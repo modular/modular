@@ -125,10 +125,18 @@ paths:
                     - role: "system"
                       content: "You are a helpful assistant that can analyze images."
                     - role: "user"
-                      content: "What's in this image?"
-                      image_url:
-                        url: "https://example.com/image.jpg"
-                        detail: "high"
+                      content: [
+                        {
+                          "type": "text",
+                          "text": "What's in this image?"
+                        },
+                        {
+                          "type": "image_url",
+                          "image_url": {
+                            "url": "https://example.com/image.jpg",
+                          }
+                        }
+                      ]
                   max_tokens: 300
       responses:
         '200':
@@ -465,29 +473,50 @@ components:
             The role of the message author.
 
         content:
-          type: string
-          description: |
-            The content of the message.
-
+          oneOf:
+            - type: string
+              description: |
+                The content of the message as a string.
+            - type: array
+              description: |
+                The content of the message as an array of content parts. For user messages, content parts can be of type text or image_url.
+              items:
+                oneOf:
+                  - type: object
+                    required:
+                      - type
+                      - text
+                    properties:
+                      type:
+                        type: string
+                        enum: [text]
+                        description: The type of the content part.
+                      text:
+                        type: string
+                        description: The text content.
+                  - type: object
+                    required:
+                      - type
+                      - image_url
+                    properties:
+                      type:
+                        type: string
+                        enum: [image_url]
+                        description: The type of the content part.
+                      image_url:
+                        type: object
+                        required:
+                          - url
+                        properties:
+                          url:
+                            type: string
+                            description: |
+                              Either a URL of the image or a base64 encoded image with the data-uri scheme.
         name:
           type: string
           description: |
-            The name of the author of this message.  
-        image_url:
-          type: object
-          description: |
-            An object that contains either a URL or base64-encoded string of the image to be processed. Only supported in user messages.
-          properties:
-            url:
-              type: string
-              description: |
-                Either a URL of the image or a base64 encoded image with the data-uri scheme.
-            detail:
-              type: string
-              enum: [auto, low, high]
-              default: auto
-              description: |
-                Controls the detail level of the image. "high" will enable more detailed processing of the image.
+            The name of the author of this message.
+
     ChatCompletionTool:
       type: object
       required:
