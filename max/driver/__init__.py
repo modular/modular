@@ -19,7 +19,7 @@ from .driver import (
     load_devices,
     scan_available_devices,
 )
-from .tensor import MemMapTensor, Tensor
+from .tensor import Tensor
 
 del driver  # type: ignore
 del tensor  # type: ignore
@@ -30,7 +30,6 @@ __all__ = [
     "Device",
     "DeviceSpec",
     "DLPackArray",
-    "MemMapTensor",
     "Tensor",
     "accelerator_api",
     "load_devices",
