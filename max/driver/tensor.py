@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Generator, Sequence
+from functools import wraps
 from itertools import product
-from mmap import mmap
 from os import PathLike
 from typing import Any, Optional, Union
 
@@ -118,11 +118,6 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
 
     This usually does not result in a copy, and the producer of the object
     retains ownership of the underlying memory."""
-    if isinstance(array, np.memmap):
-        # TODO(MSDK-976): since `np.memmap`s are often read-only, we just
-        # use our own memmap implementation here, but it would be better to
-        # always delegate to from_dlpack.
-        return MemMapTensor._from_numpy_memmap(array)
     if isinstance(array, np.ndarray):
         if not array.flags.c_contiguous:
             raise ValueError(
@@ -169,6 +164,27 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
     return Tensor._from_dlpack(array)
 
 
+@wraps(Tensor.mmap)
+def _mmap(
+    filename: PathLike | str,
+    dtype: DType,
+    shape: ShapeType | int,
+    mode: np._MemMapModeKind = "copyonwrite",
+    offset=0,
+):
+    arr: np.memmap = np.memmap(
+        filename,
+        dtype.to_numpy(),
+        mode,
+        offset,
+        # NOTE: prior to NumPy 2.0, `shape` must be `tuple` or `int`.
+        shape if isinstance(shape, int) else tuple(shape),
+        order="C",
+    )
+    assert arr.flags["C_CONTIGUOUS"]
+    return Tensor.from_dlpack(arr)
+
+
 Tensor._iterate_indices = _iterate_indices  # type: ignore[method-assign]
 Tensor.contiguous = _contiguous  # type: ignore[method-assign]
 Tensor._aligned = _aligned  # type: ignore[method-assign]
@@ -178,108 +194,7 @@ Tensor.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
 Tensor.from_numpy = _from_numpy  # type: ignore[method-assign]
 Tensor.to_numpy = _to_numpy  # type: ignore[method-assign]
 Tensor.from_dlpack = _from_dlpack  # type: ignore[method-assign]
-
-
-class MemMapTensor(Tensor):
-    """Create a memory-mapped tensor from a binary file on disk.
-
-    The constructor argument semantics follow that of np.memmap.
-    """
-
-    _mmap: mmap
-    _read_only: bool
-
-    def __init__(
-        self,
-        filename: PathLike | str,
-        dtype: DType,
-        shape: ShapeType | int,
-        mode: np._MemMapModeKind = "r+",
-        offset=0,
-    ) -> None:
-        # Instead of implementing all the mmap-related logic, we just delegate
-        # to numpy. By passing order="C", we ensure C-contiguous layout.
-        arr: np.memmap = np.memmap(
-            filename,
-            dtype.to_numpy(),
-            mode,
-            offset,
-            # NOTE: prior to NumPy 2.0, `shape` must be `tuple` or `int`.
-            shape if isinstance(shape, int) else tuple(shape),
-            order="C",
-        )
-        assert arr.flags["C_CONTIGUOUS"]
-        self._init_from_numpy_memmap(arr)
-
-    def _init_from_numpy_memmap(self, arr: np.memmap) -> None:
-        # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
-        # underlying memory from numpy. But our numpy version doesn't allow
-        # dlpack to be used on read-only arrays (common for memmaped weights).
-        super().__init__(arr, CPU())
-
-        # numpy does not attempt to free/close the mmap object it uses, so we
-        # copy a reference to it, which should keep it alive as long as needed.
-        self._mmap = arr._mmap  # type: ignore
-
-        self._read_only = not arr.flags.writeable
-
-    def _init_from_tensor(self, tensor: Tensor, mm: mmap, ro: bool) -> None:
-        super().__init__(tensor)
-        self._mmap = mm
-        self._read_only = ro
-
-    @classmethod
-    def _from_numpy_memmap(cls, arr: np.memmap) -> MemMapTensor:
-        tensor = cls.__new__(cls)
-        tensor._init_from_numpy_memmap(arr)
-        return tensor
-
-    def __dlpack__(self, *, stream=None) -> Any:  # type: ignore[override]
-        """Implements part of the dlpack contract."""
-        # We must ensure that the underlying mmap doesn't get closed.
-        return super().__dlpack__(stream=stream, _mmap=self._mmap)
-
-    @property
-    def read_only(self) -> bool:
-        return self._read_only
-
-    def view(
-        self, dtype: DType, shape: ShapeType | None = None
-    ) -> MemMapTensor:
-        """Creates a view of the memory-mapped tensor with new type and shape.
-
-        Preserves the original memory mapping properties (read-only status and
-        file reference) while reinterpreting the bytes.
-        Shares underlying storage -- modifications affect all views of the same
-        memory region.
-
-        Args:
-            dtype: New data type for interpreting the bytes.
-                Size must divide evenly into the original tensor's last
-                dimension byte size.
-            shape: Optional new shape.
-                Inferred from dtype size if not provided.
-                Product of dimensions must match original element count
-                adjusted for dtype size.
-
-        Returns:
-            New :obj:`MemMapTensor` instance with specified dtype/shape, sharing the
-            original memory-mapped file properties.
-
-        Raises:
-            ValueError: For invalid shape/dtype combinations or boundary overflows.
-            TypeError: For undefined byte interpretations.
-        """
-        viewed = super().view(dtype, shape)
-        result = MemMapTensor.__new__(MemMapTensor)
-        result._init_from_tensor(viewed, self._mmap, self._read_only)
-        return result
-
-    def __setitem__(self, idx: IndexType, value: Any) -> None:
-        """Sets an item in the tensor."""
-        if self.read_only:
-            raise ValueError("Cannot modify read-only MemMapTensor")
-        super().__setitem__(idx, value)
+Tensor.mmap = _mmap  # type: ignore[method-assign]
 
 
 def load_max_tensor(path: PathLike) -> Tensor:
@@ -305,7 +220,7 @@ def load_max_tensor(path: PathLike) -> Tensor:
             raise ValueError(
                 f"{path} is not a max checkpoint. If this file was saved "
                 'from the "BINARY" debug print option (and not '
-                '"BINARY_MAX_CHECKPOINT"), please initialize `MemmapTensor` '
+                '"BINARY_MAX_CHECKPOINT"), please initialize `Tensor.mmap` '
                 "directly."
             )
 
@@ -352,7 +267,7 @@ def load_max_tensor(path: PathLike) -> Tensor:
                 # Expand last dimension for uint8 bytes.
                 new_shape[-1] *= 2
 
-            tensor = MemMapTensor(
+            tensor = Tensor.mmap(
                 path,
                 DType.uint8,
                 new_shape,
@@ -361,4 +276,4 @@ def load_max_tensor(path: PathLike) -> Tensor:
             )
             return tensor.view(DType.bfloat16)
         else:
-            return MemMapTensor(path, dtype, shape, mode="r", offset=offset)
+            return Tensor.mmap(path, dtype, shape, mode="r", offset=offset)

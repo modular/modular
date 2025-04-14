@@ -661,7 +661,7 @@ class InferenceSession:
         InferenceSession.
 
         Tensors saved with `BINARY` can be loaded using
-        `max.driver.MemmapTensor()`, but you will have to provide the expected
+        `max.driver.Tensor.mmap()`, but you will have to provide the expected
         dtype and shape.
 
         Tensors saved with `BINARY_MAX_CHECKPOINT` are saved with the shape and
