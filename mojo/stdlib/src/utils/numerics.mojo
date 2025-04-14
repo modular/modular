@@ -967,7 +967,7 @@ fn get_accum_type[
         if preferred_accum_type is DType.float32:
             return preferred_accum_type
         else:
-            return DType.float16
+            return DType.bfloat16
     elif dtype is DType.bfloat16:
         return DType.float32
     elif dtype is DType.float16:
