@@ -3,6 +3,7 @@ datasets
 huggingface_hub[hf_transfer]
 huggingface_hub
 numpy
+protobuf
 tqdm
 transformers
 nvitop
