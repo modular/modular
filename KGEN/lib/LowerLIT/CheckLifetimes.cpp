@@ -1309,8 +1309,7 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
     diagnoseUsageError(valueRef, op, /*isDef*/ false);
 
   // If tracked, marks its value as dead.
-  if (!valueSet.isTrivial(value, isDeref))
-    valueRef.markBits(liveValues, false);
+  valueRef.markBits(liveValues, false);
 }
 
 /// The lit.ownership.mark_destroyed op consumes the whole object bit of
@@ -3256,11 +3255,6 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
   //   _ = a.x^
   //   use(a.x)
   if (!valueRef.isAllMissing(consumedValues)) {
-    // Trivial types don't have __copyinit__ methods, and therefore cannot have
-    // ownership tracked for them.
-    if (valueSet.isTrivial(value, isDeref))
-      return;
-
     ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.hasErrorDiagnosed)
       return;

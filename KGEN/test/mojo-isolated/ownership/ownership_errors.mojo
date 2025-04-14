@@ -64,6 +64,7 @@ struct RegExample:
     fn consume(owned self):
         pass
 
+
 fn use(x: RegExample):
     pass
 
@@ -485,16 +486,23 @@ fn test38421():
     # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
     _ = reference[].__len__()
 
+
 # ===----------------------------------------------------------------------=== #
 # Computed LValues
 # ===----------------------------------------------------------------------=== #
 
+
 fn get_inout_ref(mut x: String) -> ref [x] String:
     return x
 
+
 struct StrArray:
-    fn __getitem__(self, x: Int) -> String: return String()
-    fn __setitem__(mut self, x: Int, owned value: String): pass
+    fn __getitem__(self, x: Int) -> String:
+        return String()
+
+    fn __setitem__(mut self, x: Int, owned value: String):
+        pass
+
 
 fn test_inout_ref(mut v: StrArray, i: Int):
     # expected-note @below {{'(expression temporary)' declared here}}
@@ -519,6 +527,7 @@ fn test_disable_del(owned a: MemExample, owned b: String, owned c: MemExample):
     # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
     __disable_del c.x
 
+
 fn test_uninit_store_trivial():
     var example = TrivialAggregate()
     example.a = 1
@@ -539,7 +548,22 @@ struct TrivialAggregate:
 fn param_for_merge_diagnostic():
     # NOTE: shouldn't produce a "unused store" warning.
     var array_ptr = Int()
+
     @parameter
     for _ in TrivialRange():
         _ = array_ptr.value
 
+
+def raises_ret_int() -> Int:
+    return 4
+
+
+fn test_trivial_consume():
+    var outshape: Int  # expected-note {{'outshape' declared here}}
+    try:
+        outshape = raises_ret_int()
+    except:
+        pass
+
+    # expected-error @+1 {{use of uninitialized value 'outshape'}}
+    _ = outshape
