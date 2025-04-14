@@ -191,7 +191,7 @@ struct MojoKernelFunctionAdaptor {
     bool isThrow = funcTypeGenerator.isThrows();
     uint64_t numberOfArgumentsRelatedToByrefResult =
         isThrow ? 2 : resultAsArgument;
-    int64_t endOfInputArguments =
+    size_t endOfInputArguments =
         argumentTypesNames.size() - numberOfArgumentsRelatedToByrefResult;
 
     for (size_t i = begOfInputArguments; i < endOfInputArguments; ++i) {
@@ -226,6 +226,10 @@ struct MojoKernelFunctionAdaptor {
       outputResult = MojoKernelOperandAdaptor(
           {}, resultTypeName.strref(), nullptr, nullptr, argumentSourceNames);
     }
+  }
+
+  bool isElementwiseFunction() {
+    return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGElementwiseLambda);
   }
 
   template <typename StreamType>
