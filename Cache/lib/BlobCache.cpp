@@ -511,6 +511,11 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
       if (ec)
         return Error("failed to get absolute path to installed dir: " +
                      ec.message());
+    } else if (auto path = llvm::sys::Process::GetEnv("TEST_TMPDIR")) {
+      base = std::filesystem::absolute(*path, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to test tmp dir: " +
+                     ec.message());
     } else {
       // Attempt to find an existing home directory, but *do not create the
       // directory*. This is because we will fall back to the using the
