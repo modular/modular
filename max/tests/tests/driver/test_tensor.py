@@ -15,7 +15,7 @@ import pytest
 import torch
 from hypothesis import given
 from hypothesis import strategies as st
-from max.driver import CPU, MemMapTensor, Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 
 
@@ -460,14 +460,14 @@ def memmap_example_file():
 
 
 def test_memmap(memmap_example_file: Path) -> None:
-    tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     assert tensor.shape == (2, 4)
     assert tensor.dtype == DType.int8
     for i, j in product(range(2), range(4)):
         assert tensor[i, j].item() == i * 4 + j
 
     # Test that offsets work.
-    offset_tensor = MemMapTensor(
+    offset_tensor = Tensor.mmap(
         memmap_example_file, dtype=DType.int8, shape=(2, 3), offset=2, mode="r"
     )
     assert offset_tensor.shape == (2, 3)
@@ -475,12 +475,13 @@ def test_memmap(memmap_example_file: Path) -> None:
     for i, j in product(range(2), range(3)):
         assert offset_tensor[i, j].item() == i * 3 + j + 2
 
-    # Test that read-only arrays cannot be modified.
-    with pytest.raises(ValueError):
-        offset_tensor[0, 0] = 0
+    # Test that read-only arrays don't modify underlying data
+    offset_tensor[0, 0] = 0
+    assert offset_tensor[0, 0].item() == 0
+    assert tensor[0, 1].item() == 1
 
     # Test that a different type works and we can modify the array.
-    tensor_16 = MemMapTensor(
+    tensor_16 = Tensor.mmap(
         memmap_example_file, dtype=DType.int16, shape=(2,), offset=2, mode="r+"
     )
     tensor_16[0] = 0  # Intentional to avoid endianness issues.
@@ -490,13 +491,13 @@ def test_memmap(memmap_example_file: Path) -> None:
     assert tensor[0, 3].item() == 0
     assert tensor[1, 0].item() == 4
 
-    assert offset_tensor[0, 0].item() == 0
-    assert offset_tensor[0, 1].item() == 0
+    # offset_tensor is a copy because it's not writeable, so check that changes aren't reflected
+    assert offset_tensor[0, 1].item() == 3
     assert offset_tensor[0, 2].item() == 4
 
 
 def test_dlpack_memmap(memmap_example_file: Path) -> None:
-    tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     array = np.from_dlpack(tensor)
     assert array.dtype == np.int8
     assert tensor.shape == array.shape
@@ -507,9 +508,9 @@ def test_dlpack_memmap(memmap_example_file: Path) -> None:
 
 
 def test_dlpack_memmap_view(memmap_example_file: Path) -> None:
-    tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor = Tensor.mmap(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     tensor_view = tensor.view(DType.uint8)
-    assert isinstance(tensor_view, MemMapTensor)
+    assert isinstance(tensor_view, Tensor)
 
     array = np.from_dlpack(tensor_view)
     assert array.dtype == np.uint8
@@ -527,13 +528,13 @@ def test_from_dlpack_memmap(memmap_example_file: Path) -> None:
     assert not array.flags.writeable
 
     tensor = Tensor.from_dlpack(array)
-    assert isinstance(tensor, MemMapTensor)
+    assert isinstance(tensor, Tensor)
     assert array.dtype == np.int8
     assert tensor.shape == array.shape
 
-    # Test that read-onlyness propagates.
-    with pytest.raises(ValueError):
-        tensor[0] = 0
+    # Test that we don't overwrite the read-only memmap data
+    tensor[0] = 0
+    assert array[1].item() != 0
 
 
 def test_num_elements() -> None:
