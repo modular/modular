@@ -8,7 +8,6 @@
 from collections import OptionalReg
 from sys import (
     alignof,
-    env_get_bool,
     env_get_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -23,7 +22,6 @@ from gpu.memory import AddressSpace
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
-
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
 
@@ -132,10 +130,7 @@ struct MHAConfig:
 
     fn q_smem_size(self, sm_90: Bool = False) -> UInt:
         q_smem = self.block_m() * self.depth
-        return (
-            UInt(2)
-            * q_smem if (sm_90 and self.num_heads_per_block() > 1) else q_smem
-        )
+        return UInt(2) * q_smem if sm_90 else q_smem
 
     fn kv_smem_size(self, sm_90: Bool = False) -> UInt:
         kv_smem = self.block_n() * self.depth
@@ -156,18 +151,6 @@ struct MHAConfig:
     fn warp_scratch_smem_size(self) -> UInt:
         n_warps_n = self.num_warps_n()
         return 2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0
-
-    fn num_heads_per_block(self) -> UInt32:
-        alias persistent = env_get_bool["USE_MHA_PERSISTENT_KERNEL", False]()
-
-        @parameter
-        if not persistent:
-            return 1
-        else:
-            return (
-                4 if self.num_heads % 4
-                == 0 else (1 if self.num_heads > 4 else self.num_heads)
-            ) if self.algorithm == 3 else 1
 
     fn shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
@@ -197,10 +180,10 @@ struct MHAConfig:
 
         num_smem_bytes = self.type.sizeof() * num_smem_elements
         if sm_90_fa3:
-            num_smem_bytes += (
-                4 * self.num_pipeline_stages
-                + (4 if self.num_heads_per_block() > 1 else 0)
-            ) * sizeof[DType.int64]()
+            alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+            num_smem_bytes += (4 * self.num_pipeline_stages + 4) * sizeof[
+                DType.int64
+            ]() + (2 * sizeof[DType.uint32]() if persistent != 0 else 0)
         return num_smem_bytes
 
     fn __init__(

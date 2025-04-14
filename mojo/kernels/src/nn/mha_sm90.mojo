@@ -27,6 +27,7 @@ from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
+    CacheEviction,
     async_copy_commit_group,
     async_copy_wait_all,
     external_memory,
@@ -70,10 +71,197 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
+from nn.mha_tile_scheduler import (
+    MHASchedule,
+    MHASchedulerSynchronization,
+    MHATileScheduler,
+    MHATileState,
+    MHATileSummary,
+    SeqInfo,
+    WorkInfo,
+)
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
+
+from gpu.id import sm_id
+
+
+@value
+@register_passable("trivial")
+struct MHAPosition[BM: Int, BN: Int, depth: Int, num_heads: Int]:
+    var q_out_offset: Int
+    var seq_len: UInt32
+    var num_keys: Int
+    var start_pos: UInt32
+    var prompt_offset: UInt32
+    var head_idx: UInt32
+    var prompt_idx: UInt32
+
+    alias q_output_gmem_layout = Layout(
+        IntTuple(Int(Self.BM), Int(Self.depth)),
+        IntTuple(Int(Self.num_heads * Self.depth), 1),
+    )
+
+    @always_inline
+    fn __init__(
+        out self,
+        q_out_offset: Int,
+        num_keys: Int,
+        start_pos: UInt32,
+        seq_info: SeqInfo,
+    ):
+        self.q_out_offset = q_out_offset
+        self.seq_len = seq_info.seq_len
+        self.num_keys = num_keys
+        self.start_pos = start_pos
+        self.prompt_offset = seq_info.prompt_offset
+        self.head_idx = seq_info.head_idx
+        self.prompt_idx = seq_info.prompt_idx  # batch idx
+
+    @no_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "(",
+            self.q_out_offset,
+            ", ",
+            self.seq_len,
+            ", ",
+            self.num_keys,
+            ", ",
+            self.start_pos,
+            ", ",
+            self.prompt_offset,
+            ", ",
+            self.head_idx,
+            ", ",
+            self.prompt_idx,
+            ")",
+        )
+
+    @always_inline
+    fn q_tile_num_rows(self) -> UInt32:
+        return min(BM, self.seq_len - self.prompt_offset)
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self.q_out_offset == other.q_out_offset
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self.q_out_offset != other.q_out_offset
+
+    @always_inline
+    fn q_out_gmem_tensor[
+        dtype: DType
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[dtype]],
+        out gmem_block: LayoutTensor[
+            dtype,
+            Self.q_output_gmem_layout,
+            MutableAnyOrigin,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            masked=True,
+        ],
+    ):
+        gmem_block = __type_of(gmem_block)(
+            ptr + self.q_out_offset,
+            __type_of(gmem_block.runtime_layout)(
+                __type_of(gmem_block.runtime_layout.shape)(
+                    Int(self.q_tile_num_rows()), depth
+                ),
+                __type_of(gmem_block.runtime_layout.stride)(
+                    num_heads * depth, 1
+                ),
+            ),
+        )
+
+    @always_inline
+    fn mask_status[
+        mask_t: MHAMask
+    ](self, mask: mask_t, kv_tile_start_row: UInt32) -> TileMaskStatus:
+        return mask.status(
+            Index[type = DType.int32](
+                Int(self.prompt_offset + self.start_pos),
+                Int(kv_tile_start_row),
+            ),
+            Index[type = DType.int32](Int(Self.BM), Int(Self.BN)),
+        )
+
+
+@always_inline
+fn _get_position[
+    k_t: MHAOperand, //,
+    config: MHAConfig,
+    ragged: Bool = False,
+    _is_cache_length_accurate: Bool = False,
+](
+    seq_info: SeqInfo,
+    k: k_t,
+    max_seq_len: UInt32,
+    num_keys_arg: UInt32,
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ],
+) -> MHAPosition[
+    config.block_m(), config.block_n(), config.depth, config.num_heads
+]:
+    alias depth = config.depth
+    alias num_heads = config.num_heads
+
+    var batch_idx: UInt32 = seq_info.prompt_idx
+    # mha inputs
+    var seq_len: UInt32 = seq_info.seq_len
+    var num_keys: UInt32
+    var start_pos: UInt32
+    var q_batch_offset: Int
+
+    @parameter
+    if ragged:
+        cache_len = k.cache_length(Int(batch_idx))
+
+        @parameter
+        if not _is_cache_length_accurate:
+            start_pos = cache_len
+        else:
+            start_pos = 0
+
+        # this is used for cross attention where we get the num_keys
+        # from kv_input_row_offsets. This is when num_keys != seq_len
+        if kv_input_row_offsets:
+            var kv_row_offsets = kv_input_row_offsets.value()
+            kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
+            kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
+            cur_kv_len = kv_seq_end - kv_seq_start
+            num_keys = cur_kv_len + cache_len
+        else:
+            num_keys = Int(seq_len) + cache_len
+        q_batch_offset = Int(seq_info.start_of_seq) * Int(
+            config.depth * config.num_heads
+        )
+
+    # NDBuffer inputs, homogeneous batching.
+    else:
+        num_keys = num_keys_arg
+
+        # When cache length (num_keys) is greater, we assume it has
+        # prefix preceding the input seq_len.
+        start_pos = num_keys - seq_len
+        q_batch_offset = Int(depth * num_heads * batch_idx) * Int(max_seq_len)
+
+    q_out_offset = q_batch_offset + Int(depth) * (
+        Int(seq_info.head_idx) + Int(seq_info.prompt_offset) * Int(num_heads)
+    )
+    return MHAPosition[config.block_m(), config.block_n(), depth, num_heads](
+        q_out_offset,
+        Int(num_keys),
+        start_pos,
+        seq_info,
+    )
 
 
 @__llvm_metadata(
@@ -88,6 +276,7 @@ fn mha_sm90[
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
+    scheduler_t: MHATileScheduler,
     config: MHAConfig,
     group: Int = 1,
     use_score_mod: Bool = False,
@@ -95,6 +284,7 @@ fn mha_sm90[
     is_shared_kv: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
+    scheduler: scheduler_t,
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
@@ -110,107 +300,31 @@ fn mha_sm90[
     mask: mask_t,
     score_mod: score_mod_t,
 ):
-    alias depth = config.depth
-    alias num_heads = config.num_heads
-    var batch_idx: UInt32 = block_idx.z
-
     # mha inputs
-    var seq_len: UInt32
-    var max_seq_len: Int
-    var num_keys: Int
-    var mask_tensor_col: Int
-    var start_pos: UInt32 = 0
+    var max_seq_len: Int = seq_len_arg
 
-    @parameter
-    if ragged:
-        # treat valid_lengths as a input_row_offsets
-        start_of_seq = Int(valid_length[Int(batch_idx)])
-        end_of_seq = Int(valid_length[Int(batch_idx + 1)])
-        seq_len = end_of_seq - start_of_seq
-
-        if seq_len <= block_idx.x * config.block_m():
-            return
-
-        @parameter
-        if not _is_cache_length_accurate:
-            var cache_length = k.cache_length(Int(batch_idx))
-            start_pos = cache_length
-
-        # this is used for cross attention where we get the num_keys
-        # from kv_input_row_offsets. This is when num_keys != seq_len
-        if kv_input_row_offsets:
-            var kv_row_offsets = kv_input_row_offsets.value()
-            kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
-            kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
-            cur_kv_len = kv_seq_end - kv_seq_start
-            num_keys = cur_kv_len + k.cache_length(Int(batch_idx))
-        else:
-            num_keys = Int(seq_len) + k.cache_length(Int(batch_idx))
-
-        max_seq_len = seq_len_arg
-        mask_tensor_col = seq_len_arg
-        q_batch_offset = start_of_seq * config.depth * config.num_heads
-    # NDBuffer inputs, homogeneous batching.
-    else:
-        seq_len = seq_len_arg
-
-        if seq_len <= block_idx.x * config.block_m():
-            return
-
-        max_seq_len = seq_len_arg
-        num_keys = num_keys_arg
-
-        # When cache length (num_keys) is greater, we assume it has
-        # prefix preceding the input seq_len.
-        start_pos = num_keys - seq_len
-
-        mask_tensor_col = num_keys_arg
-        q_batch_offset = (
-            Int(config.depth * config.num_heads * batch_idx) * max_seq_len
-        )
-
-    @parameter
-    if config.algorithm == FlashAttentionAlgorithm(3):
-        _mha_single_batch_sm90_fa3[
-            config=config,
-            group=group,
-            use_score_mod=use_score_mod,
-        ](
-            q_ptr.offset(q_batch_offset),
-            k,
-            v,
-            output_ptr.offset(q_batch_offset),
-            scale,
-            seq_len,
-            max_seq_len,
-            start_pos,
-            num_keys,
-            mask_tensor_col,
-            mask,
-            score_mod,
-            batch_idx,
-        )
-    else:
-        constrained[config.algorithm == FlashAttentionAlgorithm(2)]()
-        _mha_single_batch_sm90_fa2[
-            config=config,
-            group=group,
-            use_score_mod=use_score_mod,
-        ](
-            q_ptr.offset(q_batch_offset),
-            k,
-            v,
-            output_ptr.offset(q_batch_offset),
-            scale,
-            seq_len,
-            max_seq_len,
-            start_pos,
-            num_keys,
-            mask_tensor_col,
-            mask,
-            score_mod,
-            batch_idx,
-        )
+    constrained[config.algorithm == FlashAttentionAlgorithm(3)]()
+    _mha_single_batch_sm90_fa3[
+        config=config,
+        group=group,
+        use_score_mod=use_score_mod,
+        ragged=ragged,
+        _is_cache_length_accurate=_is_cache_length_accurate,
+    ](
+        q_ptr,
+        k,
+        v,
+        output_ptr,
+        scale,
+        max_seq_len,
+        num_keys_arg,
+        valid_length,
+        kv_input_row_offsets,
+        mask,
+        score_mod,
+        scheduler,
+        batch_size,
+    )
 
 
 @always_inline
@@ -231,10 +345,12 @@ fn _mask_tensor_row(
 @always_inline("nodebug")
 fn _produce[
     smem_layout: Layout,
-    kv_t: MHAOperand, //,
-    kv_num_heads: Int,
-    depth: Int,
+    kv_t: MHAOperand,
+    BM: Int,
     BN: Int,
+    depth: Int,
+    num_heads: Int, //,
+    kv_num_heads: Int,
     BK: Int,
     group: Int,
     kv_gmem_layout: Layout,
@@ -245,10 +361,8 @@ fn _produce[
 ](
     write_idx: UInt32,
     write_phase: UInt32,
-    kv_tile_start_row: Int,
-    head_idx: UInt32,
-    num_keys: Int,
-    batch_idx: UInt32,
+    kv_tile_start_row: UInt32,
+    position: MHAPosition[BM, BN, depth, num_heads],
     consumed_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -263,7 +377,9 @@ fn _produce[
         address_space = AddressSpace.SHARED,
     ],
 ):
-    kv_tile_num_rows = min(Int(BN), num_keys - kv_tile_start_row)
+    kv_tile_num_rows = min(
+        Int(BN), Int(position.num_keys) - Int(kv_tile_start_row)
+    )
 
     alias kv_runtime_layout_type = RuntimeLayout[
         kv_gmem_layout,
@@ -300,7 +416,10 @@ fn _produce[
             masked=masked,
         ](
             kv.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
+                position.prompt_idx,
+                Int(kv_tile_start_row),
+                Int(position.head_idx // group),
+                0,
             ),
             kv_runtime_layout,
         )
@@ -316,7 +435,9 @@ fn _produce[
             @parameter
             if axis == 0 and masked:
                 num_rows_bound = min(
-                    Int(BK), num_keys - (kv_tile_start_row + k_id * BK)
+                    Int(BK),
+                    Int(position.num_keys)
+                    - (Int(kv_tile_start_row) + k_id * BK),
                 )
                 tensor = _mask_tensor_row(gmem_iter[], num_rows_bound)
             else:
@@ -358,10 +479,10 @@ fn _apply_mask[
     mask_warp_col: UInt32,
     start_pos: UInt32,
     lane: UInt32,
-    num_keys: Int,
+    num_keys: UInt32,
     seq_len: UInt32,
     max_seq_len: Int,
-    q_tile_idx: UInt32,
+    mask_block_row: UInt32,
     scale_log2e: Scalar[accum_type],
     mask: mask_t,
     mask_status: TileMaskStatus,
@@ -375,7 +496,6 @@ fn _apply_mask[
 ):
     # Vectorize by 2.
     p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
-    mask_block_row = BM * q_tile_idx
 
     @parameter
     @always_inline
@@ -465,24 +585,29 @@ fn _mha_single_batch_sm90_fa3[
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
+    scheduler_t: MHATileScheduler,
     *,
     config: MHAConfig,
-    group: Int = 1,
-    use_score_mod: Bool = False,
+    group: Int,
+    use_score_mod: Bool,
+    ragged: Bool,
+    _is_cache_length_accurate: Bool,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr_arg: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr_arg: UnsafePointer[Scalar[output_type]],
     scale: Float32,
-    seq_len: UInt32,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
-    start_pos: UInt32,
-    num_keys: Int,
-    mask_tensor_col: Int,  # second dimension of mask tensor
+    num_keys_arg: Int,
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ],
     mask: mask_t,
     score_mod: score_mod_t,
-    batch_idx: UInt32,
+    scheduler: scheduler_t,
+    batch_size: UInt32,
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -713,40 +838,6 @@ fn _mha_single_batch_sm90_fa3[
     alias async_copy_q_layout = Layout.row_major(
         min(num_consumer_threads, q_num_vecs) * simd_size // BK, BK // simd_size
     )
-    alias q_output_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
-    )
-
-    alias num_heads_per_block: UInt32 = config.num_heads_per_block()
-
-    @parameter
-    @always_inline
-    fn q_out_gmem_tensor[
-        type: DType, //
-    ](
-        ptr: UnsafePointer[Scalar[type]],
-        head_idx: UInt32,
-        q_tile_idx: UInt32,
-        out result: LayoutTensor[
-            type,
-            q_output_gmem_layout,
-            MutableAnyOrigin,
-            masked=True,
-        ],
-    ):
-        var q_tile_num_rows: UInt32 = min(BM, UInt32(seq_len) - q_tile_idx * BM)
-        var q_offset: UInt32 = depth * (head_idx + q_tile_idx * BM * num_heads)
-        # Global memory iterator
-        gmem_block = __type_of(result)(
-            ptr + Int(q_offset),
-            __type_of(result.runtime_layout)(
-                __type_of(result.runtime_layout.shape)(
-                    Int(q_tile_num_rows), depth
-                ),
-                __type_of(result.runtime_layout.stride)(num_heads * depth, 1),
-            ),
-        )
-        return gmem_block
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 
@@ -758,24 +849,7 @@ fn _mha_single_batch_sm90_fa3[
     consumed_mbar_v = produced_mbar_v + pipeline_stages
     produced_mbar_q = consumed_mbar_v + pipeline_stages
     consumed_mbar_q = produced_mbar_q + 2
-
-    if tid == 0:
-
-        @parameter
-        for i in range(pipeline_stages):
-            # until we can use TMA, we need 128 producers working on async copies
-            produced_mbar_k[i].init(128)
-            consumed_mbar_k[i].init(num_consumer_threads)
-            produced_mbar_v[i].init(128)
-            consumed_mbar_v[i].init(num_consumer_threads)
-
-        @parameter
-        if num_heads_per_block > 1:
-
-            @parameter
-            for i in range(2):
-                produced_mbar_q[i].init(128)
-                consumed_mbar_q[i].init(num_consumer_threads)
+    block_idx_ptr = (consumed_mbar_q + 2).bitcast[UInt32]()
 
     alias USE_TMA = False
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
@@ -791,12 +865,78 @@ fn _mha_single_batch_sm90_fa3[
     alias num_k_iters_0 = Int(depth // BK)
     alias num_k_iters_1 = Int(BN // BK)
 
-    var num_q_tiles: UInt32 = ceildiv(UInt32(seq_len), BM)
-    var head_per_block_idx: UInt32 = num_heads_per_block - 1
+    # constructing calls barrier()
+    var tile_summary = MHATileSummary(
+        batch_size, ceildiv(max_seq_len, BM), valid_length, max_seq_len
+    )
+    var state: MHATileState = scheduler.initial_state(
+        block_idx_ptr, tile_summary
+    )
 
-    var _head_idx: UInt32 = block_idx.y * num_heads_per_block + head_per_block_idx
-    var _q_tile_idx: UInt32 = block_idx.x if head_per_block_idx % 2 == 0 else num_q_tiles - 1 - block_idx.x
+    # returns `true` if we are done
+    @parameter
+    @always_inline
+    fn advance[
+        producer: Bool,
+        sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
+    ](pipeline_idx: UInt32) -> OptionalReg[SeqInfo]:
+        return scheduler.advance[ragged, producer, sync](
+            tile_summary, state, pipeline_idx
+        )
+
+    # The persistent kernels limit the grid size.
+    # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
+
+    initial_seq_info = scheduler.unsafe_seq_info[ragged](tile_summary, state)
+
+    if not initial_seq_info.is_valid():
+
+        @parameter
+        if scheduler_t.may_advance:
+            seq_info = advance[True, MHASchedulerSynchronization.ALL](1)
+            if seq_info:
+                initial_seq_info = seq_info.value()
+            else:
+                return
+        else:
+            return
+
+    if tid == 0:
+
+        @parameter
+        for i in range(pipeline_stages):
+            # until we can use TMA, we need 128 producers working on async copies
+            produced_mbar_k[i].init(128)
+            consumed_mbar_k[i].init(num_consumer_threads)
+            produced_mbar_v[i].init(128)
+            consumed_mbar_v[i].init(num_consumer_threads)
+
+        @parameter
+        if scheduler_t.may_advance:
+
+            @parameter
+            for i in range(2):
+                produced_mbar_q[i].init(128)
+                consumed_mbar_q[i].init(num_consumer_threads)
+
+    alias position_t = MHAPosition[BM, BN, depth, num_heads]
+
+    @parameter
+    @always_inline
+    fn get_position(seq_info: SeqInfo) -> position_t:
+        return _get_position[config, ragged, _is_cache_length_accurate](
+            seq_info,
+            k,
+            max_seq_len,
+            num_keys_arg,
+            valid_length,
+            kv_input_row_offsets,
+        )
+
+    var position: position_t = get_position(initial_seq_info)
+
     q_pipeline_state = PipelineState[2]()
+
     barrier()
     # For intra-warp overlap, we initiate wgmmas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
@@ -811,17 +951,23 @@ fn _mha_single_batch_sm90_fa3[
         # note that Q does not wait or arrive...
         # it assumes you can use K's
         @parameter
-        @always_inline
-        fn produce_q(head_idx: UInt32, q_tile_idx: UInt32, q_idx: UInt32):
+        @always_inline("nodebug")
+        fn produce_q(
+            position: position_t,
+            pipeline_idx: UInt32,
+        ):
             # Query global memory iterator
-            q_gmem_block = q_out_gmem_tensor(q_ptr, head_idx, q_tile_idx)
+            q_gmem_block = position.q_out_gmem_tensor(q_ptr_arg)
             q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
-            q_smem_subi = q_smem_iter.next_unsafe(Int(num_k_iters_0 * q_idx))
+            q_smem_subi = q_smem_iter.next_unsafe(
+                Int(num_k_iters_0 * pipeline_idx)
+            )
 
             # these copies get commited with the first `K`
             @parameter
             for q_id in range(num_k_iters_0):
                 cp_async_k_major(q_smem_subi.next_unsafe(q_id)[], q_gmem_iter[])
+                # cp_async_k_major[eviction_policy=CacheEviction.EVICT_FIRST](q_smem_subi.next_unsafe(q_id)[], q_gmem_iter[])
 
                 q_gmem_iter._incr()
 
@@ -837,13 +983,11 @@ fn _mha_single_batch_sm90_fa3[
         ](
             write_idx: UInt32,
             write_phase: UInt32,
-            kv_tile_start_row: Int,
-            head_idx: UInt32,
+            kv_tile_start_row: UInt32,
+            position: position_t,
         ):
             _produce[
                 kv_num_heads,
-                depth,
-                BN,
                 BK,
                 group,
                 kv_gmem_layout,
@@ -854,9 +998,7 @@ fn _mha_single_batch_sm90_fa3[
                 write_idx,
                 write_phase,
                 kv_tile_start_row,
-                head_idx,
-                num_keys,
-                batch_idx,
+                position,
                 consumed_mbar_k,
                 produced_mbar_k,
                 k,
@@ -868,13 +1010,11 @@ fn _mha_single_batch_sm90_fa3[
         fn produce_v(
             write_idx: UInt32,
             write_phase: UInt32,
-            kv_tile_start_row: Int,
-            head_idx: UInt32,
+            kv_tile_start_row: UInt32,
+            position: position_t,
         ):
             _produce[
                 kv_num_heads,
-                depth,
-                BN,
                 BK,
                 group,
                 kv_gmem_layout,
@@ -885,47 +1025,22 @@ fn _mha_single_batch_sm90_fa3[
                 write_idx,
                 write_phase,
                 kv_tile_start_row,
-                head_idx,
-                num_keys,
-                batch_idx,
+                position,
                 consumed_mbar_v,
                 produced_mbar_v,
                 v,
                 v_smem_iter,
             )
 
-        produce_q(_head_idx, _q_tile_idx, q_pipeline_state.index())
+        produce_q(position, q_pipeline_state.index())
 
-        var kv_tile_start_row: Int = 0
+        var kv_tile_start_row: UInt32 = 0
 
         while (
-            mask.status(
-                Index[type = DType.int32](
-                    Int(_q_tile_idx * BM + start_pos),
-                    Int(kv_tile_start_row),
-                ),
-                Index[type = DType.int32](Int(BM), Int(BN)),
-            )
+            position.mask_status(mask, kv_tile_start_row)
             == TileMaskStatus.FULL_MASK
         ):
             kv_tile_start_row += BN
-            # FIXME: This is impossible for standard mask types, thus the
-            # code is commented out to avoid generating dead code.
-            # Ideally, we could have some `@parameter` check for
-            # whether it is needed based on the mask type.
-            # if kv_tile_start_row >= num_keys:
-            #     # NOTE: this should not happen
-            #     # for correctness, we have code here,
-            #     # but we're slow at handling it.
-            #     if head_per_block_idx == 0:
-            #         return
-            #     head_per_block_idx -= 1
-            #     _head_idx -= 1
-            #     _q_tile_idx = num_q_tiles - 1 - _q_tile_idx
-            #     kv_tile_start_row = 0
-            #     async_copy_wait_all()
-            #     barrier()
-            #     produce_q(_head_idx, _q_tile_idx)
 
         var write_idx: UInt32 = write_pipeline_states.index()
         var write_phase: UInt32 = write_pipeline_states.phase()
@@ -933,15 +1048,12 @@ fn _mha_single_batch_sm90_fa3[
         var write_idx_prev: UInt32 = write_idx
         var write_phase_prev: UInt32 = write_phase
         var kv_tile_start_row_prev = kv_tile_start_row
-        var head_idx_prev: UInt32 = _head_idx
+        var position_prev: position_t = position
 
-        produce_k[False](write_idx, write_phase, kv_tile_start_row, _head_idx)
+        produce_k[False](write_idx, write_phase, kv_tile_start_row, position)
 
         # wait to flip phase, but only bother after producing
         # there isn't any memory we can throttle
-        @parameter
-        if num_heads_per_block > 1:
-            _ = produced_mbar_q[q_pipeline_state.index()].arrive()
         async_copy_arrive(produced_mbar_k + write_idx)
         _ = produced_mbar_k[write_idx].arrive()
         # the order of the consumer's arrivals determines the
@@ -949,30 +1061,40 @@ fn _mha_single_batch_sm90_fa3[
         # few_keys = num_keys <= BN
 
         # Process work with the tile size until there's not enough remaining work
-        #  to fit in a tile.
+        # to fit in a tile.
+        # Production order:
+        # Preheader: Q0, K0
+        # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
+        # Exit: V{-1}
         while True:
             # this loops over num_keys
             kv_tile_start_row += BN
-            if kv_tile_start_row >= num_keys and head_per_block_idx == 0:
-                break
-            elif kv_tile_start_row >= num_keys:
+            if kv_tile_start_row >= position.num_keys:
 
                 @parameter
-                if num_heads_per_block > 1:
-                    head_per_block_idx -= 1
-                    head_idx_prev = _head_idx
-                    _head_idx -= 1
-                    _q_tile_idx = num_q_tiles - 1 - _q_tile_idx
+                if scheduler_t.may_advance:
                     kv_tile_start_row = 0
+                    var q_idx_old: UInt32 = q_pipeline_state.index()
+                    var q_phase_old: UInt32 = q_pipeline_state.phase()
+                    q_pipeline_state.step()
+                    consumed_mbar_q[q_idx_old].wait(q_phase_old)
+                    # we must wait before advancing, as this mbar
+                    # is for both `q_smem` and `sidx_ptr`
+                    var q_idx: UInt32 = q_pipeline_state.index()
+                    docontinue = advance[True](q_idx_old)
+                    # commit writes to `q_smem` and to `sidx_ptr`
+                    async_copy_arrive(produced_mbar_q + q_idx_old)
+                    _ = produced_mbar_q[q_idx_old].arrive()
+                    if not docontinue:
+                        break
+                    position = get_position(docontinue.value())
+                    # merge with following produce_k
+                    produce_q(position, q_idx)
+                else:
+                    break
 
             if (
-                mask.status(
-                    Index[type = DType.int32](
-                        Int(_q_tile_idx * BM + start_pos),
-                        Int(kv_tile_start_row),
-                    ),
-                    Index[type = DType.int32](Int(BM), Int(BN)),
-                )
+                position.mask_status(mask, kv_tile_start_row)
                 == TileMaskStatus.FULL_MASK
             ):
                 continue
@@ -985,7 +1107,7 @@ fn _mha_single_batch_sm90_fa3[
                 write_idx,
                 write_phase,
                 kv_tile_start_row,
-                _head_idx,
+                position,
             )
             async_copy_arrive(produced_mbar_k + write_idx)
             _ = produced_mbar_k[write_idx].arrive()
@@ -993,38 +1115,19 @@ fn _mha_single_batch_sm90_fa3[
                 write_idx_prev,
                 write_phase_prev,
                 kv_tile_start_row_prev,
-                head_idx_prev,
+                position_prev,
             )
             # cache old
             write_idx_prev = write_idx
             write_phase_prev = write_phase
             kv_tile_start_row_prev = kv_tile_start_row
-            if head_idx_prev != _head_idx:
-                head_idx_prev = _head_idx
-
-                @parameter
-                if num_heads_per_block > 1:
-                    # if head_per_block_idx < (1 + few_keys):
-                    #     # we're fetching `2 if few_keys else 1`
-                    #     # q-tiles ahead.
-                    #     continue
-
-                    # var q_idx_old: UInt32 = q_pipeline_state.index()
-                    # var q_phase_old: UInt32 = q_pipeline_state.phase()
-                    # if few keys, the consumer arrives on the current Q
-                    # after writing the output into it (before copying to gmem)
-                    # otherwise, the consumer arrives at the previous Q
-                    var q_idx_old: UInt32 = q_pipeline_state.index()
-                    var q_phase_old: UInt32 = q_pipeline_state.phase()
-                    q_pipeline_state.step()
-                    consumed_mbar_q[q_idx_old].wait(q_phase_old)
-                    var q_idx: UInt32 = q_pipeline_state.index()
-                    produce_q(_head_idx, _q_tile_idx, q_idx)
-                    async_copy_arrive(produced_mbar_q + q_idx)
-                    _ = produced_mbar_q[q_idx].arrive()
+            position_prev = position
 
         produce_v(
-            write_idx_prev, write_phase_prev, kv_tile_start_row_prev, _head_idx
+            write_idx_prev,
+            write_phase_prev,
+            kv_tile_start_row_prev,
+            position_prev,
         )
 
     else:
@@ -1038,9 +1141,8 @@ fn _mha_single_batch_sm90_fa3[
         _ = consumed_mbar_v[pipeline_stages - 1].arrive()
 
         @parameter
-        if num_heads_per_block > 1:
+        if scheduler_t.may_advance:
             _ = consumed_mbar_q[0].arrive()
-
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
         # layout is
@@ -1151,7 +1253,7 @@ fn _mha_single_batch_sm90_fa3[
         @parameter
         @always_inline
         fn apply_mask(
-            q_tile_idx: UInt32,
+            position: position_t,
             mask_status: TileMaskStatus,
         ):
             _apply_mask[
@@ -1166,12 +1268,12 @@ fn _mha_single_batch_sm90_fa3[
             ](
                 mask_warp_row,
                 mask_warp_col,
-                start_pos,
+                position.start_pos,
                 lane,
-                num_keys,
-                seq_len,
+                position.num_keys,
+                position.seq_len,
                 max_seq_len,
-                q_tile_idx,
+                position.prompt_offset,
                 scale_log2e,
                 mask,
                 mask_status,
@@ -1217,8 +1319,7 @@ fn _mha_single_batch_sm90_fa3[
         @parameter
         @always_inline
         fn write_output(
-            head_idx: UInt32,
-            q_tile_idx: UInt32,
+            position: position_t,
             q_idx: UInt32,
             rowsum_inv: __type_of(rowsum),
         ):
@@ -1233,9 +1334,7 @@ fn _mha_single_batch_sm90_fa3[
                 for col in range(num_cols_per_warp):
                     vout._set[row, col](vout._get[row, col]() * rs_inv)
 
-            output_gmem_tile = q_out_gmem_tensor(
-                output_ptr, head_idx, q_tile_idx
-            )
+            output_gmem_tile = position.q_out_gmem_tensor(output_ptr_arg)
 
             # Write to global memory.
             constrained[
@@ -1288,33 +1387,22 @@ fn _mha_single_batch_sm90_fa3[
 
         var read_idx: UInt32 = read_pipeline_states.index()
         var read_phase: UInt32 = read_pipeline_states.phase()
-        var kv_tile_start_row: Int = 0
+        var kv_tile_start_row: UInt32 = 0
         var mask_status: TileMaskStatus
         while True:
-            mask_status = mask.status(
-                Index[type = DType.int32](
-                    Int(_q_tile_idx * BM + start_pos),
-                    Int(kv_tile_start_row),
-                ),
-                Index[type = DType.int32](Int(BM), Int(BN)),
-            )
+            mask_status = position.mask_status(mask, kv_tile_start_row)
             if mask_status != TileMaskStatus.FULL_MASK:
                 break
             kv_tile_start_row += BN
             mask_warp_col += BN
 
-        @parameter
-        if num_heads_per_block > 1:
-            produced_mbar_q[q_pipeline_state.index()].wait(
-                q_pipeline_state.phase()
-            )
         # q_mul_k must wait on fetching q and k
         # therefore, we find `kv_tile_start_row` first.
         q_mul_k(read_idx, read_phase, q_pipeline_state.index())
         wait_for_q_mul_k[0](pipeline_stages - 1)
         # few_keys = num_keys <= BN
 
-        apply_mask(_q_tile_idx, mask_status)
+        apply_mask(position, mask_status)
         rowmax.copy_from(
             _rowmax_online_softmax[
                 # threads layout by warp
@@ -1329,37 +1417,34 @@ fn _mha_single_batch_sm90_fa3[
 
         var read_idx_prev: UInt32 = read_idx
         var read_phase_prev: UInt32 = read_phase
-        var q_tile_idx_prev: UInt32 = _q_tile_idx
+        var position_prev: position_t = position
         var q_idx_old: UInt32 = q_pipeline_state.index()
         var q_phase_old: UInt32 = q_pipeline_state.phase()
-
+        # Consumption order:
+        # Preheader: Q0, K0
+        # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
+        # Exit: V{-1}
         while True:
             # this loops over num_keys
             kv_tile_start_row += BN
-            if kv_tile_start_row >= num_keys and head_per_block_idx == 0:
-                break
-            elif kv_tile_start_row >= num_keys:
+            if kv_tile_start_row >= position.num_keys:
 
                 @parameter
-                if num_heads_per_block > 1:
-                    head_per_block_idx -= 1
-                    _head_idx -= 1
-                    q_tile_idx_prev = _q_tile_idx
-                    _q_tile_idx = num_q_tiles - 1 - _q_tile_idx
+                if scheduler_t.may_advance:
                     kv_tile_start_row = 0
                     mask_warp_col = warp_x * WN  # reset?
+                    var q_idx_old: UInt32 = q_pipeline_state.index()
+                    var q_phase_old: UInt32 = q_pipeline_state.phase()
                     q_pipeline_state.step()
-                    produced_mbar_q[q_pipeline_state.index()].wait(
-                        q_pipeline_state.phase()
-                    )
+                    produced_mbar_q[q_idx_old].wait(q_phase_old)
+                    docontinue = advance[False](q_idx_old)
+                    if not docontinue:
+                        break
+                    position = get_position(docontinue.value())
+                else:
+                    break
 
-            mask_status = mask.status(
-                Index[type = DType.int32](
-                    Int(_q_tile_idx * BM + start_pos),
-                    Int(kv_tile_start_row),
-                ),
-                Index[type = DType.int32](Int(BM), Int(BN)),
-            )
+            mask_status = position.mask_status(mask, kv_tile_start_row)
             if mask_status == TileMaskStatus.FULL_MASK:
                 mask_warp_col += BN
                 continue
@@ -1384,7 +1469,11 @@ fn _mha_single_batch_sm90_fa3[
             p_mul_v(read_idx_prev, read_phase_prev)  # can't rw output or pfrag
             wait_for_q_mul_k[1](read_idx_prev)  # can rw `p_reg_tile`
 
-            apply_mask(_q_tile_idx, mask_status)
+            apply_mask(position, mask_status)
+            new_q = (
+                scheduler_t.may_advance
+                and q_idx_old != q_pipeline_state.index()
+            )
             score_frag_rowmax = _rowmax_online_softmax[
                 # threads layout by warp
                 Layout.row_major(num_warps_m, num_warps_n),
@@ -1393,12 +1482,9 @@ fn _mha_single_batch_sm90_fa3[
             ](
                 vectorize_output(p_reg_tile),
                 rowmax,
-                (num_heads_per_block > 1)
-                and (q_idx_old != q_pipeline_state.index()),
+                new_q,
             )
-            if (num_heads_per_block > 1) and (
-                q_idx_old != q_pipeline_state.index()
-            ):
+            if new_q:
                 score_frag_rowsum = rebind[__type_of(rowsum)](
                     _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
                 )
@@ -1434,15 +1520,12 @@ fn _mha_single_batch_sm90_fa3[
                 # scenario `0.` is unlikely unless `BN >= num_keys`,
                 # in which case it is guaranteed.
                 # var q_idx: UInt32 = q_pipeline_state.index() if few_keys else q_idx_old
-                var q_idx: UInt32 = q_idx_old
-                write_output(
-                    _head_idx + 1, q_tile_idx_prev, q_idx, score_frag_rowsum
-                )
+                write_output(position_prev, q_idx_old, score_frag_rowsum)
                 var q_idx_new: UInt32 = q_pipeline_state.index()
 
                 _ = consumed_mbar_q[q_idx_new].arrive()
-                q_tile_idx_prev = _q_tile_idx
                 _ = output_reg_tile.vectorize[accum_simd_width]().fill(0)
+                position_prev = position
                 q_idx_old = q_idx_new
                 q_phase_old = q_pipeline_state.phase()
             else:
@@ -1482,651 +1565,5 @@ fn _mha_single_batch_sm90_fa3[
         for row in range(num_rows_per_warp):
             rowsum._set[row](recip(rowsum._get[row]())[0])
         wgmma_1.wait_group()
-        write_output(_head_idx, _q_tile_idx, q_pipeline_state.index(), rowsum)
+        write_output(position, q_pipeline_state.index(), rowsum)
         # don't arrive
-
-
-@always_inline
-fn _mha_single_batch_sm90_fa2[
-    q_type: DType,
-    k_t: MHAOperand,
-    v_t: MHAOperand,
-    output_type: DType,
-    mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
-    *,
-    config: MHAConfig,
-    group: Int = 1,
-    use_score_mod: Bool = False,
-](
-    q_ptr: UnsafePointer[Scalar[q_type]],
-    k: k_t,
-    v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    scale: Float32,
-    seq_len: UInt32,  # valid sequence length i.e. w/o padding.
-    max_seq_len: Int,  # sequence length after padding.
-    start_pos: UInt32,
-    num_keys: Int,
-    mask_tensor_col: Int,  # second dimension of mask tensor
-    mask: mask_t,
-    score_mod: score_mod_t,
-    batch_idx: UInt32,
-):
-    """MHA for token gen where seqlen = 1 and num_keys >= 1.
-
-    The general data layout and steps conform to flash attention. Two exceptions:
-
-    1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
-      will need a separate reduction kernel at the end.
-
-    2 Frist bmm becomes gemv and second bmm becomes gevm.
-      TODO: use more optimized kernels for them
-
-    """
-    alias k_type = k_t.type
-    alias v_type = v_t.type
-    constrained[q_type == k_type and k_type == v_type]()
-
-    alias simd_size = simdwidthof[q_type]()
-
-    alias num_warps_m = config.num_warps_m()
-    alias num_warps_n = config.num_warps_n()
-    alias num_threads = config.num_threads()
-    alias num_consumer = num_threads // 128
-    alias BM = config.block_m()
-    alias BN = config.block_n()
-    alias BK = config.block_k()
-    alias num_heads = config.num_heads
-    alias depth = config.depth
-
-    constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
-        "Number of warps doesn't match warp tile sizes.",
-    ]()
-    constrained[num_warps_m == 4, "num_warps_m != 4 currently unsupported."]()
-    constrained[num_warps_n == 1, "num_warps_n != 1 currently unsupported."]()
-
-    var tid: UInt32 = thread_idx.x
-    var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
-    var warp_group_idx: UInt32 = warp.broadcast(
-        tid // 128
-    ) if num_consumer > 1 else 0
-    var lane: UInt32 = lane_id()
-
-    # Coordinates of the current warp.
-    warp_y = warp_id // num_warps_n
-    warp_x = warp_id % num_warps_n
-
-    alias q_smem_layout = tile_layout_k_major[
-        DType.bfloat16, BM, BK, swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    ]()
-    alias k_smem_layout = tile_layout_k_major[
-        DType.bfloat16, BN, BK, swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    ]()
-    alias v_smem_layout = tile_layout_mn_major[
-        DType.bfloat16, BN, BK, swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    ]()
-
-    # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = config.q_smem_size()
-    q_smem = external_memory[
-        Scalar[q_type],
-        address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
-    ]()
-    q_smem_iter = LayoutTensorIter[
-        q_type,
-        q_smem_layout,
-        # Layout.row_major(BM, BK),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
-    ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    q_type,
-                    q_smem_layout,
-                    # Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
-                ]().ptr
-            )
-        ](q_smem),
-        q_smem_size,
-    )
-    # There is one pre-allocated dynamic shared buffer.
-    # Need to explicitly offset key after at query's end.
-    alias k_smem_size = config.k_smem_size(False)
-    k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
-    k_smem_iter = LayoutTensorIter[
-        k_type,
-        k_smem_layout,
-        # Layout.row_major(BN, BK),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        # circular=True,
-    ](k_smem, k_smem_size)
-
-    alias v_smem_size = config.v_smem_size(False)
-    v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
-    v_smem_iter = LayoutTensorIter[
-        v_type,
-        # Layout.row_major(BK, BN),
-        v_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        # circular=True,
-    ](v_smem, v_smem_size)
-
-    var head_idx: UInt32 = block_idx.y
-    var q_tile_idx: UInt32 = block_idx.x
-
-    # Query global memory iterator
-    alias q_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
-    )
-    alias q_gmem_block_type = LayoutTensor[
-        q_type,
-        q_gmem_layout,
-        masked=True,
-    ]
-    q_tile_num_rows = min(BM, seq_len - BM * q_tile_idx)
-    q_offset = depth * (head_idx + num_heads * BM * q_tile_idx)
-    q_gmem_block = q_gmem_block_type(
-        q_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = q_gmem_block_type.layout_int_type,
-            linear_idx_type = q_gmem_block_type.linear_idx_type,
-        ](
-            RuntimeTuple[
-                q_gmem_layout.shape,
-                element_type = q_gmem_block_type.layout_int_type,
-            ](Int(q_tile_num_rows), depth),
-            RuntimeTuple[
-                q_gmem_layout.stride,
-                element_type = q_gmem_block_type.linear_idx_type,
-            ](num_heads * depth, 1),
-        ),
-    )
-    q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
-    # q tile has valid shape q_tile_num_rows x depth
-    # q_tile_num_rows could be less than BM when seqlen % BM != 0
-
-    constrained[BN == depth, "Block tile shape N doesn't match head dim"]()
-    alias mma_shape = Index(64, depth, 16)
-    alias MMA_M = mma_shape[0] // 4
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
-    alias WM = config.WM
-    alias WN = config.WN
-    alias num_m_mmas = WM // MMA_M
-    constrained[num_m_mmas == 1, "FIXME: life this constraint"]()
-    alias num_n_mmas = WN // MMA_N
-    alias num_k_mmas = BK // MMA_K
-
-    alias accum_type = get_accum_type[q_type]()
-    alias frag_size = get_fragment_size[mma_shape]()
-    alias p_frag_size = MMA_M * MMA_N // WARP_SIZE
-    alias p_frag_simdwidth = 2
-
-    alias a_frag_size = MMA_M * MMA_K // WARP_SIZE
-    constrained[
-        BN * num_k_mmas * a_frag_size == BK * num_n_mmas * p_frag_size
-    ]()
-    #
-    alias frag_ratio = p_frag_size // a_frag_size
-
-    alias q_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias k_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias v_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias wgmma_0 = TensorCoreAsync[
-        accum_type,
-        q_type,
-        k_type,
-        mma_shape,
-        a_swizzle=q_swizzle,
-        b_swizzle=k_swizzle,
-        transpose_b=True,
-    ]()
-    alias wgmma_1 = TensorCoreAsync[
-        accum_type,
-        v_type,
-        v_type,
-        mma_shape,
-        a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-        b_swizzle=v_swizzle,
-        transpose_b=False,
-    ]()
-
-    alias reg_tile_layout = Layout.row_major(
-        num_m_mmas * num_n_mmas, p_frag_size
-    )
-    # layout is
-    # shape  = (2, num_m_mmas) x (2, num_n_mmas)
-    # stride = (2, 4*num_n_mmas) x (1, 4)
-    p_reg_tile = LayoutTensor[
-        accum_type,
-        reg_tile_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-
-    output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            reg_tile_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
-    alias num_row_blocks_per_mma = 2
-    # a wgmma.m64n32k16 `D` fragment looks like
-    #
-    # 0,1  4,5   8, 9  12,13
-    # 2,3  6,7  10,11  14,15
-    #
-    # Each row/column has `p_frag_simdwidth`-sized vectors
-    # (e.g. `4,5` is of size 2 = p_frag_simdwidth)
-    # We have `num_row_blocks_per_mma` rows.
-    # The total number of elements (16) equals `p_frag_size`.
-    # The number of columns equals
-    # `p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth)`
-    #
-    # This gives us the layout:
-    #
-    # Note the ordering of strides:
-    # ((1, 3), (0, 2, 4))
-    # alias output_layout = Layout(
-    #     IntTuple(
-    #         IntTuple(num_row_blocks_per_mma, num_m_mmas),
-    #         IntTuple(
-    #             p_frag_simdwidth,
-    #             p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth),
-    #             num_n_mmas,
-    #         ),
-    #     ),
-    #     IntTuple(
-    #         IntTuple(p_frag_simdwidth, p_frag_size),
-    #         IntTuple(1, 2 * p_frag_simdwidth, num_m_mmas * p_frag_size),
-    #     ),
-    # )
-    # Vectorizing the layout:
-    alias element_layout = Layout.row_major(1, p_frag_simdwidth)
-    alias vec_output_layout = Layout(
-        IntTuple(
-            IntTuple(num_row_blocks_per_mma, num_m_mmas),
-            IntTuple(
-                p_frag_size // (num_row_blocks_per_mma * p_frag_simdwidth),
-                num_n_mmas,
-            ),
-        ),
-        IntTuple(
-            IntTuple(p_frag_simdwidth, p_frag_size),
-            IntTuple(
-                num_row_blocks_per_mma * p_frag_simdwidth,
-                num_m_mmas * p_frag_size,
-            ),
-        ),
-    )
-    alias num_colwise_tiles = vec_output_layout[0].size()
-    alias num_rowwise_tiles = vec_output_layout[1].size()
-
-    @always_inline
-    fn vectorize_output(
-        out result: LayoutTensor[
-            accum_type,
-            vec_output_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-            element_layout=element_layout,
-        ],
-        x: LayoutTensor[
-            accum_type, reg_tile_layout, address_space = AddressSpace.LOCAL
-        ],
-    ):
-        result = __type_of(result)(x.ptr)
-
-    # Rowwise max and sum for online softmax
-    alias accum_simd_width = simdwidthof[accum_type]()
-    alias row_alignment = alignof[SIMD[accum_type, accum_simd_width]]()
-    alias num_rows_per_warp = vec_output_layout[0].size()
-    alias num_cols_per_warp = vec_output_layout[1].size()
-    rowmax = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_rows_per_warp),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-    rowsum = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_rows_per_warp),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-    _ = rowmax.vectorize[accum_simd_width]().fill(min_or_neg_inf[accum_type]())
-    _ = rowsum.vectorize[accum_simd_width]().fill(0)
-
-    # Mask global memory iterator.
-    mask_warp_row = warp_y * WM
-    mask_warp_col = warp_x * WN
-
-    # Account for group query.
-    alias kv_num_heads = num_heads // group
-
-    alias num_pipeline_stages = config.num_pipeline_stages
-
-    alias q_num_vecs = BM * BK // simd_size
-
-    alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * simd_size // BK, BK // simd_size
-    )
-
-    alias mma_thread_layout = Layout.row_major(8, 4)
-
-    alias num_k_iters_0 = Int(depth // BK)
-    alias num_k_iters_1 = Int(BN // BK)
-    var scale_log2e: Scalar[accum_type] = (
-        scale.cast[accum_type]() if use_score_mod
-        or mask_t.apply_log2e_after_mask else scale.cast[accum_type]() * log2e
-    )
-
-    @parameter
-    for q_id in range(num_k_iters_0):
-        q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
-
-        cp_async_k_major(q_smem_tile, q_gmem_iter[])
-
-        async_copy_commit_group()
-
-        q_gmem_iter._incr()
-
-    # Iterate over KV, equivalent to the following with if hoisted out.
-    #   ```
-    #   for i in range(kv_tile_start_row, seq_len, tile_size):
-    #     if i + tile_size >= seq_len:
-    #       loop_over_kvcache[tile_size, False]
-    #     else:
-    #       loop_over_kvcache[tile_size, True]
-    #   ```
-    # Only the last iteration is doing boundary check.
-    @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
-    @always_inline
-    @parameter
-    fn loop_over_kvcache[
-        tile_size: Int, not_last_iter: Bool
-    ](kv_tile_start_row: Int, end: Int):
-        mask_status = mask.status(
-            Index[type = DType.int32](
-                Int(q_tile_idx * BM + start_pos),
-                Int(kv_tile_start_row),
-            ),
-            Index[type = DType.int32](Int(BM), Int(BN)),
-        )
-        if mask_status == TileMaskStatus.FULL_MASK:
-            mask_warp_col += BN
-            return
-
-        alias kv_gmem_layout = Layout(
-            IntTuple(Int(BN), Int(depth)),
-            IntTuple(Int(kv_num_heads * depth), 1),
-        )
-        kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
-
-        # kv cache gmem has to clip num rows as runtime layout
-        kv_runtime_layout = RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
-                kv_tile_num_rows, depth
-            ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
-                kv_num_heads * depth, 1
-            ),
-        )
-
-        k_gmem_block = LayoutTensor[
-            k_type,
-            kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
-        ](
-            k.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
-            ),
-            kv_runtime_layout,
-        )
-        k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
-
-        v_gmem_block = LayoutTensor[
-            v_type,
-            kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
-        ](
-            v.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
-            ),
-            kv_runtime_layout,
-        )
-        v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
-
-        # P = Q @ K, register tile holding mma result.
-        _ = p_reg_tile.fill(0)
-
-        alias kv_num_vecs = BN * BK // simd_size
-        alias async_copy_k_layout = Layout.row_major(
-            min(num_threads, kv_num_vecs)
-            * simd_size
-            // k_smem_iter.layout.stride[0].value(),
-            k_smem_iter.layout.stride[0].value() // simd_size,
-        )
-
-        # load K tile into smem
-        @parameter
-        for k_id in range(num_k_iters_0):
-            k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
-
-            cp_async_k_major(k_smem_tile, k_gmem_iter[])
-
-            async_copy_commit_group()
-
-            k_gmem_iter._incr()
-
-        # synchronize here since we can overlap q tile and first k tile copy
-        async_copy_wait_all()
-        barrier()
-
-        wgmma_0.arrive()
-
-        @parameter
-        for k_iter in range(num_k_iters_0):
-            wgmma_0.wgmma[num_consumer](
-                q_smem_iter.next_unsafe(k_iter)[],
-                k_smem_iter.next_unsafe(k_iter)[],
-                p_reg_tile,
-                Int(warp_group_idx),
-            )
-        wgmma_0.commit_group()
-        wgmma_0.wait_group()
-
-        _apply_mask[
-            # not not_last_iter,
-            MMA_M,
-            MMA_N,
-            BM,
-            BN,
-            num_m_mmas,
-            num_n_mmas,
-            p_frag_simdwidth,
-            use_score_mod,
-        ](
-            mask_warp_row,
-            mask_warp_col,
-            start_pos,
-            lane,
-            num_keys,
-            seq_len,
-            max_seq_len,
-            q_tile_idx,
-            scale_log2e,
-            mask,
-            mask_status,
-            score_mod,
-            p_reg_tile,
-        )
-        # Increment mask to next BM x BN block.
-        mask_warp_col += BN
-
-        # reads s_reg_tile, writes to p_reg_tile
-        correction = _online_softmax_iter_for_mma_output_sm90[
-            # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
-            mma_thread_layout,
-            use_exp2=True,
-        ](
-            vectorize_output(p_reg_tile),
-            rowmax,
-            rowsum,
-        )
-        vout = vectorize_output(output_reg_tile)
-
-        # Correct previous result
-        @parameter
-        for col_tile in range(num_colwise_tiles):
-            c = correction._get[col_tile, size = element_layout.size()]()
-
-            @parameter
-            for row_tile in range(num_rowwise_tiles):
-                vout._set[col_tile, row_tile](
-                    vout._get[col_tile, row_tile]() * c
-                )
-
-        # load V tile into smem
-        @parameter
-        for v_id in range(num_k_iters_1):
-            v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
-
-            @parameter
-            if not not_last_iter:
-                num_rows_bound = min(
-                    Int(BK), end - (kv_tile_start_row + v_id * BK)
-                )
-                v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
-            else:
-                v_tensor = v_gmem_iter[]
-
-            cp_async_mn_major(v_smem_tile, v_tensor)
-
-            async_copy_commit_group()
-
-            v_gmem_iter._incr()
-
-        # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
-        # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-        p_frag = LayoutTensor[
-            v_type,
-            Layout.row_major(num_m_mmas * num_n_mmas * frag_ratio, a_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-        # Convert 1st matmul's output FP32->BF16, layout are the same.
-        p_frag.copy_from(
-            p_reg_tile.reshape[
-                Layout.row_major(
-                    num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-                )
-            ](),
-        )
-        async_copy_wait_all()
-        barrier()
-
-        wgmma_1.arrive()
-
-        @parameter
-        for k_iter in range(num_k_iters_1):
-            wgmma_1.wgmma(
-                p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](k_iter, 0),
-                v_smem_iter.next_unsafe(k_iter)[],
-                output_reg_tile,
-            )
-        wgmma_1.commit_group()
-        wgmma_1.wait_group()
-
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
-
-    # Apply softmax denumerator.
-    vout = vectorize_output(output_reg_tile)
-
-    @parameter
-    for row in range(num_rows_per_warp):
-        rowsum_inv = vout.element_type(recip(rowsum._get[row]())[0])
-
-        @parameter
-        for col in range(num_cols_per_warp):
-            vout._set[row, col](vout._get[row, col]() * rowsum_inv)
-
-    alias output_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
-    )
-    output_gmem_tile = LayoutTensor[
-        output_type,
-        output_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
-        masked=True,
-    ](
-        output_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
-                num_heads * depth, 1
-            ),
-        ),
-    )
-
-    # Write to global memory.
-    constrained[
-        output_type.is_half_float(), "we don't support Float32 output"
-    ]()
-    alias swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size=WN, access_size=8
-    ]()
-    # Reuse a_smem for c tile in smem
-    accum_smem_tile = LayoutTensor[
-        output_type,
-        Layout.row_major(BM, depth),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ](q_smem.bitcast[Scalar[output_type]]())
-    accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
-        Int(warp_y), Int(warp_x)
-    )
-    copy[thread_layout=mma_thread_layout, swizzle=swizzle](
-        accum_smem_warp_tile.vectorize[1, 2](),
-        output_reg_tile.vectorize[1, 2]().transpose(),
-    )
-    # Guard writing to shared memory.
-    barrier()
-    # Vectorized copy from shared to global memory, during which every 2 FP32
-    # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
-    # vector and stored using 16B store instruction.
-    copy_sram_to_dram[
-        thread_layout = Layout.row_major(
-            num_threads * simd_size // depth, depth // simd_size
-        ),
-        swizzle=swizzle,
-    ](
-        output_gmem_tile.vectorize[1, simd_size](),
-        accum_smem_tile.vectorize[1, simd_size](),
-    )
