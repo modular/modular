@@ -63,7 +63,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return self.fetch_add(0)
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn _fetch_add(
         ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]
     ) -> Scalar[dtype]:
