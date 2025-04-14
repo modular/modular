@@ -188,7 +188,7 @@ struct SharedMemBarrier(CollectionElement):
         """
         mbarrier_arrive_expect_tx_shared(self.unsafe_ptr(), bytes)
 
-    @always_inline
+    @always_inline("nodebug")
     fn wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
 

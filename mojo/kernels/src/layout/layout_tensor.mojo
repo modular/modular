@@ -4972,7 +4972,8 @@ fn copy_dram_to_sram[
 
 @always_inline("nodebug")
 fn cp_async_k_major[
-    type: DType
+    type: DType,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
         type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
@@ -5003,6 +5004,7 @@ fn cp_async_k_major[
 
     Parameters:
         type: The data type of the tensor elements.
+        eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
@@ -5089,7 +5091,9 @@ fn cp_async_k_major[
             type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
-        copy_dram_to_sram_async[thread_layout, swizzle=True](
+        copy_dram_to_sram_async[
+            thread_layout, swizzle=True, eviction_policy=eviction_policy
+        ](
             dst_tile.vectorize[1, simd_size](),
             src_tile.vectorize[1, simd_size](),
         )
@@ -5097,7 +5101,8 @@ fn cp_async_k_major[
 
 @always_inline("nodebug")
 fn cp_async_mn_major[
-    type: DType
+    type: DType,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
         type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
@@ -5128,6 +5133,7 @@ fn cp_async_mn_major[
 
     Parameters:
         type: The data type of the tensor elements.
+        eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
@@ -5216,7 +5222,11 @@ fn cp_async_mn_major[
             type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
-        copy_dram_to_sram_async[thread_layout_per_warp, swizzle=True](
+        copy_dram_to_sram_async[
+            thread_layout_per_warp,
+            swizzle=True,
+            eviction_policy=eviction_policy,
+        ](
             dst_tile.vectorize[1, simd_size](),
             src_tile.vectorize[1, simd_size](),
         )
