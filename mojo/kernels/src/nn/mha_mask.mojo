@@ -329,6 +329,109 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
 
 
 # ===-----------------------------------------------------------------------===#
+# SlidingWindowMask
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct SlidingWindowMask[window_size: Int](MHAMask):
+    """Mask implementing Sliding Window attention.
+
+    Considering the following case:
+    - Q_len = 7
+    - K_len = 7
+    - window_size = 3
+
+    The mask will be applied as follows:
+        K > 0 1 2 3 4 5 6
+        Q v x------------x
+        0 | 1 0 0 0 0 0 0
+        1 | 1 1 0 0 0 0 0
+        2 | 1 1 1 0 0 0 0
+        3 | 0 1 1 1 0 0 0
+        4 | 0 0 1 1 1 0 0
+        5 | 0 0 0 1 1 1 0
+        6 | 0 0 0 0 1 1 1
+    """
+
+    alias apply_log2e_after_mask: Bool = False
+    alias mask_out_of_bound: Bool = True
+
+    @always_inline
+    fn mask[
+        type: DType,
+        width: Int, //,
+        *,
+        element_type: DType = DType.uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
+        constrained[
+            width <= window_size,
+            "SIMD width of sliding window mask must be <= window size",
+        ]()
+
+        var q_start_idx = coord[2]
+        var k_start_idx = coord[3]
+
+        return (
+            iota[DType.uint32, width](Int(q_start_idx - k_start_idx))
+            <= window_size
+        ).select(score_vec, SIMD[type, width](MASK_VALUE))
+
+    @always_inline
+    fn status[
+        *, element_type: DType = DType.uint32
+    ](
+        self,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        # --- Check for FULL_MASK scenarios ---
+
+        # Case 1: If the entire tile is too far to the right
+        # (all query positions come before all key positions)
+        var query_ends_before_keys_begin = (
+            tile_offset.data[0] + tile_size.data[0] <= tile_offset.data[1]
+        )
+
+        # Case 2: If the entire tile is too far to the left
+        # (all query positions are more than window_size away from all key positions)
+        var queries_too_far_ahead_of_keys = (
+            tile_offset.data[0] - window_size + 1
+            >= (tile_offset.data[1] + tile_size.data[1])
+        )
+
+        if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
+            return TileMaskStatus.FULL_MASK
+
+        # --- Check for NO_MASK scenario ---
+
+        # Two conditions must BOTH be true for the tile to have no masks:
+
+        # Condition 1: The earliest query position must be after the latest key position
+        # (diagonal condition)
+        var min_query_after_max_key = tile_offset.data[0] >= tile_offset.data[
+            1
+        ] + tile_size.data[1] - 1
+
+        # Condition 2: The latest query position must be within the window range of the
+        # earliest key position
+        var max_query_within_window_of_min_key = tile_offset.data[
+            0
+        ] + tile_size.data[0] - 1 < tile_offset.data[1] + window_size
+
+        if min_query_after_max_key and max_query_within_window_of_min_key:
+            return TileMaskStatus.NO_MASK
+
+        # If we reached here, some positions are masked and others aren't
+        return TileMaskStatus.PARTIAL_MASK
+
+
+# ===-----------------------------------------------------------------------===#
 # MaterializedMask
 # ===-----------------------------------------------------------------------===#
 
