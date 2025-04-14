@@ -615,25 +615,29 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   mlir::AttrTypeReplacer liftStore;
   liftStore.addReplacement(
       [&](StoreToMemAttr store) -> std::pair<Attribute, WalkResult> {
-        Type valueType = store.getValue().getType();
+        // Recursively lift the stored value first.
+        TypedAttr liftedValue =
+            cast<TypedAttr>(liftStore.replace(store.getValue()));
+        Type ptrType = liftStore.replace(store.getType());
+
+        Type valueType = liftedValue.getType();
         if (!getTarget()) {
           err = Error("store to memory requires a target model");
           return {store, WalkResult::interrupt()};
         }
 
-        ErrorOr<PointerAttr> ptr =
-            allocateInternalStackFor(valueType, store.getType());
+        ErrorOr<PointerAttr> ptr = allocateInternalStackFor(valueType, ptrType);
         if (ptr.isError()) {
           err = ptr.takeError();
           return {store, WalkResult::interrupt()};
         }
         if (ErrorOrSuccess err =
-                writeAttributeToMemory(ptr->getAddr(), store.getValue());
+                writeAttributeToMemory(ptr->getAddr(), liftedValue);
             err.isError()) {
           err = err.takeError();
           return {store, WalkResult::interrupt()};
         }
-        return {ptr.takeValue(), WalkResult::advance()};
+        return {ptr.takeValue(), WalkResult::skip()};
       });
   addCustomReplacementsToLiftStore(liftStore);
 
