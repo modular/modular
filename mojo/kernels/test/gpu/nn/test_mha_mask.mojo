@@ -8,7 +8,13 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from nn.mha_mask import AndMask, CausalMask, NullMask, TileMaskStatus
+from nn.mha_mask import (
+    AndMask,
+    CausalMask,
+    NullMask,
+    SlidingWindowMask,
+    TileMaskStatus,
+)
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList
@@ -124,7 +130,58 @@ def test_and_mask():
     )
 
 
+def test_sliding_window_mask():
+    alias mask = SlidingWindowMask[3]()
+
+    @always_inline
+    def check_status(
+        offset: IndexList[2, **_],
+        size: __type_of(offset),
+        expected: TileMaskStatus,
+    ):
+        var status = mask.status(offset, size)
+        assert_equal(
+            status,
+            expected,
+            msg=String(
+                "  ",
+                offset,
+                ", ",
+                size,
+                " > ",
+                status,
+                " (expected: ",
+                expected,
+                ")",
+            ),
+        )
+
+        # K > 0 1 2 3 4 5 6 7 8
+        # Q v x-----------------x
+        # 0 | 1 0 0 0 0 0 0 0 0
+        # 1 | 1 1 0 0 0 0 0 0 0
+        # 2 | 1 1 1 0 0 0 0 0 0
+        # 3 | 0 1 1 1 0 0 0 0 0
+        # 4 | 0 0 1 1 1 0 0 0 0
+        # 5 | 0 0 0 1 1 1 0 0 0
+        # 6 | 0 0 0 0 1 1 1 0 0
+        # 7 | 0 0 0 0 0 1 1 1 0
+        # 8 | 0 0 0 0 0 0 1 1 1
+
+    check_status(Index(0, 0), Index(4, 4), TileMaskStatus.PARTIAL_MASK)
+    check_status(Index(4, 0), Index(4, 4), TileMaskStatus.PARTIAL_MASK)
+
+    check_status(Index(2, 1), Index(2, 2), TileMaskStatus.NO_MASK)
+    check_status(Index(3, 1), Index(1, 3), TileMaskStatus.NO_MASK)
+    check_status(Index(3, 3), Index(3, 1), TileMaskStatus.NO_MASK)
+
+    check_status(Index(0, 4), Index(4, 4), TileMaskStatus.FULL_MASK)
+    check_status(Index(4, 0), Index(4, 2), TileMaskStatus.FULL_MASK)
+    check_status(Index(1, 4), Index(3, 2), TileMaskStatus.FULL_MASK)
+
+
 def main():
     test_causal_mask()
     test_causal_mask_asm()
     test_and_mask()
+    test_sliding_window_mask()
