@@ -93,7 +93,7 @@ from gpu.id import sm_id
 struct MHAPosition[BM: Int, BN: Int, depth: Int, num_heads: Int]:
     var q_out_offset: Int
     var seq_len: UInt32
-    var num_keys: Int
+    var num_keys: UInt32
     var start_pos: UInt32
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -108,7 +108,7 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, num_heads: Int]:
     fn __init__(
         out self,
         q_out_offset: Int,
-        num_keys: Int,
+        num_keys: UInt32,
         start_pos: UInt32,
         seq_info: SeqInfo,
     ):
@@ -1047,7 +1047,7 @@ fn _mha_single_batch_sm90_fa3[
 
         var write_idx_prev: UInt32 = write_idx
         var write_phase_prev: UInt32 = write_phase
-        var kv_tile_start_row_prev = kv_tile_start_row
+        var kv_tile_start_row_prev: UInt32 = kv_tile_start_row
         var position_prev: position_t = position
 
         produce_k[False](write_idx, write_phase, kv_tile_start_row, position)
@@ -1193,7 +1193,7 @@ fn _mha_single_batch_sm90_fa3[
 
         # Mask global memory iterator.
         mask_warp_row = warp_y * WM
-        mask_warp_col = warp_x * WN
+        mask_warp_col_base = warp_x * WN
         var scale_log2e: Scalar[accum_type] = (
             scale.cast[accum_type]() if use_score_mod
             or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
@@ -1255,6 +1255,7 @@ fn _mha_single_batch_sm90_fa3[
         fn apply_mask(
             position: position_t,
             mask_status: TileMaskStatus,
+            mask_warp_col: UInt32,
         ):
             _apply_mask[
                 MMA_M,
@@ -1280,9 +1281,6 @@ fn _mha_single_batch_sm90_fa3[
                 score_mod,
                 p_reg_tile,
             )
-
-            # Increment mask to next BM x BN block.
-            mask_warp_col += BN
 
         @parameter
         @always_inline
@@ -1394,7 +1392,6 @@ fn _mha_single_batch_sm90_fa3[
             if mask_status != TileMaskStatus.FULL_MASK:
                 break
             kv_tile_start_row += BN
-            mask_warp_col += BN
 
         # q_mul_k must wait on fetching q and k
         # therefore, we find `kv_tile_start_row` first.
@@ -1402,7 +1399,9 @@ fn _mha_single_batch_sm90_fa3[
         wait_for_q_mul_k[0](pipeline_stages - 1)
         # few_keys = num_keys <= BN
 
-        apply_mask(position, mask_status)
+        apply_mask(
+            position, mask_status, mask_warp_col_base + kv_tile_start_row
+        )
         rowmax.copy_from(
             _rowmax_online_softmax[
                 # threads layout by warp
@@ -1424,133 +1423,138 @@ fn _mha_single_batch_sm90_fa3[
         # Preheader: Q0, K0
         # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
         # Exit: V{-1}
+        kv_tile_start_row += BN
         while True:
-            # this loops over num_keys
-            kv_tile_start_row += BN
-            if kv_tile_start_row >= position.num_keys:
-
-                @parameter
-                if scheduler_t.may_advance:
-                    kv_tile_start_row = 0
-                    mask_warp_col = warp_x * WN  # reset?
-                    var q_idx_old: UInt32 = q_pipeline_state.index()
-                    var q_phase_old: UInt32 = q_pipeline_state.phase()
-                    q_pipeline_state.step()
-                    produced_mbar_q[q_idx_old].wait(q_phase_old)
-                    docontinue = advance[False](q_idx_old)
-                    if not docontinue:
-                        break
-                    position = get_position(docontinue.value())
-                else:
-                    break
-
-            mask_status = position.mask_status(mask, kv_tile_start_row)
-            if mask_status == TileMaskStatus.FULL_MASK:
-                mask_warp_col += BN
-                continue
-            # new pipeline states
-            read_pipeline_states.step()
-            read_idx = read_pipeline_states.index()
-            read_phase = read_pipeline_states.phase()
-            p_frag.vectorize[
-                1, a_frag_size
-            ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
-                p_reg_tile.reshape[
-                    Layout.row_major(
-                        num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-                    )
-                ]().vectorize[1, a_frag_size](),
-            )
-
-            # start wgmmas
-            q_mul_k(
-                read_idx, read_phase, q_pipeline_state.index()
-            )  # can't rw `p_reg_tile`
-            p_mul_v(read_idx_prev, read_phase_prev)  # can't rw output or pfrag
-            wait_for_q_mul_k[1](read_idx_prev)  # can rw `p_reg_tile`
-
-            apply_mask(position, mask_status)
-            new_q = (
-                scheduler_t.may_advance
-                and q_idx_old != q_pipeline_state.index()
-            )
-            score_frag_rowmax = _rowmax_online_softmax[
-                # threads layout by warp
-                Layout.row_major(num_warps_m, num_warps_n),
-                mma_thread_layout,
-                use_exp2=True,
-            ](
-                vectorize_output(p_reg_tile),
-                rowmax,
-                new_q,
-            )
-            if new_q:
-                score_frag_rowsum = rebind[__type_of(rowsum)](
-                    _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
-                )
-                rowmax.copy_from(score_frag_rowmax)
-                elementwise_reciprocal(rowsum, score_frag_rowsum)
-                wait_for_p_mul_v(read_idx_prev)  # can rw output and pfrag
-                # we `^ 1` to access the previous
-                # Two separate issues:
-                # 0. Which q do we use for `accum_smem`?
-                # 1. Which qs, if any, do we `arrive` at?
-                #
-                # If the next q_idx != the current q_idx (i.e. q_idx_n != q_idx)
-                # then we can use the current q for writing smem.
-                # If `q_idx_n == q_idx`, then we use the old q_idx (i.e. q_idx_o).
-                # This means we were not allowed to `arrive` at `q_idx_o`.
-                #
-                # Letting `0` indicate inequality, and `1` equality,
-                # let x = q_idx == q_idx_n
-                # let y = q_idx_n == q_idx_n_n
-                # We thus have 4 states `xy`:
-                # 0. 00: We use q_idx and arrive
-                # 1. 01: We use q_idx, but do not arrive on q_idx
-                # 2. 10: We use q_idx_o, do not arrive on q_idx
-                # 3. 11: We use q_idx_o, do not arrive on q_idx
-                #
-                # Only in `00` do we get to arrive on `q_idx` early.
-                # Given `BN < num_keys`, it won't often be the case
-                # that we can arrive at Q early; we need a series
-                # of q_tile_idx and head_idx that have a lot of
-                # `FULL_MASK`s, which our iteration scheme is supposed
-                # to make unlikely.
-                # Thus, we're going to simplify the problem by assuming
-                # scenario `0.` is unlikely unless `BN >= num_keys`,
-                # in which case it is guaranteed.
-                # var q_idx: UInt32 = q_pipeline_state.index() if few_keys else q_idx_old
-                write_output(position_prev, q_idx_old, score_frag_rowsum)
-                var q_idx_new: UInt32 = q_pipeline_state.index()
-
-                _ = consumed_mbar_q[q_idx_new].arrive()
-                _ = output_reg_tile.vectorize[accum_simd_width]().fill(0)
-                position_prev = position
-                q_idx_old = q_idx_new
-                q_phase_old = q_pipeline_state.phase()
-            else:
-                score_frag_rowsum = rebind[__type_of(rowsum)](
-                    _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
-                )
-                _online_softmax_correction[use_exp2=True](
-                    rowmax, score_frag_rowmax
-                )
-                # rowmax now holds score_frag_rowmax
-                # score_frag_rowmax now holds the correction
-
-                @parameter
-                for i in range(num_rows_per_warp):
-                    rowsum._set[i](
-                        rowsum._get[i]() * score_frag_rowmax._get[i]()
-                        + rebind[Scalar[accum_type]](
-                            score_frag_rowsum._get[i]()
+            while kv_tile_start_row < position.num_keys:
+                # this loops over num_keys
+                mask_status = position.mask_status(mask, kv_tile_start_row)
+                if mask_status == TileMaskStatus.FULL_MASK:
+                    kv_tile_start_row += BN
+                    continue
+                # new pipeline states
+                read_pipeline_states.step()
+                read_idx = read_pipeline_states.index()
+                read_phase = read_pipeline_states.phase()
+                p_frag.vectorize[
+                    1, a_frag_size
+                ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
+                    p_reg_tile.reshape[
+                        Layout.row_major(
+                            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
                         )
-                    )
+                    ]().vectorize[1, a_frag_size](),
+                )
 
-                wait_for_p_mul_v(read_idx_prev)  # can rw output and pfrag
-                scale_output(score_frag_rowmax)  # scale output
-            read_idx_prev = read_idx
-            read_phase_prev = read_phase
+                # start wgmmas
+                q_mul_k(
+                    read_idx, read_phase, q_pipeline_state.index()
+                )  # can't rw `p_reg_tile`
+                p_mul_v(
+                    read_idx_prev, read_phase_prev
+                )  # can't rw output or pfrag
+                wait_for_q_mul_k[1](read_idx_prev)  # can rw `p_reg_tile`
+
+                apply_mask(
+                    position,
+                    mask_status,
+                    mask_warp_col_base + kv_tile_start_row,
+                )
+                new_q = (
+                    scheduler_t.may_advance
+                    and q_idx_old != q_pipeline_state.index()
+                )
+                score_frag_rowmax = _rowmax_online_softmax[
+                    # threads layout by warp
+                    Layout.row_major(num_warps_m, num_warps_n),
+                    mma_thread_layout,
+                    use_exp2=True,
+                ](
+                    vectorize_output(p_reg_tile),
+                    rowmax,
+                    new_q,
+                )
+                if new_q:
+                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                        _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
+                    )
+                    rowmax.copy_from(score_frag_rowmax)
+                    elementwise_reciprocal(rowsum, score_frag_rowsum)
+                    wait_for_p_mul_v(read_idx_prev)  # can rw output and pfrag
+                    # we `^ 1` to access the previous
+                    # Two separate issues:
+                    # 0. Which q do we use for `accum_smem`?
+                    # 1. Which qs, if any, do we `arrive` at?
+                    #
+                    # If the next q_idx != the current q_idx (i.e. q_idx_n != q_idx)
+                    # then we can use the current q for writing smem.
+                    # If `q_idx_n == q_idx`, then we use the old q_idx (i.e. q_idx_o).
+                    # This means we were not allowed to `arrive` at `q_idx_o`.
+                    #
+                    # Letting `0` indicate inequality, and `1` equality,
+                    # let x = q_idx == q_idx_n
+                    # let y = q_idx_n == q_idx_n_n
+                    # We thus have 4 states `xy`:
+                    # 0. 00: We use q_idx and arrive
+                    # 1. 01: We use q_idx, but do not arrive on q_idx
+                    # 2. 10: We use q_idx_o, do not arrive on q_idx
+                    # 3. 11: We use q_idx_o, do not arrive on q_idx
+                    #
+                    # Only in `00` do we get to arrive on `q_idx` early.
+                    # Given `BN < num_keys`, it won't often be the case
+                    # that we can arrive at Q early; we need a series
+                    # of q_tile_idx and head_idx that have a lot of
+                    # `FULL_MASK`s, which our iteration scheme is supposed
+                    # to make unlikely.
+                    # Thus, we're going to simplify the problem by assuming
+                    # scenario `0.` is unlikely unless `BN >= num_keys`,
+                    # in which case it is guaranteed.
+                    # var q_idx: UInt32 = q_pipeline_state.index() if few_keys else q_idx_old
+                    write_output(position_prev, q_idx_old, score_frag_rowsum)
+                    var q_idx_new: UInt32 = q_pipeline_state.index()
+
+                    _ = consumed_mbar_q[q_idx_new].arrive()
+                    _ = output_reg_tile.vectorize[accum_simd_width]().fill(0)
+                    position_prev = position
+                    q_idx_old = q_idx_new
+                    q_phase_old = q_pipeline_state.phase()
+                else:
+                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                        _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
+                    )
+                    _online_softmax_correction[use_exp2=True](
+                        rowmax, score_frag_rowmax
+                    )
+                    # rowmax now holds score_frag_rowmax
+                    # score_frag_rowmax now holds the correction
+
+                    @parameter
+                    for i in range(num_rows_per_warp):
+                        rowsum._set[i](
+                            rowsum._get[i]() * score_frag_rowmax._get[i]()
+                            + rebind[Scalar[accum_type]](
+                                score_frag_rowsum._get[i]()
+                            )
+                        )
+
+                    wait_for_p_mul_v(read_idx_prev)  # can rw output and pfrag
+                    scale_output(score_frag_rowmax)  # scale output
+                read_idx_prev = read_idx
+                read_phase_prev = read_phase
+                kv_tile_start_row += BN
+
+            @parameter
+            if scheduler_t.may_advance:
+                kv_tile_start_row = 0
+                var q_idx_old: UInt32 = q_pipeline_state.index()
+                var q_phase_old: UInt32 = q_pipeline_state.phase()
+                q_pipeline_state.step()
+                produced_mbar_q[q_idx_old].wait(q_phase_old)
+                docontinue = advance[False](q_idx_old)
+                if not docontinue:
+                    break
+                position = get_position(docontinue.value())
+            else:
+                break
 
         p_frag.vectorize[1, a_frag_size]().copy_from(
             p_reg_tile.reshape[
