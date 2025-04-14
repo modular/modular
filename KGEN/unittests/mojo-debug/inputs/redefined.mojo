@@ -18,6 +18,6 @@ fn main():
     x = x + 345
     use_int(x)  # breakpoint
 
-    var y: String = "hello"
+    var y: String
     y = "world"
     use_string(y)  # breakpoint

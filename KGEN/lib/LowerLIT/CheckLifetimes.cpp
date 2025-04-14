@@ -1680,7 +1680,7 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveValues.set();
 }
 
-/// This is HLCF::IfOp, ParamIfOp, or a throwing call, which are all if-like.
+/// This is HLCF::IfOp or ParamIfOp, which are all if-like.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
@@ -2927,9 +2927,9 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 /// resulting consume sets to make sure the upward propagated set of consumed
 /// values is consistent.
 void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
-  // Given an 'if' like operation (normal 'if' statement, parameter if, or a
-  // throwing call) perform dtor analysis for each side and insert destructors
-  // at the top of the blocks to form a common upward-projected consume set.
+  // Given an 'if' like operation (normal 'if' statement or parameter if)
+  // perform dtor analysis for each side and insert destructors at the top of
+  // the blocks to form a common upward-projected consume set.
   assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
          ifElseOp.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
