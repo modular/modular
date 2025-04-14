@@ -169,7 +169,7 @@ fn write_args[
     end: StaticString = "",
 ):
     """
-    Add seperators and end characters when writing variadics into a `Writer`.
+    Add separators and end characters when writing variadics into a `Writer`.
 
     Parameters:
         W: The type of the `Writer` to write to.
@@ -357,7 +357,7 @@ fn write_buffered[
     """
     Use a buffer on the stack to minimize expensive calls to the writer. When
     the buffer would overflow it writes to the `writer` passed in. You can also
-    add seperators between the args, and end characters. The default stack space
+    add separators between the args, and end characters. The default stack space
     used for the buffer is 4096 bytes which matches the default arm64 and x86-64
     page size, you can modify this e.g. when writing a large amount of data to a
     file.
@@ -429,7 +429,7 @@ fn write_buffered[
 ](mut writer: W, values: List[T, *_], *, sep: StaticString = ""):
     """
     Use a buffer on the stack to minimize expensive calls to the writer. You
-    can also add seperators between the values. The default stack space used for
+    can also add separators between the values. The default stack space used for
     the buffer is 4096 bytes which matches the default arm64 and x86-64 page
     size, you can modify this e.g. when writing a large amount of data to a
     file.
