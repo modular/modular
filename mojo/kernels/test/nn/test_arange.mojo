@@ -33,10 +33,11 @@ def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 def test_arange[
     dtype: DType,
 ](start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]):
-    var outshape = IndexList[1]()
+    var outshape: IndexList[1]
     try:
         outshape = arange_shape[dtype, True](start, stop, step)
     except e:
+        outshape = IndexList[1]()
         print(e)
     print("Expected output shape: ")
     print(outshape)
