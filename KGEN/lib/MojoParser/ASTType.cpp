@@ -442,8 +442,7 @@ static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
 static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
   // List of common namespace prefixes to trim
   static const StringRef commonPrefixes[] = {
-      "stdlib::builtin::", "stdlib::collections::",
-      "stdlib::collections::list::", "layout::layout::",
+      "stdlib::", "layout::",
       // Add other common prefixes here
   };
 
