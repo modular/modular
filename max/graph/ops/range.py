@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for range."""
 
+from __future__ import annotations
+
 from max.mlir.dialects import rmo
 
-from ..graph import Graph
+from ..graph import DeviceRef, Graph
 from ..type import DimLike
 from ..value import TensorType, TensorValue, TensorValueLike
 
@@ -17,6 +19,7 @@ def range(
     stop: TensorValueLike,
     step: TensorValueLike,
     out_dim: DimLike,
+    device: DeviceRef | None = None,
 ) -> TensorValue:
     """Creates a sequence of numbers. The sequence goes from `start` with
     increments of size `step` up to (but not including) `stop`. All arguments
@@ -32,6 +35,7 @@ def range(
         step: The step size for the range.
         out_dim: The expected output dimensions returned by the range op.
           These will be assert at graph execution time to be correct.
+        device: Device of the result tensor.
 
     Returns:
         A symbolic tensor value containing the defined range of values.
@@ -47,7 +51,7 @@ def range(
 
     return Graph.current._add_op(
         rmo.mo_range,
-        TensorType(start.dtype, shape=[out_dim], device=start.device).to_mlir(),
+        TensorType(start.dtype, shape=[out_dim], device=device).to_mlir(),
         start,
         stop,
         step,
