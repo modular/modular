@@ -131,10 +131,8 @@ fn ldexp2kf[
     var y = bitcast[DType.int32, simd_width](ans)
 
     var msb = y
-    var idx = 0
-    for i in range(32):
+    for _ in range(32):
         if ((msb & 0x1) != 0).reduce_and():
-            idx = i
             break
         msb = msb >> 1
 
@@ -195,6 +193,8 @@ fn exp_sleef[
     u = u.fma(s, 0.166666671633720397949219)
     u = u.fma(s, 0.5)
     u = s * s * u + s + 1.0
+    # TODO: Is this correct?
+    _ = u
 
     u = _exp_taylor(s)
     u = ldexp2kf(u, q.cast[DType.int32]())

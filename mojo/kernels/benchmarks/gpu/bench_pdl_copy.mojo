@@ -122,7 +122,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     @always_inline
     @parameter
     fn run_func() raises:
-        for i in range(10):
+        for _ in range(10):
             context.enqueue_function[copy1](
                 a_device,
                 b_device,
@@ -197,7 +197,7 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     @always_inline
     @parameter
     fn run_func() raises:
-        for i in range(10):
+        for _ in range(10):
             context.enqueue_function[copy1_n](
                 a_device,
                 b_device,
