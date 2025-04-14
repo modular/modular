@@ -345,9 +345,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Copy to HOST
         generated_tokens_host = generated_tokens.to_numpy()
 
-        # Actually update the cache lengths in our kv_cache manager
-        self._draft_model.kv_manager.step(cast(list[InputContext], batch))
-
         # Ignore EOS, and update the Context objects via Jump Ahead
         # This will require us to manage the context element pointers
         # manually, at the end once we've accepted/rejected the
@@ -367,6 +364,9 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                     is_eos=is_eos,
                 )
 
+        # actually update the cache lengths in our kv_cache manager
+        self._draft_model.kv_manager.step(cast(list[InputContext], batch))
+
         return num_steps, generated_tokens_host, generated_logits
 
     def next_token(
@@ -377,21 +377,21 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Flatten our batch for consistent indexing.
         context_batch = list(batch.values())
 
+        # This is a bit of a hack, we should work out a better API for this.
+        # The draft offset tracks how far behind the draft model should be.
+        # We should bump the start_idx back up by this amount, to get back
+        # to where the target model should start.
+        for context in context_batch:
+            context.bump_token_indices(start_idx=+context._draft_offset)  # type: ignore
+
         # Generate draft tokens.
         # This updates the context_batch object in place.
         num_draft_tokens_generated, draft_tokens, draft_logits = (
             self.generate_draft_tokens(context_batch, num_steps)
         )
 
-        # This is a bit of a hack, we should work out a better API for this.
-        # The draft offset tracks how far behind the draft model should be.
-        # We should bump the start_idx back up by this amount, to get back
-        # to where the target model should start.
         for context in context_batch:
             context.bump_token_indices(start_idx=-context._draft_offset)  # type: ignore
-            # Reset the draft offset
-            # We should probably just set this once, at the end.
-            context.set_draft_offset(idx=0)
 
         # Prepare next token inputs for target model
         target_inputs, target_num_steps = self.prepare_batch(
@@ -408,13 +408,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             model_inputs=target_inputs,
         )
 
-        # Step forward with the model
-        self._target_model.kv_manager.step(cast(list[InputContext], batch))
-
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, sampled_target_tokens = self._rejection_sampler(
-            draft_tokens,
+            Tensor.from_numpy(draft_tokens).to(self.target_devices[0]),
             draft_logits,
             target_outputs.logits,
             target_outputs.logit_offsets,
@@ -456,10 +453,12 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 # model after execution, we need to rollback for both
                 # the draft and target model.
                 self._draft_model.kv_manager.rollback([context])
-                self._target_model.kv_manager.rollback([context])
 
                 # Update the context with the new target token.
                 context.update(new_token, is_eos=is_eos)
+
+                # Reset Draft Offset to 0
+                context.set_draft_offset(idx=0)
 
             # If we are not rolling back
             else:
@@ -469,7 +468,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 # Bump the start_idx back by 1
                 # This ensures the draft model picks up the last item in the sequence.
                 context.set_draft_offset(idx=-1)
-                context.bump_token_indices(start_idx=-1)
 
             res[request_ids[idx]].update_status(context.active_status)  # type: ignore
 
