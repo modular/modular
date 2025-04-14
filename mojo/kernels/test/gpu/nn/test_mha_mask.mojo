@@ -47,6 +47,7 @@ def test_causal_mask():
         mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.FULL_MASK
     )
     assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
+    assert_true(mask.status(Index(2, 1), Index(2, 2)) == TileMaskStatus.NO_MASK)
     assert_true(
         mask.status(Index(1, 5), Index(2, 2)) == TileMaskStatus.FULL_MASK
     )
