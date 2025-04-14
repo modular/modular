@@ -440,12 +440,20 @@ static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
 // If we are a builtin symbol, then just strip everything but the name of the
 // type. E.g. Print ::Int instead of stdlib::builtin::int::Int.
 static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
-  StringRef prettyName(nestedSymbolName);
+  // List of common namespace prefixes to trim
+  static const StringRef commonPrefixes[] = {
+      "stdlib::builtin::", "stdlib::collections::",
+      "stdlib::collections::list::", "layout::layout::",
+      // Add other common prefixes here
+  };
 
-  if (prettyName.starts_with("stdlib::builtin::")) {
-    size_t lastSeperatorLoc = prettyName.rfind("::");
-    if (lastSeperatorLoc != StringRef::npos)
-      return prettyName.drop_front(lastSeperatorLoc);
+  StringRef prettyName(nestedSymbolName);
+  for (StringRef prefix : commonPrefixes) {
+    if (prettyName.starts_with(prefix)) {
+      const size_t lastSeparatorLoc = prettyName.rfind("::");
+      if (lastSeparatorLoc != StringRef::npos)
+        return prettyName.substr(lastSeparatorLoc);
+    }
   }
 
   return prettyName;
