@@ -337,6 +337,15 @@ class Tensor:
         Create a deep copy on an optionally given device.
 
         If a device is None (default), a copy is created on the same device.
+
+        .. code-block:: python
+
+            from max import driver
+            from max.dtype import DType
+
+            cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
+
+            cpu_copy = cpu_tensor.copy()
         """
 
     def inplace_copy_from(self, src: Tensor) -> None:
