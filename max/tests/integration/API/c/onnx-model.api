@@ -1,2 +1,0 @@
-// RUN: modular-api-executor --model-inputs=zeros  --num-threads=0 --result-output-style=full %onnx_test_models_dir/test_abs/model.onnx | FileCheck %s
-// CHECK: 'benchmark' returned tensor{{.*}}

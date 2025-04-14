@@ -34,7 +34,6 @@ lit_tests(
     ),
     custom_substitutions = {
         "%pytorch_generated_tests_dir": "../../../../PyTorch/test/utils",
-        "%onnx_test_models_dir": "../../../../../onnx+/onnx/backend/test/data/node",
     },
     data = [
         ":inputs",
@@ -42,7 +41,6 @@ lit_tests(
         "//PyTorch/test/utils:pytorch-generated-tests",
         "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test:inputs",
-        "@onnx//onnx/backend/test/data/node:test_abs",
     ],
     env = {
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
