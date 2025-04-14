@@ -182,9 +182,8 @@ fn exp_sleef[
     alias L2Uf = SIMD[dtype, simd_width](0.693145751953125)
     alias L2Lf = SIMD[dtype, simd_width](1.428606765330187045e-06)
 
-    # var s = q.fma(-L2Uf, d)
-    # s = q.fma(-L2Lf, s)
-    var s = d - q * lg2it
+    var s = q.fma(-L2Uf, d)
+    s = q.fma(-L2Lf, s)
 
     var u = SIMD[dtype, simd_width](0.000198527617612853646278381)
     u = u.fma(s, 0.00139304355252534151077271)
@@ -192,14 +191,9 @@ fn exp_sleef[
     u = u.fma(s, 0.0416664853692054748535156)
     u = u.fma(s, 0.166666671633720397949219)
     u = u.fma(s, 0.5)
-    u = s * s * u + s + 1.0
-    # TODO: Is this correct?
-    _ = u
+    u = s * s * u + s
 
-    u = _exp_taylor(s)
-    u = ldexp2kf(u, q.cast[DType.int32]())
-    # u = ldexp_libm(u, q.cast[DType.int32]());
-    return u
+    return (q == 0).select(u, ldexp2kf(u + 1, q.cast[DType.int32]()) - 1)
 
 
 @always_inline
