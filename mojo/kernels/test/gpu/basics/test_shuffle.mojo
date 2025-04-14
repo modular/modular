@@ -125,13 +125,13 @@ fn _shuffle_up_launch_helper[
             var idx = i * simd_width + j
             if i < offset:
                 assert_equal(
-                    host_ptr[i * simd_width + j],
-                    (i * simd_width + j) + constant_add,
+                    host_ptr[idx],
+                    idx + constant_add,
                 )
             else:
                 assert_equal(
-                    host_ptr[i * simd_width + j],
-                    (i * simd_width + j) + constant_add - (offset * simd_width),
+                    host_ptr[idx],
+                    idx + constant_add - (offset * simd_width),
                 )
 
     host_ptr.free()
@@ -187,13 +187,13 @@ fn _shuffle_down_launch_helper[
             var idx = i * simd_width + j
             if i < offset:
                 assert_equal(
-                    host_ptr[i * simd_width + j],
-                    (i * simd_width + j) + constant_add + (offset * simd_width),
+                    host_ptr[idx],
+                    idx + constant_add + (offset * simd_width),
                 )
             else:
                 assert_equal(
-                    host_ptr[i * simd_width + j],
-                    (i * simd_width + j) + constant_add,
+                    host_ptr[idx],
+                    idx + constant_add,
                 )
 
     host_ptr.free()
@@ -246,7 +246,6 @@ fn _shuffle_xor_launch_helper[
 
     for i in range(block_size):
         for j in range(simd_width):
-            var idx = i * simd_width + j
             var xor_mask = (UInt32(i) ^ UInt32(offset)).cast[type]()
             var val = xor_mask * simd_width + j + constant_add
             assert_equal(host_ptr[i * simd_width + j], val)

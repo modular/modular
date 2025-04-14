@@ -337,7 +337,7 @@ fn test(ctx: DeviceContext) raises:
             )
 
         # Warmup
-        for i in range(nwarmup):
+        for _ in range(nwarmup):
             run_func(ctx)
 
         var nstime = ctx.execution_time[run_func](nrun) / nrun

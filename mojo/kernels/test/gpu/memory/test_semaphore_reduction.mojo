@@ -125,7 +125,7 @@ fn semaphore_matrix_reduce[
             row * (N * num_parts) + (block_idx * num_parts + col)
         ]
 
-    var lx = 0
+    var lx: Int
     if num_parts == (block_idx + 1):
         lx = 0
     else:

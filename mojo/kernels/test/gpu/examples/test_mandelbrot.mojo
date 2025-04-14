@@ -41,7 +41,7 @@ fn mandelbrot_kernel[
     var iters = SIMD[int_type, simd_width](0)
 
     var in_set_mask: SIMD[DType.bool, simd_width] = True
-    for i in range(MAX_ITERS):
+    for _ in range(MAX_ITERS):
         if not in_set_mask.reduce_or():
             break
         in_set_mask = z.squared_norm() <= 4

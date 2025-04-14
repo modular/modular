@@ -229,7 +229,7 @@ fn full_tiles_kernel[
     total_tiles_streamk: UInt,
 ):
     var tile_id = block_idx.x + total_tiles_streamk
-    var pid = IndexList[2](0, 0)
+    var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
     else:

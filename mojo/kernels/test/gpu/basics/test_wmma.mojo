@@ -266,8 +266,7 @@ fn run_mma_fp32_tf32(
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
 
-    var nstime = 0.0
-    nstime = ctx.execution_time[run_func_mma](iterations)
+    var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -410,8 +409,7 @@ fn run_mma_fp32_bf16(
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
 
-    var nstime = 0.0
-    nstime = ctx.execution_time[run_func_mma](iterations)
+    var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -552,8 +550,7 @@ fn run_mma_fp32_bf16_2(
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
 
-    var nstime = 0.0
-    nstime = ctx.execution_time[run_func_mma](iterations)
+    var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -694,9 +691,7 @@ fn run_mma_fp32_fp16(
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
 
-    var nstime = 0.0
-
-    nstime = ctx.execution_time[run_func_mma](iterations)
+    var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")
@@ -837,8 +832,7 @@ fn run_mma_fp16_fp16(
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
 
-    var nstime = 0.0
-    nstime = ctx.execution_time[run_func_mma](iterations)
+    var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print("Basic Tensor core kernel:")

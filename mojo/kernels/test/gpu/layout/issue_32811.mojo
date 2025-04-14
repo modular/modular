@@ -22,9 +22,9 @@ fn gpu_kernel(
         + lhs[block_idx.x * 4 + thread_idx.x]
     )
 
-    var dst_tensor = LayoutTensor[
-        DType.float32, Layout(IntTuple(16, 1), IntTuple(1, 1))
-    ](dst)
+    _ = LayoutTensor[DType.float32, Layout(IntTuple(16, 1), IntTuple(1, 1))](
+        dst
+    )
 
 
 def main():

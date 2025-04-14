@@ -24,7 +24,7 @@ fn generate_alibi_bias[
     k_idx: SIMD[DType.index, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[type, width]:
-    var scale = SIMD[type, width](0)
+    var scale: SIMD[type, width]
 
     @parameter
     if num_heads.is_power_of_two():

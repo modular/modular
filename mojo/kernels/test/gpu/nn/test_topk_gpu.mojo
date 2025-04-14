@@ -490,7 +490,7 @@ fn main() raises:
         var block_size: Int
         var batch_size: Int
         var sampling: Bool
-        var num_blocks_per_input: Int = 0
+        var num_blocks_per_input: Int
 
         # var test_cases: [TestCase] = []
         # var N_values = [1024, 32000, 128256]
