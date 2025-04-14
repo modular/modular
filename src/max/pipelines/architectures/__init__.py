@@ -24,6 +24,7 @@ def register_all_models():
         return
 
     from .exaone import exaone_arch
+    from .gemma3 import gemma3_arch
     from .granite import granite_arch
     from .llama3 import llama_arch
     from .llama4 import llama4_arch
@@ -38,6 +39,7 @@ def register_all_models():
 
     architectures = [
         exaone_arch,
+        gemma3_arch,
         llama_arch,
         llama4_arch,
         llama_vision_arch,
