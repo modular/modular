@@ -167,12 +167,12 @@ struct CausalMask(MHAMask):
         #   * A is inside the tile but B, C, D are not.
         #   * If B is on or above the diagonal i.e. offset0 + size0 <= offset1
         #     the tile is fully masked.
-        #   * If C is on or below the diagonal i.e. offset0 >= offset1 + size1
+        #   * If C is on or below the diagonal i.e. offset0 >= offset1 + size1 - 1
         #     the tile is not masked at all.
 
         # If false, the tile is not masked.
         var min_q_lt_max_k = (
-            tile_offset.data[0] < (tile_offset.data[1] + tile_size.data[1])
+            tile_offset.data[0] + 1 < tile_offset.data[1] + tile_size.data[1]
         ).cast[DType.uint8]()
 
         # If true, the tile is fully masked
