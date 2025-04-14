@@ -6,7 +6,6 @@ filegroup(
         "Inputs/dynamic-model.mlir",
         "Inputs/named-inputs.mlir",
         "Inputs/no-inputs.mlir",
-        "Inputs/relu3x100x100.onnx",
         "Inputs/relu3x100x100.torchscript",
         "Inputs/scalar-input.mlir",
         "c/mo-model.api",

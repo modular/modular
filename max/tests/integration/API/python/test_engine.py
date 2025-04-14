@@ -34,11 +34,6 @@ def sdk_test_inputs_path(modular_path: Path) -> Path:
 
 
 @pytest.fixture
-def relu_onnx_model_path(sdk_test_inputs_path: Path) -> Path:
-    return sdk_test_inputs_path / "relu3x100x100.onnx"
-
-
-@pytest.fixture
 def relu_torchscript_model_path(sdk_test_inputs_path: Path) -> Path:
     return sdk_test_inputs_path / "relu3x100x100.torchscript"
 
@@ -355,30 +350,6 @@ def test_aliasing_output(
     # Check if the outputs really alias.
     x_tensor[0] = 7
     assert y_tensor[0].item() == 7
-
-
-# TODO(#36814): Debug segfault after PT 2.2.2 bump.
-# Skip this test if we don't have onnx and torch framework libs available.
-@pytest.mark.skip(reason="#36814")
-def test_execute_multi_framework(
-    session: InferenceSession,
-    relu_onnx_model_path: Path,
-    relu_torchscript_model_path: Path,
-) -> None:
-    trch_input_specs = [
-        TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)
-    ]
-    onnx_model = session.load(relu_onnx_model_path)
-    trch_model = session.load(
-        relu_torchscript_model_path, input_specs=trch_input_specs
-    )
-    np_input = np.ones((1, 3, 100, 100))
-    np_input[:, 1, :, :] *= -1
-    onnx_output = onnx_model.execute(np_input)[0]
-    trch_output = trch_model.execute(np_input)[0]
-    assert isinstance(onnx_output, Tensor)
-    assert isinstance(trch_output, Tensor)
-    assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())
 
 
 def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
