@@ -7,7 +7,6 @@ from collections import OptionalReg
 from math import ceildiv
 from pathlib import Path
 from sys import alignof, env_get_int, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
 
 import linalg.vendor_blas
 from buffer.buffer import NDBuffer
@@ -39,7 +38,12 @@ from gpu.id import (
     thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.memory import (
+    AddressSpace,
+    external_memory,
+    fence_mbarrier_init,
+    tma_store_fence,
+)
 from gpu.mma import (
     WGMMADescriptor,
     st_matrix,
@@ -105,19 +109,19 @@ fn warp_specialized_gemm_output[
     accum_type: DType,
     c_layout: Layout,
     c_smem_layout: Layout,
+    c_tma_layout: Layout,
     c_reg_layout: Layout,
     c_desc_layout: Layout,
     /,
     *,
-    BM: Int,
-    BN: Int,
+    c_tile_shape: IndexList[2],
     c_swizzle: TensorMapSwizzle,
     wgmma_shape: IndexList[3],
     num_consumer: Int = 1,
     use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
     c_smem_tile: LayoutTensor[
         c_type,
@@ -143,6 +147,8 @@ fn warp_specialized_gemm_output[
     alias num_n_mmas = BN // wgmma_shape[1]
     alias num_consumer_threads = num_consumer * WARP_GROUP_SIZE
     alias simd_size = simdwidthof[c_type]()
+    alias BM = c_tile_shape[0]
+    alias BN = c_tile_shape[1]
 
     var c_gmem_tile = c.tile[BM, BN](block_y, block_x)
     var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
@@ -152,7 +158,7 @@ fn warp_specialized_gemm_output[
 
     alias WG_BM = c_smem_tile.layout.shape[0].value()
     alias WG_BN = c_smem_tile.layout.shape[1].value()
-
+    alias TMA_BN = c_tma_op.layout.shape[1].value() if use_tma_store else WG_BN
     # fmt: off
     alias use_stmatrix = accum_type == DType.float32 \
             and c_type == DType.bfloat16 \
@@ -170,14 +176,13 @@ fn warp_specialized_gemm_output[
     @parameter
     if use_stmatrix:
         var st_matrix_rt_layout = RuntimeLayout[
-            st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
+            st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, num_consumer](),
             element_type = DType.int32,
             linear_idx_type = DType.int32,
         ]()
         alias st_matrix_swizzle = make_ldmatrix_swizzle[
-            c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
+            c_type, TMA_BN, log2_floor(16 // sizeof[c_type]())
         ]()
-        alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
 
         lane = lane_id()
 
@@ -185,37 +190,47 @@ fn warp_specialized_gemm_output[
         for sub_wg_bn_id in range(BN // WG_BN):
 
             @parameter
-            for m_mma in range(num_m_mmas):
+            for tma_n in range(WG_BN // TMA_BN):
 
                 @parameter
-                for i in range(WG_BN // 16):
-                    var c_frag = c_reg_tile.tile[1, 8](
-                        m_mma, i + sub_wg_bn_id * (WG_BN // 16)
-                    )
+                for m_mma in range(num_m_mmas):
 
-                    var d_reg = c_frag.load[8](0, 0).cast[DType.bfloat16]()
-
-                    var st_matrix_args = RuntimeTuple[
-                        IntTuple(
-                            UNKNOWN_VALUE,
-                            IntTuple(
-                                i,
-                                m_mma,
-                                UNKNOWN_VALUE,
-                            ),
+                    @parameter
+                    for i in range(TMA_BN // 16):
+                        var c_frag = c_reg_tile.tile[1, 8](
+                            m_mma,
+                            i
+                            + tma_n * (TMA_BN // 16)
+                            + sub_wg_bn_id * (WG_BN // 16),
                         )
-                    ](
-                        warp_group_thread_idx,
-                        i,
-                        m_mma,
-                        local_warp_group_idx,
-                    )
-                    var offset = c_smem_tile.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    )
-                    var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
 
-                    st_matrix[simd_width=4](offset, d_reg_f32_packed)
+                        var d_reg = c_frag.load[8](0, 0).cast[DType.bfloat16]()
+
+                        var st_matrix_args = RuntimeTuple[
+                            IntTuple(
+                                UNKNOWN_VALUE,
+                                IntTuple(
+                                    i,
+                                    m_mma,
+                                    UNKNOWN_VALUE,
+                                ),
+                            )
+                        ](
+                            warp_group_thread_idx,
+                            i,
+                            m_mma,
+                            local_warp_group_idx,
+                        )
+                        var offset = c_smem_tile.ptr.offset(
+                            st_matrix_swizzle(
+                                st_matrix_rt_layout(st_matrix_args)
+                            )
+                            + WG_BM * TMA_BN * tma_n
+                        )
+
+                        var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
+
+                        st_matrix[simd_width=4](offset, d_reg_f32_packed)
 
             named_barrier[num_consumer_threads, 10]()
 
@@ -228,6 +243,9 @@ fn warp_specialized_gemm_output[
 
             @parameter
             if elementwise_lambda_fn:
+                alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[
+                    c_type, WG_BN
+                ]()
                 alias epilogue = elementwise_lambda_fn.value()
 
                 # Output dimensions in global memory.
@@ -268,16 +286,34 @@ fn warp_specialized_gemm_output[
 
                 @parameter
                 if use_tma_store:
-                    if warp_group_thread_idx == 0:
+                    tma_store_fence()
+
+                    if local_thread_idx < WG_BN // TMA_BN:
+                        var smem_offset = c_smem_tile.ptr.offset(
+                            WG_BM * TMA_BN * local_thread_idx
+                        )
+                        var c_tma_tile = LayoutTensor[
+                            c_type,
+                            c_tma_layout,
+                            MutableAnyOrigin,
+                            address_space = AddressSpace.SHARED,
+                            alignment=128,
+                        ](smem_offset)
+
                         c_tma_op.async_store(
-                            c_smem_tile,
+                            c_tma_tile,
                             (
-                                UInt(block_x * BN + sub_wg_bn_id * WG_BN),
+                                UInt(
+                                    block_x * BN
+                                    + sub_wg_bn_id * WG_BN
+                                    + local_thread_idx * TMA_BN
+                                ),
                                 UInt(block_y * BM),
                             ),
                         )
                         c_tma_op.commit_group()
                         c_tma_op.wait_group()
+
                 else:
                     copy_sram_to_dram[
                         thread_layout=thread_layout, swizzle=st_matrix_swizzle
@@ -285,7 +321,6 @@ fn warp_specialized_gemm_output[
                         c_gmem_wg_tile.vectorize[1, simd_size](),
                         c_smem_tile.vectorize[1, simd_size](),
                     )
-
             named_barrier[num_consumer_threads, 10]()
 
     else:
@@ -382,6 +417,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     a_desc_layout: Layout,
     b_desc_layout: Layout,
     c_desc_layout: Layout,
+    c_tma_layout: Layout,
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -396,7 +432,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
@@ -710,8 +746,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             read_pipeline_states.step()
 
         warp_specialized_gemm_output[
-            BM=BM,
-            BN=BN,
+            c_tile_shape = Index(BM, BN),
             c_swizzle=c_swizzle,
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
@@ -760,6 +795,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     a_desc_layout: Layout,
     b_desc_layout: Layout,
     c_desc_layout: Layout,
+    c_tma_layout: Layout,
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     grid_shape: IndexList[2],
@@ -775,7 +811,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     problem_shape: IndexList[3],
 ):
@@ -1097,8 +1133,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 read_pipeline_states.step()
 
             warp_specialized_gemm_output[
-                BM=BM,
-                BN=BN,
+                c_tile_shape = Index(BM, BN),
                 c_swizzle=c_swizzle,
                 wgmma_shape=wgmma_shape,
                 num_consumer=num_consumer,
@@ -1432,15 +1467,13 @@ fn _get_c_smem_layout[
     b_type: DType,
     c_type: DType,
     num_pipeline_stages: Int,
-    use_tma_store: Bool,
 ]() -> Layout:
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
     alias WG_BM = BM
-    # constrain due to max swizzling bytes
-    alias MAX_WG_BN = 128 // sizeof[c_type]() if use_tma_store else 128
+    alias MAX_WG_BN = 128
 
     alias available_smem_size = H100.shared_memory_per_multiprocessor - 1024
     alias pipeline_smem_size = Int(num_pipeline_stages) * (
@@ -1542,15 +1575,15 @@ fn warp_specialize_gemm_with_multicasting[
         b_type,
         c_type,
         config.num_pipeline_stages,
-        use_tma_store,
     ]()
     alias c_smem_tile = Index(
-        c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
+        c_smem_layout.shape[0].value(),
+        c_smem_layout.shape[1].value() // config.num_consumer,
     )
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    # make sure WG_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
+    # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     alias c_swizzle = TensorMapSwizzle(
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
@@ -1572,9 +1605,13 @@ fn warp_specialize_gemm_with_multicasting[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    c_tma_op = create_tma_tile[c_type, 2, c_smem_tile, swizzle_mode=c_swizzle](
-        ctx, c
-    )
+    c_tma_op = create_tma_tile[
+        c_type,
+        2,
+        c_smem_tile,
+        swizzle_mode=c_swizzle,
+        __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+    ](ctx, c)
 
     alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
@@ -1604,6 +1641,7 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
             __type_of(c_tma_op).desc_layout,
+            __type_of(c_tma_op).layout,
             c_smem_layout,
             c_swizzle=c_swizzle,
             cluster_shape=cluster_shape,
@@ -1644,6 +1682,7 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
             __type_of(c_tma_op).desc_layout,
+            __type_of(c_tma_op).layout,
             c_smem_layout,
             c_swizzle=c_swizzle,
             cluster_shape=cluster_shape,

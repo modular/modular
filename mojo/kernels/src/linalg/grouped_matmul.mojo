@@ -259,7 +259,6 @@ fn grouped_matmul_sm90[
         b_type,
         c_type,
         config.num_pipeline_stages,
-        False,
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
@@ -687,8 +686,7 @@ fn grouped_matmul_kernel[
         )
 
         warp_specialized_gemm_output[
-            BM=BM,
-            BN=BN,
+            c_tile_shape = Index(BM, BN),
             c_swizzle=c_swizzle,
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
