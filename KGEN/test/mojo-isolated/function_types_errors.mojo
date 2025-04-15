@@ -117,6 +117,54 @@ fn main():
 
 # // -----
 
+# Tests that we reject any device_function that is still generic.
+
+
+@register_passable("trivial")
+trait ZAnyRPTrait:
+    pass
+
+
+# A function that has a T that can't be inferred from anything
+fn device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int:
+    return 73
+
+
+# A function that has a T that can be inferred from arguments
+fn device_func_usedT[T: AnyType](a: T, b: Bool) -> Int:
+    return 73
+
+
+@value
+struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
+    pass
+
+
+# expected-note @below {{function declared here}}
+fn compile[
+    ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
+    func: fn (* args: * ArgTypes) -> Int,
+]() -> DeviceFunction[*ArgTypes]:
+    return DeviceFunction[*ArgTypes]()
+
+
+fn test_reject_generic_device_func_unusedT():
+    # TODO(MOCO-1828): Better error message.
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    var thing = compile[device_func_unusedT]()
+
+
+# Slightly different case, for no particular reason
+fn test_reject_generic_device_func_usedT():
+    # TODO(MOCO-1828): Better error message.
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    var thing = compile[device_func_usedT]()
+
+
+# // -----
+
 
 @register_passable("trivial")
 trait ZAnyRPTrait:
