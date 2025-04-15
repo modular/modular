@@ -44,7 +44,12 @@ from max._tensor_utils import (
 )
 from max.tensor import RuntimeTensorSpec
 
-from ._accelerator import accelerator, Accelerator, CompiledDeviceKernel
+from ._accelerator import (
+    accelerator,
+    accelerator_count,
+    Accelerator,
+    CompiledDeviceKernel,
+)
 from .anytensor import AnyMemory, AnyMojoValue, AnyTensor
 from .device import Device, cpu
 from .device_memory import DeviceMemory, DeviceTensor

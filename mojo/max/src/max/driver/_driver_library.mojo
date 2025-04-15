@@ -76,6 +76,9 @@ struct DriverLibrary:
     alias get_data_fn_sig = fn (Self.device_memory_type) -> UnsafePointer[UInt8]
     var get_data_fn: Self.get_data_fn_sig
 
+    alias accelerator_count_fn_sig = fn () -> Int
+    var accelerator_count_fn: Self.accelerator_count_fn_sig
+
     fn __init__(out self) raises:
         var lib = DLHandle(_get_driver_path())
         self.destroy_device_fn = lib.get_function[Self.destroy_device_fn_sig](
@@ -106,6 +109,9 @@ struct DriverLibrary:
             Self.copy_device_memory_fn_sig
         ]("M_copyDeviceMemory")
         self.get_data_fn = lib.get_function[Self.get_data_fn_sig]("M_getData")
+        self.accelerator_count_fn = lib.get_function[
+            Self.accelerator_count_fn_sig
+        ]("M_getAcceleratorCount")
         self.lib = ArcPointer[ManagedDLHandle](lib)
 
     fn get_handle(self) -> DLHandle:

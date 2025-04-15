@@ -23,6 +23,11 @@ from ._status import Status
 from .device import Device, _CDevice, _get_driver_path
 
 
+fn accelerator_count() raises -> Int:
+    var lib = DriverLibrary()
+    return lib.accelerator_count_fn()
+
+
 fn accelerator(gpu_id: Int = 0) raises -> Device:
     var lib = DriverLibrary()
     var status = Status(lib)
