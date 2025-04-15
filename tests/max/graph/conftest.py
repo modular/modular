@@ -19,7 +19,7 @@ from typing import Optional
 
 import numpy as np
 import pytest
-from hypothesis import assume, settings
+from hypothesis import Phase, assume, settings
 from hypothesis import strategies as st
 from max import mlir
 from max._core import graph as _graph
@@ -42,6 +42,11 @@ from max.graph import (
 # We have reasonable test suite timeouts. Use those instead of hypothesis deadlines.
 settings.register_profile("graph_tests", deadline=None)
 settings.load_profile("graph_tests")
+
+settings.register_profile(
+    "failfast", phases=[Phase.explicit, Phase.reuse, Phase.generate]
+)
+
 
 MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
