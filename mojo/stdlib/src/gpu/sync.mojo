@@ -24,6 +24,7 @@ from memory.pointer import AddressSpace
 
 from ._utils import to_i32, to_llvm_shared_mem_ptr
 from .memory import AddressSpace as GPUAddressSpace
+from sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # barrier
