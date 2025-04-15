@@ -806,6 +806,10 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   ];
   let extraClassDeclaration = [{
     bool isSynthetic();
+
+    /// Return true if this is non-synthetic variable, if its name starts with
+    /// something other than an underscore, and is not an argument shadow.
+    bool shouldWarnAboutUnused();
   }];
   let hasVerifier = 1;
 }

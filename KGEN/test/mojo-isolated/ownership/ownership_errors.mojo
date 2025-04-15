@@ -567,3 +567,10 @@ fn test_trivial_consume():
 
     # expected-error @+1 {{use of uninitialized value 'outshape'}}
     _ = outshape
+
+fn test_unused_var():
+    # expected-warning @+1 {{assignment to 'x' was never used; assign to '_' instead?}}
+    var x: Int = 0
+
+    # expected-warning @+1 {{variable 'y' was never used, remove it?}}
+    var y: Int

@@ -38,7 +38,10 @@ fn function():
       .open(doc)
       .onDiagnostics(doc,
                      [](const std::vector<lsp::Diagnostic> &diags) {
-                       ASSERT_EQ((int)diags.size(), 1);
+                       // FIXME: We're reporting these from both the LSP and
+                       // compiler, we should remove the LSP warning (and this
+                       // test) because this is already tests in the compiler.
+                       ASSERT_EQ((int)diags.size(), 2);
                        EXPECT_EQ(diags[0].message, "unused variable 'unused'");
                      })
       .execute();

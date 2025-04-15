@@ -1572,6 +1572,17 @@ void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
 
 bool VarDeclOp::isSynthetic() { return getKind() == VarDeclKind::Synthesized; }
 
+/// Return true if this is non-synthetic variable, if its name starts with
+/// something other than an underscore, and is not an argument shadow.
+bool VarDeclOp::shouldWarnAboutUnused() {
+  auto kind = getKind();
+  // Don't warn about synthesized VarDecls, they aren't user-declared.
+  return kind != VarDeclKind::Synthesized && kind != VarDeclKind::Arg &&
+         kind != VarDeclKind::InitOutArg &&
+         // Don't warn about things like _x, because this silences the warning.
+         !getName().starts_with("_");
+}
+
 LogicalResult VarDeclOp::verify() {
   if (getArgShadowIndex().has_value() && getKind() != VarDeclKind::Arg)
     return emitOpError() << "cannot have arg index unless is arg kind";

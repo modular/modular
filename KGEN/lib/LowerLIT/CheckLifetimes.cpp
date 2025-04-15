@@ -455,6 +455,9 @@ struct ValueInfo {
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
 
+  /// This is true if the value was ever used.
+  mutable bool isEverUsed;
+
   /// If this value needs to be tracked by debug info, this is the information
   /// about the source variable that created this value. Null otherwise.
   DebugInfo::DILocalVariableAttr debugVariable;
@@ -615,7 +618,9 @@ struct ValueSet {
 
   /// Return a reference to the entire value with the specified ID.
   ValueRef getFullValueRef(unsigned valueId) const {
-    return valueInfos[valueId].getFullValueRef(valueId);
+    auto &entry = valueInfos[valueId];
+    entry.isEverUsed = true;
+    return entry.getFullValueRef(valueId);
   }
 
   /// Given a origin attribute, return the value ref that defines it, and the
@@ -793,11 +798,11 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
   if (valueOrigin)
     originToValueIndex[valueOrigin] = valueInfos.size();
 
-  valueInfos.push_back(
-      ValueInfo{val, firstValueBit, firstValueBit + numValueBits,
-                trackable.startsUninit, trackable.endInitState,
-                trackable.isIndirect, trackable.isFullObjectLiveOnEntry,
-                /*hasErrorDiagnosed=*/false, debugVariable});
+  valueInfos.push_back(ValueInfo{
+      val, firstValueBit, firstValueBit + numValueBits, trackable.startsUninit,
+      trackable.endInitState, trackable.isIndirect,
+      trackable.isFullObjectLiveOnEntry,
+      /*hasErrorDiagnosed=*/false, /*isEverUsed=*/false, debugVariable});
 }
 
 raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
@@ -1006,8 +1011,10 @@ SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
   // Look through imm cast and unions to find the underlying attrs.
   processRawOrigin(origin, [&](TypedAttr raw) {
     auto [valueRef, type] = getValueRefAndTypeForOrigin(raw);
-    if (valueRef)
+    if (valueRef) {
       result.push_back(valueRef);
+      valueInfos[valueRef.valueId].isEverUsed = true;
+    }
   });
 
   return result;
@@ -3352,16 +3359,8 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
     if (!dryRun && isFullUseDestroy) {
       ValueInfo &valueEntry = valueSet.getValueInfo(direct.valueId);
       // Don't warn about assignments into synthesized temporaries or arguments.
-      bool isUserVar = false;
-      if (auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>())
-        if (varDecl.getKind() != VarDeclKind::Synthesized &&
-            !varDecl.getArgShadowIndex().has_value() &&
-            // We allow people to silence this warning with a leading _ on
-            // variable names.
-            !varDecl.getName().starts_with("_"))
-          isUserVar = true;
-
-      if (isUserVar) {
+      auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>();
+      if (varDecl && varDecl.shouldWarnAboutUnused()) {
         auto diag = mlir::emitWarning(op.getLoc()) << "assignment to ";
         BitVector allMissing(consumedValues.size(), true);
         direct.markBits(allMissing, false);
@@ -3745,9 +3744,16 @@ CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
   for (ValueInfo &info : valueSet.getValueInfos()) {
     if (!info.value) // Already removed value.
       continue;
+
     auto varDecl = info.value.getDefiningOp<VarDeclOp>();
     if (!varDecl)
       continue;
+
+    if (!info.isEverUsed && varDecl.shouldWarnAboutUnused()) {
+      mlir::emitWarning(varDecl.getLoc())
+          << "variable '" << varDecl.getName().str()
+          << "' was never used, remove it?";
+    }
 
     // Check to see if there are any uses other than lifetime markers.
     bool hasInterestingUse = false;
