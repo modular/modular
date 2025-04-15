@@ -21,21 +21,23 @@ fn mut_ship_function(mut x: MemType):
 alias read_ship_fn_alias: fn (read MemType) -> None = mut_ship_function
 
 
-
 # // -----
 
 
 # Tests that we detect too few arguments when doing function conversions.
 
+
 # expected-note @below {{function declared here}}
 fn infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
-    func: fn(x: Int, y: Int, *args: *ArgTypes)->None
+    func: fn (x: Int, y: Int, * args: * ArgTypes) -> None,
 ]():
     pass
 
+
 fn device_func(i: Int):
     pass
+
 
 fn test_infer_variadic():
     # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
@@ -49,9 +51,11 @@ fn test_infer_variadic():
 # Tests that we correctly match each incoming argument type against the
 # callee's variadic's element trait.
 
+
 # expected-note @below {{struct 'ZInt' does not implement all requirements for 'Sprongling'}}
 struct ZInt:
     pass
+
 
 # expected-note @below {{trait 'Sprongling' declared here}}
 trait Sprongling:
@@ -59,12 +63,14 @@ trait Sprongling:
     fn sprongle(self):
         ...
 
+
 # expected-note @below {{function declared here}}
 fn infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, Sprongling, `>`], //,
-    func: fn(*args: *ArgTypes)->None
+    func: fn (* args: * ArgTypes) -> None,
 ]():
     pass
+
 
 fn device_func(i: ZInt, j: ZInt):
     pass
@@ -80,13 +86,14 @@ fn test_infer_variadic():
 # // -----
 
 
-
 @register_passable("trivial")
 trait ZAnyRPTrait:
     pass
 
+
 fn device_func(a: Int, b: Bool) -> Int:
     return 73
+
 
 @value
 struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
@@ -94,13 +101,155 @@ struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
     fn call(self, *args: *ArgTypes) -> Int:
         return 91
 
+
 fn compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
-    func: fn(*args: *ArgTypes)->Int
+    func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
+
 
 fn main():
     var thing = compile[device_func]()
     # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
     var result2 = thing.call(42, "hello")
+
+
+# // -----
+
+
+@register_passable("trivial")
+trait ZAnyRPTrait:
+    pass
+
+
+fn device_func(a: Int, b: Bool) -> Int:
+    return 73
+
+
+@value
+struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
+    # expected-note @below {{function declared here}}
+    fn call(self, *args: *ArgTypes) -> Int:
+        return 91
+
+
+fn compile[
+    ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
+    func: fn (* args: * ArgTypes) -> Int,
+]() -> DeviceFunction[*ArgTypes]:
+    return DeviceFunction[*ArgTypes]()
+
+
+fn main():
+    var thing = compile[device_func]()
+    # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
+    var result2 = thing.call(42, "hello")
+
+
+# // -----
+
+
+# Tests a GPU-function-like case (see FTAGPUF) but this one catches when the
+# user hands in something of the wrong type.
+# TODO(MOCO-1106): This doesn't catch when the given argument type
+# (DeviceBuffer[Int]) mismatches the expected argument type
+# (UnsafePointer[Float32]) by only the input parameter (Int vs Float32), that's
+# only caught by elaborator for now and is tested elsewhere (search FTAGPUF).
+
+
+@value
+struct ZBool:
+    pass
+
+
+# Copied from stdlib
+@always_inline("nodebug")
+fn rebind[
+    src_type: AnyTrivialRegType, //,
+    dest_type: AnyTrivialRegType,
+](src: src_type) -> dest_type:
+    return __mlir_op.`kgen.rebind`[_type=dest_type](src)
+
+
+trait ConvertibleToZPointer:
+    alias Pointee: AnyType
+
+    fn to_zpointer(self) -> ZPointer[Pointee]:
+        pass
+
+
+@register_passable("trivial")
+struct ZPointer[T: AnyType]:
+    fn __init__(out self):
+        pass
+
+    @implicit
+    fn __init__[C: ConvertibleToZPointer](out self, c: C):
+        # TODO(MOCO-1106): If we can remove this rebind, we win. We'd need to
+        # constrain C.Pointee=T somehow, or make ConvertibleToZPointer into a
+        # generic trait instead of using an associated alias.
+        # As it is, this won't catch incorrectly passing in a e.g.
+        # ZDeviceBuffer[Int] into a ZPointer[Bool].
+        var z: ZPointer[T] = rebind[ZPointer[T]](c.to_zpointer())
+
+
+trait ConvertibleToZLayoutTensor:
+    fn to_tensor(self) -> ZLayoutTensor:
+        pass
+
+
+@register_passable("trivial")
+struct ZLayoutTensor:
+    fn __init__(out self):
+        pass
+
+    @implicit
+    fn __init__[C: ConvertibleToZLayoutTensor](out self, c: C):
+        var z: ZLayoutTensor = c.to_tensor()
+
+
+@register_passable("trivial")
+trait GPUPassable:
+    pass
+
+
+@value
+struct DeviceFunction[*ArgTypes: GPUPassable]:
+    # expected-note @below {{function declared here}}
+    fn call(self, *args: *ArgTypes) -> Int:
+        return 91
+
+
+@value
+struct ManagedLayoutTensor:
+    fn to_tensor(self) -> ZLayoutTensor:
+        return ZLayoutTensor()
+
+
+# Never converted, the GPU just uses this one directly
+@value
+@register_passable("trivial")
+struct NDBuffer:
+    pass
+
+
+fn kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
+    return 73
+
+
+fn compile[
+    ArgTypes: __mlir_type[`!kgen.variadic<`, GPUPassable, `>`], //,
+    func: fn (* args: * ArgTypes) -> Int,
+]() -> DeviceFunction[*ArgTypes]:
+    return DeviceFunction[*ArgTypes]()
+
+
+fn main():
+    var thing = compile[kernel]()
+    var mlt = ManagedLayoutTensor()
+    var ndb = NDBuffer()
+    # This ZBool() is incorrect, not even close to the ZPointer[Int] that's
+    # expected.
+    # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'ZBool' to 'ZPointer[Int]'}}
+    var result1 = thing.call(mlt, ZBool(), ndb)
