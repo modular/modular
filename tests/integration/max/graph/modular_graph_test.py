@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from typing import Optional
 
 import numpy as np
@@ -22,10 +22,10 @@ from max.graph import (
     StaticDim,
     SymbolicDim,
     TensorType,
-    TensorValue,
-    Value,
 )
-from typing_extensions import TypeGuard
+from test_common.graph_utils import (
+    are_all_tensor_values_iterable as _are_all_tensor_values_iterable,
+)
 
 MAX_INPUT_MAGNITUDE = 1e5
 MIN_SHAPE_DIM = 1
@@ -35,13 +35,8 @@ ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-8
 
 
-def are_all_tensor_values(
-    it: Iterable[Value],
-) -> TypeGuard[Iterable[TensorValue]]:
-    for value in it:
-        if not isinstance(value, TensorValue):
-            return False
-    return True
+# TODO: Swap all imports of this to use test_common.graph_utils directly.
+are_all_tensor_values = _are_all_tensor_values_iterable
 
 
 def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):
