@@ -347,13 +347,6 @@ class MultimodalKVCacheManager(KVCacheManager):
         # Keep the base class's state in sync with the text KV manager's.
         super().step(batch)
 
-    def rollback(self, batch: list[InputContext]) -> None:
-        """Rollback the text KV manager."""
-        self.text_kv_manager.rollback(batch)
-
-        # Keep the base class's state in sync with the text KV manager's.
-        super().rollback(batch)
-
     def external_claim(self, seq_ids: list[int]) -> None:
         """Reserves the same sequence ids for both modalities' KV caches."""
         self.text_kv_manager.external_claim(seq_ids)

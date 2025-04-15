@@ -127,49 +127,6 @@ class BlockManager(Generic[T]):
         self.assert_runtime_invariants(ctx)
 
     @traced
-    def rollback(self, ctx: T) -> None:
-        """Rollback the block manager by discarding all blocks after ctx.start_idx.
-
-        Rollback should only be called after kv_cache.step() and decrement of ctx.start_idx.
-
-        This may delete block hashes and blocks assigned to a request."""
-
-        req_hashes = self.req_to_hashes[ctx.cache_seq_id]
-        req_blocks = self.req_to_blocks[ctx.cache_seq_id]
-
-        if self.enable_prefix_caching:
-            # Delete all hashes after ctx.start_idx
-            new_num_hashes = ctx.start_idx // self.block_size
-            assert len(req_hashes) >= new_num_hashes
-            while len(req_hashes) > new_num_hashes:
-                req_hashes.pop()
-
-            # Uncommit blocks that contain rejected tokens.
-            new_num_committed_blocks = ctx.start_idx // self.block_size
-            for block in req_blocks[new_num_committed_blocks:]:
-                # If the block is committed into prefix cache, uncommit it.
-                block_hash = block.block_hash
-                assert block.ref_cnt == 1  # should only be one ref to the block
-                if block_hash is not None:
-                    self.device_block_pool.uncommit_block(block)
-
-            # Update number of committed blocks.
-            ctx.set_token_indices(
-                committed_idx=new_num_committed_blocks * self.block_size
-            )
-        else:
-            # When prefix caching is disabled, we do not compute hashes or
-            # commit blocks into prefix cache.
-            assert len(req_hashes) == 0
-            assert ctx.committed_idx == 0
-
-        # Unassign blocks from request
-        new_num_blocks = ceildiv(ctx.start_idx, self.block_size)
-        assert len(req_blocks) >= new_num_blocks
-        while len(req_blocks) > new_num_blocks:
-            self.device_block_pool.free_block(req_blocks.pop())
-
-    @traced
     def compute_hashes_for_request(
         self,
         ctx: T,
@@ -468,6 +425,9 @@ class BlockManager(Generic[T]):
         num_required_blocks = ceildiv(seq_len, self.block_size)
         num_new_blocks = num_required_blocks - len(req_blocks)
         num_new_blocks = max(num_new_blocks, 0)
+
+        # Check that there are enough blocks to store the existing cached tokens.
+        assert ctx.start_idx <= len(req_blocks) * self.block_size
 
         # Allocate new blocks.
         if num_new_blocks > len(self.device_block_pool.free_block_queue):

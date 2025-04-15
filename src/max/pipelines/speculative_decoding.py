@@ -376,9 +376,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                     is_eos=is_eos,
                 )
 
-        # actually update the cache lengths in our kv_cache manager
-        self._draft_model.kv_manager.step(cast(list[InputContext], batch))
-
         return num_steps, generated_tokens_host, generated_logits
 
     def next_token(
@@ -461,11 +458,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 # This should return the start_idx by rollback_count
                 context.rollback(rollback_count)
 
-                # Since we stepped immediately forward with the target
-                # model after execution, we need to rollback for both
-                # the draft and target model.
-                self._draft_model.kv_manager.rollback([context])
-
                 # Update the context with the new target token.
                 context.update(new_token, is_eos=is_eos)
 
@@ -510,8 +502,11 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                         TextResponse(token, log_probs)
                     )
 
-        # Update the target kv cache
+        # Maybe commit blocks into prefix cache
         self._target_model.kv_manager.step(
+            cast(list[InputContext], context_batch)
+        )
+        self._draft_model.kv_manager.step(
             cast(list[InputContext], context_batch)
         )
 

@@ -779,16 +779,6 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_manager.step(ctx)
 
     @traced
-    def rollback(self, batch: list[T]) -> None:
-        """Rollback the KVCache for speculative decoding by discarding all data
-        after ctx.start_idx.
-
-        Rollback should only be called after kv_cache.step() and decrement of ctx.start_idx.
-        """
-        for ctx in batch:
-            self.block_manager.rollback(ctx)
-
-    @traced
     def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
         copy_type = copy_op.block_copy_type
         dst_idx = copy_op.dst.bid
