@@ -61,3 +61,23 @@ def test_is_integral(int_dtype: DType, float_dtype: DType):
 def test_is_float(int_dtype: DType, float_dtype: DType):
     assert not int_dtype.is_float()
     assert float_dtype.is_float()
+
+
+def test_dtype_alignment():
+    assert DType.bool.align == 1
+    assert DType.int8.align == 1
+    assert DType.int16.align == 2
+    assert DType.int32.align == 4
+    assert DType.int64.align == 8
+    assert DType.uint8.align == 1
+    assert DType.uint16.align == 2
+    assert DType.uint32.align == 4
+    assert DType.uint64.align == 8
+    assert DType.float16.align == 2
+    assert DType.float32.align == 4
+    assert DType.float64.align == 8
+    assert DType.bfloat16.align == 2
+    assert DType.float8_e4m3fn.align == 1
+    assert DType.float8_e4m3fnuz.align == 1
+    assert DType.float8_e5m2.align == 1
+    assert DType.float8_e5m2fnuz.align == 1
