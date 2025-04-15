@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import seed, randn
+from random import randn, seed
 
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType

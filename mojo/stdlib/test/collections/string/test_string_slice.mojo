@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.string.string_slice import StringSlice
+from collections.string.string_slice import get_static_string
 from sys.info import alignof, sizeof
 
 from memory import Span, UnsafePointer
@@ -71,8 +71,7 @@ fn test_string_slice_layout() raises:
 
 
 fn test_string_literal_byte_span() raises:
-    alias string: StringLiteral = "Hello"
-    alias slc = string.as_bytes()
+    alias slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
     assert_equal(slc[0], ord("H"))
@@ -242,9 +241,7 @@ fn test_string_byte_span() raises:
 
 
 fn test_heap_string_from_string_slice() raises:
-    alias string_lit: StringLiteral = "Hello"
-
-    alias static_str = string_lit.as_string_slice()
+    alias static_str = "Hello".as_string_slice()
 
     alias heap_string = String(static_str)
 
@@ -358,10 +355,10 @@ fn test_slice_char_length() raises:
 fn test_slice_eq() raises:
     var str1: String = "12345"
     var str2: String = "12345"
-    var str3: StringLiteral = "12345"
+    var str3: StaticString = "12345"
     var str4: String = "abc"
     var str5: String = "abcdef"
-    var str6: StringLiteral = "abcdef"
+    var str6: StaticString = "abcdef"
 
     # eq
 
@@ -719,11 +716,11 @@ def test_splitlines():
 
     # test \x85 \u2028 \u2029
     var next_line = String(buffer=List[UInt8](0xC2, 0x85, 0))
-    """TODO: \\x85"""
+    _ = """TODO: \\x85"""
     var unicode_line_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA8, 0))
-    """TODO: \\u2028"""
+    _ = """TODO: \\u2028"""
     var unicode_paragraph_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA9, 0))
-    """TODO: \\u2029"""
+    _ = """TODO: \\u2029"""
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = i[]
@@ -1050,6 +1047,58 @@ def test_string_slice_from_pointer():
     assert_true("D", d[-1])
 
 
+def test_replace():
+    assert_equal(StringSlice("").replace("", "hello world"), "")
+    assert_equal(
+        StringSlice("hello").replace("", "something"),
+        "somethinghsomethingesomethinglsomethinglsomethingo",
+    )
+    assert_equal(StringSlice("hello world").replace("world", ""), "hello ")
+    assert_equal(
+        StringSlice("hello world").replace("world", "mojo"), "hello mojo"
+    )
+    assert_equal(
+        StringSlice("hello world hello world").replace("world", "mojo"),
+        "hello mojo hello mojo",
+    )
+
+
+def test_join():
+    assert_equal(StaticString("").join(), "")
+    assert_equal(StaticString("").join("a", "b", "c"), "abc")
+    assert_equal(StaticString(" ").join("a", "b", "c"), "a b c")
+    assert_equal(StaticString(" ").join("a", "b", "c", ""), "a b c ")
+    assert_equal(StaticString(" ").join("a", "b", "c", " "), "a b c  ")
+
+    var sep = StaticString(",")
+    var s = String("abc")
+    assert_equal(sep.join(s, s, s, s), "abc,abc,abc,abc")
+    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+
+    var s2 = StaticString(",").join(List[UInt8](1, 2, 3))
+    assert_equal(s2, "1,2,3")
+
+    var s3 = StaticString(",").join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
+    assert_equal(s3, "1,2,3,4,5,6,7,8,9")
+
+    var s4 = StaticString(",").join(List[UInt8]())
+    assert_equal(s4, "")
+
+    var s5 = StaticString(",").join(List[UInt8](1))
+    assert_equal(s5, "1")
+
+
+def test_string_slice_intern():
+    assert_equal(get_static_string["hello"](), "hello")
+    assert_equal(get_static_string[String("hello")](), "hello")
+    assert_equal(get_static_string[String(42)](), "42")
+    alias simd = SIMD[DType.int64, 4](1, 2, 3, 4)
+    assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
+    # Test get_static_string with multiple string arguments.
+    assert_equal(get_static_string["a", "b", "c"](), "abc")
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
@@ -1082,3 +1131,6 @@ def main():
     test_count()
     test_chars_iter()
     test_string_slice_from_pointer()
+    test_replace()
+    test_join()
+    test_string_slice_intern()

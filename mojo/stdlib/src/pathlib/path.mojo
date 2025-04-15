@@ -14,8 +14,7 @@
 """
 
 import os
-from collections import List, InlineArray
-from collections.string import StringSlice, StaticString
+from collections import InlineArray, List
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
 from sys import external_call, os_is_windows
@@ -24,7 +23,7 @@ from sys.ffi import c_char
 from builtin._location import __call_location, _SourceLocation
 from memory import UnsafePointer
 
-alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
+alias DIR_SEPARATOR = StaticString("\\") if os_is_windows() else "/"
 
 
 fn cwd() raises -> Path:
@@ -323,7 +322,7 @@ struct Path(
         with open(self, "r") as f:
             return f.read()
 
-    fn read_bytes(self) raises -> List[UInt8]:
+    fn read_bytes(self) raises -> List[Byte]:
         """Returns content of the file as bytes.
 
         Returns:
@@ -332,17 +331,26 @@ struct Path(
         with open(self, "r") as f:
             return f.read_bytes()
 
-    fn write_text[stringable: Stringable](self, value: stringable) raises:
+    fn write_text[T: Writable](self, value: T) raises:
         """Writes the value to the file as text.
 
         Parameters:
-          stringable: The Stringable type.
+            T: The type of an object conforming to the `Writable` trait.
 
         Args:
-          value: The value to write.
+            value: The value to write.
         """
         with open(self, "w") as f:
-            f.write(String(value))
+            f.write(value)
+
+    fn write_bytes(self, bytes: Span[Byte]) raises:
+        """Writes bytes to the file.
+
+        Args:
+            bytes: The bytes to write to this file.
+        """
+        with open(self, "w") as f:
+            f.write_bytes(bytes)
 
     fn suffix(self) -> String:
         """The path's extension, if any.

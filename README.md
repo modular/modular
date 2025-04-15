@@ -36,9 +36,10 @@ Then clone this repository:
 git clone https://github.com/modular/max.git
 ```
 
-If you installed the stable build (v24.6), be sure you switch to the `stable` branch,
-because the `main` branch is for nightly releases and might not be compatible
-with stable builds:
+If you installed the [stable
+release](https://docs.modular.com/max/packages#stable-release), be sure you
+switch to the `stable` branch, because the `main` branch is for nightly
+releases and might not be compatible with stable builds:
 
 ```bash
 git checkout stable

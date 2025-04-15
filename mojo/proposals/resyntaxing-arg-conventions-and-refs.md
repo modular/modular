@@ -1,6 +1,7 @@
 # Resyntaxing argument conventions and References
 
-Date: October 2024
+Chris Lattner, Date: October 2024, Status: **Implemented** (except for future
+directions), [discussion thread](https://github.com/modular/max/issues/3623)
 
 Previous revision: [[June 2023](https://github.com/modular/max/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
 
@@ -22,7 +23,7 @@ Similarly, the general design of argument conventions in Mojo fits very well
 into the ownership model and is scaling very effectively.  Changing the
 architecture of how things work isn't in scope for this proposal.
 
-## Rename `Reference` to `Pointer`
+## ✅ Rename `Reference` to `Pointer`
 
 The `Reference` type is an explicitly dereferenced "safe pointer" type that
 offers a memory safe subset of the `UnsafePointer` API.  This is an important
@@ -60,26 +61,35 @@ In addition, Mojo functions have the following return syntax:
    was to follow Python pattern syntax, but it is weird and we can't allow other
    pattern syntax here.
 
-I suggest we rename `borrowed` to `immref` (without square brackets), rename
-`inout` to `mutref` and introduce a new `out` convention.  Such a change will
+We also need to eventually add capture syntax that is very similar to argument
+conventions and should reuse the same words (hat tip to Nick Smith for pointing
+this out!)
+
+I suggest we align with 'verb' names for the argument conventions to convey
+the effect that calling a function will have on the argument.  This would
+include renaming `borrowed` to `read` (without square brackets), rename
+`inout` to `mut` and introduce a new `out` convention.  Such a change will
 give us:
 
-1) `immref`: This is convention provides an immutable reference to another value
+1) ✅ `read`: This is convention provides an immutable reference to another value
    with an inferred lifetime.  As with `borrowed` it is allowed, but will never
-   be written in practice.
-2) `mutref`: This argument convention is a mutable reference to a value from a
-   callee with an inferred lifetime.
-3) `ref [lifetime]`: **No change:** this works as it does today.
-4) `ref`: Bind to an arbitrary reference with inferred lifetime and mutability,
+   be written in practice (except in capture lists).
+2) ✅ `mut`: This argument convention indicates that the function may mutable
+   the value passed in.
+3) ✅ `ref [origin]`: **No change:** this works as it does today.
+4) ✅ `ref`: Bind to an arbitrary reference with inferred origin and mutability,
    this is the same as `ref [_]`.
-5) `owned`: **No change:** unrelated to this proposal, let's stay focused.
-6) `fn __init__(out self)`: The `__init__` function takes `self` as
+5) `take`: The argument value is taken from the caller, either because it is
+   donated by the argument to the function call (e.g. because it's an RValue or
+   the transfer operation is used) or by Mojo making an implicit copy of the
+   value.
+6) ✅ `fn __init__(out self)`: The `__init__` function takes `self` as
    uninitialized memory and returns it initialized (when an error isn't thrown)
    which means it's a named output.  Let's call it `out`, which will allow one
    to write `var x: fn (out Foo) -> None = Foo.__init__` as you'd expect.
 
-I don't see a reason to allow explicit lifetime specifications on `immref` and
-`mutref`, e.g. `mutref [lifetime]`. The only use-case would be if
+I don't see a reason to allow explicit lifetime specifications on `read` and
+`mut`, e.g. `mut [origin]`. The only use-case would be if
 you'd want to explicitly declare lifetime as a parameter, but I'm not sure why
 that is useful (vs inferring it).  We can evaluate adding it if there is a
 compelling reason to over time.
@@ -88,14 +98,9 @@ Finally, let's align the result syntax:
 
 1) `fn f():` **No change**.
 2) `fn f() -> T:` **No change**.
-3) `fn f() -> ref [life] T:`:  **No change**.
-4) `fn f() -> (out name: T):` and maybe eventually `fn f(out name: T):`.  The
-   former is a bit ugly because you'd want parens (or something else) to
-   disambiguate (for humans, not the compiler) the `:` as a terminator of the
-   function definition from the type specification.  The later is very pretty,
-   would provide a path to "real" multiple return values, and would make the
-   model consistent with `__init__` but has implementation risk that we'd have
-   to explore.  In any case, this isn't really core to the rest of the proposal.
+3) `fn f() -> ref [origin] T:`:  **No change**.
+4) `fn f(out name: T):`: This aligns with `__init__` and provides a logical path
+   to multiple results if we desired to go there.
 
 As a benefit of these changes, we'd get rid of the `borrowed` terminology, which
 is loaded with Rust semantics that we don't carry, and get rid of the `inout`
@@ -104,21 +109,22 @@ in/out.
 
 ### Alternatives considered
 
-I expect the biggest bikeshed to be around the `mutref` keyword.  The benefits
+I expect the biggest bikeshed to be around the `mut` keyword.  The benefits
 of its name is that it is clear that this is a reference, keeps in aligned with
 `ref` in other parts of the language, and is short.
 
 We might consider instead:
 
-- `mut`: This is shorter, but loses that this is a reference.  Also the name
-  `imm` for the borrowed replacement would be a bit odd.
+- `mutref`: This is longer, and makes it clear this is a reference.  That said
+  it being a reference is an implementation detail, and breaks the consistent
+  'verb' approach.
 - `mut ref`: we could use a space, but this seems like unnecessary verbosity
   and I don't see an advantage over `mutref`.
 
 I'd love to see discussion, new ideas, and additional positions and rationale:
 I'll update the proposal with those changes.
 
-## Rename "Lifetime" (the type, but also conceptually)
+## ✅ Rename "Lifetime" (the type, but also conceptually)
 
 Mojo uses parameters of types `Lifetime`, `MutableLifetime`,
 `ImmutableLifetime` etc to represent and propagate lifetimes into functions.
@@ -199,8 +205,8 @@ in Mojo.  If so, we should use names like `MutOrigin` and `ImmOrigin`.
 
 ## Implementation
 
-All of these changes can be done in a way that is effectively additive: we need
-to take `mutref` as a new keyword, but otherwise we can accept the new and the
+All of these changes can be done in a way that is effectively additive: we can
+recognize `mut` as a soft keyword, but otherwise we can accept the new and the
 old syntax in the 24.6 release and then remove the old syntax in subsequent
 releases.
 
@@ -322,6 +328,10 @@ today is to use `Pointer` which handles this with a level of abstraction, or
 use `raises` in the specific case of `Dict.__getitem__`.
 
 ### Consider renaming `owned` argument convention
+
+HISTORICAL NOTE: The proposal above suggests renaming `owned` to `take`, this
+section dates to when it suggested we leave it alone.  Keeping this for
+historical reasons.
 
 This dovetails into questions about what we should do with the `owned` keyword,
 and whether we should rename it.

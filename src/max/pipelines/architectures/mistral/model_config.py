@@ -18,12 +18,10 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.pipelines.kv_cache import KVCacheParams
-from max.pipelines.max_config import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-)
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
+from max.pipelines.max_config import KVCacheConfig
+from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 
@@ -45,7 +43,7 @@ class MistralConfigBase(MAXModelConfigBase):
 
     dtype: DType
     kv_params: KVCacheParams
-    return_n_logits: int
+    return_logits: ReturnLogits
 
     attention_multiplier: float
     devices: list[DeviceRef]

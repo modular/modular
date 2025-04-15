@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
@@ -46,10 +45,11 @@ def create_mandelbrot_graph(
 ) -> Graph:
     """Configure a graph to run a Mandelbrot kernel."""
     output_dtype = DType.int32
-    path = Path(__file__).parent / "kernels.mojopkg"
+    mojo_kernels = Path(__file__).parent / "kernels"
+
     with Graph(
         "mandelbrot",
-        custom_extensions=[path],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # The custom Mojo operation is referenced by its string name, and we
         # need to provide inputs as a list as well as expected output types.
@@ -71,10 +71,6 @@ def create_mandelbrot_graph(
 
 
 if __name__ == "__main__":
-    # This is necessary only in specific build environments.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
     # Establish Mandelbrot set ranges.
     WIDTH = 60
     HEIGHT = 25

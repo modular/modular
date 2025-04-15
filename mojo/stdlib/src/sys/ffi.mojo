@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements a foreign functions interface (FFI)."""
 
-from collections.string import StringSlice, StaticString
-from os import abort
+from collections.string.string_slice import _get_kgen_string, get_static_string
+from os import PathLike, abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
-from builtin.string_literal import get_string_literal_slice
 
 from memory import UnsafePointer
 
@@ -175,9 +174,14 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     # TODO(#15590): Implement support for windows and remove the always_inline.
     @always_inline
-    fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD):
+    fn __init__[
+        PathLike: os.PathLike, //
+    ](out self, path: PathLike, flags: Int = DEFAULT_RTLD):
         """Initialize a DLHandle object by loading the dynamic library at the
         given path.
+
+        Parameters:
+            PathLike: The type conforming to the `os.PathLike` trait.
 
         Args:
             path: The path to the dynamic library file.
@@ -186,7 +190,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
         @parameter
         if not os_is_windows():
-            var handle = dlopen(path.unsafe_cstr_ptr(), flags)
+            var handle = dlopen(path.__fspath__().unsafe_cstr_ptr(), flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
                 abort(
@@ -307,12 +311,10 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         Returns:
             A handle to the function.
         """
-        # Force the func_name into a StringLiteral so we know that it is
-        # nul-terminated.
-        alias func_name_literal = get_string_literal_slice[func_name]()
-
+        # Force unique the func_name so we know that it is nul-terminated.
+        alias func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            func_name_literal.unsafe_cstr_ptr()
+            func_name_literal.unsafe_ptr().bitcast[c_char](),
         )
 
     fn get_symbol[
@@ -580,17 +582,17 @@ fn external_call[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
-    alias callee_literal = get_string_literal_slice[callee]().value
+    alias callee_kgen_string = _get_kgen_string[callee]()
 
     @parameter
     if _mlirtype_is_eq[return_type, NoneType]():
-        __mlir_op.`pop.external_call`[func=callee_literal, _type=None](
+        __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )
         return rebind[return_type](None)
     else:
         return __mlir_op.`pop.external_call`[
-            func=callee_literal,
+            func=callee_kgen_string,
             _type=return_type,
         ](loaded_pack)
 
@@ -626,10 +628,9 @@ fn _external_call_const[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
-    alias callee_literal = get_string_literal_slice[callee]().value
 
     return __mlir_op.`pop.external_call`[
-        func=callee_literal,
+        func = _get_kgen_string[callee](),
         resAttrs = __mlir_attr.`[{llvm.noundef}]`,
         funcAttrs = __mlir_attr.`["willreturn"]`,
         memory = __mlir_attr[

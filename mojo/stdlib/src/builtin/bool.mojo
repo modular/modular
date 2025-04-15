@@ -18,6 +18,8 @@ These are Mojo built-ins, so you don't need to import them.
 from collections import List, Set
 from hashlib._hasher import _Hasher
 
+from python import PythonObject, PythonObjectible
+
 from utils._select import _select_register_value
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -107,6 +109,7 @@ struct Bool(
     ImplicitlyIntable,
     Indexer,
     Representable,
+    PythonObjectible,
     Stringable,
     Writable,
     Floatable,
@@ -259,7 +262,7 @@ struct Bool(
             writer: The object to write to.
         """
 
-        writer.write("True" if self else "False")
+        writer.write(StaticString("True") if self else "False")
 
     fn __repr__(self) -> String:
         """Get the bool as a string.
@@ -531,6 +534,14 @@ struct Bool(
             hasher: The hasher instance.
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
 
 # ===----------------------------------------------------------------------=== #

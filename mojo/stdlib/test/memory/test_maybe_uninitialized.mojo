@@ -16,12 +16,7 @@ from os import abort
 
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import (
-    CopyCounter,
-    MoveCounter,
-    DelRecorder,
-    AbortOnDel,
-)
+from test_utils import AbortOnDel, CopyCounter, DelRecorder, MoveCounter
 from testing import assert_equal
 
 
@@ -53,7 +48,7 @@ def test_write_does_not_trigger_destructor():
     a.write(AbortOnDel(42))
 
     # Using the initializer should not trigger the destructor too.
-    var b = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
+    _ = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
 
     # The destructor of a and b have already run at this point, and it shouldn't have
     # caused a crash since we assume uninitialized memory.

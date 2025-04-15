@@ -19,7 +19,7 @@ from utils.numerics import FPUtils
 ```
 """
 
-from sys import bitwidthof, has_neon, llvm_intrinsic, CompilationTarget
+from sys import CompilationTarget, bitwidthof, has_neon, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 
@@ -81,7 +81,7 @@ struct FPUtils[
         """
 
         @parameter
-        if dtype in (DType.float8_e4m3, DType.float8_e4m3fnuz):
+        if dtype is DType.float8_e4m3fnuz:
             return 7
         elif dtype is DType.float8_e4m3fn:
             return 8
@@ -104,7 +104,6 @@ struct FPUtils[
 
         @parameter
         if dtype in (
-            DType.float8_e4m3,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ):
@@ -518,7 +517,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         )
     elif dtype is DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3>`,
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
@@ -626,10 +625,6 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
         )
-    elif dtype is DType.float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3>`,
-        )
     elif dtype is DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
@@ -685,7 +680,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
         )
     elif dtype is DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3>`,
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
@@ -972,7 +967,7 @@ fn get_accum_type[
         if preferred_accum_type is DType.float32:
             return preferred_accum_type
         else:
-            return DType.float16
+            return DType.bfloat16
     elif dtype is DType.bfloat16:
         return DType.float32
     elif dtype is DType.float16:

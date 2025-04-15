@@ -429,3 +429,9 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         ) / (max - min)
 
         return ops.min(ops.max(linear_func, 0), 1)
+
+
+@dataclass
+class LinearScalingParams:
+    factor: float
+    """Main scaling factor for the frequency components of the rope."""

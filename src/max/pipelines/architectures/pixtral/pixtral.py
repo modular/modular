@@ -24,6 +24,14 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
+from max.nn import ReturnLogits
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheManager,
+    KVCacheParams,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -33,14 +41,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import TextAndVisionContext
-from max.pipelines.kv_cache import (
-    KVCacheInputs,
-    KVCacheManager,
-    KVCacheParams,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
+from max.pipelines.core import TextAndVisionContext
 from transformers import AutoConfig
 
 from .model.graph import _build_text_graph, _build_vision_graph
@@ -48,6 +49,9 @@ from .model_config import PixtralConfig
 from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
 
 logger = logging.getLogger("max.pipelines")
+
+# TODO(GEX-2071): Re-enable when parallel compilation works.
+_DO_PARALLEL_COMPILATION = False
 
 
 class PixtralInputs(ModelInputs):
@@ -103,7 +107,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -114,7 +118,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -129,9 +133,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         model_inputs = cast(PixtralInputs, model_inputs)
         if model_inputs.has_vision_inputs:
             image_embeds = self.vision_model.execute(
-                model_inputs.pixel_values,
-                model_inputs.attention_mask,
-                copy_inputs_to_device=False,
+                model_inputs.pixel_values, model_inputs.attention_mask
             )[0]
         else:
             # batch_size * num_concurrent_media * num_patches are set to 0 here to imitate a dummy tensor (used in text-only mode).
@@ -151,7 +153,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             image_embeds,
             model_inputs.input_row_offsets,
             *model_inputs.kv_cache_inputs,
-            copy_inputs_to_device=False,
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -169,6 +170,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> PixtralInputs:
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(
@@ -367,21 +369,16 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             )
             return model
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        def build_vision_model():
             build = lambda: _build_vision_graph(
                 pipeline_config=self.pipeline_config,
                 weights=self.weights,
                 huggingface_config=self.huggingface_config,
                 dtype=self.dtype,
             )
-            vision_model_future = executor.submit(
-                build_and_compile_model, build, "vision"
-            )
+            return build_and_compile_model(build, "vision")
 
-            assert isinstance(self.weights, SafetensorWeights), (
-                "weights provided must be SafetensorWeights"
-            )
-
+        def build_text_model():
             build = lambda: _build_text_graph(
                 pipeline_config=self.pipeline_config,
                 weights=self.weights,
@@ -399,11 +396,20 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 huggingface_config=self.huggingface_config,
                 dtype=self.dtype,
             )
-            text_model_future = executor.submit(
-                build_and_compile_model, build, "text"
-            )
+            return build_and_compile_model(build, "text")
 
-            vision_model = vision_model_future.result()
-            text_model = text_model_future.result()
+        assert isinstance(self.weights, SafetensorWeights), (
+            "weights provided must be SafetensorWeights"
+        )
+
+        if _DO_PARALLEL_COMPILATION:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                vision_model_future = executor.submit(build_vision_model)
+                text_model_future = executor.submit(build_text_model)
+                vision_model = vision_model_future.result()
+                text_model = text_model_future.result()
+        else:
+            vision_model = build_vision_model()
+            text_model = build_text_model()
 
         return vision_model, text_model

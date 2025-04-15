@@ -24,8 +24,8 @@ from sys import (
     bitwidthof,
     has_avx512f,
     is_amd_gpu,
-    is_nvidia_gpu,
     is_gpu,
+    is_nvidia_gpu,
     llvm_intrinsic,
     simdwidthof,
     sizeof,
@@ -34,11 +34,10 @@ from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 from sys.info import _current_arch
 
-from bit import count_trailing_zeros, count_leading_zeros
+from bit import count_leading_zeros, count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
-from collections.string import StaticString
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -206,7 +205,9 @@ fn _sqrt_nvvm(x: SIMD) -> __type_of(x):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
-    alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    alias instruction = StaticString(
+        "llvm.nvvm.sqrt.approx.ftz.f"
+    ) if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
@@ -272,7 +273,9 @@ fn _isqrt_nvvm(x: SIMD) -> __type_of(x):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
+    alias instruction = StaticString(
+        "llvm.nvvm.rsqrt.approx.ftz.f"
+    ) if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
@@ -318,7 +321,9 @@ fn _recip_nvvm(x: SIMD) -> __type_of(x):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
+    alias instruction = StaticString(
+        "llvm.nvvm.rcp.approx.ftz.f"
+    ) if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     var res = __type_of(x)()
 
     @parameter
@@ -409,9 +414,9 @@ fn exp2[
 
     @parameter
     if is_amd_gpu() and dtype in (DType.float16, DType.float32):
-        alias asm = "llvm.amdgcn.exp2." + (
-            "f16" if dtype is DType.float16 else "f32"
-        )
+        alias asm = StaticString(
+            "llvm.amdgcn.exp2.f16"
+        ) if dtype is DType.float16 else "llvm.amdgcn.exp2.f32"
         var res = SIMD[dtype, simd_width]()
 
         @parameter
@@ -2355,26 +2360,6 @@ fn clamp(
         upper_bound.
     """
     return val.clamp(lower_bound, upper_bound)
-
-
-# ===----------------------------------------------------------------------=== #
-# next_power_of_two
-# ===----------------------------------------------------------------------=== #
-
-
-fn next_power_of_two(n: Int) -> Int:
-    """Computes the next power of two greater than or equal to the input.
-
-    Args:
-        n: The input value.
-
-    Returns:
-        The next power of two greater than or equal to the input.
-    """
-    if n <= 1:
-        return 1
-
-    return 1 << (bitwidthof[Int]() - count_leading_zeros(n - 1))
 
 
 # ===----------------------------------------------------------------------=== #

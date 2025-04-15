@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 
 from sys import sizeof
+
 from testing import assert_equal
 
 

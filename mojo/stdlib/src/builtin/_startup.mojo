@@ -94,21 +94,6 @@ fn __wrap_and_execute_raising_main[
     return 0
 
 
-fn __wrap_and_execute_object_raising_main[
-    main_func: fn () raises -> object
-](
-    argc: Int32,
-    argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
-) -> Int32:
-    """Define a C-ABI compatible entry point for a raising main function that
-    returns an object."""
-
-    fn wrapped_main() raises:
-        _ = main_func()
-
-    return __wrap_and_execute_raising_main[wrapped_main](argc, argv)
-
-
 # A prototype of the main entry point, used by the compiled when synthesizing
 # main.
 fn __mojo_main_prototype(

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -22,11 +21,7 @@ from max.graph import Graph, TensorType, ops
 
 
 def main():
-    # This is necessary only for Modular internal CI.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    path = Path(__file__).parent / "kernels.mojopkg"
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     dtype = DType.float32
 
@@ -48,7 +43,7 @@ def main():
             TensorType(dtype, shape=[N, D]),
             TensorType(dtype, shape=[N, D]),
         ],
-        custom_extensions=[path],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         q, k, v, *_ = graph.inputs
         results = ops.custom(

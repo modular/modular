@@ -11,28 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import ThroughputMeasure, BenchId, BenchMetric, Bench, Bencher
+from math import iota
+from random import rand
+from sys import has_nvidia_gpu_accelerator, sizeof
+
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from bit import log2_floor
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.top_k import TopK
-from math import iota
 from max.driver import cpu
 from max.tensor import (
-    ManagedTensorSlice,
+    Input,
     InputTensor,
+    IOSpec,
+    ManagedTensorSlice,
+    MutableInput,
+    Output,
     OutputTensor,
     StaticTensorSpec,
-    IOSpec,
-    Input,
-    Output,
-    MutableInput,
 )
-from memory import AddressSpace
-from memory import UnsafePointer
-from random import rand
-from sys import sizeof, has_nvidia_gpu_accelerator
+from memory import AddressSpace, UnsafePointer
+
 from utils import IndexList
 
 
@@ -213,7 +214,7 @@ def matmul():
         var c_dev = _BenchTensor[Output, c_spec](gpu_ctx).rand()
 
         @parameter
-        def bench_matmul_kernel[impl: StringLiteral]():
+        def bench_matmul_kernel[impl: StaticString]():
             @parameter
             @always_inline
             fn bench_gpu(mut bench: Bencher) raises:
@@ -227,7 +228,7 @@ def matmul():
                 bench.iter_custom[kernel_launch](gpu_ctx)
 
             bench.bench_function[bench_gpu](
-                BenchId("gpu", impl), flops, elements
+                BenchId("gpu", String(impl)), flops, elements
             )
 
         bench_matmul_kernel["naive"]()

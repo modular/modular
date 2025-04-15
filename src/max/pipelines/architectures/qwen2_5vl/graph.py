@@ -16,13 +16,15 @@
 from max.dtype import DType
 from max.graph import ops
 from max.graph.weights import Weights
-from max.nn import MLP, Conv3D, Linear, RMSNorm
+from max.nn import MLP, Conv3D, Linear, RMSNorm, Sequential
 from transformers import AutoConfig
 
 from .nn.visual_transformer import (
+    PatchMerger,
     VisionBlock,
     VisionPatchEmbed,
     VisionRotaryEmbedding,
+    VisionTransformer,
     VisionWindowSdpaAttention,
 )
 
@@ -33,7 +35,6 @@ def patch_embed(
     temporal_patch_size: int,
     in_channels: int,
     embed_dim: int,
-    out_channels: int,
     weights: Weights,
 ) -> VisionPatchEmbed:
     kernel_size = (temporal_patch_size, patch_size, patch_size)
@@ -41,7 +42,7 @@ def patch_embed(
         weights.weight.allocate(
             dtype,
             [
-                out_channels,
+                embed_dim,
                 in_channels,
                 temporal_patch_size,
                 patch_size,
@@ -146,30 +147,114 @@ def vision_window_attention(
 
 def vision_transformer_block(
     dtype: DType,
-    huggingface_config: AutoConfig,
+    hidden_size: int,
+    num_heads: int,
+    intermediate_size: int,
+    rms_norm_eps: float,
     weights: Weights,
 ) -> VisionBlock:
     return VisionBlock(
         norm1=rms_norm(
-            huggingface_config.hidden_size,
-            huggingface_config.rms_norm_eps,
+            hidden_size,
+            rms_norm_eps,
             weights.norm1,
         ),
         norm2=rms_norm(
-            huggingface_config.hidden_size,
-            huggingface_config.rms_norm_eps,
+            hidden_size,
+            rms_norm_eps,
             weights.norm2,
         ),
         attn=vision_window_attention(
             dtype,
-            huggingface_config.hidden_size,
-            huggingface_config.num_heads,
+            hidden_size,
+            num_heads,
             weights.attn,
         ),
         mlp=mlp_with_bias(
             dtype,
-            huggingface_config.hidden_size,
-            huggingface_config.intermediate_size,
+            hidden_size,
+            intermediate_size,
             weights.mlp,
         ),
+    )
+
+
+def merger(
+    dtype: DType,
+    hidden_size: int,
+    out_hidden_size: int,
+    spatial_merge_size: int,
+    weights: Weights,
+) -> PatchMerger:
+    norm = rms_norm(hidden_size, 1e-6, weights.ln_q)
+    hidden_size = hidden_size * (spatial_merge_size**2)
+    mlp = Sequential(
+        [
+            linear_with_bias(
+                dtype=dtype,
+                in_features=hidden_size,
+                out_features=hidden_size,
+                weights=weights.mlp[0],
+            ),
+            ops.gelu,  # type: ignore
+            linear_with_bias(
+                dtype=dtype,
+                in_features=hidden_size,
+                out_features=out_hidden_size,
+                weights=weights.mlp[2],
+            ),
+        ]
+    )
+    return PatchMerger(
+        norm=norm,
+        mlp=mlp,
+        dim=out_hidden_size,
+    )
+
+
+def vision_transformer(
+    dtype: DType,
+    huggingface_config: AutoConfig,
+    weights: Weights,
+) -> VisionTransformer:
+    patch_embed_layer = patch_embed(
+        dtype=dtype,
+        patch_size=huggingface_config.vision_config.patch_size,
+        temporal_patch_size=huggingface_config.vision_config.temporal_patch_size,
+        in_channels=huggingface_config.vision_config.in_chans,
+        embed_dim=huggingface_config.vision_config.hidden_size,
+        weights=weights.patch_embed.proj,
+    )
+    rotary_pos_emb_layer = rotary_embedding_3d(
+        hidden_size=huggingface_config.vision_config.hidden_size,
+        num_heads=huggingface_config.vision_config.num_heads,
+        theta=10000.0,
+    )
+    blocks = [
+        vision_transformer_block(
+            dtype=dtype,
+            hidden_size=huggingface_config.vision_config.hidden_size,
+            num_heads=huggingface_config.vision_config.num_heads,
+            intermediate_size=huggingface_config.vision_config.intermediate_size,
+            rms_norm_eps=1e-6,
+            weights=weights.blocks[i],
+        )
+        for i in range(huggingface_config.vision_config.depth)
+    ]
+    merger_layer = merger(
+        dtype=dtype,
+        hidden_size=huggingface_config.vision_config.hidden_size,
+        out_hidden_size=huggingface_config.vision_config.out_hidden_size,
+        spatial_merge_size=huggingface_config.vision_config.spatial_merge_size,
+        weights=weights.merger,
+    )
+
+    return VisionTransformer(
+        patch_embed=patch_embed_layer,
+        rotary_pos_emb=rotary_pos_emb_layer,
+        blocks=blocks,
+        fullatt_block_indexes=huggingface_config.vision_config.fullatt_block_indexes,
+        spatial_merge_unit=huggingface_config.vision_config.spatial_merge_size
+        * huggingface_config.vision_config.spatial_merge_size,
+        merger=merger_layer,
     )

@@ -19,7 +19,8 @@ from collections.abc import Sequence
 from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
-from max.pipelines.interfaces import LogProbabilities
+
+from .interfaces import LogProbabilities, TextGenerationStatus
 
 CHUNK_SIZE = 128
 
@@ -41,6 +42,8 @@ class InputContext(Protocol):
     - preallocated: The token slots that have been preallocated. The token array
                     resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
     """
+
+    def set_draft_offset(self, idx: int) -> None: ...
 
     @property
     def ignore_eos(self) -> bool: ...
@@ -109,7 +112,7 @@ class InputContext(Protocol):
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         ...
 
-    def jump_ahead(self, new_token: int) -> None:
+    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
         ...
 
@@ -131,6 +134,10 @@ class InputContext(Protocol):
         committed_idx: Optional[int] = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
+        ...
+
+    def rollback(self, idx: int) -> None:
+        """Rollback and remove the last idx tokens."""
         ...
 
     @property
@@ -237,6 +244,9 @@ class TextContext:
         self.json_schema = json_schema
         self.is_initial_prompt = True
         self.ignore_eos = ignore_eos
+        self.active_status = TextGenerationStatus.ACTIVE
+
+        self._draft_offset = 0
 
     @property
     def start_idx(self) -> int:
@@ -256,6 +266,29 @@ class TextContext:
 
     def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         self.matcher = matcher
+
+    def rollback(self, idx: int) -> None:
+        new_active_idx = self.active_idx - idx
+        new_start_idx = self._start_idx
+
+        if self._start_idx >= new_active_idx:
+            new_start_idx = new_active_idx - 1
+
+        if new_start_idx < 0:
+            raise ValueError("cannot rollback before the start of the array")
+
+        self._start_idx = new_start_idx
+        self._active_idx = new_active_idx
+        self._end_idx = new_active_idx
+
+        # If the new active_idx is less than the completion end idx
+        # and current status suggests we have hit an EOS token
+        # reset the status
+        if self._active_idx < self._completion_end_idx:
+            self._completion_end_idx = new_active_idx
+
+            if self.active_status == TextGenerationStatus.END_OF_SEQUENCE:
+                self.active_status = TextGenerationStatus.ACTIVE
 
     @property
     def current_length(self) -> int:
@@ -331,6 +364,9 @@ class TextContext:
     def next_tokens(self) -> np.ndarray:
         return self._tokens[self._start_idx : self._active_idx]
 
+    def set_draft_offset(self, idx: int) -> None:
+        self._draft_offset = idx
+
     @property
     def tokens(self) -> np.ndarray:
         return self._tokens[: self._end_idx]
@@ -367,7 +403,10 @@ class TextContext:
         self._active_idx += 1
         self._end_idx += 1
 
-        if not is_eos:
+        if is_eos:
+            self.active_status = TextGenerationStatus.END_OF_SEQUENCE
+
+        if self.active_status == TextGenerationStatus.ACTIVE:
             self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
@@ -376,7 +415,7 @@ class TextContext:
 
         self.is_initial_prompt = False
 
-    def jump_ahead(self, new_token: int) -> None:
+    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
 
         self._upsize()
@@ -387,7 +426,12 @@ class TextContext:
         # Bump Indices
         self._active_idx += 1
         self._end_idx += 1
-        self._completion_end_idx += 1
+
+        if is_eos:
+            self.active_status = TextGenerationStatus.END_OF_SEQUENCE
+
+        if self.active_status == TextGenerationStatus.ACTIVE:
+            self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
@@ -423,6 +467,7 @@ class TextContext:
             )
 
         self._completion_start_idx = self._completion_end_idx
+        self.active_status = TextGenerationStatus.ACTIVE
 
         return res
 

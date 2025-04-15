@@ -40,7 +40,6 @@ Messages below the configured level will be silently ignored.
 import sys
 from os import abort
 from sys.param_env import env_get_string
-from collections.string import StringSlice
 
 from utils import write_args
 

@@ -13,13 +13,13 @@
 
 
 from max.graph.weights import WeightsFormat
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
-    PipelineTask,
     SupportedArchitecture,
     SupportedEncoding,
     TextAndVisionTokenizer,
 )
-from max.pipelines.kv_cache import KVCacheStrategy
+from max.pipelines.core import PipelineTask
 
 from .model import Qwen2_5VLModel
 

@@ -37,7 +37,6 @@ class ContinuousHFStaticCache(StaticCache):
             max_seq_len,
             device,
             dtype,
-            None,
             layer_device_map,
         )
         self.max_batch_size = max_batch_size

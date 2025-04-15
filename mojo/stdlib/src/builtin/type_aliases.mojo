@@ -95,17 +95,15 @@ struct Origin[is_mutable: Bool]:
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    # NOTE:
-    #   Needs to be @implicit convertible for the time being so that
-    #   `__origin_of(..)` can implicilty convert to `Origin` in use cases like:
-    #       Span[Byte, __origin_of(self)]
+    @doc_private
     @implicit
     @always_inline("builtin")
     fn __init__(out self, mlir_origin: Self._mlir_type):
         """Initialize an Origin from a raw MLIR `!lit.origin` value.
 
         Args:
-            mlir_origin: The raw MLIR origin value."""
+            mlir_origin: The raw MLIR origin value.
+        """
         self._mlir_origin = mlir_origin
 
 

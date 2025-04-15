@@ -17,7 +17,6 @@ from collections import Dict
 
 from python import Python, PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
-from utils import StaticString
 
 
 def test_dunder_methods(mut python: Python):
@@ -255,6 +254,12 @@ def test_dunder_methods(mut python: Python):
     assert_equal(c, -35)
 
 
+def test_num_conversion() -> None:
+    alias n = UInt64(0xFEDC_BA09_8765_4321)
+    alias n_str = String(n)
+    assert_equal(n_str, String(PythonObject(n)))
+
+
 def test_bool_conversion() -> None:
     var x: PythonObject = 1
     assert_true(x == 0 or x == 1)
@@ -286,9 +291,8 @@ fn test_string_conversions() raises -> None:
             print("Error occurred")
 
     fn test_type_object() raises -> None:
-        var py = Python()
         var py_float = PythonObject(3.14)
-        var type_obj = py.type(py_float)
+        var type_obj = Python.type(py_float)
         assert_equal(String(type_obj), "<class 'float'>")
 
     test_string_literal()
@@ -328,17 +332,17 @@ def test_is():
 
 
 def test_nested_object():
-    var a = PythonObject([1, 2, 3])
-    var b = PythonObject([4, 5, 6])
-    var nested_list = PythonObject([a, b])
-    var nested_tuple = PythonObject((a, b))
+    var a = Python.list(1, 2, 3)
+    var b = Python.list(4, 5, 6)
+    var nested_list = Python.list(a, b)
+    var nested_tuple = Python.tuple(a, b)
 
     assert_equal(String(nested_list), "[[1, 2, 3], [4, 5, 6]]")
     assert_equal(String(nested_tuple), "([1, 2, 3], [4, 5, 6])")
 
 
 fn test_iter() raises:
-    var list_obj: PythonObject = ["apple", "orange", "banana"]
+    var list_obj = Python.list("apple", "orange", "banana")
     var i = 0
     for fruit in list_obj:
         if i == 0:
@@ -349,13 +353,13 @@ fn test_iter() raises:
             assert_equal(fruit, "banana")
         i += 1
 
-    var list2: PythonObject = []
-    for fruit in list2:
+    var list2 = Python.list()
+    for _ in list2:
         raise Error("This should not be reachable as the list is empty.")
 
     var not_iterable: PythonObject = 3
     with assert_raises():
-        for x in not_iterable:
+        for _ in not_iterable:
             assert_false(
                 True,
                 msg=(
@@ -366,7 +370,7 @@ fn test_iter() raises:
 
 
 fn test_setitem() raises:
-    var ll = PythonObject([1, 2, 3, "food"])
+    var ll = Python.list(1, 2, 3, "food")
     assert_equal(String(ll), "[1, 2, 3, 'food']")
     ll[1] = "nomnomnom"
     assert_equal(String(ll), "[1, 'nomnomnom', 3, 'food']")
@@ -480,12 +484,12 @@ def test_setitem_raises():
 
     d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
-        d[[1, 2, 3]] = 5
+        d[Python.list(1, 2, 3)] = 5
 
 
 fn test_py_slice() raises:
     custom_indexable = Python.import_module("custom_indexable")
-    var a = PythonObject([1, 2, 3, 4, 5])
+    var a = Python.list(1, 2, 3, 4, 5)
     assert_equal("[2, 3]", String(a[1:3]))
     assert_equal("[1, 2, 3, 4, 5]", String(a[:]))
     assert_equal("[1, 2, 3]", String(a[:3]))
@@ -516,11 +520,11 @@ fn test_py_slice() raises:
     assert_equal("Hlo ol!", String(s[::2]))
     assert_equal("Hlo ol!", String(s[None:None:2]))
 
-    var t = PythonObject((1, 2, 3, 4, 5))
+    var t = Python.tuple(1, 2, 3, 4, 5)
     assert_equal("(2, 3, 4)", String(t[1:4]))
     assert_equal("(4, 3, 2)", String(t[3:0:-1]))
 
-    var empty = PythonObject([])
+    var empty = Python.list()
     assert_equal("[]", String(empty[:]))
     assert_equal("[]", String(empty[1:2:3]))
 
@@ -567,14 +571,14 @@ def test_contains_dunder():
         var z = PythonObject(0)
         _ = 5 in z
 
-    var x = PythonObject([1.1, 2.2])
+    var x = Python.list(1.1, 2.2)
     assert_true(1.1 in x)
     assert_false(3.3 in x)
 
-    x = PythonObject(["Hello", "World"])
+    x = Python.list("Hello", "World")
     assert_true("World" in x)
 
-    x = PythonObject((1.5, 2))
+    x = Python.tuple(1.5, 2)
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
@@ -592,6 +596,7 @@ def main():
     var python = Python()
 
     test_dunder_methods(python)
+    test_num_conversion()
     test_bool_conversion()
     test_string_conversions()
     test_len()

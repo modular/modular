@@ -1027,7 +1027,7 @@ fn test_str_and_repr() raises:
     assert_equal(q.__str__(), "Deque(1, 2, 3)")
     assert_equal(q.__repr__(), "Deque(1, 2, 3)")
 
-    s = Deque("a", "b", "c")
+    s = Deque[StaticString]("a", "b", "c")
 
     assert_equal(s.__str__(), "Deque('a', 'b', 'c')")
     assert_equal(s.__repr__(), "Deque('a', 'b', 'c')")

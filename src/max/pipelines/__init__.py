@@ -18,14 +18,17 @@ from typing import Union as _Union
 
 from .config import PipelineConfig
 from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
-from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceFile, download_weight_files
-from .interfaces import (
+from .core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
+    InputContext,
     LogProbabilities,
+    PipelinesFactory,
     PipelineTask,
-    PipelineTokenizer,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationResponse,
+    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
     TokenGeneratorContext,
@@ -35,13 +38,20 @@ from .interfaces import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+from .embeddings_pipeline import EmbeddingsPipeline
+from .hf_utils import (
+    HuggingFaceFile,
+    download_weight_files,
+    repo_exists_with_retry,
+)
 from .log_probabilities import compute_log_probabilities
 from .max_config import (
     KVCacheConfig,
-    MAXModelConfig,
     ProfilingConfig,
     SamplingConfig,
 )
+from .memory_estimation import MEMORY_ESTIMATOR
+from .model_config import MAXModelConfig
 from .pipeline import (
     ModelInputs,
     ModelOutputs,
@@ -53,13 +63,11 @@ from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
+    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
-
-PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
-
 
 __all__ = [
     "LogProbabilities",
@@ -72,6 +80,7 @@ __all__ = [
     "PipelineTask",
     "PIPELINE_REGISTRY",
     "SamplingConfig",
+    "MEMORY_ESTIMATOR",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TokenGenerator",
@@ -101,4 +110,6 @@ __all__ = [
     "compute_log_probabilities",
     "upper_bounded_default",
     "download_weight_files",
+    "repo_exists_with_retry",
+    "PipelinesFactory",
 ]

@@ -16,8 +16,8 @@ from memory import AddressSpace, UnsafePointer
 from test_utils import (
     ExplicitCopyOnly,
     MoveCounter,
-    ObservableMoveOnly,
     ObservableDel,
+    ObservableMoveOnly,
 )
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
@@ -232,9 +232,7 @@ def test_unsafepointer_alloc_origin():
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
     #   MutableAnyOrigin pointer that interferes with this test.
-    var obj_2 = ObservableDel[__origin_of(did_del_2)](
-        UnsafePointer(to=did_del_2)
-    )
+    _ = ObservableDel[__origin_of(did_del_2)](UnsafePointer(to=did_del_2))
 
     # `obj_2` is ASAP destroyed, since `ptr_2` origin does not keep it alive.
     assert_true(did_del_2)

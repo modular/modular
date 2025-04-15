@@ -31,7 +31,7 @@ The `StringSlice` type is particularly useful for:
 
 Example:
     ```mojo
-    from collections.string import StringSlice
+    
 
     # Create a string slice
     var text = StringSlice("Hello, 世界")
@@ -49,30 +49,33 @@ Example:
 """
 
 from collections import List, Optional
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string._utf8 import (
-    _is_valid_utf8,
-    _count_utf8_continuation_bytes,
-    _utf8_first_byte_sequence_length,
-    _utf8_byte_type,
-    _is_newline_char_utf8,
-)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
     to_uppercase,
 )
+from collections.string._utf8 import (
+    _count_utf8_continuation_bytes,
+    _is_newline_char_utf8,
+    _is_valid_utf8,
+    _utf8_byte_type,
+    _utf8_first_byte_sequence_length,
+)
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib._hasher import _HashableWithHasher, _Hasher
+from math import align_down
 from os import PathLike, abort
-from sys import bitwidthof, simdwidthof, is_compile_time
+from sys import bitwidthof, is_compile_time, simdwidthof
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
-from math import align_down
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
+from python import PythonObject, PythonObjectible
+
+from utils.write import _WriteBufferStack
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -181,7 +184,7 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice, Codepoint
+        from collections.string import Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
@@ -225,7 +228,7 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice, Codepoint
+        from collections.string import Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
@@ -392,7 +395,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]]:
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice, Codepoint
+        from collections.string import Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
@@ -459,6 +462,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     FloatableRaising,
     Boolable,
     IntableRaising,
+    PythonObjectible,
     RepresentableCollectionElement,
     EqualityComparableCollectionElement,
     _CurlyEntryFormattable,
@@ -477,11 +481,43 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         UTF-8.
     """
 
+    # Aliases
+    alias Mutable = StringSlice[MutableOrigin.cast_from[origin].result]
+    """The mutable version of the `StringSlice`."""
+    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin].result]
+    """The immutable version of the `StringSlice`."""
+    # Fields
     var _slice: Span[Byte, origin]
 
     # ===------------------------------------------------------------------===#
     # Initializers
     # ===------------------------------------------------------------------===#
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(
+        other: StringSlice,
+        out self: StringSlice[ImmutableOrigin.cast_from[other.origin].result],
+    ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The Span to cast.
+        """
+        self = rebind[__type_of(self)](other)
+
+    @doc_private
+    @always_inline
+    @implicit
+    fn __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
+        # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
+        # encoded, they can be arbitrary binary data.
+        var length: Int = __mlir_op.`pop.string.size`(_kgen)
+        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
+            Byte
+        ]()
+        self._slice = Span[Byte, StaticConstantOrigin](ptr=ptr, length=length)
 
     @always_inline
     @implicit
@@ -491,14 +527,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             lit: The literal to construct this `StringSlice` from.
         """
-        # Since a StringLiteral has static origin, it will outlive
+        # Since a StaticString has static origin, it will outlive
         # whatever arbitrary `origin` the user has specified they need this
         # slice to live for.
         # SAFETY:
-        #   StringLiteral is guaranteed to use UTF-8 encoding.
+        #   StaticString is guaranteed to use UTF-8 encoding.
         # FIXME(MSTDL-160):
         #   Ensure StringLiteral _actually_ always uses UTF-8 encoding.
-        self = StaticString(unsafe_from_utf8=lit.as_bytes())
+        self = StaticString(lit.value)
 
     @always_inline("builtin")
     fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
@@ -700,7 +736,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("ನಮಸ್ಕಾರ")
@@ -713,7 +749,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Unicode codepoint length:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("abc")
@@ -810,6 +846,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             raise Error(msg^)
 
         return Self(unsafe_from_utf8=self._slice[span])
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
@@ -1013,7 +1057,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
 
         var buffer = List[Byte](capacity=self.byte_length() * n + 1)
-        for i in range(n):
+        for _ in range(n):
             buffer.extend(self.as_bytes())
         buffer.append(0)
         return String(buffer=buffer)
@@ -1021,6 +1065,84 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
+
+    @always_inline
+    fn get_immutable(self) -> Self.Immutable:
+        """Return an immutable version of this Span.
+
+        Returns:
+            An immutable version of the same Span.
+        """
+        return rebind[Self.Immutable](self)
+
+    fn replace(self, old: StringSlice, new: StringSlice) -> String:
+        """Return a copy of the string with all occurrences of substring `old`
+        if replaced by `new`.
+
+        Args:
+            old: The substring to replace.
+            new: The substring to replace with.
+
+        Returns:
+            The string where all occurrences of `old` are replaced with `new`.
+        """
+        if not old:
+            return self._interleave(new)
+
+        var occurrences = self.count(old)
+        if occurrences == -1:
+            return String(self)
+
+        var self_start = self.unsafe_ptr()
+        var self_ptr = self.unsafe_ptr()
+        var new_ptr = new.unsafe_ptr()
+
+        var self_len = self.byte_length()
+        var old_len = old.byte_length()
+        var new_len = new.byte_length()
+
+        var res = String._buffer_type()
+        res.reserve(self_len + (old_len - new_len) * occurrences + 1)
+
+        for _ in range(occurrences):
+            var curr_offset = Int(self_ptr) - Int(self_start)
+
+            var idx = self.find(old, curr_offset)
+
+            debug_assert(idx >= 0, "expected to find occurrence during find")
+
+            # Copy preceding unchanged chars
+            for _ in range(curr_offset, idx):
+                res.append(self_ptr[])
+                self_ptr += 1
+
+            # Insert a copy of the new replacement string
+            for i in range(new_len):
+                res.append(new_ptr[i])
+
+            self_ptr += old_len
+
+        while True:
+            var val = self_ptr[]
+            if val == 0:
+                break
+            res.append(self_ptr[])
+            self_ptr += 1
+
+        res.append(0)
+        return String(res^)
+
+    fn _interleave(self, val: StringSlice) -> String:
+        var res = String._buffer_type()
+        var val_ptr = val.unsafe_ptr()
+        var self_ptr = self.unsafe_ptr()
+        res.reserve(val.byte_length() * self.byte_length() + 1)
+        for i in range(self.byte_length()):
+            for j in range(val.byte_length()):
+                res.append(val_ptr[j])
+            res.append(self_ptr[i])
+        res.append(0)
+        return String(res^)
 
     fn split[
         sep_mut: Bool,
@@ -1065,7 +1187,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         var str_byte_len = self.byte_length() - 1
         var lhs = 0
-        var rhs = 0
         var items = 0
         var sep_len = sep.byte_length()
         if sep_len == 0:
@@ -1074,7 +1195,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             output.append(String(""))
 
         while lhs <= str_byte_len:
-            rhs = self.find(sep, lhs)
+            var rhs = self.find(sep, lhs)
             if rhs == -1:
                 output.append(String(self[lhs:]))
                 break
@@ -1133,7 +1254,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var output = List[StringSlice[origin]]()
         var str_byte_len = self.byte_length() - 1
         var lhs = 0
-        var rhs = 0
         var items = 0
         while lhs <= str_byte_len:
             try:
@@ -1152,7 +1272,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     # if the last char is not whitespace
                     output.append(self[str_byte_len:])
                     break
-                rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
+                var rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
                 for s in self[
                     lhs + num_bytes(self.unsafe_ptr()[lhs]) :
                 ].codepoint_slices():
@@ -1332,7 +1452,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Print the characters in a string:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("abc")
@@ -1347,7 +1467,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         codepoints:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         # A visual character composed of a combining sequence of 2 codepoints.
@@ -1418,7 +1538,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("ನಮಸ್ಕಾರ")
@@ -1431,7 +1551,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Unicode codepoint length:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("abc")
@@ -1444,7 +1564,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         the length in Unicode codepoints, not grapheme clusters:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("á")
@@ -1488,7 +1608,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Check if particular byte positions are codepoint boundaries:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal, assert_true
         var abc = StringSlice("abc")
         assert_equal(len(abc), 3)
@@ -1534,7 +1654,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         The following program verifies the above diagram:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_true, assert_false
 
         var text = StringSlice("a©➇𝄞")
@@ -1560,20 +1680,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
         return _utf8_byte_type(byte) != 1
-
-    fn get_immutable(
-        self,
-    ) -> StringSlice[ImmutableOrigin.cast_from[origin].result]:
-        """
-        Return an immutable version of this string slice.
-
-        Returns:
-            A string slice covering the same elements, but without mutability.
-        """
-        return StringSlice[ImmutableOrigin.cast_from[origin].result](
-            ptr=self._slice.unsafe_ptr(),
-            length=len(self),
-        )
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -1781,7 +1887,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Check if a string contains only whitespace:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
@@ -2047,10 +2153,105 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var result = String(buffer=buffer)
         return result^
 
+    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            T: The types of the elements.
+
+        Args:
+            elems: The input values.
+
+        Returns:
+            The joined string.
+        """
+        var string = String()
+        var buffer = _WriteBufferStack(string)
+        for i in range(len(elems)):
+            buffer.write(elems[i])
+            if i < len(elems) - 1:
+                buffer.write(self)
+        buffer.flush()
+        return string
+
+    # TODO(MOCO-1791): The corresponding String.__init__ is limited to
+    # StaticString. This is because default arguments and param inference aren't
+    # powerful enough to declare sep/end as StringSlice.
+    fn join[*Ts: Writable](self: StaticString, *elems: *Ts) -> String:
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            Ts: The types of the elements.
+
+        Args:
+            elems: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return String(elems, sep=self)
+
 
 # ===-----------------------------------------------------------------------===#
 # Utils
 # ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn _get_kgen_string[
+    string: StaticString, *extra: StaticString
+]() -> __mlir_type.`!kgen.string`:
+    """Form a `!kgen.string` from compile-time StringSlice values concatenated.
+
+    Parameters:
+        string: The first StringSlice value.
+        extra: Additional StringSlice values to concatenate.
+
+    Returns:
+        The string value as a `!kgen.string`.
+    """
+    return _get_kgen_string[string, extra]()
+
+
+@always_inline("nodebug")
+fn _get_kgen_string[
+    string: StaticString, extra: VariadicList[StaticString]
+]() -> __mlir_type.`!kgen.string`:
+    """Form a `!kgen.string` from compile-time StringSlice values concatenated.
+
+    Parameters:
+        string: The first string slice to use.
+        extra: Additional string slices to concatenate.
+
+    Returns:
+        The string value as a `!kgen.string`.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<data_to_str,`,
+        string,
+        `,`,
+        extra.value,
+        `> : !kgen.string`,
+    ]
+
+
+@always_inline("nodebug")
+fn get_static_string[
+    string: StaticString, *extra: StaticString
+]() -> StaticString:
+    """Form a StaticString from compile-time StringSlice values. This
+    guarantees that the returned string is compile-time constant in static
+    memory.  It also guarantees that there is a 'nul' zero byte at the end,
+    which is not included in the returned range.
+
+    Parameters:
+        string: The first StringSlice value.
+        extra: Additional StringSlice values to concatenate.
+
+    Returns:
+        The string value as a StaticString.
+    """
+    return _get_kgen_string[string, extra]()
 
 
 fn _to_string_list[

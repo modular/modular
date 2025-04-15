@@ -42,6 +42,7 @@ from .linear import (
 )
 from .norm import DistributedRMSNorm, LayerNorm, LayerNormV2, RMSNorm, RMSNormV2
 from .rotary_embedding import (
+    LinearScalingParams,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
     OptimizedRotaryEmbedding,
@@ -53,6 +54,7 @@ from .transformer import (
     DistributedTransformerBlock,
     NaiveTransformer,
     NaiveTransformerBlock,
+    ReturnLogits,
     Transformer,
     TransformerBlock,
 )
@@ -87,6 +89,9 @@ __all__ = [
     "LayerNormV2",
     "Linear",
     "LinearV2",
+    "LinearScalingParams",
+    "Llama3RopeScalingParams",
+    "Llama3RotaryEmbedding",
     "MHAMaskVariant",
     "MLP",
     "MLPV2",
@@ -98,6 +103,7 @@ __all__ = [
     "RMSNorm",
     "RMSNormV2",
     "RotaryEmbedding",
+    "ReturnLogits",
     "Sequential",
     "Signals",
     "Transformer",

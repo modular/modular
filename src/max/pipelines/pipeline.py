@@ -25,7 +25,6 @@ from typing import (
     Optional,
     Protocol,
     TypeVar,
-    cast,
     runtime_checkable,
 )
 
@@ -40,11 +39,14 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
+    KVCacheManager,
+    KVCacheParams,
     infer_optimal_batch_size,
 )
+from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
@@ -52,16 +54,15 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .config_enums import SupportedEncoding
-from .context import InputContext
-from .hf_utils import download_weight_files
-from .interfaces import (
+from .core import (
+    InputContext,
     LogProbabilities,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
-from .kv_cache import KVCacheManager, KVCacheParams
+from .hf_utils import download_weight_files
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
@@ -79,13 +80,6 @@ except ImportError:
     pass
 
 logger = logging.getLogger("max.pipelines")
-
-ARCH_SAFE_VRAM_USAGE_LIMIT = {
-    "DeepseekCoder": 0.96,
-    "ExaoneForCausalLM": 0.96,
-    "LlamaForCausalLM": 0.96,
-    "MistralForCausalLM": 0.96,
-}
 
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:
@@ -118,23 +112,27 @@ class ModelInputs:
     Use this class to encapsulate inputs for your model.
     You may store any number of dataclass fields
 
-    Example:
-        >>> class ReplitInputs(ModelInputs):
-        ...     tokens: Tensor
-        ...     input_row_offsets: Tensor
-        ...
-        ...     def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
-        ...         self.tokens = tokens
-        ...         self.input_row_offsets = input_row_offsets
-        ...
-        >>> # Create tensors
-        >>> tokens = Tensor.zeros((1, 2, 3), DType.int64)
-        >>> input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
-        >>> # Initialize inputs
-        >>> inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
-        >>> # Access tensors
-        >>> list(inputs) == [tokens, input_row_offsets]
-        True
+    The following example demonstrates how to create a custom inputs class for a model:
+
+    .. code-block:: python
+
+        class ReplitInputs(ModelInputs):
+            tokens: Tensor
+            input_row_offsets: Tensor
+
+            def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
+                self.tokens = tokens
+                self.input_row_offsets = input_row_offsets
+
+        # Create tensors
+        tokens = Tensor.zeros((1, 2, 3), DType.int64)
+        input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
+
+        # Initialize inputs
+        inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
+
+        # Access tensors
+        list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
     kv_cache_inputs: KVCacheInputs | None = None
@@ -165,13 +163,16 @@ class PipelineModel(ABC, Generic[T]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
+        # TODO: This is no longer necessary inside PipelineModel since it can be
+        # inferred directly from model_config, remove it and from
+        # other PipelineModel methods that depend on it.
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter],
-        return_n_logits: int,
+        return_logits: ReturnLogits,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -180,7 +181,7 @@ class PipelineModel(ABC, Generic[T]):
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
-        self.return_n_logits = return_n_logits
+        self.return_logits = return_logits
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -199,24 +200,32 @@ class PipelineModel(ABC, Generic[T]):
         """Calculate the optimal max sequence length for the model.
         Models are expected to implement this method.
 
-        Example:
-            >>> class MistralModel(PipelineModel):
-            ...     @classmethod
-            ...     def calculate_max_seq_len(cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig) -> int:
-            ...         try:
-            ...             return upper_bounded_default(
-            ...                 upper_bound=huggingface_config.max_seq_len,
-            ...                 default=pipeline_config.max_length,
-            ...             )
-            ...         except ValueError as e:
-            ...             msg = (
-            ...                 "Unable to infer max_length for Mistral, the provided "
-            ...                 f"max_length ({pipeline_config.max_length}) exceeds the "
-            ...                 f"model's max_seq_len "
-            ...                 f"({huggingface_config.max_seq_len})."
-            ...             )
-            ...             raise ValueError(msg) from e
-            ...
+        The following example shows how to implement this method for a Mistral model:
+
+        .. code-block:: python
+
+            class MistralModel(PipelineModel):
+                @classmethod
+                def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
+                    try:
+                        return upper_bounded_default(
+                            upper_bound=huggingface_config.max_seq_len,
+                            default=pipeline_config.max_length,
+                        )
+                    except ValueError as e:
+                        msg = (
+                            "Unable to infer max_length for Mistral, the provided "
+                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"model's max_seq_len ({huggingface_config.max_seq_len})."
+                        )
+                        raise ValueError(msg) from e
+
+        Args:
+            pipeline_config: Configuration for the pipeline.
+            huggingface_config: Hugging Face model configuration.
+
+        Returns:
+            int: The maximum sequence length to use.
         """
         raise NotImplementedError(
             "PipelineModel must implement calculate_max_seq_len"
@@ -324,6 +333,7 @@ class PipelineModel(ABC, Generic[T]):
         self,
         context_batch: Sequence[T],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
 
@@ -427,15 +437,17 @@ class TextGenerationPipeline(TokenGenerator[T]):
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         self._pipeline_config = pipeline_config
-        self._huggingface_config: Optional[AutoConfig] = None
         self._devices = load_devices(pipeline_config.model_config.device_specs)
         self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
         if self._pipeline_config.ignore_eos:
             self._eos_token_id = set([])
-        elif "eos_token_id" in self.huggingface_config:
-            eos_tokens = self.huggingface_config.eos_token_id
+        elif (
+            "eos_token_id"
+            in self._pipeline_config.model_config.huggingface_config
+        ):
+            eos_tokens = self._pipeline_config.model_config.huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
                     msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
@@ -499,7 +511,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             filenames=[
                 str(x) for x in self._pipeline_config.model_config.weight_path
             ],
-            revision=self._pipeline_config.model_config.huggingface_revision,
+            revision=self._pipeline_config.model_config.huggingface_weight_revision,
             force_download=self._pipeline_config.model_config.force_download,
         )
 
@@ -510,29 +522,21 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self.huggingface_config,
+            huggingface_config=self._pipeline_config.model_config.huggingface_config,
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
             adapter=self._weight_adapters.get(_weight_format, None),
-            return_n_logits=-1 if self._pipeline_config.enable_echo else 1,
+            return_logits=ReturnLogits.ALL
+            if self._pipeline_config.enable_echo
+            else ReturnLogits.LAST_TOKEN,
         )
 
         # Load sampler.
         self._sampler = session.load(
             token_sampler(self._pipeline_config.sampling_config),
         )
-
-    @property
-    def huggingface_config(self) -> AutoConfig:
-        if not self._huggingface_config:
-            self._huggingface_config = AutoConfig.from_pretrained(
-                self._pipeline_config.model_config.model_path,
-                trust_remote_code=self._pipeline_config.model_config.trust_remote_code,
-            )
-
-        return self._huggingface_config
 
     def calculate_num_steps(
         self,
@@ -541,7 +545,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> int:
         max_seq_len = self._pipeline_model.calculate_max_seq_len(
             self._pipeline_config,
-            huggingface_config=self.huggingface_config,
+            huggingface_config=self._pipeline_config.model_config.huggingface_config,
         )
         num_available_steps = context.compute_num_available_steps(max_seq_len)
 
@@ -633,7 +637,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
-            cast(list[InputContext], batch), num_steps
+            batch, num_steps
         )
 
         return (
@@ -696,8 +700,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Multistep execution loop.
         tracer.next("allocate_generated_tokens")
-        generated_tokens = Tensor.zeros(
-            (len(context_batch), 0),
+        generated_tokens = Tensor(
+            shape=(len(context_batch), 0),
             dtype=DType.int64,
             device=self._devices[0],
         )
@@ -823,7 +827,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 max_length = upper_bounded_default(
                     upper_bound=self._pipeline_model.calculate_max_seq_len(
                         self._pipeline_config,
-                        huggingface_config=self.huggingface_config,
+                        huggingface_config=self._pipeline_config.model_config.huggingface_config,
                     ),
                     default=context.max_length,
                 )
@@ -845,9 +849,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
-        )
+        self._pipeline_model.kv_manager.step(context_batch)
         tracer.pop()  # pops kv_manager.step
 
         return res

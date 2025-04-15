@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Optional, cast
 import numpy as np
 import torch
 from max.driver import Tensor
+from max.nn.kv_cache import ContinuousHFStaticCache
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -32,16 +33,15 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from .context import TextContext
-from .interfaces import (
+from .core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
+    TextContext,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
-from .kv_cache import ContinuousHFStaticCache
 
 logger = logging.getLogger("max.pipelines")
 
@@ -61,7 +61,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         self._huggingface_config = AutoConfig.from_pretrained(
             pipeline_config.model_config.model_path,
             trust_remote_code=pipeline_config.model_config.trust_remote_code,
-            revision=pipeline_config.model_config.huggingface_revision,
+            revision=pipeline_config.model_config.huggingface_model_revision,
         )
 
         self._model = AutoModelForCausalLM.from_pretrained(
@@ -201,9 +201,9 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
 
                 # Update context
                 context.update(next_token_id)
-                next_tokens = np.array([next_token_id])
+                next_token = np.array([next_token_id])
                 self._cache.tokens[context.cache_seq_id] = np.append(
-                    self._cache.tokens[context.cache_seq_id], next_tokens
+                    self._cache.tokens[context.cache_seq_id], next_token
                 )
 
                 max_length = (

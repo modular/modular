@@ -15,6 +15,7 @@
 import os
 from pathlib import DIR_SEPARATOR, Path, cwd
 from sys import env_get_string, os_is_windows
+from tempfile import NamedTemporaryFile, gettempdir
 
 from builtin._location import __source_location
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
@@ -87,6 +88,14 @@ def test_read_write():
     assert_equal(Path(TEMP_FILE).read_text(), "hello")
 
 
+def test_read_write_bytes():
+    alias data = "hello world".as_bytes()
+    with NamedTemporaryFile() as tmp:
+        var file = Path(tmp.name)
+        file.write_bytes(data)
+        assert_equal(List[Byte](data), file.read_bytes())
+
+
 fn get_user_path() -> Path:
     @parameter
     if os_is_windows():
@@ -153,10 +162,12 @@ def test_stat():
     var stat = path.stat()
     assert_equal(
         String(stat),
-        "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
-        " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
-        " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
-        " st_rdev={}, st_flags={})".format(
+        StaticString(
+            "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
+            " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
+            " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
+            " st_rdev={}, st_flags={})"
+        ).format(
             stat.st_mode,
             stat.st_ino,
             stat.st_dev,

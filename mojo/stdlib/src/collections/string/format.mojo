@@ -72,7 +72,7 @@ from utils import Variant
 @value
 struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
     """The struct that handles string formatting by curly braces entries.
-    This is internal for the types: `String`, `StringLiteral` and `StringSlice`.
+    This is internal for the types: `StringSlice` compatible types.
     """
 
     var first_curly: Int
@@ -433,7 +433,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                         res += data
 
         if self.is_escaped_brace():
-            res += "}" if self.field[Bool] else "{"
+            res += StaticString("}") if self.field[Bool] else "{"
         elif self.is_manual_indexing():
             _format(self.field[Int])
         elif self.is_automatic_indexing():
@@ -693,7 +693,6 @@ struct _FormatSpec(CollectionElement):
         var idx = 0
         while idx < f_len:
             if f_ptr[idx] == `:`:
-                exclamation_index = idx
                 break
             idx += 1
 
@@ -722,14 +721,14 @@ struct _FormatSpec(CollectionElement):
             res: The resulting String.
             item: The item to stringify.
         """
-        var type_implements_format_write = True  # TODO
-        var type_implements_format_write_raising = True  # TODO
-        var type_implements_format = True  # TODO
-        var type_implements_format_raising = True  # TODO
-        var type_implements_float = True  # TODO
-        var type_implements_float_raising = True  # TODO
-        var type_implements_int = True  # TODO
-        var type_implements_int_raising = True  # TODO
+        # var type_implements_format_write = True  # TODO
+        # var type_implements_format_write_raising = True  # TODO
+        # var type_implements_format = True  # TODO
+        # var type_implements_format_raising = True  # TODO
+        # var type_implements_float = True  # TODO
+        # var type_implements_float_raising = True  # TODO
+        # var type_implements_int = True  # TODO
+        # var type_implements_int_raising = True  # TODO
 
         # TODO: send to the type's  __format__ method if it has one
         # TODO: transform to int/float depending on format spec

@@ -48,10 +48,13 @@ In essence, this data structure provides a fast and efficient way to manage and
 query interval data, particularly for finding overlaps.
 """
 
-from memory import UnsafePointer
-from .deque import Deque
-from builtin.math import _CopyableGreaterThanComparable
 from collections import Optional
+
+from builtin.math import _CopyableGreaterThanComparable
+from builtin.string_literal import StaticString
+from memory import UnsafePointer
+
+from .deque import Deque
 
 
 trait IntervalPayload(CollectionElement, Stringable, Comparable):
@@ -978,7 +981,7 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
 
         # Output the completed grid row by row
         for row in grid:
-            var row_str = String("".join(row[]).rstrip())
+            var row_str = String(StaticString("").join(row[]).rstrip())
             if row_str:
                 writer.write(row_str, "\n")
 

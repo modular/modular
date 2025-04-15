@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Top level imports for pipeline interfaces."""
-
-from .embeddings_generation import (
-    EmbeddingsGenerator,
-)
+from .embeddings_generation import EmbeddingsGenerator
 from .response import (
     EmbeddingsResponse,
     LogProbabilities,
@@ -36,19 +32,19 @@ from .text_generation import (
 )
 
 __all__ = [
-    "EmbeddingsResponse",
-    "LogProbabilities",
-    "PipelineTask",
-    "PipelineTokenizer",
-    "TextResponse",
-    "TokenGenerator",
-    "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
     "EmbeddingsGenerator",
+    "LogProbabilities",
+    "TextResponse",
+    "EmbeddingsResponse",
     "TextGenerationResponse",
     "TextGenerationStatus",
+    "PipelineTask",
+    "TokenGeneratorRequestFunction",
+    "TokenGeneratorRequestTool",
+    "TokenGeneratorResponseFormat",
+    "TokenGeneratorRequestMessage",
+    "TokenGeneratorRequest",
+    "TokenGeneratorContext",
+    "TokenGenerator",
+    "PipelineTokenizer",
 ]

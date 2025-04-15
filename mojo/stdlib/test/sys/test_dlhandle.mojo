@@ -13,6 +13,7 @@
 # REQUIRES: has_not
 # RUN: not --crash mojo %s 2>&1
 
+from pathlib import Path
 from sys import DLHandle
 
 
@@ -20,5 +21,10 @@ def check_invalid_dlhandle():
     _ = DLHandle("/an/invalid/library")
 
 
+def check_invalid_dlhandle_path():
+    _ = DLHandle(Path("/an/invalid/library"))
+
+
 def main():
     check_invalid_dlhandle()
+    check_invalid_dlhandle_path()

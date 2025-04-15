@@ -20,15 +20,26 @@ from sys import PrefetchLocality
 """
 
 import math
-from sys.info import is_gpu, _is_sm_9x
+from collections.string.string_slice import _get_kgen_string
+from sys.info import _is_sm_9x_or_newer, is_gpu
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-from collections.string import StaticString
-from builtin.string_literal import get_string_literal_slice
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_nvidia_gpu, sizeof
+
+
+# Check that the dimension is either x, y, or z.
+# TODO: Some day we should use typed string literals or 'requires' clauses to
+#       enforce this at the type system level.
+# https://github.com/modular/max/issues/1278
+fn _verify_xyz[dim: StaticString]():
+    constrained[
+        dim == "x" or dim == "y" or dim == "z",
+        "the dimension must be x, y, or z",
+    ]()
+
 
 # ===-----------------------------------------------------------------------===#
 # llvm_intrinsic
@@ -60,7 +71,7 @@ fn llvm_intrinsic[
 
     var loaded_pack = args.get_loaded_kgen_pack()
 
-    alias intrin_literal = get_string_literal_slice[intrin]().value
+    alias intrin_kgen_string = _get_kgen_string[intrin]()
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
@@ -68,13 +79,13 @@ fn llvm_intrinsic[
         @parameter
         if has_side_effect:
             __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_literal,
+                intrin=intrin_kgen_string,
                 _type=None,
             ](loaded_pack)
             return rebind[type](None)
         else:
             __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_literal,
+                intrin=intrin_kgen_string,
                 _type=None,
                 hasSideEffects = __mlir_attr.false,
             ](loaded_pack)
@@ -84,12 +95,12 @@ fn llvm_intrinsic[
         @parameter
         if has_side_effect:
             return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_literal,
+                intrin=intrin_kgen_string,
                 _type=type,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_literal,
+                intrin=intrin_kgen_string,
                 _type=type,
                 hasSideEffects = __mlir_attr.false,
             ](loaded_pack)
@@ -874,7 +885,9 @@ fn assume(val: Bool):
     Args:
       val: The input value which is assumed to be `True`.
     """
-    llvm_intrinsic["llvm.assume", NoneType, has_side_effect=False](val)
+    if is_compile_time():
+        return
+    llvm_intrinsic["llvm.assume", NoneType](val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1044,7 +1057,7 @@ struct _ThreadIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
@@ -1058,9 +1071,7 @@ struct _ThreadIdx:
         Returns:
             The `x`, `y`, or `z` coordinates of a thread within a block.
         """
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
@@ -1086,7 +1097,7 @@ struct _BlockIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
@@ -1100,9 +1111,7 @@ struct _BlockIdx:
         Returns:
             The `x`, `y`, or `z` coordinates of a block within a grid.
         """
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
@@ -1136,15 +1145,13 @@ struct _BlockDim:
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    fn __getattr__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the block.
 
         Returns:
             The `x`, `y`, or `z` dimension of the block.
         """
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
 
         @parameter
         if is_nvidia_gpu():
@@ -1189,15 +1196,13 @@ struct _GridDim:
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    fn __getattr__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the grid.
 
         Returns:
             The `x`, `y`, or `z` dimension of the grid.
         """
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
 
         @parameter
         if is_nvidia_gpu():
@@ -1248,9 +1253,7 @@ struct _GridIdx:
         Returns:
             The `x`, `y`, or `z` dimension of the program.
         """
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
         var thread_idx = thread_idx.__getattr__[dim]()
         var block_idx = block_idx.__getattr__[dim]()
         var block_dim = block_dim.__getattr__[dim]()
@@ -1276,19 +1279,17 @@ struct _ClusterDim:
         return
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    fn __getattr__[dim: StaticString](self) -> UInt:
         """Gets the `x`, `y`, or `z` dimension of the cluster.
 
         Returns:
             The `x`, `y`, or `z` dimension of the cluster.
         """
         constrained[
-            is_nvidia_gpu() and _is_sm_9x(),
+            _is_sm_9x_or_newer(),
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
 
         alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.cluster.nctaid." + dim
         return UInt(
@@ -1314,7 +1315,7 @@ struct _ClusterIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
 
     @always_inline("nodebug")
@@ -1325,12 +1326,10 @@ struct _ClusterIdx:
             The `x`, `y`, or `z` coordinates of a cluster within a grid.
         """
         constrained[
-            is_nvidia_gpu() and _is_sm_9x(),
+            _is_sm_9x_or_newer(),
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())
@@ -1356,7 +1355,7 @@ struct _Cluster_BlockIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
 
     @always_inline("nodebug")
@@ -1367,12 +1366,10 @@ struct _Cluster_BlockIdx:
             The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
         """
         constrained[
-            is_nvidia_gpu() and _is_sm_9x(),
+            _is_sm_9x_or_newer(),
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
-        constrained[
-            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
-        ]()
+        _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             Int(llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]())

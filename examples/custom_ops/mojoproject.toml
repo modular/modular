@@ -7,21 +7,14 @@ platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 version = "0.1.0"
 
 [tasks]
-package = "mojo package kernels/ -o kernels.mojopkg"
-addition = { cmd = "python addition.py", depends-on = ["package"] }
-mandelbrot = { cmd = "python mandelbrot.py", depends-on = ["package"] }
-vector_addition = { cmd = "python vector_addition.py", depends-on = [
-  "package",
-] }
-top_k = { cmd = "python top_k.py", depends-on = ["package"] }
-fused_attention = { cmd = "python fused_attention.py", depends-on = [
-  "package",
-] }
-matrix_multiplication = { cmd = "python matrix_multiplication.py", depends-on = [
-  "package",
-] }
-histogram = { cmd = "python histogram.py", depends-on = ["package"] }
-benchmark = { cmd = "mojo benchmarks.mojo", depends-on = ["package"] }
+addition = { cmd = "python addition.py" }
+mandelbrot = { cmd = "python mandelbrot.py" }
+vector_addition = { cmd = "python vector_addition.py" }
+top_k = { cmd = "python top_k.py" }
+fused_attention = { cmd = "python fused_attention.py" }
+matrix_multiplication = { cmd = "python matrix_multiplication.py" }
+histogram = { cmd = "python histogram.py" }
+benchmark = { cmd = "mojo benchmarks.mojo" }
 test = { depends-on = [
   "addition",
   "mandelbrot",

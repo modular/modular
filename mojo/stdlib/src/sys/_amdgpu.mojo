@@ -447,14 +447,13 @@ fn fprintf_append_string_n(
      returned by that fprintf.
 
     """
-    var retval = UInt64(0), UInt64(0)
     var msg_desc_ = msg_desc
 
     if is_last:
         msg_desc_ = msg_set_end_flag(msg_desc_)
 
     if not data:
-        retval = message_append_args(
+        var retval = message_append_args(
             ServiceId.fprintf,
             msg_desc_,
             1,
@@ -468,8 +467,7 @@ fn fprintf_append_string_n(
         )
 
         return retval[0]
-    retval = message_append_bytes(ServiceId.fprintf, msg_desc_, data)
-
+    var retval = message_append_bytes(ServiceId.fprintf, msg_desc_, data)
     return retval[0]
 
 

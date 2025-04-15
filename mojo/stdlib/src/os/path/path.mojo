@@ -27,8 +27,6 @@ from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
 
 from memory import Span
 
-from utils import StringSlice
-
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
 from .._linux_aarch64 import _stat as _stat_linux_arm
@@ -51,7 +49,7 @@ fn _constrain_unix():
 
 
 @always_inline
-fn _get_stat_st_mode(path: String) raises -> Int:
+fn _get_stat_st_mode(path: StringSlice) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_stat_macos(path).st_mode)
@@ -62,7 +60,7 @@ fn _get_stat_st_mode(path: String) raises -> Int:
 
 
 @always_inline
-fn _get_lstat_st_mode(path: String) raises -> Int:
+fn _get_lstat_st_mode(path: StringSlice) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_lstat_macos(path).st_mode)
@@ -235,7 +233,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[:i]
     if head and head != os.sep * len(head):
-        return String(head.rstrip(String(os.sep)))
+        return String(head.rstrip(os.sep))
     return head
 
 
@@ -307,6 +305,28 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
         The size of the path in bytes.
     """
     return stat(path.__fspath__()).st_size
+
+
+# ===----------------------------------------------------------------------=== #
+# is_absolute
+# ===----------------------------------------------------------------------=== #
+
+
+fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+    """Return True if `path` is an absolute path name.
+    On Unix, that means it begins with a slash.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to check.
+
+    Returns:
+        Return `True` if path is an absolute path name.
+    """
+    _constrain_unix()
+    return path.__fspath__().startswith(sep)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -394,7 +414,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[i:]
     if head and head != os.sep * len(head):
-        return String(head.rstrip(String(os.sep)))
+        return String(head.rstrip(os.sep))
     return head
 
 
@@ -421,6 +441,68 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
 #         paths_str.append(cur_path[].__fspath__())
 
 #     return join(path.__fspath__(), *paths_str)
+
+# ===----------------------------------------------------------------------=== #
+# split_extension
+# ===----------------------------------------------------------------------=== #
+
+
+# TODO: Move this to a generic path module when Windows is supported.
+# As it can be used for both Windows and Unix-like systems.
+fn _split_extension(
+    path: StringSlice,
+    sep: StringSlice,
+    alt_sep: StringSlice,
+    extension_sep: StringSlice,
+) raises -> Tuple[String, String]:
+    """Splits `path` into the root and extension.
+
+    Args:
+        path: The path to be split.
+        sep: The separator used in the path.
+        alt_sep: The alternative separator used in the path.
+        extension_sep: The extension separator used in the path.
+
+    Returns:
+        A tuple containing two strings: (root, extension).
+    """
+    # Find the last extension separator after the last separator.
+    var head_end = path.rfind(sep)
+    if alt_sep:
+        head_end = max(head_end, path.rfind(alt_sep))
+
+    var file_end = path.rfind(extension_sep)
+    if file_end > head_end:
+        # skip all leading dots
+        var file_start = head_end + 1
+        while file_start < file_end:
+            if path[file_start].as_string_slice() != extension_sep:
+                return String(path[:file_end]), String(path[file_end:])
+            file_start += 1
+
+    return String(path), String("")
+
+
+fn split_extension[
+    PathLike: os.PathLike, //
+](path: PathLike) raises -> Tuple[String, String]:
+    """Splits `path` into the root and extension.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to be split.
+
+    Returns:
+        A tuple containing two strings: (root, extension).
+    """
+
+    @parameter
+    if os_is_windows():
+        return _split_extension(path.__fspath__(), "\\", "/", ".")
+    return _split_extension(path.__fspath__(), sep, "", ".")
+
 
 # ===----------------------------------------------------------------------=== #
 # splitroot
@@ -567,7 +649,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
         The expanded path.
     """
     var path_str = path.__fspath__()
-    var bytes = path_str.as_bytes().get_immutable()
+    var bytes = path_str.as_bytes()
     var buf = String()
 
     # Byte scanning should be fine, ${} is ASCII.
@@ -576,7 +658,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf._buffer.reserve(new_capacity=2 * len(bytes))
+                buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
             name, length = _parse_variable_name(bytes[j + 1 :])

@@ -20,10 +20,18 @@ from typing import Optional, cast
 
 import numpy as np
 from max.dtype import DType
-from max.graph import Dim, TensorType, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.pipelines.kv_cache import (
+
+from .kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
@@ -778,6 +786,7 @@ class AttentionMaskVariant(str, Enum):
     NULL_MASK = "null_mask"
     CAUSAL_MASK = "causal_mask"
     TENSOR_MASK = "tensor_mask"
+    CHUNKED_CAUSAL_MASK = "chunked_causal_mask"
 
 
 class PositionalEncodingVariant(str, Enum):
@@ -789,6 +798,7 @@ class MHAMaskVariant(str, Enum):
     CAUSAL_MASK = 0
     CAUSAL_ALIBI_MASK = 1
     NULL_MASK = 2
+    CHUNKED_CAUSAL_MASK = 3
 
 
 _MHA_MASK_CONFIG_DICT = {
@@ -802,6 +812,10 @@ _MHA_MASK_CONFIG_DICT = {
     ),
     MHAMaskVariant.NULL_MASK: MHAMaskConfig(
         attention_mask_variant=AttentionMaskVariant.NULL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
         positional_encoding_variant=PositionalEncodingVariant.NO_POS,
     ),
 }
@@ -865,6 +879,7 @@ def flash_attention_ragged_paged_fa3_fallback(
             )
         ],
         parameters=parameters,
+        device=input.device,
     )[0].tensor
 
 
@@ -879,6 +894,7 @@ def flash_attention_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     context_lengths: Optional[TensorValue] = None,
+    local_window_size: int = 8192,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -939,6 +955,9 @@ def flash_attention_ragged(
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
+
+    if mask_variant == MHAMaskVariant.CHUNKED_CAUSAL_MASK:
+        parameters["local_window_size"] = local_window_size
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
@@ -1045,6 +1064,244 @@ def flare_mla_decode_ragged(
     )[0].tensor
 
 
+def flare_mla_prefill_ragged(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    input_row_offsets: TensorValue,
+    buffer_row_offsets: TensorValue,
+    cache_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_rope_dim: int = 64,
+) -> TensorValue:
+    """Performs MLA prefill."""
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        msg = (
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+        raise ValueError(msg)
+
+    if input.dtype != kv_params.dtype:
+        msg = (
+            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flare_mla_prefill_ragged: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    op_name = f"mo.mla.prefill.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+
+    return ops.inplace_custom(
+        op_name,
+        values=[
+            input,
+            k,
+            v,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            ops.constant(scale, dtype=DType.float32),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    input.shape[2] - qk_rope_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def flare_mla_prefill_plan(
+    kv_params: KVCacheParams,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    buffer_size: int,
+    max_chunks: int = 16,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """This kernel plans how to process a batch of sequences with
+    varying lengths using a fixed-size buffer.
+
+    Each sequence in the batch has some existing cached tokens and new input
+    tokens. The kernel divides the total tokens into chunks of buffer_size.
+
+    For each chunk (iteration), it calculates:
+        1. Buffer offsets for each sequence in each chunk
+        2. Cache offsets for each sequence in each chunk
+        3. Total buffer lengths for each processing iteration
+    """
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flare_mla_prefill_plan: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "type": kv_params.dtype,
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    buffer_size_tensor = ops.constant(buffer_size, DType.uint32)
+
+    results = ops.inplace_custom(
+        "mo.mla.prefill.ragged.plan",
+        values=[
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            buffer_size_tensor,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=[max_chunks, input_row_offsets.shape[0]],
+                device=input_row_offsets.device,
+            ),  # buffer_row_offsets
+            TensorType(
+                dtype=DType.uint32,
+                shape=[max_chunks, input_row_offsets.shape[0] - 1],
+                device=input_row_offsets.device,
+            ),  # cache_offsets
+            TensorType(
+                dtype=DType.int32,
+                shape=[max_chunks],
+                device=input_row_offsets.device,
+            ),  # buffer_lengths
+        ],
+        parameters=parameters,
+    )
+
+    return results[0].tensor, results[1].tensor, results[2].tensor
+
+
+def flare_mla_decompress_k_cache(
+    kv_params: KVCacheParams,
+    buffer_row_offsets_1d: TensorValue,
+    cache_offsets_1d: TensorValue,
+    buffer_length: TensorValue,
+    weight: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    buffer_size: int,
+) -> TensorValue:
+    """This kernel decompresses the key cache by up-projecting latent representations
+    into the KV space using a weight matrix.
+
+    The process involves:
+        1. Copying buffer_length latent vectors from the key cache into a contiguous
+           buffer (k_latent)
+        2. Computing k = k_latent @ weight.T to obtain the decompressed keys
+
+    Returns:
+        A tensor of shape [buffer_size, weight.shape[0]] containing the decompressed
+        keys. Note that only the first buffer_length tokens are valid.
+    """
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if cache_offsets_1d.dtype != DType.uint32:
+        msg = f"expected uint32 cache_offsets but got {cache_offsets_1d.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flare_mla_decompress_k_cache: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    results = ops.inplace_custom(
+        "mo.mla.decompress.k.cache.ragged.paged",
+        values=[
+            buffer_row_offsets_1d,
+            cache_offsets_1d,
+            buffer_length,
+            weight,
+            kv_collection,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=kv_params.dtype,
+                shape=[buffer_size, weight.shape[1]],
+                device=buffer_row_offsets_1d.device,
+            ),  # k_latent_buffer, only stores intermediate values
+            TensorType(
+                dtype=kv_params.dtype,
+                shape=[buffer_size, weight.shape[0]],
+                device=buffer_row_offsets_1d.device,
+            ),  # k_buffer
+        ],
+        parameters=parameters,
+    )
+
+    return results[1].tensor
+
+
+def kv_cache_get_max_seq_len(
+    kv_collection: PagedKVCacheCollection,
+) -> TensorValue:
+    """This kernel returns the maximum sequence length."""
+    return ops.inplace_custom(
+        "mo.kv_cache.get_max_seq_len.paged",
+        values=[kv_collection],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=[1],
+                device=DeviceRef.CPU(),
+            )
+        ],
+    )[0].tensor[0]
+
+
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1125,7 +1382,7 @@ def cross_attention_ragged(
             kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32).to(DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -1133,6 +1390,7 @@ def cross_attention_ragged(
             )
         ],
         parameters=parameters,
+        device=input.device,
     )[0].tensor
 
 
@@ -1236,6 +1494,10 @@ def rms_norm_key_cache(
             msg = f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
             raise ValueError(msg)
 
+    if gamma.dtype != kv_params.dtype:
+        msg = f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
+        raise TypeError(msg)
+
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
@@ -1256,3 +1518,125 @@ def rms_norm_key_cache(
         ],
         parameters=parameters,
     )
+
+
+def moe_create_indices(
+    topk_ids: TensorValue,
+    num_local_experts: int,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    """Creates indices for the MoE layer.
+
+    Args:
+        topk_ids: The expert assignments for each token from the router.
+        num_local_experts: The number of experts on this device.
+
+    Returns:
+        A tuple of four tensors:
+        - token_expert_order: The reordered token indices, grouped by assigned expert.
+        - expert_start_indices: The starting index for each expert's token group in
+            the reordered sequence.
+        - restore_token_order: The indices to restore original token ordering after
+            expert computation.
+        - expert_ids: ids of active experts selected for tokens
+        - expert_usage_stats: The maximum number of tokens assigned to any expert,
+            and the number of active experts.
+    """
+
+    results = ops.custom(
+        "mo.moe.create.indices",
+        values=[
+            topk_ids,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=[topk_ids.shape[0]],
+                device=topk_ids.device,
+            ),  # token_expert_order
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts + 1],
+                device=topk_ids.device,
+            ),  # expert_start_indices
+            TensorType(
+                dtype=DType.uint32,
+                shape=[topk_ids.shape[0]],
+                device=topk_ids.device,
+            ),  # restore_token_order
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts],
+                device=topk_ids.device,
+            ),  # expert_ids
+            TensorType(
+                dtype=DType.uint32,
+                shape=[2],
+                device=topk_ids.device,
+            ),  # expert_usage_stats
+        ],
+    )
+
+    return (
+        results[0].tensor,
+        results[1].tensor,
+        results[2].tensor,
+        results[3].tensor,
+        results[4].tensor,
+    )
+
+
+def grouped_matmul_ragged(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+) -> TensorValue:
+    """Grouped matmul used in MoE layer.
+
+    `hidden_states` and `expert_start_indices` are used together to implement
+    the ragged tensor. `expert_start_indices` indicates where each group starts
+    and ends in `hidden_states`
+
+    `expert_ids` is the id of the expert for each group in `hidden_states`
+
+    `expert_usage_stats_host` is the maximum number of tokens assigned to any
+    expert, and the number of active experts.
+
+    """
+
+    if weight.rank != 3:
+        msg = f"expected weight of rank 3 but got {weight.rank}"
+        raise ValueError(msg)
+
+    if hidden_states.rank != 2:
+        msg = f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        raise ValueError(msg)
+
+    if (
+        weight.shape[2] != hidden_states.shape[1]
+        or weight.shape[0] != expert_ids.shape[0]
+    ):
+        msg = f"expected weight is of shape [num_experts, *, {hidden_states.shape[1]}] but got {weight.shape}"
+        raise ValueError(msg)
+
+    output = ops.custom(
+        "mo.grouped.matmul.ragged",
+        values=[
+            hidden_states,
+            weight,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=hidden_states.dtype,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+    return output

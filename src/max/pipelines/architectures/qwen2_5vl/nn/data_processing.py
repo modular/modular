@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from typing import Optional
+
 import numpy as np
 
 
@@ -178,3 +180,187 @@ def generate_attention_mask(
             cu_window_seqlens[i - 1] : cu_window_seqlens[i],
         ] = 0
     return attention_mask_full, attention_mask_window
+
+
+def get_rope_index(
+    spatial_merge_size: int,
+    image_token_id: int,
+    video_token_id: int,
+    vision_start_token_id: int,
+    tokens_per_second: int,
+    input_ids: np.ndarray,
+    image_grid_thw: Optional[np.ndarray] = None,
+    video_grid_thw: Optional[np.ndarray] = None,
+    second_per_grid_ts: Optional[np.ndarray] = None,
+    attention_mask: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Calculates position ids for 3D rotary position embeddings (RoPE) for vLLM.
+
+    It determines the temporal, height, and width position indices for vision tokens
+    and assigns linear position indices for text tokens.
+
+    Image tokens (image_token_id) => Assigned 3D RoPE.
+    Video tokens (video_token_id) => Assigned 3D RoPE with an additional time-step scaling factor.
+    Text tokens => Assigned simple sequential position IDs.
+
+    Args:
+        spatial_merge_size: Factor for downscaling spatial dimensions (height & width).
+        image_token_id: Token ID indicating an image token.
+        video_token_id: Token ID indicating a video token.
+        vision_start_token_id: Token ID marking the start of a vision sequence.
+        tokens_per_second: Defines temporal granularity of video embeddings.
+        input_ids: Tensor of token indices for the input sequence.
+        image_grid_thw: Shape (num_images, 3), specifying (temporal, height, width) grid for each image.
+        video_grid_thw: Shape (num_videos, 3), specifying (temporal, height, width) grid for each video.
+        second_per_grid_ts: Time interval (in seconds) for each video grid along the temporal axis.
+        attention_mask: Mask indicating valid tokens (1 = valid, 0 = ignored).
+
+    Returns:
+        position_ids: A (3, batch_size, sequence_length) tensor with (temporal, height, width) indices.
+        mrope_position_deltas: A (batch_size, 1) tensor storing the positioning shift for text tokens.
+    """
+    mrope_position_deltas = []  # Tracks offsets for adjusting text token positions.
+    if input_ids is not None and (
+        image_grid_thw is not None or video_grid_thw is not None
+    ):
+        total_input_ids = input_ids
+        if attention_mask is None:
+            attention_mask = np.ones_like(total_input_ids)
+
+        # Initialize position_ids
+        position_ids = np.ones(
+            (3, input_ids.shape[0], input_ids.shape[1]), dtype=np.int64
+        )
+
+        image_index, video_index = 0, 0
+
+        for i, input_ids_row in enumerate(total_input_ids):
+            # Extract valid input_ids using the attention_mask.
+            input_ids_row = input_ids_row[attention_mask[i] == 1]
+            vision_start_indices = np.where(
+                input_ids_row == vision_start_token_id
+            )[0]
+            vision_tokens = input_ids_row[vision_start_indices + 1]
+
+            image_nums = np.sum(vision_tokens == image_token_id)
+            video_nums = np.sum(vision_tokens == video_token_id)
+
+            input_tokens = input_ids_row.tolist()
+            llm_pos_ids_list: list = []
+            st = 0
+            remain_images, remain_videos = image_nums, video_nums
+
+            for _ in range(image_nums + video_nums):
+                if image_token_id in input_tokens and remain_images > 0:
+                    ed_image = input_tokens.index(image_token_id, st)
+                else:
+                    ed_image = len(input_tokens) + 1
+
+                if video_token_id in input_tokens and remain_videos > 0:
+                    ed_video = input_tokens.index(video_token_id, st)
+                else:
+                    ed_video = len(input_tokens) + 1
+
+                # For each image token: Set temporal position to 0 and extract H,W from grid.
+                if ed_image < ed_video:
+                    assert image_grid_thw is not None
+                    t, h, w = image_grid_thw[image_index]
+                    second_per_grid_t = 0.0
+                    image_index += 1
+                    remain_images -= 1
+                    ed = ed_image
+                else:
+                    assert video_grid_thw is not None
+                    t, h, w = video_grid_thw[video_index]
+                    # Compute temporal intervals using tokens_per_second * second_per_grid_ts
+                    second_per_grid_t = (
+                        second_per_grid_ts[video_index]
+                        if second_per_grid_ts is not None
+                        else 1.0
+                    )
+                    video_index += 1
+                    remain_videos -= 1
+                    ed = ed_video
+
+                llm_grid_t, llm_grid_h, llm_grid_w = (
+                    t,
+                    h // spatial_merge_size,
+                    w // spatial_merge_size,
+                )
+                text_len = ed - st
+                st_idx = (
+                    (llm_pos_ids_list[-1].max() + 1) if llm_pos_ids_list else 0
+                )
+
+                llm_pos_ids_list.append(
+                    np.arange(text_len).reshape(1, -1).repeat(3, axis=0)
+                    + st_idx
+                )
+
+                range_tensor = np.arange(llm_grid_t).reshape(-1, 1)
+                expanded_range = np.tile(
+                    range_tensor, (1, llm_grid_h * llm_grid_w)
+                )
+                time_tensor = (
+                    expanded_range * second_per_grid_t * tokens_per_second
+                )
+                t_index = time_tensor.astype(np.int64).flatten()
+
+                h_index = np.tile(
+                    np.arange(llm_grid_h).reshape(1, -1, 1),
+                    (llm_grid_t, 1, llm_grid_w),
+                ).flatten()
+                w_index = np.tile(
+                    np.arange(llm_grid_w).reshape(1, 1, -1),
+                    (llm_grid_t, llm_grid_h, 1),
+                ).flatten()
+
+                llm_pos_ids_list.append(
+                    np.vstack([t_index, h_index, w_index]) + text_len + st_idx
+                )
+                st = ed + llm_grid_t * llm_grid_h * llm_grid_w
+
+            # Start text positions after the last vision position + 1
+            if st < len(input_tokens):
+                st_idx = (
+                    (llm_pos_ids_list[-1].max() + 1) if llm_pos_ids_list else 0
+                )
+                text_len = len(input_tokens) - st
+                llm_pos_ids_list.append(
+                    np.arange(text_len).reshape(1, -1).repeat(3, axis=0)
+                    + st_idx
+                )
+
+            llm_positions = np.concatenate(llm_pos_ids_list, axis=1).reshape(
+                3, -1
+            )
+            position_ids[:, i, attention_mask[i] == 1] = llm_positions
+            mrope_position_deltas.append(
+                llm_positions.max() + 1 - len(total_input_ids[i])
+            )
+
+        mrope_position_deltas_array = np.array(mrope_position_deltas).reshape(
+            -1, 1
+        )
+        return position_ids, mrope_position_deltas_array
+    else:
+        if attention_mask is not None:
+            position_ids = np.cumsum(attention_mask, axis=-1) - 1
+            position_ids[attention_mask == 0] = 1
+            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))
+            max_position_ids = position_ids.max(axis=1, keepdims=True).max(
+                axis=-1, keepdims=True
+            )
+            mrope_position_deltas = (
+                max_position_ids + 1 - attention_mask.shape[-1]
+            )
+        else:
+            position_ids = np.tile(
+                np.arange(input_ids.shape[1])[np.newaxis, np.newaxis, :],
+                (3, input_ids.shape[0], 1),
+            )
+            mrope_position_deltas_array = np.zeros(
+                (input_ids.shape[0], 1), dtype=np.int64
+            )
+
+        return position_ids, mrope_position_deltas_array

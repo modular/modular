@@ -428,7 +428,7 @@ def test_mojo_issue_1729():
         assert_equal(i, d[k])
 
 
-fn test[name: String, test_fn: fn () raises -> object]() raises:
+fn test[name: String, test_fn: fn () raises]() raises:
     print("Test", name, "...", end="")
     try:
         _ = test_fn()

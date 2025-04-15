@@ -11,7 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE, barrier, block_idx, thread_idx
+from math import ceildiv
+from sys.info import simdwidthof
+
+from gpu import WARP_SIZE, barrier, block_idx, thread_idx, warp_id
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
@@ -23,11 +26,10 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from math import ceildiv
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
-from sys.info import simdwidthof
-from tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor, foreach
+
 from utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -665,11 +667,9 @@ fn tensor_core_matrix_multiplication[
     alias N = C.shape[1]()  # Number of columns in matrix C
     alias K = A.shape[1]()  # Number of columns in matrix A
 
-    var warp_id = thread_idx.x // WARP_SIZE  # Warp ID within the block
-
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // (BN // WN)
-    warp_x = warp_id % (BN // WN)
+    warp_y = warp_id() // (BN // WN)
+    warp_x = warp_id() % (BN // WN)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
@@ -768,7 +768,7 @@ fn tensor_core_matrix_multiplication[
 
 
 @compiler.register("matrix_multiplication")
-struct MatrixMultiplication[algorithm: StringLiteral]:
+struct MatrixMultiplication[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different
     matrix multiplication implementations, depending on target hardware and
@@ -778,7 +778,7 @@ struct MatrixMultiplication[algorithm: StringLiteral]:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor[rank=2],
         a: InputTensor[type = out.type, rank = out.rank],
@@ -800,7 +800,7 @@ struct MatrixMultiplication[algorithm: StringLiteral]:
             gpu_ctx = ctx.get_device_context()
 
             # Zero out the memory in the outbound tensor.
-            gpu_ctx.memset(
+            gpu_ctx.enqueue_memset(
                 DeviceBuffer[out.type](
                     gpu_ctx,
                     rebind[UnsafePointer[Scalar[out.type]]](out_layout.ptr),

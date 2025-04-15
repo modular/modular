@@ -56,30 +56,27 @@ Example:
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string.string_slice import (
-    StaticString,
-    StringSlice,
-    CodepointSliceIter,
-    _to_string_list,
-    _utf8_byte_type,
-)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
     to_uppercase,
 )
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string.string_slice import (
+    CodepointSliceIter,
+    _to_string_list,
+    _utf8_byte_type,
+)
 from hashlib._hasher import _HashableWithHasher, _Hasher
-from os import abort
+from os import PathLike, abort
 from sys import bitwidthof, llvm_intrinsic
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy
-from os import PathLike
-from python import PythonObject
+from python import PythonObject, PythonObjectible
 
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import _TotalWritableBytes, _WriteBufferHeap, write_buffered
@@ -269,9 +266,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     var ord_letter_max = (-1, -1)
     var result = 0
-    var is_negative: Bool = False
-    var has_prefix: Bool = False
-    var start: Int = 0
+    var is_negative: Bool
+    var has_prefix: Bool
+    var start: Int
     var str_len = str_slice.byte_length()
 
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
@@ -585,6 +582,7 @@ struct String(
     WritableCollectionElement,
     PathLike,
     _CurlyEntryFormattable,
+    PythonObjectible,
 ):
     """Represents a mutable string."""
 
@@ -668,6 +666,8 @@ struct String(
         self = String()
         write_buffered(self, args, sep=sep, end=end)
 
+    # TODO(MOCO-1791): Default arguments and param inference aren't powerful
+    # to declare sep/end as StringSlice.
     @staticmethod
     @no_inline
     fn __init__[
@@ -941,17 +941,19 @@ struct String(
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        if not self and not other:
-            return True
-        if len(self) != len(other):
-            return False
-        # same pointer and length, so equal
-        if self.unsafe_ptr() == other.unsafe_ptr():
-            return True
-        for i in range(len(self)):
-            if self.unsafe_ptr()[i] != other.unsafe_ptr()[i]:
-                return False
-        return True
+        return self.as_string_slice() == other.as_string_slice()
+
+    @always_inline
+    fn __eq__(self, other: StringSlice) -> Bool:
+        """Compares two Strings if they have the same values.
+
+        Args:
+            other: The rhs of the operation.
+
+        Returns:
+            True if the Strings are equal and False otherwise.
+        """
+        return self.as_string_slice() == other
 
     @always_inline
     fn __ne__(self, other: String) -> Bool:
@@ -964,6 +966,18 @@ struct String(
             True if the Strings are not equal and False otherwise.
         """
         return not (self == other)
+
+    @always_inline
+    fn __ne__(self, other: StringSlice) -> Bool:
+        """Compares two Strings if they have the same values.
+
+        Args:
+            other: The rhs of the operation.
+
+        Returns:
+            True if the Strings are equal and False otherwise.
+        """
+        return self.as_string_slice() != other
 
     @always_inline
     fn __lt__(self, rhs: String) -> Bool:
@@ -1171,6 +1185,14 @@ struct String(
         """
         return self
 
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
+
     # ===------------------------------------------------------------------=== #
     # Methods
     # ===------------------------------------------------------------------=== #
@@ -1323,7 +1345,13 @@ struct String(
         """
         return self._buffer.unsafe_ptr()
 
-    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char]:
+    fn unsafe_cstr_ptr(
+        self,
+    ) -> UnsafePointer[
+        c_char,
+        mut = Origin(__origin_of(self)).is_mutable,
+        origin = __origin_of(self),
+    ]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1547,51 +1575,7 @@ struct String(
         Returns:
             The string where all occurrences of `old` are replaced with `new`.
         """
-        if not old:
-            return self._interleave(new)
-
-        var occurrences = self.count(old)
-        if occurrences == -1:
-            return self
-
-        var self_start = self.unsafe_ptr()
-        var self_ptr = self.unsafe_ptr()
-        var new_ptr = new.unsafe_ptr()
-
-        var self_len = self.byte_length()
-        var old_len = old.byte_length()
-        var new_len = new.byte_length()
-
-        var res = Self._buffer_type()
-        res.reserve(self_len + (old_len - new_len) * occurrences + 1)
-
-        for _ in range(occurrences):
-            var curr_offset = Int(self_ptr) - Int(self_start)
-
-            var idx = self.find(old, curr_offset)
-
-            debug_assert(idx >= 0, "expected to find occurrence during find")
-
-            # Copy preceding unchanged chars
-            for _ in range(curr_offset, idx):
-                res.append(self_ptr[])
-                self_ptr += 1
-
-            # Insert a copy of the new replacement string
-            for i in range(new_len):
-                res.append(new_ptr[i])
-
-            self_ptr += old_len
-
-        while True:
-            var val = self_ptr[]
-            if val == 0:
-                break
-            res.append(self_ptr[])
-            self_ptr += 1
-
-        res.append(0)
-        return String(res^)
+        return StringSlice(self).replace(old, new)
 
     fn strip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
         """Return a copy of the string with leading and trailing characters
@@ -1680,18 +1664,6 @@ struct String(
             hasher: The hasher instance.
         """
         hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
-
-    fn _interleave(self, val: StringSlice) -> String:
-        var res = Self._buffer_type()
-        var val_ptr = val.unsafe_ptr()
-        var self_ptr = self.unsafe_ptr()
-        res.reserve(val.byte_length() * self.byte_length() + 1)
-        for i in range(self.byte_length()):
-            for j in range(val.byte_length()):
-                res.append(val_ptr[j])
-            res.append(self_ptr[i])
-        res.append(0)
-        return String(res^)
 
     fn lower(self) -> String:
         """Returns a copy of the string with all cased characters

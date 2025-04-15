@@ -18,8 +18,8 @@ import math
 
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, TensorValueLike, ops
-from max.pipelines.kv_cache import KVCacheParams
 
+from ..kv_cache import KVCacheParams
 from ..layer import Module
 from ..linear import Linear, LinearV2
 from ..rotary_embedding import RotaryEmbedding

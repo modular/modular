@@ -35,7 +35,7 @@ from max.nn import (
     RMSNormV2,
     RotaryEmbedding,
 )
-from max.pipelines.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 
 from .model_config import Llama3Config
 
@@ -163,7 +163,7 @@ class NaiveLlama3(NaiveTransformer):
             embedding=embedding_layer,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,
-            return_n_logits=config.return_n_logits,
+            return_logits=config.return_logits,
         )
 
 

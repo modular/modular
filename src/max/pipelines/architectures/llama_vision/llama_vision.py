@@ -24,9 +24,23 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Linear
+from max.nn import Linear, ReturnLogits
+from max.nn.kv_cache import (
+    ContinuousBatchingKVCacheManager,
+    KVCacheInputs,
+    KVCacheInputSymbols,
+    KVCacheManager,
+    KVCacheParams,
+    KVCacheStrategy,
+    PaddedKVCacheInputs,
+    RaggedKVCacheInputs,
+    build_max_lengths_tensor,
+    estimate_kv_cache_size,
+    infer_optimal_batch_size,
+    load_kv_manager,
+)
 from max.nn.layer import Layer
 from max.pipelines import (
     KVCacheConfig,
@@ -37,21 +51,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import InputContext, TextAndVisionContext
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    KVCacheInputs,
-    KVCacheInputSymbols,
-    KVCacheManager,
-    KVCacheParams,
-    KVCacheStrategy,
-    PaddedKVCacheInputs,
-    RaggedKVCacheInputs,
-    estimate_kv_cache_size,
-    infer_optimal_batch_size,
-    load_kv_manager,
-)
-from max.pipelines.kv_cache._utils import build_max_lengths_tensor
+from max.pipelines.core import InputContext, TextAndVisionContext
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model
@@ -59,6 +59,9 @@ from .model_config import LlamaVisionConfig
 from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
+
+# TODO(GEX-2071): Re-enable when parallel compilation works.
+_DO_PARALLEL_COMPILATION = False
 
 
 @dataclass
@@ -685,7 +688,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
@@ -704,7 +707,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -713,6 +716,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self.model = self.language_model
 
     def _llama3_vision_vision_graph(self) -> Graph:
+        # NOTE: Llama 3.2 vision only supports single-device, currently.
+        device = DeviceRef(self.devices[0].label, self.devices[0].id)
+
         # Inserted a manual CHW -> HWC transpose here.
         pixel_values_type = TensorType(
             # This has to be of type float32 as we construct tensors from a numpy
@@ -727,10 +733,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 self.vision_config.image_size,  # width
                 self.vision_config.num_channels,
             ],
+            device=device,
         )
         aspect_ratio_ids_type = TensorType(
             DType.int64,
             shape=["batch_size", "num_concurrent_media"],
+            device=device,
         )
         aspect_ratio_mask_type = TensorType(
             DType.int64,
@@ -739,6 +747,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 "num_concurrent_media",
                 self.vision_config.max_num_tiles,
             ],
+            device=device,
         )
 
         input_types = [
@@ -786,7 +795,11 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        input_ids_type = TensorType(DType.int64, shape=["total_seq_len"])
+        # NOTE: Llama 3.2 vision only supports single-device, currently.
+        device = DeviceRef(self.devices[0].label, self.devices[0].id)
+        input_ids_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device
+        )
         # image_size = self.vision_config.image_size
         # patch_size = self.vision_config.patch_size
         cross_attention_states_type = TensorType(
@@ -801,10 +814,13 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 "num_vision_embeddings",
                 self.text_config.hidden_size,
             ],
+            device=device,
         )
-        input_ids_max_seq_len_type = TensorType(DType.uint32, [1])
+        input_ids_max_seq_len_type = TensorType(
+            DType.uint32, [1], device=DeviceRef.CPU()
+        )
         input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"]
+            DType.uint32, shape=["input_row_offsets_len"], device=device
         )
         cross_row_offsets_type = input_row_offsets_type
 
@@ -926,6 +942,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
@@ -986,8 +1003,8 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
         input_id_values = Tensor.from_numpy(tokens).to(self.devices[0])
-        # This lives on host / in the CPU kernel, but is later casted to a scalar on
-        # device kernel side. No need for explicit .to(pipeline_config.device) call here.
+
+        # This lives on host here and in the kernel.
         input_id_max_seq_len = Tensor.from_numpy(
             np.array(
                 [max(ctx.active_length for ctx in context_batch)],
@@ -1051,7 +1068,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 model_inputs.pixel_values,
                 model_inputs.aspect_ratio_ids,
                 model_inputs.aspect_ratio_mask,
-                copy_inputs_to_device=False,
             )[0]
             assert isinstance(exec_result, Tensor)
             cross_attention_states = exec_result
@@ -1078,7 +1094,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             model_inputs.input_id_max_seq_len,
             model_inputs.pixel_row_offsets,
             *all_kv_cache_inputs,
-            copy_inputs_to_device=False,
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -1264,10 +1279,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
             return language_model
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            vision_model_future = executor.submit(build_vision_model)
-            language_model_future = executor.submit(build_language_model)
-            vision_model = vision_model_future.result()
-            language_model = language_model_future.result()
+        if _DO_PARALLEL_COMPILATION:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                vision_model_future = executor.submit(build_vision_model)
+                language_model_future = executor.submit(build_language_model)
+                vision_model = vision_model_future.result()
+                language_model = language_model_future.result()
+        else:
+            vision_model = build_vision_model()
+            language_model = build_language_model()
 
         return (vision_model, language_model)

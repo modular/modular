@@ -17,12 +17,12 @@ from typing import Union
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.pipelines.kv_cache import (
+
+from ..kernels import flash_attention, fused_qkv_matmul
+from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     PagedKVCacheCollection,
 )
-
-from ..kernels import flash_attention, fused_qkv_matmul
 from .interfaces import AttentionImpl, AttentionImplQKV
 
 

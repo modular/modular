@@ -2,6 +2,7 @@
 title: Get started with GPU programming with Mojo and the MAX Driver
 sidebar_label: Get started with GPU programming
 description: Learn the basics of GPU programming with Mojo and the MAX driver
+image: /images/artwork/mojo-motorcycle.jpg
 ---
 
 import GetMagic from '@site/src/includes/get_magic.mdx';
@@ -799,6 +800,8 @@ covered:
 - Executing parallel computations on the GPU
 - Managing memory and object lifetimes across devices
 
+## Next steps
+
 Now that you understand the basics of GPU programming with Mojo, here are some
 suggested next steps:
 
@@ -823,3 +826,17 @@ suggested next steps:
 
 - Check out the [Mojo Manual](/mojo/manual) for more information on the Mojo
   language.
+
+import TutorialStack from '@site/src/components/TutorialStack';
+
+export const maxTutorials = [
+  'build-custom-ops',
+  'magic',
+];
+
+export const mojoTutorials = [
+  'get-started',
+];
+
+<TutorialStack maxTutorials={maxTutorials} mojoTutorials={mojoTutorials}
+  analyticsName="Get started with GPU programming: Next steps" />

@@ -22,6 +22,8 @@ from bit import count_leading_zeros
 from sys import llvm_intrinsic, sizeof
 from sys.info import bitwidthof
 
+from utils._select import _select_register_value as select
+
 # ===-----------------------------------------------------------------------===#
 # count_leading_zeros
 # ===-----------------------------------------------------------------------===#
@@ -105,9 +107,9 @@ fn count_trailing_zeros[
         trailing zeros at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return llvm_intrinsic[
-        "llvm.cttz", __type_of(val.value), has_side_effect=False
-    ](val.value, False.value)
+    return llvm_intrinsic["llvm.cttz", __type_of(val), has_side_effect=False](
+        val, False
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -261,7 +263,7 @@ fn pop_count[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@always_inline("nodebug")
 fn bit_not[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -290,7 +292,7 @@ fn bit_not[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@always_inline("nodebug")
 fn bit_width(val: Int) -> Int:
     """Computes the minimum number of bits required to represent the integer.
 
@@ -301,16 +303,14 @@ fn bit_width(val: Int) -> Int:
         The number of bits required to represent the integer.
     """
     alias bitwidth = bitwidthof[Int]()
+    return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
-    return bitwidth - count_leading_zeros(~val if val < 0 else val)
 
-
-@always_inline
+@always_inline("nodebug")
 fn bit_width[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    """Computes the minimum number of bits required to represent the SIMD vector
-    of integer values.
+    """Computes the minimum number of bits required to represent each element of a SIMD vector of integer values.
 
     Parameters:
         dtype: `dtype` used for the computation.
@@ -323,23 +323,18 @@ fn bit_width[
         val: The input value.
 
     Returns:
-        A SIMD value where the element at position `i` equals to the number of
-        bits required to represent the integer at position `i` of the input
-        value.
+        A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
-
     constrained[dtype.is_integral(), "must be integral"]()
-
     alias bitwidth = bitwidthof[dtype]()
 
     @parameter
     if dtype.is_unsigned():
         return bitwidth - count_leading_zeros(val)
     else:
-        var leading_zero_pos = count_leading_zeros(val)
-        var leading_zero_neg = count_leading_zeros(bit_not(val))
-        var leading_zero = (val < 0).select(leading_zero_neg, leading_zero_pos)
-        return bitwidth - leading_zero
+        # For signed integers, handle positive and negative separately
+        var abs_val = (val < 0).select(bit_not(val), val)
+        return bitwidth - count_leading_zeros(abs_val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -358,9 +353,8 @@ fn log2_floor(val: Int) -> Int:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0.
     """
-    if val <= 1:
-        return 0
-    return bitwidthof[Int]() - count_leading_zeros(val) - 1
+    alias bitwidth = bitwidthof[Int]()
+    return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -375,21 +369,39 @@ fn next_power_of_two(val: Int) -> Int:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
-    This operation is called `bit_ceil()` in C++.
+    Args:
+        val: The input value.
+
+    Returns:
+        The smallest power of 2 that is greater than or equal to the input
+        value.
+
+    Notes:
+        This operation is called `bit_ceil()` in C++.
+    """
+    return select(
+        val <= 1, 1, 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
+    )
+
+
+@always_inline
+fn next_power_of_two(val: UInt) -> UInt:
+    """Computes the smallest power of 2 that is greater than or equal to the
+    input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
     Args:
         val: The input value.
 
     Returns:
-        The smallest power of 2 that is greater than or equal to the input value.
+        The smallest power of 2 that is greater than or equal to the input
+        value.
+
+    Notes:
+        This operation is called `bit_ceil()` in C++.
     """
-    if val <= 1:
-        return 1
-
-    if val.is_power_of_two():
-        return val
-
-    return 1 << bit_width(val - 1)
+    return select(
+        val == 0, 1, 1 << (bitwidthof[UInt]() - count_leading_zeros(val - 1))
+    )
 
 
 @always_inline
@@ -418,10 +430,7 @@ fn next_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-
-    alias ones = SIMD[dtype, width](1)
-
-    return (val > 1).select(1 << bit_width(val - ones), ones)
+    return (val > 1).select(1 << bit_width(val - 1), 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -443,10 +452,7 @@ fn prev_power_of_two(val: Int) -> Int:
     Returns:
         The largest power of 2 that is less than or equal to the input value.
     """
-    if val <= 0:
-        return 0
-
-    return 1 << (bit_width(val) - 1)
+    return select(val > 0, 1 << (bit_width(val) - 1), 0)
 
 
 @always_inline
@@ -475,10 +481,7 @@ fn prev_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral and unsigned"]()
-
-    alias zeros = SIMD[dtype, width](0)
-
-    return (val > 0).select(1 << (bit_width(val) - 1), zeros)
+    return (val > 0).select(1 << (bit_width(val) - 1), 0)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -505,7 +508,7 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
     constrained[
-        shift >= -bitwidthof[Int]() and shift < bitwidthof[Int](),
+        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
         "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
     ]()
 
@@ -520,32 +523,28 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         )
 
 
+@always_inline("nodebug")
 fn rotate_bits_left[
     dtype: DType,
     width: Int, //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    """Shifts bits to the left by `shift` positions (with wrap-around) for each
-    element of a SIMD vector.
+    """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
     Constraints:
         `0 <= shift < size`
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-              Constraints: must be integral and unsigned.
-        width: The width of the input and output SIMD vector.
-        shift: The number of positions by which to shift left the bits for each
-               element of a SIMD vector to the left (with wrap-around).
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        width: The width of the SIMD vector.
+        shift: The number of positions to rotate left.
 
     Args:
-        x: SIMD vector to perform the operation on.
+        x: SIMD vector input.
 
     Returns:
-        The SIMD vector with each element's bits shifted to the left by `shift`
-        bits (with wrap-around).
+        SIMD vector with each element rotated left by `shift` bits.
     """
-
     constrained[dtype.is_unsigned(), "Only unsigned types can be rotated."]()
 
     @parameter
@@ -555,7 +554,7 @@ fn rotate_bits_left[
         return rotate_bits_right[-shift](x)
     else:
         return llvm_intrinsic["llvm.fshl", __type_of(x), has_side_effect=False](
-            x, x, SIMD[dtype, width](shift)
+            x, x, __type_of(x)(shift)
         )
 
 
@@ -583,7 +582,7 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
     constrained[
-        shift >= -bitwidthof[Int]() and shift < bitwidthof[Int](),
+        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
         "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
     ]()
 
@@ -598,32 +597,28 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         )
 
 
+@always_inline("nodebug")
 fn rotate_bits_right[
     dtype: DType,
     width: Int, //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    """Shifts bits to the right by `shift` positions (with wrap-around) for each
-    element of a SIMD vector.
+    """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
     Constraints:
         `0 <= shift < size`
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-              Constraints: must be integral and unsigned.
-        width: The width of the input and output SIMD vector.
-        shift: The number of positions by which to shift right the bits for each
-               element of a SIMD vector to the left (with wrap-around).
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        width: The width of the SIMD vector.
+        shift: The number of positions to rotate right.
 
     Args:
-        x: SIMD vector to perform the operation on.
+        x: SIMD vector input.
 
     Returns:
-        The SIMD vector with each element's bits shifted to the right by `shift`
-        bits (with wrap-around).
+        SIMD vector with each element rotated right by `shift` bits.
     """
-
     constrained[dtype.is_unsigned(), "Only unsigned types can be rotated."]()
 
     @parameter
@@ -633,5 +628,5 @@ fn rotate_bits_right[
         return rotate_bits_left[-shift](x)
     else:
         return llvm_intrinsic["llvm.fshr", __type_of(x), has_side_effect=False](
-            x, x, SIMD[dtype, width](shift)
+            x, x, __type_of(x)(shift)
         )

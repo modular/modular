@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.string import StringSlice
+
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -190,7 +190,7 @@ def test_add():
 def test_add_string_slice():
     var s1 = String("123")
     var s2 = StringSlice("abc")
-    var s3: StringLiteral = "abc"
+    var s3 = "abc"
     assert_equal("123abc", s1 + s2)
     assert_equal("123abc", s1 + s3)
     assert_equal("abc123", s2 + s1)
@@ -1012,7 +1012,7 @@ def test_strip():
 
 
 def test_hash():
-    fn assert_hash_equals_literal_hash[s: StringLiteral]() raises:
+    fn assert_hash_equals_literal_hash[s: StaticString]() raises:
         assert_equal(hash(s), hash(String(s)))
 
     assert_hash_equals_literal_hash["a"]()
@@ -1133,7 +1133,6 @@ def test_string_char_slices_iter():
 
     assert_equal(321111, atol(concat))
 
-    var idx = -1
     vs = String("mojo🔥")
     var iterator = vs.codepoint_slices()
     assert_equal(5, len(iterator))
@@ -1229,7 +1228,7 @@ def test_format_args():
     var s = String(" {} , {} {} !").format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
 
-    fn curly(c: StringLiteral) -> StringLiteral:
+    fn curly(c: StaticString) -> String:
         return "there is a single curly " + c + " left unclosed or unescaped"
 
     with assert_raises(contains=curly("{")):
@@ -1272,17 +1271,17 @@ def test_format_args():
     var output = String(vinput).format("123", 456)
     assert_equal(len(output), 7)
 
-    vinput = "{1}{0}"
-    output = String(vinput).format("123", 456)
+    var vinput2 = "{1}{0}"
+    output = String(vinput2).format("123", 456)
     assert_equal(len(output), 6)
     assert_equal(output, "456123")
 
-    vinput = "123"
-    output = String(vinput).format()
+    var vinput3 = "123"
+    output = String(vinput3).format()
     assert_equal(len(output), 3)
 
-    vinput = ""
-    output = String(vinput).format()
+    var vinput4 = ""
+    output = String(vinput4).format()
     assert_equal(len(output), 0)
 
     var res = "🔥 Mojo ❤️‍🔥 Mojo 🔥"

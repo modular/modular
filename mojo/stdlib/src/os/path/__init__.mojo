@@ -20,11 +20,13 @@ from .path import (
     expanduser,
     expandvars,
     getsize,
+    is_absolute,
     isdir,
     isfile,
     islink,
     join,
     lexists,
     split,
+    split_extension,
     splitroot,
 )

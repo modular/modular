@@ -24,7 +24,7 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.pipelines.kv_cache import FetchContinuousBatchingKVCacheCollection
+from max.nn.kv_cache import FetchContinuousBatchingKVCacheCollection
 
 from .model_config import MistralConfig
 
@@ -106,5 +106,5 @@ class Mistral(Transformer):
             kv_collection_constructor=FetchContinuousBatchingKVCacheCollection(
                 config.kv_params
             ),
-            return_n_logits=config.return_n_logits,
+            return_logits=config.return_logits,
         )

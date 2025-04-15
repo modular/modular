@@ -15,8 +15,8 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue
 from max.graph.weights import Weights
 from max.nn import Linear
+from max.nn.kv_cache import KVCacheManager, KVCacheParams
 from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import KVCacheManager, KVCacheParams
 from transformers import AutoConfig
 
 from ..llava.llava import (

@@ -16,73 +16,56 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string.string_slice import (
-    StaticString,
-    StringSlice,
-    CodepointSliceIter,
-    _to_string_list,
-)
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from collections.string.format import _CurlyEntryFormattable
+from collections.string.string_slice import CodepointSliceIter
+from os import PathLike
 from sys.ffi import c_char
 
 from memory import Span, UnsafePointer, memcpy
-
-from os import PathLike
+from python import PythonObject, PythonObjectible
 
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
-from utils.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
 # ===-----------------------------------------------------------------------===#
 
 
-@lldb_formatter_wrapping_type
+@value
 @register_passable("trivial")
-struct StringLiteral(
+struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
-    Comparable,
     CollectionElementNew,
     Writable,
     IntableRaising,
-    KeyElement,
+    CollectionElement,
     Representable,
     Sized,
     Stringable,
     FloatableRaising,
-    _HashableWithHasher,
     PathLike,
-    EqualityComparableCollectionElement,
     _CurlyEntryFormattable,
+    PythonObjectible,
 ):
     """This type represents a string literal.
 
     String literals are all null-terminated for compatibility with C APIs, but
     this is subject to change. String literals store their length as an integer,
     and this does not include the null terminator.
+
+    Parameters:
+        value: The underlying string value.
     """
-
-    # Fields
-    alias type = __mlir_type.`!kgen.string`
-
-    var value: Self.type
-    """The underlying storage for the string literal."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        """Create a string literal from a builtin string type.
-
-        Args:
-            value: The string value.
-        """
-        self.value = value
+    fn __init__(out self):
+        """Constructor for any value."""
+        pass
 
     @always_inline("nodebug")
     fn copy(self) -> Self:
@@ -98,7 +81,19 @@ struct StringLiteral(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __add__(self, rhs: StringLiteral) -> StringLiteral:
+    fn __add__(
+        self,
+        rhs: StringLiteral,
+        out result: StringLiteral[
+            __mlir_attr[
+                `#pop.string_concat<`,
+                self.value,
+                `,`,
+                rhs.value,
+                `> : !kgen.string`,
+            ]
+        ],
+    ):
         """Concatenate two string literals.
 
         Args:
@@ -107,7 +102,7 @@ struct StringLiteral(
         Returns:
             The concatenated string.
         """
-        return __mlir_op.`pop.string.concat`(self.value, rhs.value)
+        result = __type_of(result)()
 
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
@@ -119,30 +114,6 @@ struct StringLiteral(
             The string concatenated `n` times.
         """
         return self.as_string_slice() * n
-
-    @always_inline("nodebug")
-    fn __eq__(self, rhs: StringLiteral) -> Bool:
-        """Compare two string literals for equality.
-
-        Args:
-            rhs: The string to compare.
-
-        Returns:
-            True if they are equal.
-        """
-        return not (self != rhs)
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: StringLiteral) -> Bool:
-        """Compare two string literals for inequality.
-
-        Args:
-            rhs: The string to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return self.as_string_slice() != rhs.as_string_slice()
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: StringSlice) -> Bool:
@@ -169,122 +140,71 @@ struct StringLiteral(
         return self.as_string_slice() != rhs
 
     @always_inline("nodebug")
-    fn __lt__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than (LT) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is strictly less than the RHS StringLiteral and False otherwise.
-        """
-        return self.as_string_slice() < rhs.as_string_slice()
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than or equal to (LE) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is less than or equal to the RHS StringLiteral and False otherwise.
-        """
-        return not (rhs < self)
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than (GT) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is strictly greater than the RHS StringLiteral and False otherwise.
-        """
-        return rhs < self
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than or equal to (GE) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is greater than or equal to the RHS StringLiteral and False otherwise.
-        """
-        return not (self < rhs)
-
-    @always_inline("nodebug")
     fn __lt__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than (LT) comparison.
+        """Compare this value to the RHS using lesser than (LT) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is strictly less than the RHS StringLiteral and False otherwise.
+            True if this is strictly less than the RHS and False otherwise.
         """
         return self.as_string_slice() < rhs
 
     @always_inline("nodebug")
     fn __le__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than or equal to (LE) comparison.
+        """Compare this value to the RHS using lesser than or equal to (LE) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is less than or equal to the RHS StringLiteral and False otherwise.
+            True if this is less than or equal to the RHS and False otherwise.
         """
         return not (rhs < self)
 
     @always_inline("nodebug")
     fn __gt__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than (GT) comparison.
+        """Compare this value to the RHS using greater than (GT) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is strictly greater than the RHS StringLiteral and False otherwise.
+            True if this is strictly greater than the RHS and False otherwise.
         """
         return rhs < self
 
     @always_inline("nodebug")
     fn __ge__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than or equal to (GE) comparison.
+        """Compare this value to the RHS using greater than or equal to (GE) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is greater than or equal to the RHS StringLiteral and False otherwise.
+            True if this is greater than or equal to the RHS and False otherwise.
         """
         return not (self < rhs)
-
-    fn __contains__(self, substr: StringLiteral) -> Bool:
-        """Returns True if the substring is contained within the current string.
-
-        Args:
-          substr: The substring to check.
-
-        Returns:
-          True if the string contains the substring.
-        """
-        return substr in self.as_string_slice()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Get the string length.
 
         Returns:
-            The length of this StringLiteral.
+            The length of this value.
         """
         # TODO(MSTDL-160):
         #   Properly count Unicode codepoints instead of returning this length
@@ -338,7 +258,7 @@ struct StringLiteral(
 
     @no_inline
     fn __repr__(self) -> String:
-        """Return a representation of the `StringLiteral` instance.
+        """Return a representation of this value.
 
         You don't need to call this method directly, use `repr("...")` instead.
 
@@ -346,27 +266,6 @@ struct StringLiteral(
             A new representation of the string.
         """
         return repr(self.as_string_slice())
-
-    fn __hash__(self) -> UInt:
-        """Hash the underlying buffer using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return hash(self.unsafe_ptr(), len(self))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying bytes.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of the object.
@@ -417,7 +316,7 @@ struct StringLiteral(
         """Get the string length in bytes.
 
         Returns:
-            The length of this StringLiteral in bytes.
+            The length of this string in bytes.
 
         Notes:
             This does not include the trailing null terminator in the count.
@@ -479,32 +378,6 @@ struct StringLiteral(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    @always_inline
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
-        """Format a template with `*args`.
-
-        Args:
-            args: The substitution values.
-
-        Parameters:
-            Ts: The types of substitution values that implement `Representable`
-                and `Stringable` (to be changed and made more flexible).
-
-        Returns:
-            The template with the given values substituted.
-
-        Examples:
-
-        ```mojo
-        # Manual indexing:
-        print("{0} {1} {0}".format("Mojo", 1.125)) # Mojo 1.125 Mojo
-        # Automatic indexing:
-        print("{} {}".format(True, "hello world")) # True hello world
-        ```
-        .
-        """
-        return _FormatCurlyEntry.format(self, args)
-
     fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this string literal to the provided Writer.
@@ -518,7 +391,7 @@ struct StringLiteral(
 
         writer.write(self.as_string_slice())
 
-    fn find(self, substr: StringLiteral, start: Int = 0) -> Int:
+    fn find(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
         `start`. If not found, returns -1.
 
@@ -531,7 +404,7 @@ struct StringLiteral(
         """
         return self.as_string_slice().find(substr, start=start)
 
-    fn rfind(self, substr: StringLiteral, start: Int = 0) -> Int:
+    fn rfind(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
         `start`. If not found, returns -1.
 
@@ -543,121 +416,6 @@ struct StringLiteral(
           The offset of `substr` relative to the beginning of the string.
         """
         return self.as_string_slice().rfind(substr, start=start)
-
-    fn replace(self, old: StringLiteral, new: StringLiteral) -> StringLiteral:
-        """Return a copy of the string with all occurrences of substring `old`
-        if replaced by `new`. This operation only works in the param domain.
-
-        Args:
-            old: The substring to replace.
-            new: The substring to replace with.
-
-        Returns:
-            The string where all occurrences of `old` are replaced with `new`.
-        """
-        return __mlir_op.`pop.string.replace`(self.value, old.value, new.value)
-
-    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            T: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        for i in range(len(elems)):
-            buffer.write(elems[i])
-            if i < len(elems) - 1:
-                buffer.write(self)
-        buffer.flush()
-        return string
-
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        return String(elems, sep=self)
-
-    fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
-        """Split the string literal by a separator.
-
-        Args:
-            sep: The string to split on.
-            maxsplit: The maximum amount of items to split from String.
-                Defaults to unlimited.
-
-        Returns:
-            A List of Strings containing the input split by the separator.
-
-        Examples:
-
-        ```mojo
-        # Splitting a space
-        _ = "hello world".split(" ") # ["hello", "world"]
-        # Splitting adjacent separators
-        _ = "hello,,world".split(",") # ["hello", "", "world"]
-        # Splitting with maxsplit
-        _ = "1,2,3".split(",", 1) # ['1', '2,3']
-        ```
-        .
-        """
-        return String(self).split(sep, maxsplit)
-
-    fn split(self, sep: NoneType = None, maxsplit: Int = -1) -> List[String]:
-        """Split the string literal by every whitespace separator.
-
-        Args:
-            sep: None.
-            maxsplit: The maximum amount of items to split from string. Defaults
-                to unlimited.
-
-        Returns:
-            A List of Strings containing the input split by the separator.
-
-        Examples:
-
-        ```mojo
-        # Splitting an empty string or filled with whitespaces
-        _ = "      ".split() # []
-        _ = "".split() # []
-
-        # Splitting a string with leading, trailing, and middle whitespaces
-        _ = "      hello    world     ".split() # ["hello", "world"]
-        # Splitting adjacent universal newlines:
-        _ = "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world".split()
-        # ["hello", "world"]
-        ```
-        .
-        """
-        return String(self).split(sep, maxsplit)
-
-    fn splitlines(self, keepends: Bool = False) -> List[String]:
-        """Split the string literal at line boundaries. This corresponds to Python's
-        [universal newlines:](
-            https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
-
-        Args:
-            keepends: If True, line breaks are kept in the resulting strings.
-
-        Returns:
-            A List of Strings containing the input split by line boundaries.
-        """
-        return _to_string_list(self.as_string_slice().splitlines(keepends))
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
@@ -694,7 +452,7 @@ struct StringLiteral(
 
         return String(self).upper()
 
-    fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string literal of specified width.
 
         Args:
@@ -706,7 +464,7 @@ struct StringLiteral(
         """
         return String(self).rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string literal of specified width.
 
         Args:
@@ -718,7 +476,7 @@ struct StringLiteral(
         """
         return String(self).ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string literal of specified width.
 
         Args:
@@ -860,112 +618,3 @@ struct StringLiteral(
             A copy of the string with no leading whitespaces.
         """
         return String(String(self).lstrip())
-
-
-@always_inline("nodebug")
-fn get_string_literal_slice[
-    string: StaticString, *extra: StaticString
-]() -> StringLiteral:
-    """Form a string literal from a compile-time StringSlice value and additional
-    compile-time StringSlice values.
-
-    Parameters:
-        string: The first StringSlice value.
-        extra: Additional StringSlice values to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return get_string_literal_slice2[string, extra]()
-
-
-@always_inline("nodebug")
-fn get_string_literal_slice2[
-    string: StaticString, extra: VariadicList[StaticString]
-]() -> StringLiteral:
-    """Form a string literal from N compile-time StringSlice values concatenated.
-
-    Parameters:
-        string: The first string slice to use.
-        extra: Additional string slices to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<data_to_str,`,
-        string,
-        `,`,
-        extra.value,
-        `> : !kgen.string`,
-    ]
-
-
-# TODO(MOCO-1460): get_string_literal should be an initializer, but Mojo tries
-# to bind the parameter in `StringLiteral["foo"]()` to the type instead of the
-# initializer.   Use a global function to work around this for now.
-@always_inline("nodebug")
-fn get_string_literal[value: String, *extra: StaticString]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time String value.
-
-    Parameters:
-        value: The value to convert to StringLiteral.
-        extra: Additional StringSlice values to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return get_string_literal_slice2[value, extra]()
-
-
-@always_inline("nodebug")
-fn get_string_literal[
-    type: Stringable, //, value: type, *extra: StaticString
-]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time stringable value.
-
-    Parameters:
-        type: The type of the value.
-        value: The value to serialize.
-        extra: Additional StringSlice values to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return get_string_literal_slice2[String(value), extra]()
-
-
-fn _base64_encode[str: StringLiteral]() -> StringLiteral:
-    """Encode the string literal using Base64 encoding.
-
-    Returns:
-        A new string literal with the Base64 encoded string.
-    """
-    return __mlir_op.`pop.string.base64.encode`(str.value)
-
-
-fn _base64_decode[str: StringLiteral]() -> StringLiteral:
-    """Decode the string literal using Base64 encoding.
-
-    Returns:
-        A new string literal with the Base64 decoded string.
-    """
-    return __mlir_op.`pop.string.base64.decode`(str.value)
-
-
-fn _compress[str: StringLiteral]() -> StringLiteral:
-    """Compress the string literal using zlib.
-
-    Returns:
-        A new string literal with the compressed string.
-    """
-    return __mlir_op.`pop.string.compress`(str.value)
-
-
-fn _decompress[str: StringLiteral]() -> StringLiteral:
-    """Decompress the string literal using zlib.
-
-    Returns:
-        A new string literal with the decompressed string.
-    """
-    return __mlir_op.`pop.string.decompress`(str.value)

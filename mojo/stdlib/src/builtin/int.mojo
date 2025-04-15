@@ -15,14 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from builtin.math import (
-    _CopyableGreaterThanComparable,
-    _CopyableLessThanComparable,
-    Powable,
-    Absable,
-)
 from collections import KeyElement
-from collections.string import StringSlice
 from collections.string.format import _CurlyEntryFormattable
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
@@ -34,8 +27,14 @@ from math import Ceilable, CeilDivable, Floorable, Truncable
 from sys import bitwidthof
 
 from builtin.io import _snprintf
+from builtin.math import (
+    Absable,
+    Powable,
+    _CopyableGreaterThanComparable,
+    _CopyableLessThanComparable,
+)
 from memory import UnsafePointer
-from python import Python, PythonObject
+from python import Python, PythonObject, PythonObjectible
 from python._cpython import Py_ssize_t
 
 from utils import Writable, Writer
@@ -338,6 +337,7 @@ struct Int(
     _CurlyEntryFormattable,
     _CopyableLessThanComparable,
     EqualityComparableCollectionElement,
+    PythonObjectible,
 ):
     """This type represents an integer value."""
 
@@ -1201,6 +1201,14 @@ struct Int(
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     @always_inline("builtin")
     fn is_power_of_two(self) -> Bool:

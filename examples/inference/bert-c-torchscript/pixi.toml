@@ -20,6 +20,6 @@ pytorch = {version = "==2.5.1", channel = "pytorch"}
 [target.osx-arm64.dependencies]
 pytorch = {version = "==2.5.1", channel = "pytorch"}
 [target.linux-aarch64.pypi-dependencies]
-torch = "==2.5.1"
+torch = ">=2.5.0,<=2.6.0"
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/cpu"]

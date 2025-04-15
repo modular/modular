@@ -54,18 +54,18 @@ leading to the final output.
 
 from algorithm import parallelize_over_rows
 from compiler import register
-from utils.index import IndexList
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.tensor_core import TensorCore
-from layout.math import exp, sum, max
 from gpu.host import DeviceContext
 from gpu.id import block_idx
-from gpu.sync import barrier
 from gpu.memory import AddressSpace
+from gpu.sync import barrier
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.math import exp, max, sum
+from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
-from utils import Index
+from tensor import InputTensor, OutputTensor
 
-from tensor import OutputTensor, InputTensor
+from utils import Index
+from utils.index import IndexList
 
 
 @register("fused_attention_custom")
@@ -83,7 +83,7 @@ struct FusedAttention:
         D: Int,  # Head dimension
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
-        target: StringLiteral,  # "cpu" or "gpu"
+        target: StaticString,  # "cpu" or "gpu"
     ](
         output: OutputTensor[type=dtype, rank=rank],
         key: InputTensor[type=dtype, rank=rank],
@@ -210,7 +210,7 @@ fn fused_attention_cpu[
 
 @always_inline
 fn matmul[
-    target: StringLiteral,
+    target: StaticString,
     transpose_b: Bool = False,
 ](
     lhs: LayoutTensor,
@@ -221,7 +221,8 @@ fn matmul[
         MutableAnyOrigin,
         address_space = lhs.address_space,
         element_layout = lhs.element_layout,
-        layout_bitwidth = lhs.layout_bitwidth,
+        layout_int_type = lhs.layout_int_type,
+        linear_idx_type = lhs.linear_idx_type,
     ],
 ):
     res = __type_of(res).stack_allocation()

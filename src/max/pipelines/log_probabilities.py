@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Callable
 
 import numpy as np
-from max.pipelines.interfaces import LogProbabilities
+from max.pipelines.core import LogProbabilities
 
 
 def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:

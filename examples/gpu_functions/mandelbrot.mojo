@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StringSlice
+from math import ceildiv
+from sys import has_nvidia_gpu_accelerator
+
 from complex import ComplexSIMD
 from gpu.host import Dim
-from gpu.id import thread_idx, block_dim, block_idx
-from layout import LayoutTensor, Layout
-from math import ceildiv
+from gpu.id import block_dim, block_idx, thread_idx
+from layout import Layout, LayoutTensor
 from max.driver import Accelerator, Tensor, accelerator, cpu
-from sys import has_nvidia_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias int_dtype = DType.int32

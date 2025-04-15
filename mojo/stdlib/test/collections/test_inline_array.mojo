@@ -13,12 +13,12 @@
 # RUN: %mojo %s
 
 from collections import InlineArray
+from sys.info import sizeof
 
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import DelRecorder
 from testing import assert_equal, assert_false, assert_true
-from sys.info import sizeof
 
 
 def test_array_unsafe_get():

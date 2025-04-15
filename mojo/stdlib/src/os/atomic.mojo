@@ -19,12 +19,11 @@ from os import Atomic
 ```
 """
 
+from collections.string.string_slice import _get_kgen_string
 from sys.info import is_nvidia_gpu
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from memory import UnsafePointer, bitcast
-from builtin.string_literal import get_string_literal_slice
-from collections.string import StaticString
 
 
 struct Atomic[dtype: DType, *, scope: StaticString = ""]:
@@ -64,7 +63,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return self.fetch_add(0)
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn _fetch_add(
         ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]
     ) -> Scalar[dtype]:
@@ -86,7 +85,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
             ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-            syncscope = get_string_literal_slice[scope]().value,
+            syncscope = _get_kgen_string[scope](),
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](
             ptr.bitcast[
@@ -200,7 +199,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-            syncscope = get_string_literal_slice[scope]().value,
+            syncscope = _get_kgen_string[scope](),
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](value_addr.address, rhs.value)
 
@@ -356,7 +355,7 @@ fn _compare_exchange_weak_integral_impl[
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
         success_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        syncscope = get_string_literal_slice[scope]().value,
+        syncscope = _get_kgen_string[scope](),
     ](
         value_addr.bitcast[
             __mlir_type[`!pop.scalar<`, dtype.value, `>`]
@@ -384,7 +383,7 @@ fn _max_impl_base[
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op max>`,
         ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        syncscope = get_string_literal_slice[scope]().value,
+        syncscope = _get_kgen_string[scope](),
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
     ](value_addr.address, rhs.value)
 
@@ -399,7 +398,7 @@ fn _min_impl_base[
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op min>`,
         ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        syncscope = get_string_literal_slice[scope]().value,
+        syncscope = _get_kgen_string[scope](),
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
     ](value_addr.address, rhs.value)
 

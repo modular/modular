@@ -15,14 +15,13 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string import StringSlice, StaticString
+
+from collections.string.format import _CurlyEntryFormattable
 from sys import alignof, sizeof
 from sys.ffi import c_char
 
 from memory import UnsafePointer, memcpy
 from memory.memory import _free
-
-from collections.string.format import _CurlyEntryFormattable
 
 from utils.write import write_buffered
 

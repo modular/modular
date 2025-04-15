@@ -16,7 +16,7 @@ from math import ceildiv
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice, OutputTensor, InputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils.index import IndexList
 
@@ -75,7 +75,7 @@ struct VectorAddition:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor[rank=1],
         lhs: InputTensor[type = out.type, rank = out.rank],

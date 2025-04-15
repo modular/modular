@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
+from collections.string.string_slice import get_static_string
 from os import abort
 from sys.ffi import c_int
 from sys.info import sizeof
 
-from collections.string import StringSlice, StaticString
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
 from python._cpython import (
@@ -82,7 +82,7 @@ struct PyMojoObject[T: AnyType]:
 
 fn python_type_object[
     T: Pythonable,
-    type_name: StringLiteral,
+    type_name: StaticString,
 ](owned methods: List[PyMethodDef]) raises -> TypedPythonObject["Type"]:
     """Construct a Python 'type' describing PyMojoObject[T].
 
@@ -110,9 +110,11 @@ fn python_type_object[
     # Zeroed item terminator
     slots.append(PyType_Slot.null())
 
+    # Get this as a static string to force it to be nul terminated.
+    alias type_name_static = get_static_string[type_name]()
     var type_spec = PyType_Spec(
         # FIXME(MOCO-1306): This should be `T.__name__`.
-        type_name.unsafe_cstr_ptr(),
+        type_name_static.unsafe_ptr().bitcast[sys.ffi.c_char](),
         sizeof[PyMojoObject[T]](),
         0,
         Py_TPFLAGS_DEFAULT,
@@ -324,7 +326,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() missing {} required positional {}",
-                    StringLiteral(func_name),
+                    StaticString(func_name),
                     missing_arg_count,
                     _pluralize(missing_arg_count, "argument", "arguments"),
                 )
@@ -333,7 +335,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() takes {} positional {} but {} were given",
-                    StringLiteral(func_name),
+                    StaticString(func_name),
                     arity,
                     _pluralize(arity, "argument", "arguments"),
                     arg_count,

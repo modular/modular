@@ -17,7 +17,6 @@ from sys import alignof, sizeof
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
 from python import Python, PythonObject, TypedPythonObject
-from collections.string import StringSlice, StaticString
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
@@ -37,7 +36,6 @@ from python._cpython import (
 from python.python import _get_global_python_itf
 
 alias PyModule = TypedPythonObject["Module"]
-alias MLIRKGENString = __mlir_type.`!kgen.string`
 
 
 fn get_cpython() -> CPython:
@@ -45,8 +43,8 @@ fn get_cpython() -> CPython:
 
 
 # This function is used by the compiler to create a new module.
-fn create_pybind_module[name: MLIRKGENString]() raises -> PyModule:
-    return Python.create_module(String(StringLiteral(name)))
+fn create_pybind_module[name: StaticString]() raises -> PyModule:
+    return Python.create_module(String(name))
 
 
 fn fail_initialization(owned err: Error) -> PythonObject:
@@ -62,27 +60,10 @@ fn fail_initialization(owned err: Error) -> PythonObject:
     return PythonObject(PyObjectPtr())
 
 
-fn pointer_bitcast[
-    To: AnyType
-](
-    ptr: Pointer,
-    out result: Pointer[To, ptr.origin, ptr.address_space, *_, **_],
-):
-    return __type_of(result)(
-        _mlir_value=__mlir_op.`lit.ref.from_pointer`[
-            _type = __type_of(result)._mlir_type
-        ](
-            UnsafePointer(__mlir_op.`lit.ref.to_pointer`(ptr._value))
-            .bitcast[To]()
-            .address
-        )
-    )
-
-
 fn gen_pytype_wrapper[
     T: Pythonable,
-    name: StringLiteral,
-](mut module: PythonObject) raises:
+    name: StaticString,
+](module: PythonObject) raises:
     # TODO(MOCO-1301): Add support for member method generation.
     # TODO(MOCO-1302): Add support for generating member field as computed properties.
     # TODO(MOCO-1307): Add support for constructor generation.
@@ -94,9 +75,8 @@ fn gen_pytype_wrapper[
     # FIXME(MSTDL-957): We should have APIs that explicitly take a `CPython`
     # instance so that callers can pass it around instead of performing a lookup
     # each time.
-    # FIXME(MSTDL-969): Bitcast to `TypedPythonObject["Module"]`.
     Python.add_object(
-        pointer_bitcast[PyModule](Pointer(to=module))[], name, type_obj
+        PyModule(unsafe_unchecked_from=module), String(name), type_obj
     )
 
 
@@ -104,14 +84,14 @@ fn add_wrapper_to_module[
     wrapper_func: fn (
         PythonObject, TypedPythonObject["Tuple"]
     ) raises -> PythonObject,
-    func_name: MLIRKGENString,
+    func_name: StaticString,
 ](mut module_obj: PythonObject) raises:
     var module = TypedPythonObject["Module"](unsafe_unchecked_from=module_obj)
     Python.add_functions(
         module,
         List[PyMethodDef](
             PyMethodDef.function[
-                py_c_function_wrapper[wrapper_func], StringLiteral(func_name)
+                py_c_function_wrapper[wrapper_func], func_name
             ]()
         ),
     )
@@ -120,8 +100,8 @@ fn add_wrapper_to_module[
 fn check_and_get_arg[
     T: AnyType
 ](
-    func_name: StringLiteral,
-    type_name_id: StringLiteral,
+    func_name: StaticString,
+    type_name_id: StaticString,
     py_args: TypedPythonObject["Tuple"],
     index: Int,
 ) raises -> UnsafePointer[T]:
@@ -137,8 +117,8 @@ fn check_and_get_arg[
 fn check_and_get_or_convert_arg[
     T: ConvertibleFromPython
 ](
-    func_name: StringLiteral,
-    type_name_id: StringLiteral,
+    func_name: StaticString,
+    type_name_id: StaticString,
     py_args: TypedPythonObject["Tuple"],
     index: Int,
 ) raises -> UnsafePointer[T]:

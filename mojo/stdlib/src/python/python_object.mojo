@@ -20,15 +20,30 @@ from python import PythonObject
 """
 
 from collections import Dict
-from collections.string import StringSlice
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _type_is_eq
 
+# This apparently redundant import is needed so PythonBindingsGen.cpp can find
+# the StringLiteral declaration.
+from builtin.string_literal import StringLiteral
 from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr
 from .python import Python, _get_global_python_itf
+
+
+trait PythonObjectible:
+    """A trait that indicates a type can be converted to a PythonObject, and
+    that specifies the behavior with a `to_python_object` method."""
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert a value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        ...
 
 
 struct _PyIter(Sized):
@@ -121,7 +136,8 @@ struct _PyIter(Sized):
 
 
 @register_passable
-struct TypedPythonObject[type_hint: StringLiteral](
+struct TypedPythonObject[type_hint: StaticString](
+    PythonObjectible,
     SizedRaising,
 ):
     """A wrapper around `PythonObject` that indicates the type of the contained
@@ -178,6 +194,14 @@ struct TypedPythonObject[type_hint: StringLiteral](
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert the TypedPythonObject to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return self._obj
 
     # TODO:
     #   This should have origin, or we should do this with a context
@@ -236,6 +260,7 @@ struct PythonObject(
     SizedRaising,
     Stringable,
     Writable,
+    PythonObjectible,
     _HashableWithHasher,
 ):
     """A Python object."""
@@ -383,16 +408,19 @@ struct PythonObject(
         Args:
             value: The scalar value.
         """
-        cpython = _get_global_python_itf().cpython()
+        var cpython = _get_global_python_itf().cpython()
 
         @parameter
         if dtype is DType.bool:
             self.py_object = cpython.PyBool_FromLong(Int(value))
+        elif dtype.is_unsigned():
+            var uint_val = value.cast[DType.index]().value
+            self.py_object = cpython.PyLong_FromSize_t(uint_val)
         elif dtype.is_integral():
-            int_val = value.cast[DType.index]().value
+            var int_val = value.cast[DType.index]().value
             self.py_object = cpython.PyLong_FromSsize_t(int_val)
         else:
-            fp_val = value.cast[DType.float64]()
+            var fp_val = value.cast[DType.float64]()
             self.py_object = cpython.PyFloat_FromDouble(fp_val)
 
     @implicit
@@ -423,88 +451,87 @@ struct PythonObject(
         cpython = _get_global_python_itf().cpython()
         self.py_object = cpython.PyUnicode_DecodeUTF8(string)
 
-    @implicit
-    fn __init__[*Ts: CollectionElement](out self, value: ListLiteral[*Ts]):
+    @always_inline
+    @staticmethod
+    fn list[*Ts: PythonObjectible](*values: *Ts) -> Self:
+        """Initialize the object from a list of values.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the list with.
+
+        Returns:
+            A PythonObject representing the list.
+        """
+        return Self._list(values)
+
+    @staticmethod
+    fn _list[
+        *Ts: PythonObjectible
+    ](values: VariadicPack[_, PythonObjectible, *Ts]) -> Self:
         """Initialize the object from a list literal.
 
         Parameters:
             Ts: The list element types.
 
         Args:
-            value: The list value.
+            values: The values to initialize the list with.
+
+        Returns:
+            A PythonObject representing the list.
         """
         var cpython = _get_global_python_itf().cpython()
-        self.py_object = cpython.PyList_New(len(value))
+        var py_object = cpython.PyList_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
-            # We need to rebind the element to one we know how to convert from.
-            # FIXME: This doesn't handle implicit conversions or nested lists.
-            alias T = Ts[i]
-
-            var obj: PythonObject
-
-            @parameter
-            if _type_is_eq[T, PythonObject]():
-                obj = value.get[i, PythonObject]()
-            elif _type_is_eq[T, Int]():
-                obj = PythonObject(value.get[i, Int]())
-            elif _type_is_eq[T, Float64]():
-                obj = PythonObject(value.get[i, Float64]())
-            elif _type_is_eq[T, Bool]():
-                obj = PythonObject(value.get[i, Bool]())
-            elif _type_is_eq[T, StringLiteral]():
-                obj = PythonObject(value.get[i, StringLiteral]())
-            else:
-                obj = PythonObject(0)
-                constrained[
-                    False, "cannot convert list element to python object"
-                ]()
-
+            var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(self.py_object, i, obj.py_object)
+            _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
+        return py_object
 
-    @implicit
-    fn __init__[*Ts: CollectionElement](out self, value: Tuple[*Ts]):
+    @always_inline
+    @staticmethod
+    fn tuple[*Ts: PythonObjectible](*values: *Ts) -> Self:
         """Initialize the object from a tuple literal.
 
         Parameters:
             Ts: The tuple element types.
 
         Args:
-            value: The tuple value.
+            values: The values to initialize the tuple with.
+
+        Returns:
+            A PythonObject representing the tuple.
+        """
+        return Self._tuple(values)
+
+    @staticmethod
+    fn _tuple[
+        *Ts: PythonObjectible
+    ](values: VariadicPack[_, PythonObjectible, *Ts]) -> Self:
+        """Initialize the object from a tuple literal.
+
+        Parameters:
+            Ts: The tuple element types.
+
+        Args:
+            values: The values to initialize the tuple with.
+
+        Returns:
+            A PythonObject representing the tuple.
         """
         var cpython = _get_global_python_itf().cpython()
-        alias length = len(VariadicList(Ts))
-        self.py_object = cpython.PyTuple_New(length)
+        var py_object = cpython.PyTuple_New(len(values))
 
         @parameter
-        for i in range(length):
-            # We need to rebind the element to one we know how to convert from.
-            # FIXME: This doesn't handle implicit conversions or nested lists.
-            alias T = Ts[i]
-
-            var obj: PythonObject
-
-            @parameter
-            if _type_is_eq[T, PythonObject]():
-                obj = rebind[PythonObject](value[i])
-            elif _type_is_eq[T, Int]():
-                obj = PythonObject(rebind[Int](value[i]))
-            elif _type_is_eq[T, Float64]():
-                obj = PythonObject(rebind[Float64](value[i]))
-            elif _type_is_eq[T, Bool]():
-                obj = PythonObject(rebind[Bool](value[i]))
-            elif _type_is_eq[T, StringLiteral]():
-                obj = PythonObject(rebind[StringLiteral](value[i]))
-            else:
-                obj = PythonObject(0)
-                constrained[
-                    False, "cannot convert list element to python object"
-                ]()
-
+        for i in range(len(VariadicList(Ts))):
+            var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyTuple_SetItem(self.py_object, i, obj.py_object)
+            _ = cpython.PyTuple_SetItem(py_object, i, obj.py_object)
+        return py_object
 
     @implicit
     fn __init__(out self, slice: Slice):
@@ -525,7 +552,7 @@ struct PythonObject(
         var cpython = _get_global_python_itf().cpython()
         self.py_object = cpython.PyDict_New()
         for entry in value.items():
-            var result = cpython.PyDict_SetItem(
+            _ = cpython.PyDict_SetItem(
                 self.py_object, entry[].key.py_object, entry[].value.py_object
             )
 
@@ -1520,6 +1547,14 @@ struct PythonObject(
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return self
 
     fn unsafe_as_py_object_ptr(self) -> PyObjectPtr:
         """Get the underlying PyObject pointer.

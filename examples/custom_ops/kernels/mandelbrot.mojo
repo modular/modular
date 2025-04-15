@@ -15,11 +15,10 @@ from math import iota
 
 import compiler
 from complex import ComplexSIMD
-from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from max.tensor import InputTensor, ManagedTensorSlice, OutputTensor, foreach
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
-
 
 alias float_dtype = DType.float32
 
@@ -29,7 +28,7 @@ struct Mandelbrot:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor,
         # starting here are the list of inputs

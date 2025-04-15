@@ -19,8 +19,6 @@ These are Mojo built-ins, so you don't need to import them.
 from collections import InlineArray, List, Optional
 from os import abort
 
-from utils import StaticString, StringSlice
-
 alias _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 
@@ -317,7 +315,7 @@ fn _try_write_int[
         # TODO: Replace with safe digit_chars[:1] syntax.
         # SAFETY:
         #   This static origin is valid as long as we're using a
-        #   `StringLiteral` for `digit_chars`.
+        #   `StaticString` for `digit_chars`.
         var zero_char = digit_chars_array[0]
 
         # Construct a null-terminated buffer of single-byte char.

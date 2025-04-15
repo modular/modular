@@ -46,7 +46,7 @@ alias FILE_ptr = OpaquePointer
 
 @always_inline
 fn fdopen(fd: c_int, mode: UnsafePointer[c_char]) -> FILE_ptr:
-    alias name = "_fdopen" if os_is_windows() else "fdopen"
+    alias name = StaticString("_fdopen") if os_is_windows() else "fdopen"
 
     return external_call[name, FILE_ptr](fd, mode)
 
@@ -101,7 +101,7 @@ struct BufferMode:
 
 @always_inline
 fn dup(oldfd: c_int) -> c_int:
-    alias name = "_dup" if os_is_windows() else "dup"
+    alias name = StaticString("_dup") if os_is_windows() else "dup"
 
     return external_call[name, c_int](oldfd)
 

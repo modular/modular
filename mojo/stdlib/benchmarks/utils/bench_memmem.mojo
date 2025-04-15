@@ -14,8 +14,8 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from math import align_down
 from collections.string.string_slice import _memchr, _memmem
+from math import align_down
 from sys import simdwidthof
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run

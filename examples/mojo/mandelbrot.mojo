@@ -54,14 +54,13 @@ fn mandelbrot_kernel_SIMD[
     var cy = c.im
     var x = SIMD[float_type, simd_width](0)
     var y = SIMD[float_type, simd_width](0)
-    var y2 = SIMD[float_type, simd_width](0)
     var iters = SIMD[int_type, simd_width](0)
     var t: SIMD[DType.bool, simd_width] = True
 
     for _ in range(MAX_ITERS):
         if not any(t):
             break
-        y2 = y * y
+        var y2 = y * y
         y = x.fma(y + y, cy)
         t = x.fma(x, y2) <= 4
         x = x.fma(x, cx - y2)

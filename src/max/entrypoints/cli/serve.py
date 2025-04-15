@@ -19,8 +19,9 @@ import logging
 from typing import Optional, Union
 
 import uvloop
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, PipelineTask
-from max.pipelines.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.core import PipelineTask
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,
@@ -86,6 +87,8 @@ def serve_pipeline(
             failure_percentage,
         )
 
+        # TODO(AITLIB-320): Figure out a way to avoid monkey patching PipelineConfig
+        # here.
         pipeline_config.model_config.kv_cache_config.cache_strategy = (
             KVCacheStrategy.CONTINUOUS
         )
@@ -100,7 +103,6 @@ def serve_pipeline(
     # If explicit model name is not provided, set to model_path.
     if model_name is None:
         model_name = pipeline_config.model_config.model_path
-        assert model_name is not None
 
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name=model_name,

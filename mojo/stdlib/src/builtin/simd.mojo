@@ -42,7 +42,6 @@ domain-specific libraries for machine learning and scientific computing.
 
 import math
 from collections import InlineArray
-from collections.string import StringSlice
 from collections.string.string import (
     _calc_format_buffer_size,
     _calc_initial_buffer_size,
@@ -53,6 +52,7 @@ from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
 from os import abort
 from sys import (
+    CompilationTarget,
     PrefetchOptions,
     _RegisterPackType,
     alignof,
@@ -66,10 +66,9 @@ from sys import (
     prefetch,
     simdwidthof,
     sizeof,
-    CompilationTarget,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x
+from sys.info import _is_sm_9x_or_newer
 
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
@@ -78,6 +77,7 @@ from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
+from python import PythonObject, PythonObjectible
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -130,10 +130,9 @@ alias UInt256 = Scalar[DType.uint256]
 """Represents a 256-bit unsigned scalar integer."""
 
 alias Float8_e5m2 = Scalar[DType.float8_e5m2]
-"""Represents a FP8E5M2 floating point format from the [OFP8
-standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
-
-The 8 bits are encoded as `seeeeemm`:
+"""Represents the 8-bit E5M2 floating point format from the [OFP8
+standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+encoded as `seeeeemm`:
 - (s)ign: 1 bit
 - (e)xponent: 5 bits
 - (m)antissa: 2 bits
@@ -144,9 +143,7 @@ The 8 bits are encoded as `seeeeemm`:
 - -0: 10000000
 """
 alias Float8_e5m2fnuz = Scalar[DType.float8_e5m2fnuz]
-"""Represents a FP8E5M2FNUZ floating point format.
-
-The 8 bits are encoded as `seeeeemm`:
+"""Represents an 8-bit floating point format, encoded as `seeeeemm`:
 - (s)ign: 1 bit
 - (e)xponent: 5 bits
 - (m)antissa: 2 bits
@@ -156,10 +153,15 @@ The 8 bits are encoded as `seeeeemm`:
 - uz: unsigned zero (no -0 encoding)
 """
 alias Float8_e4m3fn = Scalar[DType.float8_e4m3fn]
-"""Represents a FP8E4M3 floating point format from the [OFP8
+"""Represents the E4M3 floating point format defined in the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
-The 8 bits are encoded as `seeeemmm`:
+This type is named differently across libraries and vendors, for example:
+- Mojo, PyTorch, JAX, and LLVM refer to it as `e4m3fn`.
+- OCP, NVIDIA CUDA, and AMD ROCm refer to it as `e4m3`.
+
+In these contexts, they are all referring to the same finite type specified
+in the OFP8 standard above, encoded as `seeeemmm`:
 - (s)ign: 1 bit
 - (e)xponent: 4 bits
 - (m)antissa: 3 bits
@@ -169,9 +171,8 @@ The 8 bits are encoded as `seeeemmm`:
 - fn: finite (no inf or -inf encodings)
 """
 alias Float8_e4m3fnuz = Scalar[DType.float8_e4m3fnuz]
-"""Represents a FP8E4M3FNUZ floating point format.
-
-The 8 bits are encoded as `seeeemmm`:
+"""Represents an 8-bit e4m3fnuz floating point format, encoded as
+`seeeemmm`:
 - (s)ign: 1 bit
 - (e)xponent: 4 bits
 - (m)antissa: 3 bits
@@ -242,7 +243,7 @@ fn _has_native_bf16_support() -> Bool:
 
 @always_inline("nodebug")
 fn _has_native_f8_support() -> Bool:
-    return _is_sm_9x() or is_nvidia_gpu["sm_89"]() or is_amd_gpu()
+    return _is_sm_9x_or_newer() or is_nvidia_gpu["sm_89"]() or is_amd_gpu()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -271,6 +272,7 @@ struct SIMD[dtype: DType, size: Int](
     Representable,
     Roundable,
     Sized,
+    PythonObjectible,
     RepresentableCollectionElement,
     Stringable,
 ):
@@ -523,7 +525,6 @@ struct SIMD[dtype: DType, size: Int](
         )
 
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, *elems: Scalar[dtype]):
         """Constructs a SIMD vector via a variadic list of elements.
 
@@ -1409,6 +1410,15 @@ struct SIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        constrained[size == 1, "only works with scalar values"]()
+        return PythonObject(rebind[Scalar[dtype]](self))
+
     @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Gets the length of the SIMD vector.
@@ -1461,9 +1471,7 @@ struct SIMD[dtype: DType, size: Int](
             # a large unsigned
             return self.cast[_uint_type_of_width[int_width]()]().__int__()
         else:
-            return __mlir_op.`pop.cast`[
-                _type = __mlir_type.`!pop.scalar<index>`
-            ](rebind[Scalar[dtype]](self).value)
+            return rebind[Scalar[DType.index]](self.cast[DType.index]()).value
 
     @always_inline("nodebug")
     fn __index__(self) -> __mlir_type.index:
@@ -1488,9 +1496,7 @@ struct SIMD[dtype: DType, size: Int](
             The value as a float.
         """
         constrained[size == 1, "expected a scalar type"]()
-        return __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<f64>`](
-            rebind[Scalar[dtype]](self).value
-        )
+        return rebind[Scalar[dtype]](self).cast[DType.float64]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -1566,7 +1572,9 @@ struct SIMD[dtype: DType, size: Int](
 
                 @parameter
                 if dtype.is_half_float():
-                    alias prefix = "abs.bf16" if dtype is DType.bfloat16 else "abs.f16"
+                    alias prefix = StaticString(
+                        "abs.bf16"
+                    ) if dtype is DType.bfloat16 else "abs.f16"
                     return _call_ptx_intrinsic[
                         scalar_instruction=prefix,
                         vector2_instruction = prefix + "x2",
@@ -1731,15 +1739,28 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             constrained[
-                target in (DType.float32, DType.float16, DType.bfloat16),
+                target
+                in (
+                    DType.float64,
+                    DType.float32,
+                    DType.float16,
+                    DType.bfloat16,
+                ),
                 (
-                    "Only FP8->F32, FP8->F16, and FP8->BF16 castings are"
-                    " implemented."
+                    String(
+                        (
+                            "Only FP8->F64, FP8->F32, FP8->F16, and FP8->BF16"
+                            " castings are implemented. "
+                        ),
+                        dtype,
+                        "->",
+                        target,
+                    )
                 ),
             ]()
 
             @parameter
-            if target is DType.float32:
+            if target in (DType.float32, DType.float64):
                 return _convert_float8_to_f32(
                     rebind[SIMD[dtype, size]](self)
                 ).cast[target]()
@@ -1872,9 +1893,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The integer value.
         """
-        var ptr: UnsafePointer[Scalar[dtype]] = bytes.unsafe_ptr().bitcast[
-            Scalar[dtype]
-        ]()
+        var ptr = bytes.unsafe_ptr().bitcast[Scalar[dtype]]()
         var value = ptr[]
 
         @parameter
@@ -1907,7 +1926,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return array^
 
-    fn _floor_ceil_trunc_impl[intrinsic: StringLiteral](self) -> Self:
+    fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
         constrained[
             intrinsic == "llvm.floor"
             or intrinsic == "llvm.ceil"
@@ -1962,9 +1981,9 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
 
-        return __mlir_op.`pop.fma`(
-            self.value, multiplier.value, accumulator.value
-        )
+        return __mlir_op.`pop.fma`[
+            fastmathFlags = __mlir_attr.`#pop<fmf contract>`
+        ](self.value, multiplier.value, accumulator.value)
 
     @always_inline("nodebug")
     fn _shuffle_variadic[
@@ -3140,7 +3159,7 @@ fn _convert_float8_to_f32[
     size: Int,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
     @parameter
-    if is_nvidia_gpu() and _is_sm_9x():
+    if _is_sm_9x_or_newer():
         return _convert_float8_to_f16(rebind[SIMD[dtype, size]](val)).cast[
             DType.float32
         ]()
@@ -3164,35 +3183,10 @@ fn _convert_float8_to_f16[
     size: Int,
 ](val: SIMD[dtype, size],) -> SIMD[DType.float16, size]:
     @parameter
-    if is_nvidia_gpu() and _is_sm_9x():
-        alias asm_prefix = "cvt.rn.f16x2.e4m3x2" if dtype is DType.float8_e4m3fn else "cvt.rn.f16x2.e5m2x2"
-        var val_uint8 = bitcast[DType.uint8](val)
-
-        @parameter
-        if size > 1:
-            var res = SIMD[DType.uint16, size]()
-
-            @parameter
-            for i in range(0, size, 2):
-                var f8x2 = val_uint8.slice[2, offset=i]()
-                var f16x2_f8x2 = inlined_assembly[
-                    asm_prefix + " $0, $1;",
-                    Scalar[DType.uint32],
-                    constraints="=r,h",
-                    has_side_effect=False,
-                ](bitcast[DType.uint16, 1](f8x2))
-                var ui16x2 = bitcast[DType.uint16, 2](f16x2_f8x2)
-                res = res.insert[offset=i](ui16x2)
-            return bitcast[DType.float16](res)
-        else:
-            var f16x2_f8x2 = inlined_assembly[
-                asm_prefix + " $0, $1;",
-                Scalar[DType.uint32],
-                constraints="=r,h",
-                has_side_effect=False,
-            ](val_uint8.cast[DType.uint16]())
-            var ui16x2 = bitcast[DType.uint16, 2](f16x2_f8x2)
-            return bitcast[DType.float16](ui16x2[0])
+    if _is_sm_9x_or_newer():
+        return __mlir_op.`pop.cast`[
+            _type = SIMD[DType.float16, size]._mlir_type
+        ](val.value)
     else:
         return _convert_float8_to_f32(rebind[SIMD[dtype, size]](val)).cast[
             DType.float16
@@ -3206,7 +3200,7 @@ fn _convert_f32_to_float8[
     size: Int,
 ](val: SIMD[dtype, size],) -> SIMD[target, size]:
     @parameter
-    if is_nvidia_gpu() and _is_sm_9x():
+    if _is_sm_9x_or_newer():
         return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
             val.value
         )
@@ -3250,7 +3244,6 @@ fn _convert_f32_to_float8_scaler[
     var sign: UInt8 = 0x80 if FPUtils[dtype].get_sign(x) else 0x00
     var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - FP32_EXPONENT_BIAS
     var mantissa = Int32(FPUtils[dtype].get_mantissa(x))
-    var u: UInt8 = 0
 
     var kF8_NaN: UInt8 = 0x7F
 
@@ -3372,7 +3365,9 @@ fn _bfloat16_to_f32_scalar(
     @parameter
     if is_nvidia_gpu():
         return inlined_assembly[
-            "cvt.f32.bf16 $0, $1;" if _is_sm_9x() else "mov.b32 $0, {0, $1};",
+            StaticString(
+                "cvt.f32.bf16 $0, $1;"
+            ) if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",
             Float32,
             constraints="=f,h",
             has_side_effect=False,

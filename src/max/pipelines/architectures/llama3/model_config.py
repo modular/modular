@@ -22,16 +22,13 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import Llama3RopeScalingParams
+from max.nn import Llama3RopeScalingParams, ReturnLogits
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines import upper_bounded_default
 from max.pipelines.config import PipelineConfig
 from max.pipelines.config_enums import RopeType
-from max.pipelines.kv_cache import KVCacheParams
-from max.pipelines.max_config import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-)
+from max.pipelines.max_config import KVCacheConfig
+from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 
@@ -54,7 +51,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     model_quantization_encoding: Optional[QuantizationEncoding]
     quantization_config: Optional[QuantizationConfig]
     kv_params: KVCacheParams
-    return_n_logits: int
+    return_logits: ReturnLogits
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     attention_bias: bool
     rms_norm_eps: Optional[float]
@@ -167,7 +164,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
-        return_n_logits: int,
+        return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> Llama3Config:
@@ -245,7 +242,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             # on the underlying model repo id.
             model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
-            return_n_logits=return_n_logits,
+            return_logits=return_logits,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),

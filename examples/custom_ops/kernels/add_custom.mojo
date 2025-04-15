@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from max.tensor import InputTensor, ManagedTensorSlice, OutputTensor, foreach
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
@@ -23,7 +23,7 @@ struct AddConstantCustom[value: Int]:
     @staticmethod
     fn execute[
         # e.g. "CUDA" or "CPU"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor,
         x: InputTensor[type = out.type, rank = out.rank],
@@ -53,7 +53,7 @@ struct AddOneCustom:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor,
         x: InputTensor[type = out.type, rank = out.rank],

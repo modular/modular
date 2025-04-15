@@ -18,67 +18,56 @@ from os.path import splitroot
 from testing import assert_equal
 
 
+def _splitroot_test(
+    path: String,
+    expected_drive: String,
+    expected_root: String,
+    expected_tail: String,
+):
+    drive, root, tail = splitroot(path)
+    assert_equal(drive, expected_drive)
+    assert_equal(root, expected_root)
+    assert_equal(tail, expected_tail)
+
+
 def test_absolute_path():
-    drive, root, tail = splitroot("/usr/lib/file.txt")
-    assert_equal(drive, "")
-    assert_equal(root, "/")
-    assert_equal(tail, "usr/lib/file.txt")
-
-    drive, root, tail = splitroot("//usr/lib/file.txt")
-    assert_equal(drive, "")
-    assert_equal(root, "//")
-    assert_equal(tail, "usr/lib/file.txt")
-
-    drive, root, tail = splitroot("///usr/lib/file.txt")
-    assert_equal(drive, "")
-    assert_equal(root, "/")
-    assert_equal(tail, "//usr/lib/file.txt")
+    _splitroot_test("/usr/lib/file.txt", "", "/", "usr/lib/file.txt")
+    _splitroot_test("//usr/lib/file.txt", "", "//", "usr/lib/file.txt")
+    _splitroot_test("///usr/lib/file.txt", "", "/", "//usr/lib/file.txt")
+    _splitroot_test("/a", "", "/", "a")
+    _splitroot_test("/a/b", "", "/", "a/b")
+    _splitroot_test("/a/b/", "", "/", "a/b/")
 
 
 def test_relative_path():
-    drive, root, tail = splitroot("usr/lib/file.txt")
-    assert_equal(drive, "")
-    assert_equal(root, "")
-    assert_equal(tail, "usr/lib/file.txt")
-
-    drive, root, tail = splitroot(".")
-    assert_equal(drive, "")
-    assert_equal(root, "")
-    assert_equal(tail, ".")
-
-    drive, root, tail = splitroot("..")
-    assert_equal(drive, "")
-    assert_equal(root, "")
-    assert_equal(tail, "..")
-
-    drive, root, tail = splitroot("entire/.//.tail/..//captured////")
-    assert_equal(drive, "")
-    assert_equal(root, "")
-    assert_equal(tail, "entire/.//.tail/..//captured////")
+    _splitroot_test("usr/lib/file.txt", "", "", "usr/lib/file.txt")
+    _splitroot_test(".", "", "", ".")
+    _splitroot_test("..", "", "", "..")
+    _splitroot_test(
+        "entire/.//.tail/..//captured////",
+        "",
+        "",
+        "entire/.//.tail/..//captured////",
+    )
+    _splitroot_test("a", "", "", "a")
+    _splitroot_test("a/b", "", "", "a/b")
+    _splitroot_test("a/b/", "", "", "a/b/")
 
 
 def test_root_directory():
-    drive, root, tail = splitroot("/")
-    assert_equal(drive, "")
-    assert_equal(root, "/")
-    assert_equal(tail, "")
-
-    drive, root, tail = splitroot("//")
-    assert_equal(drive, "")
-    assert_equal(root, "//")
-    assert_equal(tail, "")
-
-    drive, root, tail = splitroot("///")
-    assert_equal(drive, "")
-    assert_equal(root, "/")
-    assert_equal(tail, "//")
+    _splitroot_test("/", "", "/", "")
+    _splitroot_test("//", "", "//", "")
+    _splitroot_test("///", "", "/", "//")
 
 
 def test_empty_path():
-    drive, root, tail = splitroot("")
-    assert_equal(drive, "")
-    assert_equal(root, "")
-    assert_equal(tail, "")
+    _splitroot_test("", "", "", "")
+
+
+def test_windows_directory():
+    _splitroot_test("c:/a/b", "", "", "c:/a/b")
+    _splitroot_test("\\/a/b", "", "", "\\/a/b")
+    _splitroot_test("\\a\\b", "", "", "\\a\\b")
 
 
 def main():
@@ -86,3 +75,4 @@ def main():
     test_relative_path()
     test_root_directory()
     test_empty_path()
+    test_windows_directory()

@@ -15,6 +15,7 @@
 from collections import InlineArray
 from sys import has_neon
 
+from bit import count_leading_zeros
 from builtin.simd import _modf
 from memory import UnsafePointer
 from testing import (
@@ -27,7 +28,6 @@ from testing import (
 
 from utils import IndexList, StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
-from bit import count_leading_zeros
 
 
 def test_cast():

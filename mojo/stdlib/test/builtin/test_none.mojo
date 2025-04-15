@@ -53,9 +53,9 @@ struct FromNone:
 
 
 def test_type_from_none():
-    obj = FromNone(5)
+    _ = FromNone(5)
 
-    obj = FromNone(None)
+    _ = FromNone(None)
 
     # -------------------------------------
     # Test implicit conversion from `None`
@@ -71,4 +71,4 @@ def test_type_from_none():
     # foo(None)
     #
     #   But, interestingly, this does not fail?
-    var obj2: FromNone = None
+    var _obj2: FromNone = None

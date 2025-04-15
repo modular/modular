@@ -125,7 +125,7 @@ def test_reversed_dict():
     assert_equal(keys, "")
 
     check = 0
-    for val in reversed(empty_dict.values()):
+    for _ in reversed(empty_dict.values()):
         # values is empty, should not reach here
         check += 1
 

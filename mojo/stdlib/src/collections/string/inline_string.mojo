@@ -38,7 +38,6 @@ Example:
 """
 
 from collections import InlineArray, Optional
-from collections.string import StringSlice
 from os import abort
 from sys import sizeof
 
@@ -332,7 +331,7 @@ struct _FixedString[CAP: Int](
                 ")",
             )
 
-        self.buffer = InlineArray[UInt8, CAP]()
+        self.buffer = InlineArray[UInt8, CAP](uninitialized=True)
         self.size = len(literal)
 
         memcpy(self.buffer.unsafe_ptr(), literal.unsafe_ptr(), len(literal))
@@ -392,6 +391,17 @@ struct _FixedString[CAP: Int](
 
     fn __len__(self) -> Int:
         return self.size
+
+    fn __eq__(self, other: StringSlice) -> Bool:
+        """Returns True if this string content is equal to another string.
+
+        Args:
+            other: The string to compare against.
+
+        Returns: A boolean indicating if this string content is the same as
+            another string.
+        """
+        return self.as_string_slice() == other
 
     # ===------------------------------------------------------------------=== #
     # Methods

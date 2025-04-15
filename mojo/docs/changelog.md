@@ -28,7 +28,31 @@ what we publish.
   attach other kinds of attributes, and this helps guard against typos and mojo
   code getting outdated when the dialect changes.
 
+- `def` functions now require type annotations on arguments, and treat a missing
+  return type as returning `None`. Previously these defaulted to the `object`
+  type which led to a variety of problems.  Support for `object` is being
+  removed until we have time to investigate a proper replacement.
+
+- The Mojo compiler now warns about stores to values that are never used, e.g.:
+  `x = foo(); x = bar()` will warn about the first assignment to `x` because
+  it is overwritten.  You can generally address this by deleting dead code, or
+  by assigning to `_` instead: `_ = foo(); x = bar()`.  You may also encounter
+  this in variable declarations, e.g. `var x = 0; ...; x = foo()`.  In this
+  case, change the variable to being declared as uninitialized, e.g.
+  `var x: Int`.  You may also silence this warning entirely for a variable by
+  renaming it to start with an underscore, e.g. `_x`.
+
 ### Standard library changes
+
+- The `StringLiteral` type has been moved to a more reliable "dependent type"
+  design where the value of the string is carried in a parameter instead of a
+  stored member. This defines away a category of compiler crashes when working
+  with `StringLiteral` by making it impossible to express that.  As a
+  consequence of this change, many APIs should switch to using `StaticString`
+  instead of `StringLiteral`.
+
+- `Span` now has a `swap_elements` method which takes two indices and swaps them
+   within the span.
 
 - `Pointer` now has `get_immutable()` to return a new `Pointer`
   with the same underlying data but an `ImmutableOrigin`.
@@ -75,10 +99,28 @@ for i in range(iteration_range):
 - The `is_power_of_two(x)` function in the `bit` package is now a method on
   `Int`, `UInt` and `SIMD`.
 
+- The types `StringSlice` and `StaticString` are now part of the prelude, there
+  is no need to import them anymore.
+
 - The `constrained[cond, string]()` function now accepts multiple strings that
   are printed concatenated on failure, so you can use:
   `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
   efficient and somewhat more ergonomic than using string concatenation.
+
+- `pathlib.Path.write_text` now accepts a `Writable` argument instead of a `Stringable`
+  argument. This makes the function more efficient by removing a String allocation.
+
+- Added `pathlib.Path.write_bytes` which enables writing raw bytes to a file.
+
+- Added `os.path.split_extension` to split a path into its root and extension.
+
+- Added `os.path.is_absolute` to check if a given path is absolute or not.
+
+- `PythonObject` is no longer implicitly constructible from tuple or list
+  literals, e.g. `var x : PythonObject = [1, 2, "foo"]` is no longer accepted.
+  Instead, please use named constructors like
+  `var x = Python.list(1, 2, "foo")`.  We hope to re-enable the syntax in
+  the future as the standard library matures.
 
 ### GPU changes
 
@@ -148,6 +190,11 @@ alias b: Int = (5 * a) // 2
 
 previously compiler would throw error "cannot fold operation".
 
+- New `--emit-llvm` option to the `mojo build` command that allows users to emit
+LLVM IR. When `--emit-llvm` is specified, the build process will: compile mojo
+code to LLVM IR, save the IR to a .ll file (using the same name as the input
+ file), and print the IR to stdout for immediate inspection.
+
 ### ❌ Removed
 
 - The `SIMD.roundeven()` method has been removed from the standard library.
@@ -159,10 +206,18 @@ previously compiler would throw error "cannot fold operation".
 - The `StringableCollectionElement` trait has been removed in favor of
   `WritableCollectionElement`.
 
+- The `object` type has been removed.
+
 ### 🛠️ Fixed
+
+- [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't
+  handle large `UInt64` correctly.
 
 - [#3847](https://github.com/modular/max/issues/3847) - Count leading zeros
   can't be used on SIMD at compile time.
 
 - [#4198](https://github.com/modular/max/issues/4198) - Apple M4
   is not properly detected with `sys.is_apple_silicon()`.
+
+- [#3662](https://github.com/modular/max/issues/3662) - Code using `llvm.assume`
+  cannot run at compile time.

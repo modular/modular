@@ -21,7 +21,6 @@ from os import listdir
 """
 
 from collections import InlineArray, List
-from collections.string import StringSlice
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
 from sys.ffi import OpaquePointer, c_char
 
@@ -31,7 +30,7 @@ from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "\\" if os_is_windows() else "/"
+alias sep = StaticString("\\") if os_is_windows() else "/"
 
 
 # ===----------------------------------------------------------------------=== #

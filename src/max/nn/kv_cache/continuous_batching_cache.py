@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -32,16 +32,18 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
-from max.pipelines.context import InputContext
 
-from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
+from .context import KVCacheAwareContext
 from .manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     RaggedKVCacheInputs,
 )
+from .utils import build_max_lengths_tensor
+
+T = TypeVar("T", bound=KVCacheAwareContext)
 
 
 @dataclass
@@ -169,9 +171,9 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         self.blocks: list[Tensor] = []
         for i in range(len(self.devices)):
             self.blocks.append(
-                Tensor.zeros(
-                    self.block_shape(self.max_batch_size),
-                    self.params.dtype,
+                Tensor(
+                    shape=self.block_shape(self.max_batch_size),
+                    dtype=self.params.dtype,
                     device=self.devices[i],
                 )
             )
@@ -222,7 +224,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
 
     def fetch(
         self,
-        batch: list[InputContext],
+        batch: list[T],
         num_steps: int = 1,
     ) -> list[KVCacheInputs]:
         """Fetches the KV cache state for the given sequence IDs.
@@ -232,7 +234,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         previously cached key/value pairs.
 
         Args:
-            batch: List of InputContext for which to fetch cache state for.
+            batch: List of KVCacheAwareContext for which to fetch cache state for.
             num_steps: Number of steps to run for multi-step scheduling.
 
         Returns:

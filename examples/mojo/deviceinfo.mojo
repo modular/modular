@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+from collections.string import StaticString
 from sys import (
+    CompilationTarget,
     has_avx,
     has_avx2,
     has_avx512f,
@@ -27,7 +29,6 @@ from sys import (
     os_is_linux,
     os_is_macos,
     os_is_windows,
-    CompilationTarget,
 )
 
 # This sample prints the current host system information using APIs from the
@@ -36,7 +37,7 @@ from sys.info import _current_arch, _current_target, _triple_attr
 
 
 def main():
-    var os = ""
+    var os: StaticString
     if os_is_linux():
         os = "linux"
     elif os_is_macos():
@@ -44,7 +45,7 @@ def main():
     else:
         os = "windows"
     var cpu = _current_arch()
-    var arch = _triple_attr()
+    var arch = StaticString(_triple_attr())
     var cpu_features = String("")
     if CompilationTarget.has_sse4():
         cpu_features += " sse4"

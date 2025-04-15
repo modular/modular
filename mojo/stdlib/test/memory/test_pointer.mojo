@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from testing import assert_equal, assert_true, assert_not_equal
+from testing import assert_equal, assert_not_equal, assert_true
 
 
 def test_copy_reference_explicitly():
@@ -48,15 +48,12 @@ def test_pointer_to():
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def test_get_immutable():
-    fn foo(x: Pointer[Int], y: Pointer[Int]) -> Int:
+def test_get_immutable() -> Int:
+    fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
         return x[]
 
     var x = Int(0)
-    return foo(
-        Pointer(to=x).get_immutable(),
-        Pointer(to=x).get_immutable(),
-    )
+    return foo(Pointer(to=x), Pointer(to=x))
 
 
 def main():

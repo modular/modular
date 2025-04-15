@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true, assert_not_equal
 from collections.interval import Interval, IntervalTree
+
+from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 def test_interval():

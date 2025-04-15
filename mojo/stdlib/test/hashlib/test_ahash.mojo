@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from collections import InlineArray
 from hashlib._ahash import AHasher
 from hashlib._hasher import _hash_with_hasher as hash
 from hashlib.hash import hash as old_hash
 
 from bit import pop_count
 from builtin._location import __call_location
-from collections import InlineArray
 from memory import Span, memset_zero
 from testing import assert_equal, assert_not_equal, assert_true
 
@@ -610,26 +610,25 @@ alias hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
 
 
 def test_hash_byte_array():
-    assert_equal(hash[HasherType=hasher0]("a"), hash[HasherType=hasher0]("a"))
-    assert_equal(hash[HasherType=hasher1]("a"), hash[HasherType=hasher1]("a"))
+    alias a = StaticString("a")
+    alias b = StaticString("b")
+    alias c = StaticString("c")
+    alias d = StaticString("d")
+
+    assert_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher0](a))
+    assert_equal(hash[HasherType=hasher1](a), hash[HasherType=hasher1](a))
+    assert_not_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher1](a))
+    assert_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher0](b))
+    assert_equal(hash[HasherType=hasher1](b), hash[HasherType=hasher1](b))
+    assert_not_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher1](b))
+    assert_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher0](c))
+    assert_equal(hash[HasherType=hasher1](c), hash[HasherType=hasher1](c))
+    assert_not_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher1](c))
+    assert_equal(hash[HasherType=hasher0](d), hash[HasherType=hasher0](d))
+    assert_equal(hash[HasherType=hasher1](d), hash[HasherType=hasher1](d))
     assert_not_equal(
-        hash[HasherType=hasher0]("a"), hash[HasherType=hasher1]("a")
-    )
-    assert_equal(hash[HasherType=hasher0]("b"), hash[HasherType=hasher0]("b"))
-    assert_equal(hash[HasherType=hasher1]("b"), hash[HasherType=hasher1]("b"))
-    assert_not_equal(
-        hash[HasherType=hasher0]("b"), hash[HasherType=hasher1]("b")
-    )
-    assert_equal(hash[HasherType=hasher0]("c"), hash[HasherType=hasher0]("c"))
-    assert_equal(hash[HasherType=hasher1]("c"), hash[HasherType=hasher1]("c"))
-    assert_not_equal(
-        hash[HasherType=hasher0]("c"), hash[HasherType=hasher1]("c")
-    )
-    assert_equal(hash[HasherType=hasher0]("d"), hash[HasherType=hasher0]("d"))
-    assert_equal(hash[HasherType=hasher1]("d"), hash[HasherType=hasher1]("d"))
-    assert_not_equal(
-        hash[HasherType=hasher0]("d"),
-        hash[HasherType=hasher1]("d"),
+        hash[HasherType=hasher0](d),
+        hash[HasherType=hasher1](d),
     )
 
 
@@ -739,9 +738,7 @@ def assert_fill_factor_old_hash[
 
 
 def test_fill_factor():
-    var words = List[String]()
-
-    words = gen_word_pairs[words_ar]()
+    var words: List[String] = gen_word_pairs[words_ar]()
     assert_fill_factor["AR"](words, len(words), 0.63)
     assert_fill_factor["AR"](words, len(words) // 2, 0.86)
     assert_fill_factor["AR"](words, len(words) // 4, 0.98)

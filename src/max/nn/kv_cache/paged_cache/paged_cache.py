@@ -20,7 +20,7 @@ import math
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -35,7 +35,6 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
-from max.pipelines.context import InputContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -43,18 +42,21 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
-from ._utils import build_max_lengths_tensor
-from .block_manager import BlockManager
-from .block_utils import BlockCopyOp, BlockCopyType
-from .cache_params import KVCacheParams
-from .manager import (
+from ..cache_params import KVCacheParams
+from ..context import KVCacheAwareContext
+from ..manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     RaggedKVCacheInputs,
 )
+from ..utils import build_max_lengths_tensor
+from .block_manager import BlockManager
+from .block_utils import BlockCopyOp, BlockCopyType
 
 logger = logging.getLogger("max.pipelines")
+
+T = TypeVar("T", bound=KVCacheAwareContext)
 
 
 @dataclass
@@ -85,6 +87,20 @@ class PagedKVCacheCollectionType(_OpaqueType):
     def __init__(self) -> None:
         """Creates an opaque type containing a paged KV cache collection."""
         super().__init__("PagedKVCacheCollection")
+
+
+class PagedKVCacheCollectionFA3FallbackType(_OpaqueType):
+    """The graph type for a "view" of the cache for the given sequences in the
+    batch.
+
+    This object does not own the underlying buffers in k_cache and v_cache,
+    it's borrowing them from the BlockWrappers in our ContinuousKVCacheManager.
+    It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
+    """
+
+    def __init__(self) -> None:
+        """Creates an opaque type containing a paged KV cache collection."""
+        super().__init__("PagedKVCacheCollectionFA3Fallback")
 
 
 class PagedKVCache(_OpaqueValue):
@@ -180,7 +196,7 @@ class FetchPagedKVCacheCollectionFA3Fallback:
                     lookup_table_cast,
                     is_cache_empty,
                 ],
-                out_types=[PagedKVCacheCollectionType()],
+                out_types=[PagedKVCacheCollectionFA3FallbackType()],
                 parameters={
                     "num_heads": self.kv_params.n_kv_heads_per_device,
                     "head_dim": self.kv_params.head_dim,
@@ -269,7 +285,7 @@ class PagedKVCacheManager(KVCacheManager):
     enable_prefix_caching: bool
     """Flag indicating if prefix caching (block reuse) is enabled."""
 
-    enable_swapping_to_host: bool
+    enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
     prefetched_seq_ids: set[int]
@@ -383,9 +399,9 @@ class PagedKVCacheManager(KVCacheManager):
         self.device_tensors: list[Tensor] = []
         for device in self.devices:
             self.device_tensors.append(
-                Tensor.zeros(
-                    self.block_shape(),  # type: ignore
-                    self.params.dtype,
+                Tensor(
+                    shape=self.block_shape(),  # type: ignore
+                    dtype=self.params.dtype,
                     device=device,
                 )
             )
@@ -421,9 +437,9 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
             # create a host tensor
-            self.host_tensor = Tensor.zeros(
-                self.block_shape(self.total_num_host_pages),  # type: ignore
-                self.params.dtype,
+            self.host_tensor = Tensor(
+                shape=self.block_shape(self.total_num_host_pages),  # type: ignore
+                dtype=self.params.dtype,
                 device=Device.cpu(),
             )
 
@@ -446,7 +462,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.enable_prefix_caching = self.params.enable_prefix_caching
 
         # Whether kvcache swapping to host is enabled
-        self.enable_swapping_to_host = (
+        self.enable_kvcache_swapping_to_host = (
             self.params.enable_kvcache_swapping_to_host
         )
 
@@ -553,7 +569,7 @@ class PagedKVCacheManager(KVCacheManager):
         ]
 
     @traced
-    def reuse_blocks_from_prefix_cache(self, data: InputContext) -> None:
+    def reuse_blocks_from_prefix_cache(self, data: T) -> None:
         """Reuse blocks from the prefix cache for a given sequence.
 
         This must be followed by a call to `allocate_new_blocks`. Doing so will
@@ -580,9 +596,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.reset_req_copy_ops(seq_id)
 
     @traced
-    def allocate_new_blocks(
-        self, data: InputContext, num_steps: int = 1
-    ) -> bool:
+    def allocate_new_blocks(self, data: T, num_steps: int = 1) -> bool:
         """Allocate new blocks for a given sequence.
 
         This must be preceded by a call to `reuse_blocks_from_prefix_cache`.
@@ -606,9 +620,7 @@ class PagedKVCacheManager(KVCacheManager):
         return True
 
     @traced
-    def fetch(
-        self, batch: list[InputContext], num_steps: int = 1
-    ) -> list[KVCacheInputs]:
+    def fetch(self, batch: list[T], num_steps: int = 1) -> list[KVCacheInputs]:
         """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
 
         On cache hits, the input context may have their start_idx bumped upwards in order
@@ -660,7 +672,8 @@ class PagedKVCacheManager(KVCacheManager):
             seq_len = ctx.current_length + num_steps - 1
             num_required_blocks = ceildiv(seq_len, self.page_size)
             assert len(blocks) >= num_required_blocks
-            blocks = blocks[:num_required_blocks]
+            if len(blocks) > num_required_blocks:
+                blocks = blocks[:num_required_blocks]
 
             # Vectorized assignment of block indices to lookup table
             lut_table_np[batch_idx, : len(blocks)] = np.array(
@@ -720,7 +733,9 @@ class PagedKVCacheManager(KVCacheManager):
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
                 max_lengths=TensorType(
-                    DType.uint32, shape=["steps_remaining", 2]
+                    DType.uint32,
+                    shape=["steps_remaining", 2],
+                    device=DeviceRef.CPU(),
                 ),
             )
             for i in range(len(self.devices))
@@ -752,7 +767,7 @@ class PagedKVCacheManager(KVCacheManager):
     @traced
     def step(
         self,
-        batch: list[InputContext],
+        batch: list[T],
     ) -> None:
         """Commit new tokens into the prefix cache.
 
@@ -763,9 +778,11 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_manager.step(ctx)
 
     @traced
-    def rollback(self, batch: list[InputContext]) -> None:
+    def rollback(self, batch: list[T]) -> None:
         """Rollback the KVCache for speculative decoding by discarding all data
         after ctx.start_idx.
+
+        Rollback should only be called after kv_cache.step() and decrement of ctx.start_idx.
         """
         for ctx in batch:
             self.block_manager.rollback(ctx)
@@ -773,8 +790,8 @@ class PagedKVCacheManager(KVCacheManager):
     @traced
     def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
         copy_type = copy_op.block_copy_type
-        dst_idx = copy_op.dst.block_id
-        src_idx = copy_op.src.block_id
+        dst_idx = copy_op.dst.bid
+        src_idx = copy_op.src.bid
         if copy_type == BlockCopyType.D2D_COW:
             # TODO E2EOPT-142: Schedule each memcpy on a different stream
             if dst_idx != src_idx:
@@ -854,7 +871,7 @@ class PagedKVCacheManager(KVCacheManager):
         if self.block_manager.host_block_pool is None:
             return 0
         host_committed_blocks = len(
-            self.block_manager.host_block_pool.block_hash_to_committed_block
+            self.block_manager.host_block_pool.hash_to_committed_block
         )
         pct = host_committed_blocks / self.total_num_host_pages
         assert 0 <= pct <= 1
@@ -905,7 +922,9 @@ class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
                 max_lengths=TensorType(
-                    DType.uint32, shape=["steps_remaining", 2]
+                    DType.uint32,
+                    shape=["steps_remaining", 2],
+                    device=DeviceRef.CPU(),
                 ),
             )
             for i in range(len(self.devices))

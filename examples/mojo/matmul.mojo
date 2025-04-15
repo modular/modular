@@ -15,6 +15,7 @@
 # This sample demonstrates how various systems optimizations can be applied to a
 # naive matmul implementation in Mojo to gain significant performance speedups
 
+from collections.string import StaticString
 from os.env import getenv
 from random import rand
 from sys import info, simdwidthof
@@ -282,7 +283,7 @@ fn matmul_reordered(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StringLiteral
+    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StaticString
 ](base_gflops: Float64, np_gflops: Float64) raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()

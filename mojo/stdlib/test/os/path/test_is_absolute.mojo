@@ -10,11 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
 
-from .context import InputContext, TextAndVisionContext, TextContext
+import os
+from os.path import is_absolute
 
-__all__ = [
-    "InputContext",
-    "TextAndVisionContext",
-    "TextContext",
-]
+from testing import assert_false, assert_true
+
+
+def main():
+    assert_true(is_absolute("/"))
+    assert_true(is_absolute("/foo"))
+    assert_true(is_absolute("/foo/bar"))
+
+    assert_false(is_absolute(""))
+    assert_false(is_absolute("foo/bar"))

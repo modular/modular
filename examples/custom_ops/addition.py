@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -21,11 +20,7 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
 
 if __name__ == "__main__":
-    # This is necessary only in specific build environments.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    path = Path(__file__).parent / "kernels.mojopkg"
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     rows = 5
     columns = 10
@@ -44,7 +39,7 @@ if __name__ == "__main__":
         input_types=[
             TensorType(dtype, shape=[rows, columns]),
         ],
-        custom_extensions=[path],
+        custom_extensions=[mojo_kernels],
     )
 
     # Place the graph on a GPU, if available. Fall back to CPU if not.

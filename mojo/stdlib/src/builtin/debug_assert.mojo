@@ -25,27 +25,27 @@ from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
 from memory import Span, UnsafePointer
-from collections.string import StaticString
+
 from utils.write import (
+    WritableVariadicPack,
     _TotalWritableBytes,
     _WriteBufferHeap,
     _WriteBufferStack,
     write_args,
-    WritableVariadicPack,
 )
 
-alias defined_mode = env_get_string["ASSERT", "safe"]()
+alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
 
 @no_inline
 fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     constrained[
-        defined_mode == "none"
-        or defined_mode == "warn"
-        or defined_mode == "safe"
-        or defined_mode == "all",
+        ASSERT_MODE == "none"
+        or ASSERT_MODE == "warn"
+        or ASSERT_MODE == "safe"
+        or ASSERT_MODE == "all",
         "-D ASSERT=",
-        defined_mode,
+        ASSERT_MODE,
         " but must be one of: none, warn, safe, all",
     ]()
     constrained[
@@ -56,12 +56,12 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     ]()
 
     @parameter
-    if defined_mode == "none" or (is_gpu() and cpu_only):
+    if ASSERT_MODE == "none" or (is_gpu() and cpu_only):
         return False
-    elif defined_mode == "all" or defined_mode == "warn" or is_debug_build():
+    elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True
     else:
-        return defined_mode == assert_mode
+        return ASSERT_MODE == assert_mode
 
 
 @always_inline
@@ -245,31 +245,41 @@ fn _debug_assert_msg[
     abort's implementation could use debug_assert)
     """
 
+    alias kind_str = StaticString(
+        "Warning: "
+    ) if ASSERT_MODE == "warn" else "Error: "
+
     @parameter
     if is_gpu():
-        print(
-            "At ",
-            loc,
-            ": ",
-            _GPUThreadInfo(),
-            " Assert ",
-            "Warning: " if defined_mode == "warn" else "Error: ",
-            WritableVariadicPack(messages),
-            sep="",
-        )
+
+        @parameter
+        if is_amd_gpu():
+            # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
+            print("Assert failed")
+        else:
+            print(
+                "At ",
+                loc,
+                ": ",
+                _GPUThreadInfo(),
+                " Assert ",
+                kind_str,
+                WritableVariadicPack(messages),
+                sep="",
+            )
     else:
         print(
             "At ",
             loc,
             ": ",
             " Assert ",
-            "Warning: " if defined_mode == "warn" else "Error: ",
+            kind_str,
             WritableVariadicPack(messages),
             sep="",
         )
 
     @parameter
-    if defined_mode != "warn":
+    if ASSERT_MODE != "warn":
         abort()
 
 

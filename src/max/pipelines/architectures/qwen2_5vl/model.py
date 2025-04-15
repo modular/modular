@@ -21,6 +21,8 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -31,11 +33,11 @@ from max.pipelines import (
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     generate_attention_mask,
+    get_rope_index,
     get_window_index,
     mrope_pos_ids_3d,
 )
-from max.pipelines.context import TextAndVisionContext
-from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.pipelines.core import TextAndVisionContext
 from transformers import AutoConfig
 
 
@@ -58,6 +60,7 @@ class Qwen2_5VLInputs(ModelInputs):
     input_row_offsets_or_attn_mask: Tensor
     input_id_max_seq_len: Tensor
     pixel_row_offsets: Tensor
+    rope_index: Tensor
 
     # Vision model inputs.
     """ image pixel_values stacked in 2D tensor of shape [n_patches, in_channels *
@@ -76,7 +79,7 @@ class Qwen2_5VLInputs(ModelInputs):
     """ Attention mask for Full Attention layers
     """
     image_attention_mask_full: Tensor | None
-    """ Maximum value of spatial dims in the grid of image patches 
+    """ Maximum value of spatial dims in the grid of image patches
     """
     image_max_grid_size: int
     """ video pixel_values
@@ -94,7 +97,7 @@ class Qwen2_5VLInputs(ModelInputs):
     """ Attention mask for Full Attention layers
     """
     video_attention_mask_full: Tensor | None
-    """ Maximum value of spatial dims in the grid of image patches 
+    """ Maximum value of spatial dims in the grid of image patches
     """
     video_max_grid_size: int
 
@@ -104,22 +107,24 @@ class Qwen2_5VLInputs(ModelInputs):
         input_row_offsets_or_attn_mask: Tensor,
         input_id_max_seq_len: Tensor,
         pixel_row_offsets: Tensor,
-        pixel_values: Tensor | None,
-        image_rot_pos_ids: Tensor | None,
-        image_window_index: Tensor | None,
-        image_attention_mask_window: Tensor | None,
-        image_attention_mask_full: Tensor | None,
-        pixel_values_videos: Tensor | None,
-        video_rot_pos_ids: Tensor | None,
-        video_window_index: Tensor | None,
-        video_attention_mask_window: Tensor | None,
-        video_attention_mask_full: Tensor | None,
+        rope_index: Tensor,
+        pixel_values: Tensor | None = None,
+        image_rot_pos_ids: Tensor | None = None,
+        image_window_index: Tensor | None = None,
+        image_attention_mask_window: Tensor | None = None,
+        image_attention_mask_full: Tensor | None = None,
+        pixel_values_videos: Tensor | None = None,
+        video_rot_pos_ids: Tensor | None = None,
+        video_window_index: Tensor | None = None,
+        video_attention_mask_window: Tensor | None = None,
+        video_attention_mask_full: Tensor | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
         self.input_id_max_seq_len = input_id_max_seq_len
         self.pixel_row_offsets = pixel_row_offsets
+        self.rope_index = rope_index
         self.pixel_values = pixel_values
         self.image_rot_pos_ids = image_rot_pos_ids
         self.image_attention_mask_window = image_attention_mask_window
@@ -150,7 +155,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -161,7 +166,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.model = self.load_model(session)
 
@@ -239,10 +244,33 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         # TODO: Call _generate_pos_ids_and_window_indices on image and video inputs for all contexts in the batch
         raise NotImplementedError
 
+    def _prepare_rope_index(
+        self,
+        input_ids: np.ndarray,
+        image_grid_thw: np.ndarray,
+        video_grid_thw: np.ndarray,
+        second_per_grid_ts: np.ndarray,
+        attention_mask: np.ndarray,
+    ) -> Tensor:
+        position_ids, mrope_position_deltas = get_rope_index(
+            self.huggingface_config.vision_config.spatial_merge_size,
+            self.huggingface_config.image_token_id,
+            self.huggingface_config.video_token_id,
+            self.huggingface_config.vision_start_token_id,
+            self.huggingface_config.vision_config.tokens_per_second,
+            input_ids=input_ids,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
+            second_per_grid_ts=second_per_grid_ts,
+            attention_mask=attention_mask,
+        )
+        return Tensor.from_numpy(position_ids)
+
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
             msg = "Llama Vision only supports continuous batching"
@@ -252,7 +280,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             return pixel_values is not None and len(pixel_values) > 0
 
         has_images = any(has_image(ctx.pixel_values) for ctx in context_batch)
-        # TODO: Update this after vision context is updated to check for video pixel values too.
+        # TODO(AITLIB-257): Update this after vision context is updated to check for video pixel values too.
         has_videos = False
 
         # Prepare vision inputs if applicable.
@@ -293,6 +321,19 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             )
         ).to(self.devices[0])
 
+        # TODO(AITLIB-257): Implement an image and video context with these attributes and uncomment this
+        # rope_index = self._prepare_rope_index(ctx.input_ids,
+        #                                       ctx.image_grid_thw,
+        #                                       ctx.video_grid_thw,
+        #                                       ctx.second_per_grid_ts,
+        #                                       ctx.attention_mask)
+        rope_index = Tensor.from_numpy(
+            np.array(
+                [0],
+                dtype=np.uint32,
+            )
+        )
+
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
@@ -317,6 +358,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             input_row_offsets_or_attn_mask=input_id_row_offsets,
             input_id_max_seq_len=input_id_max_seq_len,
             pixel_row_offsets=pixel_row_offsets,
+            rope_index=rope_index,
             pixel_values=image_pixel_values,
             image_rot_pos_ids=image_position_ids,
             image_window_index=image_window_index,

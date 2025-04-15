@@ -563,7 +563,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             return
         var orig = self.copy()
         self.reserve(len(self) * x)
-        for i in range(x - 1):
+        for _ in range(x - 1):
             self.extend(orig)
 
     fn extend(mut self, owned other: List[T, *_]):

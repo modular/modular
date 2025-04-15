@@ -36,10 +36,10 @@ Notes:
   default to `True` and the `run_destructors` parameter will be removed.
 """
 
+import math
 from collections._index_normalization import normalize_index
 from sys.intrinsics import _type_is_eq
 
-import math
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 

@@ -20,7 +20,6 @@ from python import Python
 """
 
 from collections import Dict
-from collections.string import StringSlice
 from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global
@@ -98,7 +97,7 @@ struct Python:
         """
         self.impl = existing.impl
 
-    fn eval(mut self, code: StringSlice) -> Bool:
+    fn eval(self, code: StringSlice) -> Bool:
         """Executes the given Python code.
 
         Args:
@@ -192,10 +191,8 @@ struct Python:
         Args:
             dir_path: The path to a Python module you want to import.
         """
-        var cpython = _get_global_python_itf().cpython()
         var sys = Python.import_module("sys")
         var directory: PythonObject = dir_path
-
         _ = sys.path.append(directory)
 
     # ===-------------------------------------------------------------------===#
@@ -267,7 +264,7 @@ struct Python:
 
     @staticmethod
     fn add_functions(
-        mut module: TypedPythonObject["Module"],
+        module: TypedPythonObject["Module"],
         owned functions: List[PyMethodDef],
     ) raises:
         """Adds functions to a PyModule object.
@@ -289,7 +286,7 @@ struct Python:
 
     @staticmethod
     fn unsafe_add_methods(
-        mut module: TypedPythonObject["Module"],
+        module: TypedPythonObject["Module"],
         functions: UnsafePointer[PyMethodDef],
     ) raises:
         """Adds methods to a PyModule object.
@@ -316,7 +313,7 @@ struct Python:
 
     @staticmethod
     fn add_object(
-        mut module: TypedPythonObject["Module"],
+        module: TypedPythonObject["Module"],
         name: String,
         value: PythonObject,
     ) raises:
@@ -359,17 +356,38 @@ struct Python:
         return PythonObject(Dict[PythonObject, PythonObject]())
 
     @staticmethod
-    fn list() -> PythonObject:
-        """Construct an empty Python list.
+    fn list[*Ts: PythonObjectible](*values: *Ts) -> PythonObject:
+        """Construct an Python list of objects.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the list with.
 
         Returns:
-            The constructed empty Python list.
+            The constructed Python list.
         """
-        return PythonObject([])
+        return PythonObject._list(values)
+
+    @staticmethod
+    fn tuple[*Ts: PythonObjectible](*values: *Ts) -> PythonObject:
+        """Construct an Python tuple of objects.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the tuple with.
+
+        Returns:
+            The constructed Python tuple.
+        """
+        return PythonObject._tuple(values)
 
     @no_inline
     fn as_string_slice(
-        mut self, str_obj: PythonObject
+        self, str_obj: PythonObject
     ) -> StringSlice[__origin_of(str_obj.py_object.unsized_obj_ptr.origin)]:
         """Return a string representing the given Python object.
 
@@ -383,7 +401,7 @@ struct Python:
         return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
 
     @staticmethod
-    fn throw_python_exception_if_error_state(mut cpython: CPython) raises:
+    fn throw_python_exception_if_error_state(cpython: CPython) raises:
         """Raise an exception if CPython interpreter is in an error state.
 
         Args:
@@ -393,7 +411,7 @@ struct Python:
             raise Python.unsafe_get_python_exception(cpython)
 
     @staticmethod
-    fn unsafe_get_python_exception(mut cpython: CPython) -> Error:
+    fn unsafe_get_python_exception(cpython: CPython) -> Error:
         """Get the `Error` object corresponding to the current CPython
         interpreter error state.
 
