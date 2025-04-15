@@ -14,9 +14,17 @@
 """Build a Qwen2.5VL model via Graph API from Safetensors weights."""
 
 from max.dtype import DType
-from max.graph import ops
+from max.graph import (
+    ops,
+)
 from max.graph.weights import Weights
-from max.nn import MLP, Conv3D, Linear, RMSNorm, Sequential
+from max.nn import (
+    MLP,
+    Conv3D,
+    Linear,
+    RMSNorm,
+    Sequential,
+)
 from transformers import AutoConfig
 
 from .nn.visual_transformer import (
