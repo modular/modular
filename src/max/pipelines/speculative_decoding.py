@@ -130,7 +130,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Calculate Max Length
         self._max_length = self._target_model.calculate_max_seq_len(
-            self.pipeline_config.max_length,
+            self.pipeline_config,
             huggingface_config=self.pipeline_config.model_config.huggingface_config,
         )
 
