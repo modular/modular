@@ -645,7 +645,10 @@ class PagedKVCacheManager(KVCacheManager):
 
             # Compute the total sequence length
             seq_len = ctx.current_length + num_steps - 1
-            assert seq_len <= self.max_seq_len
+            if seq_len > self.max_seq_len:
+                raise RuntimeError(
+                    f"Request has current length ({ctx.current_length}) + num_steps ({num_steps}) - 1 = {seq_len} which exceeds model max_seq_len of {self.max_seq_len}"
+                )
             max_seq_len = max(max_seq_len, seq_len)
 
         self.prefetched_seq_ids.clear()

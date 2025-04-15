@@ -221,11 +221,14 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         huggingface_config: AutoConfig,
         num_steps: int,
         context: T,
+        is_draft: bool = False,
     ) -> int:
         max_seq_len = model.calculate_max_seq_len(
             self.pipeline_config,
             huggingface_config=huggingface_config,
         )
+        if is_draft:
+            max_seq_len -= 1
         num_available_steps = context.compute_num_available_steps(max_seq_len)
 
         if num_available_steps <= 0:
@@ -245,6 +248,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         batch: list[T],
         num_steps: int,
         return_n_logits: int,
+        is_draft: bool = False,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
         for i, context in enumerate(batch):
@@ -253,7 +257,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
             # Calculate num_steps.
             num_steps = self.calculate_num_steps(
-                model, model.huggingface_config, num_steps, context
+                model, model.huggingface_config, num_steps, context, is_draft
             )
 
         kv_cache_inputs = model.kv_manager.fetch(
@@ -293,7 +297,11 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     ) -> tuple[int, np.ndarray, Tensor]:
         # Prepare the Batch
         model_inputs, num_steps = self.prepare_batch(
-            self._draft_model, batch, num_steps, return_n_logits=1
+            self._draft_model,
+            batch,
+            num_steps,
+            return_n_logits=1,
+            is_draft=True,
         )
 
         # Generate tensor for generated tokens.
