@@ -49,7 +49,7 @@ fn _error_impl[
     *Ts: Writable
 ](
     graph: Optional[Graph],
-    messages: VariadicPack[_, Writable, *Ts],
+    messages: VariadicPack[_, _, Writable, *Ts],
     location: Optional[_SourceLocation],
     call_loc: _SourceLocation,
 ) -> Error:
@@ -89,7 +89,7 @@ fn format_error[
     *Ts: Writable
 ](
     graph: Optional[Graph],
-    messages: VariadicPack[_, Writable, *Ts],
+    messages: VariadicPack[_, _, Writable, *Ts],
     location: Optional[_SourceLocation] = None,
 ) -> String:
     """Formats an error string that includes call information.
@@ -112,7 +112,7 @@ fn _format_error_impl[
     *Ts: Writable
 ](
     graph: Optional[Graph],
-    messages: VariadicPack[_, Writable, *Ts],
+    messages: VariadicPack[_, _, Writable, *Ts],
     location: Optional[_SourceLocation],
     call_loc: _SourceLocation,
 ) -> String:
