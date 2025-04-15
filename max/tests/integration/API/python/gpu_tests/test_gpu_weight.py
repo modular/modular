@@ -108,7 +108,6 @@ def test_weight_device_implicit_mismatch():
         assert isinstance(result, Tensor)
 
 
-@pytest.mark.skip(reason="This causes a crash during execution")
 def test_input_device_mismatch():
     cuda = Accelerator()
     session = InferenceSession(devices=[cuda])
@@ -139,5 +138,6 @@ def test_input_device_mismatch():
         weights_registry={"w": device_weight},
     )
 
-    result = model.execute(input_tensor)[0]
-    assert isinstance(result, Tensor)
+    expected_error_msg = r"expected arg 0 to be on device Device\(type=cpu,id=0\), but was on device Device\(type=gpu,id=0\)"
+    with pytest.raises(TypeError, match=expected_error_msg):
+        model.execute(input_tensor)
