@@ -369,18 +369,30 @@ struct SlidingWindowMask[window_size: Int](MHAMask):
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
+        alias index_type = coord.element_type
+
         constrained[
             width <= window_size,
             "SIMD width of sliding window mask must be <= window size",
         ]()
 
-        var q_start_idx = coord[2]
-        var k_start_idx = coord[3]
+        var q_idx = coord[2]
+        var k_idx = coord[3]
 
+        # first, check if the query is after the key, this step is the same
+        # as the causal mask
+        var masked_score_vec = (
+            SIMD[index_type, width](q_idx) >= iota[index_type, width](k_idx)
+        ).select(score_vec, MASK_VALUE)
+
+        # second, check if the query is within the window size of the key
+        # It looks like we will encounter a problem here when the q_idx is
+        # smaller than k_idx, but this is not possible because of the causal mask
+        # that we have applied.
         return (
-            iota[DType.uint32, width](Int(q_start_idx - k_start_idx))
-            <= window_size
-        ).select(score_vec, SIMD[type, width](MASK_VALUE))
+            SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx)
+            < window_size
+        ).select(masked_score_vec, SIMD[type, width](MASK_VALUE))
 
     @always_inline
     fn status[
