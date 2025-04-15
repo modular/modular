@@ -44,7 +44,6 @@ modular_py_test(
     ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//ONNX/tools/onnx:monnx",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test/API:inputs",
@@ -130,7 +129,6 @@ modular_py_test(
     ],
     data = [
         "//ModularFramework/tools/mof",
-        "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
