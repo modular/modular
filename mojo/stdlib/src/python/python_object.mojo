@@ -453,6 +453,29 @@ struct PythonObject(
 
     @always_inline
     @staticmethod
+    fn list[T: PythonObjectible & CollectionElement](values: Span[T]) -> Self:
+        """Initialize the object from a list of values.
+
+        Parameters:
+            T: The span element type.
+
+        Args:
+            values: The values to initialize the list with.
+
+        Returns:
+            A PythonObject representing the list.
+        """
+        var cpython = _get_global_python_itf().cpython()
+        var py_object = cpython.PyList_New(len(values))
+
+        for i in range(len(values)):
+            var obj = values[i].to_python_object()
+            cpython.Py_IncRef(obj.py_object)
+            _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
+        return py_object
+
+    @always_inline
+    @staticmethod
     fn list[*Ts: PythonObjectible](*values: *Ts) -> Self:
         """Initialize the object from a list of values.
 
