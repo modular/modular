@@ -62,6 +62,7 @@ def generate_torch_outputs(
     # Hack - Transformers `LLama4TextAttention` doesn't actually use the config
     # to configure whether the layer uses rope. Set this manually.
     model.layers[1].self_attn.use_rope = False
+    del model.layers[1].self_attn.qk_norm  # Also unset qk_norm.
 
     # Create layer inputs.
     input_tensor = input_tensor.to(device)
@@ -84,8 +85,6 @@ def generate_torch_outputs(
 
     outputs = []
     for layer_idx in (0, 1):
-        if layer_idx == 0:
-            continue
         layer = model.layers[layer_idx].self_attn.to(dtype).to(device)
         layer.training = False
 
@@ -167,8 +166,6 @@ def generate_max_outputs(
     session = InferenceSession(devices=[Accelerator(0)])
     outputs = []
     for layer_idx, use_rope in enumerate([True, False]):
-        if layer_idx == 0:
-            continue
         attention = _Llama4TextAttention(
             rope=OptimizedRotaryEmbedding(
                 text_config.hidden_size,
@@ -287,7 +284,7 @@ def attention_weights(
     num_key_value_heads = text_config.num_key_value_heads
     head_dim = text_config.head_dim
 
-    std = 0.001
+    std = 0.008
 
     def random_weight(*size):
         return torch.normal(0, std, size, dtype=dtype)
