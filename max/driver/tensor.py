@@ -35,11 +35,6 @@ def _contiguous(self) -> Tensor:
     return tensor_copy
 
 
-def _aligned(self, alignment: int | None = None) -> bool:
-    """Returns whether the tensor is aligned to the desired alignment."""
-    return self.__aligned(alignment or self.dtype.align)
-
-
 def _repr(self) -> str:
     return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.stream})"
 
@@ -187,7 +182,6 @@ def _mmap(
 
 Tensor._iterate_indices = _iterate_indices  # type: ignore[method-assign]
 Tensor.contiguous = _contiguous  # type: ignore[method-assign]
-Tensor._aligned = _aligned  # type: ignore[method-assign]
 Tensor.__repr__ = _repr  # type: ignore[method-assign]
 Tensor.view = _view  # type: ignore[method-assign]
 Tensor.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]

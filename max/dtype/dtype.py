@@ -96,18 +96,9 @@ def _from_numpy(dtype: np.dtype) -> DType:
     raise ValueError(f"unsupported NumPy dtype: {dtype}")
 
 
-def _align(self) -> int:
-    """Returns the alignment of the dtype."""
-    if self is DType.bfloat16:
-        # Use float16 alignment since np.bfloat16 doesn't exist.
-        return np.dtype(np.float16).alignment
-    return np.dtype(self.to_numpy()).alignment
-
-
 DType._missing_ = _missing  # type: ignore[method-assign]
 DType.__repr__ = _repr  # type: ignore[method-assign]
 DType._mlir = property(_mlir)  # type: ignore[assignment]
-DType.align = property(_align)  # type: ignore[assignment]
 DType.to_numpy = _to_numpy  # type: ignore[method-assign]
 DType.from_numpy = _from_numpy  # type: ignore[method-assign]
 

@@ -50,6 +50,10 @@ class DType(enum.Enum):
     _unknown = 0
 
     @property
+    def align(self) -> int:
+        """Returns the alignment of the dtype."""
+
+    @property
     def size_in_bytes(self) -> int:
         """Returns the size of the dtype in bytes."""
 
@@ -90,10 +94,6 @@ class DType(enum.Enum):
         Raises:
             ValueError: If the input dtype is not supported.
         """
-
-    @property
-    def align(self) -> int:
-        """Returns the alignment of the dtype."""
 
     @property
     def _mlir(self) -> str: ...
