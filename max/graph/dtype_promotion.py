@@ -156,7 +156,9 @@ _DTYPE_MIN_AND_MAX_FULL_PRECISION = {
     DType.uint32: (0, 2**32 - 1),
     DType.uint64: (0, 2**64 - 1),
     DType.float8_e5m2: (-(1.10 * 2**16), 1.10 * 2**16),
+    DType.float8_e5m2fnuz: (-(1.75 * 2**15), 1.75 * 2**15),
     DType.float8_e4m3fn: (-(1.75 * 2**8), 1.75 * 2**8),
+    DType.float8_e4m3fnuz: (-240, 240),
     # This is two to the power of the number of significand bits plus one.
     DType.bfloat16: (-(2**8), 2**8),
     DType.float16: (-(2**11), 2**11),
