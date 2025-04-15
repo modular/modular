@@ -464,6 +464,7 @@ alias _AnyTypeMetaType = __type_of(AnyType)
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool, //,
+    is_owned: Bool,
     origin: Origin[elt_is_mutable],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
@@ -474,6 +475,8 @@ struct VariadicPack[
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument pack.
+        is_owned: Whether the elements are owned by the pack. If so, the pack
+                  will release the elements when it is destroyed.
         origin: The origin of the underlying elements.
         element_trait: The trait that each element of the pack conforms to.
         element_types: The list of types held by the argument pack.
@@ -490,7 +493,6 @@ struct VariadicPack[
     ]
 
     var _value: Self._mlir_type
-    var _is_owned: Bool
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -498,27 +500,20 @@ struct VariadicPack[
 
     @doc_private
     @always_inline("nodebug")
-    fn __init__(out self, value: Self._mlir_type, is_owned: Bool):
+    fn __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 
         Args:
             value: The argument to construct the pack with.
-            is_owned: Whether this is an 'owned' pack or 'mut'/'read-only'.
         """
         self._value = value
-        self._is_owned = is_owned
 
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destructor that releases elements if owned."""
 
-        # Immutable variadics never own the memory underlying them,
-        # microoptimize out a check of _is_owned.
         @parameter
-        if Bool(elt_is_mutable):
-            # If the elements are unowned, just return.
-            if not self._is_owned:
-                return
+        if is_owned:
 
             @parameter
             for i in reversed(range(Self.__len__())):

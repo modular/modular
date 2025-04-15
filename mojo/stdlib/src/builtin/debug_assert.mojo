@@ -235,7 +235,7 @@ fn debug_assert[
 @no_inline
 fn _debug_assert_msg[
     origin: ImmutableOrigin, *Ts: Writable
-](messages: VariadicPack[origin, Writable, *Ts], loc: _SourceLocation):
+](messages: VariadicPack[_, origin, Writable, *Ts], loc: _SourceLocation):
     """Aborts with (or prints) the given message and location.
 
     This function is intentionally marked as no_inline to reduce binary size.

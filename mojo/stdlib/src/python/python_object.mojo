@@ -470,7 +470,7 @@ struct PythonObject(
     @staticmethod
     fn _list[
         *Ts: PythonObjectible
-    ](values: VariadicPack[_, PythonObjectible, *Ts]) -> Self:
+    ](values: VariadicPack[_, _, PythonObjectible, *Ts]) -> Self:
         """Initialize the object from a list literal.
 
         Parameters:
@@ -511,7 +511,7 @@ struct PythonObject(
     @staticmethod
     fn _tuple[
         *Ts: PythonObjectible
-    ](values: VariadicPack[_, PythonObjectible, *Ts]) -> Self:
+    ](values: VariadicPack[_, _, PythonObjectible, *Ts]) -> Self:
         """Initialize the object from a tuple literal.
 
         Parameters:

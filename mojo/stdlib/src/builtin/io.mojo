@@ -178,7 +178,7 @@ fn _flush(file: FileDescriptor = stdout):
 
 fn _printf_cpu[
     fmt: StaticString, *types: AnyType
-](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
+](args: VariadicPack[_, _, AnyType, *types], file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.

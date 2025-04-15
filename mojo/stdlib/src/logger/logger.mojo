@@ -382,7 +382,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
     # copy/paste code :(
     # fn _log[
     #     target_level: Level, *Ts: Writable
-    # ](self, *values: VariadicPack[_, Writable, Ts]):
+    # ](self, *values: VariadicPack[_, _, Writable, Ts]):
     #     @parameter
     #     fn get_length() -> Int:
     #         return len(values)

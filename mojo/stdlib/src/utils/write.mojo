@@ -163,7 +163,7 @@ fn write_args[
     W: Writer, *Ts: Writable
 ](
     mut writer: W,
-    args: VariadicPack[_, Writable, *Ts],
+    args: VariadicPack[_, _, Writable, *Ts],
     *,
     sep: StaticString = "",
     end: StaticString = "",
@@ -349,7 +349,7 @@ fn write_buffered[
     use_heap: Bool = False,
 ](
     mut writer: W,
-    args: VariadicPack[_, Writable, *Ts],
+    args: VariadicPack[_, _, Writable, *Ts],
     *,
     sep: StaticString = "",
     end: StaticString = "",
@@ -470,6 +470,7 @@ fn write_buffered[
 @register_passable
 struct WritableVariadicPack[
     mut: Bool, //,
+    is_owned: Bool,
     origin: Origin[mut],
     pack_origin: Origin[mut],
     *Ts: Writable,
@@ -479,6 +480,7 @@ struct WritableVariadicPack[
 
     Parameters:
         mut: Whether the origin is mutable.
+        is_owned: Whether the `VariadicPack` owns its elements.
         origin: The origin of the reference to the `VariadicPack`.
         pack_origin: The origin of the `VariadicPack`.
         Ts: The types of the variadic arguments conforming to `Writable`.
@@ -502,11 +504,14 @@ struct WritableVariadicPack[
     ```
     """
 
-    var value: Pointer[VariadicPack[pack_origin, Writable, *Ts], origin]
+    var value: Pointer[
+        VariadicPack[is_owned, pack_origin, Writable, *Ts], origin
+    ]
     """Reference to a `VariadicPack` that comforms to `Writable`."""
 
     fn __init__(
-        out self, ref [origin]value: VariadicPack[pack_origin, Writable, *Ts]
+        out self,
+        ref [origin]value: VariadicPack[is_owned, pack_origin, Writable, *Ts],
     ):
         """Initialize using a reference to the `VariadicPack`.
 
