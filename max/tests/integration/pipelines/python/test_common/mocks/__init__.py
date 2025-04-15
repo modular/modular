@@ -33,6 +33,7 @@ def create_mock_pipeline_config(
     vocab_size: int,
     eos_token: int,
     device_specs: list[DeviceSpec],
+    pdl_level: str = "1",
 ) -> MagicMock:
     mock_config = MagicMock()
     mock_config.profiling_config = ProfilingConfig(
@@ -57,6 +58,7 @@ def create_mock_pipeline_config(
     mock_config.max_length = max_length
     mock_config.vocab_size = vocab_size
     mock_config.eos_token = [eos_token]
+    mock_config.pdl_level = pdl_level
     return mock_config
 
 
