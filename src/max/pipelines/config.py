@@ -100,6 +100,9 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
+    pdl_level: str = os.environ.get("PDL_LEVEL", "1")
+    """Level of overlap of kernel launch via programmatic dependent grid control."""
+
     ignore_eos: bool = False
     """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 

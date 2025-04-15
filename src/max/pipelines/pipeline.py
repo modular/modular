@@ -494,6 +494,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             self._pipeline_config.use_experimental_kernels
         )
 
+        # Set PDL level if enabled by env var `PDL_LEVEL`.
+        session._pdl_level(self._pipeline_config.pdl_level)
+
         # Load model.
         if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")

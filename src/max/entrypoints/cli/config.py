@@ -154,6 +154,7 @@ def config_to_flag(cls, prefix: Optional[str] = None):
             "device_specs",
             "in_dtype",
             "out_dtype",
+            "pdl_level",
         ):
             continue
 
