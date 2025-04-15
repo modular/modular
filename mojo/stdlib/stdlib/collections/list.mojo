@@ -832,22 +832,23 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         print(my_list.index(2)) # prints `1`
         ```
         """
-        var start_normalized = start
 
+        var s_len = len(self)
+        var start_normalized = start
         var stop_normalized: Int
         if stop is None:
             # Default end
-            stop_normalized = len(self)
+            stop_normalized = s_len
         else:
             stop_normalized = stop.value()
 
         if start_normalized < 0:
-            start_normalized += len(self)
+            start_normalized += s_len
         if stop_normalized < 0:
-            stop_normalized += len(self)
+            stop_normalized += s_len
 
-        start_normalized = _clip(start_normalized, 0, len(self))
-        stop_normalized = _clip(stop_normalized, 0, len(self))
+        start_normalized = max(0, min(start_normalized, s_len))
+        stop_normalized = max(0, min(stop_normalized, s_len))
 
         for i in range(start_normalized, stop_normalized):
             if self[i] == value:
@@ -1121,7 +1122,3 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         __disable_del self
 
         return result^
-
-
-fn _clip(value: Int, start: Int, end: Int) -> Int:
-    return max(start, min(value, end))
