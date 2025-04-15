@@ -16,14 +16,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Callable, Optional, cast
+from typing import Callable, Optional
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import (
     EmbeddingV2,
     Module,
-    ReturnLogits,
     RMSNormV2,
     TransformerBlock,
 )
@@ -134,7 +133,6 @@ class Qwen2_5VLDecoderTransformer(Module):
             | FetchPagedKVCacheCollection
             | FetchPagedKVCacheCollectionFA3Fallback
         ),
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
@@ -150,7 +148,6 @@ class Qwen2_5VLDecoderTransformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
-        self.return_logits = return_logits
 
     # copied from nn.Transformer
     def _apply_logits_postprocessor(
@@ -165,9 +162,8 @@ class Qwen2_5VLDecoderTransformer(Module):
         inputs_embeds: TensorValue,
         position_ids: TensorValue,
         kv_cache_inputs: Sequence[TensorValue],
-        return_n_logits: TensorValue,
         **kwargs,
-    ) -> tuple[TensorValue, ...]:
+    ) -> TensorValue:
         """Outputs raw hidden states of the transformer model on input `inputs_embeds`.
 
         Args:
@@ -215,47 +211,4 @@ class Qwen2_5VLDecoderTransformer(Module):
                 **kwargs,
             )
 
-        # Retrieve a variable number of tokens
-        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = ops.cast(self.norm(last_h), DType.float32)
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64),
-                ops.constant(-1, DType.int64),
-                out_dim="return_n_logits_range",
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            last_tokens = ops.gather(h, last_indices, axis=0)
-            logits = ops.cast(self.norm(last_tokens), DType.float32)
-            offsets = ops.range(
-                ops.constant(0, DType.int64),
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.norm(h), DType.float32)
-            offsets = cast(TensorValue, kwargs["input_row_offsets"])
-
-        if logits:
-            last_logits, logits = self._apply_logits_postprocessor(
-                (
-                    last_logits,
-                    logits,
-                )
-            )
-        else:
-            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
-
-        if offsets is not None:
-            assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
+        return self.norm(h)
