@@ -465,7 +465,7 @@ struct RegPassableRequiredType(RequiredType):
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
 fn bind_regpassable_required_type():
-    # CHECK-NEXT: fn(Int) -> Int
+    # CHECK-NEXT: fn(::Int) -> ::Int
     # CHECK-SAME: @RegPassableRequiredType::@"use_it
     alias T: RequiredType = RegPassableRequiredType
 
