@@ -68,6 +68,10 @@ feedback](https://www.modular.com/community).
     Driver](/mojo/manual/gpu/intro-tutorial)
   - [GPU basics](/mojo/manual/gpu/basics)
 
+- **Layouts and LayoutTensor**
+
+  - [Introduction to Layouts](/mojo/manual/layout/layouts)
+
 - **Python**
 
   - [Python integration](/mojo/manual/python/)
