@@ -33,11 +33,17 @@ from transformers import AutoConfig
 from .core import (
     InputContext,
     TextGenerationResponse,
+    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
 from .hf_utils import download_weight_files
-from .pipeline import ModelInputs, ModelOutputs, PipelineModel
+from .pipeline import (
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+    upper_bounded_default,
+)
 from .sampling import rejection_sampler, token_sampler
 
 T = TypeVar("T", bound=InputContext)
@@ -120,6 +126,12 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format, None),
             return_logits=ReturnLogits.VARIABLE,
+        )
+
+        # Calculate Max Length
+        self._max_length = self._target_model.calculate_max_seq_len(
+            self.pipeline_config.max_length,
+            huggingface_config=self.pipeline_config.model_config.huggingface_config,
         )
 
         # Load draft model
@@ -471,12 +483,32 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
             res[request_ids[idx]].update_status(context.active_status)  # type: ignore
 
+            # Identify the Max Length
+            context_max_length = upper_bounded_default(
+                upper_bound=self._max_length,
+                default=context.max_length,
+            )
+
             # TODO: This resets the context object for a new sequence.
             # We may want to make this more explicit
-            for token, log_probs in context.outstanding_completion_tokens():
-                res[request_ids[idx]].append_token(
-                    TextResponse(token, log_probs)
-                )
+            for i, (token, log_probs) in enumerate(
+                context.outstanding_completion_tokens()
+            ):
+                # Break early if beyond max length
+                current_length = context.start_idx + 1
+
+                if current_length >= context_max_length:
+                    context.active_status = TextGenerationStatus.MAXIMUM_LENGTH  # type: ignore
+                    res[request_ids[idx]].update_status(context.active_status)  # type: ignore
+
+                    res[request_ids[idx]].append_token(
+                        TextResponse(token, log_probs)
+                    )
+                    break
+                else:
+                    res[request_ids[idx]].append_token(
+                        TextResponse(token, log_probs)
+                    )
 
         # Update the target kv cache
         self._target_model.kv_manager.step(
