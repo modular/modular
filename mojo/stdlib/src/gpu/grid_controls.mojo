@@ -125,6 +125,61 @@ fn wait_on_dependent_grids():
         __mlir_op.`nvvm.griddepcontrol.wait`[_type=None]()
 
 
+struct PDLLevel:
+    """Programmatic Dependency Launch (PDL) level."""
+
+    var _level: Int
+
+    alias OFF = PDLLevel(0)
+    alias OVERLAP_AT_END = PDLLevel(1)
+    alias OVERLAP_AT_BEGINNING = PDLLevel(2)
+
+    @always_inline
+    fn __init__(out self, level: Int):
+        """Initialize the PDL level.
+
+        Args:
+            level: The PDL level to initialize.
+        """
+        self._level = level
+
+    @always_inline
+    fn __eq__(self, other: PDLLevel) -> Bool:
+        """Check if the PDL level is equal to another PDL level.
+
+        Args:
+            other: The other PDL level to compare against.
+
+        Returns:
+            True if the PDL level is equal to the other PDL level, False otherwise.
+        """
+        return self._level == other._level
+
+    @always_inline
+    fn __eq__(self, other: Int) -> Bool:
+        """Check if the PDL level is equal to another PDL level.
+
+        Args:
+            other: The other PDL level to compare against.
+
+        Returns:
+            True if the PDL level is equal to the other PDL level, False otherwise.
+        """
+        return self._level == other
+
+    @always_inline
+    fn __gt__(self, other: PDLLevel) -> Bool:
+        """Check if the PDL level is greater than another PDL level.
+
+        Args:
+            other: The other PDL level to compare against.
+
+        Returns:
+            True if the PDL level is greater than the other PDL level, False otherwise.
+        """
+        return self._level > other._level
+
+
 struct PDL:
     """Programmatic Dependency Launch (PDL) control structure.
 
