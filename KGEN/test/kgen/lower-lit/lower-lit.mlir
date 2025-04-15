@@ -272,7 +272,7 @@ lit.struct.decl @foo {
   lit.alias.decl B = <2>
  // CHECK-LABEL:  @"foo::f"() -> index
   lit.fn @f() -> index {
-    // CHECK: kgen.param.declare
+    // CHECK-NOT: kgen.param.declare
     lit.alias.decl C = <3>
     %0 = kgen.param.constant: index = <1>
     kgen.return %0 : index

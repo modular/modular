@@ -289,9 +289,9 @@ void LITLowerer::lowerLITOps(FnOp func) {
     // Lower any aliases within the function body to param declare.
     IRRewriter b{OpBuilder(op)};
     if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
-      assert(alias.getValueAttr() && "function's alias should have a value");
-      b.replaceOpWithNewOp<ParamDeclareOp>(
-          alias, TypeRange(), alias.getParamDecl(), alias.getValueAttr());
+      // Aliases are eagerly substituted for their value, so they are no longer
+      // referenced anymore.
+      op->erase();
     } else if (auto lifetimeStart = dyn_cast<VarLifetimeStartOp>(op)) {
       auto arg = lifetimeStart.getArg();
       b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(
