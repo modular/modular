@@ -670,6 +670,7 @@ fn _mha_single_batch_sm90_fa3[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
         alignment = alignof[SIMD[q_type, simd_size]](),
+        name="mha_dynamic_shared_memory",
     ]()
     q_smem_iter = LayoutTensorIter[
         q_type,
