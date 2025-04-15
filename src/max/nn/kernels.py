@@ -787,6 +787,7 @@ class AttentionMaskVariant(str, Enum):
     CAUSAL_MASK = "causal_mask"
     TENSOR_MASK = "tensor_mask"
     CHUNKED_CAUSAL_MASK = "chunked_causal_mask"
+    SLIDING_WINDOW_MASK = "sliding_window_mask"
 
 
 class PositionalEncodingVariant(str, Enum):
@@ -799,6 +800,7 @@ class MHAMaskVariant(str, Enum):
     CAUSAL_ALIBI_MASK = 1
     NULL_MASK = 2
     CHUNKED_CAUSAL_MASK = 3
+    SLIDING_WINDOW_MASK = 4
 
 
 _MHA_MASK_CONFIG_DICT = {
@@ -816,6 +818,10 @@ _MHA_MASK_CONFIG_DICT = {
     ),
     MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
         attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.SLIDING_WINDOW_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_MASK,
         positional_encoding_variant=PositionalEncodingVariant.NO_POS,
     ),
 }
@@ -956,7 +962,10 @@ def flash_attention_ragged(
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
-    if mask_variant == MHAMaskVariant.CHUNKED_CAUSAL_MASK:
+    if (
+        mask_variant == MHAMaskVariant.CHUNKED_CAUSAL_MASK
+        or mask_variant == MHAMaskVariant.SLIDING_WINDOW_MASK
+    ):
         parameters["local_window_size"] = local_window_size
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
