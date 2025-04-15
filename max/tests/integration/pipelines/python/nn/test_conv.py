@@ -10,7 +10,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
-from max.nn import Conv1D, Conv3D
+from max.nn import Conv1D, Conv3D, Conv3DV2
 
 ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6
@@ -122,11 +122,6 @@ def test_conv3d() -> None:
     )
 
     conv.weight.data = nn.Parameter(torch.rand(size=conv.weight.data.shape))
-    print("Filter shape = ", conv.weight.data.shape)
-    print(
-        "Should be = (out_channels, in_channels, depth, height, width) = ",
-        (out_channels, in_channels, depth, height, width),
-    )
 
     with torch.no_grad():
         # permute output from (batch_size, out_channels, depth, height, width) to (batch_size, depth, height, width, out_channels).
@@ -166,6 +161,83 @@ def test_conv3d() -> None:
     compiled = session.load(graph, weights_registry=weights_registry)
 
     graph_api_conv_result = compiled.execute(graph_api_inputs)[0]
+    assert isinstance(graph_api_conv_result, Tensor)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+def test_conv3dv2() -> None:
+    in_channels = 3
+    out_channels = 1280
+    kernel_size = (2, 14, 14)
+    stride = (2, 14, 14)
+
+    # input params
+    batch_size = 3
+    depth = 32
+    height = 112
+    width = 112
+
+    is_gpu = False
+    torch_dtype = torch.float32
+    max_dtype = DType.float32
+
+    input_sequence = torch.rand(
+        size=(batch_size, in_channels, depth, height, width)
+    ).to(torch_dtype)
+
+    input_sequence = input_sequence.cuda() if is_gpu else input_sequence.cpu()
+
+    torch_conv = nn.Conv3d(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        bias=False,
+    )
+
+    max_conv = Conv3DV2(
+        depth=kernel_size[0],
+        height=kernel_size[1],
+        width=kernel_size[2],
+        in_channels=in_channels,
+        out_channels=out_channels,
+        dtype=max_dtype,
+        stride=stride,
+        has_bias=False,
+        permute=True,
+    )
+
+    # load random weights to torch
+    torch_conv.weight.data = nn.Parameter(
+        torch.rand(size=torch_conv.weight.data.shape)
+    )
+
+    # load weights to max
+    state_dict = {"weight": torch_conv.weight.data.cpu()}
+    max_conv.load_state_dict(state_dict)
+
+    # get_torch_output
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
+    # get_max_output
+    session = InferenceSession()
+    graph = Graph(
+        "conv3d",
+        max_conv,
+        input_types=(TensorType(max_dtype, input_sequence.shape),),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    graph_api_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(graph_api_conv_result, Tensor)
 
     np.testing.assert_allclose(
