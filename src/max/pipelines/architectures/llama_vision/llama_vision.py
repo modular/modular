@@ -105,7 +105,7 @@ class MultimodalKVCacheManager(KVCacheManager):
         vision_max_seq_len: int,
         text_num_layers: int,
         vision_num_layers: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         session: InferenceSession,
         available_cache_memory: int,
         page_size: int,
@@ -155,7 +155,7 @@ class MultimodalKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated total memory usage of the kv cache."""
@@ -196,7 +196,7 @@ class MultimodalKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated optimal batch size for the kv cache."""

@@ -213,7 +213,7 @@ class ColumnParallelLinear(LinearV2):
     def __init__(
         self,
         *args,
-        devices: list[DeviceRef],
+        devices: Sequence[DeviceRef],
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -242,7 +242,7 @@ class ColumnParallelLinear(LinearV2):
             self.distributed_linear_layers.append(layer)
 
     def __call__(  # type: ignore[override]
-        self, x: list[TensorValue]
+        self, x: Sequence[TensorValue]
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 

@@ -164,7 +164,7 @@ class KVCacheManager(ABC, Generic[T]):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         session: InferenceSession,
         is_ragged: bool = False,
     ) -> None:
@@ -196,7 +196,7 @@ class KVCacheManager(ABC, Generic[T]):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated total memory usage of the kv cache."""
@@ -210,7 +210,7 @@ class KVCacheManager(ABC, Generic[T]):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated optimal batch size for the kv cache."""

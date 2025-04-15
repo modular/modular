@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Optional
 
 from max.driver import Device
@@ -36,7 +37,7 @@ def load_kv_manager(
     max_batch_size: Optional[int],
     max_seq_len: int,
     num_layers: int,
-    devices: list[Device],
+    devices: Sequence[Device],
     session: InferenceSession,
     available_cache_memory: Optional[int] = None,
     page_size: Optional[int] = 512,
@@ -107,7 +108,7 @@ def estimate_kv_cache_size(
     max_seq_len: int,
     num_layers: int,
     available_cache_memory: int,
-    devices: list[Device],
+    devices: Sequence[Device],
     **kwargs: Any,
 ) -> int:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
@@ -132,7 +133,7 @@ def infer_optimal_batch_size(
     max_seq_len: int,
     num_layers: int,
     available_cache_memory: int,
-    devices: list[Device],
+    devices: Sequence[Device],
     **kwargs: Any,
 ) -> int:
     return CACHE_MANAGER_REGISTRY[

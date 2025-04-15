@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
@@ -307,7 +308,7 @@ class PagedKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         session: InferenceSession,
         cache_memory: int,
         page_size: int = 128,
@@ -492,7 +493,7 @@ class PagedKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         # Determine how much size is necessary to store the full cache based on max_batch_size and max_seq_len.
@@ -522,7 +523,7 @@ class PagedKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         # We just hard-code a default of 512 for paged attention.

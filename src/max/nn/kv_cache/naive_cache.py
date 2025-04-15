@@ -13,6 +13,7 @@
 
 """Naive KV cache for the Transformer."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
@@ -50,7 +51,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         session: InferenceSession,
     ) -> None:
         assert len(devices) == 1, "Naive caching only supports a single device."
@@ -89,7 +90,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         return (
@@ -110,7 +111,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (

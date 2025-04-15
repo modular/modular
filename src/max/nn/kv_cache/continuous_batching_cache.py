@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
@@ -154,7 +155,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         session: InferenceSession,
     ) -> None:
         super().__init__(
@@ -186,7 +187,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         cache_size = (
@@ -210,7 +211,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: list[Device],
+        devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (
