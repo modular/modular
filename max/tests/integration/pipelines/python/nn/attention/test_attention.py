@@ -247,6 +247,8 @@ def test_attention__valid_logits(session, start_pos, seq_len):
         (KVCacheStrategy.PAGED, MHAMaskVariant.CAUSAL_MASK),
         (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
         (KVCacheStrategy.PAGED, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
+        (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.SLIDING_WINDOW_MASK),
+        (KVCacheStrategy.PAGED, MHAMaskVariant.SLIDING_WINDOW_MASK),
     ],
 )
 def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
