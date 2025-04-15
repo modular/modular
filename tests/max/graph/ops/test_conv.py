@@ -116,7 +116,7 @@ def test_conv_dtype_promote_weight():
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight_failed():
+def test_conv_dtype_promote_weight_success():
     x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
@@ -126,9 +126,29 @@ def test_conv_dtype_promote_weight_failed():
     )
     with Graph("conv", input_types=[x_type]) as graph:
         # Both the input and weight have strong dtypes. Conv requires them to match.
+        out = ops.conv2d(
+            graph.inputs[0].tensor,
+            filter,
+        )
+        assert out.dtype == DType.float32
+
+
+def test_conv_dtype_promote_weight_failed():
+    x_type = TensorType(DType.int32, [1, 128, 128, 4])
+    filter_shape = [3, 3, 4, 5]
+    filter = Weight(
+        "filter",
+        dtype=DType.float16,
+        shape=filter_shape,
+    )
+    with Graph("conv", input_types=[x_type]) as graph:
+        # Both the input and weight have strong dtypes. Conv requires them to match.
         with pytest.raises(
             ValueError,
-            match="input and filter must resolve to the same strong dtype",
+            match=(
+                "Failed to resolve valid dtype: Unsafe cast from si32 to f32."
+                " Insert an explicit cast op if this conversion is wanted"
+            ),
         ):
             out = ops.conv2d(
                 graph.inputs[0].tensor,

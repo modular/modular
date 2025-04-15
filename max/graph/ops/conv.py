@@ -74,19 +74,8 @@ def conv2d(
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
 
-    if x.dtype != filter.dtype:
-        raise ValueError(
-            "input and filter must resolve to the same strong dtype. input is"
-            f" {x.dtype}. filter is {filter.dtype}."
-        )
-
     if bias is not None:
         x, bias = dtype_promotion._promote_weak_dtypes(x, bias)
-        if x.dtype != bias.dtype:
-            raise ValueError(
-                "input and bias must resolve to the same strong dtype. input is"
-                f" {x.dtype}. bias is {bias.dtype}."
-            )
 
         if bias.rank != 1:
             raise ValueError(
@@ -178,19 +167,8 @@ def conv3d(
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
 
-    if x.dtype != filter.dtype:
-        raise ValueError(
-            "input and filter must resolve to the same strong dtype. input is"
-            f" {x.dtype}. filter is {filter.dtype}."
-        )
-
     if bias is not None:
         x, bias = dtype_promotion._promote_weak_dtypes(x, bias)
-        if x.dtype != bias.dtype:
-            raise ValueError(
-                "input and bias must resolve to the same strong dtype. input is"
-                f" {x.dtype}. bias is {bias.dtype}."
-            )
 
         if bias.rank != 1:
             raise ValueError(
