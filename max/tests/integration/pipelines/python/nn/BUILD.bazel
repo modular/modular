@@ -86,7 +86,6 @@ modular_py_test(
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "multi-gpu",
-        "no-mypy",  # TODO: Fix and remove
     ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",

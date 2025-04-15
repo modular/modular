@@ -17,6 +17,7 @@ modular_py_library(
         ":distance_metrics",
         ":evaluate",
         ":evaluate_embeddings",
+        ":graph_utils",
         ":mocks",
         ":ndarray_from_tensor_type",
         ":numpy_encoder",
@@ -79,6 +80,17 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/pipelines",
+    ],
+)
+
+modular_py_library(
+    name = "graph_utils",
+    srcs = ["graph_utils.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
     ],
 )
 

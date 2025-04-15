@@ -6,18 +6,19 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
 
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn import ColumnParallelLinear, LinearV2
 
 
-def _distribute_value(v, devices: Sequence[Device]):
+def _distribute_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
@@ -70,6 +71,7 @@ def _multi_gpu_linear(
             )
         ],
     ) as distributed_graph:
+        assert isinstance(distributed_graph.inputs[0], TensorValue)
         inputs = _distribute_value(distributed_graph.inputs[0], devices)
         distributed_graph.output(*distributed_linear(inputs))
 
@@ -117,7 +119,8 @@ def test_linear(
     outputs = compiled_linear(input)
 
     assert len(outputs) == 1
-    expected_output = cast(Tensor, outputs[0]).to(host).to_numpy()
+    assert isinstance(outputs[0], Tensor)
+    expected_output = outputs[0].to(host).to_numpy()
 
     # Compute multi-gpu Linear layer outputs.
     compiled_distributed_linear = _multi_gpu_linear(

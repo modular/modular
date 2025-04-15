@@ -5,14 +5,25 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
+from __future__ import annotations
+
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    StaticDim,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn import Allreduce, Linear, Signals
 from max.nn.attention import Attention
 from max.nn.kv_cache import (
@@ -23,6 +34,11 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from test_common.context_utils import create_text_context
+from test_common.graph_utils import (
+    are_all_buffer_values_sequence,
+    are_all_tensor_values_sequence,
+    are_all_tensors_sequence,
+)
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -31,9 +47,12 @@ LAYER_IDX = 0
 BATCH_SIZE = 4
 
 
-def _attention_block(params, inputs):
-    (cache_strategy, fetch_op, kv_params) = params
-
+def _attention_block(
+    cache_strategy: KVCacheStrategy,
+    fetch_op: FetchContinuousBatchingKVCacheCollection,
+    kv_params: KVCacheParams,
+    inputs: Sequence[TensorValue],
+) -> TensorValue:
     (
         x,
         attn_mask,
@@ -75,11 +94,15 @@ def _attention_block(params, inputs):
     )
 
 
-def distribute_value(v, devices: list[Device]):
+def distribute_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
-def shard_attn_mask_value(v, devices: list[Device]):
+def shard_attn_mask_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     n_devices = len(devices)
     size = v.shape[1] // n_devices
     return [
@@ -90,8 +113,11 @@ def shard_attn_mask_value(v, devices: list[Device]):
     ]
 
 
-def shard_col_value(v, devices: list[Device]):
+def shard_col_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     n_devices = len(devices)
+    assert isinstance(v.shape[1], StaticDim)
     col_size = v.shape[1].dim // n_devices
     return [
         v[:, i * col_size : (i + 1) * col_size].to(
@@ -101,8 +127,11 @@ def shard_col_value(v, devices: list[Device]):
     ]
 
 
-def shard_row_value(v, devices: list[Device]):
+def shard_row_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     n_devices = len(devices)
+    assert isinstance(v.shape[0], StaticDim)
     row_size = v.shape[0].dim // n_devices
     return [
         v[i * row_size : (i + 1) * row_size, :].to(
@@ -112,21 +141,28 @@ def shard_row_value(v, devices: list[Device]):
     ]
 
 
+@dataclass
+class ModelParameters:
+    hidden_dim: int
+    n_heads: int
+    n_kv_heads: int
+    head_dim: int
+    max_seq_len: int
+
+
 def _attention_layer(
     dtype: DType,
     mask_dtype: DType,
     cache_strategy: KVCacheStrategy,
     session: InferenceSession,
-    devices: list[Device],
-    model_parameters,
+    devices: Sequence[Device],
+    model_parameters: ModelParameters,
 ) -> tuple[Graph, KVCacheParams, KVCacheManager]:
-    (
-        hidden_dim,
-        n_heads,
-        n_kv_heads,
-        head_dim,
-        MAX_SEQ_LEN,
-    ) = model_parameters
+    hidden_dim = model_parameters.hidden_dim
+    n_heads = model_parameters.n_heads
+    n_kv_heads = model_parameters.n_kv_heads
+    head_dim = model_parameters.head_dim
+    MAX_SEQ_LEN = model_parameters.max_seq_len
 
     # Initialize input types
     input_type = TensorType(
@@ -198,10 +234,20 @@ def _attention_layer(
         (x, attn_mask, wq, wk, wv, wo, valid_lengths, *variadic_args) = (
             graph.inputs
         )
+        assert isinstance(x, TensorValue)
+        assert isinstance(attn_mask, TensorValue)
+        assert isinstance(wq, TensorValue)
+        assert isinstance(wk, TensorValue)
+        assert isinstance(wv, TensorValue)
+        assert isinstance(wo, TensorValue)
+        assert isinstance(valid_lengths, TensorValue)
 
         num_kv_inputs = len(variadic_args) - len(devices)
         kv_inputs = variadic_args[:num_kv_inputs]
-        signal_buffers = [v.buffer for v in variadic_args[num_kv_inputs:]]
+        assert are_all_tensor_values_sequence(kv_inputs)
+        signal_values = variadic_args[num_kv_inputs:]
+        assert are_all_buffer_values_sequence(signal_values)
+        signal_buffers = [v.buffer for v in signal_values]
 
         blocks_all = [
             kv_inputs[i * 4 + 0] for i in range(len(devices))
@@ -225,7 +271,9 @@ def _attention_layer(
         wv_devs = shard_col_value(wv, devices)
         attn_out = [
             _attention_block(
-                (cache_strategy, fetch_op, kv_params),
+                cache_strategy,
+                fetch_op,
+                kv_params,
                 (
                     x_devs[dev_id],
                     attn_mask_devs[dev_id],
@@ -250,12 +298,13 @@ def _attention_layer(
 
 
 def execute_attn_for_devices(
-    inputs,
-    session,
-    devices: list[Device],
-    model_parameters,
+    inputs: Sequence[Tensor],
+    session: InferenceSession,
+    devices: Sequence[Device],
+    model_parameters: ModelParameters,
     seq_len: int,
-):
+) -> Sequence[Tensor]:
+    # XXX: Why are we overwriting session immediately upon entry?
     session = InferenceSession(devices=devices)
     graph, _, kv_manager = _attention_layer(
         DType.float32,
@@ -288,7 +337,9 @@ def execute_attn_for_devices(
         *flattened_kv_cache_inputs,
         *signal_buffers,
     ]
-    return model.execute(*all_inputs)
+    outputs = model.execute(*all_inputs)
+    assert are_all_tensors_sequence(outputs)
+    return outputs
 
 
 @pytest.mark.parametrize(
@@ -308,8 +359,14 @@ def execute_attn_for_devices(
     ],
 )
 def test_attention(
-    seq_len, n_heads, n_kv_heads, head_dim, hidden_dim, max_seq_len, n_devices
-):
+    seq_len: int,
+    n_heads: int,
+    n_kv_heads: int,
+    head_dim: int,
+    hidden_dim: int,
+    max_seq_len: int,
+    n_devices: int,
+) -> None:
     # This tests that the attention mask is calculating valid logits.
     # It does not test that these logits match a reference implementation.
 
@@ -342,12 +399,12 @@ def test_attention(
         np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
     )
     model_inputs = (hidden_states, attn_mask, wq, wk, wv, wo, valid_lengths)
-    model_parameters = (
-        hidden_dim,
-        n_heads,
-        n_kv_heads,
-        head_dim,
-        max_seq_len,
+    model_parameters = ModelParameters(
+        hidden_dim=hidden_dim,
+        n_heads=n_heads,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        max_seq_len=max_seq_len,
     )
     # Run distributed and ensure all ranks are the same.
     devices_with_host = [host, *devices]

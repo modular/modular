@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from collections.abc import Sequence
+
 import numpy as np
 import pytest
 import torch
@@ -12,34 +16,42 @@ import torch.nn.functional as F
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, StaticDim, TensorType, TensorValue
 from max.nn import MLP, Linear, Signals
 from max.nn.comm.allreduce import Allreduce
+from test_common.graph_utils import are_all_buffer_values_sequence
 
 
-def torch_linear(weight, **kwargs):
+def torch_linear(weight: torch.Tensor, **kwargs) -> nn.Linear:
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
     return linear
 
 
 class TorchMLP(nn.Module):
-    def __init__(self, w1, w2, w3):
+    def __init__(
+        self, w1: torch.Tensor, w2: torch.Tensor, w3: torch.Tensor
+    ) -> None:
         super().__init__()
         self.gate_proj = torch_linear(w1, bias=False)
         self.down_proj = torch_linear(w2, bias=False)
         self.up_proj = torch_linear(w3, bias=False)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-def distribute_value(v, devices: list[Device]):
+def distribute_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
-def shard_col_value(v, devices: list[Device]):
+def shard_col_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     n_devices = len(devices)
+    assert isinstance(v.shape[1], StaticDim)
     col_size = v.shape[1].dim // n_devices
     return [
         v[:, i * col_size : (i + 1) * col_size].to(
@@ -49,8 +61,11 @@ def shard_col_value(v, devices: list[Device]):
     ]
 
 
-def shard_row_value(v, devices: list[Device]):
+def shard_row_value(
+    v: TensorValue, devices: Sequence[Device]
+) -> Sequence[TensorValue]:
     n_devices = len(devices)
+    assert isinstance(v.shape[0], StaticDim)
     row_size = v.shape[0].dim // n_devices
     return [
         v[i * row_size : (i + 1) * row_size, :].to(
@@ -60,7 +75,9 @@ def shard_row_value(v, devices: list[Device]):
     ]
 
 
-def distributed_mlp_graph(devices: list[Device], model_parameters) -> Graph:
+def distributed_mlp_graph(
+    devices: Sequence[Device], model_parameters: tuple[int, int, int]
+) -> Graph:
     (batch_size, intermediate_size, hidden_dim) = model_parameters
 
     input_type: TensorType = TensorType(
@@ -84,6 +101,11 @@ def distributed_mlp_graph(devices: list[Device], model_parameters) -> Graph:
         ],
     ) as graph:
         x_graph, w1_graph, w2_graph, w3_graph, *signal_buffers = graph.inputs
+        assert isinstance(x_graph, TensorValue)
+        assert isinstance(w1_graph, TensorValue)
+        assert isinstance(w2_graph, TensorValue)
+        assert isinstance(w3_graph, TensorValue)
+        assert are_all_buffer_values_sequence(signal_buffers)
 
         # Typical strategy to parallelize MLP
         # Column shard weights on gate/up projections which are on input layers
@@ -118,7 +140,9 @@ def distributed_mlp_graph(devices: list[Device], model_parameters) -> Graph:
         (1, 14336, 4096, 2),  # llama3.1 8b config over 2 device
     ],
 )
-def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
+def test_mlp(
+    batch_size: int, intermediate_size: int, hidden_dim: int, n_devices: int
+) -> None:
     # Initialize the device-contexts
     host = CPU(0)
     # Check we are parallelizing over legal amounts of devices and create contexts.
@@ -145,11 +169,7 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
     w3 = Tensor.from_numpy(w3_np)
 
     signal_buffers = [
-        Tensor.zeros(
-            shape=(Signals.NUM_BYTES,),
-            dtype=DType.uint8,
-            device=dev,
-        )
+        Tensor.zeros(shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev)
         for dev in devices
     ]
 
@@ -157,8 +177,7 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
     devices_with_host = [host, *devices]
     session = InferenceSession(devices=devices_with_host)
     graph = distributed_mlp_graph(
-        devices,
-        (batch_size, intermediate_size, hidden_dim),
+        devices, (batch_size, intermediate_size, hidden_dim)
     )
     compiled = session.load(graph)
     results = compiled.execute(x, w1, w2, w3, *signal_buffers)
