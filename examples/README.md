@@ -32,13 +32,13 @@ complex, on an available GPU. Note that
 [a MAX-compatible GPU](https://docs.modular.com/max/faq/#gpu-requirements) will
 be necessary to build and run these.
 
-## [PyTorch and ONNX inference on MAX](inference/)
+## [PyTorch inference on MAX](inference/)
 
-MAX has the power to accelerate existing PyTorch and ONNX models directly, and
+MAX has the power to accelerate existing PyTorch models directly, and
 provides Python, Mojo, and C APIs for this. These examples showcase common
-models from these frameworks and how to run them even faster via MAX.
+models and how to run them even faster via MAX.
 
 ## [Jupyter notebooks](notebooks/)
 
-Jupyter notebooks that showcase PyTorch and ONNX models being accelerated
+Jupyter notebooks that showcase PyTorch models being accelerated
 through MAX.

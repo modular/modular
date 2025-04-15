@@ -68,7 +68,6 @@ README for each example or notebook you want to run.
 Check out the [notebooks examples](./examples/notebooks/) for using MAX Engine
 🏎️ for models such as
 
-- [Mistral-7B](./examples/notebooks/mistral7b-python-onnx.ipynb)
 - [Roberta-pytorch](./examples/notebooks/roberta-python-pytorch.ipynb)
 
 ### Tutorials
