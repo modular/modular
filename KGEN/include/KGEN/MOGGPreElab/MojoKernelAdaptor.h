@@ -152,6 +152,13 @@ struct MojoKernelOperandAdaptor {
                underlyingType) ||
            std::holds_alternative<ListOfTensorOperandAdaptor>(underlyingType);
   }
+
+  bool isFusedTensorType() const {
+    if (!isTensorType())
+      return false;
+
+    return std::get<TensorOperandAdaptor>(underlyingType).fused;
+  }
 };
 
 template <typename FuncOpType>
@@ -229,7 +236,7 @@ struct MojoKernelFunctionAdaptor {
     }
   }
 
-  bool isElementwiseFunction() {
+  bool isElementwise() {
     return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGElementwiseLambda);
   }
 
