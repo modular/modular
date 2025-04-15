@@ -63,7 +63,7 @@ class _Llama4TextAttention(Module):
         kv_params: KVCacheParams,
         layer_idx: int,
         dtype: DType = DType.float32,
-        attn_temperature_tuning: int,
+        attn_temperature_tuning: bool,
         floor_scale: float,
         attn_scale: float,
         devices: list[DeviceRef],
@@ -85,7 +85,7 @@ class _Llama4TextAttention(Module):
             layer_idx: The layer number associated with this Attention block.
             dtype: DType of the attention inputs and weights.
             attn_temperature_tuning: int, used to improve accuracy for long
-                contexts. Currently not implemented.
+                contexts.
             floor_scale: Float, used with `attn_temperature_tuning`.
             attn_scale: Float, used with `attn_temperature_tuning`.
             devices: Device to place the weights and run the computation. If
@@ -213,16 +213,16 @@ class _Llama4TextAttention(Module):
             freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
         else:
             freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
-
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            kwargs["input_row_offsets"],
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=self.rope.interleaved,
-        )
+        if self.use_rope:
+            xq = fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                kwargs["input_row_offsets"],
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=self.rope.interleaved,
+            )
 
         if self.use_qk_norm:
             # Apply QK norm to query and key states.
