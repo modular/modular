@@ -640,6 +640,7 @@ alias _AnyTypeMetaType = __type_of(AnyType)
 @register_passable
 struct VariadicPack[
     elt_is_mutable: Bool, //,
+    is_owned: Bool,
     origin: Origin[elt_is_mutable],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
@@ -654,7 +655,7 @@ struct VariadicPack[
         `>`,
     ]
 
-    fn __init__(out self, value: Self._mlir_pack_type, is_owned: Bool):
+    fn __init__(out self, value: Self._mlir_pack_type):
         pass
 
     fn __getitem__[

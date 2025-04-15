@@ -1044,6 +1044,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // The reference is immutable when borrowing, mutable otherwise.
   bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
                    arg.convention != ParsedArgument::kConventionUnspec;
+  bool isOwned = arg.convention == ParsedArgument::kConventionOwned;
 
   // Arguments passed by memory need an associated origin parameter, and need
   // to be passed by reference.
@@ -1060,10 +1061,10 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   // We expect:
   // VariadicPack[
-  //   mut: Bool, //, origin: Origin[mut],
+  //   mut: Bool, //, is_owned: Bool, origin: Origin[mut],
   //   element_trait: _AnyTypeMetaType, *element_types: element_trait]
   auto packStruct = dyn_cast_if_present<StructDeclOp>(packDecl);
-  if (!packStruct || packStruct.getParams().size() != 4) {
+  if (!packStruct || packStruct.getParams().size() != 5) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
@@ -1085,11 +1086,12 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 #endif
 
   auto isMutType = typeSig.getParamTypes()[0];
-  auto originType = typeSig.getParamTypes()[1];
-  auto traitMetaType = typeSig.getParamTypes()[2];
-  if (!isa<LIT::StructType>(isMutType) || !isa<LIT::StructType>(originType) ||
-      !isa<AnyTraitType>(traitMetaType) ||
-      !isa<VariadicType>(typeSig.getParamTypes()[3])) {
+  auto isOwnedType = typeSig.getParamTypes()[1];
+  auto originType = typeSig.getParamTypes()[2];
+  auto traitMetaType = typeSig.getParamTypes()[3];
+  if (!isa<LIT::StructType>(isMutType) || !isa<LIT::StructType>(isOwnedType) ||
+      !isa<LIT::StructType>(originType) || !isa<AnyTraitType>(traitMetaType) ||
+      !isa<VariadicType>(typeSig.getParamTypes()[4])) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
@@ -1102,6 +1104,14 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   if (!isMut)
     return {};
   evaluator.addInputValue(isMut);
+
+  auto isOwnedAttr = BoolAttr::get(emitter.getContext(), isOwned);
+  PValue isOwnedVal =
+      emitter.emitPValue({isOwnedAttr, arg.typeExpr}, EC_Type, isOwnedType);
+  if (!isOwnedVal)
+    return {};
+  evaluator.addInputValue(isOwnedVal);
+
   PValue origin =
       emitter.emitPValue({refType.getOrigin(), arg.typeExpr}, EC_Type,
                          evaluator.getReboundType(originType));
@@ -1123,8 +1133,8 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
-  return packStruct.bindReference(
-      {isMut.get(), origin.get(), traitMT.get(), param.get()});
+  return packStruct.bindReference({isMut.get(), isOwnedVal.get(), origin.get(),
+                                   traitMT.get(), param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default

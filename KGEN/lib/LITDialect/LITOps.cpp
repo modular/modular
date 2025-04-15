@@ -1866,7 +1866,7 @@ Value RefPackCreateOp::findRefPackCreate(Value val) {
       continue;
 
     auto call = refStore.getValue().getDefiningOp<LIT::CallOp>();
-    if (!call || call.getNumOperands() != 2)
+    if (!call || call.getNumOperands() != 1)
       continue;
 
     // Make sure any change to the API forces this code to get updated.

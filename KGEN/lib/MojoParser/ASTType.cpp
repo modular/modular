@@ -367,19 +367,20 @@ ArgConvention ASTType::getVariadicConvention() const {
 RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  // NOTE: `bindings[0]` is expected to be the Mojo `Bool` type, and
-  // bindings[1] is an Origin.
-  assert(bindings.size() == 4 && isa<LIT::StructType>(bindings[0].getType()) &&
+  // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
+  // type, and `bindings[2]` is an Origin.
+  assert(bindings.size() == 5 && isa<LIT::StructType>(bindings[0].getType()) &&
          isa<LIT::StructType>(bindings[1].getType()) &&
-         isa<AnyTraitType>(bindings[2].getType()) &&
-         isa<VariadicType>(bindings[3].getType()) &&
+         isa<LIT::StructType>(bindings[2].getType()) &&
+         isa<AnyTraitType>(bindings[3].getType()) &&
+         isa<VariadicType>(bindings[4].getType()) &&
          "Not a VariadicPack struct?");
 
-  TypedAttr origin = ASTType::extractOriginOf(SMLoc(), bindings[1], shared);
+  TypedAttr origin = ASTType::extractOriginOf(SMLoc(), bindings[2], shared);
   return RefPackType::get(
-      /*variadicList*/ bindings[3], origin,
+      /*variadicList*/ bindings[4], origin,
       /*addrSpace*/
-      IntegerAttr::get(IndexType::get(bindings[1].getContext()), 0));
+      IntegerAttr::get(IndexType::get(shared.getContext()), 0));
 }
 
 /// Return the type list for the variadic argument in a VariadicPack.  This
@@ -388,14 +389,15 @@ RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
 TypedAttr ASTType::getVariadicPackTypeList() const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  // NOTE: `bindings[0]` is expected to be the Mojo `Bool` type, and
-  // bindings[1] is an Origin.
-  assert(bindings.size() == 4 && isa<LIT::StructType>(bindings[0].getType()) &&
+  // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
+  // type, and `bindings[2]` is an Origin.
+  assert(bindings.size() == 5 && isa<LIT::StructType>(bindings[0].getType()) &&
          isa<LIT::StructType>(bindings[1].getType()) &&
-         isa<AnyTraitType>(bindings[2].getType()) &&
-         isa<VariadicType>(bindings[3].getType()) &&
+         isa<LIT::StructType>(bindings[2].getType()) &&
+         isa<AnyTraitType>(bindings[3].getType()) &&
+         isa<VariadicType>(bindings[4].getType()) &&
          "Not a VariadicPack struct?");
-  return bindings[3];
+  return bindings[4];
 }
 
 ASTType ASTType::getKwargsDictValueType() const {
