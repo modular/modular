@@ -1788,7 +1788,7 @@ struct DeviceFunction[
     ](
         self,
         ctx: DeviceContext,
-        args: VariadicPack[_, AnyType, *Ts],
+        args: VariadicPack[_, _, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2120,7 +2120,7 @@ struct DeviceExternalFunction:
     ](
         self,
         ctx: DeviceContext,
-        args: VariadicPack[_, AnyType, *Ts],
+        args: VariadicPack[_, _, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -2934,7 +2934,7 @@ struct DeviceContext(CollectionElement):
     ](
         self,
         f: DeviceFunction,
-        args: VariadicPack[_, AnyType, *Ts],
+        args: VariadicPack[_, _, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -3033,7 +3033,7 @@ struct DeviceContext(CollectionElement):
     ](
         self,
         f: DeviceExternalFunction,
-        args: VariadicPack[_, AnyType, *Ts],
+        args: VariadicPack[_, _, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
