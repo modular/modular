@@ -5,7 +5,6 @@ modular_py_test(
     srcs = glob(["*.py"]),
     data = glob(["*.mojo"]) + ["//KGEN/tools/mojo"],
     env = {
-        "PATH": "KGEN/tools/mojo:/usr/bin:/bin",
         # HACK: This test invokes "mojo build" in a subprocess, but it can't
         # see modular.cfg, so we need to provide the run path here to
         # find CompilerRT.
