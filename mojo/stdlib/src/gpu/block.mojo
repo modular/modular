@@ -33,7 +33,7 @@ from .warp import (
     min as warp_min,
     prefix_sum as warp_prefix_sum,
 )
-from .warp import shuffle_idx, shuffle_up
+from .warp import shuffle_idx, shuffle_up, broadcast as warp_broadcast
 from .globals import WARP_SIZE
 
 
@@ -45,12 +45,14 @@ from .globals import WARP_SIZE
 @always_inline
 fn _block_reduce[
     type: DType,
-    simd_width: Int, //,
+    width: Int, //,
     block_size: Int,
     warp_reduce_fn: fn[dtype: DType, width: Int] (
         SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
-](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+](val: SIMD[type, width], *, initial_val: SIMD[type, width]) -> SIMD[
+    type, width
+]:
     """Performs a generic block-level reduction operation.
 
     This function implements a block-level reduction using warp-level operations
@@ -59,12 +61,13 @@ fn _block_reduce[
 
     Parameters:
         type: The data type of the SIMD elements.
-        simd_width: The SIMD width for vector operations.
+        width: The SIMD width for vector operations.
         block_size: The number of threads in the block.
         warp_reduce_fn: A function that performs warp-level reduction.
 
     Args:
         val: The input value from each thread to include in the reduction.
+        initial_val: The initial value for the reduction.
 
     Returns:
         The result of the reduction operation for each thread.
@@ -77,7 +80,7 @@ fn _block_reduce[
     # Allocate shared memory for inter-warp communication
     alias n_warps = block_size // WARP_SIZE
     var shared_mem = stack_allocation[
-        n_warps * simd_width, type, address_space = AddressSpace.SHARED
+        n_warps * width, type, address_space = AddressSpace.SHARED
     ]()
 
     # Step 1: Perform warp-level reduction
@@ -92,15 +95,15 @@ fn _block_reduce[
     # Step 3: Have the first warp reduce the warp results
     if warp_id() == 0:
         # Load this warp's share of the warp results
-        var block_val = SIMD[type, simd_width](0)
+        var block_val = initial_val
         if lane_id() < n_warps:
-            block_val = shared_mem.load[width=simd_width](lane_id())
+            block_val = shared_mem.load[width=width](lane_id())
 
         # Reduce across the first warp
         warp_result = warp_reduce_fn(block_val)
 
     # Step 4: Broadcast the result from thread 0 to all threads
-    return shuffle_idx(warp_result, 0)
+    return warp_broadcast(warp_result)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -110,8 +113,8 @@ fn _block_reduce[
 
 @always_inline
 fn sum[
-    type: DType, simd_width: Int, //, *, block_size: Int
-](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    type: DType, width: Int, //, *, block_size: Int
+](val: SIMD[type, width]) -> SIMD[type, width]:
     """Computes the sum of values across all threads in a block.
 
     Performs a parallel reduction using warp-level operations and shared memory
@@ -119,7 +122,7 @@ fn sum[
 
     Parameters:
         type: The data type of the SIMD elements.
-        simd_width: The number of elements in each SIMD vector.
+        width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
 
     Args:
@@ -137,7 +140,7 @@ fn sum[
     ](x: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
         return warp_sum(x)
 
-    return _block_reduce[block_size, _warp_sum](val)
+    return _block_reduce[block_size, _warp_sum](val, initial_val=0)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -147,8 +150,8 @@ fn sum[
 
 @always_inline
 fn max[
-    type: DType, simd_width: Int, //, *, block_size: Int
-](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    type: DType, width: Int, //, *, block_size: Int
+](val: SIMD[type, width]) -> SIMD[type, width]:
     """Computes the maximum value across all threads in a block.
 
     Performs a parallel reduction using warp-level operations and shared memory
@@ -156,7 +159,7 @@ fn max[
 
     Parameters:
         type: The data type of the SIMD elements.
-        simd_width: The number of elements in each SIMD vector.
+        width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
 
     Args:
@@ -174,7 +177,9 @@ fn max[
     ](x: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
         return warp_max(x)
 
-    return _block_reduce[block_size, _warp_max](val)
+    return _block_reduce[block_size, _warp_max](
+        val, initial_val=Scalar[type].MIN_FINITE
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -184,8 +189,8 @@ fn max[
 
 @always_inline
 fn min[
-    type: DType, simd_width: Int, //, *, block_size: Int
-](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    type: DType, width: Int, //, *, block_size: Int
+](val: SIMD[type, width]) -> SIMD[type, width]:
     """Computes the minimum value across all threads in a block.
 
     Performs a parallel reduction using warp-level operations and shared memory
@@ -193,7 +198,7 @@ fn min[
 
     Parameters:
         type: The data type of the SIMD elements.
-        simd_width: The number of elements in each SIMD vector.
+        width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
 
     Args:
@@ -211,7 +216,9 @@ fn min[
     ](x: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
         return warp_min(x)
 
-    return _block_reduce[block_size, _warp_min](val)
+    return _block_reduce[block_size, _warp_min](
+        val, initial_val=Scalar[type].MAX_FINITE
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -221,8 +228,8 @@ fn min[
 
 @always_inline
 fn broadcast[
-    type: DType, simd_width: Int, //, *, block_size: Int
-](val: SIMD[type, simd_width], src_thread: UInt = 0) -> SIMD[type, simd_width]:
+    type: DType, width: Int, //, *, block_size: Int
+](val: SIMD[type, width], src_thread: UInt = 0) -> SIMD[type, width]:
     """Broadcasts a value from a source thread to all threads in a block.
 
     This function takes a SIMD value from the specified source thread and
@@ -231,7 +238,7 @@ fn broadcast[
 
     Parameters:
         type: The data type of the SIMD elements.
-        simd_width: The number of elements in each SIMD vector.
+        width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
 
     Args:
@@ -244,7 +251,7 @@ fn broadcast[
     """
     # Allocate shared memory for broadcasting
     var shared_mem = stack_allocation[
-        simd_width, type, address_space = AddressSpace.SHARED
+        width, type, address_space = AddressSpace.SHARED
     ]()
 
     # Source thread writes its value to shared memory
@@ -254,7 +261,7 @@ fn broadcast[
     barrier()
 
     # All threads read the same value from shared memory
-    return shared_mem.load[width=simd_width](0)
+    return shared_mem.load[width=width](0)
 
 
 # ===-----------------------------------------------------------------------===#
