@@ -296,6 +296,8 @@ def _create_token_generation_scheduler(
         enable_in_flight_batching=enable_in_flight_batching,
     )
 
+    # TODO E2EOPT-190: Grab paged_manager from SpeculativeDecodingTextGenerationPipeline
+
     # Get the paged kv cache manager if we are using one
     paged_manager = None
     if (
