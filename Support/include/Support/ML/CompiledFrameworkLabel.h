@@ -40,8 +40,6 @@ public:
   enum Cases {
     /// Framework is unknown.
     kUnknown,
-    // A compiled ONNX model.
-    kONNXModel,
     // A compiled PyTorch model.
     kPyTorchModel,
     // A compiled Modular model.
@@ -75,7 +73,7 @@ public:
   /// Return a printable string identifying this framework label.
   const char *getAsString() const;
 
-  /// Returns a unique label string such as `onnx` identifying the framework.
+  /// Returns a unique label string such as `pytorch` identifying the framework.
   /// Differs from `getAsString` in that this is an ID, whereas `getAsString` is
   /// more human readable.
   static const char *asLabelString(Cases label);

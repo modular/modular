@@ -68,7 +68,7 @@ struct StatsReport {
   llvm::StringMap<size_t> failureHistogram;
 
 private:
-  /// framework name: pytorch, onnx, etc.
+  /// framework name: pytorch, etc.
   std::string framework;
   std::string modelName;
 };
