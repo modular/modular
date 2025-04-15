@@ -228,3 +228,18 @@ const llvm::fltSemantics *DType::getFloatSemantics() const {
 #undef DECLARE_FLOAT
   }
 }
+
+size_t DType::getAlignment() const {
+  constexpr auto getAlign = [](const auto *ptr) {
+    return alignof(decltype(*ptr));
+  };
+  return dispatch<size_t>((void *)nullptr)
+      .when<DType::f16>(getAlign)
+      .when<DType::bf16>(getAlign)
+      .when<DType::bf16>(getAlign)
+      .when<DType::f8e4m3fn>(getAlign)
+      .when<DType::f8e4m3fnuz>(getAlign)
+      .when<DType::f8e5m2>(getAlign)
+      .when<DType::f8e5m2fnuz>(getAlign)
+      .whenCXXType(getAlign);
+}
