@@ -159,6 +159,9 @@ static constexpr StringLiteral kMOGGTraceNameParameterName = "_trace_name";
 // An ArrayAttr of indices which correspond which operands have fusion enabled.
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
 
+// An ArrayAttr of of the encoded IOSpec value for all kernel arguments.
+static constexpr StringLiteral kMOGGArgsIOSpecs = "mogg.args_io_specs";
+
 static constexpr StringLiteral kMOGGBufferArgs = "mogg.buffer_args";
 
 // Fusion interface implementation details.
