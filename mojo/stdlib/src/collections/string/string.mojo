@@ -718,27 +718,26 @@ struct String(
 
     @always_inline
     fn __init__(out self, *, owned buffer: List[UInt8, *_]):
-        """Construct a string from a buffer of bytes without copying the
-        allocated data.
-
-        The buffer must be terminated with a null byte:
-
-        ```mojo
-        var buf = List[UInt8]()
-        buf.append(ord('H'))
-        buf.append(ord('i'))
-        buf.append(0)
-        var hi = String(buffer=buf)
-        ```
+        """Construct a string from a buffer of null-terminated bytes, copying
+        the allocated data. Use the transfer operator `^` to avoid the copy.
 
         Args:
             buffer: The buffer.
+
+        Examples:
+
+        ```mojo
+        %# from testing import assert_equal
+        var buf = List[Byte](ord('h'), ord('i'), 0)
+        var hi = String(buffer=buf^)
+        assert_equal(hi, "hi")
+        ```
         """
         debug_assert(
             len(buffer) > 0 and buffer[-1] == 0,
             "expected last element of String buffer to be null terminator",
         )
-        self._buffer = buffer^._cast_hint_trivial_type[True]()
+        self._buffer = rebind[Self._buffer_type](buffer)
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
