@@ -6,7 +6,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from pathlib import Path
-from sys import alignof, simdwidthof, sizeof
+from sys import alignof, env_get_int, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
 
 import linalg.vendor_blas
@@ -18,6 +18,12 @@ from gpu.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
+)
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    PDLLevel,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
@@ -519,6 +525,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
 
+    alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
+
+    @parameter
+    if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
         a_tma_op.prefetch_descriptor()
@@ -717,6 +729,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             block_idx_swizzle[0],
         )
 
+    @parameter
+    if pdl_level == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
     # TO ensure SEMEM destruction doesn't happen
     @parameter
     if cluster_size[cluster_shape]() > 1:
@@ -884,6 +900,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
+
+    alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
+
+    @parameter
+    if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
@@ -1094,6 +1116,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 block_x,
             )
             work_info = scheduler.fetch_next_work()
+
+    @parameter
+    if pdl_level == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
 
     # TO ensure SEMEM destruction doesn't happen
     @parameter
