@@ -855,8 +855,17 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
       if (!ref || ref.getDepth() != depth - signatureScoped ||
           ref.getIndex() >= bindingsSoFar.size())
         return {};
-      auto result = bindingsSoFar[ref.getIndex()];
-      assert(result.getType() == evaluator.getReboundType(ref.getType()) &&
+      TypedAttr result = bindingsSoFar[ref.getIndex()];
+
+      [[maybe_unused]] auto getExpectedType = [&]() -> ASTType {
+        // Since we're at a depth of `depth - signatureScoped`, while the
+        // `evaluator` expects a depth of 0, we need to adjust any depths in the
+        // type before running it through `evaluator`.
+        IndexDepthAdjuster depthAdjuster(depth - signatureScoped);
+        Type adjustedType = depthAdjuster.replace(result.getType());
+        return evaluator.getReboundType(adjustedType);
+      };
+      assert(result.getType() == getExpectedType() &&
              "Parameter type mismatch");
       return result;
     }
