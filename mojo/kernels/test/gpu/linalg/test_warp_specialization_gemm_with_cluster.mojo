@@ -204,6 +204,7 @@ def test_warp_specialize_gemm_with_multicasting[
         config=matmul_config,
         schedule=schedule,
         grid_shape=grid_shape,
+        use_tma_store=use_tma_store,
     ](
         c_device.tensor,
         a_device.tensor,
