@@ -15,7 +15,6 @@
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !lit.ref.pack
     # CHECK-SAME: <:variadic<!AnyType> [], imm {}> = <<>>
-    # CHECK-NEXT:  kgen.param.constant: !Bool = <{:i1 0}>
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}@Tuple<:variadic<!AnyType> []>,
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
     _ = ()

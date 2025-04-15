@@ -12,6 +12,7 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
@@ -33,13 +34,13 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// This helper function emits a call to VariadicPack(refPackValue, isOwned)
-/// and returns the result value.  'variadicPackType' is the fully bound
-/// VariadicPack type per the function signature.
-static CValue emitVariadicPackConstructor(
-    ASTType variadicPackType, ArgConvention declaredArgConvention,
-    TypedAttr originToUse, const ExprNode *expr, ExprEmitter &emitter,
-    std::function<CValue(RefPackType)> refPackBuilder) {
+/// This helper function emits a call to VariadicPack(refPackValue) and returns
+/// the result value.  'variadicPackType' is the fully bound VariadicPack type
+/// per the function signature.
+static CValue
+emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
+                            const ExprNode *expr, ExprEmitter &emitter,
+                            std::function<CValue(RefPackType)> refPackBuilder) {
   RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
 
   // If there was no origin specified, use an immortal one with the same
@@ -54,26 +55,45 @@ static CValue emitVariadicPackConstructor(
   // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted origin.
   CValue refPackValue = refPackBuilder(packType);
 
-  auto isOwned = declaredArgConvention == ArgConvention::OwnedMem;
-  auto isOwnedAttr = BoolAttr::get(emitter.getContext(), isOwned);
-  auto isOwnedVal = emitter.emitBool({isOwnedAttr, expr}, EC_PackArgument);
-  assert(isOwnedVal && "Bool emission should always work");
-
   // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
   // bool indicating whether the argument is owned.
   CallOperands operands;
   operands.add({refPackValue, expr});
-  operands.add({isOwnedVal, expr});
 
   ValueDest packDest(ExprContext::EC_PackArgument);
 
-  // Construct the pack type without parameters so we reinfer the origin which
+  auto variadicPackStructDecl =
+      cast<StructDeclOp>(variadicPackType.getDecl(emitter.shared));
+  SmallVector<TypedAttr> bindings(
+      cast<LIT::StructType>(variadicPackType).getParamValues());
+  // NOTE: `bindings[0]` and `bindings[1]` are expected to be the Mojo `Bool`
+  // type, and `bindings[2]` is an Origin.
+  assert(bindings.size() == 5 && isa<LIT::StructType>(bindings[0].getType()) &&
+         isa<LIT::StructType>(bindings[1].getType()) &&
+         isa<LIT::StructType>(bindings[2].getType()) &&
+         isa<AnyTraitType>(bindings[3].getType()) &&
+         isa<VariadicType>(bindings[4].getType()) &&
+         "Not a VariadicPack struct?");
+
+  // Construct the pack type without parameters so we re-infer the origin which
   // is different on the caller side (the union of the argument origins) than
   // the declared callee side (a parameter).
-  variadicPackType = variadicPackType.getWithoutParameters(emitter.shared);
+  ParameterEvaluator evaluator;
+  for (auto [idx, currBinding] : llvm::enumerate(bindings)) {
+    // Do not clear the `is_owned` parameter since it's not inferrable from the
+    // operands to VariadicPack. It has to be set explicitly based on what
+    // convention was used to construct the pack.
+    if (idx != 1) // Index `1` is the `is_owned` parameter.
+      currBinding =
+          UnboundAttr::get(evaluator.getReboundType(currBinding.getType()));
+    evaluator.addInputValue(currBinding);
+  }
+  ASTType unboundVariadicPackType =
+      variadicPackStructDecl.bindReference(bindings);
 
-  return emitter.emitConstructorCall(variadicPackType, std::move(operands),
-                                     expr, CallSyntax::kTypeCall, packDest);
+  return emitter.emitConstructorCall(unboundVariadicPackType,
+                                     std::move(operands), expr,
+                                     CallSyntax::kTypeCall, packDest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -335,7 +355,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       assert(variadicPackType && "Unknown variadic argument kind");
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
-          variadicPackType, convention, /*origin*/ {}, callExpr, emitter,
+          variadicPackType, /*origin*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             // RefPack elements are passed through memory.  Use adjustedPackType
             // to get the proper (immortal) origin installed.
@@ -436,7 +456,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
     assert(variadicPackType && "Must be a VariadicPack");
     argVal = emitVariadicPackConstructor(
-        variadicPackType, convention, getCommonOrigin(), callExpr, emitter,
+        variadicPackType, getCommonOrigin(), callExpr, emitter,
         [&](RefPackType adjustedPackType) -> CValue {
           return SRValue(emitter.builder->create<RefPackCreateOp>(
               loc, adjustedPackType, args));
@@ -533,10 +553,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
                  .getValues()
                  .empty() &&
              "pack type already checked against operand count");
-      auto argConv = calleeSig.getPackVarArgConvention(argIdx);
       // Emit a VariadicPack constructor call.
       auto variadicPack = emitVariadicPackConstructor(
-          variadicPackType, argConv, /*origin*/ {}, callExpr, emitter,
+          variadicPackType, /*origin*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
             return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
           });

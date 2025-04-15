@@ -991,7 +991,7 @@ fn test_pack_of_traits1[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait]
      pass
 
 fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
-    owned storage: VariadicPack[_, elt_trait, *elt_types]):
+    owned storage: VariadicPack[_, _, elt_trait, *elt_types]):
      pass
 
 
@@ -1017,7 +1017,7 @@ struct FormVariadicPackWithCastedElementVariadic[
     fn __init__(out self, owned *args: *element_types):
         # This should work.
         self.foo(args^)
-    fn foo(self, owned storage: VariadicPack[_, element_trait, *element_types]):
+    fn foo(self, owned storage: VariadicPack[_, _, element_trait, *element_types]):
         pass
 
 # This tests that we can take UnsafePointer (which has an AnyType bound for T)
