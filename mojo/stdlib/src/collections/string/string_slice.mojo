@@ -2325,22 +2325,39 @@ fn _to_string_list[
     return _to_string_list[items.T, len_fn, unsafe_ptr_fn](items)
 
 
-@always_inline
-fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
+fn _strnlen(ptr: UnsafePointer[Byte], max: UInt = UInt.MAX) -> UInt:
+    """Get the length of a null-terminated string from a pointer.
+
+    Args:
+        ptr: The null-terminated pointer to the string.
+        max: The maximum size of the string.
+
+    Returns:
+        The length of the null terminated string without the null terminator.
+
+    Notes:
+        The length does NOT include the null terminator.
     """
-    Get the length of a null-terminated string from a pointer.
-    Note: the length does NOT include the null terminator.
+    var offset = UInt(0)
+    while offset < max and ptr[offset]:
+        offset += 1
+    return offset
+
+
+@always_inline
+fn _unsafe_strlen(ptr: UnsafePointer[Byte]) -> UInt:
+    """Get the length of a null-terminated string from a pointer.
 
     Args:
         ptr: The null-terminated pointer to the string.
 
     Returns:
         The length of the null terminated string without the null terminator.
+
+    Notes:
+        The length does NOT include the null terminator.
     """
-    var len = 0
-    while ptr.load(len):
-        len += 1
-    return len
+    return _strnlen(ptr)
 
 
 @always_inline

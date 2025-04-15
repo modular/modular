@@ -21,6 +21,7 @@ from os import listdir
 """
 
 from collections import InlineArray, List
+from collections.string.string_slice import _strnlen
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
 from sys.ffi import OpaquePointer, c_char
 
@@ -83,13 +84,6 @@ struct _dirent_macos:
     """Name of entry."""
 
 
-fn _strnlen(ptr: UnsafePointer[c_char], max: Int) -> Int:
-    var offset = 0
-    while offset < max and ptr[offset]:
-        offset += 1
-    return offset
-
-
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
@@ -147,9 +141,9 @@ struct _DirHandle:
             if not ep:
                 break
             var name = ep.take_pointee().name
-            var name_ptr = name.unsafe_ptr()
+            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[__origin_of(name)](
-                ptr=name_ptr.bitcast[UInt8](),
+                ptr=name_ptr,
                 length=_strnlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
             )
             if name_str == "." or name_str == "..":
@@ -174,9 +168,9 @@ struct _DirHandle:
             if not ep:
                 break
             var name = ep.take_pointee().name
-            var name_ptr = name.unsafe_ptr()
+            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[__origin_of(name)](
-                ptr=name_ptr.bitcast[UInt8](),
+                ptr=name_ptr,
                 length=_strnlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
             )
             if name_str == "." or name_str == "..":
