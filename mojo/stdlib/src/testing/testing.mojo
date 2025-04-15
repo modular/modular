@@ -48,10 +48,12 @@ fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> String:
 
 @always_inline
 fn assert_true[
-    T: Boolable, //
+    T: Boolable, //, O: ImmutableOrigin = StaticConstantOrigin
 ](
     val: T,
-    msg: String = "condition was unexpectedly False",
+    msg: StringSlice[O] = rebind[StringSlice[O]](
+        StaticString("condition was unexpectedly False")
+    ),
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
@@ -59,6 +61,7 @@ fn assert_true[
 
     Parameters:
         T: The type of the value argument.
+        O: The origin of the error message.
 
     Args:
         val: The value to assert to be True.
@@ -116,11 +119,11 @@ trait TestableCollectionElement(
 
 @always_inline
 fn assert_equal[
-    T: Testable
+    T: Testable, O: ImmutableOrigin = StaticConstantOrigin
 ](
     lhs: T,
     rhs: T,
-    msg: String = "",
+    msg: StringSlice[O] = rebind[StringSlice[O]](StaticString("")),
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
@@ -129,6 +132,7 @@ fn assert_equal[
 
     Parameters:
         T: A Testable type.
+        O: The origin of the error message.
 
     Args:
         lhs: The lhs of the equality.
@@ -143,7 +147,7 @@ fn assert_equal[
         raise _assert_cmp_error["`left == right` comparison"](
             String(lhs),
             String(rhs),
-            msg=msg,
+            msg=String(msg),
             loc=location.or_else(__call_location()),
         )
 
@@ -172,6 +176,45 @@ fn assert_equal(
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs, rhs, msg=msg, loc=location.or_else(__call_location())
+        )
+
+
+fn assert_equal[
+    O1: Origin, O2: Origin
+](
+    lhs: StringSlice[O1],
+    rhs: StringSlice[O2],
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    """Asserts that the input values are equal. If it is not then an Error
+    is raised.
+
+    Parameters:
+        O1: The origin of lhs.
+        O2: The origin of rhs.
+
+    Args:
+        lhs: The lhs of the equality.
+        rhs: The rhs of the equality.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (default to the `__call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    # TODO(MSTDL-1071):
+    #   Once Mojo supports parametric traits, implement EqualityComparable for
+    #   StringSlice such that string slices with different origin types can be
+    #   compared, then drop this hack.
+    # HACK: Cast `rhs` to have the same origin as `lhs`
+    if lhs.get_immutable() != rebind[__type_of(lhs.get_immutable())](rhs):
+        raise _assert_cmp_error["`left == right` comparison"](
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=location.or_else(__call_location()),
         )
 
 

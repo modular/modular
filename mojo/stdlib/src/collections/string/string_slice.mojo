@@ -49,6 +49,7 @@ Example:
 """
 
 from collections import List, Optional
+from collections._index_normalization import normalize_index
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -963,7 +964,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return CodepointSliceIter[origin, forward=False](self)
 
-    fn __getitem__[I: Indexer](self, idx: I) -> String:
+    fn __getitem__[I: Indexer](self, idx: I) -> Self.Immutable:
         """Gets the character at the specified position.
 
         Parameters:
@@ -975,11 +976,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A new string containing the character at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-        var buf = String._buffer_type(capacity=1)
-        buf.append(self._slice[idx])
-        buf.append(0)
-        return String(buf^)
+        # TODO(#3526): implement this for unicode
+        var i = normalize_index["StringSlice"](idx, len(self))
+        return Self.Immutable(ptr=self.unsafe_ptr() + i, length=1)
 
     fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
