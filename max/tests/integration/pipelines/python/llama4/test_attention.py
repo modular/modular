@@ -307,7 +307,6 @@ def attention_weights(
 
 def test_attention(
     text_config: Llama4TextConfig,
-    input_tensor: torch.Tensor,
 ) -> None:
     # Update TextConfig to contain two decoder layers, one that uses attention
     # with rope, and one that uses attention without rope with attention tuning.
@@ -316,8 +315,23 @@ def test_attention(
     text_config.num_hidden_layers = 2
     text_config.no_rope_layers = [1]
 
+    # Decrease actual head sizes to avoid OOMing
+    text_config.hidden_size = 512
+    text_config.num_attention_heads = 4
+    text_config.num_key_value_heads = 4
+    text_config.head_dim = (
+        text_config.hidden_size // text_config.num_attention_heads
+    )
+
     config = Llama4Config()
     config.text_config = text_config
+
+    input_tensor = torch.randn(
+        1,  # batch size
+        6,  # seq len
+        text_config.hidden_size,  # hidden size
+        dtype=torch.bfloat16,
+    )
 
     torch_dtype = torch.bfloat16
     max_dtype = DType.bfloat16
