@@ -9,7 +9,7 @@ import json
 import numpy as np
 import torch
 import xgrammar as xgr
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines import SamplingConfig
@@ -17,7 +17,7 @@ from max.pipelines.sampling import rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
 
-def test_bitmask_sampling_vs_xgrammar():
+def test_bitmask_sampling_vs_xgrammar(session: InferenceSession):
     # Get Tokenizer and Model Info
     model_id = "modularai/llama-3.1"
     config = AutoConfig.from_pretrained(model_id)
@@ -27,9 +27,6 @@ def test_bitmask_sampling_vs_xgrammar():
 
     # Create a grammar compiler for the tokenizer
     compiler = xgr.GrammarCompiler(tokenizer_info, max_threads=8)
-
-    # Initialize Device
-    device = Accelerator()
 
     # Compile the grammar for a sample schema.
     person_schema = {
@@ -58,7 +55,7 @@ def test_bitmask_sampling_vs_xgrammar():
         ),
     )
 
-    session = InferenceSession(devices=[device])
+    device = session.devices[0]
     sampler = session.load(graph)
 
     # Variables
@@ -102,14 +99,11 @@ def test_bitmask_sampling_vs_xgrammar():
             Tensor.from_dlpack(bitmask).to(device),
         )[:2]
         assert isinstance(new_tokens, Tensor)
-        for token in new_tokens.to(CPU()).to_numpy():
+        for token in new_tokens.to_numpy():
             assert matcher.accept_token(token[0], debug_print=True)
 
 
-def test_sampling_return_logits():
-    # Initialize Device
-    device = Accelerator()
-
+def test_sampling_return_logits(session: InferenceSession):
     # Create one op sampling graph
     graph = token_sampler(
         SamplingConfig(
@@ -121,7 +115,7 @@ def test_sampling_return_logits():
         return_logits=True,
     )
 
-    session = InferenceSession(devices=[device])
+    device = session.devices[0]
     sampler = session.load(graph)
 
     # Variables
@@ -143,11 +137,16 @@ def test_sampling_return_logits():
         )
 
         # Run through Sampler
-        new_tokens, generated_tokens, generated_logits = sampler(
+        new_tokens, generated_tokens_max, generated_logits_max = sampler(
             Tensor.from_dlpack(logits).to(device),
             generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
             generated_logits,
         )[:3]
+        assert isinstance(generated_tokens_max, Tensor)
+        assert isinstance(generated_logits_max, Tensor)
+        assert isinstance(new_tokens, Tensor)
+        generated_tokens = generated_tokens_max
+        generated_logits = generated_logits_max
 
         # Ensure that the tokens generated, match the correct logits expected.
         numpy_logits = generated_logits.to_numpy()
@@ -155,9 +154,7 @@ def test_sampling_return_logits():
             assert numpy_logits[i, j] == logits[i, token_idx]
 
 
-def test_rejection_sampler():
-    device = Accelerator()
-
+def test_rejection_sampler(session: InferenceSession):
     graph = rejection_sampler(
         SamplingConfig(
             top_k=1,
@@ -167,7 +164,7 @@ def test_rejection_sampler():
         ),
     )
 
-    session = InferenceSession(devices=[device])
+    device = session.devices[0]
     sampler = session.load(graph)
 
     # Variables
@@ -196,10 +193,12 @@ def test_rejection_sampler():
         Tensor.from_dlpack(target_logits).to(device),
         Tensor.from_dlpack(target_logit_offsets).to(device),
     )
+    assert isinstance(first_rejected_token, Tensor)
+    assert isinstance(sampled_tokens, Tensor)
 
     # Bring these back to CPU
-    first_rejected_token = first_rejected_token.to_numpy()
-    sampled_tokens = sampled_tokens.to_numpy()
+    first_rejected_token_np = first_rejected_token.to_numpy()
+    sampled_tokens_np = sampled_tokens.to_numpy()
 
     # Basic Rejection Sampler Impl in Python
     for x in range(batch_size):
@@ -210,9 +209,10 @@ def test_rejection_sampler():
             target_logit = target_logits[target_idx][token_idx]
 
             if draft_logit > target_logit:
-                assert first_rejected_token[x][0] == i, f"x: {x}, i: {i}"
+                assert first_rejected_token_np[x][0] == i, f"x: {x}, i: {i}"
                 assert (
-                    np.argmax(target_logits[target_idx]) == sampled_tokens[x][0]
+                    np.argmax(target_logits[target_idx])
+                    == sampled_tokens_np[x][0]
                 ), (
                     f"target_logits: {target_logits[target_idx]}, sampled: {sampled_tokens[x][0]}"
                 )

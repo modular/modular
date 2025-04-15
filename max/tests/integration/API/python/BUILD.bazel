@@ -6,11 +6,16 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_cli.py",
-        "test_config.py",
+        "test_config_pure.py",
         "test_context.py",
+        "test_cumsum.py",
         "test_dtype.py",
         "test_engine.py",
+        "test_explicit_device.py",
         "test_graph_telemetry.py",
+        "test_load_weights.py",
+        "test_memory_estimation.py",
+        "test_registry.py",
         "test_telemetry.py",
     ],
     data = [
@@ -18,8 +23,13 @@ modular_py_test(
         "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
+        "//SDK/lib/API/python/tests/graph/testdata",
     ],
-    env = {"MODULAR_PATH": "."},
+    env = {
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    tags = ["gpu"],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
@@ -39,7 +49,10 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "test_config.py",
         "test_huggingface_utilities.py",
+        "test_sampling.py",
+        "test_speculative_decoding.py",
         "test_tokenizer.py",
     ],
     data = [
@@ -52,6 +65,7 @@ modular_py_test(
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
     tags = [
+        "gpu",
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
@@ -66,91 +80,7 @@ modular_py_test(
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
-    ],
-)
-
-modular_py_test(
-    name = "gpu-tests-pure",
-    size = "large",
-    srcs = [
-        "gpu_tests/conftest.py",
-        "gpu_tests/test_cli_gpu.py",
-        "gpu_tests/test_config_gpu_pure.py",
-        "gpu_tests/test_cumsum_gpu.py",
-        "gpu_tests/test_engine.py",
-        "gpu_tests/test_explicit_device.py",
-        "gpu_tests/test_gpu_weight.py",
-        "gpu_tests/test_load_weights_fp8.py",
-        "gpu_tests/test_memory_estimation_gpu.py",
-        "gpu_tests/test_registry_gpu.py",
-    ],
-    data = [
-        "//ModularFramework/tools/mof",
-        "//PyTorch:ATenRT",
-        "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
-        "//SDK/integration-test:test_user_op",
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
-    ],
-    env = {
-        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
-        "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "no-mypy",  # TODO: fix and remove
-    ],
-    deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints",
-        requirement("click"),
-        requirement("numpy"),
-        requirement("safetensors"),
-        requirement("torch"),
         requirement("xgrammar"),
-        requirement("setuptools"),
-    ],
-)
-
-modular_py_test(
-    name = "gpu-tests-hf",
-    size = "large",
-    srcs = [
-        "gpu_tests/conftest.py",
-        "gpu_tests/test_config_gpu.py",
-        "gpu_tests/test_sampling_gpu.py",
-        "gpu_tests/test_speculative_decoding_gpu.py",
-        "gpu_tests/test_tokenizer_gpu.py",
-    ],
-    data = [
-        "//ModularFramework/tools/mof",
-        "//PyTorch:ATenRT",
-        "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
-    ],
-    env = {"MODULAR_PATH": "."},
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "manual",  # TODO(AITLIB-293)
-        "no-mypy",  # TODO: fix and remove
-        "requires-network",
-    ],
-    deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints",
-        requirement("click"),
-        requirement("numpy"),
-        requirement("safetensors"),
-        requirement("torch"),
-        requirement("xgrammar"),
-        requirement("setuptools"),
     ],
 )
 

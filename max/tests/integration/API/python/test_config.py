@@ -4,129 +4,334 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pickle
+from __future__ import annotations
+
+import platform
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from max.driver import DeviceSpec
-from max.pipelines.config import PipelineConfig
+from max.driver import DeviceSpec, accelerator_count
+from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineConfig,
+    PipelineEngine,
+    SupportedEncoding,
+)
 from test_common.pipeline_config import (
-    mock_pipeline_config_hf_dependencies,
+    mock_estimate_memory_footprint,
+    mock_huggingface_config,
+    mock_huggingface_hub_repo_exists_with_retry,
+)
+from test_common.pipeline_model_dummy import (
+    DUMMY_ARCH,
+    DUMMY_GPTQ_ARCH,
+    REPLIT_ARCH,
+    prepare_registry,
 )
 
 
-@mock_pipeline_config_hf_dependencies
-def test_config_init__raises_with_no_model_path():
+@prepare_registry
+@mock_estimate_memory_footprint
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="GPTQ only supported on gpu"
+)
+def test_config__raises_with_unsupported_GPTQ_format():
+    PIPELINE_REGISTRY.register(DUMMY_GPTQ_ARCH)
+    # this should work
+    config = PipelineConfig(
+        model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
+        quantization_encoding=SupportedEncoding.gptq,
+        device_specs=[DeviceSpec.accelerator()],
+        engine=PipelineEngine.MAX,
+    )
+
     # We expect this to fail.
     with pytest.raises(ValueError):
-        _ = PipelineConfig(weight_path="file.gguf")
-
-
-@mock_pipeline_config_hf_dependencies
-def test_config_post_init__with_weight_path_but_no_model_path():
-    config = PipelineConfig(
-        trust_remote_code=True,
-        weight_path=[
-            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
-        ],
-    )
-
-    assert config.model_config.model_path == "modularai/replit-code-1.5"
-    assert config.model_config.weight_path == [
-        Path("replit-code-v1_5-3b-f32.gguf")
-    ]
-
-
-@mock_pipeline_config_hf_dependencies
-def test_config_init__reformats_with_str_weights_path():
-    # We expect this to convert the string.
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        weight_path="file.gguf",
-    )
-
-    assert isinstance(config.model_config.weight_path, list)
-    assert len(config.model_config.weight_path) == 1
-    assert isinstance(config.model_config.weight_path[0], Path)
-
-
-@mock_pipeline_config_hf_dependencies
-def test_validate_model_path__correct_repo_id_provided():
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-    )
-
-    assert config.model_config.model_path == "modularai/llama-3.1"
-
-
-class LimitedPickler(pickle.Unpickler):
-    """A custom Unpickler class that checks for transformer modules."""
-
-    def find_class(self, module, name):
-        if module.startswith("transformers"):
-            raise AssertionError(
-                "Tried to unpickle class from transformers module, raising an "
-                "error because this may break in serving."
-            )
-        return super().find_class(module, name)
-
-
-@mock_pipeline_config_hf_dependencies
-def test_config_is_picklable(tmp_path):
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-    )
-
-    pickle_path = tmp_path / "config.pkl"
-    with open(pickle_path, "wb") as f:
-        pickle.dump(config, f)
-
-    with open(pickle_path, "rb") as f:
-        limited_pickler = LimitedPickler(f)
-        loaded_config = limited_pickler.load()
-
-    assert loaded_config == config
-
-
-@mock_pipeline_config_hf_dependencies
-def test_config__validate_devices():
-    # This test should always have a cpu available.
-    _ = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M",
-        device_specs=[DeviceSpec.cpu()],
-    )
-
-    # This test should never have a gpu available.
-    with pytest.raises(ValueError):
-        _ = PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
+        unsupported_config = PipelineConfig(
+            model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
+            quantization_encoding=SupportedEncoding.gptq,
             device_specs=[DeviceSpec.accelerator()],
+            engine=PipelineEngine.MAX,
         )
 
 
-@mock_pipeline_config_hf_dependencies
-@pytest.mark.skip(
-    "TODO: AITLIB-293, this still requires a HF call to throw the exception"
-)
-def test_validate_model_path__bad_repo_provided():
-    with pytest.raises(Exception):
-        _ = PipelineConfig(
-            model_path="bert-base-asdfasdf",
-        )
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_retrieve_factory_with_known_architecture():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
-
-@mock_pipeline_config_hf_dependencies
-@pytest.mark.skip("TODO: AITLIB-293, this still requires a HF call")
-def test_config_post_init__other_repo_weights():
     config = PipelineConfig(
-        model_path="replit/replit-code-v1_5-3b",
-        trust_remote_code=True,
-        weight_path=[
-            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
-        ],
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        max_batch_size=1,
+        max_length=1,
     )
 
-    assert config.model_config._weights_repo_id == "modularai/replit-code-1.5"
-    assert config.model_config.weight_path == [
-        Path("replit-code-v1_5-3b-f32.gguf")
+    assert config.engine == PipelineEngine.MAX
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_retrieve_factory_with_unsupported_model_path():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        model_path="modularai/replit-code-1.5",
+        trust_remote_code=True,
+        max_batch_size=1,
+        max_length=1,
+    )
+    # Fallback to the generalized pipeline
+    assert config.engine == PipelineEngine.HUGGINGFACE
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_load_factory_with_known_architecture_and_hf_repo_id():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        max_batch_size=1,
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_incompatible_quantization_encoding():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    with pytest.raises(ValueError):
+        # This should raise, as q4_k != f32.
+        config = PipelineConfig(
+            model_path="modularai/llama-3.1",
+            quantization_encoding=SupportedEncoding.q4_k,
+            weight_path=[Path("llama-3.1-8b-instruct-f32.gguf")],
+            max_batch_size=1,
+            max_length=1,
+            engine=PipelineEngine.MAX,
+        )
+
+    # This should not raise, as float32 == f32.
+    config = PipelineConfig(
+        model_path="modularai/llama-3.1",
+        quantization_encoding=SupportedEncoding.float32,
+        weight_path=[Path("llama-3.1-8b-instruct-f32.gguf")],
+        max_batch_size=1,
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__update_cache_strategy():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    pipeline_config = PipelineConfig(
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        cache_strategy=KVCacheStrategy.NAIVE,
+        max_batch_size=1,
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+
+    # Naive is not shown as supported in architecture, as
+    # such this should change to a support strategy automatically.
+    # TODO(AITLIB-293): this assert is triggered without a HF call
+    assert (
+        pipeline_config.model_config.kv_cache_config.cache_strategy
+        == KVCacheStrategy.CONTINUOUS
+    )
+
+
+@prepare_registry
+@pytest.mark.skip("TODO: AITLIB-238")
+@mock_estimate_memory_footprint
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="BF16 is not supported on ARM CPU architecture",
+)
+def test_config__update_weight_paths():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(REPLIT_ARCH)
+
+    temp_valid_kernels = [
+        ("bf16", 1, 16),
+        ("bf16", 24, 128),
+        ("bf16", 3, 64),  # SmolLM
+        ("bf16", 32, 128),
+        ("bf16", 4, 4),
+        ("bf16", 8, 128),
+        ("bf16", 8, 32),
+        ("bf16", 8, 512),
+        ("bf16", 8, 64),
+        ("bf16", 8, 80),
+        ("f32", 1, 16),
+        ("f32", 2, 2),
+        ("f32", 24, 128),
+        ("f32", 3, 64),  # SmolLM
+        ("f32", 32, 128),
+        ("f32", 4, 4),
+        ("f32", 8, 128),
+        ("f32", 8, 32),
+        ("f32", 8, 512),
+        ("f32", 8, 64),
+        ("f32", 8, 80),
     ]
+    with patch(
+        "max.pipelines.kv_cache.cache_params",
+        temp_valid_kernels,
+    ):
+        # This first example, is requesting float32 from a gguf repository.
+        config = PipelineConfig(
+            model_path="modularai/llama-3.1",
+            quantization_encoding=SupportedEncoding.float32,
+            max_batch_size=1,
+            max_length=512,
+        )
+
+        assert len(config.model_config.weight_path) == 1
+        assert config.model_config.weight_path == [
+            Path("llama-3.1-8b-instruct-f32.gguf")
+        ]
+
+        # This second example, is requesting float32 from a safetensors repository.
+        config = PipelineConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.float32,
+            max_batch_size=1,
+            max_length=512,
+        )
+
+        assert len(config.model_config.weight_path) == 1
+        assert config.model_config.weight_path == [Path("model.safetensors")]
+
+        # This should raise, as this repository, does not have q6_k weights.
+        with pytest.raises(
+            ValueError, match="compatible weights cannot be found"
+        ):
+            # This example, should raise, as you are requesting q6_k from a fp32
+            # safetensors repo.
+            config = PipelineConfig(
+                model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                quantization_encoding=SupportedEncoding.q6_k,
+                device_specs=[DeviceSpec.cpu()],
+            )
+
+        # This example, should pass, since using fp32 weights for bfloat16 is
+        # listed as an alternate encoding for fp32.
+        config = PipelineConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=[DeviceSpec.accelerator()],
+            max_batch_size=1,
+            max_length=512,
+        )
+
+        assert len(config.model_config.weight_path) == 1
+        assert config.model_config.weight_path == [Path("model.safetensors")]
+
+        with pytest.raises(ValueError):
+            # This example, should raise as we dont have q4_k listed as supported.
+            config = PipelineConfig(
+                model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                quantization_encoding=SupportedEncoding.q4_k,
+                engine=PipelineEngine.MAX,
+                max_batch_size=1,
+                max_length=512,
+            )
+
+        # This example, should raise as we dont have q4_k listed as supported.
+        # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
+        config = PipelineConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            quantization_encoding=SupportedEncoding.q4_k,
+            max_batch_size=1,
+            max_length=512,
+        )
+        assert config.engine == PipelineEngine.HUGGINGFACE
+
+        # This example, should not raise, as we are showing that we have a weight converter for pytorch for Replit.
+        config = PipelineConfig(
+            model_path="replit/replit-code-v1_5-3b",
+            quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=[DeviceSpec.accelerator()],
+            trust_remote_code=True,
+            max_batch_size=1,
+            max_length=1,
+        )
+        assert config.engine == PipelineEngine.MAX
+        assert config.model_config.weight_path == [Path("pytorch_model.bin")]
+
+        # Test a partially complete huggingface_repo
+        config = PipelineConfig(
+            model_path="neubla/tiny-random-LlamaForCausalLM",
+            max_batch_size=1,
+            max_length=1,
+        )
+        assert (
+            config.model_config.quantization_encoding
+            == SupportedEncoding.float32
+        )
+        assert config.engine == PipelineEngine.MAX
+        assert config.model_config.weight_path == [Path("model.safetensors")]
+
+        # This example, should not raise as we are passing a valid weights path in a different repository.
+        config = PipelineConfig(
+            model_path="replit/replit-code-v1_5-3b",
+            quantization_encoding=SupportedEncoding.float32,
+            trust_remote_code=True,
+            weight_path=[
+                Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
+            ],
+            max_batch_size=1,
+            max_length=1,
+        )
+        assert config.engine == PipelineEngine.MAX
+        assert config.model_config.weight_path == [
+            Path("replit-code-v1_5-3b-f32.gguf")
+        ]
+        assert (
+            config.model_config.huggingface_weight_repo_id
+            == "modularai/replit-code-1.5"
+        )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+@mock_huggingface_config
+@mock_huggingface_hub_repo_exists_with_retry
+def test_config__validates_invalid_supported_device():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    with pytest.raises(
+        ValueError, match="not compatible with the selected device type 'cpu'"
+    ):
+        # Invalid device/encoding combinations.
+        config = PipelineConfig(
+            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding=SupportedEncoding.bfloat16,
+            max_length=1,
+            engine=PipelineEngine.MAX,
+        )
+
+    if accelerator_count() > 0:
+        with pytest.raises(
+            ValueError,
+            match="not compatible with the selected device type 'gpu'",
+        ):
+            config = PipelineConfig(
+                model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding=SupportedEncoding.q6_k,
+                max_length=1,
+                engine=PipelineEngine.MAX,
+            )

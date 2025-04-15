@@ -44,8 +44,8 @@ class DummyPipelineConfig(PipelineConfig):
     def __init__(
         self,
         model_path: str,
-        max_batch_size: int,
-        max_length: int,
+        max_batch_size: int | None,
+        max_length: int | None,
         device_specs: list[DeviceSpec],
         quantization_encoding: SupportedEncoding,
     ):

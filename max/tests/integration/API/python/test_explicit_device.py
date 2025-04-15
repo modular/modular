@@ -6,12 +6,15 @@
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
 import pytest
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
 def create_test_graph_with_transfer() -> Graph:
     input_type = TensorType(
         dtype=DType.float32,
@@ -29,6 +32,9 @@ def create_test_graph_with_transfer() -> Graph:
     return graph
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
 def create_test_graph_io_devices() -> Graph:
     cuda_input_type = TensorType(
         dtype=DType.float32,
@@ -59,6 +65,9 @@ def create_test_graph_io_devices() -> Graph:
     return graph
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
 def test_io_device_properties() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
@@ -77,6 +86,9 @@ def test_io_device_properties() -> None:
     assert str(cuda0) == str(compiled.devices[1])
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
 def test_io_device_output_errors() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
@@ -93,6 +105,9 @@ def test_io_device_output_errors() -> None:
         compiled.output_devices
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
 def test_io_device_input_errors() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
@@ -109,6 +124,9 @@ def test_io_device_input_errors() -> None:
         compiled.input_devices
 
 
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
 def test_explicit_device_compilation() -> None:
     graph = create_test_graph_with_transfer()
     device = Accelerator(0)

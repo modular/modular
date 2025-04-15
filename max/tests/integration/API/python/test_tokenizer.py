@@ -10,7 +10,9 @@ import asyncio
 import numpy as np
 import pytest
 import requests
+from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import (
+    PipelineConfig,
     SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
@@ -18,8 +20,13 @@ from max.pipelines import (
     TokenGeneratorRequestFunction,
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
+    TokenGeneratorResponseFormat,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
+from test_common.pipeline_config import (
+    mock_estimate_memory_footprint,
+    mock_huggingface_config,
+)
 
 
 def convert_image_url_to_base64(image_url):
@@ -203,3 +210,62 @@ async def test_tokenizer__encode_and_decode():
     assert context.current_length == len(encoded)
     decoded = await tokenizer.decode(context, encoded)
     assert test_string == decoded
+
+
+@mock_estimate_memory_footprint
+@mock_huggingface_config
+def test_text_tokenizer_with_constrained_decoding():
+    device_specs = []
+    if accelerator_count() > 0:
+        device_specs.append(DeviceSpec.accelerator(id=0))
+    else:
+        device_specs.append(DeviceSpec.cpu(id=0))
+    pipeline_config = PipelineConfig(
+        model_path="HuggingFaceTB/SmolLM-135M",
+        device_specs=device_specs,
+        enable_structured_output=True,
+    )
+
+    tokenizer = TextTokenizer(pipeline_config.model_config.model_path)
+
+    prompt = """
+    Please provide a json response, with the person's name and age extracted from the excerpt.
+    For example, provided an excerpt 'Joe Biden is 100 years old.' return with {"name": "Joe Biden", "age": 100}.
+
+    Please extract the person's name and age from the following excerpt:
+    'Donald Trump is 102 years old.'
+
+    """
+
+    request = TokenGeneratorRequest(
+        id="request_with_tools",
+        index=0,
+        model_name=pipeline_config.model_config.model_path,
+        messages=[
+            TokenGeneratorRequestMessage(
+                role="user",
+                content=prompt,
+            )
+        ],
+        response_format=TokenGeneratorResponseFormat(
+            type="json_schema",
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                    },
+                    "age": {
+                        "type": "integer",
+                    },
+                },
+                "required": ["name", "age"],
+            },
+        ),
+    )
+
+    context = asyncio.run(tokenizer.new_context(request))
+
+    assert context.json_schema
+    assert isinstance(context.prompt, str)

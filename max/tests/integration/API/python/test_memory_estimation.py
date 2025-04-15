@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 from unittest.mock import PropertyMock, patch
 
 import pytest
@@ -19,9 +18,9 @@ from test_common.pipeline_model_dummy import DUMMY_ARCH, DummyLlamaPipelineModel
 
 def create_mock_pipeline_config(
     model_path: str,
-    max_batch_size: Optional[int],
-    max_length: Optional[int],
-    device_specs: Optional[list[DeviceSpec]] = None,
+    max_batch_size: int | None,
+    max_length: int | None,
+    device_specs: list[DeviceSpec] = [],
 ) -> DummyPipelineConfig:
     if device_specs is None:
         device_specs = scan_available_devices()

@@ -105,12 +105,14 @@ def pytest_addoption(parser):
 
 @pytest.fixture(scope="module")
 def session() -> InferenceSession:
-    return InferenceSession()
+    devices: list[md.Device] = []
+    for i in range(md.accelerator_count()):
+        devices.append(md.Accelerator(i))
 
+    if len(devices) == 0:
+        devices.append(md.CPU())
 
-@pytest.fixture(scope="module")
-def gpu_session() -> InferenceSession:
-    return InferenceSession(devices=[md.Accelerator()])
+    return InferenceSession(devices=devices)
 
 
 def pytest_collection_modifyitems(items):
@@ -118,3 +120,11 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if item.name.startswith("Test"):
             item.add_marker(pytest.mark.skip)
+
+
+@pytest.fixture
+def graph_testdata() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    path = getenv("GRAPH_TESTDATA")
+    assert path is not None
+    return Path(path)

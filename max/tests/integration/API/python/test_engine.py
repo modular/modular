@@ -6,17 +6,19 @@
 """Test the max.engine Python bindings with MOF."""
 
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Tensor
+from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType, Value, Weight
 from max.mlir.dialects import mo
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
@@ -63,7 +65,11 @@ def test_execute_success(
     session: InferenceSession, mo_model_path: Path
 ) -> None:
     model = session.load(mo_model_path)
-    output = model.execute(np.ones(5, dtype=np.float32))
+    output = model.execute(
+        Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(
+            model.input_devices[0]
+        )
+    )
     assert len(output) == 1
     assert isinstance(output[0], Tensor)
     assert np.allclose(
@@ -84,6 +90,9 @@ def test_devicetensor_wrong_num_inputs(
     for i in range(5):
         first_tensor[i] = i
         second_tensor[i] = i
+
+    first_tensor = first_tensor.to(model.input_devices[0])
+    second_tensor = second_tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
         match=(
@@ -104,6 +113,8 @@ def test_devicetensor_wrong_shape(
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
+
+    tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
         match=(
@@ -125,6 +136,8 @@ def test_devicetensor_wrong_rank(
     for i in range(5):
         for j in range(2):
             tensor[i, j] = i
+
+    tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
         match=(
@@ -145,6 +158,8 @@ def test_devicetensor_wrong_dtype(
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
+
+    tensor = tensor.to(model.input_devices[0])
     with pytest.raises(
         ValueError,
         match=(
@@ -163,15 +178,22 @@ def test_execute_device_tensor(
     input_tensor = Tensor(DType.float32, (5,))
     for idx in range(5):
         input_tensor[idx] = 1.0
+
+    input_tensor = input_tensor.to(model.input_devices[0])
     output = model.execute(input_tensor)
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
     assert isinstance(output_tensor, Tensor)
+    output_tensor = output_tensor.to(CPU())
     for idx in range(5):
         assert isclose(output_tensor[idx].item(), expected[idx])
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2098): Slicing Driver Tenssor not supported on gpu and segfaults",
+)
 def test_execute_noncontiguous_tensor(
     session: InferenceSession, mo_model_path: Path
 ) -> None:
@@ -195,6 +217,7 @@ def test_execute_noncontiguous_tensor(
     assert len(output) == 1
     output_tensor = output[0]
     assert isinstance(output_tensor, Tensor)
+    output_tensor = output_tensor.to(CPU())
     for idx in range(5):
         assert isclose(output_tensor[idx].item(), expected[idx])
 
@@ -212,10 +235,13 @@ def test_execute_devicetensor_dynamic_shape(
         tensor_one[x] = x
         tensor_two[x] = 2 * x
 
+    tensor_one = tensor_one.to(model.input_devices[0])
+    tensor_two = tensor_two.to(model.input_devices[1])
     outputs = model.execute(tensor_one, tensor_two)
     assert len(outputs) == 1
     output_tensor = outputs[0]
     assert isinstance(output_tensor, Tensor)
+    output_tensor = output_tensor.to(CPU())
     for x in range(5):
         assert output_tensor[x].item() == 3 * x
 
@@ -229,12 +255,13 @@ def test_execute_devicetensor_numpy_stays_alive(
     # after execution.
     model = session.load(mo_model_path)
     arr = np.ones((5,), dtype=np.float32)
-    input_tensor = Tensor.from_numpy(arr)
+    input_tensor = Tensor.from_numpy(arr).to(model.input_devices[0])
     output = model.execute(input_tensor)
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
     assert isinstance(output_tensor, Tensor)
+    output_tensor = output_tensor.to(CPU())
     for idx in range(5):
         assert isclose(output_tensor[idx].item(), expected[idx])
 
@@ -242,38 +269,39 @@ def test_execute_devicetensor_numpy_stays_alive(
         assert isclose(arr[idx].item(), 1.0)
 
 
-def test_execute_subtensor(
-    session: InferenceSession, mo_model_path: Path
-) -> None:
+def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     # Our engine should be able to execute tensors that are contiguous slices
     # of larger tensors. This will be important for things like our kv cache
     # implementation.
     model = session.load(mo_model_path)
+
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
-    input_tensor = Tensor.from_numpy(arr)
-    output = model.execute(input_tensor[0, :5])
-    expected = [3.0, 2.0, -4.0, 5.0, 9.0]
-    assert len(output) == 1
-    output_tensor = output[0]
+    input_tensor = Tensor.from_numpy(arr).to(model.input_devices[0])
+    outputs = model.execute(input_tensor[0, :5])
+    assert len(outputs) == 1
+    output_tensor = outputs[0]
     assert isinstance(output_tensor, Tensor)
-    for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])
+    if accelerator_count() > 0:
+        assert not output_tensor.is_host
+    host_tensor = output_tensor.to(CPU())
+    expected = [3.0, 2.0, -4.0, 5.0, 9.0]
+    for idx, elt in enumerate(expected):
+        assert isclose(host_tensor[idx].item(), elt)
 
     # Let's ensure that execution doesn't delete the underlying numpy array.
     np.array_equal(arr, np.ones((2, 10), dtype=np.float32))
 
     # We need to also handle situations where we're creating tensors from numpy
     # arrays that have already been sliced.
-    presliced_input = Tensor.from_numpy(arr[0, ::2])
+    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(model.input_devices[0])
     presliced_output = model.execute(presliced_input)
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
-    presliced_output_tensor = presliced_output[0]
-    assert isinstance(presliced_output_tensor, Tensor)
+    assert isinstance(presliced_output[0], Tensor)
+    presliced_output_tensor_host = presliced_output[0].to(CPU())
     for idx in range(5):
         assert isclose(
-            presliced_output_tensor[idx].item(),
-            presliced_expected[idx],
+            presliced_output_tensor_host[idx].item(), presliced_expected[idx]
         )
 
 
@@ -297,8 +325,10 @@ def test_scalar_inputs(
 ) -> None:
     # We should be able to execute models with scalar inputs.
     model = session.load(scalar_input_path)
-    scalar = Tensor.scalar(3, dtype=DType.int32)
-    vector = np.arange(1, 6, dtype=np.int32)
+    scalar = Tensor.scalar(3, dtype=DType.int32).to(model.input_devices[0])
+    vector = Tensor.from_numpy(np.arange(1, 6, dtype=np.int32)).to(
+        model.input_devices[1]
+    )
 
     output = model.execute(scalar, vector)[0]
     assert isinstance(output, Tensor)
@@ -325,6 +355,10 @@ def test_numpy_aliasing() -> None:
     assert tensor_numpy[0] == 5
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2098): Slicing Driver Tenssor not supported on gpu and segfaults",
+)
 def test_aliasing_output(
     session: InferenceSession, aliasing_outputs_path: Path
 ) -> None:
@@ -332,7 +366,7 @@ def test_aliasing_output(
     # same tensor outputs more than once.
     model = session.load(aliasing_outputs_path)
     arr = np.arange(0, 5, dtype=np.int32)
-    input_tensor = Tensor.from_numpy(arr)
+    input_tensor = Tensor.from_numpy(arr).to(model.input_devices[0])
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
     x_tensor, y_tensor = outputs
@@ -352,10 +386,23 @@ def test_aliasing_output(
     assert y_tensor[0].item() == 7
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2099): Crashing on gpu with an llvm cast failure",
+)
 def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
     model_with_list_io = session.load(mo_listio_model_path)
     output = model_with_list_io.execute_legacy(
-        input_list=[np.zeros(2)], input_tensor=np.ones(5)
+        input_list=[np.zeros(2)],
+        input_tensor=np.ones(5),
+        # input_list=[
+        #     Tensor.from_numpy(np.zeros(2)).to(
+        #         model_with_list_io.input_devices[0]
+        #     )
+        # ],
+        # input_tensor=Tensor.from_numpy(np.ones(5)).to(
+        #     model_with_list_io.input_devices[0]
+        # ),
     )
     assert "output_list" in output
     output_list = output["output_list"]
@@ -410,7 +457,10 @@ def test_repr_torch_input_spec() -> None:
 
 @dataclass
 class ExternalWeightsModel:
+    """Model that performs elementwise add with a weights tensor."""
+
     num_elems: int
+    device: Device = field(default_factory=CPU)
 
     def __call__(self, input: Value) -> Value:
         weights_tensor_type = TensorType(
@@ -425,7 +475,11 @@ class ExternalWeightsModel:
 
         # Set the constant external op's device explicitly.
         const_external_op = weights_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = DeviceRef.CPU().to_mlir()
+        const_external_op.attributes["device"] = (
+            DeviceRef.CPU().to_mlir()
+            if self.device.is_host
+            else DeviceRef.GPU(0).to_mlir()
+        )
 
         return input + weights_tensor
 
@@ -457,11 +511,17 @@ def test_execute_external_weights_numpy(
     )
 
     input = np.random.randn(external_weights_size).astype(np.float32)
-    output = compiled.execute(input)
+    output = compiled.execute(
+        Tensor.from_numpy(input).to(compiled.input_devices[0])
+    )
     assert isinstance(output[0], Tensor)
     assert np.allclose(output[0].to_numpy(), input + weights)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="This fails on gpu due to tensors on different devices, yet the numpy test above passes.",
+)
 def test_execute_external_weights_torch(
     session: InferenceSession,
     external_weights_graph: Graph,
@@ -473,8 +533,127 @@ def test_execute_external_weights_torch(
     )
 
     input = torch.randn(external_weights_size, dtype=torch.float32)
-    output = compiled.execute(input)
+    output = compiled.execute(
+        Tensor.from_dlpack(input).to(compiled.input_devices[0])
+    )
     assert torch.allclose(torch.from_dlpack(output[0]), input + weights)
+
+
+def test_execute_external_weights_resident(
+    session: InferenceSession,
+    external_weights_size: int,
+) -> None:
+    """Executes a model with external weights already resident on device."""
+    weights_np = np.arange(external_weights_size, dtype=np.float32)
+    weights = Tensor.from_numpy(weights_np).to(session.devices[0])
+
+    graph = Graph(
+        "external_weights_gpu_resident",
+        ExternalWeightsModel(external_weights_size, device=session.devices[0]),
+        input_types=(TensorType(DType.float32, (external_weights_size,)),),
+    )
+    compiled = session.load(graph, weights_registry={"foo": weights})
+
+    # Check that this graph has a device constant external op.
+    const_external_op = next(
+        op
+        for op in graph._mlir_op.regions[0].blocks[0].operations
+        if isinstance(op, mo.ConstantExternalOp)
+    )
+    if accelerator_count() == 0:
+        assert "cpu" in str(const_external_op.attributes["device"])
+    else:
+        assert "gpu" in str(const_external_op.attributes["device"])
+
+    # Compile and execute with the device-resident weights.
+    compiled = session.load(graph, weights_registry={"foo": weights})
+
+    input_np = (
+        np.random.default_rng(seed=42)
+        .standard_normal(external_weights_size)
+        .astype(np.float32)
+    )
+    output = compiled.execute(
+        Tensor.from_numpy(input_np).to(compiled.input_devices[0])
+    )
+    assert isinstance(output[0], Tensor)
+    assert np.allclose(output[0].to_numpy(), input_np + weights_np)
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
+def test_weight_device_mismatch(
+    session: InferenceSession,
+):
+    cuda = Accelerator()
+    # Create graph with CPU-based weight
+    with Graph(
+        "test_device_validation",
+        input_types=[TensorType(DType.float32, (10, 10))],
+    ) as g:
+        x = g.inputs[0].tensor
+        weight = Weight("w", DType.float32, (10, 10), device=DeviceRef.CPU())
+        y = x @ weight
+        g.output(y)
+
+    # Create GPU tensor that should be on CPU
+    device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32)).to("cuda")
+
+    # Create test input on GPU
+    input_tensor = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+        cuda
+    )
+
+    # This will load but set up invalid device configuration
+    with pytest.raises(
+        ValueError, match="Mismatch in device type for weight 'w'."
+    ):
+        model = session.load(
+            g,
+            weights_registry={"w": device_weight},
+        )
+
+        result = model.execute(input_tensor)[0]
+        assert isinstance(result, Tensor)
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
+def test_weight_device_implicit_mismatch(
+    session: InferenceSession,
+):
+    cuda = Accelerator()
+    # Create graph with CPU-based weight
+    with Graph(
+        "test_device_validation",
+        input_types=[TensorType(DType.float32, (10, 10))],
+    ) as g:
+        x = g.inputs[0].tensor
+        weight = Weight("w", DType.float32, (10, 10))
+        y = x @ weight
+        g.output(y)
+
+    # Create GPU tensor that should be on CPU
+    device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32)).to("cuda")
+
+    # Create test input on GPU
+    input_tensor = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+        cuda
+    )
+
+    # This will load but set up invalid device configuration
+    with pytest.raises(
+        ValueError, match="Mismatch in device type for weight 'w'."
+    ):
+        model = session.load(
+            g,
+            weights_registry={"w": device_weight},
+        )
+
+        result = model.execute(input_tensor)[0]
+        assert isinstance(result, Tensor)
 
 
 def test_stats_report(
@@ -490,7 +669,10 @@ def test_stats_report(
 
 def test_devices(session: InferenceSession) -> None:
     host = CPU()
-    assert str(host) == str(session.devices[0])
+    if accelerator_count() == 0:
+        assert str(host) == str(session.devices[0])
+    else:
+        assert str(Accelerator()) == str(session.devices[0])
 
 
 @pytest.fixture
@@ -521,7 +703,13 @@ def test_positional_call(
 ) -> None:
     # Calling a model with strictly positional inputs should work.
     a, b, c, d, e = call_inputs
-    output = call_model(a, b, c, d, e)[0]
+    output = call_model(
+        a.to(call_model.input_devices[0]),
+        b.to(call_model.input_devices[1]),
+        c.to(call_model.input_devices[2]),
+        d.to(call_model.input_devices[3]),
+        e.to(call_model.input_devices[4]),
+    )[0]
     assert isinstance(output, Tensor)
     assert np.array_equal(call_output, output.to_numpy())
 
@@ -531,7 +719,13 @@ def test_named_call(
 ) -> None:
     # Calling a model with strictly named inputs should work.
     a, b, c, d, e = call_inputs
-    output = call_model(b=b, a=a, e=e, c=c, d=d)[0]
+    output = call_model(
+        a=a.to(call_model.input_devices[0]),
+        b=b.to(call_model.input_devices[1]),
+        c=c.to(call_model.input_devices[2]),
+        d=d.to(call_model.input_devices[3]),
+        e=e.to(call_model.input_devices[4]),
+    )[0]
     assert isinstance(output, Tensor)
     assert np.array_equal(call_output, output.to_numpy())
 
@@ -542,7 +736,13 @@ def test_mixed_positional_named_call(
     # Calling a model with a mixture of named and positional inputs should also work (even if named
     # inputs are not ordered).
     a, b, c, d, e = call_inputs
-    output = call_model(a, b, e=e, c=c, d=d)[0]
+    output = call_model(
+        a.to(call_model.input_devices[0]),
+        b.to(call_model.input_devices[1]),
+        c=c.to(call_model.input_devices[2]),
+        d=d.to(call_model.input_devices[3]),
+        e=e.to(call_model.input_devices[4]),
+    )[0]
     assert isinstance(output, Tensor)
     assert np.array_equal(call_output, output.to_numpy())
 
@@ -582,3 +782,82 @@ def test_invalid_session_arg() -> None:
     """Check that passing an invalid arg to InferenceSession's ctor errors."""
     with pytest.raises(TypeError):
         InferenceSession(device=[])  # type: ignore
+
+
+def test_session_device_initialization() -> None:
+    """Verify InferenceSession device list initialization behavior."""
+    cpu = CPU()
+
+    # Case 1: Default (no devices specified).
+    session1 = InferenceSession()
+    assert set(session1.devices) == {cpu}, "Default devices should be just CPU"
+
+    # Case 2: Only CPU specified.
+    session2 = InferenceSession(devices=[cpu])
+    assert set(session2.devices) == {cpu}, (
+        "Devices with only CPU should result in just CPU"
+    )
+
+    # Case 3: Duplicate CPU specified.
+    session3 = InferenceSession(devices=[cpu, cpu])
+    assert set(session3.devices) == {cpu}, (
+        "Devices with duplicate CPU should result in just CPU"
+    )
+
+    # Case 4: Empty list specified.
+    session4 = InferenceSession(devices=[])
+    assert not set(session4.devices), (
+        "Devices with empty list should give the empty set"
+    )
+
+    if accelerator_count() == 0:
+        return
+
+    gpu = Accelerator()
+    # Case 5: Only GPU specified.
+    session5 = InferenceSession(devices=[gpu])
+    assert set(session5.devices) == {gpu}, (
+        "Devices with only GPU should result in GPU"
+    )
+
+    # Case 6: GPU and CPU specified.
+    session6 = InferenceSession(devices=[gpu, cpu])
+    assert set(session6.devices) == {gpu, cpu}, (
+        "Devices with GPU and CPU should be unique"
+    )
+
+    # Case 7: Duplicate GPU specified.
+    session7 = InferenceSession(devices=[gpu, gpu])
+    assert set(session7.devices) == {gpu}, (
+        "Devices with duplicate GPU should be unique"
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="Requires gpu device to test"
+)
+def test_execute_wrong_device_input(session: InferenceSession) -> None:
+    """Test that model.execute() raises TypeError for input tensors on the wrong device."""
+    N = 42
+    model = session.load(
+        Graph(
+            "mixed_devices",
+            forward=lambda x, y: x.to(cast(DeviceRef, y.device)) + y,
+            input_types=[
+                # One tensor on host, the other on device.
+                TensorType(DType.float32, shape=[N], device=DeviceRef.CPU()),
+                TensorType(DType.float32, shape=[N], device=DeviceRef.GPU()),
+            ],
+        )
+    )
+
+    # Attempt to execute with the wrong device input should raise TypeError
+    with pytest.raises(
+        TypeError,
+        # Escape because CPU and Accelerator's repr's include parentheses.
+        match=re.escape(
+            f"expected arg 0 to be on device {CPU()}, but was on device {Accelerator()}"
+        ),
+    ):
+        x = Tensor(DType.float32, shape=(N,), device=Accelerator())
+        model.execute(x, x)

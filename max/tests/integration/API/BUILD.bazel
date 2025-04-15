@@ -27,9 +27,6 @@ lit_tests(
             "**/*.api",
             "**/*.mojo",
         ],
-        exclude = [
-            "mojo/test_devicetensor_gpu.mojo",
-        ],
     ),
     custom_substitutions = {
         "%pytorch_generated_tests_dir": "../../../../PyTorch/test/utils",
@@ -49,6 +46,7 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib",
         "//Kernels/mojo/register",
     ],
+    tags = ["gpu"],
     tools = [
         "//GenericML/tools/mt",
         "//KGEN/tools/mojo",
@@ -60,21 +58,4 @@ lit_tests(
         requirement("torch"),
         requirement("torchvision"),
     ],
-)
-
-lit_tests(
-    name = "gpu-test",
-    size = "large",
-    srcs = ["mojo/test_devicetensor_gpu.mojo"],
-    data = [":inputs"],
-    env = {
-        "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
-        "//SDK/lib/API/mojo/max/max",
-        "//open-source/mojo/stdlib/stdlib",
-    ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
 )
