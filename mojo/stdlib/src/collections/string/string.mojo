@@ -1505,8 +1505,8 @@ struct String(
         ```
         .
         """
-        return self.as_string_slice().split[sep.mut, sep.origin](
-            sep, maxsplit=maxsplit
+        return _to_string_list(
+            self.as_string_slice().split(sep, maxsplit=maxsplit)
         )
 
     fn split(self, sep: NoneType = None, maxsplit: Int = -1) -> List[String]:
@@ -1536,19 +1536,9 @@ struct String(
         ```
         .
         """
-
-        # TODO(MSTDL-590): Avoid the need to loop to convert `StringSlice` to
-        #   `String` by making `String.split()` return `StringSlice`s.
-        var str_slices = self.as_string_slice()._split_whitespace(
-            maxsplit=maxsplit
+        return _to_string_list(
+            self.as_string_slice().split(sep, maxsplit=maxsplit)
         )
-
-        var output = List[String](capacity=len(str_slices))
-
-        for str_slice in str_slices:
-            output.append(String(str_slice[]))
-
-        return output^
 
     fn splitlines(self, keepends: Bool = False) -> List[String]:
         """Split the string at line boundaries. This corresponds to Python's

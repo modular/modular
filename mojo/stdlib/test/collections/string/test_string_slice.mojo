@@ -517,14 +517,8 @@ def test_is_codepoint_boundary():
 
 
 def test_split():
-    # empty separators default to whitespace
-    var d0 = StringSlice("hello world").split()
-    assert_true(len(d0) == 2)
-    assert_true(d0[0] == "hello")
-    assert_true(d0[1] == "world")
-    var d = StringSlice("hello \t\n\n\v\fworld").split(sep="\n")
-    assert_true(len(d) == 3)
-    assert_true(d[0] == "hello \t" and d[1] == "" and d[2] == "\v\fworld")
+    alias S = StaticString
+    alias L = List[StaticString]
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
@@ -554,117 +548,63 @@ def test_split():
         )
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    var ds1 = StringSlice(s).split()
-    assert_true(len(ds1) == 2)
-    assert_true(ds1[0] == "hello" and ds1[1] == "world")
+    assert_equal(StringSlice(s).split(), L("hello", "world"))
 
     # should split into empty strings between separators
-    d = StringSlice("1,,,3").split(",")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "1" and d[1] == "" and d[2] == "" and d[3] == "3")
-    d = StringSlice(",,,").split(",")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "" and d[2] == "" and d[3] == "")
-    d = StringSlice(" a b ").split(" ")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "a" and d[2] == "b" and d[3] == "")
-    d = StringSlice("abababaaba").split("aba")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "b" and d[2] == "" and d[3] == "")
+    assert_equal(S("1,,,3").split(","), L("1", "", "", "3"))
+    assert_equal(S(",,,").split(","), L("", "", "", ""))
+    assert_equal(S(" a b ").split(" "), L("", "a", "b", ""))
+    assert_equal(S("abababaaba").split("aba"), L("", "b", "", ""))
+    assert_true(len(S("").split()) == 0)
+    assert_true(len(S(" ").split()) == 0)
+    assert_true(len(S("").split(" ")) == 1)
+    assert_true(len(S(",").split(",")) == 2)
+    assert_true(len(S(" ").split(" ")) == 2)
+    # assert_true(len(S("").split("")) == 2) # TODO(#3528)
+    assert_true(len(S("  ").split(" ")) == 3)
+    assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
-    d = StringSlice("1,2,3").split(",", 0)
-    assert_true(len(d) == 1)
-    assert_true(d[0] == "1,2,3")
-    d = StringSlice("1,2,3").split(",", 1)
-    assert_true(len(d) == 2)
-    assert_true(d[0] == "1" and d[1] == "2,3")
+    assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
+    assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
 
-    assert_true(len(StringSlice("").split()) == 0)
-    assert_true(len(StringSlice(" ").split()) == 0)
-    assert_true(len(StringSlice("").split(" ")) == 1)
-    assert_true(len(StringSlice(" ").split(" ")) == 2)
-    assert_true(len(StringSlice("  ").split(" ")) == 3)
-    assert_true(len(StringSlice("   ").split(" ")) == 4)
-
+    # TODO(#3528): delete this test
     with assert_raises():
-        _ = StringSlice("").split("")
+        _ = S("").split("")
 
     # Split in middle
-    var d1 = StringSlice("n")
-    var in1 = StringSlice("faang")
-    var res1 = in1.split(d1)
-    assert_equal(len(res1), 2)
-    assert_equal(res1[0], "faa")
-    assert_equal(res1[1], "g")
-
-    # Matches should be properly split in multiple case
-    var d2 = StringSlice(" ")
-    var in2 = StringSlice("modcon is coming soon")
-    var res2 = in2.split(d2)
-    assert_equal(len(res2), 4)
-    assert_equal(res2[0], "modcon")
-    assert_equal(res2[1], "is")
-    assert_equal(res2[2], "coming")
-    assert_equal(res2[3], "soon")
+    assert_equal(S("faang").split("n"), L("faa", "g"))
 
     # No match from the delimiter
-    var d3 = StringSlice("x")
-    var in3 = StringSlice("hello world")
-    var res3 = in3.split(d3)
-    assert_equal(len(res3), 1)
-    assert_equal(res3[0], "hello world")
+    assert_equal(S("hello world").split("x"), L("hello world"))
 
     # Multiple character delimiter
-    var d4 = StringSlice("ll")
-    var in4 = StringSlice("hello")
-    var res4 = in4.split(d4)
-    assert_equal(len(res4), 2)
-    assert_equal(res4[0], "he")
-    assert_equal(res4[1], "o")
+    assert_equal(S("hello").split("ll"), L("he", "o"))
 
-    # related to #2879
-    # TODO: replace string comparison when __eq__ is implemented for List
-    assert_equal(
-        StringSlice("abbaaaabbba").split("a").__str__(),
-        "['', 'bb', '', '', '', 'bbb', '']",
-    )
-    assert_equal(
-        StringSlice("abbaaaabbba").split("a", 8).__str__(),
-        "['', 'bb', '', '', '', 'bbb', '']",
-    )
-    assert_equal(
-        StringSlice("abbaaaabbba").split("a", 5).__str__(),
-        "['', 'bb', '', '', '', 'bbba']",
-    )
-    assert_equal(StringSlice("aaa").split("a", 0).__str__(), "['aaa']")
-    assert_equal(StringSlice("a").split("a").__str__(), "['', '']")
-    assert_equal(StringSlice("1,2,3").split("3", 0).__str__(), "['1,2,3']")
-    assert_equal(StringSlice("1,2,3").split("3", 1).__str__(), "['1,2,', '']")
-    assert_equal(
-        StringSlice("1,2,3,3").split("3", 2).__str__(), "['1,2,', ',', '']"
-    )
-    assert_equal(
-        StringSlice("1,2,3,3,3").split("3", 2).__str__(), "['1,2,', ',', ',3']"
-    )
+    res = L("", "bb", "", "", "", "bbb", "")
+    assert_equal(S("abbaaaabbba").split("a"), res)
+    assert_equal(S("abbaaaabbba").split("a", 8), res)
+    s1 = S("abbaaaabbba").split("a", 5)
+    assert_equal(s1, L("", "bb", "", "", "", "bbba"))
+    assert_equal(S("aaa").split("a", 0), L("aaa"))
+    assert_equal(S("a").split("a"), L("", ""))
+    assert_equal(S("1,2,3").split("3", 0), L("1,2,3"))
+    assert_equal(S("1,2,3").split("3", 1), L("1,2,", ""))
+    assert_equal(S("1,2,3,3").split("3", 2), L("1,2,", ",", ""))
+    assert_equal(S("1,2,3,3,3").split("3", 2), L("1,2,", ",", ",3"))
 
-    var in5 = StringSlice("Hello 🔥!")
-    var res5 = in5.split()
-    assert_equal(len(res5), 2)
-    assert_equal(res5[0], "Hello")
-    assert_equal(res5[1], "🔥!")
+    assert_equal(S("Hello 🔥!").split(), L("Hello", "🔥!"))
 
-    var in6 = StringSlice("Лорем ипсум долор сит амет")
-    var res6 = in6.split(" ")
-    assert_equal(len(res6), 5)
-    assert_equal(res6[0], "Лорем")
-    assert_equal(res6[1], "ипсум")
-    assert_equal(res6[2], "долор")
-    assert_equal(res6[3], "сит")
-    assert_equal(res6[4], "амет")
+    s2 = S("Лорем ипсум долор сит амет").split(" ")
+    assert_equal(s2, L("Лорем", "ипсум", "долор", "сит", "амет"))
+    s3 = S("Лорем ипсум долор сит амет").split("м")
+    assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
 
-    with assert_raises(contains="Separator cannot be empty."):
-        _ = StringSlice("1, 2, 3").split("")
+    # TODO(#3528)
+    # assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    # assert_equal(S("").join(S("123").split("")), "123")
+    # assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    # assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():

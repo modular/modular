@@ -31,7 +31,7 @@ The `StringSlice` type is particularly useful for:
 
 Example:
     ```mojo
-    
+
 
     # Create a string slice
     var text = StringSlice("Hello, 世界")
@@ -1144,21 +1144,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         res.append(0)
         return String(res^)
 
-    fn split[
-        sep_mut: Bool,
-        sep_origin: Origin[sep_mut], //,
-    ](
-        self,
-        sep: StringSlice[sep_origin],
-        maxsplit: Int = -1,
-    ) raises -> List[
-        String
-    ]:
+    fn split(
+        self, sep: StringSlice, maxsplit: Int = -1
+    ) raises -> List[Self.Immutable]:
         """Split the string by a separator.
-
-        Parameters:
-            sep_mut: Mutability of the `sep` string slice.
-            sep_origin: Origin of the `sep` string slice.
 
         Args:
             sep: The string to split on.
@@ -1183,7 +1172,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         ```
         .
         """
-        var output = List[String]()
+        var output = List[Self.Immutable]()
 
         var str_byte_len = self.byte_length() - 1
         var lhs = 0
@@ -1192,31 +1181,31 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if sep_len == 0:
             raise Error("Separator cannot be empty.")
         if str_byte_len < 0:
-            output.append(String(""))
+            output.append(rebind[Self.Immutable](StaticString("")))
 
         while lhs <= str_byte_len:
             var rhs = self.find(sep, lhs)
             if rhs == -1:
-                output.append(String(self[lhs:]))
+                output.append(rebind[Self.Immutable](self[lhs:]))
                 break
 
             if maxsplit > -1:
                 if items == maxsplit:
-                    output.append(String(self[lhs:]))
+                    output.append(rebind[Self.Immutable](self[lhs:]))
                     break
                 items += 1
 
-            output.append(String(self[lhs:rhs]))
+            output.append(rebind[Self.Immutable](self[lhs:rhs]))
             lhs = rhs + sep_len
 
         if self.endswith(sep) and (len(output) <= maxsplit or maxsplit == -1):
-            output.append(String(""))
+            output.append(rebind[Self.Immutable](StaticString("")))
 
         return output^
 
     fn split(
         self, sep: NoneType = None, maxsplit: Int = -1
-    ) -> List[StringSlice[origin]]:
+    ) -> List[Self.Immutable]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1246,12 +1235,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         return self._split_whitespace()
 
-    fn _split_whitespace(self, maxsplit: Int = -1) -> List[StringSlice[origin]]:
+    fn _split_whitespace(self, maxsplit: Int = -1) -> List[Self.Immutable]:
         fn num_bytes(b: UInt8) -> Int:
             var flipped = ~b
             return Int(count_leading_zeros(flipped) + (flipped >> 7))
 
-        var output = List[StringSlice[origin]]()
+        var output = List[Self.Immutable]()
         var str_byte_len = self.byte_length() - 1
         var lhs = 0
         var items = 0
@@ -1270,7 +1259,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     break
                 elif lhs == str_byte_len:
                     # if the last char is not whitespace
-                    output.append(self[str_byte_len:])
+                    output.append(rebind[Self.Immutable](self[str_byte_len:]))
                     break
                 var rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
                 for s in self[
@@ -1282,18 +1271,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
                 if maxsplit > -1:
                     if items == maxsplit:
-                        output.append(self[lhs:])
+                        output.append(rebind[Self.Immutable](self[lhs:]))
                         break
                     items += 1
 
-                output.append(self[lhs:rhs])
+                output.append(rebind[Self.Immutable](self[lhs:rhs]))
                 lhs = rhs
             except e:
-                return abort[List[StringSlice[origin]]](
+                return abort[List[Self.Immutable]](
                     "unexpected exception during split()"
                 )
 
-        return output
+        return output^
 
     @always_inline
     fn strip(self, chars: StringSlice) -> Self:
