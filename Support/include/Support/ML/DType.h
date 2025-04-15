@@ -220,9 +220,12 @@ public:
 
   // Type generic methods.
 
-  /// Return the width of this element in bits.  This returns -1 for unknown
+  /// Return the width of this element in bits. This returns -1 for unknown
   /// width values.
   ssize_t getWidthInBits() const;
+
+  // Returns the alignment of this element in bytes.
+  size_t getAlignment() const;
 
   /// This method returns the LLVM floating point semantics for the given DType,
   /// or nullptr if the DType is not a floating point type LLVM knows about
