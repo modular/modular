@@ -15,7 +15,13 @@ from algorithm import map
 from collections.string.string_slice import StaticString, get_static_string
 from math import align_down, ceildiv
 from os import abort
-from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
+from sys import (
+    bitwidthof,
+    env_get_int,
+    is_nvidia_gpu,
+    num_physical_cores,
+    simdwidthof,
+)
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -24,7 +30,12 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    PDLLevel,
+)
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
 from runtime import tracing
@@ -1659,39 +1670,52 @@ fn _elementwise_impl_gpu[
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
-        with PDL():
-            for idx in range(
-                tid,
-                num_packed_elems,
-                block_size * grid_dim.x,
-            ):
-                var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
-                    idx * simd_width, shape
-                )
+        alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
 
-                @parameter
-                if handle_uneven_simd:
-                    if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+        @parameter
+        if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
 
-                        @parameter
-                        for off in range(Int(simd_width)):
-                            func[1, rank](
-                                _get_start_indices_of_nth_subvolume_uint[0](
-                                    idx * simd_width + off,
-                                    shape,
-                                ).canonicalize()
-                            )
-                    else:
-                        func[simd_width, rank](start_indices.canonicalize())
+        @parameter
+        if pdl_level > PDLLevel.OFF:
+            wait_on_dependent_grids()
+
+        for idx in range(
+            tid,
+            num_packed_elems,
+            block_size * grid_dim.x,
+        ):
+            var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
+                idx * simd_width, shape
+            )
+
+            @parameter
+            if handle_uneven_simd:
+                if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+
+                    @parameter
+                    for off in range(Int(simd_width)):
+                        func[1, rank](
+                            _get_start_indices_of_nth_subvolume_uint[0](
+                                idx * simd_width + off,
+                                shape,
+                            ).canonicalize()
+                        )
                 else:
                     func[simd_width, rank](start_indices.canonicalize())
+            else:
+                func[simd_width, rank](start_indices.canonicalize())
 
-            # process the tail region
-            if tid < unpacked_tail_length:
-                var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
-                    packed_region_length + tid, shape
-                ).canonicalize()
-                func[1, rank](index_tup)
+        # process the tail region
+        if tid < unpacked_tail_length:
+            var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
+                packed_region_length + tid, shape
+            ).canonicalize()
+            func[1, rank](index_tup)
+
+        @parameter
+        if pdl_level == PDLLevel.OVERLAP_AT_END:
+            launch_dependent_grids()
 
     if shape[rank - 1] % simd_width == 0:
         ctx.enqueue_function[

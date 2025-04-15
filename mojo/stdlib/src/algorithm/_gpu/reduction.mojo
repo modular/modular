@@ -19,7 +19,12 @@ from gpu import (
     warp_id,
     thread_idx,
 )
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    PDLLevel,
+)
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
@@ -27,6 +32,7 @@ from memory import stack_allocation
 from utils import IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+from sys import env_get_int
 
 
 @always_inline
@@ -294,34 +300,47 @@ fn reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    with PDL():
-        # grid stride loop over rows
-        # each block reduces a row, which requires no partial reductions
-        for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
-            var row_coords = _get_nd_indices_from_flat_index(
-                Int(row_idx), shape, axis
-            )
+    alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
 
-            var row_accum = row_reduce[
-                BLOCK_SIZE,
-                num_reductions,
-                input_fn,
-                reduce_fn,
-                type,
-                simd_width,
-                rank,
-                accum_type=accum_type,
-            ](row_coords, axis, init, row_size)
+    @parameter
+    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
 
-            if thread_idx.x == 0:
-                var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
+    @parameter
+    if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
-                @parameter
-                for i in range(num_reductions):
-                    row_accum_cast[i] = row_accum[i].cast[type]()
+    # grid stride loop over rows
+    # each block reduces a row, which requires no partial reductions
+    for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx), shape, axis
+        )
 
-                row_coords[axis] = 0
-                output_fn[type, 1, rank](row_coords, row_accum_cast)
+        var row_accum = row_reduce[
+            BLOCK_SIZE,
+            num_reductions,
+            input_fn,
+            reduce_fn,
+            type,
+            simd_width,
+            rank,
+            accum_type=accum_type,
+        ](row_coords, axis, init, row_size)
+
+        if thread_idx.x == 0:
+            var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
+
+            @parameter
+            for i in range(num_reductions):
+                row_accum_cast[i] = row_accum[i].cast[type]()
+
+            row_coords[axis] = 0
+            output_fn[type, 1, rank](row_coords, row_accum_cast)
+
+    @parameter
+    if pdl_level == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
 
 
 fn reduce_launch[
