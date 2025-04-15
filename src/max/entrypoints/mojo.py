@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 # max/entrypoints/mojo.py -> max
 root = Path(__file__).parent.parent
@@ -22,66 +24,99 @@ lib = root / "lib"
 
 ext = ".dylib" if sys.platform == "darwin" else ".so"
 
-env = os.environ
+# fmt: off
+sdk_default_env: dict[str, str] = {
+    "MODULAR_MAX_CACHE_DIR": str(root / "share" / "max" / ".max_cache"),
+    "MODULAR_MAX_DRIVER_LIB": str(lib / "libDeviceDriver") + ext,
+    "MODULAR_MAX_ENABLE_COMPILE_PROGRESS": "true",
+    "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "true",
+    "MODULAR_MAX_ENGINE_LIB": str(lib / "libmodular-framework-common") + ext,
+    "MODULAR_MAX_GRAPH_LIB": str(lib / "libmof") + ext,
+    "MODULAR_MAX_PATH": str(root),
+    "MODULAR_MAX_NAME": "MAX Platform",
+    "MODULAR_MAX_TORCH_EXT_LIB": (
+        str(lib / "libmodular-framework-torch-ext") + ext
+    ),
+    # MODULAR_MAX_VERSION intentionally omitted
 
-env["MODULAR_MAX_CACHE_DIR"] = str(root / "share" / "max" / ".max_cache")
-env["MODULAR_MAX_DRIVER_LIB"] = str(lib / "libDeviceDriver") + ext
-env["MODULAR_MAX_ENABLE_COMPILE_PROGRESS"] = "true"
-env["MODULAR_MAX_ENABLE_MODEL_IR_CACHE"] = "true"
-env["MODULAR_MAX_ENGINE_LIB"] = str(lib / "libmodular-framework-common") + ext
-env["MODULAR_MAX_GRAPH_LIB"] = str(lib / "libmof") + ext
-env["MODULAR_MAX_PATH"] = str(root)
-env["MODULAR_MAX_NAME"] = "MAX Platform"
-env["MODULAR_MAX_TORCH_EXT_LIB"] = (
-    str(lib / "libmodular-framework-torch-ext") + ext
-)
-# MODULAR_MAX_VERSION intentionally omitted
+    "MODULAR_MOJO_MAX_COMPILERRT_PATH": (
+        str(lib / "libKGENCompilerRTShared") + ext
+    ),
+    "MODULAR_MOJO_MAX_MGPRT_PATH": str(lib / "libMGPRT") + ext,
+    "MODULAR_MOJO_MAX_ATENRT_PATH": str(lib / "libATenRT") + ext,
+    "MODULAR_MOJO_MAX_SHARED_LIBS": (
+        str(lib / "libAsyncRTMojoBindings")
+        + ext
+        + ","
+        + str(lib / "libAsyncRTRuntimeGlobals")
+        + ext
+        + ","
+        + str(lib / "libMSupportGlobals")
+        + ext
+        + ",-Xlinker,-rpath,-Xlinker,"
+        + str(lib)
+        + ";"
+    ),
+    "MODULAR_MOJO_MAX_DRIVER_PATH": str(bin / "mojo"),
+    "MODULAR_MOJO_MAX_IMPORT_PATH": str(lib / "mojo"),
+    # MODULAR_MOJO_MAX_JUPYTER_PATH
+    "MODULAR_MOJO_MAX_LLDB_PATH": str(bin / "mojo-lldb"),
+    "MODULAR_MOJO_MAX_LLDB_PLUGIN_PATH": str(lib / "libMojoLLDB") + ext,
+    "MODULAR_MOJO_MAX_LLDB_VISUALIZERS_PATH": str(lib / "lldb-visualizers"),
+    # env["MODULAR_MOJO_MAX_LLDB_VSCODE_PATH"] = str(bin / "mojo-lldb-dap")
+    "MODULAR_MOJO_MAX_LSP_SERVER_PATH": str(bin / "mojo-lsp-server"),
+    # MODULAR_MOJO_MAX_MBLACK_PATH
+    "MODULAR_MOJO_MAX_ORCRT_PATH": str(lib / "liborc_rt.a"),
+    "MODULAR_MOJO_MAX_PTXAS_PATH": str(bin / "ptxas"),
+    "MODULAR_MOJO_MAX_REPL_ENTRY_POINT": str(lib / "mojo-repl-entry-point"),
+    "MODULAR_MOJO_MAX_SYSTEM_LIBS": (
+        "-lm,-lz,-lcurses"
+        if sys.platform == "darwin"
+        else "-lrt,-ldl,-lpthread,-lm,-lz,-ltinfo"
+    ),
+    "MODULAR_MOJO_MAX_TEST_EXECUTOR_PATH": str(lib / "mojo-test-executor"),
 
-env["MODULAR_MOJO_MAX_COMPILERRT_PATH"] = (
-    str(lib / "libKGENCompilerRTShared") + ext
-)
-env["MODULAR_MOJO_MAX_MGPRT_PATH"] = str(lib / "libMGPRT") + ext
-env["MODULAR_MOJO_MAX_ATENRT_PATH"] = str(lib / "libATenRT") + ext
-env["MODULAR_MOJO_MAX_SHARED_LIBS"] = (
-    str(lib / "libAsyncRTMojoBindings")
-    + ext
-    + ","
-    + str(lib / "libAsyncRTRuntimeGlobals")
-    + ext
-    + ","
-    + str(lib / "libMSupportGlobals")
-    + ext
-    + ",-Xlinker,-rpath,-Xlinker,"
-    + str(lib)
-    + ";"
-)
-env["MODULAR_MOJO_MAX_DRIVER_PATH"] = str(bin / "mojo")
-env["MODULAR_MOJO_MAX_IMPORT_PATH"] = str(lib / "mojo")
-# MODULAR_MOJO_MAX_JUPYTER_PATH
-env["MODULAR_MOJO_MAX_LLDB_PATH"] = str(bin / "mojo-lldb")
-env["MODULAR_MOJO_MAX_LLDB_PLUGIN_PATH"] = str(lib / "libMojoLLDB") + ext
-env["MODULAR_MOJO_MAX_LLDB_VISUALIZERS_PATH"] = str(lib / "lldb-visualizers")
-# env["MODULAR_MOJO_MAX_LLDB_VSCODE_PATH"] = str(bin / "mojo-lldb-dap")
-env["MODULAR_MOJO_MAX_LSP_SERVER_PATH"] = str(bin / "mojo-lsp-server")
-# MODULAR_MOJO_MAX_MBLACK_PATH
-env["MODULAR_MOJO_MAX_ORCRT_PATH"] = str(lib / "liborc_rt.a")
-env["MODULAR_MOJO_MAX_PTXAS_PATH"] = str(bin / "ptxas")
-env["MODULAR_MOJO_MAX_REPL_ENTRY_POINT"] = str(lib / "mojo-repl-entry-point")
-env["MODULAR_MOJO_MAX_SYSTEM_LIBS"] = (
-    "-lm,-lz,-lcurses"
-    if sys.platform == "darwin"
-    else "-lrt,-ldl,-lpthread,-lm,-lz,-ltinfo"
-)
-env["MODULAR_MOJO_MAX_TEST_EXECUTOR_PATH"] = str(lib / "mojo-test-executor")
-
-env["MODULAR_CRASH_REPORTING_HANDLER_PATH"] = str(
-    bin / "modular-crashpad-handler"
-)
+    "MODULAR_CRASH_REPORTING_HANDLER_PATH": str(
+        bin / "modular-crashpad-handler"
+    ),
+}
+# fmt: on
 
 
-def main():
-    os.execve(bin / "mojo", sys.argv, env)
+def _mojo_env() -> dict[str, str]:
+    """Returns an environment variable set that uses the Mojo SDK environment
+    paths by default, but with overrides from the ambient OS environment."""
+
+    return sdk_default_env | dict(os.environ)
+
+
+def exec_mojo():
+    env = _mojo_env()
+
+    os.execve(env["MODULAR_MOJO_MAX_DRIVER_PATH"], sys.argv, env)
+
+
+def subprocess_run_mojo(
+    mojo_args: list[str],
+    **kwargs: Any,
+):
+    """Launches the bundled `mojo` in a subprocess, configured to use the
+    `mojo` assets in the `max` package.
+
+    Arguments:
+        mojo_args: Arguments supplied to the `mojo` command.
+        kwargs: Additional arguments to pass to `subprocess.run()`
+    """
+
+    env = _mojo_env()
+
+    subprocess.run(
+        # Combine the `mojo` executable path with the provided argument list.
+        [env["MODULAR_MOJO_MAX_DRIVER_PATH"]] + mojo_args,
+        env=env,
+        **kwargs,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    exec_mojo()
