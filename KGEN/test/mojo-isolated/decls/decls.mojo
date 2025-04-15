@@ -868,7 +868,7 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
 fn initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %fn_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(Int)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
     var fn_ptr1: fn (Int) -> MyInt = MyInt.__init__
 
@@ -888,7 +888,7 @@ fn initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %fn_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(Int)")
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr5
     var fn_ptr5: fn (Int) -> StructWithInit = StructWithInit.__init__
 
@@ -1111,7 +1111,7 @@ struct VarArgInit:
     fn __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !VarArgInit
+    # CHECK: lit.fn @"__init__(Int)"(%a: !Int) -> !VarArgInit
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the

@@ -147,7 +147,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         # is completely optimized out.
 
         # TODO: Eliminate this entirely by handling lit.ref.store!
-        # CHECK-NEXT: %11 = lit.call {{.*}}@Error::@"__copyinit__(::Error)"[imm *"err`"](%err)
+        # CHECK-NEXT: %11 = lit.call {{.*}}@Error::@"__copyinit__(Error)"[imm *"err`"](%err)
         # CHECK-NEXT: lit.var.lifetime.start %__try_error__
         # CHECK-NEXT: lit.ref.store %11, %__try_error__
         # CHECK-NEXT: %12 = lit.call {{.*}}@Error::@"__del__{{.*}}(%__try_error__)
@@ -643,7 +643,7 @@ fn loop_any_origin(owned mem: MemExample, cond: Bool):
   # there is an access through AnyOrigin within the loop.
   # CHECK: hlcf.loop
   # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_i1__
-  # CHECK-NEXT:     hlcf.if 
+  # CHECK-NEXT:     hlcf.if
   # CHECK-NEXT:       hlcf.yield
   # CHECK-NEXT:     } else {
   # CHECK-NEXT:       lit.var.lifetime.end %ptr
@@ -652,4 +652,4 @@ fn loop_any_origin(owned mem: MemExample, cond: Bool):
   while cond:
     ptr[] = 4
 
-  
+
