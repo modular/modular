@@ -985,6 +985,19 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     func->setAttr(kMOGGFusableArgs, builder.getArrayAttr(fusableIdxs));
   }
 
+  // Build the encoding of all iOSpecs of the arguments.
+  SmallVector<Attribute> argsIoSpecs;
+  Attribute nullIoSpecAttr = builder.getUnitAttr();
+  for (auto [idx, spec] : ioSpecs) {
+    if (idx >= argsIoSpecs.size()) {
+      argsIoSpecs.resize(idx + 1, nullIoSpecAttr);
+    }
+    argsIoSpecs[idx] = builder.getStringAttr(toString(spec));
+  }
+  if (!argsIoSpecs.empty()) {
+    func->setAttr(kMOGGArgsIOSpecs, builder.getArrayAttr(argsIoSpecs));
+  }
+
   return true;
 }
 

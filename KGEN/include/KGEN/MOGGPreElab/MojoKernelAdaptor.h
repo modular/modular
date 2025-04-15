@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
+#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 
 namespace M::KGEN::MOGGPreElab {
 
@@ -18,6 +19,11 @@ struct TensorOperandAdaptor {
   // If the tensor is a mutable input or not.
   bool mut;
   bool fused;
+  IOSpec ioSpec;
+  TensorOperandAdaptor() = default;
+  TensorOperandAdaptor(IOSpec ioSpec)
+      : mut(isMutableIOSpec(ioSpec)), fused(isFusableIOSpec(ioSpec)),
+        ioSpec(ioSpec) {}
 
   bool operator==(const TensorOperandAdaptor &other) const {
     // Not comparing fused because it can't be specified anywhere except in Mojo
@@ -99,10 +105,8 @@ struct MojoKernelOperandAdaptor {
   MojoKernelOperandVariant underlyingType;
 
   MojoKernelOperandAdaptor(std::optional<uint64_t> positionInFunction,
-                           StringRef typeName,
-                           ArrayAttr positionOfMutableTensors,
-                           ArrayAttr positionOfFusedTensors,
-                           ArrayAttr argumentSourceNames, uint64_t offset = 0);
+                           StringRef typeName, ArrayAttr argumentSourceNames,
+                           ArrayAttr argsIoSpecs, uint64_t offset = 0);
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
@@ -170,12 +174,10 @@ struct MojoKernelFunctionAdaptor {
     auto numberOfOutputArgumentsAttr =
         mojoCode->template getAttrOfType<IntegerAttr>(
             KGEN::MOGGPreElab::kMOGGNumDPSOutputs);
-    auto positionOfMutableTensors = mojoCode->template getAttrOfType<ArrayAttr>(
-        KGEN::MOGGPreElab::kMOGGBufferArgs);
-    auto positionOfFusedTensors = mojoCode->template getAttrOfType<ArrayAttr>(
-        KGEN::MOGGPreElab::kMOGGFusableArgs);
     auto argumentSourceNames = mojoCode->template getAttrOfType<ArrayAttr>(
         KGEN::MOGGPreElab::MOGG_ARG_SRC_NAMES);
+    auto argsIoSpecsAttr = mojoCode->template getAttrOfType<ArrayAttr>(
+        KGEN::MOGGPreElab::kMOGGArgsIOSpecs);
 
     uint64_t begOfInputArguments =
         numberOfOutputArgumentsAttr ? numberOfOutputArgumentsAttr.getInt() : 0;
@@ -196,17 +198,16 @@ struct MojoKernelFunctionAdaptor {
 
     for (size_t i = begOfInputArguments; i < endOfInputArguments; ++i) {
       auto argTypeName = cast<StringAttr>(argumentTypesNames[i]).strref();
-      inputArguments.emplace_back(i, argTypeName, positionOfMutableTensors,
-                                  positionOfFusedTensors, argumentSourceNames,
-                                  begOfInputArguments);
+      inputArguments.emplace_back(i, argTypeName, argumentSourceNames,
+                                  argsIoSpecsAttr, begOfInputArguments);
     }
 
     for (size_t i = 0; i < begOfInputArguments; ++i) {
       auto argTypeName = cast<StringAttr>(argumentTypesNames[i]).strref();
       // Providing no mutable tensor positions because outputs can't be mutable
       // inputs.
-      outputArguments.emplace_back(i, argTypeName, nullptr,
-                                   positionOfFusedTensors, argumentSourceNames);
+      outputArguments.emplace_back(i, argTypeName, argumentSourceNames,
+                                   argsIoSpecsAttr);
     }
 
     if (resultAsArgument) {
@@ -218,13 +219,13 @@ struct MojoKernelFunctionAdaptor {
         // make sense for output results.
         outputResult = MojoKernelOperandAdaptor(
             endOfInputArguments + numberOfArgumentsRelatedToByrefResult - 1,
-            argTypeName.strref(), nullptr, nullptr, argumentSourceNames);
+            argTypeName.strref(), argumentSourceNames, argsIoSpecsAttr);
       }
     } else if (resultTypeName) {
       // Providing no mutable or fused tensor positions because they don't make
       // sense for output results.
       outputResult = MojoKernelOperandAdaptor(
-          {}, resultTypeName.strref(), nullptr, nullptr, argumentSourceNames);
+          {}, resultTypeName.strref(), argumentSourceNames, argsIoSpecsAttr);
     }
   }
 

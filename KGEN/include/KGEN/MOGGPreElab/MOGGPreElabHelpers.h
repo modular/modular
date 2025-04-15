@@ -53,6 +53,7 @@ std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
 
 bool isOutputIOSpec(IOSpec spec);
 bool isFusableIOSpec(IOSpec spec);
+bool isMutableIOSpec(IOSpec spec);
 
 } // namespace M::KGEN::MOGGPreElab
 
