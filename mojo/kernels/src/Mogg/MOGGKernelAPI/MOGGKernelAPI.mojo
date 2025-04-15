@@ -2852,35 +2852,6 @@ struct Slice:
         )
 
 
-@compiler.register("mo.mutable.store")
-struct MutableStore:
-    @staticmethod
-    fn execute[
-        target: StaticString,
-        _synchronous: Bool,
-        _trace_name: StaticString,
-    ](
-        buffer: MutableInputTensor,
-        tensor: FusedInputTensor,
-        ctx: DeviceContextPtr,
-    ) raises:
-        @parameter
-        @always_inline
-        fn func[
-            width: Int
-        ](idx: IndexList[buffer.rank]) -> SIMD[buffer.type, width]:
-            return rebind[SIMD[buffer.type, width]](
-                tensor._fused_load[width](idx)
-            )
-
-        foreach[
-            func,
-            target=target,
-            _synchronous=_synchronous,
-            _trace_name=_trace_name,
-        ](buffer, ctx)
-
-
 @compiler.register("mo.mutable.store.slice")
 struct MutableStoreSlice:
     @staticmethod
