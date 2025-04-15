@@ -395,6 +395,21 @@ class SplitKReductionPrecision(IntEnum):
     OUTPUT = auto()
 
 
+class PdlLevel(IntEnum):
+    """Internal use."""
+
+    # No PDL
+    OFF = auto()
+
+    # Start subsequent kernel at the end
+    # Apply to elementwise and reduction kernels
+    OVERLAP_AT_END = auto()
+
+    # Start subsequent kernel at the beginning
+    # Apply to elementwise and reduction kernels
+    OVERLAP_AT_BEGINNING = auto()
+
+
 class AssertLevel(str, Enum):
     """Internal use."""
 
@@ -758,6 +773,15 @@ class InferenceSession:
             return
 
         self._set_mojo_define("USE_EXPERIMENTAL_KERNELS", 1)
+
+    def _pdl_level(self, level: str | PdlLevel) -> None:
+        """Level of overlap of kernel launch."""
+        if not isinstance(level, PdlLevel):
+            if level not in {"0", "1", "2"}:
+                msg = f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
+                raise TypeError(msg)
+
+        self._set_mojo_define("PDL_LEVEL", int(level))
 
     def _dump_gpu_asm(self, option: bool | str | Path = True):
         """Enables dumping of gpu asm.
