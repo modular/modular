@@ -80,8 +80,8 @@ def test_causal_mask_asm():
         )
         if (
             mask.status(
-                Index[type = DType.uint32](q_idx, k_idx),
-                Index[type = DType.uint32](4, 5),
+                Index[dtype = DType.uint32](q_idx, k_idx),
+                Index[dtype = DType.uint32](4, 5),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
@@ -198,8 +198,8 @@ def test_sliding_window_mask_asm():
         )
         if (
             mask.status(
-                Index[type = DType.uint32](q_idx, k_idx),
-                Index[type = DType.uint32](64, 32),
+                Index[dtype = DType.uint32](q_idx, k_idx),
+                Index[dtype = DType.uint32](64, 32),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
