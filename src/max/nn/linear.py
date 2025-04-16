@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable
 
 import numpy as np
@@ -620,10 +621,20 @@ class MLP(Layer):
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
 
 
+_ACTIVATION_FUNCTIONS = {
+    "silu": ops.silu,
+    "gelu": ops.gelu,
+    "gelu_tanh": partial(ops.gelu, approximate="tanh"),
+    "relu": ops.relu,
+    "tanh": ops.tanh,
+    "sigmoid": ops.sigmoid,
+}
+
+
 class MLPV2(Module):
     """
     Simple multi-layer perceptron composed of three linear layers.
-    Uses SiLU activation function.
+    Defaults to SiLU activation function.
     """
 
     def __init__(
@@ -634,6 +645,7 @@ class MLPV2(Module):
         feed_forward_length: int,
         linear_cls: Callable[..., LinearV2] = LinearV2,
         devices: Sequence[DeviceRef] = (),
+        activation_function: str = "silu",
     ):
         """
         Args:
@@ -646,6 +658,13 @@ class MLPV2(Module):
             devices: Devices to run the `MLP` layer. If multiple are provided,
                 the first device is used instead. Use `DistributedMLP` to use
                 all devices.
+            activation_function: Activation function to use. Options are:
+                - "silu"
+                - "gelu"
+                - "gelu_tanh"
+                - "relu"
+                - "tanh"
+                - "sigmoid"
         """
         super().__init__()
         self.devices = devices
@@ -671,6 +690,8 @@ class MLPV2(Module):
             quantization_encoding=quantization_encoding,
         )
         self.quantization_encoding = quantization_encoding
+        assert activation_function in _ACTIVATION_FUNCTIONS.keys()
+        self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         if (
@@ -690,7 +711,8 @@ class MLPV2(Module):
             )
         if self.quantization_encoding:
             return self.down_proj(
-                ops.silu(self.gate_proj(x)) * self.up_proj(x)  # type: ignore
+                self.activation_function(self.gate_proj(TensorValue(x)))
+                * self.up_proj(TensorValue(x))
             )
         else:
             # Optimization to compute a single matmul by merging the
@@ -706,7 +728,7 @@ class MLPV2(Module):
             gate_out, up_out = ops.split(
                 output, [feed_forward_length, feed_forward_length], axis=1
             )
-            return self.down_proj(ops.silu(gate_out) * up_out)
+            return self.down_proj(self.activation_function(gate_out) * up_out)
 
 
 class DistributedMLP(MLPV2):
