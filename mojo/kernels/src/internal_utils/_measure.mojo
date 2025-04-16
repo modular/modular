@@ -246,14 +246,18 @@ fn cosine[
 
 fn relative_difference[
     dtype: DType, //,
-](u: UnsafePointer[Scalar[dtype]], v: __type_of(u), len: Int,) -> Float64:
+](
+    out: UnsafePointer[Scalar[dtype]],
+    ref_out: __type_of(out),
+    len: Int,
+) -> Float64:
     var sum_abs_diff: Float64 = 0.0
     var sum_abs_ref: Float64 = 0.0
     var size = len
 
     for idx in range(len):
-        var ui = u[idx].cast[DType.float64]()
-        var vi = v[idx].cast[DType.float64]()
+        var ui = out[idx].cast[DType.float64]()
+        var vi = ref_out[idx].cast[DType.float64]()
 
         sum_abs_diff += abs(ui - vi).cast[DType.float64]()
 
