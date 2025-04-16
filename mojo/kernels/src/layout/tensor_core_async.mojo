@@ -734,13 +734,13 @@ struct TensorCoreAsync[
         scale_b: Int = 1,
     ](
         a_smem_tile: LayoutTensor[
-            a_type, _, address_space = AddressSpace.SHARED, *_, **_
+            a_type, _, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         b_smem_tile: LayoutTensor[
-            b_type, _, address_space = AddressSpace.SHARED, *_, **_
+            b_type, _, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         c_reg_tile: LayoutTensor[
-            c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+            c_type, _, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
         wg_idx: Int = 0,
     ):
