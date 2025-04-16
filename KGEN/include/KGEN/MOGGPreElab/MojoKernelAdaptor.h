@@ -99,6 +99,8 @@ using MojoKernelOperandVariant =
                  DevicesContextPtrListOperandAdaptor>;
 
 struct MojoKernelOperandAdaptor {
+  MojoKernelOperandAdaptor() = default;
+
   // The source information which is optional in the case of a return value.
   std::optional<MojoKernelOperandSourceDescriptor> sourceDescriptor;
   // A union between all kinds of supported operands.
@@ -255,7 +257,7 @@ struct MojoKernelFunctionAdaptor {
     for (auto &arg : outputArguments)
       arg.printNested(os, nesting + "  [out] ") << ",\n";
 
-    for (auto arg : inputArguments)
+    for (auto &arg : inputArguments)
       arg.printNested(os, nesting + "  [in]  ") << ",\n";
 
     os << nesting << ")";
