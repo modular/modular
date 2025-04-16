@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Generator, Sequence
-from functools import wraps
 from itertools import product
 from os import PathLike
 from typing import Any, Optional, Union
@@ -159,7 +158,8 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
     return Tensor._from_dlpack(array)
 
 
-@wraps(Tensor.mmap)
+# TODO(MAXPLAT-206): re-enable @wraps
+# @wraps(Tensor.mmap)
 def _mmap(
     filename: PathLike | str,
     dtype: DType,
