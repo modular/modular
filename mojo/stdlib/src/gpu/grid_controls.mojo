@@ -51,9 +51,7 @@ fn _enable_pdl_launch() -> Bool:
     if DEFAULT_GPU < H100:
         return False
 
-    alias level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
-
-    if level == PDLLevel.OFF:
+    if PDLLevel() == PDLLevel.OFF:
         return False
 
     return True
@@ -138,6 +136,11 @@ struct PDLLevel:
     alias OFF = PDLLevel(0)
     alias OVERLAP_AT_END = PDLLevel(1)
     alias OVERLAP_AT_BEGINNING = PDLLevel(2)
+
+    @always_inline
+    fn __init__(out self):
+        """Initialize the PDL level to OFF."""
+        self = PDLLevel(env_get_int["PDL_LEVEL", 1]())
 
     @always_inline
     fn __init__(out self, level: Int):
