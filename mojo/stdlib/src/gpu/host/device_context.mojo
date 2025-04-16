@@ -3784,15 +3784,15 @@ struct DeviceContext(CollectionElement):
         return Int(value)
 
     @always_inline
-    fn is_compatible(self) raises:
+    fn is_compatible(self) -> Bool:
         """Returns True if this device is compatible with MAX.
 
         This method checks whether the current device is compatible with the
         Modular Accelerated Execution (MAX) runtime. It's useful for validating
         that the device can execute the compiled code before attempting operations.
 
-        Raises:
-            If the device is not compatible with MAX.
+        Returns:
+            True if the device is compatible with MAX, False otherwise.
 
         Example:
 
@@ -3800,23 +3800,23 @@ struct DeviceContext(CollectionElement):
         from gpu.host import DeviceContext
 
         var ctx = DeviceContext()
-        try:
-            ctx.is_compatible()  # Verify compatibility
-            # Continue with device operations
-        except:
-            print("Device is not compatible with MAX")
+        print("Device is compatible with MAX:", ctx.is_compatible())
         ```
         """
         # const char * AsyncRT_DeviceContext_isCompatible(const DeviceContext *ctx)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_isCompatible",
-                _CharPtr,
-                _DeviceContextPtr,
-            ](
-                self._handle,
+        try:
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_isCompatible",
+                    _CharPtr,
+                    _DeviceContextPtr,
+                ](
+                    self._handle,
+                )
             )
-        )
+            return True
+        except:
+            return False
 
     @always_inline
     fn id(self) raises -> Int64:
