@@ -773,30 +773,6 @@ fn _integral_type_of[dtype: DType]() -> DType:
     return dtype.invalid
 
 
-@always_inline("nodebug")
-fn _uint_type_of[dtype: DType]() -> DType:
-    """Gets the unsigned integral type which has the same bitwidth as the input
-    type."""
-
-    @parameter
-    if dtype.is_integral() and dtype.is_unsigned():
-        return dtype
-    elif dtype.is_float8() or dtype is DType.int8:
-        return DType.uint8
-    elif dtype.is_half_float() or dtype is DType.int16:
-        return DType.uint16
-    elif (
-        dtype is DType.float32
-        or dtype is DType.tensor_float32
-        or dtype is DType.int32
-    ):
-        return DType.uint32
-    elif dtype is DType.float64 or dtype is DType.int64:
-        return DType.uint64
-
-    return dtype.invalid
-
-
 # ===-------------------------------------------------------------------===#
 # _unsigned_integral_type_of
 # ===-------------------------------------------------------------------===#
@@ -808,7 +784,9 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
     the input type."""
 
     @parameter
-    if dtype.is_integral():
+    if dtype.is_unsigned():
+        return dtype
+    elif dtype.is_integral():
         return _uint_type_of_width[bitwidthof[dtype]()]()
     elif dtype.is_float8():
         return DType.uint8
@@ -854,8 +832,13 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
 @always_inline
 fn _int_type_of_width[width: Int]() -> DType:
     constrained[
-        width == 8 or width == 16 or width == 32 or width == 64,
-        "width must be either 8, 16, 32, or 64",
+        width == 8
+        or width == 16
+        or width == 32
+        or width == 64
+        or width == 128
+        or width == 256,
+        "width must be either 8, 16, 32, 64, 128, or 256",
     ]()
 
     @parameter
@@ -865,8 +848,12 @@ fn _int_type_of_width[width: Int]() -> DType:
         return DType.int16
     elif width == 32:
         return DType.int32
-    else:
+    elif width == 64:
         return DType.int64
+    elif width == 128:
+        return DType.int128
+    else:
+        return DType.int256
 
 
 # ===-------------------------------------------------------------------===#
@@ -878,8 +865,13 @@ fn _int_type_of_width[width: Int]() -> DType:
 @always_inline
 fn _uint_type_of_width[width: Int]() -> DType:
     constrained[
-        width == 8 or width == 16 or width == 32 or width == 64,
-        "width must be either 8, 16, 32, or 64",
+        width == 8
+        or width == 16
+        or width == 32
+        or width == 64
+        or width == 128
+        or width == 256,
+        "width must be either 8, 16, 32, 64, 128, or 256",
     ]()
 
     @parameter
@@ -889,8 +881,12 @@ fn _uint_type_of_width[width: Int]() -> DType:
         return DType.uint16
     elif width == 32:
         return DType.uint32
-    else:
+    elif width == 64:
         return DType.uint64
+    elif width == 128:
+        return DType.uint128
+    else:
+        return DType.uint256
 
 
 # ===-------------------------------------------------------------------===#

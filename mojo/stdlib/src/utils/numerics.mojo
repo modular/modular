@@ -23,7 +23,7 @@ from sys import CompilationTarget, bitwidthof, has_neon, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 
-from builtin.dtype import _integral_type_of, _uint_type_of
+from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from builtin.simd import _simd_apply
 from memory import UnsafePointer, bitcast
 
@@ -54,7 +54,7 @@ struct FPUtils[
     alias integral_type = _integral_type_of[dtype]()
     """The equivalent integer dtype of the float type."""
 
-    alias uint_type = _uint_type_of[dtype]()
+    alias uint_type = _unsigned_integral_type_of[dtype]()
     """The equivalent uint dtype of the float type."""
 
     @staticmethod
