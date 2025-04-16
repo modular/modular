@@ -104,6 +104,48 @@ fn cluster_size[cluster_shape: StaticTuple[Int32, 3]]() -> Int32:
 
 
 @always_inline
+fn promote_to_cuda_cores[
+    accum_type: DType, layout: Layout
+](
+    c_reg_tile: LayoutTensor[
+        accum_type,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        *_, **_,
+    ],
+    final_c_reg_tile: LayoutTensor[
+        accum_type,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        *_, **_,
+    ],
+):
+    constrained[
+        accum_type in (DType.float32, DType.float16),
+        "Only support fp32 and fp16 data type in CUDA Core promotion",
+    ]()
+    constrained[
+        len(layout) == 2, "Only support 2D layout in CUDA Core promotion"
+    ]()
+
+    alias num_mma = c_reg_tile.layout.shape[0].value()
+    alias c_frag_size = c_reg_tile.layout.shape[1].value()
+
+    # CUD Core promotion for fp8 data type increases the precision of the result.
+    # This is a workaround used by cutlass and cuBLAS to ensure the results are as precise as possible.
+    @parameter
+    for mma_id in range(num_mma):
+
+        @parameter
+        for i in range(c_frag_size):
+            final_c_reg_tile[mma_id, i] = rebind[Scalar[accum_type]](
+                final_c_reg_tile[mma_id, i]
+            ) + rebind[Scalar[accum_type]](c_reg_tile[mma_id, i])
+
+
+@always_inline
 fn warp_specialized_gemm_output[
     c_type: DType,
     accum_type: DType,
@@ -428,6 +470,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
     use_tma_store: Bool = False,
+    promotion_frequency: Int = 1,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
@@ -702,7 +745,18 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
-        _ = c_reg_tile.fill(0.0)
+        var final_c_reg_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+
+        @parameter
+        if a_type == DType.float8_e4m3fn:
+            _ = final_c_reg_tile.fill(0.0)
+        else:
+            _ = c_reg_tile.fill(0.0)
 
         @parameter
         for i in range(pipeline_stages):
@@ -717,6 +771,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
+        var fp8_promotion_iter = 0
+
         for _ in range(num_k_iters):
             var read_idx = read_pipeline_states.index()
 
@@ -726,7 +782,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             var b_smem_tile = b_smem_iter.next(read_idx)[]
 
             wgmma_op.arrive()
-            wgmma_op.wgmma[num_consumer](
+            alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
+            wgmma_op.wgmma[num_consumer, scale_c=scale_c](
                 a_smem_tile,
                 b_smem_tile,
                 c_reg_tile,
@@ -743,7 +800,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 if warp_group_thread_idx == 0:
                     _ = empty[read_idx].arrive()
 
+            @parameter
+            if a_type == DType.float8_e4m3fn:
+                fp8_promotion_iter += 1
+                if fp8_promotion_iter == promotion_frequency:
+                    promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+                    fp8_promotion_iter -= promotion_frequency
+
             read_pipeline_states.step()
+
+        # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
+        @parameter
+        if a_type == DType.float8_e4m3fn:
+            if fp8_promotion_iter != 0:
+                promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+
+        var output_reg_tile = final_c_reg_tile if a_type == DType.float8_e4m3fn else c_reg_tile
 
         warp_specialized_gemm_output[
             c_tile_shape = Index(BM, BN),
@@ -756,7 +828,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             c_tma_op,
             c,
             c_smem_tile,
-            c_reg_tile,
+            output_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
             thread_idx.x - WARP_GROUP_SIZE,
@@ -807,6 +879,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
     use_tma_store: Bool = False,
+    promotion_frequency: Int = 1,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
@@ -1082,7 +1155,18 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
-        _ = c_reg_tile.fill(0.0)
+        var final_c_reg_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+
+        @parameter
+        if a_type == DType.float8_e4m3fn:
+            _ = final_c_reg_tile.fill(0.0)
+        else:
+            _ = c_reg_tile.fill(0.0)
 
         @parameter
         for i in range(pipeline_stages):
@@ -1098,7 +1182,14 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
         while work_info.is_valid():
-            _ = c_reg_tile.fill(0.0)
+
+            @parameter
+            if a_type == DType.float8_e4m3fn:
+                _ = final_c_reg_tile.fill(0.0)
+            else:
+                _ = c_reg_tile.fill(0.0)
+
+            var fp8_promotion_iter = 0
 
             var block_y = UInt(Int(ceildiv(work_info.m, BM)))
             var block_x = UInt(Int(ceildiv(work_info.n, BN)))
@@ -1111,7 +1202,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 var b_smem_tile = b_smem_iter.next(read_idx)[]
 
                 wgmma_op.arrive()
-                wgmma_op.wgmma[num_consumer](
+                alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
+                wgmma_op.wgmma[num_consumer, scale_c=scale_c](
                     a_smem_tile,
                     b_smem_tile,
                     c_reg_tile,
@@ -1130,7 +1222,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     if warp_group_thread_idx == 0:
                         _ = empty[read_idx].arrive()
 
+                @parameter
+                if a_type == DType.float8_e4m3fn:
+                    fp8_promotion_iter += 1
+                    if fp8_promotion_iter == promotion_frequency:
+                        promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+                        fp8_promotion_iter -= promotion_frequency
+
                 read_pipeline_states.step()
+
+            # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
+            @parameter
+            if a_type == DType.float8_e4m3fn:
+                if fp8_promotion_iter != 0:
+                    promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+
+            var output_reg_tile = final_c_reg_tile if a_type == DType.float8_e4m3fn else c_reg_tile
 
             warp_specialized_gemm_output[
                 c_tile_shape = Index(BM, BN),
@@ -1143,7 +1250,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 c_tma_op,
                 c,
                 c_smem_tile,
-                c_reg_tile,
+                output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
                 thread_idx.x - WARP_GROUP_SIZE,
@@ -1178,13 +1285,14 @@ fn hopper_matmul_tma_wgmma_kernel[
     a_desc_layout: Layout,
     b_desc_layout: Layout,
     transpose_b: Bool = True,
+    promotion_frequency: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
-    constrained[a_type == b_type, "A and B must have the same data type"]()
+
     alias K = b_layout.shape[1].value()
 
     alias BM = block_tile_shape[0]
@@ -1237,11 +1345,11 @@ fn hopper_matmul_tma_wgmma_kernel[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    _ = c_reg_tile.fill(0.0)
-
     @parameter
     if a_type == DType.float8_e4m3fn:
         _ = final_c_reg_tile.fill(0.0)
+    else:
+        _ = c_reg_tile.fill(0.0)
 
     wgmma_op = TensorCoreAsync[
         accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
@@ -1264,6 +1372,8 @@ fn hopper_matmul_tma_wgmma_kernel[
         mbar[0].init()
 
     barrier()
+
+    var fp8_promotion_iter = 0
 
     for i in range(num_k_iters):
         if thread_idx.x == 0:
@@ -1296,18 +1406,16 @@ fn hopper_matmul_tma_wgmma_kernel[
 
         @parameter
         if a_type == DType.float8_e4m3fn:
-            # CUD Core promotion for fp8 data type increases the precision of the result.
-            # This is a workaround to ensure the result is as precise as possible.
-            @parameter
-            for m_mma in range(num_m_mmas):
+            fp8_promotion_iter += 1
+            if fp8_promotion_iter == promotion_frequency:
+                promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+                fp8_promotion_iter -= promotion_frequency
 
-                @parameter
-                for n_mma in range(num_n_mmas):
-                    alias mma_id = n_mma * num_m_mmas + m_mma
-
-                    @parameter
-                    for i in range(c_frag_size):
-                        final_c_reg_tile[mma_id, i] += c_reg_tile[mma_id, i]
+    # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
+    @parameter
+    if a_type == DType.float8_e4m3fn:
+        if fp8_promotion_iter != 0:
+            promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     warp_id = get_warp_id()
@@ -1468,39 +1576,54 @@ fn _get_c_smem_layout[
     c_type: DType,
     num_pipeline_stages: Int,
 ]() -> Layout:
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    alias BM = Int(block_tile_shape[0])
+    alias BN = Int(block_tile_shape[1])
+    alias BK = Int(block_tile_shape[2])
 
     alias WG_BM = BM
     alias MAX_WG_BN = 128
 
-    alias available_smem_size = H100.shared_memory_per_multiprocessor - 1024
-    alias pipeline_smem_size = Int(num_pipeline_stages) * (
-        BM * BK * sizeof[a_type]()
-        + BN * BK * sizeof[b_type]()
-        + (sizeof[Int64]() * 2)
+    alias available_smem_size = Int(
+        H100.shared_memory_per_multiprocessor - 1024
+    )
+    alias pipeline_smem_size = Int(
+        num_pipeline_stages
+        * (
+            BM * BK * sizeof[a_type]()
+            + BN * BK * sizeof[b_type]()
+            + (sizeof[Int64]() * 2)
+        )
     )
 
-    alias available_c_smem_size = available_smem_size - pipeline_smem_size
+    alias available_c_smem_size = Int(available_smem_size - pipeline_smem_size)
 
-    constrained[
-        available_c_smem_size > 0,
-        "Not enough SMEM to fit the pipeline.",
-    ]()
+    @parameter
+    if available_smem_size > (
+        pipeline_smem_size + (WG_BM * BN // 4 * sizeof[c_type]())
+    ):
 
-    fn _get_max_wg_bn() capturing -> Int:
-        var WG_BN = MAX_WG_BN
-        while available_c_smem_size < WG_BM * WG_BN * sizeof[c_type]():
-            WG_BN //= 2
-        return WG_BN
+        fn _get_max_wg_bn() capturing -> Int:
+            var WG_BN = MAX_WG_BN
+            while available_c_smem_size < WG_BM * WG_BN * sizeof[c_type]():
+                WG_BN //= 2
+            return WG_BN
 
-    constrained[
-        _get_max_wg_bn() >= BN // 4,
-        "WG_BN is too small.",
-    ]()
+        alias max_wg_bn = _get_max_wg_bn()
+        constrained[
+            max_wg_bn >= BN // 4,
+            "WG_BN is too small.",
+        ]()
 
-    return Layout.row_major(WG_BM, _get_max_wg_bn())
+        return Layout.row_major(WG_BM, max_wg_bn)
+    else:
+        constrained[
+            False,
+            (
+                "There is not enough SMEM to fit the pipeline yet alone the"
+                " output tile!"
+            ),
+        ]()
+        return Layout.row_major(0, 0)
 
 
 fn warp_specialize_gemm_with_multicasting[
@@ -1536,6 +1659,17 @@ fn warp_specialize_gemm_with_multicasting[
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
     alias BK = config.block_tile_shape[2]
+
+    constrained[
+        (a_type == b_type == DType.float8_e4m3fn)
+        or (a_type == b_type == DType.bfloat16),
+        "Unsupported input dtype",
+    ]()
+
+    constrained[
+        a_type != DType.float8_e4m3fn or BK == 128,
+        "BK must be 128 for fp8 data type for numerical accuracy correctness",
+    ]()
 
     @parameter
     if grid_shape:
