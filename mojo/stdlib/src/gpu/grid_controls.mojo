@@ -20,7 +20,7 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from sys import has_nvidia_gpu_accelerator
+from sys import has_nvidia_gpu_accelerator, env_get_int
 
 from .host.info import DEFAULT_GPU, H100
 from .host.launch_attribute import (
@@ -49,6 +49,11 @@ fn _enable_pdl_launch() -> Bool:
         return False
 
     if DEFAULT_GPU < H100:
+        return False
+
+    alias level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
+
+    if level == PDLLevel.OFF:
         return False
 
     return True
