@@ -320,11 +320,21 @@ fn _matmul_gpu[
     alias s_type = DType.float32 if (
         a_type == DType.bfloat16 or a_type == DType.float16
     ) else c_type
-    alias matmul_supported_format = (
+
+    alias matmul_supported_format_nvidia = (
         a_type in (DType.float32, DType.bfloat16)
         and b_type in (DType.float32, DType.bfloat16)
         and c_type in (DType.float32, DType.bfloat16)
     )
+
+    alias matmul_supported_format_amd = (
+        a_type == DType.bfloat16
+        and b_type == DType.bfloat16
+        and c_type == DType.bfloat16
+    )
+
+    alias matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
+
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var multi_gemm_cond = (

@@ -58,7 +58,6 @@ struct MMATileBuffers[
     num_k_tiles: Int,
     block_dim: Int,
     block_k_dim: Int,
-    warp_tile_size: Int,
     warp_tile_mmas: Int,
     mma_warp_dim: Int,
     num_mmas: Int,
@@ -84,12 +83,6 @@ struct MMATileBuffers[
         alignment=alignment,
     ]
     var shared_mem_tile: Self.SharedMemTileType
-
-    # Tile view into shared memory for the current warp's portion of the matrix
-    alias WarpTileType = __type_of(
-        Self.SharedMemTileType.tile_type[warp_tile_size, block_k_dim]()
-    )
-    var warp_tile: Self.WarpTileType
 
     # Tile view optimized for matrix multiplication acceleration (MMA) operations
     alias MMATileType = __type_of(
@@ -136,9 +129,6 @@ struct MMATileBuffers[
             k_dim: The K dimension of the matrix (used for global memory offset calculation).
         """
         self.shared_mem_tile = Self.SharedMemTileType.stack_allocation()
-        self.warp_tile = self.shared_mem_tile.tile[warp_tile_size, block_k_dim](
-            warp_id, 0
-        )
         self.mma_tile = self.shared_mem_tile.tile[mma_warp_dim, block_k_dim](
             warp_idx, 0
         )
@@ -146,11 +136,7 @@ struct MMATileBuffers[
         self.register_buffer = Self.RegisterTileType.stack_allocation().split[
             2
         ]()
-        self.global_offset = k_dim * (
-            block_dim * block_idx + warp_tile_size * warp_id
-        )
-
-        # var offset_a = k_dim *(block_m * block_idx.y + warp_id * warp_tile_m()
+        self.global_offset = k_dim * (block_dim * block_idx)
 
     @always_inline
     fn copy_to_shared(self):
@@ -161,10 +147,10 @@ struct MMATileBuffers[
         copy[
             thread_layout=thread_layout,
             swizzle=swizzle,
-            thread_scope = ThreadScope.WARP,
+            thread_scope = ThreadScope.BLOCK,
             row_major=True,
         ](
-            self.warp_tile.vectorize[1, Self.simd_width](),
+            self.shared_mem_tile.vectorize[1, Self.simd_width](),
             self.load_tile.vectorize[1, Self.simd_width](),
         )
 
@@ -180,7 +166,7 @@ struct MMATileBuffers[
         """
         copy_dram_to_local[
             src_thread_layout=thread_layout,
-            thread_scope = ThreadScope.WARP,
+            thread_scope = ThreadScope.BLOCK,
         ](
             self.load_tile.vectorize[1, Self.simd_width](),
             gmem_iter.vectorize[1, Self.simd_width](),
@@ -359,7 +345,7 @@ fn gemm_kernel[
     alias k_group_size = 16 // simd_width
     alias smem_alignment = alignof[SIMD[a_type, simd_width]]()
     alias swizzle = Swizzle(2, 0, 2)
-    alias thread_layout = Layout.row_major(16, 4)
+    alias thread_layout = Layout.row_major(32, 8)
 
     # Warp organization
     alias warps_m = block_m // warp_m
@@ -375,29 +361,15 @@ fn gemm_kernel[
     alias k_tiles_count = block_k // k_tile_size
 
     # Thread tile dimensions within warp
-    alias warp_tile_m = block_m // warps_per_block
-    alias warp_tile_n = block_n // warps_per_block
-    alias warp_tile_m_mmas = warp_tile_m // mma_m
-    alias warp_tile_n_mmas = warp_tile_n // mma_n
-
-    # Validate tiling constraints
-    constrained[
-        warp_tile_m % 16 == 0,
-        "Block M dimension per warp (",
-        String(warp_tile_m),
-        ") must be divisible by 16",
-    ]()
-    constrained[
-        warp_tile_n % 16 == 0,
-        "Block N dimension per warp (",
-        String(warp_tile_n),
-        ") must be divisible by 16",
-    ]()
+    alias warp_tile_m_mmas = warp_m // mma_m
+    alias warp_tile_n_mmas = warp_n // mma_n
 
     # Matrix dimensions from input tensors
     var m_dim = a.dim(0)
     alias n_dim = b.shape[0 if transpose_b else 1]()
     alias k_dim = b.shape[1 if transpose_b else 0]()
+
+    alias num_threads = config.num_threads()
 
     # Thread and warp indices
     var warp_id = get_warp_id()
@@ -405,35 +377,31 @@ fn gemm_kernel[
     # Helper function for shared memory layout
     @always_inline
     @parameter
-    fn get_smem_layout[tile_size: Int, block_size: Int]() -> Layout:
+    fn get_smem_layout[
+        tile_size: Int, block_size: Int, simd_width: Int, threads: Int
+    ]() -> Layout:
         # Calculate the number of tiles in each dimension
-        alias num_tiles = block_size // tile_size
+        alias threads_per_row = block_k // simd_width
+        alias threads_per_block = block_size // warps_per_block
+        alias blocks = warps_per_block
 
-        # K-dimension tiling
-        alias k_tile_dim = k_group_size * mma_k
-        alias num_k_tiles = block_k // k_tile_dim
+        alias ro = blocks
+        alias ri = threads_per_block
+        alias co = 1
+        alias ci = block_k
 
-        # Construct shape dimensions (logical 2D grid of elements)
-        alias shape_dims = IntTuple(
-            IntTuple(tile_size, num_tiles), IntTuple(k_tile_dim, num_k_tiles)
-        )
+        alias shape_dims = IntTuple(IntTuple(ri, ro), ci)
 
-        # Calculate strides for memory layout (physical arrangement)
-        alias k_stride = k_tile_dim
-        alias tile_stride = block_k * tile_size
-        alias k_tile_stride = 1
-        alias main_tile_stride = k_tile_dim * tile_size
+        alias ro_stride = ri * block_k
+        alias ri_stride = block_k
+        alias co_stride = threads
+        alias ci_stride = 1
 
-        alias stride_dims = IntTuple(
-            IntTuple(k_stride, tile_stride),
-            IntTuple(k_tile_stride, main_tile_stride),
-        )
-
+        alias stride_dims = IntTuple(IntTuple(ri_stride, ro_stride), ci_stride)
         return Layout(shape_dims, stride_dims)
 
-    # A (input matrix) memory
     var a_tiles = MMATileBuffers[
-        get_smem_layout[mma_m, block_m](),
+        get_smem_layout[mma_m, block_m, simd_width, num_threads](),
         type=a_type,
         alignment=smem_alignment,
         thread_layout=thread_layout,
@@ -441,7 +409,6 @@ fn gemm_kernel[
         num_k_tiles=k_tiles_count,
         block_dim=block_m,
         block_k_dim=block_k,
-        warp_tile_size=warp_tile_m,
         warp_tile_mmas=warp_tile_m_mmas,
         mma_warp_dim=warp_m,
         num_mmas=mmas_per_warp_m,
@@ -449,12 +416,12 @@ fn gemm_kernel[
 
     # Global memory iterator for matrix A
     var a_gmem_iter = a.tile[block_m, k_dim](block_idx.y, 0).tiled_iterator[
-        warp_tile_m, block_k, axis=1
-    ](warp_id, 0)
+        block_m, block_k, axis=1
+    ](0, 0)
 
     # B (weights matrix) memory
     var b_tiles = MMATileBuffers[
-        get_smem_layout[mma_n, block_n](),
+        get_smem_layout[mma_n, block_n, simd_width, num_threads](),
         type=b_type,
         alignment=smem_alignment,
         thread_layout=thread_layout,
@@ -462,16 +429,15 @@ fn gemm_kernel[
         num_k_tiles=k_tiles_count,
         block_dim=block_n,
         block_k_dim=block_k,
-        warp_tile_size=warp_tile_n,
         warp_tile_mmas=warp_tile_n_mmas,
-        mma_warp_dim = block_n // warps_n,
+        mma_warp_dim=warp_n,
         num_mmas=mmas_per_warp_n,
     ](warp_id, warp_id % warps_n, block_idx.x, k_dim)
 
     # Global memory iterator for matrix B
     var b_gmem_iter = b.tile[block_n, k_dim](block_idx.x, 0).tiled_iterator[
-        warp_tile_n, block_k, axis=1
-    ](warp_id, 0)
+        block_n, block_k, axis=1
+    ](0, 0)
 
     # Accumulation registers for result
     var c_reg_tile = LayoutTensor[
