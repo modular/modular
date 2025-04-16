@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import sqrt
+from memory import UnsafePointer
 
 
 @value
@@ -74,8 +75,6 @@ struct Complex(
     # ===-------------------------------------------------------------------===#
 
     fn __getitem__[idx: Int](ref self) -> ref [self] Float64:
-        from memory import UnsafePointer
-
         constrained[idx in (0, 1), "idx must be 0 or 1"]()
 
         @parameter
@@ -117,7 +116,7 @@ struct Complex(
         return Self(self.re - rhs.re, self.im - rhs.im)
 
     fn __rsub__(self, lhs: Float64) -> Self:
-        return self - lhs
+        return Self(lhs) - self
 
     fn __isub__(mut self, rhs: Self):
         self = self - rhs
