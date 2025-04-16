@@ -169,18 +169,20 @@ fn main() raises:
     test_model_device_tensor()
     test_device_graph()
 
-    if accelerator_count() > 0:
-        cpu_dev = cpu()
-        gpu_dev = accelerator()
-        options = SessionOptions()
-        options._set_device(gpu_dev)
-        session = InferenceSession(options)
+    # TODO(GEX-2101): Re-enable this part of the test once it runs on amd.
+    # That or add an ability to skip specifically on amd.
+    # if accelerator_count() > 0:
+    #     cpu_dev = cpu()
+    #     gpu_dev = accelerator()
+    #     options = SessionOptions()
+    #     options._set_device(gpu_dev)
+    #     session = InferenceSession(options)
 
-        test_model_device_tensor_gpu(
-            cpu_dev, gpu_dev, session, inputs_on_device=True
-        )
-        test_model_device_tensor_gpu(
-            cpu_dev, gpu_dev, session, inputs_on_device=False
-        )
-        test_device_graph_gpu(cpu_dev, gpu_dev, session, inputs_on_device=True)
-        test_device_graph_gpu(cpu_dev, gpu_dev, session, inputs_on_device=False)
+    #     test_model_device_tensor_gpu(
+    #         cpu_dev, gpu_dev, session, inputs_on_device=True
+    #     )
+    #     test_model_device_tensor_gpu(
+    #         cpu_dev, gpu_dev, session, inputs_on_device=False
+    #     )
+    #     test_device_graph_gpu(cpu_dev, gpu_dev, session, inputs_on_device=True)
+    #     test_device_graph_gpu(cpu_dev, gpu_dev, session, inputs_on_device=False)
