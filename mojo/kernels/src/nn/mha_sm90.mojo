@@ -385,11 +385,11 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
         mask_t: MHAMask
     ](self, mask: mask_t, kv_tile_start_row: UInt32) -> TileMaskStatus:
         return mask.status(
-            Index[type = DType.int32](
+            Index[dtype = DType.int32](
                 Int(self.prompt_offset + self.start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[type = DType.int32](Int(Self.BM), Int(Self.BN)),
+            Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
         )
 
 

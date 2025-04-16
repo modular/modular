@@ -768,11 +768,11 @@ fn mha_single_batch[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var mask_status = mask.status(
-            Index[type = DType.uint32](
+            Index[dtype = DType.uint32](
                 Int(q_tile_idx * BM + start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[type = DType.uint32](Int(BM), Int(BN)),
+            Index[dtype = DType.uint32](Int(BM), Int(BN)),
         )
 
         @parameter
@@ -1204,11 +1204,11 @@ fn mha_decoding_single_batch[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var mask_status = mask.status(
-            Index[type = DType.uint32](
+            Index[dtype = DType.uint32](
                 Int(q_tile_idx * BM + start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[type = DType.uint32](Int(BM), Int(BN)),
+            Index[dtype = DType.uint32](Int(BM), Int(BN)),
         )
 
         @parameter

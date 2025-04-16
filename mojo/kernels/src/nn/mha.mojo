@@ -1221,11 +1221,11 @@ fn mha_single_batch[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[type = DType.uint32](
+                Index[dtype = DType.uint32](
                     Int(q_tile_idx * BM + start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[type = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1433,11 +1433,11 @@ fn mha_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[type = DType.uint32](
+                Index[dtype = DType.uint32](
                     Int(q_tile_idx * BM + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[type = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -1876,10 +1876,10 @@ fn mha_single_batch_pipelined[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[type = DType.uint32](
+                Index[dtype = DType.uint32](
                     Int(q_tile_idx * BM + start_pos), Int(kv_tile_start_row)
                 ),
-                Index[type = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -2143,10 +2143,10 @@ fn mha_single_batch_pipelined[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[type = DType.uint32](
+                Index[dtype = DType.uint32](
                     Int(q_tile_idx * BM + start_pos), kv_tile_start_row
                 ),
-                Index[type = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
