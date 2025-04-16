@@ -2,7 +2,6 @@
 title: '@parameter'
 description: Executes a function or if statement at compile time.
 codeTitle: true
-
 ---
 
 You can add the `@parameter` decorator on an `if` or `for` statement to run that
@@ -31,46 +30,49 @@ this will be included in the binary
 ## Parametric `for` statement
 
 You can add the `@parameter` decorator to a `for` loop to create a loop that's
-evaluated at compile time. The loop sequence and induction values must be
-valid parameter expressions (that is, expressions that evaluate at compile
-time).
+"unrolled" at compile time.
 
-This has the effect of "unrolling" the loop.
+The loop sequence and induction values must be valid parameter expressions (that
+is, expressions that evaluate at compile time). For example, if you use
+`for i in range(LIMIT)`, the expression `range(LIMIT)` defines the loop
+sequence. This is a valid parameter expression if `LIMIT` is a parameter, alias,
+or integer literal.
+
+The compiler "unrolls" the loop by replacing the `for` loop with
+`LIMIT` copies of the loop body with different constant `i` values.
+
+You can use run-time expressions in the body of the loop (for example, in the
+following example, the `list`, `threshold`, and `count` variables are all
+run-time values).
 
 ```mojo
-fn parameter_for[max: Int]():
+from collections import List
+from random import rand
+
+def main():
+    alias LIST_SIZE = 128
+
+    var list = List[Float64](length=LIST_SIZE, fill=0)
+    rand(list.unsafe_ptr(), LIST_SIZE)
+
+    var threshold = 0.6
+    var count = 0
+
     @parameter
-    for i in range(max):
-        @parameter
-        if i == 10:
-            print("found 10!")
+    for i in range(LIST_SIZE):
+        if (list[i] > threshold):
+            count += 1
+
+    print(String("{} items over 0.6").format(count))
 ```
+
+The `@parameter for` construct unrolls at the beginning of compilation, which
+might explode the size of the program that still needs to be compiled, depending
+on the amount of code that's unrolled.
 
 Currently, `@parameter for` requires the sequence's `__iter__` method to
 return a `_StridedRangeIterator`, meaning the induction variables must be
-`Int`. The intention is to lift these restrictions in the future.
-
-### Compared to `unroll()`
-
-The Mojo standard library also includes a function called
-[`unroll()`](/mojo/stdlib/utils/loop/unroll) that unrolls a
-given function that you want to call repeatedly, but has some important
-differences when compared to the parametric `for` statement:
-
-- The `@parameter` decorator operates on `for` loop expressions. The
-  `unroll()` function is a higher-order function that takes a parametric closure
-  (see below) and executes it a specified number of times.
-
-- The parametric `for` statement is more versatile, since you can do anything
-  you can do in a `for` statement including: using arbitrary sequences,
-  early-exiting from the loop, skipping iterations with `continue`, and so on.
-
-  By contrast, `unroll()` simply takes a function and a count, and executes
-  the function the specified number of times.
-
-Both `unroll()` and `@parameter for` unroll at the beginning of compilation,
-which might explode the size of the program that still needs to be compiled,
-depending on the amount of code that's unrolled.
+`Int`. The intention is to lift this restriction in the future.
 
 ## Parametric closure
 
