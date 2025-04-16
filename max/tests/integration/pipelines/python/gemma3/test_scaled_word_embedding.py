@@ -13,6 +13,7 @@ from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )
+from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 from transformers.models.gemma3.modeling_gemma3 import (
     Gemma3TextScaledWordEmbedding,
@@ -23,13 +24,14 @@ def generate_torch_outputs(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     embedding_weights: torch.Tensor,
+    embed_scale: float = 1.0,
 ) -> torch.Tensor:
     layer = (
         Gemma3TextScaledWordEmbedding(
             num_embeddings=text_config.vocab_size,
             embedding_dim=text_config.hidden_size,
             padding_idx=text_config.pad_token_id,
-            embed_scale=1.0,
+            embed_scale=embed_scale,
         )
         .to(torch.bfloat16)
         .to("cuda")
@@ -43,6 +45,7 @@ def generate_max_outputs(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     embedding_weights: torch.Tensor,
+    embed_scale: float = 1.0,
 ) -> torch.Tensor:
     layer = ScaledWordEmbedding(
         vocab_size=text_config.vocab_size,
@@ -51,7 +54,7 @@ def generate_max_outputs(
         device=DeviceRef.GPU(),
         quantization_encoding=None,
         name="embeddings",
-        embed_scale=1.0,
+        embed_scale=embed_scale,
     )
 
     # Weights need to be passed as CPU tensors
@@ -74,7 +77,7 @@ def generate_max_outputs(
 
     compiled = session.load(graph, weights_registry=state_dict)
     max_output = compiled.execute(input_tensor.to("cuda"))
-    return torch.from_dlpack(max_output[0]).to(torch.bfloat16)
+    return from_dlpack(max_output[0]).to(torch.bfloat16)
 
 
 def test_scaled_word_embedding(
@@ -82,11 +85,34 @@ def test_scaled_word_embedding(
     input_tensor: torch.Tensor,
     embedding_weights: torch.Tensor,
 ) -> None:
+    """Test ScaledWordEmbedding with default scale (1.0)."""
     torch_output = generate_torch_outputs(
         text_config, input_tensor, embedding_weights
     )
     max_output = generate_max_outputs(
         text_config, input_tensor, embedding_weights
+    )
+
+    torch.testing.assert_close(
+        torch_output,
+        max_output,
+        rtol=1e-3,
+        atol=1e-3,
+    )
+
+
+def test_scaled_word_embedding_with_scale(
+    text_config: Gemma3TextConfig,
+    input_tensor: torch.Tensor,
+    embedding_weights: torch.Tensor,
+) -> None:
+    """Test `ScaledWordEmbedding` with a non-default scale factor."""
+    embed_scale = 0.5
+    torch_output = generate_torch_outputs(
+        text_config, input_tensor, embedding_weights, embed_scale=embed_scale
+    )
+    max_output = generate_max_outputs(
+        text_config, input_tensor, embedding_weights, embed_scale=embed_scale
     )
 
     torch.testing.assert_close(
