@@ -9,6 +9,7 @@ modular_nanobind_extension(
     nanobind_deps = [
         "//SDK/lib/API/python/max/_core/src:modules",
     ],
+    new_link_root = "lib",
     deps = [
         "@llvm-project//llvm:Support",
     ],
