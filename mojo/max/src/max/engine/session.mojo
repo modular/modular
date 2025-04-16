@@ -454,7 +454,8 @@ struct InferenceSession:
         if "cuda" in String(device):
             # This should eventually be a method on the device itself so we can
             # avoid having `session.mojo` depend on CUDA.
-            Accelerator.check_compute_capability(device)
+            if not Accelerator.check_compute_capability(device):
+                raise "Accelerator is not supported by MAX"
         var path = _get_engine_path()
         self._ptr = ArcPointer(_InferenceSessionImpl(path, device))
 

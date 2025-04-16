@@ -92,13 +92,16 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
 
 struct Accelerator:
     @staticmethod
-    fn check_compute_capability(device: Device) raises:
-        """Checks if a device is compatible with MAX. Will raise an exception if
-        CUDA version is not supported."""
+    fn check_compute_capability(device: Device) -> Bool:
+        """Checks if a device is compatible with MAX.
+
+        Returns:
+            True if the device is compatible with MAX, False otherwise.
+        """
         var device_context = call_dylib_func[DeviceContextPtr](
             device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
         )
-        device_context[].is_compatible()
+        return device_context[].is_compatible()
 
     @staticmethod
     fn compile[
