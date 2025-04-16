@@ -2317,6 +2317,7 @@ fn mla_prefill_plan_kernel[
                 )
                 buffer_lengths[chunk_idx] = seq_end_pos % buffer_size
             else:
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
                 buffer_lengths[chunk_idx] = -1
 
 
