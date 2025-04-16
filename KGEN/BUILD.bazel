@@ -213,16 +213,14 @@ td_library(
 
 mlir_nanobind(
     name = "KGENDialectNanobindInc",
-    srcs = [
-        "//KGEN:include/KGEN/KGENDialect/KGEN.td",
-    ],
-    dialect = "KGENDialect",
+    srcs = glob(["include/KGEN/KGENDialect/*.td"]),
     exclude = [
         # BytecodeOpInterface uses internally defined payload types
         "KGEN_ParamConstantOp",
         # Uses `Res<AnyType, " ", [MemAlloc]>` which isn't implemented
         "KGEN_ParamMaterializeOp",
         "KGEN_NoneAttr",  # Can't bind NoneAttr::get for some reason
+        "KGEN_CallOp",  # Can't bind CallOp::setCalleeAttr for some reason
     ],
     output_dir = "include/KGEN/KGENDialect/Nanobind",
     visibility = ["//visibility:public"],
