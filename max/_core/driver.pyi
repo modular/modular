@@ -244,7 +244,7 @@ class Tensor:
         dtype: max._core.dtype.DType,
         shape: Sequence[int],
         device: Device | None = None,
-        on_host: bool | None = None,
+        pinned: bool = False,
     ) -> None: ...
     @overload
     def __init__(
@@ -252,7 +252,7 @@ class Tensor:
         dtype: max._core.dtype.DType,
         shape: Sequence[int],
         stream: DeviceStream,
-        on_host: bool | None = None,
+        pinned: bool = False,
     ) -> None: ...
     @overload
     def __init__(
@@ -427,6 +427,10 @@ class Tensor:
         If the tensor is on the host (CPU), the numpy array aliases the existing memory.
         Otherwise, it is copied to the host device.
         """
+
+    @property
+    def pinned(self) -> bool:
+        """Whether or not the underlying memory is pinned (page-locked)."""
 
     def view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int] | None = None
