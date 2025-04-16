@@ -173,6 +173,8 @@ from nn.topk import top_k
 from nn.topk import top_k_fused_sampling_cpu as _topk_fused_sampling_cpu
 from nn.topk import top_k_shape_impl
 from nn.topk import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
+from nn.toppminp import min_p_sampling as min_p_sampling_cpu
+from nn.toppminp_gpu import min_p_sampling_gpu
 from quantization import (
     Q4sym,
     block_Q4_K,
@@ -8324,6 +8326,48 @@ struct Struct_topk_fused_sampling:
                     Int(K),
                     input_buf,
                     out_idxs_buf,
+                )
+
+
+@compiler.register("min_p_sampling")
+struct Struct_min_p_sampling:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        out_idx_type: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_token_ids: OutputTensor[type=out_idx_type, rank=rank],
+        min_p: Scalar[type],
+        input: InputTensor[type=type, rank=rank],
+        temperature: Scalar[type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_valid_target[target](), "not a valid target"]()
+
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
+        var min_ps_buf = NDBuffer[type, 1, _, 1, 1](
+            UnsafePointer.address_of(min_p)
+        )
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+
+            @parameter
+            if is_cpu[target]():
+                min_p_sampling_cpu(
+                    min_ps_buf, input_buf, out_token_ids_buf, temperature
+                )
+            else:
+                var cuda_ctx = ctx.get_device_context()
+                min_p_sampling_gpu(
+                    cuda_ctx,
+                    min_ps_buf,
+                    input_buf,
+                    out_token_ids_buf,
+                    temperature,
                 )
 
 
