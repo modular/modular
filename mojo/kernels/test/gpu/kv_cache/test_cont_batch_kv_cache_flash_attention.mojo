@@ -198,6 +198,8 @@ def execute_flash_attention[
         ),
         ctx=ctx,
     )
+    random(kv_block_host.tensor)
+    ctx.enqueue_copy(kv_block_device.buffer, kv_block_host.tensor.data)
 
     var lookup_table_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](
