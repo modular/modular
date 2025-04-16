@@ -5,11 +5,34 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
+
+# ===----------------------------------------------------------------------=== #
+# Utilities
+# ===----------------------------------------------------------------------=== #
+
+
+# Thie implementation needs to be in sync with the mojo implementation found in
+# stdlib/utils/numerics.mojo
+def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
+    dtype = x.dtype
+    if dtype.is_float8():
+        return (
+            DType.float32 if preferred_type == DType.float32 else DType.bfloat16
+        )
+    if dtype == DType.float16:
+        return (
+            DType.float32 if preferred_type == DType.float32 else DType.float16
+        )
+    if dtype == DType.bfloat16:
+        return DType.float32
+    return dtype
+
 
 # ===----------------------------------------------------------------------=== #
 # Binary Ops
@@ -653,7 +676,8 @@ def _gelu_quick(x: TensorValue):
     Raises:
         Error: If the symbol doesn't represent a tensor value.
     """
-    return x * sigmoid(x * 1.702)
+    x_cast = x.cast(_accum_type(x))
+    return (x_cast * sigmoid(x_cast * 1.702)).cast(x.dtype)
 
 
 def _gelu_tanh(x: TensorValue):
@@ -674,7 +698,12 @@ def _gelu_tanh(x: TensorValue):
     Raises:
         Error: If the symbol doesn't represent a tensor value.
     """
-    return x * 0.5 * (1.0 + tanh(0.7978845608028654 * (x + 0.044715 * x**3)))
+    x_cast = x.cast(_accum_type(x))
+    return (
+        x_cast
+        * 0.5
+        * (1.0 + tanh(0.7978845608028654 * (x_cast + 0.044715 * x_cast**3)))
+    ).cast(x.dtype)
 
 
 def gelu(x: TensorValue, approximate: str = "none"):
@@ -857,7 +886,8 @@ def silu(x: TensorValue):
     Raises:
         Error: If the symbol doesn't represent a tensor value.
     """
-    return mul(x, sigmoid(x))
+    x_cast = x.cast(_accum_type(x))
+    return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
 
 
 softmax = _elementwise_unary(rmo.mo_softmax)
