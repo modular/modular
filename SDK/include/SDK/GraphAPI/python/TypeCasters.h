@@ -20,11 +20,19 @@
 #include "nanobind/stl/string_view.h"
 #include "nanobind/stl/unique_ptr.h"
 #include "llvm/Support/raw_ostream.h"
+#include <Support/ErrorOr.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/StorageUniquerSupport.h>
+#include <mlir/IR/Value.h>
+#include <type_traits>
+#include <utility>
 
 namespace nb = nanobind;
 
 namespace M::Graph::Python {
 
+/// Let bound types register themselves for type hooks.
 void registerTypeID(mlir::TypeID, const std::type_info *);
 const std::type_info *lookupTypeID(mlir::TypeID);
 
@@ -53,6 +61,26 @@ public:
   NanobindWrapper(T &&value) : value(value) {}
   operator T() { return value; }
 };
+
+/// Nanobind doesn't support multiple inheritance, but we want to correctly
+/// model MLIR Interface types. Conveniently, MLIR interfaces are basically
+/// Python protocols already.
+///
+/// Rather than bind them directly, we create custom type casters and type hooks
+/// that check whether a type matches an interface, and then rely on type hooks
+/// for  downcasting.
+///
+/// For stub eneration, we bind a `Protocol` wrapped type, which then can't
+/// actually be created, but will have the correct types and definitions for the
+/// interface.
+template <typename T>
+class Protocol {};
+
+/// A non-implemented method with a specific signature for nanobind typing.
+template <typename Return, typename... Args>
+Return not_implemented(Args &&...) {
+  throw nb::type_error("not implemented");
+}
 } // namespace M::Graph::Python
 
 namespace NB_NAMESPACE {
@@ -101,11 +129,63 @@ template <typename T>
 constexpr bool is_attribute_interface() {
   return is_attribute_interface_base<T>::value;
 }
+
+/// Trait for detecting subclasses of `mlir::AttributeBase
+template <typename T>
+struct is_type_interface_base {
+private:
+  template <typename C, typename Concrete, typename... Traits>
+  static std::true_type test(const mlir::TypeInterface<Concrete, Traits...> *);
+
+  template <typename C>
+  static std::false_type test(...);
+
+public:
+  using type = decltype(test<T>(std::declval<T *>()));
+  static constexpr bool value = type::value;
+};
+
+/// Trait function for detecting subclasses of `mlir::AttributeBase
+template <typename T>
+constexpr bool is_type_interface() {
+  return is_type_interface_base<T>::value;
+}
 } // namespace
 
 //===----------------------------------------------------------------------===//
 // TypeCasters for LLVM and MLIR types
 //===----------------------------------------------------------------------===//
+
+template <typename T, typename Delegate>
+struct delegate_caster : type_caster_base<T> {
+  using Caster = make_caster<Delegate>;
+  NB_TYPE_CASTER(T, Caster::Name)
+  Caster caster;
+
+  static T convert_to(Delegate &d) {
+    if constexpr (std::is_convertible_v<Delegate, T>) {
+      return d;
+    }
+  }
+
+  static Delegate convert_from(T &t) noexcept {
+    if constexpr (std::is_convertible_v<T, Delegate>) {
+      return t;
+    }
+  }
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (caster.from_python(src, flags, cleanup)) {
+      value = convert_to(caster.value);
+      return true;
+    }
+    return false;
+  }
+  static handle from_cpp(T t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(convert_from(t), policy, cleanup);
+  }
+};
 
 /// Casts object <-> MLIRContext.
 /// Only passes by pointer; we never want to take or store an MLIRContext by
@@ -175,25 +255,8 @@ struct type_caster<::mlir::Location> {
 /// Casts str <-> llvm::StringRef.
 /// Delegate implementation to the `std::string_view` caster.
 template <>
-struct type_caster<::llvm::StringRef> {
-  NB_TYPE_CASTER(::llvm::StringRef, const_name("str"))
-  using Caster = make_caster<std::string_view>;
-  Caster caster;
-
-  bool from_python(handle_t<nb::str> src, uint8_t flags,
-                   cleanup_list *cleanup) noexcept {
-    if (!caster.from_python(src, flags, cleanup)) {
-      return false;
-    }
-    value = caster.value;
-    return true;
-  }
-
-  static handle from_cpp(::llvm::StringRef t, rv_policy policy,
-                         cleanup_list *cleanup) noexcept {
-    return Caster::from_cpp(t, policy, cleanup);
-  }
-};
+struct type_caster<::llvm::StringRef>
+    : delegate_caster<llvm::StringRef, std::string_view> {};
 
 /// Casts int <-> llvm::APInt.
 /// There's likely a _much_ better way to do this by directly passing
@@ -223,6 +286,42 @@ struct type_caster<::llvm::APInt> {
     // longs, which is a spooky and very hard to track down memory safety bug.
     return nb::int_(make_caster<std::string>::from_cpp(base10, policy, cleanup))
         .release();
+  }
+};
+
+/// Casts float <-> llvm::APFloat.
+template <>
+struct type_caster<::llvm::APFloat> {
+  static constexpr auto Name = const_name("float");
+  template <typename T>
+  using Cast = movable_cast_t<llvm::APFloat>;
+  using Caster = make_caster<double>;
+  Caster caster;
+
+  /// Since `APFloat` doesn't have a default constructor, store the value
+  /// as an `optional` until it is successfully cast.
+  std::optional<::llvm::APFloat> value;
+
+  explicit operator ::llvm::APFloat *() { return &*value; }
+  explicit operator ::llvm::APFloat &() { return *value; }
+  explicit operator ::llvm::APFloat &&() { return std::move(*value); }
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (!caster.from_python(src, flags, cleanup)) {
+      return false;
+    }
+    value = llvm::APFloat(caster.value);
+    return true;
+  }
+
+  template <typename T>
+  static constexpr bool can_cast() {
+    return Caster::can_cast<T>();
+  }
+
+  static handle from_cpp(::llvm::APFloat f, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(f.convertToDouble(), policy, cleanup);
   }
 };
 
@@ -293,9 +392,9 @@ template <typename AttributeInterface>
 struct type_caster<
     AttributeInterface,
     std::enable_if_t<is_attribute_interface<AttributeInterface>(), int>> {
-  NB_TYPE_CASTER(AttributeInterface, const_name("\"") +
-                                         type_name<AttributeInterface>() +
-                                         const_name("\""))
+  NB_TYPE_CASTER(
+      AttributeInterface,
+      make_caster<M::Graph::Python::Protocol<AttributeInterface>>::Name)
 
   using Caster = make_caster<mlir::Attribute>;
   Caster caster;
@@ -315,6 +414,65 @@ struct type_caster<
         std::make_unique<::mlir::Attribute>(ar), policy, cleanup);
   }
 };
+
+/// Casts TypeInterface <-> python.
+/// - General type caster for any type interfaces
+/// - Allows any type implementing the interface to be passed Python ->
+/// C++
+/// - Downcasts to the concrete type implementation type when passed C++
+/// -> Python
+template <typename TypeInterface>
+struct type_caster<TypeInterface,
+                   std::enable_if_t<is_type_interface<TypeInterface>(), int>> {
+  NB_TYPE_CASTER(TypeInterface,
+                 make_caster<M::Graph::Python::Protocol<TypeInterface>>::Name)
+
+  using Caster = make_caster<mlir::Type>;
+  Caster caster;
+
+  bool from_python(handle_t<::mlir::Type> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    if (!caster.from_python(src, flags, cleanup))
+      return false;
+    value = ::mlir::dyn_cast_or_null<TypeInterface>(mlir::Type(caster));
+    return bool(value);
+  }
+
+  static handle from_cpp(TypeInterface t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return make_caster<std::unique_ptr<::mlir::Type>>::from_cpp(
+        std::make_unique<::mlir::Type>(t), policy, cleanup);
+  }
+};
+
+template <typename Type>
+struct type_caster<mlir::detail::TypedValue<Type>> {
+  using Caster = make_caster<mlir::Value>;
+  NB_TYPE_CASTER(mlir::detail::TypedValue<Type>,
+                 Caster::Name + const_name("[") + make_caster<Type>::Name +
+                     const_name("]"))
+  Caster caster;
+
+  bool from_python(handle_t<::mlir::Value> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    if (!caster.from_python(src, flags, cleanup))
+      return false;
+    if (!*caster || mlir::isa<Type>((*caster).getType())) {
+      value = mlir::cast<mlir::detail::TypedValue<Type>>(*caster);
+      return true;
+    }
+    return false;
+  }
+
+  static handle from_cpp(mlir::TypedValue<Type> v, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(v, policy, cleanup);
+  }
+};
+
+template <typename Entry>
+struct type_caster<llvm::FailureOr<Entry>>
+    : delegate_caster<llvm::FailureOr<Entry>, std::optional<Entry>> {};
 
 /// Downcast known Attributes to their bound type object.
 /// If we don't know it, return the base Attribute.
@@ -342,6 +500,20 @@ struct type_hook<::mlir::Type> {
   }
 };
 
+/// Downcast known Ops to their bound type object.
+/// If we don't know it, return the base Type.
+template <>
+struct type_hook<::mlir::OpState> {
+  static const std::type_info *get(::mlir::OpState *op) {
+    if (op && *op) {
+      if (auto info = M::Graph::Python::lookupTypeID(
+              op->getOperation()->getRegisteredInfo()->getTypeID()))
+        return info;
+    }
+    return &typeid(::mlir::OpState);
+  }
+};
+
 /// Casts sequence <-> ArrayRef.
 /// This currently copies in each direction.
 /// - For Python -> C++ it's unlikely we could improve this, except in the case
@@ -354,8 +526,7 @@ struct type_caster<::llvm::ArrayRef<Entry>> {
   using Caster = make_caster<Entry>;
   using VecCaster = make_caster<std::vector<Entry>>;
   NB_TYPE_CASTER(::llvm::ArrayRef<Entry>,
-                 const_name("collections.abc.Sequence[") + Caster::Name +
-                     const_name("]"))
+                 const_name("Sequence[") + Caster::Name + const_name("]"))
 
   VecCaster caster;
   bool used = false;
@@ -387,8 +558,7 @@ struct type_caster<::llvm::ArrayRef<Entry>> {
 template <>
 struct type_caster<::llvm::ArrayRef<bool>> {
   using Caster = make_caster<bool>;
-  NB_TYPE_CASTER(::llvm::ArrayRef<bool>,
-                 const_name("collections.abc.Sequence[bool]"))
+  NB_TYPE_CASTER(::llvm::ArrayRef<bool>, const_name("Sequence[bool]"))
 
   Caster caster;
   ::llvm::SmallVector<bool> storage;
@@ -460,6 +630,75 @@ struct type_caster<::mlir::ValueRange> {
   static handle from_cpp(::mlir::ValueRange t, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
     return Caster::VecCaster::from_cpp(t, policy, cleanup);
+  }
+};
+
+/// Casts object <-> mlir::ValueRange.
+/// This makes a copy of the value pointers passing either direction.
+template <>
+struct type_caster<::mlir::ResultRange> {
+  using Caster = make_caster<::mlir::ValueRange>;
+  NB_TYPE_CASTER(::mlir::ResultRange, Caster::Name)
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    return false;
+  }
+
+  static handle from_cpp(::mlir::ResultRange t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    std::vector<mlir::OpResult> vec(t.begin(), t.end());
+    return make_caster<std::vector<mlir::OpResult>>::from_cpp(std::move(vec),
+                                                              policy, cleanup);
+  }
+};
+
+/// Casts object <-> mlir::OperandRange.
+/// This makes a copy of the value pointers passing either direction.
+template <>
+struct type_caster<::mlir::OperandRange> {
+  using Caster = make_caster<mlir::ValueRange>;
+  NB_TYPE_CASTER(::mlir::ValueRange, Caster::Name)
+  Caster caster;
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    return false;
+  }
+  static handle from_cpp(::mlir::OperandRange t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    std::vector<mlir::Value> vec(t.begin(), t.end());
+    return make_caster<std::vector<mlir::Value>>::from_cpp(std::move(vec),
+                                                           policy, cleanup);
+  }
+};
+
+template <typename Return, typename... Args>
+struct type_caster<::llvm::function_ref<Return(Args...)>>
+    : delegate_caster<::llvm::function_ref<Return(Args...)>,
+                      std::function<Return(Args...)>> {};
+
+template <>
+struct type_caster<::llvm::LogicalResult>
+    : delegate_caster<::llvm::LogicalResult, bool> {
+  static bool convert_from(llvm::LogicalResult &result) {
+    return result.succeeded();
+  }
+};
+
+template <>
+struct type_caster<::M::ErrorOrSuccess>
+    : delegate_caster<::M::ErrorOrSuccess, bool> {
+  static bool convert_from(M::ErrorOrSuccess &result) {
+    return !result.isError();
+  }
+};
+
+template <>
+struct type_caster<::llvm::function_ref<mlir::InFlightDiagnostic()>> {
+  NB_TYPE_CASTER(::llvm::function_ref<mlir::InFlightDiagnostic()>,
+                 const_name("DiagnosticHandler"))
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    return false;
   }
 };
 
