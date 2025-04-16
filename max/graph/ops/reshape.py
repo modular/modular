@@ -39,9 +39,6 @@ def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
     Raises:
         ValueError: if input and target shapes' number of elements mismatch.
     """
-    x = TensorValue(x)
-    shape = Shape(shape)
-
     return Graph.current._add_op(
         rmo.reshape, TensorValue(x), new_shape=Shape(shape).to_mlir()
     )[0].tensor

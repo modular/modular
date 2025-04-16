@@ -22,7 +22,7 @@ convenience methods such as
 
 from __future__ import annotations
 
-from . import allreduce
+from . import allreduce, random
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
