@@ -1259,15 +1259,10 @@ modular_shared_library(
     name = "MojoLLDB",
     srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
-    copts = [
-        "-iquoteexternal/",
-    ],
     includes = [],
     local_defines = [
         "MODULAR_BUILDING_LIBRARY",
     ],
-    # These files are copied from LLDB, so ignore our checks.
-    tags = ["no-clang-tidy"],
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",
@@ -1331,9 +1326,6 @@ modular_shared_library(
     hdrs = glob([
         "include/KGEN/MojoJupyter/*.h",
     ]),
-    copts = [
-        "-iquoteexternal/",
-    ],
     local_defines = [
         "MODULAR_BUILDING_JUPYTER_LIBRARY",
     ],
