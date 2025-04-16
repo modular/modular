@@ -364,6 +364,21 @@ private:
     return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), value);
   }
 
+  Type getConvertedScalarType(SIMDType simd) const {
+    return convertType(
+        SIMDType::get(simd.getContext(), /*size=*/1, *simd.getResolvedDType()));
+  }
+
+  Type convertKGENDType(MLIRContext *ctx, KGENDType dtype) const {
+    return getConvertedScalarType(SIMDType::get(ctx, /*size=*/1, dtype));
+  }
+
+  Value extractElement(ConversionPatternRewriter &rewriter, Location loc,
+                       Type resType, Value value, unsigned index) const {
+    return rewriter.create<LLVM::ExtractElementOp>(
+        loc, resType, value, createConstant<uint32_t>(rewriter, loc, index));
+  }
+
   /// Fast conversion of f32 to bf16 on AMDGPU that is not supported by LLVM and
   /// has different handling of NaNs.
   /// The generated sequence has been moved from stdlib (see reference
@@ -372,15 +387,16 @@ private:
   ///   - reduce compile time as stdlib's code won't be parsed and will simply
   ///   be represented by `pop.cast`
   LogicalResult
-  convertF32ToBF16OnAMDGPU(ConversionPatternRewriter &rewriter, CastOp cast,
+  convertF32ToBF16OnAMDGPU(ConversionPatternRewriter &rewriter, CastOp op,
                            Value value, APFloat::Semantics fromFloatSemantics,
                            APFloat::Semantics toFloatSemantics) const {
     assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
            "fast lowering of f32 to bf16 is only supported on AMDGPU");
-    assert(cast.getFastAttr() &&
-           "`fast` attribute must be set on a `pop.cast`");
+    assert(op.getFastAttr() && "`fast` attribute must be set on a `pop.cast`");
 
-    Location loc = cast.getLoc();
+    Location loc = op.getLoc();
+    auto simd = cast<SIMDType>(op.getInput().getType());
+    const uint64_t size = *simd.getResolvedSize();
 
     // This implementation is a faster version for fp32 to bf16 type conversion
     // It is from CK:
@@ -389,46 +405,67 @@ private:
     // previous implementation
     Value roundedBias = createConstant<uint32_t>(
         rewriter, loc, std::numeric_limits<int16_t>::max());
-    Type vecI64 = convertType(
-        SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui64));
-    Value unorderedMask =
-        createInlineAsm(rewriter, loc, "v_cmp_u_f32 $0, $1, $1", "=s,v", vecI64,
-                        {value})
-            .getResult(0);
+    Type vecI64 = convertKGENDType(rewriter.getContext(), KGENDType::ui64);
+    Type bf16Type = getConvertedScalarType(cast<SIMDType>(op.getType()));
+    Type f32Type = getConvertedScalarType(simd);
 
-    Type vecI32 = convertType(
-        SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui32));
-    Value lsb = createInlineAsm(rewriter, loc, "v_bfe_u32 $0, $1, 16, 1",
-                                "=v,v", vecI32, {value})
-                    .getResult(0);
+    // Helper function to convert a single F32 value to BF16
+    auto convertSingleValue = [&](Value value) {
+      Value unorderedMask =
+          createInlineAsm(rewriter, loc, "v_cmp_u_f32 $0, $1, $1", "=s,v",
+                          vecI64, {value})
+              .getResult(0);
 
-    Value roundedVal =
-        createInlineAsm(rewriter, loc, "v_add3_u32 $0, $1, $2, $3", "=v,v,v,v",
-                        vecI32, {value, lsb, roundedBias})
-            .getResult(0);
+      Type vecI32 = convertType(
+          SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui32));
+      Value lsb = createInlineAsm(rewriter, loc, "v_bfe_u32 $0, $1, 16, 1",
+                                  "=v,v", vecI32, {value})
+                      .getResult(0);
 
-    Value nan = createConstant(
-        rewriter, loc,
-        APFloat::getNaN(APFloat::EnumToSemantics(fromFloatSemantics)));
+      Value roundedVal =
+          createInlineAsm(rewriter, loc, "v_add3_u32 $0, $1, $2, $3",
+                          "=v,v,v,v", vecI32, {value, lsb, roundedBias})
+              .getResult(0);
 
-    Value floatBits =
-        createInlineAsm(rewriter, loc, "v_cndmask_b32 $0, $1, $2, $3",
-                        "=v,v,v,s", vecI32, {roundedVal, nan, unorderedMask})
-            .getResult(0);
+      Value nan = createConstant(
+          rewriter, loc,
+          APFloat::getNaN(APFloat::EnumToSemantics(fromFloatSemantics)));
 
-    Value mantissaDiff = createConstant<uint32_t>(
-        rewriter, loc,
-        APFloat::semanticsPrecision(
-            APFloat::EnumToSemantics(fromFloatSemantics)) -
-            APFloat::semanticsPrecision(
-                APFloat::EnumToSemantics(toFloatSemantics)));
-    Value shifted = rewriter.create<LLVM::LShrOp>(loc, floatBits, mantissaDiff);
+      Value floatBits =
+          createInlineAsm(rewriter, loc, "v_cndmask_b32 $0, $1, $2, $3",
+                          "=v,v,v,s", vecI32, {roundedVal, nan, unorderedMask})
+              .getResult(0);
 
-    shifted = rewriter.create<LLVM::TruncOp>(loc, rewriter.getIntegerType(16),
-                                             shifted);
+      Value mantissaDiff = createConstant<uint32_t>(
+          rewriter, loc,
+          APFloat::semanticsPrecision(
+              APFloat::EnumToSemantics(fromFloatSemantics)) -
+              APFloat::semanticsPrecision(
+                  APFloat::EnumToSemantics(toFloatSemantics)));
+      Value shifted =
+          rewriter.create<LLVM::LShrOp>(loc, floatBits, mantissaDiff);
 
-    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
-        cast, convertType(cast.getType()), shifted);
+      shifted = rewriter.create<LLVM::TruncOp>(loc, rewriter.getIntegerType(16),
+                                               shifted);
+
+      return rewriter.create<LLVM::BitcastOp>(loc, bf16Type, shifted);
+    };
+
+    Value res;
+    if (size > 1) {
+      res = rewriter.create<LLVM::UndefOp>(op.getLoc(),
+                                           VectorType::get(size, bf16Type));
+      for (uint32_t i = 0; i < size; ++i) {
+        Value element = extractElement(rewriter, loc, f32Type, value, i);
+        Value converted = convertSingleValue(element);
+        res = rewriter.create<LLVM::InsertElementOp>(
+            loc, res, converted, createConstant<uint32_t>(rewriter, loc, i));
+      }
+    } else {
+      res = convertSingleValue(value);
+    }
+
+    rewriter.replaceOp(op, res);
     return success();
   }
 
@@ -456,17 +493,13 @@ private:
             ? "cvt.rn.satfinite.e4m3x2.f32"
             : "cvt.rn.satfinite.e5m2x2.f32";
 
-    auto extractElement = [&](unsigned index) {
-      return rewriter.create<LLVM::ExtractElementOp>(
-          loc, f32Type, value, createConstant<uint32_t>(rewriter, loc, index));
-    };
     assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
     if (size > 1) {
       Value res = rewriter.create<LLVM::UndefOp>(
           op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(16)));
       for (uint64_t i = 0; i < size; i += 2) {
-        Value firstFp = extractElement(i + 1);
-        Value secondFp = extractElement(i);
+        Value firstFp = extractElement(rewriter, loc, f32Type, value, i + 1);
+        Value secondFp = extractElement(rewriter, loc, f32Type, value, i);
         Value converted =
             createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
                             "=h,f,f", rewriter.getIntegerType(16),
@@ -516,12 +549,6 @@ private:
       // packed f8 as i16.
       value = rewriter.create<LLVM::BitcastOp>(
           loc, VectorType::get(size / 2, ui16Type), value);
-
-      auto extractElement = [&](unsigned index) {
-        return rewriter.create<LLVM::ExtractElementOp>(
-            loc, ui16Type, value,
-            createConstant<uint32_t>(rewriter, loc, index));
-      };
       // Create a vector of I32 to hold the result of the conversion. At the end
       // it will be bitcasted to f16
       Value res = rewriter.create<LLVM::UndefOp>(
@@ -529,7 +556,8 @@ private:
       for (uint64_t i = 0, e = size / 2; i < e; ++i) {
         Value converted =
             createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
-                            rewriter.getIntegerType(32), {extractElement(i)})
+                            rewriter.getIntegerType(32),
+                            {extractElement(rewriter, loc, ui16Type, value, i)})
                 .getResult(0);
         res = rewriter.create<LLVM::InsertElementOp>(
             loc, res, converted, createConstant<uint32_t>(rewriter, loc, i));
@@ -604,8 +632,7 @@ private:
     // Convert F32 to BF16
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
-      if (target.getTriple().isAMDGPU() && cast.getFastAttr() &&
-          (!simd || simd.isScalar())) {
+      if (target.getTriple().isAMDGPU() && cast.getFastAttr()) {
         return convertF32ToBF16OnAMDGPU(rewriter, cast, value,
                                         fromFloatSemantics, toFloatSemantics);
       }
