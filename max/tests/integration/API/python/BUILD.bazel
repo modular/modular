@@ -89,7 +89,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
-        "//ModularFramework/tools/mof",
+        "//ModularFramework/tools/max",
         "//PyTorch:ATenRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",

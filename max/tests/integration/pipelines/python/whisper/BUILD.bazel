@@ -12,7 +12,7 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
     ),
-    data = ["//ModularFramework/tools/mof"],
+    data = ["//ModularFramework/tools/max"],
     ignore_collisions = True,
     tags = [
         "manual",  # TODO(AITLIB-293)

@@ -10,7 +10,7 @@ modular_py_test(
     name = "qwen2_5vl",
     size = "large",
     srcs = glob(["**/test_*.py"]),
-    data = ["//ModularFramework/tools/mof"],
+    data = ["//ModularFramework/tools/max"],
     tags = [
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",

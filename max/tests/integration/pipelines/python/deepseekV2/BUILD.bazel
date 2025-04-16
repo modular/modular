@@ -30,7 +30,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
-        "//ModularFramework/tools/mof",
+        "//ModularFramework/tools/max",
         "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
     ],
     env = {
