@@ -144,8 +144,7 @@ def _format_big_duration(seconds: float) -> str:
     pieces = []
     if hours:
         pieces.append(f"{hours}h")
-        if minutes:
-            pieces.append(f"{minutes:02d}m")
+        pieces.append(f"{minutes:02d}m")
     elif minutes:
         pieces.append(f"{minutes}m")
     pieces.append(f"{int(math.floor(seconds)):02d}s")
