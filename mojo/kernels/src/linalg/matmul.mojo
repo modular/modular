@@ -853,6 +853,7 @@ fn matmul[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                _trace_description=_trace_description,
             ](c, a, b, ctx.value())
 
 

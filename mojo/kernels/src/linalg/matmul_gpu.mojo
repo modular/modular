@@ -303,6 +303,7 @@ fn _matmul_gpu[
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
+    _trace_description: StaticString = "",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -359,6 +360,7 @@ fn _matmul_gpu[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             config=config,
+            _trace_description=_trace_description,
         ](c, a, b, ctx)
 
     @parameter

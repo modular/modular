@@ -321,6 +321,8 @@ fn matmul[
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
 ) raises:
     """
     Matmul using the vendor BLAS library. With a global handle.
@@ -335,6 +337,8 @@ fn matmul[
         c_row_major=c_row_major,
         transpose_a=transpose_a,
         transpose_b=transpose_b,
+        alpha=alpha,
+        beta=beta,
     )
 
 
@@ -350,6 +354,8 @@ fn matmul[
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
 ) raises:
     @parameter
     if handle.resolved_backend is Backend.CUBLAS:
@@ -362,6 +368,8 @@ fn matmul[
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
         )
     elif handle.resolved_backend is Backend.ROCBLAS:
         _rocblas_matmul[use_tf32=use_tf32](
@@ -373,6 +381,8 @@ fn matmul[
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
         )
     elif handle.resolved_backend is Backend.CUBLASLT:
         _cublasLt_matmul(
@@ -384,6 +394,8 @@ fn matmul[
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
         )
     elif handle.resolved_backend is Backend.HIPBLASLT:
         _hipblasLt_matmul(
@@ -395,6 +407,8 @@ fn matmul[
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
         )
     else:
         raise String(
@@ -421,6 +435,8 @@ fn _cublas_matmul[
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
 ) raises:
     constrained[
         a.type == b.type
@@ -434,9 +450,6 @@ fn _cublas_matmul[
     var M = c.dim[0]()
     var N = c.dim[1]()
     var K = a.dim[1]() if not transpose_a else a.dim[0]()
-
-    var alpha = Float32(1.0)
-    var beta = Float32(0.0)
 
     var compute_type: ComputeType
 
@@ -569,6 +582,8 @@ fn _rocblas_matmul[
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
 ) raises:
     constrained[
         a.type == b.type
@@ -582,9 +597,6 @@ fn _rocblas_matmul[
     var M = c.dim[0]()
     var N = c.dim[1]()
     var K = a.dim[1]() if not transpose_a else a.dim[0]()
-
-    var alpha = Float32(1.0)
-    var beta = Float32(0.0)
 
     var compute_type = _rocblas.types.DataType(DType.float32)
 
@@ -680,6 +692,8 @@ fn _cublasLt_matmul(
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
 ) raises:
     alias a_type = a.type
     alias b_type = b.type
@@ -741,9 +755,6 @@ fn _cublasLt_matmul(
     # TN format required for FP8
     var transa = cublasOperation_t.CUBLAS_OP_T
     var transb = cublasOperation_t.CUBLAS_OP_N
-
-    var alpha = Float32(1.0)
-    var beta = Float32(0.0)
 
     # create operation desciriptor; see cublasLtMatmulDescAttributes_t for details about defaults;
     var compute_desc = cublasLtMatmulDesc_t()
@@ -931,6 +942,8 @@ fn _hipblasLt_matmul(
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
 ) raises:
     constrained[
         (
@@ -1028,9 +1041,6 @@ fn _hipblasLt_matmul(
 
     if returnedResults == 0:
         raise Error("No algorithm was found!")
-
-    var alpha = Float32(1.0)
-    var beta = Float32(0.0)
 
     _check_hipblas_error(
         hipblasLtMatmul(
