@@ -25,6 +25,8 @@ def argsort(x: TensorValue, ascending: bool = True) -> TensorValue:
     Returns:
         A tensor of indices of the same shape as the input tensor.
     """
+    if x.rank != 1:
+        raise ValueError("argsort only implemented for input tensors of rank 1")
     return custom(
         "mx.argsort",
         [x],
