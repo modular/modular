@@ -17,7 +17,7 @@ all ops) also implements various dunder methods to support operations between
 symbols, such as `+` add, `*` multiply, and `@` matmul, plus convenience
 methods such as
 [`reshape()`](/max/api/mojo/graph/symbol/Symbol#reshape) and
-[`swapaxes()`](/max/api/mojo/graph/symbol/Symbol#swapaxes). """
+[`swapaxes()`](/max/api/mojo/graph/symbol/Symbol#swapaxes)."""
 
 from .casting import (
     broadcast_to,
