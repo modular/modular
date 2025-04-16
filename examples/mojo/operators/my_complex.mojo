@@ -15,6 +15,7 @@ from math import sqrt
 
 
 @value
+@register_passable("trivial")
 struct Complex(
     Boolable,
     EqualityComparable,
@@ -38,19 +39,21 @@ struct Complex(
     # Initializers
     # ===-------------------------------------------------------------------===#
 
+    @implicit
     fn __init__(out self, re: Float64, im: Float64 = 0.0):
         self.re = re
         self.im = im
+
+    @implicit
+    fn __init__(out self, re: IntLiteral):
+        self = Self(Float64(re))
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
     fn __repr__(self) -> String:
-        result = (
-            "Complex(re = " + repr(self.re) + ", im = " + repr(self.im) + ")"
-        )
-        return result
+        return String("Complex(re = ", self.re, ", im = ", self.im, ")")
 
     fn __str__(self) -> String:
         return String.write(self)
@@ -64,120 +67,85 @@ struct Complex(
         writer.write("i)")
 
     fn __bool__(self) -> Bool:
-        return self.re != 0 and self.im != 0
+        return self != 0
 
     # ===-------------------------------------------------------------------===#
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(self, idx: Int) raises -> Float64:
-        if idx == 0:
-            return self.re
-        elif idx == 1:
-            return self.im
-        else:
-            raise "index out of bounds"
+    fn __getitem__[idx: Int](ref self) -> ref [self] Float64:
+        from memory import UnsafePointer
 
-    fn __setitem__(mut self, idx: Int, value: Float64) raises:
+        constrained[idx in (0, 1), "idx must be 0 or 1"]()
+
+        @parameter
         if idx == 0:
-            self.re = value
-        elif idx == 1:
-            self.im = value
+            var p = UnsafePointer(to=self.re).origin_cast[
+                origin = __origin_of(self)
+            ]()
+            return p[]
         else:
-            raise "index out of bounds"
+            var p = UnsafePointer(to=self.im).origin_cast[
+                origin = __origin_of(self)
+            ]()
+            return p[]
 
     # ===-------------------------------------------------------------------===#
     # Unary arithmetic operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __neg__(self) -> Self:
+    fn __neg__(self) -> Self:
         return Self(-self.re, -self.im)
 
-    def __pos__(self) -> Self:
+    fn __pos__(self) -> Self:
         return self
 
     # ===-------------------------------------------------------------------===#
     # Binary arithmetic operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __add__(self, rhs: Self) -> Self:
+    fn __add__(self, rhs: Self) -> Self:
         return Self(self.re + rhs.re, self.im + rhs.im)
 
-    def __add__(self, rhs: Float64) -> Self:
-        return Self(self.re + rhs, self.im)
+    fn __radd__(self, lhs: Float64) -> Self:
+        return self + lhs
 
-    def __radd__(self, lhs: Float64) -> Self:
-        return Self(self.re + lhs, self.im)
+    fn __iadd__(mut self, rhs: Self):
+        self = self + rhs
 
-    def __iadd__(mut self, rhs: Self):
-        self.re += rhs.re
-        self.im += rhs.im
-
-    def __iadd__(mut self, rhs: Float64):
-        self.re += rhs
-
-    def __sub__(self, rhs: Self) -> Self:
+    fn __sub__(self, rhs: Self) -> Self:
         return Self(self.re - rhs.re, self.im - rhs.im)
 
-    def __sub__(self, rhs: Float64) -> Self:
-        return Self(self.re - rhs, self.im)
+    fn __rsub__(self, lhs: Float64) -> Self:
+        return self - lhs
 
-    def __rsub__(self, lhs: Float64) -> Self:
-        return Self(lhs - self.re, -self.im)
+    fn __isub__(mut self, rhs: Self):
+        self = self - rhs
 
-    def __isub__(mut self, rhs: Self):
-        self.re -= rhs.re
-        self.im -= rhs.im
-
-    def __isub__(mut self, rhs: Float64):
-        self.re -= rhs
-
-    def __mul__(self, rhs: Self) -> Self:
+    fn __mul__(self, rhs: Self) -> Self:
         return Self(
             self.re * rhs.re - self.im * rhs.im,
             self.re * rhs.im + self.im * rhs.re,
         )
 
-    def __mul__(self, rhs: Float64) -> Self:
-        return Self(self.re * rhs, self.im * rhs)
+    fn __rmul__(self, lhs: Float64) -> Self:
+        return self * lhs
 
-    def __rmul__(self, lhs: Float64) -> Self:
-        return Self(lhs * self.re, lhs * self.im)
+    fn __imul__(mut self, rhs: Self):
+        self = self * rhs
 
-    def __imul__(mut self, rhs: Self):
-        new_re = self.re * rhs.re - self.im * rhs.im
-        new_im = self.re * rhs.im + self.im * rhs.re
-        self.re = new_re
-        self.im = new_im
-
-    def __imul__(mut self, rhs: Float64):
-        self.re *= rhs
-        self.im *= rhs
-
-    def __truediv__(self, rhs: Self) -> Self:
+    fn __truediv__(self, rhs: Self) -> Self:
         denom = rhs.squared_norm()
         return Self(
             (self.re * rhs.re + self.im * rhs.im) / denom,
             (self.im * rhs.re - self.re * rhs.im) / denom,
         )
 
-    def __truediv__(self, rhs: Float64) -> Self:
-        return Self(self.re / rhs, self.im / rhs)
+    fn __rtruediv__(self, lhs: Float64) -> Self:
+        return Self(lhs) / self
 
-    def __rtruediv__(self, lhs: Float64) -> Self:
-        denom = self.squared_norm()
-        return Self((lhs * self.re) / denom, (-lhs * self.im) / denom)
-
-    def __itruediv__(mut self, rhs: Self):
-        denom = rhs.squared_norm()
-        new_re = (self.re * rhs.re + self.im * rhs.im) / denom
-        new_im = (self.im * rhs.re - self.re * rhs.im) / denom
-        self.re = new_re
-        self.im = new_im
-
-    def __itruediv__(mut self, rhs: Float64):
-        self.re /= rhs
-        self.im /= rhs
+    fn __itruediv__(mut self, rhs: Self):
+        self = self / rhs
 
     # ===-------------------------------------------------------------------===#
     # Equality comparison operator dunders
@@ -187,14 +155,14 @@ struct Complex(
         return self.re == other.re and self.im == other.im
 
     fn __ne__(self, other: Self) -> Bool:
-        return self.re != other.re and self.im != other.im
+        return not self == other
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def squared_norm(self) -> Float64:
+    fn squared_norm(self) -> Float64:
         return self.re * self.re + self.im * self.im
 
-    def norm(self) -> Float64:
+    fn norm(self) -> Float64:
         return sqrt(self.squared_norm())

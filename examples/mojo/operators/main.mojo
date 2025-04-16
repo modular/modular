@@ -19,24 +19,24 @@ from my_complex import Complex
 def main():
     # Examples of creating Complex instances
     c1 = Complex(-1.2, 6.5)
-    print(StaticString("c1: Real: {}; Imaginary: {}").format(c1.re, c1.im))
+    print("c1 =", repr(c1))
 
     c2 = Complex(3.14159)
-    print(StaticString("c2: Real: {}; Imaginary: {}").format(c2.re, c2.im))
+    print("c2 =", repr(c2))
 
     print()
 
     # Examples of using Complex values with String(), repr(), and print()
     c3 = Complex(3.14159, -2.71828)
-    print("c3 =", c3)
+    print("c3 =", repr(c3))
     var msg = String("The value is: ", c3)
     print(msg)
-    print(StaticString("{!r}").format(c3))
+    print(repr(c3))
 
     print()
 
     # Examples of using Complex indexing
-    print(StaticString("c2[0]: {}; c2[1]: {}").format(c2[0], c2[1]))
+    print("c2[0]", c2[0], "; c2[1]", c2[1])
     c2[0] = 2.71828
     c2[1] = 42
     print("c2[0] = 2.71828; c2[1] = 42; c2:", c2)
