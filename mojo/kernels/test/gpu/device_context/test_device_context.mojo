@@ -26,7 +26,11 @@ fn vec_func(
     out[tid] = in0[tid] + in1[tid] + supplement
 
 
-fn test(ctx: DeviceContext) raises:
+def test_is_compatible(ctx: DeviceContext):
+    assert_equal(ctx.is_compatible(), True)
+
+
+fn test_basic(ctx: DeviceContext) raises:
     alias length = 1024
 
     # Host memory buffers for input and output data
@@ -131,7 +135,8 @@ def main():
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
         # Execute our test with the context
-        test(ctx)
+        test_is_compatible(ctx)
+        test_basic(ctx)
         test_move(ctx)
         test_id(ctx)
         test_print(ctx)
