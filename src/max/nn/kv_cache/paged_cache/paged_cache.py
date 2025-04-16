@@ -463,7 +463,7 @@ class PagedKVCacheManager(KVCacheManager):
                     shape=self.block_shape(self.total_num_host_pages),  # type: ignore
                     dtype=self.params.dtype,
                     device=self.gpu_device,
-                    on_host=True,
+                    pinned=True,
                 )
             else:
                 # Use normal pageable memory when there is no GPU device.
