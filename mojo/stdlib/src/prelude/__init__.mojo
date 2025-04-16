@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements the prelude package.  This package provide the public entities
-  that are automatically imported into every Mojo program.
+that are automatically imported into every Mojo program.
 """
 
 from collections import InlineArray, KeyElement, List, Optional
