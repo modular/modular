@@ -89,7 +89,7 @@ def mock_huggingface_config(func):
 def mock_huggingface_hub_repo_exists_with_retry(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        with patch("huggingface_hub.repo_exists", return_value=True):
+        with patch("huggingface_hub.revision_exists", return_value=True):
             return func(*args, **kwargs)
 
     return wrapper
