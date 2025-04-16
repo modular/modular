@@ -193,8 +193,11 @@ fn test_hopper_fp8_matmul0_tma_wgmma[
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
 
+    # Both cutlass and cuBLAS promote output every 4 WGMMA instructions.
+    # The threshold is set to a very low value to find potential changes to cutlass/cublas strategies.
+    # If these tests fail, then it means that the cublas is doing something different.
     assert_with_measure[relative_difference](
-        c_host_ref.tensor, c_host.tensor, threshold=0.00001
+        c_host.tensor, c_host_ref.tensor, threshold=0.00001
     )
 
     alias rtol = 0.0001
