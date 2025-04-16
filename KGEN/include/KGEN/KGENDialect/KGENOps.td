@@ -1142,9 +1142,6 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
 // StageClosureOp
 //===----------------------------------------------------------------------===//
 
-// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
-def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
-
 def KGEN_StageClosureOp : KGENOp<"stage_closure",
   [Pure, FunctionLike, DebugInfo_InlinedSubprogramScoped]
 >{

@@ -918,10 +918,7 @@ modular_nanobind_library(
 
 mlir_nanobind(
     name = "MDialectNanobindInc",
-    srcs = [
-        "//Support:include/Support/MDialect/M.td",
-    ],
-    dialect = "MDialect",
+    srcs = glob(["include/Support/MDialect/*.td"]),
     output_dir = "include/Support/MDialect/Nanobind",
     visibility = ["//visibility:public"],
     deps = [
