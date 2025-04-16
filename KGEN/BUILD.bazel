@@ -1262,7 +1262,6 @@ modular_shared_library(
     srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
     copts = [
-        "-fvisibility=default",
         "-iquoteexternal/",
     ],
     includes = [],
@@ -1291,8 +1290,8 @@ modular_shared_library(
 )
 
 genrule(
-    name = "gen_maptlotlib_initialization_script",
-    outs = ["gen_maptlotlib_initialization_tool.py"],
+    name = "gen_matplotlib_initialization_script",
+    outs = ["gen_matplotlib_initialization_tool.py"],
     cmd = """
 cat > $(OUTS) <<EOF
 import sys
@@ -1307,12 +1306,12 @@ EOF
 )
 
 modular_py_binary(
-    name = "gen_maptlotlib_initialization_tool",
-    srcs = [":gen_maptlotlib_initialization_script"],
+    name = "gen_matplotlib_initialization_tool",
+    srcs = [":gen_matplotlib_initialization_script"],
 )
 
 genrule(
-    name = "gen_maptlotlib_initialization",
+    name = "gen_matplotlib_initialization",
     srcs = [
         "lib/MojoJupyter/MatplotlibInitialization.h.in",
         "lib/MojoJupyter/matplotlib_backend.py",
@@ -1320,22 +1319,21 @@ genrule(
     ],
     outs = ["MojoJupyter/MatplotlibInitialization.h"],
     cmd = """
-$(location :gen_maptlotlib_initialization_tool) \
+$(location :gen_matplotlib_initialization_tool) \
     $(location :lib/MojoJupyter/MatplotlibInitialization.h.in) \
     $(location :lib/MojoJupyter/enable_matplotlib.py) \
     $(location :lib/MojoJupyter/matplotlib_backend.py) > $(OUTS)
 """,
-    tools = [":gen_maptlotlib_initialization_tool"],
+    tools = [":gen_matplotlib_initialization_tool"],
 )
 
 modular_shared_library(
     name = "MojoJupyter",
-    srcs = glob(["lib/MojoJupyter/*.cpp"]) + [":gen_maptlotlib_initialization"],
+    srcs = glob(["lib/MojoJupyter/*.cpp"]) + [":gen_matplotlib_initialization"],
     hdrs = glob([
         "include/KGEN/MojoJupyter/*.h",
     ]),
     copts = [
-        "-fvisibility=default",
         "-iquoteexternal/",
     ],
     local_defines = [
