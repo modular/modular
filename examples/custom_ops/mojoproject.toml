@@ -1,6 +1,6 @@
 [project]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "pytorch", "https://conda.modular.com/max-nightly/"]
 description = "An example of extending a graph with a custom Mojo operation"
 name = "Custom Operations"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
@@ -15,7 +15,7 @@ fused_attention = { cmd = "python fused_attention.py" }
 matrix_multiplication = { cmd = "python matrix_multiplication.py" }
 histogram = { cmd = "python histogram.py" }
 benchmark = { cmd = "mojo benchmarks.mojo" }
-whisper = {cmd = "python whisper.py" }
+whisper = { cmd = "python whisper.py" }
 test = { depends-on = [
   "addition",
   "mandelbrot",
@@ -30,3 +30,24 @@ test = { depends-on = [
 [dependencies]
 python = ">=3.9,<3.13"
 max = ">=24.6.0.dev2024090821"
+
+# Dependencies needed for the `whisper` example
+
+transformers = "*"
+datasets = "*"
+
+[target.linux-64.dependencies]
+pytorch = {version = ">=2.5.0,<=2.6.0", channel = "pytorch"}
+
+[target.osx-arm64.dependencies]
+pytorch = {version = ">=2.5.0,<=2.6.0", channel = "pytorch"}
+
+# Linux aarch64 wheels are not available in Conda yet.
+# https://github.com/pytorch/pytorch/issues/134117
+# We prefer the Conda version since for some reason it is faster, at least on Linux-x64.
+# See PT-482
+[target.linux-aarch64.pypi-dependencies]
+torch = ">=2.5.0,<=2.6.0"
+
+[pypi-options]
+extra-index-urls = ["https://download.pytorch.org/whl/cpu"]
