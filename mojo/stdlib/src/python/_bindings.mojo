@@ -32,8 +32,6 @@ from python._cpython import (
 )
 from python.python import _get_global_python_itf
 
-alias MLIRKGENString = __mlir_type.`!kgen.string`
-
 
 trait ConvertibleFromPython(CollectionElement):
     """Denotes a type that can attempt construction from a read-only Python
@@ -304,7 +302,7 @@ fn py_c_function_wrapper[
 
 
 fn check_arguments_arity(
-    func_name: MLIRKGENString,
+    func_name: StringSlice,
     arity: Int,
     args: TypedPythonObject["Tuple"],
 ) raises:
@@ -326,7 +324,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() missing {} required positional {}",
-                    StaticString(func_name),
+                    func_name,
                     missing_arg_count,
                     _pluralize(missing_arg_count, "argument", "arguments"),
                 )
@@ -335,7 +333,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() takes {} positional {} but {} were given",
-                    StaticString(func_name),
+                    func_name,
                     arity,
                     _pluralize(arity, "argument", "arguments"),
                     arg_count,
