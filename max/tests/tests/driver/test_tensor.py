@@ -15,7 +15,7 @@ import pytest
 import torch
 from hypothesis import given
 from hypothesis import strategies as st
-from max.driver import CPU, Tensor
+from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 
 
@@ -271,6 +271,21 @@ def test_host_host_copy() -> None:
     assert tensor2[0].item() == 0
     assert tensor2[1].item() == 2
     assert tensor2[2].item() == 3
+
+
+def test_pinning() -> None:
+    # We're not actually testing the behavior of pinning here,
+    # just the construction and accessor.
+    assert not Tensor(DType.int32, (1, 1), device=CPU()).pinned
+    assert Tensor(DType.int32, (1, 1), device=CPU(), pinned=True).pinned
+
+    if accelerator_count():
+        tensor = Tensor(DType.int32, (1, 1), device=CPU())
+        gpu_tensor = tensor.to(Accelerator())
+        assert not gpu_tensor.pinned
+        # I don't actually know what the behavior _should_ be here, but
+        # testing what we actually do for clarity.
+        assert not gpu_tensor.to(CPU()).pinned
 
 
 DLPACK_DTYPES = [
