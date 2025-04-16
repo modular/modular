@@ -17,7 +17,6 @@ from math import align_down, ceildiv
 from os import abort
 from sys import (
     bitwidthof,
-    env_get_int,
     is_nvidia_gpu,
     num_physical_cores,
     simdwidthof,
@@ -1670,14 +1669,12 @@ fn _elementwise_impl_gpu[
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
-        alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
-
         @parameter
-        if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+        if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
         @parameter
-        if pdl_level > PDLLevel.OFF:
+        if PDLLevel() > PDLLevel.OFF:
             wait_on_dependent_grids()
 
         for idx in range(
@@ -1714,7 +1711,7 @@ fn _elementwise_impl_gpu[
             func[1, rank](index_tup)
 
         @parameter
-        if pdl_level == PDLLevel.OVERLAP_AT_END:
+        if PDLLevel() == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
     if shape[rank - 1] % simd_width == 0:

@@ -32,7 +32,6 @@ from memory import stack_allocation
 from utils import IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from sys import env_get_int
 
 
 @always_inline
@@ -300,14 +299,12 @@ fn reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
-
     @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
     @parameter
-    if pdl_level > PDLLevel.OFF:
+    if PDLLevel() > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # grid stride loop over rows
@@ -339,7 +336,7 @@ fn reduce_kernel[
             output_fn[type, 1, rank](row_coords, row_accum_cast)
 
     @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_END:
+    if PDLLevel() == PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
 
