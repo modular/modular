@@ -216,9 +216,12 @@ def main():
         print("This example is only available for GPUs at the moment.")
         return
 
+    # Get the path to our Mojo custom ops
+    mojo_kernels = Path(__file__).parent / "kernels"
+
     inference_session = engine.InferenceSession(
         devices=[Accelerator()],
-        custom_extensions=Path(__file__).parent / "kernels.mojopkg",
+        custom_extensions=[mojo_kernels],
     )
     with torch.no_grad():
         mtorch.register_custom_ops(inference_session)
