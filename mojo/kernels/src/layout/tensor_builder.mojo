@@ -212,7 +212,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[type = res.__layout_int_type](shape0.value, shape1.value)
+                Index[dtype = res.__layout_int_type](shape0.value, shape1.value)
             )
         )
 
@@ -240,7 +240,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[type = res.__layout_int_type](
+                Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value
                 )
             )
@@ -274,7 +274,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[type = res.__layout_int_type](
+                Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
@@ -310,7 +310,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[type = res.__layout_int_type](
+                Index[dtype = res.__layout_int_type](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -364,7 +364,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[type = res.__layout_int_type](shape0.value, shape1.value)
+                Index[dtype = res.__layout_int_type](shape0.value, shape1.value)
             )
         )
 
@@ -392,7 +392,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[type = res.__layout_int_type](
+                Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value
                 )
             )
@@ -426,7 +426,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[type = res.__layout_int_type](
+                Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
@@ -462,7 +462,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[type = res.__layout_int_type](
+                Index[dtype = res.__layout_int_type](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -575,7 +575,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[type = res.__layout_int_type](shape0.value)
+                Index[dtype = res.__layout_int_type](shape0.value)
             )
         )
 
