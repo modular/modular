@@ -75,6 +75,8 @@ from layout.tma_async import (
 from linalg.matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
+    producer_main_loop,
+    consumer_main_loop,
     warp_specialized_gemm_output,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
@@ -400,11 +402,6 @@ fn grouped_matmul_kernel[
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
-    alias a_tma_load_size = a_desc_layout.size()
-    alias b_tma_load_size = b_desc_layout.size()
-    alias a_tma_rows = a_desc_layout.shape[0].value()
-    alias b_tma_rows = b_desc_layout.shape[0].value()
-
     alias K = b_layout.shape[1].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -420,10 +417,6 @@ fn grouped_matmul_kernel[
 
     alias accum_type = get_accum_type[a_type]()
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     alias use_cluster = cluster_size[cluster_shape]() > 1
 
@@ -536,70 +529,34 @@ fn grouped_matmul_kernel[
         alias num_regs = 24 if num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
         if warp_group_thread_idx == 0 and lane_predicate:
-            var multicast_column_mask = 0
-
-            @parameter
-            for i in range(Int(CLUSTER_M)):
-                multicast_column_mask |= 1 << (i * CLUSTER_N)
-
-            var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
-                rank_m * CLUSTER_N
-            )
-
             var write_pipeline_states = PipelineState[pipeline_stages]()
-            for i in range(num_k_iters):
-                var write_idx = write_pipeline_states.index()
 
-                empty[write_idx].wait(write_pipeline_states.phase())
+            var m_coord = block_idx.y * BM if CLUSTER_N > 1 else UInt(
+                Int(a_start_row)
+            ) + UInt(block_idx_swizzle[1]) * BM
 
-                var a_smem_tile = a_smem_iter.next(write_idx)[]
-                var b_smem_tile = b_smem_iter.next(write_idx)[]
+            var n_coord = block_idx.x * BN if CLUSTER_M > 1 else UInt(
+                Int(b_start_row)
+            ) + UInt(block_idx_swizzle[0]) * BN
 
-                full[write_idx].expect_bytes(expected_bytes)
-
-                @parameter
-                if CLUSTER_N > 1:
-                    if rank_n == 0:
-                        a_tma_op.async_multicast_load(
-                            a_smem_tile,
-                            full[write_idx],
-                            (UInt(i) * BK, block_idx.y * BM),
-                            UInt16(multicast_row_mask),
-                        )
-
-                else:
-                    a_tma_op.async_copy(
-                        a_smem_tile,
-                        full[write_idx],
-                        (
-                            UInt(i) * BK,
-                            UInt(Int(a_start_row))
-                            + UInt(block_idx_swizzle[1]) * BM,
-                        ),
-                    )
-
-                @parameter
-                if CLUSTER_M > 1:
-                    if rank_m == 0:
-                        b_tma_op.async_multicast_load(
-                            b_smem_tile,
-                            full[write_idx],
-                            (UInt(i) * BK, block_idx.x * BN),
-                            UInt16(multicast_column_mask << rank_n),
-                        )
-
-                else:
-                    b_tma_op.async_copy(
-                        b_smem_tile,
-                        full[write_idx],
-                        (
-                            UInt(i) * BK,
-                            UInt(Int(b_start_row))
-                            + UInt(block_idx_swizzle[0]) * BN,
-                        ),
-                    )
-
-                write_pipeline_states.step()
+            producer_main_loop[
+                block_tile_shape=block_tile_shape,
+                cluster_shape=cluster_shape,
+                partitioned_multicast=False,
+            ](
+                a_tma_op,
+                b_tma_op,
+                a_smem_iter,
+                b_smem_iter,
+                num_k_iters,
+                m_coord,
+                n_coord,
+                rank_n,
+                rank_m,
+                write_pipeline_states,
+                empty,
+                full,
+            )
 
     else:
 
@@ -613,6 +570,13 @@ fn grouped_matmul_kernel[
         var local_warp_group_idx = warp_group_idx - 1
 
         var c_reg_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+
+        var dummy_c_reg_tile = LayoutTensor[
             accum_type,
             Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
             MutableAnyOrigin,
@@ -634,33 +598,22 @@ fn grouped_matmul_kernel[
 
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
-        for _ in range(num_k_iters):
-            var read_idx = read_pipeline_states.index()
-
-            full[read_idx].wait(read_pipeline_states.phase())
-
-            var a_smem_tile = a_smem_iter.next(read_idx)[]
-            var b_smem_tile = b_smem_iter.next(read_idx)[]
-
-            wgmma_op.arrive()
-            wgmma_op.wgmma[num_consumer](
-                a_smem_tile,
-                b_smem_tile,
-                c_reg_tile,
-                local_warp_group_idx,
-            )
-            wgmma_op.commit_group()
-            wgmma_op.wait_group()
-
-            @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[read_idx].arrive()
-
-            read_pipeline_states.step()
+        consumer_main_loop[
+            cluster_shape=cluster_shape,
+            num_consumer=num_consumer,
+        ](
+            dummy_c_reg_tile,
+            c_reg_tile,
+            a_smem_iter,
+            b_smem_iter,
+            read_pipeline_states,
+            full,
+            empty,
+            wgmma_op,
+            num_k_iters,
+            local_warp_group_idx,
+            warp_group_thread_idx,
+        )
 
         # C layout for current expert
         alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))

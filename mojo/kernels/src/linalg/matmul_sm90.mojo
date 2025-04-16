@@ -7,6 +7,7 @@ from collections import OptionalReg
 from math import ceildiv
 from pathlib import Path
 from sys import alignof, env_get_int, simdwidthof, sizeof
+from memory import UnsafePointer
 
 import linalg.vendor_blas
 from buffer.buffer import NDBuffer
@@ -143,6 +144,273 @@ fn promote_to_cuda_cores[
             final_c_reg_tile[mma_id, i] = rebind[Scalar[accum_type]](
                 final_c_reg_tile[mma_id, i]
             ) + rebind[Scalar[accum_type]](c_reg_tile[mma_id, i])
+
+
+@always_inline
+fn producer_main_loop[
+    a_type: DType,
+    b_type: DType,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    a_smem_layout: Layout,
+    b_smem_layout: Layout,
+    a_desc_layout: Layout,
+    b_desc_layout: Layout,
+    pipeline_stages: Int,
+    /,
+    *,
+    block_tile_shape: IndexList[3],
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    partitioned_multicast: Bool = False,
+](
+    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
+    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_smem_iter: LayoutTensorIter[
+        a_type,
+        a_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128, **_,
+    ],
+    b_smem_iter: LayoutTensorIter[
+        b_type,
+        b_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128, **_,
+    ],
+    num_k_iters: Int,
+    m_coord: UInt,
+    n_coord: UInt,
+    rank_n: UInt,
+    rank_m: UInt,
+    mut write_pipeline_states: PipelineState[pipeline_stages],
+    empty_mbar: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    full_mbar: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+):
+    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias expected_bytes = a_expected_bytes + b_expected_bytes
+
+    alias a_tma_load_size = a_desc_layout.size()
+    alias b_tma_load_size = b_desc_layout.size()
+    alias a_tma_rows = a_desc_layout.shape[0].value()
+    alias b_tma_rows = b_desc_layout.shape[0].value()
+
+    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
+    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    var multicast_column_mask = 0
+
+    @parameter
+    for i in range(Int(CLUSTER_M)):
+        multicast_column_mask |= 1 << (i * CLUSTER_N)
+
+    var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
+
+    for i in range(num_k_iters):
+        var write_idx = write_pipeline_states.index()
+
+        empty_mbar[write_idx].wait(write_pipeline_states.phase())
+
+        var a_smem_tile = a_smem_iter.next(write_idx)[]
+        var b_smem_tile = b_smem_iter.next(write_idx)[]
+
+        full_mbar[write_idx].expect_bytes(expected_bytes)
+
+        @parameter
+        if CLUSTER_N > 1:
+
+            @parameter
+            if partitioned_multicast:
+                var a_gmem_slice_coord = m_coord + Int(rank_n) * a_tma_rows
+                var a_smem_slice = __type_of(a_smem_tile)(
+                    a_smem_tile.ptr + rank_n * a_tma_load_size
+                )
+
+                a_tma_op.async_multicast_load(
+                    a_smem_slice,
+                    full_mbar[write_idx],
+                    (UInt(i) * BK, a_gmem_slice_coord),
+                    UInt16(multicast_row_mask),
+                )
+
+            else:
+                if rank_n == 0:
+                    a_tma_op.async_multicast_load(
+                        a_smem_tile,
+                        full_mbar[write_idx],
+                        (UInt(i) * BK, m_coord),
+                        UInt16(multicast_row_mask),
+                    )
+
+        else:
+            a_tma_op.async_copy(
+                a_smem_tile,
+                full_mbar[write_idx],
+                (UInt(i) * BK, m_coord),
+            )
+
+        @parameter
+        if CLUSTER_M > 1:
+
+            @parameter
+            if partitioned_multicast:
+                var b_gmem_slice_coord = n_coord + Int(rank_m) * b_tma_rows
+                var b_smem_slice = __type_of(b_smem_tile)(
+                    b_smem_tile.ptr + rank_m * b_tma_load_size
+                )
+
+                b_tma_op.async_multicast_load(
+                    b_smem_slice,
+                    full_mbar[write_idx],
+                    (UInt(i) * BK, b_gmem_slice_coord),
+                    UInt16(multicast_column_mask << rank_n),
+                )
+
+            else:
+                if rank_m == 0:
+                    b_tma_op.async_multicast_load(
+                        b_smem_tile,
+                        full_mbar[write_idx],
+                        (UInt(i) * BK, n_coord),
+                        UInt16(multicast_column_mask << rank_n),
+                    )
+
+        else:
+            b_tma_op.async_copy(
+                b_smem_tile,
+                full_mbar[write_idx],
+                (UInt(i) * BK, n_coord),
+            )
+
+        write_pipeline_states.step()
+
+
+@always_inline
+fn consumer_main_loop[
+    accum_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_reg_layout: Layout,
+    a_smem_layout: Layout,
+    b_smem_layout: Layout,
+    wgmma_shape: IndexList[3],
+    a_swizzle: TensorMapSwizzle,
+    b_swizzle: TensorMapSwizzle,
+    transpose_b: Bool,
+    pipeline_stages: Int,
+    /,
+    *,
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    promotion_frequency: Int = 1,
+    num_consumer: Int = 1,
+](
+    final_c_reg_tile: LayoutTensor[
+        accum_type,
+        c_reg_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL, **_,
+    ],
+    c_reg_tile: LayoutTensor[
+        accum_type,
+        c_reg_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL, **_,
+    ],
+    a_smem_iter: LayoutTensorIter[
+        a_type,
+        a_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+        *_, **_,
+    ],
+    b_smem_iter: LayoutTensorIter[
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+        *_, **_,
+    ],
+    mut read_pipeline_states: PipelineState[pipeline_stages],
+    full: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    empty: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    wgmma_op: TensorCoreAsync[
+        accum_type,
+        a_type,
+        b_type,
+        wgmma_shape,
+        a_swizzle,
+        b_swizzle,
+        transpose_b,
+    ],
+    num_k_iters: Int,
+    local_warp_group_idx: UInt,
+    warp_group_thread_idx: UInt,
+):
+    alias CLUSTER_SIZE = cluster_size[cluster_shape]()
+
+    @parameter
+    if a_type == DType.float8_e4m3fn:
+        _ = final_c_reg_tile.fill(0.0)
+    else:
+        _ = c_reg_tile.fill(0.0)
+
+    var fp8_promotion_iter = 0
+
+    for i in range(num_k_iters):
+        var read_idx = read_pipeline_states.index()
+
+        full[read_idx].wait(read_pipeline_states.phase())
+
+        var a_smem_tile = a_smem_iter.next(read_idx)[]
+        var b_smem_tile = b_smem_iter.next(read_idx)[]
+
+        wgmma_op.arrive()
+        alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
+        wgmma_op.wgmma[num_consumer, scale_c=scale_c](
+            a_smem_tile,
+            b_smem_tile,
+            c_reg_tile,
+            local_warp_group_idx,
+        )
+        wgmma_op.commit_group()
+        wgmma_op.wait_group()
+
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            if warp_group_thread_idx < UInt(Int(CLUSTER_SIZE)):
+                _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
+        else:
+            if warp_group_thread_idx == 0:
+                _ = empty[read_idx].arrive()
+
+        @parameter
+        if a_type == DType.float8_e4m3fn:
+            fp8_promotion_iter += 1
+            if fp8_promotion_iter == promotion_frequency:
+                promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+                fp8_promotion_iter -= promotion_frequency
+
+        read_pipeline_states.step()
+
+    # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
+    @parameter
+    if a_type == DType.float8_e4m3fn:
+        if fp8_promotion_iter != 0:
+            promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
 
 @always_inline
@@ -486,11 +754,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
-    alias a_tma_load_size = a_desc_layout.size()
-    alias b_tma_load_size = b_desc_layout.size()
-    alias a_tma_rows = a_desc_layout.shape[0].value()
-    alias b_tma_rows = b_desc_layout.shape[0].value()
-
     alias K = b_layout.shape[1].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -633,99 +896,29 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         alias num_regs = 24 if num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
         if warp_group_thread_idx == 0 and lane_predicate:
-            var multicast_column_mask = 0
-
-            @parameter
-            for i in range(Int(CLUSTER_M)):
-                multicast_column_mask |= 1 << (i * CLUSTER_N)
-
-            var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
-                rank_m * CLUSTER_N
-            )
-
             var write_pipeline_states = PipelineState[pipeline_stages]()
-            for i in range(num_k_iters):
-                var write_idx = write_pipeline_states.index()
 
-                empty[write_idx].wait(write_pipeline_states.phase())
+            var m_coord = block_idx_swizzle[1] * BM
+            var n_coord = block_idx_swizzle[0] * BN
 
-                var a_smem_tile = a_smem_iter.next(write_idx)[]
-                var b_smem_tile = b_smem_iter.next(write_idx)[]
-
-                full[write_idx].expect_bytes(expected_bytes)
-
-                @parameter
-                if CLUSTER_N > 1:
-
-                    @parameter
-                    if partitioned_multicast:
-                        var a_gmem_slice_coord = block_idx.y * BM + Int(
-                            rank_n
-                        ) * a_tma_rows
-                        var a_smem_slice = __type_of(a_smem_tile)(
-                            a_smem_tile.ptr + rank_n * a_tma_load_size
-                        )
-
-                        a_tma_op.async_multicast_load(
-                            a_smem_slice,
-                            full[write_idx],
-                            (UInt(i) * BK, a_gmem_slice_coord),
-                            UInt16(multicast_row_mask),
-                        )
-
-                    else:
-                        if rank_n == 0:
-                            a_tma_op.async_multicast_load(
-                                a_smem_tile,
-                                full[write_idx],
-                                (UInt(i) * BK, block_idx.y * BM),
-                                UInt16(multicast_row_mask),
-                            )
-
-                else:
-                    a_tma_op.async_copy(
-                        a_smem_tile,
-                        full[write_idx],
-                        (UInt(i) * BK, UInt(block_idx_swizzle[1]) * BM),
-                    )
-
-                @parameter
-                if CLUSTER_M > 1:
-
-                    @parameter
-                    if partitioned_multicast:
-                        var b_gmem_slice_coord = block_idx.x * BN + Int(
-                            rank_m
-                        ) * b_tma_rows
-                        var b_smem_slice = __type_of(b_smem_tile)(
-                            b_smem_tile.ptr + rank_m * b_tma_load_size
-                        )
-
-                        b_tma_op.async_multicast_load(
-                            b_smem_slice,
-                            full[write_idx],
-                            (UInt(i) * BK, b_gmem_slice_coord),
-                            UInt16(multicast_column_mask << rank_n),
-                        )
-
-                    else:
-                        if rank_m == 0:
-                            b_tma_op.async_multicast_load(
-                                b_smem_tile,
-                                full[write_idx],
-                                (UInt(i) * BK, block_idx.x * BN),
-                                UInt16(multicast_column_mask << rank_n),
-                            )
-
-                else:
-                    b_tma_op.async_copy(
-                        b_smem_tile,
-                        full[write_idx],
-                        # (UInt(i) * BK, block_idx.x * BN),
-                        (UInt(i) * BK, UInt(block_idx_swizzle[0]) * BN),
-                    )
-
-                write_pipeline_states.step()
+            producer_main_loop[
+                block_tile_shape=block_tile_shape,
+                cluster_shape=cluster_shape,
+                partitioned_multicast=partitioned_multicast,
+            ](
+                a_tma_op,
+                b_tma_op,
+                a_smem_iter,
+                b_smem_iter,
+                num_k_iters,
+                m_coord,
+                n_coord,
+                rank_n,
+                rank_m,
+                write_pipeline_states,
+                empty,
+                full,
+            )
 
     else:
 
@@ -753,12 +946,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         ].stack_allocation()
 
         @parameter
-        if a_type == DType.float8_e4m3fn:
-            _ = final_c_reg_tile.fill(0.0)
-        else:
-            _ = c_reg_tile.fill(0.0)
-
-        @parameter
         for i in range(pipeline_stages):
 
             @parameter
@@ -771,49 +958,23 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
-        var fp8_promotion_iter = 0
-
-        for _ in range(num_k_iters):
-            var read_idx = read_pipeline_states.index()
-
-            full[read_idx].wait(read_pipeline_states.phase())
-
-            var a_smem_tile = a_smem_iter.next(read_idx)[]
-            var b_smem_tile = b_smem_iter.next(read_idx)[]
-
-            wgmma_op.arrive()
-            alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
-            wgmma_op.wgmma[num_consumer, scale_c=scale_c](
-                a_smem_tile,
-                b_smem_tile,
-                c_reg_tile,
-                local_warp_group_idx,
-            )
-            wgmma_op.commit_group()
-            wgmma_op.wait_group()
-
-            @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[read_idx].arrive()
-
-            @parameter
-            if a_type == DType.float8_e4m3fn:
-                fp8_promotion_iter += 1
-                if fp8_promotion_iter == promotion_frequency:
-                    promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
-                    fp8_promotion_iter -= promotion_frequency
-
-            read_pipeline_states.step()
-
-        # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
-        @parameter
-        if a_type == DType.float8_e4m3fn:
-            if fp8_promotion_iter != 0:
-                promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
+        consumer_main_loop[
+            cluster_shape=cluster_shape,
+            promotion_frequency=promotion_frequency,
+            num_consumer=num_consumer,
+        ](
+            final_c_reg_tile,
+            c_reg_tile,
+            a_smem_iter,
+            b_smem_iter,
+            read_pipeline_states,
+            full,
+            empty,
+            wgmma_op,
+            num_k_iters,
+            local_warp_group_idx,
+            warp_group_thread_idx,
+        )
 
         var output_reg_tile = final_c_reg_tile if a_type == DType.float8_e4m3fn else c_reg_tile
 
@@ -896,11 +1057,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
-    alias a_tma_load_size = a_desc_layout.size()
-    alias b_tma_load_size = b_desc_layout.size()
-    alias a_tma_rows = a_desc_layout.shape[0].value()
-    alias b_tma_rows = b_desc_layout.shape[0].value()
-
     alias K = b_layout.shape[1].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -935,10 +1091,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     alias accum_type = get_accum_type[a_type]()
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     alias use_cluster = cluster_size[cluster_shape]() > 1
 
@@ -1039,102 +1191,30 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         alias num_regs = 24 if num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
         if warp_group_thread_idx == 0 and lane_predicate:
-            var multicast_column_mask = 0
-
-            @parameter
-            for i in range(Int(CLUSTER_M)):
-                multicast_column_mask |= 1 << (i * CLUSTER_N)
-
-            var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
-                rank_m * CLUSTER_N
-            )
-
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
             while work_info.is_valid():
-                var m_coord = UInt(Int(work_info.m))
-                var n_coord = UInt(Int(work_info.n))
-                for i in range(num_k_iters):
-                    var write_idx = write_pipeline_states.index()
+                var m_coord = work_info.m
+                var n_coord = work_info.n
 
-                    empty[write_idx].wait(write_pipeline_states.phase())
-
-                    var a_smem_tile = a_smem_iter.next(write_idx)[]
-                    var b_smem_tile = b_smem_iter.next(write_idx)[]
-
-                    full[write_idx].expect_bytes(expected_bytes)
-
-                    @parameter
-                    if CLUSTER_N > 1:
-
-                        @parameter
-                        if partitioned_multicast:
-                            var a_gmem_slice_coord = m_coord + Int(
-                                rank_n
-                            ) * a_tma_rows
-                            var a_smem_slice = __type_of(a_smem_tile)(
-                                a_smem_tile.ptr + rank_n * a_tma_load_size
-                            )
-
-                            a_tma_op.async_multicast_load(
-                                a_smem_slice,
-                                full[write_idx],
-                                (UInt(i) * BK, a_gmem_slice_coord),
-                                UInt16(multicast_row_mask),
-                            )
-
-                        else:
-                            if rank_n == 0:
-                                a_tma_op.async_multicast_load(
-                                    a_smem_tile,
-                                    full[write_idx],
-                                    (UInt(i) * BK, m_coord),
-                                    UInt16(multicast_row_mask),
-                                )
-
-                    else:
-                        a_tma_op.async_copy(
-                            a_smem_tile,
-                            full[write_idx],
-                            (UInt(i) * BK, m_coord),
-                        )
-
-                    @parameter
-                    if CLUSTER_M > 1:
-
-                        @parameter
-                        if partitioned_multicast:
-                            var b_gmem_slice_coord = n_coord + Int(
-                                rank_m
-                            ) * b_tma_rows
-                            var b_smem_slice = __type_of(b_smem_tile)(
-                                b_smem_tile.ptr + rank_m * b_tma_load_size
-                            )
-
-                            b_tma_op.async_multicast_load(
-                                b_smem_slice,
-                                full[write_idx],
-                                (UInt(i) * BK, b_gmem_slice_coord),
-                                UInt16(multicast_column_mask << rank_n),
-                            )
-
-                        else:
-                            if rank_m == 0:
-                                b_tma_op.async_multicast_load(
-                                    b_smem_tile,
-                                    full[write_idx],
-                                    (UInt(i) * BK, n_coord),
-                                    UInt16(multicast_column_mask << rank_n),
-                                )
-
-                    else:
-                        b_tma_op.async_copy(
-                            b_smem_tile,
-                            full[write_idx],
-                            (UInt(i) * BK, n_coord),
-                        )
-
-                    write_pipeline_states.step()
+                producer_main_loop[
+                    block_tile_shape=block_tile_shape,
+                    cluster_shape=cluster_shape,
+                    partitioned_multicast=partitioned_multicast,
+                ](
+                    a_tma_op,
+                    b_tma_op,
+                    a_smem_iter,
+                    b_smem_iter,
+                    num_k_iters,
+                    UInt(Int(m_coord)),
+                    UInt(Int(n_coord)),
+                    rank_n,
+                    rank_m,
+                    write_pipeline_states,
+                    empty,
+                    full,
+                )
                 work_info = scheduler.fetch_next_work()
 
     else:
@@ -1182,61 +1262,26 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
         while work_info.is_valid():
-
-            @parameter
-            if a_type == DType.float8_e4m3fn:
-                _ = final_c_reg_tile.fill(0.0)
-            else:
-                _ = c_reg_tile.fill(0.0)
-
-            var fp8_promotion_iter = 0
+            consumer_main_loop[
+                cluster_shape=cluster_shape,
+                promotion_frequency=promotion_frequency,
+                num_consumer=num_consumer,
+            ](
+                final_c_reg_tile,
+                c_reg_tile,
+                a_smem_iter,
+                b_smem_iter,
+                read_pipeline_states,
+                full,
+                empty,
+                wgmma_op,
+                num_k_iters,
+                local_warp_group_idx,
+                warp_group_thread_idx,
+            )
 
             var block_y = UInt(Int(ceildiv(work_info.m, BM)))
             var block_x = UInt(Int(ceildiv(work_info.n, BN)))
-            for i in range(num_k_iters):
-                var read_idx = read_pipeline_states.index()
-
-                full[read_idx].wait(read_pipeline_states.phase())
-
-                var a_smem_tile = a_smem_iter.next(read_idx)[]
-                var b_smem_tile = b_smem_iter.next(read_idx)[]
-
-                wgmma_op.arrive()
-                alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
-                wgmma_op.wgmma[num_consumer, scale_c=scale_c](
-                    a_smem_tile,
-                    b_smem_tile,
-                    c_reg_tile,
-                    local_warp_group_idx,
-                )
-                wgmma_op.commit_group()
-                wgmma_op.wait_group()
-
-                @parameter
-                if cluster_size[cluster_shape]() > 1:
-                    if warp_group_thread_idx < CLUSTER_SIZE:
-                        _ = empty[read_idx].arrive_cluster(
-                            warp_group_thread_idx
-                        )
-                else:
-                    if warp_group_thread_idx == 0:
-                        _ = empty[read_idx].arrive()
-
-                @parameter
-                if a_type == DType.float8_e4m3fn:
-                    fp8_promotion_iter += 1
-                    if fp8_promotion_iter == promotion_frequency:
-                        promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
-                        fp8_promotion_iter -= promotion_frequency
-
-                read_pipeline_states.step()
-
-            # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
-            @parameter
-            if a_type == DType.float8_e4m3fn:
-                if fp8_promotion_iter != 0:
-                    promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
-
             var output_reg_tile = final_c_reg_tile if a_type == DType.float8_e4m3fn else c_reg_tile
 
             warp_specialized_gemm_output[
