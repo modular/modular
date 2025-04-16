@@ -438,7 +438,11 @@ class FakeModel:
 
         fake_model = self
 
-        def mock_enqueue_block_copy(self, copy_op: BlockCopyOp) -> Any:
+        def mock_enqueue_block_copy(
+            self,
+            copy_op: BlockCopyOp,
+            _use_auxillary_stream_for_d2h: bool = False,
+        ) -> Any:
             assert copy_op.block_copy_type == BlockCopyType.D2D_COW
             block_src = copy_op.src.bid
             block_dst = copy_op.dst.bid
