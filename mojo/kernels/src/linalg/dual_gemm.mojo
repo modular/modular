@@ -476,9 +476,11 @@ fn multistage_dual_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        Index[type = DType.uint32](block_idx.x, block_idx.y),
-        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index[type = DType.uint32](block_idx.x, block_idx.y)
+        Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+        Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if swizzle_block else Index[dtype = DType.uint32](
+        block_idx.x, block_idx.y
+    )
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)

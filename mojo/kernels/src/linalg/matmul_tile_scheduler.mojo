@@ -85,7 +85,7 @@ struct TileScheduler[
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
-    alias wave_shape = Index[type = DType.uint32](
+    alias wave_shape = Index[dtype = DType.uint32](
         tile_shape[0] * grid_shape[1], tile_shape[1] * grid_shape[0]
     )
     # This has to match the grid dimension for the kernel launch.
@@ -146,14 +146,14 @@ struct TileScheduler[
     @always_inline
     fn _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
         # Grid dim as if there is no persist kernel
-        logical_grid_dim = Index[type = DType.uint32](
+        logical_grid_dim = Index[dtype = DType.uint32](
             ceildiv(self.prob_shape[1], tile_shape[1]),
             ceildiv(self.prob_shape[0], tile_shape[0]),
         )
 
         by, bx = divmod(UInt(Int(self.idx)), UInt(Int(logical_grid_dim[0])))
         block_xy_swizzle = block_swizzle(
-            Index[type = DType.uint32](bx, by), logical_grid_dim
+            Index[dtype = DType.uint32](bx, by), logical_grid_dim
         )
 
         m = UInt(block_xy_swizzle[1] * tile_shape[0])

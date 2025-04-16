@@ -421,9 +421,9 @@ fn grouped_matmul_kernel[
     alias use_cluster = cluster_size[cluster_shape]() > 1
 
     var block_idx_swizzle = block_swizzle(
-        Index[type = DType.uint32](block_idx.x, block_idx.y),
-        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
-    ) if not use_cluster else Index[type = DType.uint32](
+        Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+        Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if not use_cluster else Index[dtype = DType.uint32](
         block_idx.x, block_idx.y
     )
 
@@ -630,8 +630,8 @@ fn grouped_matmul_kernel[
             element_type = c_gmem_type.layout_int_type,
             linear_idx_type = c_gmem_type.linear_idx_type,
         ](
-            Index[type = c_gmem_type.layout_int_type](M, N),
-            Index[type = c_gmem_type.linear_idx_type](N, 1),
+            Index[dtype = c_gmem_type.layout_int_type](M, N),
+            Index[dtype = c_gmem_type.linear_idx_type](N, 1),
         )
 
         var c_by_expert = c_gmem_type(

@@ -794,9 +794,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias use_cluster = cluster_size[cluster_shape]() > 1
 
     var block_idx_swizzle = block_swizzle(
-        Index[type = DType.uint32](block_idx.x, block_idx.y),
-        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
-    ) if not use_cluster else Index[type = DType.uint32](
+        Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+        Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if not use_cluster else Index[dtype = DType.uint32](
         block_idx.x, block_idx.y
     )
 
