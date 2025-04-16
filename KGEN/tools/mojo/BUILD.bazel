@@ -167,7 +167,7 @@ pkg_files(
 rpath_shim(
     name = "rpaths",
     packages = [
-        "//ModularFramework/tools/mof",
+        "//ModularFramework/tools/max",
     ],
     visibility = ["//visibility:private"],
 )
