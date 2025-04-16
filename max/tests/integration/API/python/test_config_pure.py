@@ -117,34 +117,6 @@ def test_config__validate_devices():
         )
 
 
-@mock_pipeline_config_hf_dependencies
-@pytest.mark.skip(
-    "TODO: AITLIB-293, this still requires a HF call to throw the exception"
-)
-def test_validate_model_path__bad_repo_provided():
-    with pytest.raises(Exception):
-        _ = PipelineConfig(
-            model_path="bert-base-asdfasdf",
-        )
-
-
-@mock_pipeline_config_hf_dependencies
-@pytest.mark.skip("TODO: AITLIB-293, this still requires a HF call")
-def test_config_post_init__other_repo_weights():
-    config = PipelineConfig(
-        model_path="replit/replit-code-v1_5-3b",
-        trust_remote_code=True,
-        weight_path=[
-            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
-        ],
-    )
-
-    assert config.model_config._weights_repo_id == "modularai/replit-code-1.5"
-    assert config.model_config.weight_path == [
-        Path("replit-code-v1_5-3b-f32.gguf")
-    ]
-
-
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_config__validates_supported_device():

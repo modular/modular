@@ -13,6 +13,7 @@ modular_py_test(
         "test_engine.py",
         "test_explicit_device.py",
         "test_graph_telemetry.py",
+        "test_huggingface_utilities_pure.py",
         "test_load_weights.py",
         "test_memory_estimation.py",
         "test_registry.py",
