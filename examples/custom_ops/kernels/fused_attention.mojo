@@ -66,9 +66,14 @@ from tensor import InputTensor, OutputTensor
 
 from utils import Index
 from utils.index import IndexList
+from python import Python, PythonObject
+from python.python import _get_global_python_itf
+from os import abort
+from sys import argv
+from tensor import OutputTensor, InputTensor
 
 
-@register("fused_attention_custom")
+@register("modular_ops::fused_attention_custom")
 struct FusedAttention:
     """Registers the `fused_attention_custom` op, allowing python to use it from the `max`
     package.
@@ -79,24 +84,22 @@ struct FusedAttention:
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
-        N: Int,  # Input length
-        D: Int,  # Head dimension
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
         output: OutputTensor[type=dtype, rank=rank],
-        key: InputTensor[type=dtype, rank=rank],
         query: InputTensor[type=dtype, rank=rank],
+        key: InputTensor[type=dtype, rank=rank],
         value: InputTensor[type=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
 
-        # Key tensor
-        K = key.to_layout_tensor()
         # Query tensor
         Q = query.to_layout_tensor()
+        # Key tensor
+        K = key.to_layout_tensor()
         # Value tensor
         V = value.to_layout_tensor()
         # Attention output tensor
@@ -105,11 +108,38 @@ struct FusedAttention:
         @parameter
         if target == "cpu":
             print("Running on CPU")
-            fused_attention_cpu[BN, BD](K, Q, V, O)
+            fused_attention_cpu[BN, BD](Q, K, V, O)
         else:
             dev_ctx = ctx.get_device_context()
             print("Running on GPU")
-            fused_attention_gpu[BN, BD](dev_ctx, K, Q, V, O)
+            fused_attention_gpu[BN, BD](dev_ctx, Q, K, V, O)
+
+    @staticmethod
+    fn _fallback_impl(
+        torch: PythonObject,
+        query: PythonObject,
+        key: PythonObject,
+        value: PythonObject,
+    ) -> PythonObject:
+        var cpython = _get_global_python_itf().cpython()
+        var state = cpython.PyGILState_Ensure()
+        try:
+            cpython.check_init_error()
+            return query
+        except e:
+            abort(e)
+        finally:
+            cpython.PyGILState_Release(state)
+        return None
+
+    @staticmethod
+    fn pytorch_fallback(
+        torch: PythonObject,
+        query: PythonObject,
+        key: PythonObject,
+        value: PythonObject,
+    ) -> PythonObject:
+        return FusedAttention._fallback_impl(torch, query, key, value)
 
 
 @always_inline
@@ -324,7 +354,6 @@ fn fused_attention_kernel[
 
     alias BN_1 = 8
 
-    @parameter
     for tile_n_idx in range(N // BN_1):
         K_tile = K.tile[BN_1, D](tile_n_idx, 0)
         V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
@@ -332,9 +361,10 @@ fn fused_attention_kernel[
         m_2 = max(m_1, rebind[__type_of(m_1)](max[axis=1](S)))
         l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
         P = exp(S - m_2) / l_2
-        O_i = O_i * (l_1 / l_2) * exp(m_1 - m_2) + matmul["gpu"](P, V_tile)
-        m_1 = m_2
-        l_1 = rebind[__type_of(l_1)](l_2)
+        O_j = O_i * (l_1 / l_2) * exp(m_1 - m_2) + matmul["gpu"](P, V_tile)
+        m_1.copy_from(m_2)
+        l_1.copy_from(rebind[__type_of(l_1)](l_2))
+        O_i.copy_from(O_j)
     O.tile[BN, BD](block_idx.y, block_idx.x).copy_from(O_i)
 
 

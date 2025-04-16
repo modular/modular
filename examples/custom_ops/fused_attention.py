@@ -47,8 +47,8 @@ def main():
     ) as graph:
         q, k, v, *_ = graph.inputs
         results = ops.custom(
-            name="fused_attention_custom",
-            parameters={"N": N, "D": D, "BD": BD, "BN": BN},
+            name="modular_ops::fused_attention_custom",
+            parameters={"BD": BD, "BN": BN},
             values=[q, k, v],
             out_types=[TensorType(dtype, shape=[N, D])],
         )

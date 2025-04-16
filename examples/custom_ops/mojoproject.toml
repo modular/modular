@@ -15,6 +15,7 @@ fused_attention = { cmd = "python fused_attention.py" }
 matrix_multiplication = { cmd = "python matrix_multiplication.py" }
 histogram = { cmd = "python histogram.py" }
 benchmark = { cmd = "mojo benchmarks.mojo" }
+whisper = {cmd = "python whisper.py" }
 test = { depends-on = [
   "addition",
   "mandelbrot",
@@ -23,6 +24,7 @@ test = { depends-on = [
   "fused_attention",
   "matrix_multiplication",
   "benchmark",
+  "whisper",
 ] }
 
 [dependencies]
