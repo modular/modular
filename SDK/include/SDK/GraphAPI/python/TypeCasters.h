@@ -28,37 +28,6 @@ namespace M::Graph::Python {
 void registerTypeID(mlir::TypeID, const std::type_info *);
 const std::type_info *lookupTypeID(mlir::TypeID);
 
-/// Get the currently active MLIR context from Python
-mlir::MLIRContext *current_context();
-
-/// Wrap a `getChecked` call with a diagnostic handler which will raise a
-/// python TypeError with the emitted error message.
-template <typename T, typename... Args>
-auto checked(Args... args) {
-  auto ctx = current_context();
-  std::string err;
-  auto handler = mlir::ScopedDiagnosticHandler(
-      ctx, [&](mlir::Diagnostic &diag) { err = diag.str(); });
-  // Can't use `T` here, some KGEN types fold on creation
-  auto concrete = T::getChecked(mlir::detail::getDefaultDiagnosticEmitFn(ctx),
-                                std::forward<Args>(args)...);
-  if (!concrete) {
-    PyTypeObject *type = (PyTypeObject *)nanobind::type<T>().ptr();
-    PyErr_Format(PyExc_TypeError, "%s: %s", type->tp_name, err.c_str());
-    throw nanobind::python_error();
-  }
-  return concrete;
-}
-
-/// Decorator to infer the MLIRContext as the currently active Python MLIR
-/// context. Returns a function which doesn't accept a context.
-template <typename Return, typename... Args>
-auto infer_context(Return (*func)(mlir::MLIRContext *, Args...)) {
-  return [=](Args... args) {
-    return func(current_context(), std::forward<Args>(args)...);
-  };
-}
-
 /// Wrap an OpBuilder->create call.
 /// - We can't bind templatized functions on OpBuilder
 /// - Instead, each Op has their own constructors that take a builder
@@ -84,93 +53,6 @@ public:
   NanobindWrapper(T &&value) : value(value) {}
   operator T() { return value; }
 };
-
-//===----------------------------------------------------------------------===//
-// overload_cast
-//===----------------------------------------------------------------------===//
-
-/// Trait for selecting a specific overload of a function pointer
-template <typename... Args>
-struct overload_cast_impl {
-  template <typename Return>
-  constexpr auto
-  operator()(Return (*pf)(Args...)) const noexcept -> decltype(pf) {
-    return pf;
-  }
-
-  template <typename Return, typename Class>
-  constexpr auto
-  operator()(Return (Class::*pmf)(Args...)) const noexcept -> decltype(pmf) {
-    return pmf;
-  }
-
-  template <typename Return, typename Class>
-  constexpr auto operator()(Return (Class::*pmf)(Args...)
-                                const) const noexcept -> decltype(pmf) {
-    return pmf;
-  }
-};
-
-/// Decorator to select a specific overload of a function pointer
-template <typename... Args>
-static constexpr overload_cast_impl<Args...> overload_cast = {};
-
-//===----------------------------------------------------------------------===//
-// optional_pimpl
-//===----------------------------------------------------------------------===//
-///
-/// Decorator around a function which may return a nullable PImpl type, such as
-/// mlir::Attribute or mlir::Type.
-/// - For an optional PImpl type, wrap the type as `std::optional<T>` and return
-///     an empty optional. Nanobind will know to return a `None` in this case.
-/// - For any other type, no-op.
-/// Overload for function pointers
-template <typename Return, typename... Args>
-auto optional_pimpl(Return (*func)(Args...)) {
-  if constexpr (std::is_base_of_v<mlir::Attribute, Return> ||
-                std::is_base_of_v<mlir::Type, Return>) {
-    return [=](Args... args) {
-      if (auto ret = std::invoke(func, std::forward<Args>(args)...)) {
-        return std::optional<Return>{std::move(ret)};
-      }
-      return std::optional<Return>{};
-    };
-  } else {
-    return func;
-  }
-}
-
-/// Overload for const pointer to member functions
-template <typename Class, typename Return, typename... Args>
-auto optional_pimpl(Return (Class::*func)(Args...) const) {
-  if constexpr (std::is_base_of_v<mlir::Attribute, Return> ||
-                std::is_base_of_v<mlir::Type, Return>) {
-    return [=](Class *obj, Args... args) {
-      if (auto ret = std::invoke(func, obj, std::forward<Args>(args)...)) {
-        return std::optional<Return>{std::move(ret)};
-      }
-      return std::optional<Return>{};
-    };
-  } else {
-    return func;
-  }
-}
-
-/// Overload for non-const pointer to member functions
-template <typename Class, typename Return, typename... Args>
-auto optional_pimpl(Return (Class::*func)(Args...)) {
-  if constexpr (std::is_base_of_v<mlir::Attribute, Return> ||
-                std::is_base_of_v<mlir::Type, Return>) {
-    return [=](Class *obj, Args... args) {
-      if (auto ret = std::invoke(func, obj, std::forward<Args>(args)...)) {
-        return std::optional<Return>{std::move(ret)};
-      }
-      return std::optional<Return>{};
-    };
-  } else {
-    return func;
-  }
-}
 } // namespace M::Graph::Python
 
 namespace NB_NAMESPACE {
