@@ -286,6 +286,9 @@ class PagedKVCacheManager(KVCacheManager):
     enable_prefix_caching: bool
     """Flag indicating if prefix caching (block reuse) is enabled."""
 
+    gpu_device: Device | None
+    """An arbitrary GPU device which holds KV cache blocks, should one exist."""
+
     enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
@@ -407,6 +410,13 @@ class PagedKVCacheManager(KVCacheManager):
                 )
             )
 
+        # Determine if any of the devices are GPU devices.
+        self.gpu_device: Device | None = None
+        for dev in devices:
+            if not dev.is_host:
+                self.gpu_device = dev
+                break
+
         self.host_tensor = None
         self.total_num_host_pages = 0
         if params.enable_kvcache_swapping_to_host:
@@ -437,12 +447,26 @@ class PagedKVCacheManager(KVCacheManager):
                 f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_str} per page."
             )
 
-            # create a host tensor
-            self.host_tensor = Tensor(
-                shape=self.block_shape(self.total_num_host_pages),  # type: ignore
-                dtype=self.params.dtype,
-                device=Device.cpu(),
-            )
+            # Create a kvcache allocation on the host.
+            if self.gpu_device is not None:
+                # Use pinned host memory when there is a GPU device.
+                # Pinned memory has faster memory transfer speeds compared to
+                # pageable memory and allows for the host to issue them
+                # asynchronously to the GPU.
+                self.host_tensor = Tensor(
+                    shape=self.block_shape(self.total_num_host_pages),  # type: ignore
+                    dtype=self.params.dtype,
+                    device=self.gpu_device,
+                    on_host=True,
+                )
+            else:
+                # Use normal pageable memory when there is no GPU device.
+                # Note that the memory transfers will be synchronous.
+                self.host_tensor = Tensor(
+                    shape=self.block_shape(self.total_num_host_pages),  # type: ignore
+                    dtype=self.params.dtype,
+                    device=Device.cpu(),
+                )
 
         # Initialize block manager
         device_memory_tier = (
