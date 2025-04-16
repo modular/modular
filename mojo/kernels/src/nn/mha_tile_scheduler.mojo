@@ -567,7 +567,13 @@ struct QueuedTileScheduler[
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
+    decoding: Bool = False,
 ](MHATileScheduler):
+    """
+    If `decoding == False`, then `num_heads` is `q_num_heads`.
+    If `decoding == True`, then `num_heads` is `kv_num_heads`.
+    """
+
     # Linear work tile index i.e. idx-th work among all possible workload.
     var gidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL]
 

@@ -7,11 +7,12 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import alignof, simdwidthof, sizeof
+from sys import alignof, simdwidthof, sizeof, env_get_int
 
 import gpu.warp as warp
 from algorithm.functional import tile_and_unswitch, unswitch
 from buffer import NDBuffer
+from buffer.dimlist import DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -23,6 +24,8 @@ from gpu import (
     thread_idx,
 )
 from gpu.cluster import elect_one_sync
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.info import H100
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
@@ -77,7 +80,10 @@ from nn.mha_tile_scheduler import (
     MHATileScheduler,
     MHATileState,
     MHATileSummary,
+    QueuedTileScheduler,
     SeqInfo,
+    TransientScheduler,
+    TileScheduler,
     WorkInfo,
 )
 
@@ -88,9 +94,204 @@ from utils.static_tuple import StaticTuple
 from gpu.id import sm_id
 
 
+@always_inline
+fn mha_sm90_dispatch[
+    rank: Int,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
+    mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
+    type: DType,
+    q_shape: DimList, //,
+    config: MHAConfig,
+    group: Int,
+    use_score_mod: Bool,
+    ragged: Bool,
+    _is_cache_length_accurate: Bool,
+    decoding: Bool,
+](
+    output: NDBuffer[_, rank, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
+    k: k_t,
+    v: v_t,
+    mask_functor: mask_t,
+    score_mod_functor: score_mod_t,
+    valid_length: NDBuffer[DType.uint32, 1, *_],
+    max_prompt_len: Int,
+    max_cache_valid_length: Int,
+    scale: Float32,
+    is_token_generation: Bool,
+    ctx: DeviceContext,
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ],
+    batch_size: Int,
+) raises:
+    alias BM = config.block_m()
+    alias BK = config.block_k()
+    constrained[
+        BM % 64 == 0,
+        "SM90 requires BM%64==0, but BM==",
+        String(BM),
+    ]()
+    constrained[
+        BK == 64,
+        "H100 requires BK=64 as it uses 128B swizzles, but BK==",
+        String(BK),
+    ]()
+    alias BN = config.block_n()
+    # we add smem use for SharedMemBarrier synchronization
+    alias smem_use = config.shared_mem_bytes[False, sm_90=True]()
+    # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
+    alias num_threads = config.num_threads[True]()
+    constrained[num_threads % 128 == 0]()
+
+    alias num_heads = config.num_heads // group if decoding else config.num_heads
+    alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+    constrained[config.algorithm == FlashAttentionAlgorithm(3)]()
+
+    @parameter
+    if persistent == 0:
+        alias scheduler_t = TransientScheduler[BM, num_heads]
+        alias kernel_sm90 = _mha_sm90[
+            config.type,
+            k_t,
+            v_t,
+            output.type,
+            mask_t,
+            score_mod_t,
+            scheduler_t,
+            config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding=decoding,
+        ]
+        var scheduler: scheduler_t = scheduler_t()
+        ctx.enqueue_function[kernel_sm90](
+            q.data,
+            k,
+            v,
+            output.data,
+            scale,
+            batch_size,
+            max_prompt_len,
+            max_cache_valid_length,
+            valid_length,
+            kv_input_row_offsets,
+            mask_functor,
+            score_mod_functor,
+            scheduler,
+            grid_dim=scheduler_t.grid_dim(
+                batch_size, ceildiv(max_prompt_len, BM)
+            ),
+            block_dim=(Int(num_threads), 1, 1),
+            shared_mem_bytes=Int(smem_use),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_use
+            ),
+        )
+    elif persistent == 2:
+        alias scheduler_t = TileScheduler[BM, num_heads]
+        alias kernel_sm90 = _mha_sm90[
+            config.type,
+            k_t,
+            v_t,
+            output.type,
+            mask_t,
+            score_mod_t,
+            scheduler_t,
+            config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding=decoding,
+        ]
+        var scheduler: scheduler_t = scheduler_t()
+        ctx.enqueue_function[kernel_sm90,](
+            q.data,
+            k,
+            v,
+            output.data,
+            scale,
+            batch_size,
+            max_prompt_len,
+            max_cache_valid_length,
+            valid_length,
+            kv_input_row_offsets,
+            mask_functor,
+            score_mod_functor,
+            scheduler,
+            grid_dim=scheduler_t.grid_dim(
+                batch_size, ceildiv(max_prompt_len, BM)
+            ),
+            block_dim=(Int(num_threads), 1, 1),
+            shared_mem_bytes=Int(smem_use),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_use
+            ),
+        )
+    else:
+        alias scheduler_t = QueuedTileScheduler[BM, num_heads]
+        alias kernel_sm90 = _mha_sm90[
+            config.type,
+            k_t,
+            v_t,
+            output.type,
+            mask_t,
+            score_mod_t,
+            scheduler_t,
+            config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding=decoding,
+        ]
+        var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
+            UInt32(H100.sm_count)
+        )
+        ctx.synchronize()
+        var scheduler: scheduler_t = scheduler_t(schedule.unsafe_ptr())
+        ctx.enqueue_function[kernel_sm90](
+            rebind[scheduler_t](scheduler),
+            q.data,
+            k,
+            v,
+            output.data,
+            rebind[Float32](scale),
+            UInt32(batch_size),
+            UInt32(max_prompt_len),
+            UInt32(max_cache_valid_length),
+            rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](valid_length),
+            rebind[OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]](
+                kv_input_row_offsets
+            ),
+            rebind[mask_t](mask_functor),
+            rebind[score_mod_t](score_mod_functor),
+            grid_dim=scheduler_t.grid_dim(
+                batch_size, ceildiv(max_prompt_len, BM)
+            ),
+            block_dim=(Int(num_threads), 1, 1),
+            shared_mem_bytes=Int(smem_use),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_use
+            ),
+        )
+        _ = schedule
+
+
 @value
 @register_passable("trivial")
-struct MHAPosition[BM: Int, BN: Int, depth: Int, num_heads: Int]:
+struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
+    """
+    Position of the MHA-kernel.
+    When `decoding=False`, `q_head_stride == num_heads`.
+    When `decoding=True`, `q_head_stride == 1`.
+    """
+
     var q_out_offset: Int
     var seq_len: UInt32
     var num_keys: UInt32
@@ -101,7 +302,7 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, num_heads: Int]:
 
     alias q_output_gmem_layout = Layout(
         IntTuple(Int(Self.BM), Int(Self.depth)),
-        IntTuple(Int(Self.num_heads * Self.depth), 1),
+        IntTuple(Int(Self.q_head_stride * Self.depth), 1),
     )
 
     @always_inline
@@ -174,7 +375,7 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, num_heads: Int]:
                     Int(self.q_tile_num_rows()), depth
                 ),
                 __type_of(gmem_block.runtime_layout.stride)(
-                    num_heads * depth, 1
+                    q_head_stride * depth, 1
                 ),
             ),
         )
@@ -261,69 +462,6 @@ fn _get_position[
         Int(num_keys),
         start_pos,
         seq_info,
-    )
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
-    )
-)
-fn mha_sm90[
-    q_type: DType,
-    k_t: MHAOperand,
-    v_t: MHAOperand,
-    output_type: DType,
-    mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
-    scheduler_t: MHATileScheduler,
-    config: MHAConfig,
-    group: Int = 1,
-    use_score_mod: Bool = False,
-    ragged: Bool = False,
-    is_shared_kv: Bool = False,
-    _is_cache_length_accurate: Bool = False,
-](
-    scheduler: scheduler_t,
-    q_ptr: UnsafePointer[Scalar[q_type]],
-    k: k_t,
-    v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    scale: Float32,
-    batch_size: Int,
-    seq_len_arg: Int,
-    num_keys_arg: Int,
-    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    ],
-    mask: mask_t,
-    score_mod: score_mod_t,
-):
-    # mha inputs
-    var max_seq_len: Int = seq_len_arg
-
-    constrained[config.algorithm == FlashAttentionAlgorithm(3)]()
-    _mha_single_batch_sm90_fa3[
-        config=config,
-        group=group,
-        use_score_mod=use_score_mod,
-        ragged=ragged,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-    ](
-        q_ptr,
-        k,
-        v,
-        output_ptr,
-        scale,
-        max_seq_len,
-        num_keys_arg,
-        valid_length,
-        kv_input_row_offsets,
-        mask,
-        score_mod,
-        scheduler,
-        batch_size,
     )
 
 
@@ -481,7 +619,7 @@ fn _apply_mask[
     lane: UInt32,
     num_keys: UInt32,
     seq_len: UInt32,
-    max_seq_len: Int,
+    max_seq_len: UInt32,
     mask_block_row: UInt32,
     scale_log2e: Scalar[accum_type],
     mask: mask_t,
@@ -551,7 +689,7 @@ fn _apply_mask[
                                         Int(score_col),
                                     ),
                                     p_reg_vec2[mma_id, i + j * 2],
-                                    max_seq_len,
+                                    Int(max_seq_len),
                                 )
                                 * log2e
                             )
@@ -577,8 +715,12 @@ fn _apply_mask[
     unswitch[_apply_mask_capture](mask_status == TileMaskStatus.PARTIAL_MASK)
 
 
-@always_inline
-fn _mha_single_batch_sm90_fa3[
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        config.num_threads[True]()
+    )
+)
+fn _mha_sm90[
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -586,28 +728,28 @@ fn _mha_single_batch_sm90_fa3[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     scheduler_t: MHATileScheduler,
-    *,
     config: MHAConfig,
     group: Int,
     use_score_mod: Bool,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
+    decoding: Bool,
 ](
+    scheduler: scheduler_t,
     q_ptr_arg: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
     output_ptr_arg: UnsafePointer[Scalar[output_type]],
     scale: Float32,
-    max_seq_len: Int,  # sequence length after padding.
-    num_keys_arg: Int,
+    batch_size: UInt32,
+    max_seq_len: UInt32,  # sequence length after padding.
+    num_keys_arg: UInt32,
     valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
     mask: mask_t,
     score_mod: score_mod_t,
-    scheduler: scheduler_t,
-    batch_size: UInt32,
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -977,6 +1119,8 @@ fn _mha_single_batch_sm90_fa3[
             IntTuple(Int(kv_num_heads * depth), 1),
         )
 
+        alias produce_group = 1 if decoding else group
+
         @parameter
         @always_inline("nodebug")
         fn produce_k[
@@ -990,7 +1134,7 @@ fn _mha_single_batch_sm90_fa3[
             _produce[
                 kv_num_heads,
                 BK,
-                group,
+                produce_group,
                 kv_gmem_layout,
                 num_k_iters_0,
                 axis=1,
@@ -1017,7 +1161,7 @@ fn _mha_single_batch_sm90_fa3[
             _produce[
                 kv_num_heads,
                 BK,
-                group,
+                produce_group,
                 kv_gmem_layout,
                 num_k_iters_1,
                 axis=0,

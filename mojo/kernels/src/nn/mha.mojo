@@ -80,7 +80,7 @@ from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from nn.mha_mask import MaterializedMask, MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from nn.mha_sm90 import mha_sm90
+from nn.mha_sm90 import mha_sm90_dispatch
 from nn.mha_utils import MHAConfig, _copy_frag_to_smem, _kernel_mask
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -403,174 +403,38 @@ fn flash_attention_dispatch[
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
-            alias BM = config.block_m()
-            alias BK = config.block_k()
-
             @parameter
             if (
                 ctx.device_info is H100
                 and q_half_float
                 and (ragged or not _use_valid_length)
             ):
-                constrained[
-                    BM % 64 == 0,
-                    "SM90 requires BM%64==0, but BM==",
-                    String(BM),
-                ]()
-                constrained[
-                    BK == 64,
-                    "H100 requires BK=64 as it uses 128B swizzles, but BK==",
-                    String(BK),
-                ]()
-                alias BN = config.block_n()
-                # we add smem use for SharedMemBarrier synchronization
-                alias smem_use = config.shared_mem_bytes[False, sm_90=True]()
-                # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-                alias num_threads = config.num_threads[True]()
-                constrained[num_threads % 128 == 0]()
-
-                alias num_heads = config.num_heads
-                alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
-
-                @parameter
-                if persistent == 0:
-                    alias scheduler_t = TransientScheduler[BM, num_heads]
-                    alias kernel_sm90 = mha_sm90[
-                        config.type,
-                        k_t,
-                        v_t,
-                        output.type,
-                        mask_t,
-                        score_mod_t,
-                        scheduler_t,
-                        config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        is_shared_kv=is_shared_kv,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ]
-                    var scheduler: scheduler_t = scheduler_t()
-                    ctx.enqueue_function[kernel_sm90](
-                        q.data,
-                        k,
-                        v,
-                        output.data,
-                        scale,
-                        batch_size,
-                        max_prompt_len,
-                        max_cache_valid_length,
-                        valid_length,
-                        kv_input_row_offsets,
-                        mask_functor,
-                        score_mod_functor,
-                        scheduler,
-                        grid_dim=scheduler_t.grid_dim(
-                            batch_size, ceildiv(max_prompt_len, BM)
-                        ),
-                        block_dim=(Int(num_threads), 1, 1),
-                        shared_mem_bytes=Int(smem_use),
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            smem_use
-                        ),
-                    )
-                elif persistent == 2:
-                    alias scheduler_t = TileScheduler[BM, num_heads]
-                    alias kernel_sm90 = mha_sm90[
-                        config.type,
-                        k_t,
-                        v_t,
-                        output.type,
-                        mask_t,
-                        score_mod_t,
-                        scheduler_t,
-                        config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        is_shared_kv=is_shared_kv,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ]
-                    var scheduler: scheduler_t = scheduler_t()
-                    ctx.enqueue_function[kernel_sm90,](
-                        q.data,
-                        k,
-                        v,
-                        output.data,
-                        scale,
-                        batch_size,
-                        max_prompt_len,
-                        max_cache_valid_length,
-                        valid_length,
-                        kv_input_row_offsets,
-                        mask_functor,
-                        score_mod_functor,
-                        scheduler,
-                        grid_dim=scheduler_t.grid_dim(
-                            batch_size, ceildiv(max_prompt_len, BM)
-                        ),
-                        block_dim=(Int(num_threads), 1, 1),
-                        shared_mem_bytes=Int(smem_use),
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            smem_use
-                        ),
-                    )
-                else:
-                    alias scheduler_t = QueuedTileScheduler[BM, num_heads]
-                    alias kernel_sm90 = mha_sm90[
-                        config.type,
-                        k_t,
-                        v_t,
-                        output.type,
-                        mask_t,
-                        score_mod_t,
-                        scheduler_t,
-                        config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        is_shared_kv=is_shared_kv,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ]
-                    var schedule = ctx.enqueue_create_buffer[DType.uint32](
-                        1
-                    ).enqueue_fill(UInt32(H100.sm_count))
-                    ctx.synchronize()
-                    var scheduler: scheduler_t = scheduler_t(
-                        schedule.unsafe_ptr()
-                    )
-                    ctx.enqueue_function[kernel_sm90](
-                        rebind[scheduler_t](scheduler),
-                        q.data,
-                        k,
-                        v,
-                        output.data,
-                        rebind[Float32](scale),
-                        rebind[Int](batch_size),
-                        rebind[Int](max_prompt_len),
-                        rebind[Int](max_cache_valid_length),
-                        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                            valid_length
-                        ),
-                        rebind[
-                            OptionalReg[
-                                NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-                            ]
-                        ](kv_input_row_offsets),
-                        rebind[mask_t](mask_functor),
-                        rebind[score_mod_t](score_mod_functor),
-                        grid_dim=scheduler_t.grid_dim(
-                            batch_size, ceildiv(max_prompt_len, BM)
-                        ),
-                        block_dim=(Int(num_threads), 1, 1),
-                        shared_mem_bytes=Int(smem_use),
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            smem_use
-                        ),
-                    )
-                    _ = schedule
+                mha_sm90_dispatch[
+                    config=config,
+                    group=group,
+                    use_score_mod=use_score_mod,
+                    ragged=ragged,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    decoding=False,
+                ](
+                    output,
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    score_mod_functor,
+                    valid_length,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    scale,
+                    is_token_generation,
+                    ctx,
+                    kv_input_row_offsets,
+                    batch_size,
+                )
 
             else:
+                alias BM = config.block_m()
                 alias smem_use = config.shared_mem_bytes[is_shared_kv]()
                 alias kernel = mha[
                     config.type,
