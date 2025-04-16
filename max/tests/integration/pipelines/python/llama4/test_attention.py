@@ -198,7 +198,7 @@ def generate_max_outputs(
                 huggingface_config=config
             ),
             devices=[device],
-            available_cache_memory=10 * 1024 * 1024 * 1024,
+            available_cache_memory=10 * 1024 * 1024,
             page_size=kv_cache_config.kv_cache_page_size,
             session=session,
         )
