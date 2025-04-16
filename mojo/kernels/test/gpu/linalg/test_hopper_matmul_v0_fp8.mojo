@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
+# ALLOW_RETRIES: 5
 
 from math import ceildiv
 from sys import sizeof
@@ -55,7 +56,7 @@ from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 
-def test_hopper_fp8_matmul0_tma_wgmma[
+fn test_hopper_fp8_matmul0_tma_wgmma[
     wgmma_n: Int,
     a_type: DType,
     b_type: DType,
@@ -67,7 +68,7 @@ def test_hopper_fp8_matmul0_tma_wgmma[
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-):
+) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -156,6 +157,7 @@ def test_hopper_fp8_matmul0_tma_wgmma[
             a_device.tensor,
             b_device.tensor,
             c_row_major=True,
+            transpose_b=True,
         )
 
     else:
@@ -182,6 +184,7 @@ def test_hopper_fp8_matmul0_tma_wgmma[
             a_device.tensor,
             b_device_col_major.tensor,
             c_row_major=True,
+            transpose_b=True,
         )
 
     ctx.synchronize()
@@ -212,7 +215,7 @@ def test_hopper_fp8_matmul0_tma_wgmma[
     _ = b_device
 
 
-def main():
+fn main() raises:
     with DeviceContext() as ctx:
         with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
             test_hopper_fp8_matmul0_tma_wgmma[

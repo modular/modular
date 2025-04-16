@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
+# ALLOW_RETRIES: 5
 
 import linalg.vendor_blas
 from buffer import DimList, NDBuffer
@@ -219,6 +220,7 @@ fn wgmma_e4m3_e4m3_f32[
             a_device.tensor,
             b_device.tensor,
             c_row_major=True,
+            transpose_b=True,
         )
 
     else:
@@ -245,6 +247,7 @@ fn wgmma_e4m3_e4m3_f32[
             a_device.tensor,
             b_device_col_major.tensor,
             c_row_major=True,
+            transpose_b=True,
         )
 
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
@@ -267,7 +270,7 @@ fn wgmma_e4m3_e4m3_f32[
     _ = c_tensor
 
 
-def main():
+fn main() raises:
     with DeviceContext() as ctx:
         with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
 

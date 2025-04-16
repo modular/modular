@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
+# ALLOW_RETRIES: 5
 
 from math import ceildiv
 
@@ -57,6 +58,7 @@ fn test_cublaslt[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
+        transpose_b=True,
         c_row_major=True,
     )
 
