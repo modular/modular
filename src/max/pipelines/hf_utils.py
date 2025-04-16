@@ -185,12 +185,15 @@ def download_weight_files(
     return weight_paths
 
 
-def repo_exists_with_retry(repo_id: str) -> bool:
+def repo_exists_with_retry(repo_id: str, revision: str) -> bool:
     """
-    Wrapper around huggingface_hub.repo_exists with retry logic.
+    Wrapper around huggingface_hub.revision_exists with retry logic.
     Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
 
-    See huggingface_hub.repo_exists for details
+    We use revision_exists here instead of repo_exists because repo_exists
+    does not take in a revision parameter.
+
+    See huggingface_hub.revision_exists for details
     """
 
     if os.environ.get("MODULAR_DISABLE_HF_NETWORK_ACCESS", None):
@@ -204,7 +207,9 @@ def repo_exists_with_retry(repo_id: str) -> bool:
 
     for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
         try:
-            return huggingface_hub.repo_exists(repo_id)
+            return huggingface_hub.revision_exists(
+                repo_id=repo_id, revision=revision
+            )
         except (
             hf_hub_errors.RepositoryNotFoundError,
             hf_hub_errors.GatedRepoError,
@@ -241,10 +246,22 @@ def repo_exists_with_retry(repo_id: str) -> bool:
 
 @dataclass(frozen=True)
 class HuggingFaceRepo:
+    """
+    A class for interacting with HuggingFace Repos.
+    """
+
     repo_id: str
+    """The HuggingFace repo id. While it's called repo_id, it can be a HF
+    remote or local path altogether."""
+
     revision: str = huggingface_hub.constants.DEFAULT_REVISION
+    """The revision to use for the repo."""
+
     trust_remote_code: bool = False
+    """Whether to trust remote code."""
+
     repo_type: Optional[RepoType] = None
+    """The type of repo. This is inferred from the repo_id."""
 
     def __post_init__(self) -> None:
         # Get repo type.
@@ -255,7 +272,7 @@ class HuggingFaceRepo:
                 object.__setattr__(self, "repo_type", RepoType.online)
 
         if self.repo_type == RepoType.online and not repo_exists_with_retry(
-            self.repo_id
+            repo_id=self.repo_id, revision=self.revision
         ):
             raise ValueError(f"model_path: {self.repo_id} does not exist")
 
