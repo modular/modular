@@ -106,6 +106,9 @@ class BlockManager(Generic[T]):
         self.prompt_tokens = 0
         self.cached_prompt_tokens = 0
 
+        # Recently committed device blocks
+        self.recently_committed_device_blocks: list[KVCacheBlock] = []
+
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
 
@@ -393,7 +396,9 @@ class BlockManager(Generic[T]):
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
                 block_hash, block
             )
-            if new_block is not None:
+            if new_block is None:
+                self.recently_committed_device_blocks.append(block)
+            else:
                 req_blocks[block_idx] = new_block
 
         ctx.set_token_indices(
@@ -437,6 +442,13 @@ class BlockManager(Generic[T]):
         for _ in range(num_new_blocks):
             new_block = self.allocate_device_block()
             req_blocks.append(new_block)
+
+    @traced
+    def offload_recently_committed_blocks(self) -> None:
+        """Offload recently committed blocks to host memory."""
+        for block in self.recently_committed_device_blocks:
+            self.maybe_offload_gpu_block_to_host(block, block.block_hash)
+        self.recently_committed_device_blocks = []
 
     @traced
     def maybe_offload_gpu_block_to_host(

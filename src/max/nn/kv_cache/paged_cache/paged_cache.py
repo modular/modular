@@ -24,7 +24,7 @@ from operator import mul
 from typing import Any, TypeVar, cast
 
 import numpy as np
-from max.driver import Device, Tensor
+from max.driver import Device, DeviceStream, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -292,6 +292,12 @@ class PagedKVCacheManager(KVCacheManager):
     enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
+    main_stream: DeviceStream | None
+    """The main stream on the gpu_device used by pipelines which must be synchronized with the auxillary stream."""
+
+    d2h_auxillary_stream: DeviceStream | None
+    """An auxillary stream for issuing d2h copies if swapping to host is enabled on a GPU device."""
+
     prefetched_seq_ids: set[int]
     """Set of sequence IDs whose blocks have been prefetched."""
 
@@ -491,6 +497,13 @@ class PagedKVCacheManager(KVCacheManager):
             self.params.enable_kvcache_swapping_to_host
         )
 
+        self.main_stream: DeviceStream | None = None
+        self.d2h_auxillary_stream: DeviceStream | None = None
+        if self.enable_kvcache_swapping_to_host and self.gpu_device is not None:
+            self.main_stream = self.gpu_device.default_stream
+            # Create auxillary stream for D2H memcpys
+            self.d2h_auxillary_stream = DeviceStream(self.gpu_device)
+
         # Mapping from seq ID to blocks that have been prefetched prior to a
         # fetch operation.
         self.prefetched_seq_ids: set[int] = set()
@@ -606,18 +619,37 @@ class PagedKVCacheManager(KVCacheManager):
 
     @traced
     def _enqueue_and_reset_copy_ops(
-        self, seq_id: int, skip_req_copy_ops: bool = False
+        self,
+        seq_id: int | None = None,
+        skip_req_copy_ops: bool = False,
+        use_auxillary_stream_for_d2h: bool = False,
     ) -> None:
-        """Enqueue copy ops for a given sequence and clear the list."""
+        """Enqueue copy ops for a given sequence and clear the list.
+
+        When attempting to schedule a request, block copy ops are enqueued. If
+        the request is succesfully scheduled, we should execute their enqueued
+        d2d (COW) and h2d (host cache hit) copies. If the request is not scheduled
+        for any reason (eg: not enough blocks are available), we will skip issuing
+        those block copies.
+
+        Regardless of whether the request is scheduled or not, the d2h eviction
+        copies should always be issued. These are not specific to any request.
+        """
+        # Attempt to schedule all d2h eviction copies.
         copy_ops = self.block_manager.d2h_eviction_copy_ops
         for copy_op in copy_ops:
-            self._enqueue_block_copy(copy_op)
+            self._enqueue_block_copy(copy_op, use_auxillary_stream_for_d2h)
         self.block_manager.reset_d2h_eviction_copy_ops()
 
+        # If seq_id is None, there are no d2d / h2d copies to schedule.
+        if seq_id is None:
+            return
+
+        # Schedule d2d and h2d copies needed to run the given request.
         copy_ops = self.block_manager.get_req_copy_ops(seq_id)
         if not skip_req_copy_ops:
             for copy_op in copy_ops:
-                self._enqueue_block_copy(copy_op)
+                self._enqueue_block_copy(copy_op, use_auxillary_stream_for_d2h)
         self.block_manager.reset_req_copy_ops(seq_id)
 
     @traced
@@ -657,6 +689,15 @@ class PagedKVCacheManager(KVCacheManager):
         If all requests run `allocate_new_blocks` prior to `fetch`, then the requests
         already have blocks pre-allocated and we will not run into OOM errors.
         """
+
+        # Synchronize main stream with the auxillary stream.
+        # This ensures that the d2h copies from BatchN completes before
+        # BatchN+1 begins. This is needed because BatchN+1 may write to the
+        # same blocks as BatchN is reading from.
+        if self.d2h_auxillary_stream is not None:
+            assert self.main_stream is not None
+            self.main_stream.wait_for(self.d2h_auxillary_stream)
+
         max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):
             seq_id = ctx.cache_seq_id
@@ -716,6 +757,13 @@ class PagedKVCacheManager(KVCacheManager):
             prompt_tokens = ctx.active_length
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
+
+        # Offload the recently committed gpu blocks to host memory.
+        # This is overlapped with kernel execution.
+        self.block_manager.offload_recently_committed_blocks()
+        self._enqueue_and_reset_copy_ops(
+            use_auxillary_stream_for_d2h=self.d2h_auxillary_stream is not None
+        )
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
@@ -806,7 +854,9 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_manager.step(ctx)
 
     @traced
-    def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
+    def _enqueue_block_copy(
+        self, copy_op: BlockCopyOp, use_auxillary_stream_for_d2h: bool = False
+    ) -> None:
         copy_type = copy_op.block_copy_type
         dst_idx = copy_op.dst.bid
         src_idx = copy_op.src.bid
@@ -862,9 +912,14 @@ class PagedKVCacheManager(KVCacheManager):
             # devices have the same data.
             assert self.host_tensor is not None
             device_tensor_rank0 = self.device_tensors[0]
-            self.host_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
-                device_tensor_rank0[src_idx, :, :, :, :, :]
-            )
+            dst = self.host_tensor[dst_idx, :, :, :, :, :]
+            src = device_tensor_rank0[src_idx, :, :, :, :, :]
+
+            if use_auxillary_stream_for_d2h:
+                assert self.d2h_auxillary_stream is not None
+                dst = dst.to(self.d2h_auxillary_stream)
+
+            dst.inplace_copy_from(src)
             self.d2h_blocks_copied += 1
         else:
             raise NotImplementedError(f"Unknown block copy type: {copy_type}")
