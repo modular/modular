@@ -814,13 +814,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 # ===-----------------------------------------------------------------------===#
 @always_inline
 fn Index[
-    T0: Intable, //, *, type: DType = DType.int64
-](x: T0, out result: IndexList[1, element_type=type]):
+    T0: Intable, //, *, dtype: DType = DType.int64
+](x: T0, out result: IndexList[1, element_type=dtype]):
     """Constructs a 1-D Index from the given value.
 
     Parameters:
         T0: The type of the 1st argument.
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The initial value.
@@ -833,12 +833,12 @@ fn Index[
 
 @always_inline
 fn Index[
-    *, type: DType = DType.int64
-](x: UInt, out result: IndexList[1, element_type=type]):
+    *, dtype: DType = DType.int64
+](x: UInt, out result: IndexList[1, element_type=dtype]):
     """Constructs a 1-D Index from the given value.
 
     Parameters:
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The initial value.
@@ -851,14 +851,14 @@ fn Index[
 
 @always_inline
 fn Index[
-    T0: Intable, T1: Intable, //, *, type: DType = DType.int64
-](x: T0, y: T1, out result: IndexList[2, element_type=type]):
+    T0: Intable, T1: Intable, //, *, dtype: DType = DType.int64
+](x: T0, y: T1, out result: IndexList[2, element_type=dtype]):
     """Constructs a 2-D Index from the given values.
 
     Parameters:
         T0: The type of the 1st argument.
         T1: The type of the 2nd argument.
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -872,12 +872,12 @@ fn Index[
 
 @always_inline
 fn Index[
-    *, type: DType = DType.int64
-](x: UInt, y: UInt, out result: IndexList[2, element_type=type]):
+    *, dtype: DType = DType.int64
+](x: UInt, y: UInt, out result: IndexList[2, element_type=dtype]):
     """Constructs a 2-D Index from the given values.
 
     Parameters:
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -895,15 +895,15 @@ fn Index[
     T1: Intable,
     T2: Intable, //,
     *,
-    type: DType = DType.int64,
-](x: T0, y: T1, z: T2, out result: IndexList[3, element_type=type]):
+    dtype: DType = DType.int64,
+](x: T0, y: T1, z: T2, out result: IndexList[3, element_type=dtype]):
     """Constructs a 3-D Index from the given values.
 
     Parameters:
         T0: The type of the 1st argument.
         T1: The type of the 2nd argument.
         T2: The type of the 3rd argument.
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -923,8 +923,8 @@ fn Index[
     T2: Intable,
     T3: Intable, //,
     *,
-    type: DType = DType.int64,
-](x: T0, y: T1, z: T2, w: T3, out result: IndexList[4, element_type=type]):
+    dtype: DType = DType.int64,
+](x: T0, y: T1, z: T2, w: T3, out result: IndexList[4, element_type=dtype]):
     """Constructs a 4-D Index from the given values.
 
     Parameters:
@@ -932,7 +932,7 @@ fn Index[
         T1: The type of the 2nd argument.
         T2: The type of the 3rd argument.
         T3: The type of the 4th argument.
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -954,14 +954,14 @@ fn Index[
     T3: Intable,
     T4: Intable, //,
     *,
-    type: DType = DType.int64,
+    dtype: DType = DType.int64,
 ](
     x: T0,
     y: T1,
     z: T2,
     w: T3,
     v: T4,
-    out result: IndexList[5, element_type=type],
+    out result: IndexList[5, element_type=dtype],
 ):
     """Constructs a 5-D Index from the given values.
 
@@ -971,7 +971,7 @@ fn Index[
         T2: The type of the 3rd argument.
         T3: The type of the 4th argument.
         T4: The type of the 5th argument.
-        type: The integer type of the underlying element.
+        dtype: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.

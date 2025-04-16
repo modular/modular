@@ -58,9 +58,9 @@ def test_cast():
 
 
 def test_index():
-    assert_equal(String(Index[type = DType.int64](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(String(Index[type = DType.int32](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(String(Index[type = DType.uint32](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[dtype = DType.int64](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[dtype = DType.int32](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[dtype = DType.uint32](1, 2, 3)), "(1, 2, 3)")
 
 
 def main():
