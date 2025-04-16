@@ -6,7 +6,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from pathlib import Path
-from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys import alignof, simdwidthof, sizeof
 from memory import UnsafePointer
 
 import linalg.vendor_blas
@@ -867,10 +867,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
 
-    alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
-
     @parameter
-    if pdl_level > PDLLevel.OFF:
+    if PDLLevel() > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     var lane_predicate = elect_one_sync()
@@ -998,7 +996,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         )
 
     @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_END:
+    if PDLLevel() == PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
     # TO ensure SEMEM destruction doesn't happen
@@ -1162,10 +1160,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
 
-    alias pdl_level = PDLLevel(env_get_int["PDL_LEVEL", 1]())
-
     @parameter
-    if pdl_level > PDLLevel.OFF:
+    if PDLLevel() > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     var lane_predicate = elect_one_sync()
@@ -1305,7 +1301,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
             work_info = scheduler.fetch_next_work()
 
     @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_END:
+    if PDLLevel() == PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
     # TO ensure SEMEM destruction doesn't happen
