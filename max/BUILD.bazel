@@ -78,7 +78,7 @@ modular_genrule(
     done
 
     # Lint and format the files
-    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --quiet
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --exclude {excludes} --quiet
     BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --exclude {excludes} --quiet
     """.format(
         excludes = "dialects/m/__init__.pyi,dialects/mo/__init__.pyi,dialects/mosh/__init__.pyi,dialects/builtin/__init__.pyi,dialects/kgen/__init__.pyi",
