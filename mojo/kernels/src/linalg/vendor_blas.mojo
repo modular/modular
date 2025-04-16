@@ -707,10 +707,10 @@ fn _cublasLt_matmul(
         ),
     ]()
 
-    if transpose_a or transpose_b:
+    if transpose_a or not transpose_b:
         raise Error(
             "the cuBLASLT backend currently only is implemented for"
-            " transpose_a=False and transpose_b=False"
+            " transpose_a=False and transpose_b=True"
         )
 
     # CublasLt is by default column-major but we like to have the output in row-major
