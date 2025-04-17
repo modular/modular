@@ -17,8 +17,6 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
-    BlockCopyOp,
-    BlockCopyType,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
@@ -438,29 +436,26 @@ class FakeModel:
 
         fake_model = self
 
-        def mock_enqueue_block_copy(
+        def mock_memcpy_d2d(
             self,
-            copy_op: BlockCopyOp,
-            _use_auxillary_stream_for_d2h: bool = False,
+            dst: int,
+            src: int,
+            num_tokens: int,
         ) -> Any:
-            assert copy_op.block_copy_type == BlockCopyType.D2D_COW
-            block_src = copy_op.src.bid
-            block_dst = copy_op.dst.bid
-            num_tokens = copy_op.num_tokens
-
-            assert block_src in fake_model.block_projections
+            assert src in fake_model.block_projections
             assert 0 < num_tokens < fake_model.page_size
             for token in range(num_tokens):
-                fake_model.block_projections[block_dst][token] = (
-                    fake_model.block_projections[block_src][token]
+                fake_model.block_projections[dst][token] = (
+                    fake_model.block_projections[src][token]
                 )
 
-            self._orig_enqueue_block_copy(copy_op)
+            self._orig_memcpy_d2d(dst, src, num_tokens)
 
-        # Monkey patch the enqueue_block_copy method to use our mock method.
-        kv_manager._orig_enqueue_block_copy = kv_manager._enqueue_block_copy  # type: ignore
-        kv_manager._enqueue_block_copy = mock_enqueue_block_copy.__get__(  # type: ignore
-            kv_manager
+        # Monkey patch the memcpy_d2d method to use our mock method.
+        block_copy_engine = kv_manager.block_copy_engine
+        block_copy_engine._orig_memcpy_d2d = block_copy_engine.memcpy_d2d  # type: ignore
+        block_copy_engine.memcpy_d2d = mock_memcpy_d2d.__get__(  # type: ignore
+            block_copy_engine
         )
 
     def run(
@@ -742,8 +737,8 @@ async def test_prefix_caching_cow() -> None:
     run_forward_cow(
         seq_id=1, prompt=np.array([10, 11, 12, 13, 14, 22]), cache_idx=5
     )
-    assert kv_manager.d2d_blocks_copied == 1
+    assert kv_manager.num_blocks_copied.d2d == 1
     run_forward_cow(seq_id=2, prompt=np.array([10, 11, 22]), cache_idx=2)
-    assert kv_manager.d2d_blocks_copied == 2
+    assert kv_manager.num_blocks_copied.d2d == 2
     run_forward_cow(seq_id=3, prompt=np.array([10, 11, 12]), cache_idx=2)
-    assert kv_manager.d2d_blocks_copied == 3
+    assert kv_manager.num_blocks_copied.d2d == 3

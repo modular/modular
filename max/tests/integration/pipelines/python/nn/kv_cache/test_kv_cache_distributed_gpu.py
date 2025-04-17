@@ -134,8 +134,9 @@ async def test_swapping_to_host_multi_gpu(enable_swapping_to_host: bool):
         # Host tensor should be pinned
         assert kv_manager.host_tensor is not None
         assert kv_manager.host_tensor.pinned
-        # Evictions should be scheduled on auxillary stream
-        assert kv_manager.d2h_auxillary_stream is not None
+        # Evictions should be scheduled on auxiliary stream
+        assert kv_manager.block_manager.block_copy_engine is not None
+        assert kv_manager.block_manager.block_copy_engine.supports_multistream()
 
     def gen_prompt(length: int) -> np.ndarray:
         # returns a binary sequence of length `length`
@@ -198,10 +199,12 @@ async def test_swapping_to_host_multi_gpu(enable_swapping_to_host: bool):
         expected_cache_hit_rates = np.array([0.0, 0.02, 0.03, 0.02, 0.03])
         expected_blocks_copied = np.array([11, 0, 0])  # d2d, d2h, h2d
 
-    d2d = kv_manager.d2d_blocks_copied
-    d2h = kv_manager.d2h_blocks_copied
-    h2d = kv_manager.h2d_blocks_copied
-    blocks_copied = np.array([d2d, d2h, h2d])
-    print(f"Blocks copied: D2D: {d2d}, D2H: {d2h}, H2D: {h2d}")
-    assert np.allclose(blocks_copied, expected_blocks_copied, atol=5)
+    blocks_copied = kv_manager.num_blocks_copied
+    print(
+        f"Blocks copied: D2D: {blocks_copied.d2d}, D2H: {blocks_copied.d2h}, H2D: {blocks_copied.h2d}"
+    )
+    blocks_copied_arr = np.array(
+        [blocks_copied.d2d, blocks_copied.d2h, blocks_copied.h2d]
+    )
+    assert np.allclose(blocks_copied_arr, expected_blocks_copied, atol=5)
     assert np.allclose(cache_hit_rates, expected_cache_hit_rates, atol=0.1)
