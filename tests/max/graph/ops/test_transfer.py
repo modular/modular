@@ -26,3 +26,20 @@ def test_transfer_to_basic() -> None:
         out = graph.inputs[0].to(target_device)
         assert out.device == target_device
         graph.output(out)
+
+
+def test_transfer_identity() -> None:
+    with Graph(
+        "identity",
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=[6, 5], device=DeviceRef.GPU()
+            ),
+        ],
+    ) as graph:
+        # gpu:0 --> gpu:0 is useless so this should be no-op
+        out = graph.inputs[0].to(DeviceRef.GPU())
+        graph.output(out)
+
+    # make sure no transfer operation was created
+    assert "transfer" not in str(graph)

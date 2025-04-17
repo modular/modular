@@ -25,6 +25,7 @@ import numpy as np
 from max import mlir
 from max._core import graph as _graph
 from max._core.dialects import mo  # type: ignore
+from max.driver import Device
 from max.dtype import DType
 
 
@@ -584,6 +585,8 @@ class DeviceRef:
 
     def __eq__(self, other: Any) -> bool:
         """Returns true if devices are equal."""
+        if not isinstance(other, DeviceRef):
+            return False
         return self.device_type is other.device_type and self.id == other.id
 
     def to_mlir(self) -> mlir.Attribute:
@@ -599,6 +602,10 @@ class DeviceRef:
             device_type=DeviceKind(_graph.device_attr_get_label(device_attr)),
             id=_graph.device_attr_get_id(device_attr),
         )
+
+    @staticmethod
+    def from_device(device: Device) -> DeviceRef:
+        return DeviceRef(DeviceKind(device.label), device.id)
 
 
 StaticShape = list[StaticDim]

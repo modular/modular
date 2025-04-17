@@ -29,6 +29,8 @@ def transfer_to(x: TensorValue, device: DeviceRef) -> TensorValue:
     Returns:
         A tensor transferred to device specified.
     """
+    if device == x.type.device:
+        return x
 
     return Graph.current._add_op(
         rmo.mo_transfer,
