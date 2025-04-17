@@ -12,6 +12,23 @@
 #include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 
+#include <type_traits>
+#include <variant>
+
+template <typename T, typename... Ts>
+constexpr bool is_one_of = (std::is_same_v<T, Ts> || ...);
+
+template <typename... TargetTypes, typename Variant, typename Func>
+void partial_visit(Func &&func, Variant &var) {
+  std::visit(
+      [&](auto &val) {
+        using T = std::decay_t<decltype(val)>;
+        if constexpr (is_one_of<T, TargetTypes...>)
+          func(val);
+      },
+      var);
+}
+
 namespace M::KGEN::MOGGPreElab {
 
 struct TensorOperandAdaptor {
@@ -159,7 +176,12 @@ struct MojoKernelOperandAdaptor {
     if (!isTensorType())
       return false;
 
-    return std::get<TensorOperandAdaptor>(underlyingType).fused;
+    bool fused;
+    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
+                  ListOfTensorOperandAdaptor>(
+        [&](auto &&obj) { fused = obj.fused; }, underlyingType);
+
+    return fused;
   }
 };
 
@@ -248,10 +270,13 @@ struct MojoKernelFunctionAdaptor {
     if constexpr (std::is_same_v<LIT::FnOp, FuncOpType>) {
       if (mojoCode.getSymName().has_value())
         sourceName = *mojoCode.getSymName();
+    } else {
+      sourceName = mojoCode.getSymName();
     }
 
     if (auto name = mojoCode->getAttr("sourceName"))
       sourceName = cast<StringAttr>(name).strref();
+
     os << nesting << sourceName.str() << "\n" << nesting << "(\n";
 
     for (auto &arg : outputArguments)
