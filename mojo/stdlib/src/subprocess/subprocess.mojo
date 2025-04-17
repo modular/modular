@@ -92,8 +92,22 @@ struct _POpenHandle:
 fn run(cmd: String) raises -> String:
     """Runs the specified command and returns the output as a string.
 
+    This function executes the given command in a subprocess, captures its
+    standard output, and returns it as a string. It automatically handles
+    opening and closing the subprocess.
+
+    Args:
+        cmd: The command to execute as a string.
+
     Returns:
-      The output of running the command as a string.
+        The standard output of the command as a string, with trailing
+        whitespace removed.
+
+    Raises:
+        This function raises if:
+        * The command cannot be executed.
+        * There is an IO error reading from the subprocess.
+        * The data written by the subprocess is not valid UTF-8.
     """
     var hdl = _POpenHandle(cmd)
     return hdl.read()
