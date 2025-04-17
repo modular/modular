@@ -121,7 +121,7 @@ class RotaryEmbedding(Module):
         if start_pos is None:
             start_pos = ops.constant(0, dtype=DType.int64)
         if seq_len is None:
-            seq_len = v.shape[-2]
+            seq_len = v.shape[-3]
 
         seq_len_val = TensorValue(seq_len)
         freqs_cis_sliced = self.freqs_cis[
@@ -248,45 +248,69 @@ class DeepseekYarnRopeScalingParams:
 
 
 @dataclass
-class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
-    """YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
+class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
+    """
+    Deepseek's YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
 
-    This layer implements YaRN rotary position embeddings which extend RoPE to longer sequences.
-    It computes position-dependent rotation matrices using a combination of linear interpolation
-    and frequency scaling to enable extrapolation beyond the original training context length.
-
-    Unlike the parent class, this class does not apply frequencies to the input tensor. Instead, it simply returns the frequencies which can be later applied in a kernel.
+    Unlike Llama3RotaryEmbedding, the `dim` argument here is the rope dimension
+    of the model, not the hidden dimension.
     """
 
     scaling_params: Optional[DeepseekYarnRopeScalingParams] = None
 
-    def __call__(
-        self,
-        x: TensorValueLike,
-        start_pos: Optional[TensorValue] = None,
-        seq_len: Optional[Dim] = None,
-    ) -> TensorValue:
-        freqs_cos, freqs_sin = self._compute_yarn_freqs(TensorValue(x))
-        return ops.stack([freqs_cos, freqs_sin], axis=0)
+    def freqs_cis_base(self) -> TensorValue:
+        """
+        Computes the frequency tensor for complex exponentials (cis)
+        for a given seq_len. Tensor is scaled with theta parameter.
+        Required to apply Rotary Position Embedding (RoPE) to tensor.
+        See 'Roformer: Enhanced Transformer with Rotary Embedding'
+        (arxiv.org/pdf/2104.09864).
 
-    def _compute_yarn_freqs(
-        self, x: TensorValue
-    ) -> tuple[TensorValue, TensorValue]:
+        Returns:
+            The frequency tensor for complex exponentials with shape
+                (max_seq_len, rope_dim // 2, 2)
+        """
+        if self._freqs_cis is None:
+            if self.scaling_params is None:
+                raise ValueError("scaling_params must be provided")
+            _mscale = float(
+                self._yarn_get_mscale(
+                    self.scaling_params.scaling_factor,
+                    self.scaling_params.mscale,
+                )
+                / self._yarn_get_mscale(
+                    self.scaling_params.scaling_factor,
+                    self.scaling_params.mscale_all_dim,
+                )
+            )
+
+            inv_freqs = self._compute_yarn_freqs()
+
+            t = ops.range(
+                ops.constant(0, DType.float32),
+                ops.constant(self.max_seq_len, DType.float32),
+                ops.constant(1, DType.float32),
+                out_dim=self.max_seq_len,
+            )
+            freqs = ops.outer(t, inv_freqs)
+            cos = ops.cos(freqs) * _mscale
+            sin = ops.sin(freqs) * _mscale
+            self._freqs_cis = ops.stack([cos, sin], axis=-1)
+        return TensorValue(self._freqs_cis)
+
+    def _compute_yarn_freqs(self) -> TensorValue:
         if self.scaling_params is None:
             raise ValueError("scaling_params must be provided")
 
-        seq_len = x.shape[-2]
-
-        dim = Dim(self.dim // 2)
+        dim_2 = Dim(self.dim // 2)
 
         start = ops.constant(0, dtype=DType.float32)
         end = ops.constant(self.dim, dtype=DType.float32)
         step = ops.constant(2, dtype=DType.float32)
-        range_output = ops.range(start, end, step, out_dim=dim)
+        range_output = ops.range(start, end, step, out_dim=dim_2)
 
         freq_base = self.theta ** (range_output / float(self.dim))
         freq_extra = 1.0 / freq_base
-
         freq_inter = 1.0 / (self.scaling_params.scaling_factor * freq_base)
 
         low, high = self._yarn_find_correction_range(
@@ -298,39 +322,13 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         )
 
         # Ensure the mask has the correct dimension
-        inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(low, high, dim).cast(
-            DType.float32
-        )
-
-        # Ensure shapes match before multiplication
-        inv_freq_mask = ops.broadcast_to(inv_freq_mask, freq_inter.shape)
+        inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
+            low, high, dim_2
+        ).cast(DType.float32)
 
         inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
 
-        self.inv_freq = inv_freq
-        # Create range with all required parameters
-        end = ops.constant(
-            int(seq_len), dtype=DType.float32
-        )  # Convert seq_len to int
-        step = ops.constant(1, dtype=DType.float32)
-        t = ops.range(start, end, step, out_dim=Dim(int(seq_len)))
-        freqs = ops.outer(t, inv_freq)
-
-        _mscale = float(
-            self._yarn_get_mscale(
-                self.scaling_params.scaling_factor, self.scaling_params.mscale
-            )
-            / self._yarn_get_mscale(
-                self.scaling_params.scaling_factor,
-                self.scaling_params.mscale_all_dim,
-            )
-        )
-
-        emb = ops.concat((freqs, freqs), axis=-1)
-        freqs_cos = ops.cos(emb) * _mscale
-        freqs_sin = ops.sin(emb) * _mscale
-        self._freqs_cis = ops.stack([freqs_cos, freqs_sin], axis=0)
-        return freqs_cos, freqs_sin
+        return inv_freq
 
     def _yarn_get_mscale(
         self, scale: float = 1.0, mscale: float = 1.0
@@ -372,10 +370,14 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
                 low_rot, dim, base, max_position_embeddings
             )
         )
-        high = ops.floor(
-            self._yarn_find_correction_dim(
-                high_rot, dim, base, max_position_embeddings
+        # TODO: we don't have ops.ceil, use ops.trunc + 1 instead
+        high = (
+            ops.trunc(
+                self._yarn_find_correction_dim(
+                    high_rot, dim, base, max_position_embeddings
+                )
             )
+            + 1
         )
         return ops.max(low, 0), ops.min(high, dim - 1)
 
