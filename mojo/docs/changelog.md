@@ -18,6 +18,10 @@ what we publish.
 
 ### ✨ Highlights
 
+- Trait compositions are now supported via the `&` syntax. A trait composition
+  combines two traits into one logical trait whose constraint set is the union
+  of the constraint sets of the two original traits.
+
 ### Language changes
 
 - The Mojo compiler now warns about obsolete use of `mut self` in initializers,
