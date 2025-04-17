@@ -535,6 +535,15 @@ class DeviceKind(str, Enum):
     def __str__(self) -> str:
         return self.value
 
+    @staticmethod
+    def from_string(txt) -> DeviceKind:
+        if txt == str(DeviceKind.CPU):
+            return DeviceKind.CPU
+        elif txt == str(DeviceKind.GPU):
+            return DeviceKind.GPU
+        else:
+            raise ValueError(f"Unknown device kind {txt}")
+
 
 class DeviceRef:
     """A symbolic device representation.
