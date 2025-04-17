@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import math
 from contextvars import ContextVar
 
 import numpy as np
@@ -18,7 +17,6 @@ from .. import dtype_promotion
 from ..graph import Graph
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
-from .elementwise import erf
 
 SEED = ContextVar[TensorValue]("Seed")
 SeedType = TensorType(DType.int64, [])
@@ -91,16 +89,17 @@ def uniform(
     like: TensorType,
     range: tuple[TensorValueLike, TensorValueLike] = (0, 1),
 ) -> TensorValue:
-    # Transform the gaussian by its CDF, which yields a uniform distribution.
-    #  - Scale the gaussian by 1/sqrt(2) to cancel the sqrt(2) factor in the CDF
-    #  - After `erf`, distribution is uniform on (-1, 1)
-    symmetric_uniform = erf(gaussian(like, std=1 / math.sqrt(2)))
-    unit_uniform = (1 + symmetric_uniform) / 2
-
     lower, upper = range
+
     assert_scalar(lower)
     assert_scalar(upper)
-    lower = dtype_promotion._promote_to_strong(lower, like.dtype)
-    upper = dtype_promotion._promote_to_strong(upper, like.dtype)
-    scale = upper - lower
-    return scale * unit_uniform + lower
+    # Check whether we have a seed before we add other constants to the graph.
+    seed = _next_seed()
+    return Graph.current._add_op(
+        rmo.mo_random_uniform,
+        result=like.to_mlir(),
+        shape=TensorValue(like.shape),
+        lower_bound=dtype_promotion._promote_to_strong(lower, like.dtype),
+        upper_bound=dtype_promotion._promote_to_strong(upper, like.dtype),
+        seed=seed,
+    )[0].tensor
