@@ -2571,6 +2571,29 @@ struct StaticBroadcastTo:
         return tuple_to_dimlist(new_strides)
 
     @staticmethod
+    fn update_input_view[
+        type: DType,
+        in_rank: Int,
+        out_rank: Int, //,
+    ](
+        z: OutputTensor[type=type, rank=out_rank],
+        x: InputTensor[type=type, rank=in_rank],
+        output_shape: IndexList[out_rank],
+        out result: InputTensor[
+            static_spec = x.static_spec.with_layout[out_rank](
+                z._static_shape,
+                Self.get_view_strides[z.rank, x.rank](
+                    x._static_shape, x._static_strides
+                ),
+            )
+        ],
+    ):
+        var x_runtime_strides = Self.build_view[z.rank](x)
+        return __type_of(result)(
+            x.unsafe_ptr(), output_shape, x_runtime_strides
+        )
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -2587,16 +2610,7 @@ struct StaticBroadcastTo:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
-        alias view_strides = Self.get_view_strides[z.rank, x.rank](
-            x._static_shape, x._static_strides
-        )
-
-        var x_runtime_strides = Self.build_view[z.rank](x)
-
-        var x_view = x.with_layout[
-            new_static_shape = z._static_shape,
-            new_static_strides=view_strides,
-        ](output_shape, x_runtime_strides)
+        var x_view = Self.update_input_view(z, x, output_shape)
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -2627,6 +2641,32 @@ struct StaticReshape:
         return tuple_to_dimlist(new_strides)
 
     @staticmethod
+    fn update_input_view[
+        type: DType,
+        output_rank: Int, //,
+    ](
+        output: OutputTensor[type=type, rank=output_rank],
+        input: InputTensor[type=type],
+        shape: IndexList[output_rank],
+        out result: InputTensor[
+            static_spec = input.static_spec.with_layout[output_rank](
+                output._static_shape,
+                Self.get_view_strides[output.rank](output._static_shape),
+            )
+        ],
+    ):
+        var view_buffer = reshape(
+            managed_tensor_slice_to_ndbuffer(input),
+            shape,
+        )
+
+        return __type_of(result)(
+            view_buffer.data,
+            view_buffer.get_shape(),
+            view_buffer.get_strides(),
+        )
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -2639,18 +2679,7 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContextPtr,
     ) raises:
-        var view_buffer = reshape(
-            managed_tensor_slice_to_ndbuffer(input),
-            shape,
-        )
-        alias view_strides = Self.get_view_strides[output.rank](
-            output._static_shape
-        )
-
-        view_tensor = input.with_layout[
-            new_static_shape = output._static_shape,
-            new_static_strides=view_strides,
-        ](view_buffer.get_shape(), view_buffer.get_strides())
+        var view_tensor = Self.update_input_view(output, input, shape)
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -2723,6 +2752,27 @@ struct Transpose:
         return tuple_to_dimlist(new_strides)
 
     @staticmethod
+    fn update_input_view[
+        type: DType,
+        rank: Int, //,
+        static_permutations: DimList,
+    ](
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        permutations: InputTensor[rank=1],
+        out result: InputTensor[
+            static_spec = input.static_spec.with_layout[rank](
+                output._static_shape,
+                Self.get_view_strides[static_permutations, rank](
+                    input._static_strides
+                ),
+            )
+        ],
+    ):
+        shape, strides = Self.transpose_in_place(input, permutations)
+        return __type_of(result)(input.unsafe_ptr(), shape, strides)
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -2736,16 +2786,9 @@ struct Transpose:
         permutations: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        alias view_strides = Self.get_view_strides[static_permutations, rank](
-            input._static_strides
+        var view = Self.update_input_view[static_permutations](
+            output, input, permutations
         )
-
-        shape, strides = Self.transpose_in_place(input, permutations)
-
-        var view = input.with_layout[
-            new_static_shape = output._static_shape,
-            new_static_strides=view_strides,
-        ](shape, strides)
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -2805,6 +2848,39 @@ struct Slice:
         return tuple_to_dimlist(new_strides)
 
     @staticmethod
+    fn update_input_view[
+        type: DType,
+        rank: Int, //,
+        static_steps: DimList,
+    ](
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        starts: InputTensor[rank=1],
+        stops: InputTensor[rank=1],
+        steps: InputTensor[rank=1],
+        out result: InputTensor[
+            static_spec = input.static_spec.with_layout[rank](
+                output._static_shape,
+                Self.get_view_strides[rank](
+                    input._static_strides, static_steps
+                ),
+            )
+        ],
+    ):
+        var view_buffer = slice_as_view(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(starts),
+            managed_tensor_slice_to_ndbuffer(stops),
+            managed_tensor_slice_to_ndbuffer(steps),
+        )
+
+        return __type_of(result)(
+            view_buffer.data,
+            view_buffer.get_shape(),
+            view_buffer.get_strides(),
+        )
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -2820,24 +2896,8 @@ struct Slice:
         steps: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        var view_buffer = slice_as_view(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
-        )
-
-        alias view_strides = Self.get_view_strides[rank](
-            input._static_strides, static_steps
-        )
-
-        var view_tensor = input.with_layout[
-            new_static_shape = output._static_shape,
-            new_static_strides=view_strides,
-        ](
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
-            offset_ptr=view_buffer.data,
+        var view_tensor = Self.update_input_view[static_steps](
+            output, input, starts, stops, steps
         )
 
         view_copy_impl[
@@ -2939,6 +2999,40 @@ struct SliceDim:
         return tuple_to_dimlist(new_strides)
 
     @staticmethod
+    fn update_input_view[
+        type: DType,
+        rank: Int, //,
+        axis: Int,
+        static_step: DimList,
+    ](
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        starts: Scalar,
+        stops: Scalar,
+        steps: Scalar,
+        out result: InputTensor[
+            static_spec = input.static_spec.with_layout[rank](
+                output._static_shape,
+                Self.get_view_strides[rank, axis](
+                    input._static_strides, static_step.at[0]()
+                ),
+            )
+        ],
+    ):
+        var view_buffer = slice_dim_as_view[dim=axis](
+            managed_tensor_slice_to_ndbuffer(input),
+            Int(starts),
+            Int(stops),
+            Int(steps),
+        )
+
+        return __type_of(result)(
+            view_buffer.data,
+            view_buffer.get_shape(),
+            view_buffer.get_strides(),
+        )
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -2955,24 +3049,8 @@ struct SliceDim:
         steps: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
-        var view_buffer = slice_dim_as_view[dim=axis](
-            managed_tensor_slice_to_ndbuffer(input),
-            Int(starts),
-            Int(stops),
-            Int(steps),
-        )
-
-        alias view_strides = Self.get_view_strides[rank, axis](
-            input._static_strides, static_step.at[0]()
-        )
-
-        var view_tensor = input.with_layout[
-            new_static_shape = output._static_shape,
-            new_static_strides=view_strides,
-        ](
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
-            offset_ptr=view_buffer.data,
+        var view_tensor = Self.update_input_view[axis, static_step](
+            output, input, starts, stops, steps
         )
 
         view_copy_impl[
