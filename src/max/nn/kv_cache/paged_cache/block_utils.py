@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import NamedTuple
 
 import numpy as np
@@ -113,21 +112,6 @@ class KVCacheBlock:
 
     def __repr__(self) -> str:
         return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash})"
-
-
-class BlockCopyType(Enum):
-    D2D_COW = 1
-    H2D_MEMCPY = 2
-    D2H_MEMCPY = 3
-
-
-@dataclass
-class BlockCopyOp:
-    block_copy_type: BlockCopyType
-    dst: KVCacheBlock
-    src: KVCacheBlock
-    num_tokens: int
-    block_hash: BlockHashType
 
 
 class FreeKVCacheBlockQueue:

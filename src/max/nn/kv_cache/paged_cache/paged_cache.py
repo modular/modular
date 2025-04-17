@@ -24,7 +24,7 @@ from operator import mul
 from typing import Any, TypeVar, cast
 
 import numpy as np
-from max.driver import Device, DeviceStream, Tensor
+from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -52,8 +52,8 @@ from ..manager import (
     RaggedKVCacheInputs,
 )
 from ..utils import build_max_lengths_tensor
-from .block_manager import BlockManager
-from .block_utils import BlockCopyOp, BlockCopyType
+from .block_copy_engine import BlockCopyEngine, BlockCopyMetrics
+from .block_manager import BlockManager, SwappingStrategy
 
 logger = logging.getLogger("max.pipelines")
 
@@ -292,23 +292,8 @@ class PagedKVCacheManager(KVCacheManager):
     enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
-    main_stream: DeviceStream | None
-    """The main stream on the gpu_device used by pipelines which must be synchronized with the auxillary stream."""
-
-    d2h_auxillary_stream: DeviceStream | None
-    """An auxillary stream for issuing d2h copies if swapping to host is enabled on a GPU device."""
-
     prefetched_seq_ids: set[int]
     """Set of sequence IDs whose blocks have been prefetched."""
-
-    d2d_blocks_copied: int
-    """Count of blocks copied device-to-device (e.g., for COW)."""
-
-    d2h_blocks_copied: int
-    """Count of blocks copied device-to-host (e.g., for eviction)."""
-
-    h2d_blocks_copied: int
-    """Count of blocks copied host-to-device (e.g., for cache hits from host)."""
 
     @traced
     def __init__(
@@ -390,10 +375,6 @@ class PagedKVCacheManager(KVCacheManager):
                 f"Need to allocate at least {blocks_needed_for_max_seq_len} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
             )
 
-        logger.info(
-            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page."
-        )
-
         # call our base class constructor
         super().__init__(
             params=params,
@@ -404,6 +385,22 @@ class PagedKVCacheManager(KVCacheManager):
             session=session,
             is_ragged=True,
         )
+
+        # Whether prefix caching is enabled.
+        self.enable_prefix_caching = self.params.enable_prefix_caching
+
+        # Whether kvcache swapping to host is enabled
+        self.enable_kvcache_swapping_to_host = (
+            self.params.enable_kvcache_swapping_to_host
+        )
+
+        if (
+            self.enable_kvcache_swapping_to_host
+            and not self.enable_prefix_caching
+        ):
+            raise ValueError(
+                "KVCache swapping to host is only supported when prefix caching is enabled"
+            )
 
         # Initialize the block buffers for each device.
         self.device_tensors: list[Tensor] = []
@@ -416,12 +413,9 @@ class PagedKVCacheManager(KVCacheManager):
                 )
             )
 
-        # Determine if any of the devices are GPU devices.
-        self.gpu_device: Device | None = None
-        for dev in devices:
-            if not dev.is_host:
-                self.gpu_device = dev
-                break
+        logger.info(
+            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page."
+        )
 
         self.host_tensor = None
         self.total_num_host_pages = 0
@@ -453,8 +447,15 @@ class PagedKVCacheManager(KVCacheManager):
                 f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_str} per page."
             )
 
+            # Determine if any of the devices are GPU devices.
+            gpu_device: Device | None = None
+            for dev in devices:
+                if not dev.is_host:
+                    gpu_device = dev
+                    break
+
             # Create a kvcache allocation on the host.
-            if self.gpu_device is not None:
+            if gpu_device is not None:
                 # Use pinned host memory when there is a GPU device.
                 # Pinned memory has faster memory transfer speeds compared to
                 # pageable memory and allows for the host to issue them
@@ -462,7 +463,7 @@ class PagedKVCacheManager(KVCacheManager):
                 self.host_tensor = Tensor(
                     shape=self.block_shape(self.total_num_host_pages),  # type: ignore
                     dtype=self.params.dtype,
-                    device=self.gpu_device,
+                    device=gpu_device,
                     pinned=True,
                 )
             else:
@@ -473,6 +474,17 @@ class PagedKVCacheManager(KVCacheManager):
                     dtype=self.params.dtype,
                     device=Device.cpu(),
                 )
+
+        # Initialize block copy engine.
+        self.block_copy_engine: BlockCopyEngine | None = None
+        if self.enable_prefix_caching:
+            self.block_copy_engine = BlockCopyEngine(
+                block_size=self.page_size,
+                num_device_blocks=self.total_num_pages,
+                device_tensors=self.device_tensors,
+                num_host_blocks=self.total_num_host_pages,
+                host_tensor=self.host_tensor,
+            )
 
         # Initialize block manager
         device_memory_tier = (
@@ -485,33 +497,14 @@ class PagedKVCacheManager(KVCacheManager):
             total_num_blocks=self.total_num_pages,
             total_num_host_blocks=self.total_num_host_pages,
             block_size=self.page_size,
+            block_copy_engine=self.block_copy_engine,
             enable_prefix_caching=self.params.enable_prefix_caching,
             enable_runtime_checks=enable_runtime_checks,
         )
 
-        # Whether prefix caching is enabled.
-        self.enable_prefix_caching = self.params.enable_prefix_caching
-
-        # Whether kvcache swapping to host is enabled
-        self.enable_kvcache_swapping_to_host = (
-            self.params.enable_kvcache_swapping_to_host
-        )
-
-        self.main_stream: DeviceStream | None = None
-        self.d2h_auxillary_stream: DeviceStream | None = None
-        if self.enable_kvcache_swapping_to_host and self.gpu_device is not None:
-            self.main_stream = self.gpu_device.default_stream
-            # Create auxillary stream for D2H memcpys
-            self.d2h_auxillary_stream = DeviceStream(self.gpu_device)
-
         # Mapping from seq ID to blocks that have been prefetched prior to a
         # fetch operation.
         self.prefetched_seq_ids: set[int] = set()
-
-        # Number of blocks that have been copied
-        self.d2d_blocks_copied: int = 0
-        self.d2h_blocks_copied: int = 0
-        self.h2d_blocks_copied: int = 0
 
     @classmethod
     def _block_size_per_token(
@@ -618,41 +611,6 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.reuse_blocks_from_prefix_cache(data)
 
     @traced
-    def _enqueue_and_reset_copy_ops(
-        self,
-        seq_id: int | None = None,
-        skip_req_copy_ops: bool = False,
-        use_auxillary_stream_for_d2h: bool = False,
-    ) -> None:
-        """Enqueue copy ops for a given sequence and clear the list.
-
-        When attempting to schedule a request, block copy ops are enqueued. If
-        the request is succesfully scheduled, we should execute their enqueued
-        d2d (COW) and h2d (host cache hit) copies. If the request is not scheduled
-        for any reason (eg: not enough blocks are available), we will skip issuing
-        those block copies.
-
-        Regardless of whether the request is scheduled or not, the d2h eviction
-        copies should always be issued. These are not specific to any request.
-        """
-        # Attempt to schedule all d2h eviction copies.
-        copy_ops = self.block_manager.d2h_eviction_copy_ops
-        for copy_op in copy_ops:
-            self._enqueue_block_copy(copy_op, use_auxillary_stream_for_d2h)
-        self.block_manager.reset_d2h_eviction_copy_ops()
-
-        # If seq_id is None, there are no d2d / h2d copies to schedule.
-        if seq_id is None:
-            return
-
-        # Schedule d2d and h2d copies needed to run the given request.
-        copy_ops = self.block_manager.get_req_copy_ops(seq_id)
-        if not skip_req_copy_ops:
-            for copy_op in copy_ops:
-                self._enqueue_block_copy(copy_op, use_auxillary_stream_for_d2h)
-        self.block_manager.reset_req_copy_ops(seq_id)
-
-    @traced
     def allocate_new_blocks(self, data: T, num_steps: int = 1) -> bool:
         """Allocate new blocks for a given sequence.
 
@@ -667,10 +625,7 @@ class PagedKVCacheManager(KVCacheManager):
         try:
             self.block_manager.allocate_new_blocks(data, num_steps)
         except RuntimeError:
-            self._enqueue_and_reset_copy_ops(seq_id, skip_req_copy_ops=True)
             return False
-
-        self._enqueue_and_reset_copy_ops(seq_id)
         self.prefetched_seq_ids.add(seq_id)
 
         self.block_manager.assert_runtime_invariants(data)
@@ -690,13 +645,8 @@ class PagedKVCacheManager(KVCacheManager):
         already have blocks pre-allocated and we will not run into OOM errors.
         """
 
-        # Synchronize main stream with the auxillary stream.
-        # This ensures that the d2h copies from BatchN completes before
-        # BatchN+1 begins. This is needed because BatchN+1 may write to the
-        # same blocks as BatchN is reading from.
-        if self.d2h_auxillary_stream is not None:
-            assert self.main_stream is not None
-            self.main_stream.wait_for(self.d2h_auxillary_stream)
+        if self.block_copy_engine is not None:
+            self.block_copy_engine.wait_for_completion()
 
         max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):
@@ -706,7 +656,6 @@ class PagedKVCacheManager(KVCacheManager):
             if seq_id not in self.prefetched_seq_ids:
                 self.block_manager.reuse_blocks_from_prefix_cache(ctx)
                 self.block_manager.allocate_new_blocks(ctx, num_steps)
-                self._enqueue_and_reset_copy_ops(seq_id)
 
             # Compute the total sequence length
             seq_len = ctx.current_length + num_steps - 1
@@ -758,12 +707,8 @@ class PagedKVCacheManager(KVCacheManager):
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
-        # Offload the recently committed gpu blocks to host memory.
-        # This is overlapped with kernel execution.
-        self.block_manager.offload_recently_committed_blocks()
-        self._enqueue_and_reset_copy_ops(
-            use_auxillary_stream_for_d2h=self.d2h_auxillary_stream is not None
-        )
+        if self.block_manager.swapping_strategy == SwappingStrategy.EAGER:
+            self.block_manager.eagerly_offload_recently_committed_blocks()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
@@ -853,77 +798,6 @@ class PagedKVCacheManager(KVCacheManager):
             # We possibly commit new blocks into the prefix cache.
             self.block_manager.step(ctx)
 
-    @traced
-    def _enqueue_block_copy(
-        self, copy_op: BlockCopyOp, use_auxillary_stream_for_d2h: bool = False
-    ) -> None:
-        copy_type = copy_op.block_copy_type
-        dst_idx = copy_op.dst.bid
-        src_idx = copy_op.src.bid
-        if copy_type == BlockCopyType.D2D_COW:
-            # TODO E2EOPT-142: Schedule each memcpy on a different stream
-            if dst_idx != src_idx:
-                self.d2d_blocks_copied += 1
-                for device_tensor in self.device_tensors:
-                    device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
-                        device_tensor[src_idx, :, :, :, :, :]
-                    )
-        elif copy_type == BlockCopyType.H2D_MEMCPY:
-            # This is a cache hit
-            logger.debug(
-                f"H2D: Copying block D{dst_idx} <- H{src_idx} (CPU Cache Hit)"
-            )
-            dst_dev = copy_op.dst
-            src_host = copy_op.src
-            host_block_pool = self.block_manager.host_block_pool
-            assert host_block_pool is not None
-
-            # Commit the dst block into the device prefix cache.
-            device_block_pool = self.block_manager.device_block_pool
-            device_block_pool.commit_into_prefix_cache(
-                copy_op.block_hash, dst_dev
-            )
-
-            # Release the host block.
-            host_block_pool.free_block(src_host)
-
-            # Copy the data from the host to the devices.
-            assert self.host_tensor is not None
-            for device_tensor in self.device_tensors:
-                device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
-                    self.host_tensor[src_idx, :, :, :, :, :]
-                )
-            self.h2d_blocks_copied += 1
-        elif copy_type == BlockCopyType.D2H_MEMCPY:
-            # This is a eviction
-            logger.debug(
-                f"D2H: Copying block H{dst_idx} <- D{src_idx} (GPU Block Evicted)"
-            )
-            dst_host = copy_op.dst
-            host_block_pool = self.block_manager.host_block_pool
-            assert host_block_pool is not None
-
-            # We already committed the dst_host block into the host prefix cache.
-
-            # Release host block.
-            host_block_pool.free_block(dst_host)
-
-            # Copy the data from device 0 to the host. We assume that all
-            # devices have the same data.
-            assert self.host_tensor is not None
-            device_tensor_rank0 = self.device_tensors[0]
-            dst = self.host_tensor[dst_idx, :, :, :, :, :]
-            src = device_tensor_rank0[src_idx, :, :, :, :, :]
-
-            if use_auxillary_stream_for_d2h:
-                assert self.d2h_auxillary_stream is not None
-                dst = dst.to(self.d2h_auxillary_stream)
-
-            dst.inplace_copy_from(src)
-            self.d2h_blocks_copied += 1
-        else:
-            raise NotImplementedError(f"Unknown block copy type: {copy_type}")
-
     @property
     def free_blocks(self) -> set[int]:
         """Get the set of free blocks."""
@@ -964,15 +838,22 @@ class PagedKVCacheManager(KVCacheManager):
         assert 0 <= pct <= 1
         return pct
 
-    def reset_blocks_copied(self) -> None:
-        """Reset the number of cow operations performed."""
-        self.d2d_blocks_copied = 0
-        self.d2h_blocks_copied = 0
-        self.h2d_blocks_copied = 0
-
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
         return self.block_manager.get_req_blocks(seq_id)
+
+    @property
+    def num_blocks_copied(self) -> BlockCopyMetrics:
+        """Get the number of blocks copied for each type."""
+        if self.block_copy_engine is None:
+            return BlockCopyMetrics()
+        return self.block_copy_engine.blocks_copied
+
+    def reset_num_blocks_copied(self) -> None:
+        """Reset the number of blocks copied for each type."""
+        if self.block_copy_engine is None:
+            return
+        self.block_copy_engine.blocks_copied.reset()
 
 
 class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):

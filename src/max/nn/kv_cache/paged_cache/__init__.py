@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from .block_utils import BlockCopyOp, BlockCopyType
+from .block_copy_engine import BlockCopyEngine, BlockCopyType
 from .paged_cache import (
     FetchPagedKVCacheCollection,
     FetchPagedKVCacheCollectionFA3Fallback,
@@ -24,7 +24,6 @@ from .paged_cache import (
 )
 
 __all__ = [
-    "BlockCopyOp",
     "BlockCopyType",
     "FetchPagedKVCacheCollection",
     "FetchPagedKVCacheCollectionFA3Fallback",

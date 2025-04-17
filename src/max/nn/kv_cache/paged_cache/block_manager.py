@@ -24,8 +24,10 @@ This logic is largely borrowed from vLLM v1:
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Iterable
+from enum import Enum
 from typing import Generic, TypeVar
 
 import numpy as np
@@ -36,16 +38,29 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 from max.support.math import ceildiv
 
 from ..context import KVCacheAwareContext
+from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
 from .block_utils import (
     ROOT_BLOCK_HASH,
-    BlockCopyOp,
-    BlockCopyType,
     BlockHashType,
     KVCacheBlock,
     hash_block_tokens,
     hash_request_tokens,
 )
+
+logger = logging.getLogger("max.pipelines")
+
+
+class SwappingStrategy(Enum):
+    """Strategy for offboarding blocks from the device."""
+
+    # Copy device blocks to host as soon as they are committed.
+    # This results in more copies but is efficient if copies can be hidden in a
+    # separate stream.
+    EAGER = "EAGER"
+    # Copy device blocks to host only when they are evicted.
+    LAZY = "LAZY"
+
 
 T = TypeVar("T", bound=KVCacheAwareContext)
 
@@ -58,6 +73,7 @@ class BlockManager(Generic[T]):
         total_num_blocks: int,
         total_num_host_blocks: int,
         block_size: int,
+        block_copy_engine: BlockCopyEngine | None,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ):
@@ -66,6 +82,13 @@ class BlockManager(Generic[T]):
 
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
+
+        # The block copy engine.
+        if enable_prefix_caching and block_copy_engine is None:
+            raise ValueError(
+                "Block copy engine must be provided if prefix caching is enabled"
+            )
+        self.block_copy_engine = block_copy_engine
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -77,12 +100,28 @@ class BlockManager(Generic[T]):
 
         # A pool of host blocks.
         self.host_block_pool: BlockPool | None = None
+        self.swapping_strategy: SwappingStrategy | None = None
         if total_num_host_blocks > 0:
             self.host_block_pool = BlockPool(
                 MemoryTier.MEMORY_TIER_CPU,
                 total_num_host_blocks,
                 enable_prefix_caching,
                 enable_runtime_checks,
+            )
+
+            if self.block_copy_engine is None:
+                raise ValueError(
+                    "Block copy engine must be provided if host block pool is enabled"
+                )
+
+            # Determine the swapping strategy based on whether the block copy engine
+            # supports multistream.
+            if self.block_copy_engine.supports_multistream():
+                self.swapping_strategy = SwappingStrategy.EAGER
+            else:
+                self.swapping_strategy = SwappingStrategy.LAZY
+            logger.info(
+                f"Host KVCache swapping strategy: {self.swapping_strategy.value}"
             )
 
         # Mapping from request ID to blocks to track the blocks allocated
@@ -95,19 +134,14 @@ class BlockManager(Generic[T]):
         # `get_computed_blocks` or `allocate_slots`.
         self.req_to_hashes: dict[int, list[BlockHashType]] = defaultdict(list)
 
-        # Mapping from request ID to block copy operations.
-        # Note that the BlockCopyOp owns an instance of a Host block.
-        # We should increment it when creating a BlockCopyOp and decrement it
-        # when the block copy operation is deleted.
-        self.req_to_copy_ops: dict[int, list[BlockCopyOp]] = defaultdict(list)
-        self.d2h_eviction_copy_ops: list[BlockCopyOp] = []
-
         # Cache hit rate metrics.
         self.prompt_tokens = 0
         self.cached_prompt_tokens = 0
 
-        # Recently committed device blocks
-        self.recently_committed_device_blocks: list[KVCacheBlock] = []
+        # Tracks recently committed device blocks to offload to host.
+        self.recently_committed_device_blocks: list[KVCacheBlock] | None = None
+        if self.swapping_strategy == SwappingStrategy.EAGER:
+            self.recently_committed_device_blocks = []
 
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
@@ -230,15 +264,11 @@ class BlockManager(Generic[T]):
                     start_idx=tokens_matched,
                 )
 
-                # Record a COW operation.
-                cow_op = BlockCopyOp(
-                    block_copy_type=BlockCopyType.D2D_COW,
-                    dst=fresh_block,
-                    src=partial_block,
-                    num_tokens=tokens_matched,
-                    block_hash=block_hash,
+                # Enqueue a D2D block copy operation.
+                assert self.block_copy_engine is not None
+                self.block_copy_engine.memcpy_d2d(
+                    fresh_block.bid, partial_block.bid, tokens_matched
                 )
-                self.req_to_copy_ops[seq_id].append(cow_op)
 
                 # Check that the cached_idx has increased.
                 assert ctx.start_idx > orig_start_idx
@@ -297,15 +327,17 @@ class BlockManager(Generic[T]):
                 device_block = self.allocate_device_block()
                 blocks.append(device_block)
 
-                # Record a H2D block copy operation.
-                h2d_op = BlockCopyOp(
-                    block_copy_type=BlockCopyType.H2D_MEMCPY,
-                    src=host_block,
-                    dst=device_block,
-                    num_tokens=self.block_size,
-                    block_hash=host_block.block_hash,
+                # Enqueue a H2D block copy operation.
+                assert self.block_copy_engine is not None
+                self.block_copy_engine.memcpy_h2d(
+                    device_block.bid, host_block.bid
                 )
-                self.req_to_copy_ops[seq_id].append(h2d_op)
+
+                # Commit the device block into the prefix cache.
+                # We should use the hash from the host block.
+                self.device_block_pool.commit_into_prefix_cache(
+                    host_block.block_hash, device_block
+                )
             else:
                 break
 
@@ -396,10 +428,14 @@ class BlockManager(Generic[T]):
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
                 block_hash, block
             )
-            if new_block is None:
-                self.recently_committed_device_blocks.append(block)
-            else:
+            if new_block is not None:
                 req_blocks[block_idx] = new_block
+
+            if (
+                new_block is None
+                and self.recently_committed_device_blocks is not None
+            ):
+                self.recently_committed_device_blocks.append(block)
 
         ctx.set_token_indices(
             committed_idx=num_computed_blocks * self.block_size,
@@ -444,11 +480,14 @@ class BlockManager(Generic[T]):
             req_blocks.append(new_block)
 
     @traced
-    def offload_recently_committed_blocks(self) -> None:
+    def eagerly_offload_recently_committed_blocks(self) -> None:
         """Offload recently committed blocks to host memory."""
+        assert self.recently_committed_device_blocks is not None
+        assert self.swapping_strategy == SwappingStrategy.EAGER
+
         for block in self.recently_committed_device_blocks:
             self.maybe_offload_gpu_block_to_host(block, block.block_hash)
-        self.recently_committed_device_blocks = []
+        self.recently_committed_device_blocks.clear()
 
     @traced
     def maybe_offload_gpu_block_to_host(
@@ -462,10 +501,6 @@ class BlockManager(Generic[T]):
         if old_hash is None:
             return
 
-        # Can't swap if there are no free host blocks.
-        if len(self.host_block_pool.free_block_queue) == 0:
-            return
-
         # Should not swap if another block with the same hash is present.
         if old_hash.value in self.host_block_pool.hash_to_committed_block:
             return
@@ -473,15 +508,9 @@ class BlockManager(Generic[T]):
         # Allocate a host block
         host_block, _ = self.host_block_pool.alloc_block()
 
-        # Create a D2H block copy operation.
-        d2h_op = BlockCopyOp(
-            block_copy_type=BlockCopyType.D2H_MEMCPY,
-            src=gpu_block,
-            dst=host_block,
-            num_tokens=self.block_size,
-            block_hash=old_hash,
-        )
-        self.d2h_eviction_copy_ops.append(d2h_op)
+        # Copy the block from the GPU to the host.
+        assert self.block_copy_engine is not None
+        self.block_copy_engine.memcpy_d2h(host_block.bid, gpu_block.bid)
 
         # Commit the host block into the host prefix cache.
         self.host_block_pool.commit_into_prefix_cache(old_hash, host_block)
@@ -489,7 +518,8 @@ class BlockManager(Generic[T]):
     @traced
     def allocate_device_block(self) -> KVCacheBlock:
         new_block, block_hash = self.device_block_pool.alloc_block()
-        self.maybe_offload_gpu_block_to_host(new_block, block_hash)
+        if self.swapping_strategy == SwappingStrategy.LAZY:
+            self.maybe_offload_gpu_block_to_host(new_block, block_hash)
         return new_block
 
     @property
@@ -517,18 +547,6 @@ class BlockManager(Generic[T]):
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
         return [block.bid for block in self.req_to_blocks[seq_id]]
-
-    def reset_d2h_eviction_copy_ops(self) -> None:
-        """Reset the D2H eviction operations."""
-        self.d2h_eviction_copy_ops.clear()
-
-    def reset_req_copy_ops(self, seq_id: int) -> None:
-        """Reset the block copy operations for a request."""
-        self.req_to_copy_ops[seq_id].clear()
-
-    def get_req_copy_ops(self, seq_id: int) -> list[BlockCopyOp]:
-        """Get the block copy operations for a request."""
-        return self.req_to_copy_ops[seq_id]
 
     @traced
     def assert_runtime_invariants(self, ctx: T) -> None:

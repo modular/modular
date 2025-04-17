@@ -31,7 +31,6 @@ from .manager import (
 )
 from .naive_cache import NaiveKVCacheManager
 from .paged_cache import (
-    BlockCopyOp,
     BlockCopyType,
     FetchPagedKVCacheCollection,
     FetchPagedKVCacheCollectionFA3Fallback,
@@ -65,7 +64,6 @@ __all__ = [
     "KVCacheInputSymbols",
     "PaddedKVCacheInputs",
     "RaggedKVCacheInputs",
-    "BlockCopyOp",
     "BlockCopyType",
     "FetchPagedKVCacheCollection",
     "FetchPagedKVCacheCollectionFA3Fallback",
