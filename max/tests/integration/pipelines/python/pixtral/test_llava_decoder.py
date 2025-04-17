@@ -173,6 +173,7 @@ def mistral_given_pytorch_mistral(
     rope = OptimizedRotaryEmbedding(
         dim=config.num_attention_heads * config.head_dim,
         n_heads=config.num_attention_heads,
+        head_dim=config.head_dim,
         theta=config.rope_theta,
         max_seq_len=config.max_length,
     )

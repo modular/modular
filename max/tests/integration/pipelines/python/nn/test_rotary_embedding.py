@@ -110,6 +110,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
             params.n_heads,
             params.theta,
             MAX_SEQ_LEN,
+            head_dim=params.head_dim,
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
@@ -174,6 +175,7 @@ def test_llama3_freqs_cis(
             base_params.theta,
             MAX_SEQ_LEN,
             scaling_params=scaling_params,
+            head_dim=base_params.head_dim,
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)

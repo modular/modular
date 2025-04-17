@@ -68,9 +68,9 @@ def generate_max_outputs(
     )
 
     rope = DeepseekYarnRotaryEmbedding(
-        config.qk_rope_head_dim,
-        theta=config.rope_theta,
+        dim=config.qk_rope_head_dim,
         n_heads=config.num_attention_heads,
+        theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
         scaling_params=scaling_params,
     )
