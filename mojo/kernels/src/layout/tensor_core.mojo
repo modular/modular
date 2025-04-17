@@ -35,7 +35,7 @@ Supported Data Types:
 Supported Matrix Shapes:
 ----------------------
 - NVIDIA: 16×8×8, 16×8×4, 16×8×16, 8×8×4, 16×8×32
-- AMD: 16×16×4, 16×16×16
+- AMD: 16×16×4, 16×16×16, 32×32×8
 """
 
 from collections import OptionalReg
@@ -98,6 +98,7 @@ alias shape_16x8x32 = IndexList[3](16, 8, 32)
 # MI300x shapes
 alias shape_16x16x4 = IndexList[3](16, 16, 4)
 alias shape_16x16x16 = IndexList[3](16, 16, 16)
+alias shape_32x32x8 = IndexList[3](32, 32, 8)
 
 
 fn _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
@@ -158,7 +159,7 @@ struct TensorCore[
           - float8: 16×8×32
         For AMD GPUs:
           - float32: 16×16×4
-          - half-precision: 16×16×16
+          - half-precision: 16×16×16 or 32×32×8
     """
 
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
@@ -167,7 +168,9 @@ struct TensorCore[
         shape == shape_16x8x8 if is_nvidia_gpu() else shape == shape_16x16x4
     )
     alias supported_half = in_type.is_half_float() and (
-        shape == shape_16x8x16 if is_nvidia_gpu() else shape == shape_16x16x16
+        shape
+        == shape_16x8x16 if is_nvidia_gpu() else shape
+        in (shape_16x16x16, shape_32x32x8)
     )
     alias supported_fp8 = in_type in (
         DType.float8_e4m3fn,
@@ -285,7 +288,8 @@ struct TensorCore[
         # when using 16B loads, so instead we load 16x32 tile in one go.
         alias k_group_size = _get_a_k_group_size[a.layout, shape]()
         alias simd_width = reg_per_thread * k_group_size
-        alias warp_layout = Layout.col_major(16, 4)
+
+        alias warp_layout = Layout.col_major(mma_m, WARP_SIZE // mma_m)
 
         constrained[
             in_type
@@ -448,8 +452,8 @@ struct TensorCore[
         alias simd_width = reg_per_thread * k_group_size
 
         alias warp_layout = Layout.col_major(
-            16, 4
-        ) if transpose_b else Layout.row_major(4, 16)
+            mma_n, WARP_SIZE // mma_n
+        ) if transpose_b else Layout.row_major(WARP_SIZE // mma_n, mma_n)
 
         @parameter
         if in_type in (DType.float32, DType.bfloat16, DType.float16):
@@ -576,12 +580,13 @@ struct TensorCore[
         alias mma_k = shape[2]
         var c_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
-        alias warp_layout = Layout.row_major(4, 16)
+        alias warp_layout = Layout.row_major(mma_m // reg_per_thread, mma_n)
 
         @parameter
         if out_type is DType.float32:
             constrained[
-                reg_per_thread == 4, "No valid shape to load matrix fragment c"
+                reg_per_thread in (4, 16),
+                "No valid shape to load matrix fragment c",
             ]()
 
             var c_ram_frags = c.vectorize[4, 1]().distribute[warp_layout](
@@ -643,12 +648,13 @@ struct TensorCore[
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
-        alias warp_layout = Layout.row_major(4, 16)
+        alias warp_layout = Layout.row_major(mma_m // reg_per_thread, mma_n)
 
         @parameter
         if out_type is DType.float32:
             constrained[
-                reg_per_thread == 4, "No valid shape to store to LayoutTensor d"
+                reg_per_thread in (4, 16),
+                "No valid shape to store to LayoutTensor d",
             ]()
 
             var dst = d_dst.vectorize[4, 1]().distribute[warp_layout](lane_id())
