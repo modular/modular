@@ -84,7 +84,7 @@ static VariadicKind getVariadicKind(PogListAttr pogListAttr, size_t idx) {
 static std::string generatePValueString(SharedState &shared, PValue value) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
-  ASTType::printParam(os, value, /*forDiag=*/&shared, /*demangleParams=*/true);
+  ASTType::printParam(os, value, /*forDiag=*/&shared, /*demangleParams=*/false);
   return os.str();
 }
 

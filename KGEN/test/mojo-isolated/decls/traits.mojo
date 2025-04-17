@@ -322,7 +322,7 @@ fn convert_result_type():
     fn convert_result_type[T: ChangedResultTypeTrait]():
         pass
 
-    # CHECK: call{{.*}}fn() -> ChangedResultTypeStruct
+    # CHECK: call{{.*}}fn() -> traits::ChangedResultTypeStruct
     convert_result_type[ChangedResultTypeStruct]()
 
 
@@ -465,7 +465,7 @@ struct RegPassableRequiredType(RequiredType):
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
 fn bind_regpassable_required_type():
-    # CHECK-NEXT: fn(Int) -> Int
+    # CHECK-NEXT: fn(::Int) -> ::Int
     # CHECK-SAME: @RegPassableRequiredType::@"use_it
     alias T: RequiredType = RegPassableRequiredType
 
