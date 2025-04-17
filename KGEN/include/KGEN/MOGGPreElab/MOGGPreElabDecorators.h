@@ -52,6 +52,11 @@ constexpr StringLiteral MOGG_INTRINSIC_VIEW_KERNEL = "mogg.view_kernel";
 /// MOGG Intrinsic for the for_each function
 constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH = "mogg.for_each";
 
+/// MOGG Intrinsic for a singleton for_each function that is used to drive
+/// elemwise kernel execution
+constexpr StringLiteral MOGG_INTRINSIC_ELEMWISE_FOR_EACH =
+    "mogg.elemwise_for_each";
+
 /// MOGG Instrinsic for the input / output lambda implementations.
 constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
     "mogg.dps_input_fusion_hook";
