@@ -1089,6 +1089,52 @@ fn foreach[
     ](tensor.shape(), ctx)
 
 
+@__mogg_intrinsic_attr("mogg.for_each")
+@no_inline
+fn foreach[
+    type: DType,
+    rank: Int, //,
+    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
+    out_func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[type, target](),
+    _synchronous: Bool = False,
+    _trace_name: StaticString = "mogg.for_each",
+](
+    tensor: ManagedTensorSlice,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    """Apply the function `func` to each element of the tensor slice.
+
+    Parameters:
+        type: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        func: The function to apply to each element of the tensor slice.
+        out_func: The function to apply on each output element.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+        _synchronous: True to run the custom op synchronously in the runtime (defaults to False).
+        _trace_name: Name of the executed operation displayed in the trace_description.
+
+    Args:
+        tensor: The input tensor slice which the consumed values.
+        ctx: The call context (forward this from the custom operation).
+    """
+    debug_assert(
+        ctx.handle_ or is_cpu[target](),
+        "Expecting non-null device ctx for GPU kernels",
+    )
+
+    algorithm.functional.elementwise[
+        out_func,
+        simd_width,
+        use_blocking_impl=_synchronous,
+        target=target,
+        _trace_description=_trace_name,
+    ](tensor.shape(), ctx)
+
+
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
 @doc_private
