@@ -187,6 +187,19 @@ struct PDLLevel:
         """
         return self._level > other._level
 
+    @always_inline
+    fn __ge__(self, other: PDLLevel) -> Bool:
+        """Check if the PDL level is greater than or equal to another PDL level.
+
+        Args:
+            other: The other PDL level to compare against.
+
+        Returns:
+            True if the PDL level is greater or equal to the other PDL level,
+            False otherwise.
+        """
+        return self._level >= other._level
+
 
 struct PDL:
     """Programmatic Dependency Launch (PDL) control structure.

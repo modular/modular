@@ -32,7 +32,7 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import simdwidthof
+from sys import simdwidthof, env_get_int
 
 from buffer import NDBuffer
 from gpu import (
@@ -42,6 +42,12 @@ from gpu import (
     block_idx,
     grid_dim,
     thread_idx,
+)
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    PDLLevel,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
@@ -502,6 +508,14 @@ fn _allreduce_2stage_kernel[
     var end = num_simd_vectors if my_rank == ngpus - 1 else start + part
     var largest_part = part + (num_simd_vectors % ngpus)
 
+    @parameter
+    if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    @parameter
+    if PDLLevel() > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
     # --- Memory Pointer Configuration ---
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = stack_allocation[
@@ -809,6 +823,7 @@ fn _allreduce_p2p[
                 max_num_blocks,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
+                attributes=pdl_launch_attributes(),
             )
 
 
