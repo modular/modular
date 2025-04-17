@@ -993,6 +993,23 @@ fn readfirstlane(value: UnsafePointer) -> __type_of(value):
     ](value)
 
 
+@always_inline
+fn readfirstlane(value: Int) -> __type_of(value):
+    """
+    Get the value in the lowest active lane of the input operand.
+
+    Args:
+        value: The input pointer.
+
+    Returns:
+        The value in the lowest active lane of the input operand.
+    """
+    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    return llvm_intrinsic[
+        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+    ](value)
+
+
 # ===-----------------------------------------------------------------------===#
 # sendmsg
 # ===-----------------------------------------------------------------------===#
