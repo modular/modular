@@ -183,17 +183,30 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         for value in span:
             self.append(value[])
 
+    @always_inline
+    fn __init__(out self, *, unsafe_uninit_length: Int):
+        """Construct a list with the specified length, with uninitialized
+        memory. This is unsafe, as it relies on the caller initializing the
+        elements with unsafe operations, not assigning over the uninitialized
+        data.
+
+        Args:
+            unsafe_uninit_length: The number of elements to allocate.
+        """
+        self = Self(capacity=unsafe_uninit_length)
+        self._len = unsafe_uninit_length
+
     fn __init__(
-        out self, *, ptr: UnsafePointer[T], length: UInt, capacity: UInt
+        out self, *, steal_ptr: UnsafePointer[T], length: Int, capacity: UInt
     ):
         """Constructs a list from a pointer, its length, and its capacity.
 
         Args:
-            ptr: The pointer to the data.
+            steal_ptr: The pointer to the data.
             length: The number of elements in the list.
             capacity: The capacity of the list.
         """
-        self.data = ptr
+        self.data = steal_ptr
         self._len = length
         self.capacity = capacity
 
@@ -1088,7 +1101,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         var data = self.steal_data()
 
         return List[T, hint_trivial_type](
-            ptr=data, length=size, capacity=capacity
+            steal_ptr=data, length=size, capacity=capacity
         )
 
 

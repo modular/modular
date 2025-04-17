@@ -708,7 +708,7 @@ def test_constructor_from_pointer():
     new_pointer[2] = 2
     # rest is not initialized
 
-    var some_list = List[Int8](ptr=new_pointer, length=3, capacity=5)
+    var some_list = List[Int8](steal_ptr=new_pointer, length=3, capacity=5)
     assert_equal(some_list[0], 0)
     assert_equal(some_list[1], 1)
     assert_equal(some_list[2], 2)
@@ -723,7 +723,7 @@ def test_constructor_from_other_list_through_pointer():
     var size = len(initial_list)
     var capacity = initial_list.capacity
     var some_list = List[Int8](
-        ptr=initial_list.steal_data(), length=size, capacity=capacity
+        steal_ptr=initial_list.steal_data(), length=size, capacity=capacity
     )
     assert_equal(some_list[0], 0)
     assert_equal(some_list[1], 1)
@@ -919,6 +919,15 @@ def test_list_fill_constructor():
         assert_equal(l2[i], "hi")
 
 
+def test_uninit_ctor():
+    var list = List[String](unsafe_uninit_length=2)
+
+    UnsafePointer(to=list[0]).init_pointee_move("hello ")
+    UnsafePointer(to=list[1]).init_pointee_move("world")
+    assert_equal(list[0], "hello ")
+    assert_equal(list[1], "world")
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -960,3 +969,4 @@ def main():
     test_destructor_trivial_elements()
     test_list_repr()
     test_list_fill_constructor()
+    test_uninit_ctor()

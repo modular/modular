@@ -18,7 +18,7 @@ from collections.string.string import (
     _calc_initial_buffer_size_int64,
 )
 
-from memory import UnsafePointer
+from memory import UnsafePointer, memcpy
 from python import Python
 from testing import (
     assert_equal,
@@ -67,7 +67,7 @@ def test_constructors():
     ptr[1] = ord("b")
     ptr[2] = ord("c")
     ptr[3] = 0
-    var s3 = String(ptr=ptr, length=4)
+    var s3 = String(steal_ptr=ptr, length=4)
     assert_equal(s3, "abc")
 
     # Construction with capacity
@@ -639,11 +639,8 @@ def test_split():
     # test all unicode separators
     # 0 is to build a String with null terminator
     alias next_line = List[UInt8](0xC2, 0x85, 0)
-    """TODO: \\x85"""
     alias unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8, 0)
-    """TODO: \\u2028"""
     alias unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9, 0)
-    """TODO: \\u2029"""
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape secuences are accepted
     var univ_sep_var = (
@@ -1416,6 +1413,12 @@ def test_reserve():
     assert_equal(s._buffer.capacity, 1)
 
 
+def test_uninit_ctor():
+    var s = String(unsafe_uninit_length=len("hello"))
+    memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), len("hello"))
+    assert_equal(s, "hello")
+
+
 def test_variadic_ctors():
     var s = String("message", 42, 42.2, True, sep=", ")
     assert_equal(s, "message, 42, 42.2, True")
@@ -1475,4 +1478,5 @@ def main():
     test_format_conversion_flags()
     test_float_conversion()
     test_slice_contains()
+    test_uninit_ctor()
     test_variadic_ctors()

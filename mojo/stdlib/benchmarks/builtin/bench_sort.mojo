@@ -94,7 +94,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
             seed(1)
             var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
             var list = List[Scalar[dtype]](
-                ptr=ptr, length=count, capacity=count
+                steal_ptr=ptr, length=count, capacity=count
             )
 
             @always_inline
@@ -115,7 +115,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
             seed(1)
             var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
             var list = List[Scalar[dtype]](
-                ptr=ptr, length=count, capacity=count
+                steal_ptr=ptr, length=count, capacity=count
             )
 
             @always_inline
@@ -136,7 +136,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
             seed(1)
             var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
             var list = List[Scalar[dtype]](
-                ptr=ptr, length=count, capacity=count
+                steal_ptr=ptr, length=count, capacity=count
             )
 
             @always_inline
@@ -173,7 +173,9 @@ fn bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
         var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](ptr=ptr, length=count, capacity=count)
+        var list = List[Scalar[dtype]](
+            steal_ptr=ptr, length=count, capacity=count
+        )
 
         @always_inline
         @parameter
@@ -192,7 +194,9 @@ fn bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     fn bench_insertion_sort(mut b: Bencher) raises:
         seed(1)
         var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](ptr=ptr, length=count, capacity=count)
+        var list = List[Scalar[dtype]](
+            steal_ptr=ptr, length=count, capacity=count
+        )
 
         @always_inline
         @parameter
@@ -225,7 +229,9 @@ fn bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
         var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](ptr=ptr, length=count, capacity=count)
+        var list = List[Scalar[dtype]](
+            steal_ptr=ptr, length=count, capacity=count
+        )
 
         @always_inline
         @parameter
@@ -244,7 +250,9 @@ fn bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     fn bench_heap_sort(mut b: Bencher) raises:
         seed(1)
         var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](ptr=ptr, length=count, capacity=count)
+        var list = List[Scalar[dtype]](
+            steal_ptr=ptr, length=count, capacity=count
+        )
 
         @always_inline
         @parameter
@@ -278,7 +286,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
         var ptr = UnsafePointer[UInt8].alloc(count)
-        var list = List[UInt8](ptr=ptr, length=count, capacity=count)
+        var list = List[UInt8](steal_ptr=ptr, length=count, capacity=count)
 
         @always_inline
         @parameter
@@ -297,7 +305,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
     fn bench_heap_sort(mut b: Bencher) raises:
         seed(1)
         var ptr = UnsafePointer[UInt8].alloc(count)
-        var list = List[UInt8](ptr=ptr, length=count, capacity=count)
+        var list = List[UInt8](steal_ptr=ptr, length=count, capacity=count)
 
         @always_inline
         @parameter

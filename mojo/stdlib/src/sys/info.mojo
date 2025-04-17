@@ -946,21 +946,24 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     alias INITIAL_CAPACITY = 32
 
-    var buf = List[UInt8](capacity=INITIAL_CAPACITY)
+    # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
+    var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
         "kern.osproductversion".unsafe_cstr_ptr(),
-        buf.data,
+        osver.unsafe_ptr(),
         Pointer(to=buf_len),
         OpaquePointer(),
         Int(0),
     )
-
     if err:
         raise "Unable to query macOS version"
 
-    var osver = String(ptr=buf.steal_data(), length=buf_len)
+    # Truncate the string down to the actual length.
+    # FIXME: Stop using internals of String!
+    osver._buffer.resize(buf_len + 1)
+    osver._buffer[buf_len] = 0
 
     var major = 0
     var minor = 0

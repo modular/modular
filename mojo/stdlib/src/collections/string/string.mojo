@@ -760,20 +760,38 @@ struct String(
         """
         self = literal.__str__()
 
+    fn __init__(out self, *, unsafe_uninit_length: UInt):
+        """Construct a String with the specified length, with uninitialized
+        memory. This is unsafe, as it relies on the caller initializing the
+        elements with unsafe operations, not assigning over the uninitialized
+        data.
+
+        Args:
+            unsafe_uninit_length: The number of bytes to allocate.
+        """
+        self._buffer = Self._buffer_type(
+            unsafe_uninit_length=unsafe_uninit_length + 1
+        )
+        self._buffer[unsafe_uninit_length] = 0
+
     @always_inline
-    fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
+    fn __init__(out self, *, steal_ptr: UnsafePointer[Byte], length: UInt):
         """Creates a string from the buffer. Note that the string now owns
         the buffer.
 
         The buffer must be terminated with a null byte.
 
         Args:
-            ptr: The pointer to the buffer.
+            steal_ptr: The pointer to the buffer.
             length: The length of the buffer, including the null terminator.
         """
         # we don't know the capacity of ptr, but we'll assume it's the same or
         # larger than len
-        self = Self(Self._buffer_type(ptr=ptr, length=length, capacity=length))
+        self = Self(
+            Self._buffer_type(
+                steal_ptr=steal_ptr, length=length, capacity=length
+            )
+        )
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -861,7 +879,7 @@ struct String(
         """
 
         return String(
-            ptr=steal_ptr,
+            steal_ptr=steal_ptr,
             length=len(
                 StringSlice[steal_ptr.origin](unsafe_from_utf8_ptr=steal_ptr)
             )
@@ -1241,7 +1259,8 @@ struct String(
             var buffer = _WriteBufferHeap(total_bytes.size + 1)
             buffer.write_list(elems, sep=sep)
             buffer.data[total_bytes.size] = 0
-            return String(ptr=buffer.data, length=total_bytes.size + 1)
+            # FIXME: This is stealing a pointer from buffer.data - does this work?
+            return String(steal_ptr=buffer.data, length=total_bytes.size + 1)
         # Use stack otherwise
         else:
             var string = String()
@@ -1878,13 +1897,14 @@ struct String(
         """Reserves the requested capacity.
 
         Args:
-            new_capacity: The new capacity.
+            new_capacity: The new capacity in stored bytes.
 
         Notes:
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the data is moved.
         """
-        self._buffer.reserve(new_capacity)
+        # Reserve an extra byte because we always keep a null terminator.
+        self._buffer.reserve(new_capacity + 1)
 
 
 # ===----------------------------------------------------------------------=== #
