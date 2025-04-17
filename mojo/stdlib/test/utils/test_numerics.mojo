@@ -30,7 +30,6 @@ from utils.numerics import (
     nan,
     neg_inf,
     nextafter,
-    ulp,
 )
 
 

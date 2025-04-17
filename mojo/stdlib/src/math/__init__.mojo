@@ -13,7 +13,7 @@
 """Implements the math package."""
 
 # In Python, these are in the math module, so we also expose them here.
-from utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter, ulp
+from utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter
 
 from .constants import e, pi, tau
 
@@ -75,6 +75,7 @@ from .math import (
     tan,
     tanh,
     trunc,
+    ulp,
     y0,
     y1,
 )

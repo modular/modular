@@ -208,6 +208,9 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 
 - The `object` type has been removed.
 
+- `utils.numerics.ulp` has been removed.  Use the same `ulp` function from the
+  `math` package instead.
+
 ### 🛠️ Fixed
 
 - [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't
