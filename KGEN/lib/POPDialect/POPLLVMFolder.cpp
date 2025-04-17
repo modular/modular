@@ -115,31 +115,47 @@ static TypedAttr convertLLVMToAttr(llvm::Constant *value, Type type) {
     if (!dtype)
       return {};
 
-    // Scalar float/int result type.
-    if (auto cf = dyn_cast<llvm::ConstantFP>(value))
-      return SIMDAttr::get(DTypeValue(cf->getValue(), *dtype), simdType);
-    if (auto ci = dyn_cast<llvm::ConstantInt>(value))
-      return SIMDAttr::get(DTypeValue(ci->getValue(), *dtype), simdType);
-
     if (isa<llvm::ConstantAggregateZero>(value))
       return SIMDAttr::getZeroValue(simdType);
 
-    if (auto simdValue = dyn_cast<llvm::ConstantVector>(value)) {
-      SmallVector<DTypeValue> values;
+    SmallVector<DTypeValue> values;
+
+    auto addValue = [&](llvm::Value *value) -> LogicalResult {
+      if (auto ci = dyn_cast<llvm::ConstantInt>(value)) {
+        if (dtype->isBool())
+          values.push_back(DTypeValue(!ci->getValue().isZero(), *dtype));
+        else
+          values.push_back(DTypeValue(ci->getValue(), *dtype));
+      } else if (auto cf = dyn_cast<llvm::ConstantFP>(value)) {
+        values.push_back(DTypeValue(cf->getValue(), *dtype));
+      } else {
+        return failure();
+      }
+      return success();
+    };
+
+    // Scalar float/int result type.
+    if (auto cf = dyn_cast<llvm::ConstantFP>(value)) {
+      values.push_back(DTypeValue(cf->getValue(), *dtype));
+    } else if (auto ci = dyn_cast<llvm::ConstantInt>(value)) {
+      values.push_back(DTypeValue(ci->getValue(), *dtype));
+    } else if (auto simdValue = dyn_cast<llvm::ConstantVector>(value)) {
       for (auto i = simdValue->op_begin(), e = simdValue->op_end(); i != e;
            ++i) {
-        if (auto ci = dyn_cast<llvm::ConstantInt>(*i)) {
-          if (dtype->isBool())
-            values.push_back(DTypeValue(!ci->getValue().isZero(), *dtype));
-          else
-            values.push_back(DTypeValue(ci->getValue(), *dtype));
-        } else if (auto cf = dyn_cast<llvm::ConstantFP>(*i))
-          values.push_back(DTypeValue(cf->getValue(), *dtype));
-        else
+        if (failed(addValue(*i)))
           return {};
       }
-      return SIMDAttr::get(values, simdType);
+    } else if (auto data = dyn_cast<llvm::ConstantDataSequential>(value)) {
+      for (size_t i = 0, e = data->getNumElements(); i != e; ++i) {
+        if (failed(addValue(data->getElementAsConstant(i))))
+          return {};
+      }
+
+    } else {
+      return {};
     }
+
+    return SIMDAttr::get(values, simdType);
   }
 
   return {};
