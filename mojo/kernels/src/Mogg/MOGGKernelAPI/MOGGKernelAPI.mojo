@@ -157,6 +157,7 @@ from nn.normalization import layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.rand_uniform import random_uniform
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
@@ -214,6 +215,10 @@ from tensor_internal import (
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
+)
+from tensor_internal._indexing import (
+    _row_major_strides,
+    _dot_prod,
 )
 from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import (
@@ -4535,6 +4540,58 @@ struct StaticRandomNormal:
             mean.cast[DType.float64](),
             variance.cast[DType.float64](),
         )
+
+
+@compiler.register("mo.random.uniform")
+struct RandomUniform:
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[type=type],
+        shape: InputTensor[rank=1],
+        lower_bound: Scalar[type],
+        upper_bound: Scalar[type],
+        seed_value: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        fn output_fn[
+            _width: Int,
+            _rank: Int,
+        ](coords: IndexList[_rank], val: SIMD[type, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.type, _width]](val),
+            )
+
+        random_uniform[output_fn, target=target](
+            output.shape(), lower_bound, upper_bound, UInt64(seed_value), ctx
+        )
+
+    @staticmethod
+    fn shape[
+        output_rank: Int
+    ](
+        shape: InputTensor[rank=1],
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
+    ) -> IndexList[output_rank]:
+        debug_assert(shape.dim_size[0]() == output_rank)
+
+        var unrolled_shape = IndexList[output_rank]()
+        for i in range(output_rank):
+            unrolled_shape[i] = Int(shape[i])
+
+        return unrolled_shape
+
+
+# ===-----------------------------------------------------------------------===#
+# Softmax kernels
+# ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("mo.softmax")
