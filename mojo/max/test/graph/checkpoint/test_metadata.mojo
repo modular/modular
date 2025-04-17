@@ -26,8 +26,7 @@ fn _write_int[type: Intable](ref object: type, f: FileHandle) raises:
 
 def test_read_version():
     # Write header and metadata
-    var header_buf = _serialization_header()
-    var header = String(buffer=header_buf)
+    var header = String(_serialization_header())
     var major_version: UInt32 = 1234567
     var minor_version: UInt32 = 8910
     with NamedTemporaryFile(name=String("test_simple")) as TEMP_FILE:
@@ -45,8 +44,7 @@ def test_read_version():
 
 def test_bad_header():
     # Write an invalid header (missing characters)
-    var header_buf = List[UInt8](0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B, 0x0)
-    var header = String(buffer=header_buf)
+    var header = String(List[UInt8](0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B))
     var major_version: UInt32 = 1234567
     var minor_version: UInt32 = 8910
     with NamedTemporaryFile(name=String("test_simple")) as TEMP_FILE:
