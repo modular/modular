@@ -23,7 +23,7 @@ from max.pipelines import (
     TokenGeneratorResponseFormat,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from test_common.pipeline_config import (
+from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_huggingface_config,
 )

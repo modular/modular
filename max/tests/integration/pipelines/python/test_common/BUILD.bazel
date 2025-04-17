@@ -23,7 +23,6 @@ modular_py_library(
         ":numpy_encoder",
         ":path",
         ":pipeline_cli_utils",
-        ":pipeline_config",
         ":pipeline_model_dummy",
         ":process_isolation",
         ":registry",
@@ -146,18 +145,6 @@ modular_py_library(
 )
 
 modular_py_library(
-    name = "pipeline_config",
-    srcs = ["pipeline_config.py"],
-    imports = [".."],
-    deps = [
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        requirement("transformers"),
-    ],
-)
-
-modular_py_library(
     name = "torch_utils",
     srcs = ["torch_utils.py"],
     imports = [".."],
@@ -174,6 +161,8 @@ modular_py_library(
     name = "mocks",
     srcs = [
         "mocks/__init__.py",
+        "mocks/memory_estimation.py",
+        "mocks/pipeline_config.py",
         "mocks/pipeline_model.py",
         "mocks/tokenizer.py",
     ],

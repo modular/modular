@@ -19,7 +19,7 @@ from max.pipelines import (
     PipelineEngine,
     SupportedEncoding,
 )
-from test_common.pipeline_config import (
+from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_huggingface_config,
     mock_huggingface_hub_repo_exists_with_retry,

@@ -9,18 +9,22 @@ from functools import wraps
 from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
+from max.engine import GPUProfilingMode
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import (
     KVCacheStrategy,
 )
 from max.pipelines import (
-    MEMORY_ESTIMATOR,
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
+    ProfilingConfig,
+    SamplingConfig,
     SupportedEncoding,
 )
 from transformers import AutoConfig
+
+from .memory_estimation import mock_estimate_memory_footprint
 
 
 class DummyMAXModelConfig(MAXModelConfig):
@@ -44,35 +48,49 @@ class DummyPipelineConfig(PipelineConfig):
     def __init__(
         self,
         model_path: str,
-        max_batch_size: int | None,
-        max_length: int | None,
-        device_specs: list[DeviceSpec],
         quantization_encoding: SupportedEncoding,
+        max_batch_size: int | None = None,
+        max_length: int | None = None,
+        pdl_level: str = "1",
+        device_specs: list[DeviceSpec] = [],
+        kv_cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT,
+        gpu_profiling: GPUProfilingMode = GPUProfilingMode.OFF,
+        enable_structured_output: bool = False,
+        # TODO(AITLIB-328): These values do not belong in PipelineConfig,
+        # but are somehow used by MockPipelineModel in pipeline_model.py.
+        eos_prob: float | None = None,
+        vocab_size: int | None = None,
+        eos_token: int | None = None,
     ):
         self.model_path = model_path
+        self.quantization_encoding = quantization_encoding
         self.max_batch_size = max_batch_size
         self.max_length = max_length
+        self.pdl_level = pdl_level
         self.device_specs = device_specs
+
+        self._profiling_config = ProfilingConfig(
+            gpu_profiling=gpu_profiling,
+        )
+        self._sampling_config = SamplingConfig(
+            enable_structured_output=enable_structured_output,
+        )
+
         self._model_config = DummyMAXModelConfig(
             model_path=model_path,
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
             _kv_cache_config=KVCacheConfig(
-                cache_strategy=KVCacheStrategy.CONTINUOUS,
+                cache_strategy=kv_cache_strategy,
             ),
             _huggingface_config=MagicMock(),
         )
 
-
-def mock_estimate_memory_footprint(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        with patch.object(
-            MEMORY_ESTIMATOR, "estimate_memory_footprint", return_value=0
-        ):
-            return func(*args, **kwargs)
-
-    return wrapper
+        # TODO(AITLIB-328): These values do not belong in PipelineConfig,
+        # but are somehow used by MockPipelineModel in pipeline_model.py.
+        self.eos_prob = eos_prob
+        self.vocab_size = vocab_size
+        self.eos_token = eos_token
 
 
 def mock_huggingface_config(func):

@@ -13,53 +13,19 @@ from unittest.mock import MagicMock, PropertyMock, patch
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import (
-    KVCacheConfig,
-    MAXModelConfig,
-    ProfilingConfig,
-    SamplingConfig,
-    SupportedEncoding,
-    TextGenerationPipeline,
-)
+from max.pipelines import SupportedEncoding, TextGenerationPipeline
 from max.pipelines.core import TextContext
 
+from .pipeline_config import (
+    DummyMAXModelConfig,
+    DummyPipelineConfig,
+    mock_estimate_memory_footprint,
+    mock_huggingface_config,
+    mock_huggingface_hub_repo_exists_with_retry,
+    mock_pipeline_config_hf_dependencies,
+)
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
-
-
-def create_mock_pipeline_config(
-    eos_prob: float,
-    max_length: Optional[int],
-    vocab_size: int,
-    eos_token: int,
-    device_specs: list[DeviceSpec],
-    pdl_level: str = "1",
-) -> MagicMock:
-    mock_config = MagicMock()
-    mock_config.profiling_config = ProfilingConfig(
-        gpu_profiling=GPUProfilingMode.OFF,
-    )
-    mock_config.sampling_config = SamplingConfig(
-        enable_structured_output=False,
-    )
-
-    mock_hf_config = MagicMock()
-    mock_config.model_config = MAXModelConfig(
-        model_path="HuggingFaceTB/SmolLM-135M-Instruct",
-        device_specs=device_specs,
-        quantization_encoding=SupportedEncoding.float32,
-        _kv_cache_config=KVCacheConfig(
-            cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
-        ),
-        _huggingface_config=mock_hf_config,
-    )
-
-    mock_config.eos_prob = eos_prob
-    mock_config.max_length = max_length
-    mock_config.vocab_size = vocab_size
-    mock_config.eos_token = [eos_token]
-    mock_config.pdl_level = pdl_level
-    return mock_config
 
 
 @contextmanager
@@ -79,12 +45,17 @@ def retrieve_mock_text_generation_pipeline(
     if not device_specs:
         device_specs = scan_available_devices()
 
-    mock_config = create_mock_pipeline_config(
-        eos_prob=eos_prob,
+    mock_config = DummyPipelineConfig(
+        model_path="HuggingFaceTB/SmolLM-135M-Instruct",
         max_length=max_length,
+        device_specs=device_specs,
+        quantization_encoding=SupportedEncoding.float32,
+        kv_cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
+        enable_structured_output=False,
+        gpu_profiling=GPUProfilingMode.OFF,
+        eos_prob=eos_prob,
         vocab_size=vocab_size,
         eos_token=eos_token,
-        device_specs=device_specs,
     )
 
     tokenizer = MockTextTokenizer(
@@ -108,6 +79,11 @@ def retrieve_mock_text_generation_pipeline(
 
 __all__ = [
     "MockTextTokenizer",
-    "create_mock_pipeline_config",
+    "DummyMAXModelConfig",
+    "DummyPipelineConfig",
+    "mock_estimate_memory_footprint",
+    "mock_huggingface_config",
+    "mock_huggingface_hub_repo_exists_with_retry",
+    "mock_pipeline_config_hf_dependencies",
     "retrieve_mock_text_generation_pipeline",
 ]

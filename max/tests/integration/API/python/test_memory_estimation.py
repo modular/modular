@@ -10,28 +10,10 @@ import logging
 from unittest.mock import PropertyMock, patch
 
 import pytest
-from max.driver import DeviceSpec, load_devices, scan_available_devices
+from max.driver import load_devices
 from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
-from test_common.pipeline_config import DummyPipelineConfig
+from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import DUMMY_ARCH, DummyLlamaPipelineModel
-
-
-def create_mock_pipeline_config(
-    model_path: str,
-    max_batch_size: int | None,
-    max_length: int | None,
-    device_specs: list[DeviceSpec] = [],
-) -> DummyPipelineConfig:
-    if device_specs is None:
-        device_specs = scan_available_devices()
-
-    return DummyPipelineConfig(
-        model_path=model_path,
-        max_batch_size=max_batch_size,
-        max_length=max_length,
-        device_specs=device_specs,
-        quantization_encoding=DUMMY_ARCH.default_encoding,
-    )
 
 
 def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memory():
@@ -54,11 +36,14 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
         with pytest.raises(
             RuntimeError, match="Model size exceeds available memory"
         ):
-            mock_config = create_mock_pipeline_config(
+            mock_config = DummyPipelineConfig(
                 model_path="modularai/llama-3.1",
                 max_batch_size=None,
                 max_length=None,
+                device_specs=[],
+                quantization_encoding=DUMMY_ARCH.default_encoding,
             )
+
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
                 mock_config,
@@ -87,10 +72,12 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution():
         with pytest.raises(
             RuntimeError,
         ):
-            mock_config = create_mock_pipeline_config(
+            mock_config = DummyPipelineConfig(
                 model_path="modularai/llama-3.1",
                 max_batch_size=None,
                 max_length=None,
+                device_specs=[],
+                quantization_encoding=DUMMY_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
@@ -120,10 +107,12 @@ def test_memory_estimation__raise_oom_error_all_defaults(caplog):
     ):
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
         with caplog.at_level(logging.WARNING):
-            mock_config = create_mock_pipeline_config(
+            mock_config = DummyPipelineConfig(
                 model_path="modularai/llama-3.1",
                 max_batch_size=None,
                 max_length=None,
+                device_specs=[],
+                quantization_encoding=DUMMY_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
@@ -153,10 +142,12 @@ def test_memory_estimation__raise_oom_error_max_length_set():
             RuntimeError,
             match=r"Try reducing --max-length to \d+ .*supports batch size of",
         ):
-            mock_config = create_mock_pipeline_config(
+            mock_config = DummyPipelineConfig(
                 model_path="modularai/llama-3.1",
                 max_batch_size=None,
                 max_length=100000,
+                device_specs=[],
+                quantization_encoding=DUMMY_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
@@ -184,10 +175,12 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set():
     ):
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
         with pytest.raises(RuntimeError, match="reducing --max-batch-size to"):
-            mock_config = create_mock_pipeline_config(
+            mock_config = DummyPipelineConfig(
                 model_path="modularai/llama-3.1",
                 max_batch_size=100000,
                 max_length=None,
+                device_specs=[],
+                quantization_encoding=DUMMY_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
@@ -217,10 +210,12 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
     ):
         device_mock.return_value = {"free_memory": 40000 * 1024 * 1024}
         with pytest.raises(RuntimeError, match="reducing --max-batch-size to"):
-            mock_config = create_mock_pipeline_config(
+            mock_config = DummyPipelineConfig(
                 model_path="modularai/llama-3.1",
                 max_batch_size=100000,
                 max_length=4096,
+                device_specs=[],
+                quantization_encoding=DUMMY_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(

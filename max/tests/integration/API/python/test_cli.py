@@ -28,14 +28,12 @@ from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
+from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_cli_utils import (
     CLITestCommand,
     CLITestConfig,
     CLITestEnum,
     Output,
-)
-from test_common.pipeline_config import (
-    mock_pipeline_config_hf_dependencies,
 )
 from test_common.pipeline_model_dummy import (
     DUMMY_ARCH,
