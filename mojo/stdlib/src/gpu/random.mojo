@@ -121,8 +121,9 @@ struct Random[rounds: Int = 6]:
         self._counter[3] += 1
 
     @always_inline
+    @staticmethod
     fn _single_round(
-        self, counter: SIMD[DType.uint32, 4], key: SIMD[DType.uint32, 2]
+        counter: SIMD[DType.uint32, 4], key: SIMD[DType.uint32, 2]
     ) -> SIMD[DType.uint32, 4]:
         """Perform a single round of the Philox mixing function.
 
