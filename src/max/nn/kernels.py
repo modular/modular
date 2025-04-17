@@ -539,6 +539,13 @@ def fused_qk_ragged_rope(
 ) -> TensorValue:
     """Computes fused query-key attention with rotary positional encodings and ragged inputs.
 
+    Args:
+        input: [batch_size * seq_len, n_heads, head_dim]
+        input_row_offsets:
+        freqs_cis: tensor of shape (max_seq_len * 2, head_dim)
+        layer_idx:
+        interleaved:
+
     `input` and `input_row_offsets` are used together to implement the ragged tensor.
     `input_row_offsets` indicates where each batch starts and ends in `input`
     """

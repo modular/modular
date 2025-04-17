@@ -23,7 +23,6 @@ from max.graph import Dim, TensorValue, TensorValueLike, ops
 from .layer import Module
 
 
-@dataclass
 class RotaryEmbedding(Module):
     """
     RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
@@ -35,15 +34,43 @@ class RotaryEmbedding(Module):
     """Hyperparameter used to control the frequency scaling of the sinusoidal components of the embeddings."""
     max_seq_len: int
     """The maximum sequence length for model's input."""
+    head_dim: Optional[int] = None
+    """head_dim = dim // n_heads if not specified in the config."""
     _freqs_cis: Optional[TensorValueLike] = None
     interleaved: bool = True
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        theta: float,
+        max_seq_len: int,
+        head_dim: Optional[int] = None,
+        _freqs_cis: Optional[TensorValueLike] = None,
+        interleaved: bool = True,
+    ):
         super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+        self.theta = theta
+        self.max_seq_len = max_seq_len
+        self.head_dim = self.head_dim
+        self.interleaved = interleaved
+        self._freqs_cis = _freqs_cis
 
     def _compute_inv_freqs(self) -> TensorValue:
-        n = self.dim // self.n_heads
+        """Computes inv_freqs for n // 2 rotation blocks to be used by RoPE.
+
+        Returns:
+            a 1D tensor of thetas of shape [head_dim // 2]
+        """
+        n = (
+            self.head_dim
+            if self.head_dim is not None
+            else self.dim // self.n_heads
+        )
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
+        # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
         iota = ops.range(
             ops.constant(0, DType.float64),
             ops.constant(n - 1, DType.float64),
@@ -51,6 +78,7 @@ class RotaryEmbedding(Module):
             out_dim=n // 2,
         )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
+
         return inv_freq
 
     def freqs_cis_base(self) -> TensorValue:
@@ -62,22 +90,23 @@ class RotaryEmbedding(Module):
         (arxiv.org/pdf/2104.09864).
 
         Returns:
-            The frequency tensor for complex exponentials with shape
-                (max_seq_len * 2, dim//(2 * n_heads), 2)
+            The frequency tensor for complex exponentials with shape (max_seq_len * 2, head_dim / 2, 2)
         """
         if self._freqs_cis is None:
             inv_freqs = self._compute_inv_freqs()
 
+            # Generate position ids [0, 1, ..., max_seq_len*2] for a a sequence of length (max_seq_len*2).
             t = ops.range(
                 ops.constant(0, DType.float32),
                 ops.constant(self.max_seq_len * 2.0, DType.float32),
                 ops.constant(1, DType.float32),
                 out_dim=self.max_seq_len * 2,
             )
-            freqs = ops.outer(t, inv_freqs)
+            # Rotation matrix for block i =  [cos(m*theta_i) -sin(m*theta_i); sin(m*theta_i) -cos(m*theta_i)] for each position_id m.
+            freqs = ops.outer(t, inv_freqs)  # [max_seq_len*2, head_dim // 2]
             self._freqs_cis = ops.stack(
                 [ops.cos(freqs), ops.sin(freqs)], axis=-1
-            )
+            )  # [max_seq_len*2, head_dim // 2, 2]
         return TensorValue(self._freqs_cis)
 
     @cached_property
@@ -156,7 +185,6 @@ class RotaryEmbedding(Module):
         return ops.cast(ops.reshape(rope_complex, v.shape), v.dtype)
 
 
-@dataclass
 class OptimizedRotaryEmbedding(RotaryEmbedding):
     """
     Optimized version of RotaryEmbedding using 2D frequency tensor representation.
@@ -165,8 +193,8 @@ class OptimizedRotaryEmbedding(RotaryEmbedding):
     @cached_property
     def freqs_cis(self):
         freqs = self.freqs_cis_base()
-        d1, d2, d3 = freqs.shape
-        new_f_shape = [d1, d2 * d3]
+        d1, d2, d3 = freqs.shape  # (max_seq_len * 2, head_dim // 2, 2)
+        new_f_shape = [d1, d2 * d3]  # (max_seq_len * 2, head_dim)
         self._freqs_cis = ops.reshape(freqs, new_f_shape)
         return self._freqs_cis
 
@@ -183,7 +211,6 @@ class Llama3RopeScalingParams:
     """The original maximum position length supported by the model."""
 
 
-@dataclass
 class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
     """
     RotaryEmbedding for Llama3 that takes rope scaling into account.
@@ -191,6 +218,22 @@ class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
 
     scaling_params: Optional[Llama3RopeScalingParams] = None
     """Scaling parameters to enable llama to function with a longer context length."""
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        theta: float,
+        max_seq_len: int,
+        head_dim: Optional[int] = None,
+        _freqs_cis: Optional[TensorValueLike] = None,
+        interleaved: bool = True,
+        scaling_params: Optional[Llama3RopeScalingParams] = None,
+    ):
+        super().__init__(
+            dim, n_heads, theta, max_seq_len, head_dim, _freqs_cis, interleaved
+        )
+        self.scaling_params = scaling_params
 
     def _compute_inv_freqs(self) -> TensorValue:
         inv_freqs = super()._compute_inv_freqs()
@@ -247,7 +290,6 @@ class DeepseekYarnRopeScalingParams:
     """Scaling factor applied to all dimensions."""
 
 
-@dataclass
 class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
     """
     Deepseek's YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
@@ -257,6 +299,22 @@ class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
     """
 
     scaling_params: Optional[DeepseekYarnRopeScalingParams] = None
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        theta: float,
+        max_seq_len: int,
+        head_dim: Optional[int] = None,
+        _freqs_cis: Optional[TensorValueLike] = None,
+        interleaved: bool = True,
+        scaling_params: Optional[DeepseekYarnRopeScalingParams] = None,
+    ):
+        super().__init__(
+            dim, n_heads, theta, max_seq_len, head_dim, _freqs_cis, interleaved
+        )
+        self.scaling_params = scaling_params
 
     def freqs_cis_base(self) -> TensorValue:
         """

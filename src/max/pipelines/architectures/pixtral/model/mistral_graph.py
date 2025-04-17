@@ -160,6 +160,7 @@ def _transformer(
             dim=huggingface_config.text_config.num_attention_heads
             * huggingface_config.text_config.head_dim,
             n_heads=huggingface_config.text_config.num_attention_heads,
+            head_dim=huggingface_config.text_config.head_dim,
             theta=huggingface_config.text_config.rope_theta,
             max_seq_len=max_seq_len,
             interleaved=False,
