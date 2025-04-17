@@ -849,37 +849,24 @@ struct String(
 
     @staticmethod
     @always_inline
-    fn _from_bytes(owned buff: UnsafePointer[UInt8]) -> String:
+    fn _from_c_str(*, steal_ptr: UnsafePointer[UInt8]) -> String:
         """Construct a string from a sequence of bytes.
 
         This does no validation that the given bytes are valid in any specific
         String encoding.
 
         Args:
-            buff: The buffer. This should have an existing terminator.
+            steal_ptr: The pointer to steal. This should have an existing
+                terminator.
         """
 
         return String(
-            ptr=buff,
-            length=len(StringSlice[buff.origin](unsafe_from_utf8_ptr=buff)) + 1,
+            ptr=steal_ptr,
+            length=len(
+                StringSlice[steal_ptr.origin](unsafe_from_utf8_ptr=steal_ptr)
+            )
+            + 1,
         )
-
-    @staticmethod
-    fn _from_bytes(owned buff: Self._buffer_type) -> String:
-        """Construct a string from a sequence of bytes.
-
-        This does no validation that the given bytes are valid in any specific
-        String encoding.
-
-        Args:
-            buff: The buffer.
-        """
-
-        # If a terminator does not already exist, then add it.
-        if buff[-1]:
-            buff.append(0)
-
-        return String(buffer=buff^)
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
