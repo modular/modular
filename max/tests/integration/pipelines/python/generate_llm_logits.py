@@ -606,7 +606,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
     ),
     "llama4-scout": GenericOracle(
-        model_path="meta-llama/Llama-3.3-70B-Instruct",
+        model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
         # TODO(bduke): test chunked attention with >8192 context length cases.
         config_params={"max_length": 8192},
         device_encoding_map={"gpu": ["bfloat16"]},

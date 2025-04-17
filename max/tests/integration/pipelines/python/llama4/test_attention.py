@@ -313,7 +313,7 @@ def test_attention(
     text_config = Llama4TextConfig(**text_config.to_dict())
     text_config.attn_temperature_tuning = True
     text_config.num_hidden_layers = 2
-    text_config.no_rope_layers = [1]
+    text_config.no_rope_layer_interval = 2
 
     # Decrease actual head sizes to avoid OOMing
     text_config.hidden_size = 512
