@@ -242,7 +242,7 @@ static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
 /// appropriate documentation using the description.
 template <typename PublicDeclT>
 static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
-                                          size_t &line, size_t lineE,
+                                          size_t &line, size_t lineEnd,
                                           SmallVector<PublicDeclT> &decls) {
   std::string fullArgDesc;
   llvm::raw_string_ostream fullArgDescOS(fullArgDesc);
@@ -250,7 +250,7 @@ static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
   for (auto &decl : decls)
     declMap.try_emplace(decl.getName(), &decl);
 
-  for (++line; line < lineE && !lines[line].empty();) {
+  for (++line; line < lineEnd && !lines[line].empty();) {
     // Extract the argument name and description.
     auto [argName, argDesc] = lines[line].split(':');
     argName = argName.trim();
@@ -263,7 +263,7 @@ static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
     // Remove the initial indent but leave other whitespace intact to preserve
     // Markdown formatting.
     size_t indent = getIndentationLevel(lines[line]);
-    while (++line < lineE && getIndentationLevel(lines[line]) > indent)
+    while (++line < lineEnd && getIndentationLevel(lines[line]) > indent)
       fullArgDescOS << "\n" << lines[line].drop_front(indent).rtrim();
 
     // If it's a known entry, process it, otherwise skip it.
@@ -278,7 +278,7 @@ static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
 /// Header:
 ///   Element1...
 static std::string parseDocStringSection(ArrayRef<StringRef> lines,
-                                         size_t &line, size_t lineE) {
+                                         size_t &line, size_t lineEnd) {
   // A doc string may end with "Header:". This is diagnosed by the validator,
   // but invalid doc strings may still be emitted as JSON.
   if (line >= lines.size())
@@ -292,9 +292,81 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
   // Merge in additional description lines that have equal or larger
   // indentation.
   size_t indent = getIndentationLevel(lines[line]);
-  while (++line < lineE && getIndentationLevel(lines[line]) >= indent)
+  while (++line < lineEnd && getIndentationLevel(lines[line]) >= indent)
     paragraphOS << "\n" << lines[line].trim();
   return paragraphOS.str();
+}
+
+/// Parse "fake" sections to ensure they don't have unnecessary
+/// indentation. Don't trim lines because they'll be merged back into the
+/// (unprocessed) descriptionLines. Called after checking for the
+/// defined section headings, so we know the current line is either
+/// an ad-hoc heading or a regular line of text.
+/// TODO: We could eliminate this whole function if we had
+/// docstring linting that prevented this class of errors.
+static void
+maybeParseDocStringAdHocSection(SmallVector<std::string> &pureDescriptionLines,
+                                ArrayRef<StringRef> lines, size_t &line,
+                                size_t lineEnd) {
+  if (line >= lines.size())
+    return;
+
+  static const SmallVector<StringLiteral> adHocSections = {
+      DocString::kAdHocSectionExample,     DocString::kAdHocSectionExamples,
+      DocString::kAdHocSectionNote,        DocString::kAdHocSectionNotes,
+      DocString::kAdHocSectionPerformance, DocString::kAdHocSectionSafety,
+      DocString::kAdHocSectionWarning,
+  };
+
+  bool isAdHoc = false;
+  StringRef section = lines[line];
+  if (section.consume_back(":")) {
+    auto it = std::find(adHocSections.begin(), adHocSections.end(), section);
+    isAdHoc = (it != adHocSections.end());
+  }
+  // Whether or not the current line is an ad-hoc heading, add it to the
+  // output.
+  pureDescriptionLines.push_back(lines[line].str());
+  if (isAdHoc) {
+    size_t sectionIndent = getIndentationLevel(lines[line]);
+
+    // Don't set indent based on an empty line.
+    while (++line < lineEnd && lines[line].empty())
+      pureDescriptionLines.push_back(lines[line].str());
+
+    StringRef currentLine = lines[line];
+    size_t contentIndent = getIndentationLevel(currentLine);
+    if (contentIndent == sectionIndent) {
+      // Content is formatted appropriately, with no extra indent.
+      // This could be a new section heading, so back up and return
+      // control to the caller.
+      --line;
+      return;
+    } else {
+      // Over-indented content, fix it.
+      size_t dedent = contentIndent - sectionIndent;
+      pureDescriptionLines.push_back(lines[line].drop_front(dedent).str());
+      // Merge in additional description lines that have equal or larger
+      // indentation.
+      while (++line < lineEnd) {
+        currentLine = lines[line];
+        if (currentLine.empty()) {
+          // Don't dedent empty lines
+          pureDescriptionLines.push_back(currentLine.str());
+        } else if (getIndentationLevel(currentLine) < contentIndent) {
+          // End of the indented section. This line could be another
+          // section heading, so back up and return control to the caller.
+          --line;
+          return;
+        } else {
+          // Merge in additional description lines that have equal or larger
+          // indentation.
+          pureDescriptionLines.push_back(currentLine.drop_front(dedent).str());
+        }
+      }
+      return;
+    }
+  }
 }
 
 /// Extract a list of direct children decls from a given decl. It omits
@@ -655,28 +727,36 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
 
 void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
-  SmallVector<StringRef> pureDescriptionLines;
-  for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
+  SmallVector<std::string> pureDescriptionLines;
+
+  for (size_t line = 0, lineEnd = desc.size(); line < lineEnd; ++line) {
     if (desc[line] == (Twine(DocString::kSectionArgs) + ":").str()) {
-      augmentDeclsWithDocumentation(desc, line, lineE, args);
+      augmentDeclsWithDocumentation(desc, line, lineEnd, args);
     } else if (desc[line] ==
                (Twine(DocString::kSectionParameters) + ":").str()) {
-      augmentDeclsWithDocumentation(desc, line, lineE, parameters);
+      augmentDeclsWithDocumentation(desc, line, lineEnd, parameters);
     } else if (desc[line] == (Twine(DocString::kSectionReturns) + ":").str()) {
       if (returnType)
-        returnsDoc = parseDocStringSection(desc, line, lineE);
+        returnsDoc = parseDocStringSection(desc, line, lineEnd);
     } else if (desc[line] ==
                (Twine(DocString::kSectionConstraints) + ":").str()) {
-      constraints = parseDocStringSection(desc, line, lineE);
+      constraints = parseDocStringSection(desc, line, lineEnd);
     } else if (desc[line] == (Twine(DocString::kSectionRaises) + ":").str()) {
       if (raises())
-        raisesDoc = parseDocStringSection(desc, line, lineE);
+        raisesDoc = parseDocStringSection(desc, line, lineEnd);
     } else {
-      pureDescriptionLines.push_back(desc[line]);
+      // If this line is an ad-hoc section heading, process it to ensure
+      // that it doesn't have any unexpected indentation. Otherwise, just
+      // add the line to the description.
+      maybeParseDocStringAdHocSection(pureDescriptionLines, desc, line,
+                                      lineEnd);
     }
   }
-
-  description = DocString::formatDescription(pureDescriptionLines);
+  SmallVector<StringRef> pureDescriptionLinesRef;
+  for (const auto &descLine : pureDescriptionLines) {
+    pureDescriptionLinesRef.push_back(StringRef(descLine));
+  }
+  description = DocString::formatDescription(pureDescriptionLinesRef);
 }
 
 std::string
@@ -1169,17 +1249,24 @@ PublicTraitDecl::PublicTraitDecl(MojoASTDeclRef declRef)
 
 void PublicStructDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
-  SmallVector<StringRef> pureDescriptionLines;
-  for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
+  SmallVector<std::string>
+      pureDescriptionLines; // Change to std::string to own the data
+  for (size_t line = 0, lineEnd = desc.size(); line < lineEnd; ++line) {
     if (desc[line] == (Twine(DocString::kSectionParameters) + ":").str())
-      augmentDeclsWithDocumentation(desc, line, lineE, parameters);
+      augmentDeclsWithDocumentation(desc, line, lineEnd, parameters);
     else if (desc[line] == (Twine(DocString::kSectionConstraints) + ":").str())
-      constraints = parseDocStringSection(desc, line, lineE);
+      constraints = parseDocStringSection(desc, line, lineEnd);
     else
-      pureDescriptionLines.push_back(desc[line]);
+      // Handle any badly-indented ad-hoc sections
+      maybeParseDocStringAdHocSection(pureDescriptionLines, desc, line,
+                                      lineEnd);
   }
 
-  description = DocString::formatDescription(pureDescriptionLines);
+  SmallVector<StringRef> pureDescriptionLinesRef;
+  for (const auto &descLine : pureDescriptionLines) {
+    pureDescriptionLinesRef.push_back(StringRef(descLine));
+  }
+  description = DocString::formatDescription(pureDescriptionLinesRef);
 }
 
 std::string
