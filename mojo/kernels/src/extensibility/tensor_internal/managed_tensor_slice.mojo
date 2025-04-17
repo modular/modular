@@ -417,7 +417,7 @@ struct ManagedTensorSlice[
             adjusted_shape[i] = Int(ceil((stop[i] - start[i]) / step[i]))
         var slice_spec = RuntimeTensorSpec[type](adjusted_shape)
 
-        var slicer_strides = _row_major_strides(slicer_spec)
+        var slicer_strides = _row_major_strides(adjusted_shape)
         var start_offset = _dot_prod(start, slicer_strides)
 
         var strides = IndexList[rank]()
@@ -441,7 +441,7 @@ struct ManagedTensorSlice[
         """
         self._ptr = ptr
         self._spec = RuntimeTensorSpec[type, rank](shape)
-        self._runtime_strides = _row_major_strides(self._spec)
+        self._runtime_strides = _row_major_strides(shape)
 
     fn __init__(
         out self,

@@ -6,8 +6,6 @@
 
 from collections import InlineArray
 
-from tensor_internal import RuntimeTensorSpec
-
 from utils import IndexList
 
 
@@ -38,14 +36,12 @@ fn _slice_to_tuple[
 
 
 @always_inline
-fn _row_major_strides[
-    type: DType, rank: Int
-](spec: RuntimeTensorSpec[type, rank]) -> IndexList[rank]:
+fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
     var offset = 1
     var strides = IndexList[rank]()
 
     @parameter
     for i in reversed(range(rank)):
         strides[i] = offset
-        offset *= spec.shape[i]
+        offset *= shape[i]
     return strides
