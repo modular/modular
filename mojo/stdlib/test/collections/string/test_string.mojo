@@ -810,11 +810,8 @@ def test_splitlines():
 
     # test \x85 \u2028 \u2029
     var next_line = List[UInt8](0xC2, 0x85, 0)
-    """TODO: \\x85"""
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8, 0)
-    """TODO: \\u2028"""
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9, 0)
-    """TODO: \\u2029"""
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = String(buffer=i[])

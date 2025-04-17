@@ -314,11 +314,9 @@ struct Codepoint(
             A string containing this single character.
         """
         var char_len = self.utf8_byte_length()
-        var buffer = List[Byte](capacity=char_len + 1)
-        _ = self.unsafe_write_utf8(buffer.unsafe_ptr())
-        buffer.unsafe_ptr()[char_len] = 0
-        buffer._len = char_len + 1
-        return String(buffer=buffer^)
+        var result = String(unsafe_uninit_length=char_len)
+        _ = self.unsafe_write_utf8(result.unsafe_ptr())
+        return result
 
     # ===-------------------------------------------------------------------===#
     # Methods

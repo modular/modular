@@ -24,6 +24,7 @@ from sys import simdwidthof
 
 import bit
 from memory import Span
+from collections.string.string import _chr_ascii
 
 from ._b64encode import b64encode_with_buffers as _b64encode_with_buffers
 
@@ -147,7 +148,7 @@ fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
                 ).format(n)
             )
 
-    var p = String._buffer_type(capacity=n + 1)
+    var result = String(capacity=n)
 
     # This algorithm is based on https://arxiv.org/abs/1704.00605
     for i in range(0, n, 4):
@@ -156,19 +157,15 @@ fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
         var c = _ascii_to_value[validate](str[i + 2])
         var d = _ascii_to_value[validate](str[i + 3])
 
-        p.append((a << 2) | (b >> 4))
+        result += _chr_ascii((a << 2) | (b >> 4))
         if str[i + 2] == "=":
             break
-
-        p.append(((b & 0x0F) << 4) | (c >> 2))
-
+        result += _chr_ascii(((b & 0x0F) << 4) | (c >> 2))
         if str[i + 3] == "=":
             break
+        result += _chr_ascii(((c & 0x03) << 6) | d)
 
-        p.append(((c & 0x03) << 6) | d)
-
-    p.append(0)  # null-terminate the result
-    return String(buffer=p^)
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#

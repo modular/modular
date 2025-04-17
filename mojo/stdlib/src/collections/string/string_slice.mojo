@@ -596,7 +596,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = Self(unsafe_from_utf8_ptr=ptr)
 
     @always_inline("builtin")
-    fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
+    fn __init__(
+        out self,
+        *,
+        ptr: UnsafePointer[Byte, mut=mut, origin=origin],
+        length: UInt,
+    ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
         encoded bytes and a length.
 
@@ -677,10 +682,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             This will allocate a new string that copies the string contents from
             the provided string slice.
         """
-        var buffer = String._buffer_type(capacity=self.byte_length() + 1)
-        buffer.extend(self.as_bytes())
-        buffer.append(0)
-        return String(buffer=buffer^)
+        var len = self.byte_length()
+        var result = String(unsafe_uninit_length=len)
+        memcpy(result.unsafe_ptr(), self.unsafe_ptr(), len)
+        return result^
 
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
@@ -1021,13 +1026,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The result string.
         """
-        var res = List[Byte](
-            capacity=self.byte_length() + rhs.byte_length() + 1
-        )
-        res.extend(self.as_bytes())
-        res.extend(rhs.as_bytes())
-        res.append(0)
-        return String(buffer=res^)
+        return String._add(self._slice, rhs._slice)
 
     fn __radd__(self, lhs: StringSlice) -> String:
         """Returns a string with this value appended to another string.
@@ -1038,13 +1037,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The result string.
         """
-        var res = List[Byte](
-            capacity=self.byte_length() + lhs.byte_length() + 1
-        )
-        res.extend(lhs.as_bytes())
-        res.extend(self.as_bytes())
-        res.append(0)
-        return String(buffer=res^)
+        return lhs + self
 
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
@@ -1055,12 +1048,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The string concatenated `n` times.
         """
-
-        var buffer = List[Byte](capacity=self.byte_length() * n + 1)
+        var result = String()
+        if n <= 0:
+            return result
+        result.reserve(self.byte_length() * n)
         for _ in range(n):
-            buffer.extend(self.as_bytes())
-        buffer.append(0)
-        return String(buffer=buffer)
+            result += self
+        return result
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -2134,13 +2128,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         debug_assert(
             len(fillchar) == 1, "fill char needs to be a one byte literal"
         )
-        var fillbyte = fillchar.as_bytes()[0]
-        var buffer = List[Byte](capacity=width + 1)
-        buffer.resize(width, fillbyte)
-        buffer.append(0)
-        memcpy(buffer.unsafe_ptr().offset(start), self.unsafe_ptr(), len(self))
-        var result = String(buffer=buffer)
-        return result^
+
+        var result = String(capacity=width)
+        for _ in range(start):
+            result += fillchar
+        result += self
+
+        while result.byte_length() < width:
+            result += fillchar
+        return result
 
     fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
@@ -2244,24 +2240,21 @@ fn get_static_string[
 
 
 fn _to_string_list[
+    O: ImmutableOrigin, //,
     T: CollectionElement,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
-    unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte],
+    unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, mut=False, origin=O],
 ](items: List[T]) -> List[String]:
-    i_len = len(items)
-    i_ptr = items.unsafe_ptr()
-    out_ptr = UnsafePointer[String].alloc(i_len)
+    var i_len = len(items)
+
+    var out_list = List[String](capacity=i_len)
 
     for i in range(i_len):
-        og_len = len_fn(i_ptr[i])
-        f_len = og_len + 1  # null terminator
-        p = UnsafePointer[Byte].alloc(f_len)
-        og_ptr = unsafe_ptr_fn(i_ptr[i])
-        memcpy(p, og_ptr, og_len)
-        p[og_len] = 0  # null terminator
-        buf = String._buffer_type(steal_ptr=p, length=f_len, capacity=f_len)
-        (out_ptr + i).init_pointee_move(String(buf^))
-    return List[String](steal_ptr=out_ptr, length=i_len, capacity=i_len)
+        var elt_ptr = Pointer(to=items[i])
+        var og_len = len_fn(elt_ptr[])
+        var og_ptr = unsafe_ptr_fn(elt_ptr[])
+        out_list.append(String(StringSlice(ptr=og_ptr, length=og_len)))
+    return out_list^
 
 
 @always_inline
@@ -2280,7 +2273,9 @@ fn _to_string_list[
         The list of created strings.
     """
 
-    fn unsafe_ptr_fn(v: StringSlice[O]) -> UnsafePointer[Byte]:
+    fn unsafe_ptr_fn(
+        v: StringSlice[O],
+    ) -> UnsafePointer[Byte, mut=False, origin=O]:
         return v.unsafe_ptr()
 
     fn len_fn(v: StringSlice[O]) -> Int:
@@ -2305,7 +2300,9 @@ fn _to_string_list[
         The list of created strings.
     """
 
-    fn unsafe_ptr_fn(v: Span[Byte, O]) -> UnsafePointer[Byte]:
+    fn unsafe_ptr_fn(
+        v: Span[Byte, O]
+    ) -> UnsafePointer[Byte, mut=False, origin=O]:
         return v.unsafe_ptr()
 
     fn len_fn(v: Span[Byte, O]) -> Int:

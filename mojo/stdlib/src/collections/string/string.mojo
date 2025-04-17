@@ -136,9 +136,7 @@ fn chr(c: Int) -> String:
         )
 
     # SAFETY: We just checked that `char` is present.
-    var char = char_opt.unsafe_value()
-
-    return String(char)
+    return String(char_opt.unsafe_value())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1077,6 +1075,7 @@ struct String(
         if o_len == 0:
             return
         self._buffer.reserve(self.byte_length() + o_len + 1)
+        # remove the nul terminator if it exists.
         if len(self._buffer) > 0:
             _ = self._buffer.pop()
         self._buffer.extend(other)
