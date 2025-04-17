@@ -7,15 +7,3 @@ modular_py_test(
         "//SDK/lib/API/python/max",
     ],
 )
-
-test_suite(
-    name = "tests",
-    tags = ["manual"],
-    tests = [
-        ":max_tests",
-        "//SDK/lib/API/python/tests/driver:tests",
-        "//SDK/lib/API/python/tests/graph:tests",
-        "//SDK/lib/API/python/tests/profiler:tests",
-        "//SDK/lib/API/python/tests/serve:tests",
-    ],
-)
