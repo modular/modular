@@ -398,7 +398,7 @@ fn consumer_main_loop[
                 _ = empty[read_idx].arrive()
 
         @parameter
-        if a_type == DType.float8_e4m3fn:
+        if a_type is DType.float8_e4m3fn:
             fp8_promotion_iter += 1
             if fp8_promotion_iter == promotion_frequency:
                 promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
@@ -408,7 +408,7 @@ fn consumer_main_loop[
 
     # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type is DType.float8_e4m3fn:
         if fp8_promotion_iter != 0:
             promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
@@ -1239,7 +1239,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         ].stack_allocation()
 
         @parameter
-        if a_type == DType.float8_e4m3fn:
+        if a_type is DType.float8_e4m3fn:
             _ = final_c_reg_tile.fill(0.0)
         else:
             _ = c_reg_tile.fill(0.0)
@@ -1342,7 +1342,7 @@ fn hopper_matmul_tma_wgmma_kernel[
 
     constrained[
         a_type != DType.float8_e4m3fn or BK == 128,
-        "BK must be 128 for fp8 data type for numerical accuracy correctness",
+        "BK must be 128 for fp8 data type for numerical accuracy",
     ]()
 
     alias num_m_mmas = BM // wgmma_shape[0]
@@ -1387,7 +1387,7 @@ fn hopper_matmul_tma_wgmma_kernel[
     ].stack_allocation()
 
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type is DType.float8_e4m3fn:
         _ = final_c_reg_tile.fill(0.0)
     else:
         _ = c_reg_tile.fill(0.0)
@@ -1446,7 +1446,7 @@ fn hopper_matmul_tma_wgmma_kernel[
         barrier()
 
         @parameter
-        if a_type == DType.float8_e4m3fn:
+        if a_type is DType.float8_e4m3fn:
             fp8_promotion_iter += 1
             if fp8_promotion_iter == promotion_frequency:
                 promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
@@ -1454,7 +1454,7 @@ fn hopper_matmul_tma_wgmma_kernel[
 
     # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type is DType.float8_e4m3fn:
         if fp8_promotion_iter != 0:
             promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
 
@@ -1477,7 +1477,7 @@ fn hopper_matmul_tma_wgmma_kernel[
             # Tile at (mma_id, 0) is a long vector containing all fragments
             # for this warp.
             @parameter
-            if a_type == DType.float8_e4m3fn:
+            if a_type is DType.float8_e4m3fn:
                 c_frag = final_c_reg_tile.tile[1, c_frag_size](mma_id, 0)
             else:
                 c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
