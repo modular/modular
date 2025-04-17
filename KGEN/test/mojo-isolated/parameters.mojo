@@ -149,9 +149,9 @@ fn testSIMD(a: SIMD[DType.float32, 1],
 #
 # CHECK-LABEL: lit.fn @"paramResolution[
 # CHECK-SAME: Int,
-# CHECK-SAME: StructWithIntParam[$0],
+# CHECK-SAME: parameters::StructWithIntParam[$0],
 # CHECK-SAME: Int,
-# CHECK-SAME: StructWithIntParam[$2]
+# CHECK-SAME: parameters::StructWithIntParam[$2]
 # CHECK-SAME: ]()"<
 # CHECK-SAME: size1: !Int, a: @parameters::@StructWithIntParam<:!Int size1>,
 # CHECK-SAME: size2: !Int, b: @parameters::@StructWithIntParam<:!Int size2>>()
@@ -193,7 +193,7 @@ fn useParameterizedField[x: Pair[DType.float32]]():
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]]: type>
 struct TypeParameter[T: __mlir_type.`!kgen.type`]:
-  # CHECK: @"bar(TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<[[TYPE]]>)
+  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<[[TYPE]]>)
   fn bar(self, val: T):
     pass
 
@@ -442,7 +442,7 @@ fn callMemoryValueParam():
     # CHECK: lit.call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
     _ = passMemoryValue(copy)
 
-    # CHECK: lit.call {{.*}}MemoryType::@"__init__(Int)"), {22})>
+    # CHECK: lit.call {{.*}}MemoryType::@"__init__(::Int)"), {22})>
     memoryParam[MemoryType(22)]()
 
     # CHECK: dontFoldMemoryCall{{.*}}{42})))
@@ -941,7 +941,7 @@ fn infer_with_default_arg[T: AnyTrivialRegType](a: T, b: Int = 7):
 
 # CHECK-LABEL: lit.fn @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,Int)"<:type !Int>
+    # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,::Int)"<:type !Int>
     infer_with_default_arg(128)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -1179,15 +1179,15 @@ fn default_params[a: Int, b: Int = 7, c: String = "woof"]():
 
 # CHECK-LABEL: lit.fn @"test_default_params()"
 fn test_default_params():
-    # CHECK: lit.call @{{.*}}@"default_params[Int,Int,String]()"
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     default_params[1]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[Int,Int,String]()"
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {2}, :!Int {8}, {{.*}}#StringLiteral <:string "woof">
     default_params[2, 8]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[Int,Int,String]()"
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
     # CHECK-SAME: <:!Int {4}, :!Int {9}, {{.*}}#StringLiteral <:string "meow">
     default_params[4, 9, "meow"]()
 
@@ -1541,7 +1541,7 @@ fn getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
 
 # CHECK-LABEL: lit.fn @"tryCallingAThingReturningMOCO1144Bound
 fn tryCallingAThingReturningMOCO1144Bound():
-    # CHECK-NEXT:  lit.var.decl "x" {{.*}}MOCO1144<:!Bool {:i1 1}, :!AnyType [!Int{{.*}}takeAnyTypeReturnInt[AnyType]()"<:!AnyType [!Int
+    # CHECK-NEXT:  lit.var.decl "x" {{.*}}MOCO1144<:!Bool {:i1 1}, :!AnyType [!Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType [!Int
     var x = getMOCO1144Bound()
 
 
