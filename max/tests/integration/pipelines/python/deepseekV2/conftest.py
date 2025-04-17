@@ -63,7 +63,7 @@ def input_tensor_rope(
         batch_size,
         config.num_attention_heads,
         seq_len,
-        config.qk_nope_head_dim,
+        config.qk_rope_head_dim,
         dtype=torch.bfloat16,
     )
 

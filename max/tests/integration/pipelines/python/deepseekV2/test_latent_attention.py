@@ -20,7 +20,10 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import (
+    DeepseekYarnRopeScalingParams,
+    DeepseekYarnRotaryEmbedding,
+)
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2Attention
@@ -52,11 +55,24 @@ def generate_max_outputs(
     session = InferenceSession(devices=[device0])
     session.set_debug_print_options(style=PrintStyle.COMPACT)
 
-    rope = OptimizedRotaryEmbedding(
-        dim=config.qk_rope_head_dim,
-        n_heads=config.num_attention_heads,
+    assert config.rope_scaling is not None
+    scaling_params = DeepseekYarnRopeScalingParams(
+        scaling_factor=config.rope_scaling["factor"],
+        original_max_position_embeddings=config.rope_scaling[
+            "original_max_position_embeddings"
+        ],
+        beta_fast=config.rope_scaling["beta_fast"],
+        beta_slow=config.rope_scaling["beta_slow"],
+        mscale=config.rope_scaling["mscale"],
+        mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+    )
+
+    rope = DeepseekYarnRotaryEmbedding(
+        config.qk_rope_head_dim,
         theta=config.rope_theta,
+        n_heads=config.num_attention_heads,
         max_seq_len=config.max_position_embeddings,
+        scaling_params=scaling_params,
     )
 
     kv_params = KVCacheParams(
@@ -242,6 +258,6 @@ def test_latent_attention_decode(
     torch.testing.assert_close(
         torch_output,
         max_output,
-        rtol=1e-2,
-        atol=1e-2,
+        rtol=1e-3,
+        atol=2e-3,
     )

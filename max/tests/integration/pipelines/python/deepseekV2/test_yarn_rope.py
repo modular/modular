@@ -17,15 +17,18 @@ from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import (
     DeepseekV2Config,
 )
-from torch_reference.modeling_deepseek import DeepseekV2YarnRotaryEmbedding
+from torch_reference.modeling_deepseek import (
+    DeepseekV2YarnRotaryEmbedding,
+    apply_rotary_pos_emb,
+)
 
 
 def generate_torch_outputs(
     config: DeepseekV2Config,
     input_tensor_rope: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     kwargs = {}
-    scaling_factor = 1.0  # default value
+    scaling_factor = 40.0  # default value
     if config.rope_scaling is not None:
         scaling_factor = config.rope_scaling["factor"]
         kwargs = {
@@ -45,17 +48,35 @@ def generate_torch_outputs(
         scaling_factor=scaling_factor,
         base=int(config.rope_theta),
         **kwargs,
-    ).to(torch.bfloat16)
-    torch_output = layer(input_tensor_rope, seq_len=input_tensor_rope.shape[2])
-    torch_cos = torch_output[0].to(torch.bfloat16)
-    torch_sin = torch_output[1].to(torch.bfloat16)
-    return torch.stack([torch_cos, torch_sin], axis=0)
+    )
+    cos, sin = layer(input_tensor_rope, seq_len=input_tensor_rope.shape[2])
+    output, output_dummy = apply_rotary_pos_emb(
+        input_tensor_rope,
+        input_tensor_rope,
+        cos,
+        sin,
+        torch.arange(7).unsqueeze(0),
+    )
+
+    # when provided with a interleaved input, `apply_rotary_pos_emb` returns a
+    # non-interleaved result
+    #
+    # (i.e. output = roped_input.view(b, h, s, d // 2, 2]).transpose(3, 4).reshape(b, h, s, d))
+    #
+    # this doesn't matter in the attention calculation, as such permutation won't
+    # change the inner-product of q_rope and k_rope. However, we do need to remove
+    # the perumtation if we want to compare against MAX's output.
+    b, h, s, d = input_tensor_rope.shape
+    output = output.view(b, h, s, 2, d // 2).transpose(3, 4).reshape(b, h, s, d)
+
+    return output
 
 
 def generate_max_outputs(
     config: DeepseekV2Config,
     input_tensor_rope: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
+    assert config.rope_scaling is not None
     scaling_params = DeepseekYarnRopeScalingParams(
         scaling_factor=config.rope_scaling["factor"],
         original_max_position_embeddings=config.rope_scaling[
@@ -95,12 +116,14 @@ def test_yarn_rope(
     input_tensor_rope: torch.Tensor,
 ) -> None:
     torch_output = generate_torch_outputs(config, input_tensor_rope)
-    max_output = generate_max_outputs(config, input_tensor_rope)
+    # max uses [batch, seq_len, num_heads, head_dim]
+    max_output = generate_max_outputs(
+        config, input_tensor_rope.transpose(1, 2).contiguous()
+    )
 
-    # TODO (MODELS-396): These tolerances are likely too permissive. This should be revisited and adjusted if needed when the model is E2E validated.
     torch.testing.assert_close(
         torch_output,
-        max_output,
-        rtol=2e-2,
-        atol=2e-2,
+        max_output.transpose(1, 2),
+        rtol=1e-4,
+        atol=1e-4,
     )
