@@ -26,7 +26,6 @@ modular_py_binary(
     srcs = ["verify_pipelines.py"],
     data = [
         "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/llama3:verify",
         "//SDK/integration-test/pipelines/python/test_common",
         "@torch_llama-gptq_golden",
         "@torch_llama3-vision_golden",
@@ -204,7 +203,6 @@ modular_py_binary(
         "run_lm_eval.py",
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "@mistral-evals//:evaluate",
     ],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     main = "pipelines_lm_eval.py",
