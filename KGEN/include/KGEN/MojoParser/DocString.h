@@ -105,6 +105,20 @@ public:
   /// surrounding raises within the function.
   static constexpr StringLiteral kSectionRaises = "Raises";
 
+  //===----------------------------------------------------------------------===//
+  // Known ad-hoc section names
+
+  /// These "fake" section names appear in description portion of
+  /// the docstring; if they're followed by indented content like
+  /// a true section, it will format incorrectly, so we check for that.
+  static constexpr StringLiteral kAdHocSectionExample = "Example";
+  static constexpr StringLiteral kAdHocSectionExamples = "Examples";
+  static constexpr StringLiteral kAdHocSectionNote = "Note";
+  static constexpr StringLiteral kAdHocSectionNotes = "Notes";
+  static constexpr StringLiteral kAdHocSectionWarning = "Warning";
+  static constexpr StringLiteral kAdHocSectionPerformance = "Performance";
+  static constexpr StringLiteral kAdHocSectionSafety = "Safety";
+
 private:
   /// The short summary of the doc string.
   std::string summary;
