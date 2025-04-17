@@ -1038,6 +1038,7 @@ fn get_kernel_simd_width[type: DType, target: StaticString]() -> Int:
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
+@__mogg_intrinsic_attr("mogg.elemwise_for_each")
 @no_inline
 fn foreach[
     type: DType,
