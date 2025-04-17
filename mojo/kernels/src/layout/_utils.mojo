@@ -244,14 +244,16 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 fn get_amd_buffer_descriptor(tensor: LayoutTensor) -> _buffer_resource:
     var ptr = tensor.ptr
     var size = _get_bounds(tensor)
-    return make_buffer_resource(ptr, size)
+    return make_buffer_resource(readfirstlane(ptr), readfirstlane(size))
 
 
 @always_inline
 fn get_amd_buffer_descriptor(
     tensor_iter: LayoutTensorIter, bound: Int
 ) -> _buffer_resource:
-    return make_buffer_resource(readfirstlane(tensor_iter.ptr), bound)
+    return make_buffer_resource(
+        readfirstlane(tensor_iter.ptr), readfirstlane(bound)
+    )
 
 
 @always_inline
