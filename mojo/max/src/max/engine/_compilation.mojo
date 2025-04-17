@@ -248,7 +248,9 @@ struct CompileConfig:
 
         # This transfers ownership of the underlying data buffer allocated in
         # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-        var torch_ext_lib_path = String._from_bytes(torch_ext_lib_path_str_ptr)
+        var torch_ext_lib_path = String._from_c_str(
+            steal_ptr=torch_ext_lib_path_str_ptr
+        )
 
         if not Path(torch_ext_lib_path).exists():
             return None

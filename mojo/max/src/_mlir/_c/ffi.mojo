@@ -31,7 +31,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var mof_lib_path = String._from_bytes(mof_lib_path_str_ptr)
+    var mof_lib_path = String._from_c_str(steal_ptr=mof_lib_path_str_ptr)
 
     if not Path(mof_lib_path).exists():
         abort("cannot load graph library from " + mof_lib_path)

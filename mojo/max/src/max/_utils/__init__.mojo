@@ -71,7 +71,7 @@ fn handle_from_config(name: String, param: String) -> DLHandle:
 
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var lib_path = String._from_bytes(lib_path_str_ptr)
+    var lib_path = String._from_c_str(steal_ptr=lib_path_str_ptr)
 
     if not Path(lib_path).exists():
         abort("cannot load " + name + " library from " + lib_path)
@@ -159,7 +159,7 @@ fn get_lib_path_from_cfg(
 
     # this transfers ownership of the underlying data buffer allocated in
     # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var lib_path = String._from_bytes(lib_path_str_ptr)
+    var lib_path = String._from_c_str(steal_ptr=lib_path_str_ptr)
 
     if not Path(lib_path).exists():
         raise String(err_name) + " not found at " + lib_path
