@@ -10,14 +10,7 @@ from conftest import axes, shapes, symbolic_axes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import (
-    Dim,
-    Graph,
-    Shape,
-    StaticDim,
-    TensorType,
-    ops,
-)
+from max.graph import DeviceRef, Dim, Graph, Shape, StaticDim, TensorType, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes())
@@ -174,3 +167,19 @@ def test_concat__symbolic__algebraic_result(
     with Graph("concat", input_types=input_types) as graph:
         out = ops.concat(graph.inputs, axis)
         assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))
+
+
+def test_oncat_different_devices():
+    input_types = [
+        TensorType(DType.float32, [12], DeviceRef.CPU(0)),
+        TensorType(DType.float32, [13], DeviceRef.CPU(0)),
+        TensorType(DType.float32, [14], DeviceRef.CPU(1)),
+    ]
+
+    with (
+        Graph("concat", input_types=input_types) as graph,
+        pytest.raises(
+            ValueError, match="Cannot concat inputs on different devices .*"
+        ),
+    ):
+        out = ops.concat(graph.inputs, 0)
