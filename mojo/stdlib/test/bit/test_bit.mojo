@@ -76,6 +76,9 @@ def test_count_leading_zeros_simd():
         count_leading_zeros(var7), SIMD[int64_t, simd_width](0, 64, 0, 1)
     )
 
+    alias alias7 = count_leading_zeros(SIMD[DType.uint8, 4](0))
+    assert_equal(alias7, SIMD[DType.uint8, 4](8, 8, 8, 8))
+
 
 def test_count_trailing_zeros():
     assert_equal(count_trailing_zeros(-(2**59)), 59)

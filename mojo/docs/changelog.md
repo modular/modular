@@ -224,3 +224,6 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 
 - [#3662](https://github.com/modular/max/issues/3662) - Code using `llvm.assume`
   cannot run at compile time.
+
+- [#4273](https://github.com/modular/max/issues/4273) - `count_leading_zeros`
+  doesn't work for vectors with size > 1 at comptime
