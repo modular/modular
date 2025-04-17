@@ -1386,7 +1386,7 @@ struct OuterStruct:
     var outers_field: RefResultStruct
     # CHECK: lit.fn @"__del__
     fn __del__(owned self):
-        # CHECK: lit.call {{.*}}use(::String)
+        # CHECK: lit.call {{.*}}use(String)
         use(self.outers_field.x)
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[outers_field]
         # CHECK-NEXT: lit.call {{.*}}RefResultStruct::@"__del__{{.*}}([[TMP]])
