@@ -460,8 +460,9 @@ static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
   return prettyName;
 }
 
-static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
-                        bool isFunc) {
+static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
+                        SharedState *diagShared, bool isFunc) {
+  const bool forDiag = diagShared != nullptr;
   if (forDiag) {
     StringRef name = getNameFromSymbolRef(symbol, isFunc);
     // For constructors, print the type name instead.
