@@ -72,7 +72,7 @@ private:
     return !genOp->hasAttr(MOGG_INTRINSIC_TENSOR_FUSED_LOAD);
   }
 
-  void outlineFunction(GeneratorOp gen,
+  void outlineFunction(GeneratorOp gen, Attribute label,
                        ArrayRef<KGEN::ParamDeclareRegionOp> lambdas,
                        CallOp elementwiseOp, SymbolTable &symTab) {
     // We are either outlining the full function or just the inner elementwise.
@@ -234,8 +234,11 @@ private:
     // to be inlined later when loaded by MOGG.
     outlinedFunction->setAttr(outlinedAttrName, builder.getUnitAttr());
 
-    if (elementwiseOp)
-      outlinedFunction->setAttr(OUTLINED_ELEMW_ATTR, builder.getUnitAttr());
+    if (elementwiseOp) {
+      outlinedFunction->setAttr(OUTLINED_ELEMW_ATTR, label);
+      // Set to exported in order to get indexed by MOGGLoader
+      outlinedFunction.setExported();
+    }
 
     // Add all the old attributes (except the execute related attrs).
     for (NamedAttribute attr : gen->getDialectAttrs())
@@ -354,7 +357,8 @@ public:
 
     for (GeneratorOp kernel : mod.getOps<GeneratorOp>()) {
       // Skip non-kernels.
-      if (!kernel->hasAttr(kMOGGExecuteFunctionLabel))
+      Attribute label = kernel->getAttr(kMOGGExecuteFunctionLabel);
+      if (!label)
         continue;
 
       // Don't slice view kernels (The GraphCompiler need to access the copy
@@ -413,7 +417,7 @@ public:
       // Outline the actual work of the function.
       // 1. If it is elementwise, outline the body of the elementwise lambda
       // 2. Otherwise outline everything other than the lambdas.
-      outlineFunction(kernel, addedLambdas, elementwiseOp, symTab);
+      outlineFunction(kernel, label, addedLambdas, elementwiseOp, symTab);
 
       // Tell MOGG this thing is elementwise.
       if (elementwiseOp) {
