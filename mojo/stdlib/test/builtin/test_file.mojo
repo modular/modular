@@ -50,17 +50,13 @@ def test_file_read_bytes_multi():
     ) as f:
         var bytes1 = f.read_bytes(12)
         assert_equal(len(bytes1), 12, "12 bytes")
-        # we add the null terminator
-        bytes1.append(0)
-        var string1 = String(buffer=bytes1)
+        var string1 = String(bytes1)
         assert_equal(len(string1), 12, "12 chars")
         assert_equal(string1, String("Lorem ipsum "))
 
         var bytes2 = f.read_bytes(6)
         assert_equal(len(bytes2), 6, "6 bytes")
-        # we add the null terminator
-        bytes2.append(0)
-        var string2 = String(buffer=bytes2)
+        var string2 = String(bytes2)
         assert_equal(len(string2), 6, "6 chars")
         assert_equal(string2, "dolor ")
 
@@ -204,27 +200,6 @@ def test_file_write_again():
 
     with open(TEMP_FILE, "r") as read_file:
         assert_equal(read_file.read(), expected_content)
-
-
-@value
-@register_passable
-struct Word:
-    var first_letter: UInt8
-    var second_letter: UInt8
-    var third_letter: UInt8
-    var fourth_letter: UInt8
-    var fith_letter: UInt8
-
-    @no_inline
-    fn __str__(self) -> String:
-        var word = List[UInt8](capacity=6)
-        word.append(self.first_letter)
-        word.append(self.second_letter)
-        word.append(self.third_letter)
-        word.append(self.fourth_letter)
-        word.append(self.fith_letter)
-        word.append(0)
-        return String(buffer=word)
 
 
 def test_file_read_to_dtype_pointer():

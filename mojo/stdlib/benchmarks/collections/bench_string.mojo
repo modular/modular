@@ -51,10 +51,9 @@ fn make_string[
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
-            items.append(0)
-            return String(buffer=items^)
+            return String(items)
         else:
-            return String(buffer=f.read_bytes())
+            return String(f.read_bytes())
     except e:
         print(e, file=2)
     return abort[String]()

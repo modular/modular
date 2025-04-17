@@ -635,6 +635,18 @@ struct String(
         """
         self = value.__str__()
 
+    @always_inline
+    fn __init__(out self, bytes: Span[UInt8, *_]):
+        """Construct a string by copying the data.
+
+        Args:
+            bytes: The bytes to copy.
+        """
+        self._buffer = Self._buffer_type(capacity=len(bytes) + 1)
+        self._buffer.append(bytes)
+        # add nul terminator.
+        self._buffer.append(0)
+
     @no_inline
     fn __init__[
         *Ts: Writable
@@ -713,30 +725,6 @@ struct String(
             capacity: The capacity of the string.
         """
         self._buffer = Self._buffer_type(capacity=capacity)
-
-    @always_inline
-    fn __init__(out self, *, owned buffer: List[UInt8, *_]):
-        """Construct a string from a buffer of bytes without copying the
-        allocated data.
-
-        The buffer must be terminated with a null byte:
-
-        ```mojo
-        var buf = List[UInt8]()
-        buf.append(ord('H'))
-        buf.append(ord('i'))
-        buf.append(0)
-        var hi = String(buffer=buf)
-        ```
-
-        Args:
-            buffer: The buffer.
-        """
-        debug_assert(
-            len(buffer) > 0 and buffer[-1] == 0,
-            "expected last element of String buffer to be null terminator",
-        )
-        self._buffer = buffer^._cast_hint_trivial_type[True]()
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
@@ -902,7 +890,7 @@ struct String(
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](idx, len(self))
-        return String(buffer=Self._buffer_type(self._buffer[normalized_idx], 0))
+        return _chr_ascii(self._buffer[normalized_idx])
 
     fn __getitem__(self, span: Slice) -> String:
         """Gets the sequence of characters at the specified positions.
@@ -927,12 +915,11 @@ struct String(
                 )
             )
 
-        var buffer = Self._buffer_type(capacity=len(r) + 1)
+        var result = String(capacity=len(r) + 1)
         var ptr = self.unsafe_ptr()
         for i in r:
-            buffer.append(ptr[i])
-        buffer.append(0)
-        return String(buffer=buffer^)
+            result += _chr_ascii(ptr[i])
+        return result^
 
     @always_inline
     fn __eq__(self, other: String) -> Bool:
@@ -1043,8 +1030,10 @@ struct String(
         var buffer = Self._buffer_type(capacity=lhs_len + rhs_len + 1)
         buffer.extend(lhs)
         buffer.extend(rhs)
-        buffer.append(0)
-        return String(buffer=buffer^)
+        buffer.append(0)  # nul terminator
+        var result = String()
+        result._buffer = buffer^
+        return result^
 
     @always_inline
     fn __add__(self, other: StringSlice) -> String:

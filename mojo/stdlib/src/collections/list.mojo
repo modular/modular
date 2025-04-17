@@ -531,6 +531,24 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
         self._len += 1
 
+    fn append(mut self, elements: Span[T, _]):
+        """Appends elements to this list.
+
+        Args:
+            elements: The elements to append.
+        """
+        var new_num_elts = self._len + len(elements)
+        if new_num_elts > self.capacity:
+            # Make sure our capacity at least doubles to avoid O(n^2) behavior.
+            self._realloc(max(self.capacity * 2, new_num_elts))
+
+        var i = self._len
+        self._len = new_num_elts
+
+        for elt in elements:
+            UnsafePointer(to=self[i]).init_pointee_copy(elt[])
+            i += 1
+
     fn insert(mut self, i: Int, owned value: T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
@@ -876,20 +894,20 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self.capacity = 0
         return ptr
 
-    fn __getitem__(self, span: Slice) -> Self:
+    fn __getitem__(self, slice: Slice) -> Self:
         """Gets the sequence of elements at the specified positions.
 
         Args:
-            span: A slice that specifies positions of the new list.
+            slice: A slice that specifies positions of the new list.
 
         Returns:
-            A new list containing the list at the specified span.
+            A new list containing the list at the specified slice.
         """
 
         var start: Int
         var end: Int
         var step: Int
-        start, end, step = span.indices(len(self))
+        start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
 
         if not len(r):

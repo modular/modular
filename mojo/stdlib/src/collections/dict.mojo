@@ -724,9 +724,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             A string representation of the Dict.
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
-        var string_buffer = List[UInt8](capacity=minimum_capacity)
-        string_buffer.append(0)  # Null terminator
-        var result = String(buffer=string_buffer^)
+        var result = String(capacity=minimum_capacity)
         result += "{"
 
         var i = 0

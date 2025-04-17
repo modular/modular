@@ -251,10 +251,15 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         # inline the string slice constructor to work around an elaborator
         # memory leak.
         # return self.as_string_slice()
-        var buffer = String._buffer_type(capacity=self.byte_length() + 1)
-        buffer.extend(self.as_bytes())
-        buffer.append(0)
-        return String(buffer=buffer^)
+
+        var len = self.byte_length()
+        var result = String(unsafe_uninit_length=len)
+        # TODO: Use memcpy.
+        for i in range(len):
+            UnsafePointer(to=result._buffer[i]).init_pointee_copy(
+                self.unsafe_ptr()[i]
+            )
+        return result^
 
     @no_inline
     fn __repr__(self) -> String:

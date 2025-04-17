@@ -115,8 +115,7 @@ fn b64encode(input_bytes: Span[Byte, _]) -> String:
     """
     var result = List[UInt8, True]()
     b64encode(input_bytes, result)
-    result.append(0)  # null-terminate the result
-    return String(buffer=result^)
+    return String(result)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -200,8 +199,7 @@ fn b16encode(str: StringSlice) -> String:
         out.append(b16chars[Int(hi)])
         out.append(b16chars[Int(lo)])
 
-    out.append(0)  # null-terminate the result
-    return String(buffer=out^)
+    return String(out)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -245,5 +243,4 @@ fn b16decode(str: StringSlice) -> String:
         var lo = str[i + 1]
         p.append(decode(hi) << 4 | decode(lo))
 
-    p.append(0)  # null-terminate the result
-    return String(buffer=p^)
+    return String(p)

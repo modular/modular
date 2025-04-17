@@ -48,9 +48,8 @@ provided by the `String` and `StringSlice` types rather than using these utiliti
 """
 
 from collections import Optional
-
+from collections.string.string import _chr_ascii
 from memory import UnsafePointer
-
 from utils import Variant
 
 # TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for
@@ -181,9 +180,8 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         alias len_pos_args = __type_of(args).__len__()
         entries, size_estimation = Self._create_entries(fmt_src, len_pos_args)
         var fmt_len = fmt_src.byte_length()
-        var buf = String._buffer_type(capacity=fmt_len + size_estimation)
-        buf.append(0)
-        var res = String(buffer=buf^)
+
+        var res = String(capacity=fmt_len + size_estimation)
         var offset = 0
         var ptr = fmt_src.unsafe_ptr()
         alias S = StringSlice[StaticConstantOrigin]
@@ -422,8 +420,11 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                         alias argnum = "Argument number: "
                         alias does_not = " does not implement the trait "
                         alias needed = "needed for conversion_flag: "
-                        var flg = String(buffer=List[UInt8](flag, 0))
-                        raise Error(String(argnum, i, does_not, needed, flg))
+                        raise Error(
+                            String(
+                                argnum, i, does_not, needed, _chr_ascii(flag)
+                            )
+                        )
 
                     if self.format_spec:
                         self.format_spec.value().format(

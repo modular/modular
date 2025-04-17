@@ -175,7 +175,7 @@ fn to_lowercase(s: StringSlice) -> String:
         A new string where cased letters have been converted to lowercase.
     """
     var input = s.unsafe_ptr()
-    var output = List[Byte](capacity=_estimate_needed_size(s.byte_length()))
+    var result = String(capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
@@ -183,29 +183,16 @@ fn to_lowercase(s: StringSlice) -> String:
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
-            output.extend(
-                Span[Byte, s.origin](
-                    ptr=input + input_offset, length=rune_and_size[1]
-                )
+            # FIXME: slicing a StringSlice is inconsistent with slicing a span!
+            result += String(
+                s._slice[input_offset : input_offset + rune_and_size[1]]
             )
         else:
-            var lower_char: Codepoint = lowercase_char_opt.unsafe_value()
-            output._len += lower_char.unsafe_write_utf8(
-                output._unsafe_next_uninit_ptr()
-            )
+            result += String(lowercase_char_opt.unsafe_value())
 
         input_offset += rune_and_size[1]
 
-        # Check if we need to reserve additional capacity.
-        if len(output) >= output.capacity - 5:
-            output.reserve(
-                output.capacity
-                + _estimate_needed_size(s.byte_length() - input_offset)
-            )
-
-    # Add NUL terminator
-    output.append(0)
-    return String(buffer=output^)
+    return result^
 
 
 fn to_uppercase(s: StringSlice) -> String:
@@ -218,7 +205,7 @@ fn to_uppercase(s: StringSlice) -> String:
         A new string where cased letters have been converted to uppercase.
     """
     var input = s.unsafe_ptr()
-    var output = List[Byte](capacity=_estimate_needed_size(s.byte_length()))
+    var result = String(capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
@@ -236,29 +223,16 @@ fn to_uppercase(s: StringSlice) -> String:
                 uppercase_replacement_opt.unsafe_value()
             )
             for char_idx in range(count):
-                var char: Codepoint = uppercase_replacement_chars[char_idx]
-                output._len += char.unsafe_write_utf8(
-                    output._unsafe_next_uninit_ptr()
-                )
+                result += String(uppercase_replacement_chars[char_idx])
         else:
-            output.extend(
-                Span[Byte, s.origin](
-                    ptr=input + input_offset, length=rune_and_size[1]
-                )
+            # FIXME: slicing a StringSlice is inconsistent with slicing a span!
+            result += String(
+                s._slice[input_offset : input_offset + rune_and_size[1]]
             )
 
         input_offset += rune_and_size[1]
 
-        # Check if we need to reserve additional capacity.
-        if len(output) >= output.capacity - 5:
-            output.reserve(
-                output.capacity
-                + _estimate_needed_size(s.byte_length() - input_offset)
-            )
-
-    # Add NUL terminator
-    output.append(0)
-    return String(buffer=output^)
+    return result^
 
 
 @always_inline

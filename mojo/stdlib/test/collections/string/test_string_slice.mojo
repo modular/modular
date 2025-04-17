@@ -523,11 +523,11 @@ def test_split():
     # Should add all whitespace-like chars as one
     # test all unicode separators
     # 0 is to build a String with null terminator
-    alias next_line = List[UInt8](0xC2, 0x85, 0)
+    var next_line = List[UInt8](0xC2, 0x85)
     """TODO: \\x85"""
-    alias unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8, 0)
+    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     """TODO: \\u2028"""
-    alias unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9, 0)
+    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     """TODO: \\u2029"""
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape secuences are accepted
@@ -542,9 +542,9 @@ def test_split():
             "\x1c",
             "\x1d",
             "\x1e",
-            String(buffer=next_line),
-            String(buffer=unicode_line_sep),
-            String(buffer=unicode_paragraph_sep),
+            String(next_line),
+            String(unicode_line_sep),
+            String(unicode_paragraph_sep),
         )
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
@@ -655,12 +655,9 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(buffer=List[UInt8](0xC2, 0x85, 0))
-    _ = """TODO: \\x85"""
-    var unicode_line_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA8, 0))
-    _ = """TODO: \\u2028"""
-    var unicode_paragraph_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA9, 0))
-    _ = """TODO: \\u2029"""
+    var next_line = String(List[UInt8](0xC2, 0x85))
+    var unicode_line_sep = String(List[UInt8](0xE2, 0x80, 0xA8))
+    var unicode_paragraph_sep = String(List[UInt8](0xE2, 0x80, 0xA9))
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = i[]
