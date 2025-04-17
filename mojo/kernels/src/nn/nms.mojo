@@ -162,13 +162,13 @@ fn non_max_suppression[
 
     # Allocate the box indices and scores without initializing their elements.
     var box_idxs = List(
-        ptr=UnsafePointer[Int64].alloc(num_boxes),
+        steal_ptr=UnsafePointer[Int64].alloc(num_boxes),
         length=num_boxes,
         capacity=num_boxes,
     )
 
     var per_class_scores = List(
-        ptr=UnsafePointer[Scalar[type]].alloc(num_boxes),
+        steal_ptr=UnsafePointer[Scalar[type]].alloc(num_boxes),
         length=num_boxes,
         capacity=num_boxes,
     )

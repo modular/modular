@@ -189,7 +189,7 @@ fn _top_k_cpu[
     fn process_rows(start_row: Int, end_row: Int):
         # Allocate the index list without initializing its elements.
         var idxs = List(
-            ptr=UnsafePointer[Int64].alloc(shape[axis]),
+            steal_ptr=UnsafePointer[Int64].alloc(shape[axis]),
             length=shape[axis],
             capacity=shape[axis],
         )
