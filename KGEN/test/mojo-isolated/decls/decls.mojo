@@ -202,10 +202,10 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call @decls::@"paramOverload2{{.*}}<:variadic<!Int> [a, b]>()
     paramOverload2[a, b]()
 
-    # CHECK-NEXT: lit.call @decls::@"paramOverload2[decls::MyInt]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2[MyInt]()"
     paramOverload2[MyInt(a)]()
 
-    # CHECK-NEXT: lit.call @decls::@"paramOverload2[decls::MyInt,decls::MyInt]()"
+    # CHECK-NEXT: lit.call @decls::@"paramOverload2[MyInt,MyInt]()"
     paramOverload2[MyInt(a), b]()
 
     # CHECK-NEXT: lit.call @decls::@"paramOverload2[{{.*}}<:variadic<!MyInt>
@@ -676,7 +676,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -868,7 +868,7 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
 fn initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %fn_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(Int)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
     var fn_ptr1: fn (Int) -> MyInt = MyInt.__init__
 
@@ -880,7 +880,7 @@ fn initializersAsFunctions():
     var fn_ptr2: fn () -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %fn_ptr4 = lit.var.decl "fn_ptr4"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(StructExample)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
     var fn_ptr4: fn (
         StructExample
@@ -888,7 +888,7 @@ fn initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %fn_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(Int)")
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr5
     var fn_ptr5: fn (Int) -> StructWithInit = StructWithInit.__init__
 
@@ -1105,13 +1105,13 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.fn @"__init__(decls::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> var
+    # CHECK: lit.fn @"__init__(ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> var
     # The argument is intentionally memory-only.
     @implicit
     fn __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !VarArgInit
+    # CHECK: lit.fn @"__init__(Int)"(%a: !Int) -> !VarArgInit
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the

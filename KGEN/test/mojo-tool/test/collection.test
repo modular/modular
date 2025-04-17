@@ -8,9 +8,9 @@
 // RUN: mojo test --co %S/inputs/unit_suffix_test.mojo | FileCheck %s --check-prefix=CHECK-FILE
 // RUN: mojo test --co %S/inputs/package | FileCheck %s --check-prefix=CHECK-PACKAGE
 // RUN: mojo test --co "%S/inputs/test_unit_prefix.mojo::test_fn()" | FileCheck %s --check-prefix=CHECK-TEST
-// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
-// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
-// RUN: mojo test --co --diagnostic-format json "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-JSON
+// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(Int).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
+// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(Int).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
+// RUN: mojo test --co --diagnostic-format json "%S/inputs/doc.mojo@doc_fn(Int).__doc__" | FileCheck %s --check-prefix=CHECK-JSON
 // RUN: mojo test --filter backtick --co %S/inputs/ | FileCheck %s --check-prefix=CHECK-FILTER
 // RUN: mojo test --co %S/inputs/magic-project | FileCheck %s --check-prefix=CHECK-MAGIC
 
@@ -68,11 +68,11 @@
 // CHECK-SUITE:  inputs/doc.mojo@doc_fn({{.*}}).__doc__>
 // CHECK-SUITE:    inputs/doc.mojo@doc_fn({{.*}}).__doc__::0>
 
-// CHECK-SUITE-AND-TEST: doc.mojo@doc_fn(\3A\3AInt).__doc__::0
+// CHECK-SUITE-AND-TEST: doc.mojo@doc_fn(Int).__doc__::0
 
 // CHECK-JSON:   "children":
-// CHECK-JSON:       "id": "{{.*}}inputs/doc.mojo@doc_fn(\\3A\\3AInt).__doc__::0"
-// CHECK-JSON:   "id": "{{.*}}inputs/doc.mojo@doc_fn(\\3A\\3AInt).__doc__"
+// CHECK-JSON:       "id": "{{.*}}inputs/doc.mojo@doc_fn(Int).__doc__::0"
+// CHECK-JSON:   "id": "{{.*}}inputs/doc.mojo@doc_fn(Int).__doc__"
 
 // CHECK-FILTER: inputs/subfolder/subfolder_test.mojo::test_backtick\2Ename\2Erequired()>
 // CHECK-FILTER: inputs/subfolder/subfolder_test.mojo::test_backtick\2Efails()>

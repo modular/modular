@@ -38,4 +38,4 @@ def main():
 
 
 # CHECK: dynamic
-# CHECK: compile_shared::compiled_fn[::DType]
+# CHECK: compile_shared::compiled_fn[DType]

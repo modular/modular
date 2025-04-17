@@ -14,7 +14,7 @@ from debuginfo_module import imported_fn
 # CHECK-DAG: #[[CALLED_STRUCT_BOUND:.*]] = #debuginfo.source_name<(struct)"CalledStruct{{.*}}param{{.*}}"
 # CHECK-DAG: #[[CALLED_STRUCT:.*]] = #debuginfo.source_name<(struct)"CalledStruct"[<"index">] from <(module)"debuginfo_import">>
 # CHECK-DAG: #test_name = #debuginfo.source_name<(fn)"test"(#[[CALLED_STRUCT_BOUND]]) from #[[CALLED_STRUCT]]>
-# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = {{.*}}, sourceName = #test_name, linkageName = "test({{.*}}::CalledStruct[{{.*}}])"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = {{.*}}, sourceName = #test_name, linkageName = "test({{.*}}CalledStruct[{{.*}}])"
 
 
 struct CalledStruct[param: __mlir_type.index]:
