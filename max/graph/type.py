@@ -646,7 +646,12 @@ class Type:
         Returns:
             The type represented by the MLIR Type value.
         """
-        raise NotImplementedError
+        for cls in Type.__subclasses__():
+            try:
+                return cls.from_mlir(t)
+            except TypeError:
+                continue
+        raise NotImplementedError(f"No type found for MLIR type: {t}")
 
 
 @dataclass
