@@ -18,7 +18,7 @@ from typing import Callable, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn import Llama3RopeScalingParams, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.config import PipelineConfig
@@ -79,11 +79,8 @@ class Llama4ConfigBase(MAXModelConfigBase):
     use_qk_norm: bool
     """Whether to apply L2 normalization to query and key states."""
 
-    no_rope_layers: list[int]
-    """List of layer indices where RoPE should not be applied."""
-
     no_rope_layer_interval: int
-    """Interval for skipping RoPE application if `no_rope_layers` is not set."""
+    """Interval for skipping RoPE application."""
 
     attention_chunk_size: int
     """Chunk size for attention computation."""
@@ -244,13 +241,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
         Returns:
             An initialized :obj:`Llama4Config` instance.
         """
-        _weights_format = weights_format(
-            pipeline_config.model_config.weight_path
-        )
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and pipeline_config.rope_type == RopeType.normal
-        )
+        interleaved_rope_weights = pipeline_config.rope_type == RopeType.normal
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs
@@ -308,7 +299,6 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             ),
             interleave_moe_layer_step=text_config.interleave_moe_layer_step,
             use_qk_norm=text_config.use_qk_norm,
-            no_rope_layers=text_config.no_rope_layers,
             no_rope_layer_interval=getattr(
                 text_config, "no_rope_layer_interval", 4
             ),

@@ -54,10 +54,8 @@ class Llama4DecoderLayer(Module):
         devices: list[DeviceRef],
     ):
         super().__init__()
-        if config.no_rope_layers:
-            use_rope = layer_idx in config.no_rope_layers
-        else:
-            use_rope = (layer_idx + 1) % config.no_rope_layer_interval == 0
+        is_nope_layer = (layer_idx + 1) % config.no_rope_layer_interval == 0
+        use_rope = not is_nope_layer
         self.self_attn = Llama4TextAttention(
             rope=rope,
             num_attention_heads=config.num_attention_heads,

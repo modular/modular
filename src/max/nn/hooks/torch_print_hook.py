@@ -58,7 +58,7 @@ class TorchPrintHook(BasePrintHook):
                 full_path = f"{export_path}/{name}.pt"
                 torch.save(value, full_path)
             else:
-                print(name, value)
+                print(name, value, value.shape)
             return True
         return False
 
