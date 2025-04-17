@@ -23,6 +23,7 @@ from internal_utils._utils import (
     dynamic,
     initialize,
     static,
+    random_float8,
 )
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
@@ -89,6 +90,7 @@ fn bench_matmul[
     transpose_b: Bool = False,
 ](
     ctx: DeviceContext,
+    handle: vendor_blas.Handle,
     mut b: Bench,
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
@@ -110,23 +112,28 @@ fn bench_matmul[
     alias k128 = 512 * 1024 * 1024
     var cache_a = align_up(k128, stride_a * sizeof[dtype]()) // sizeof[dtype]()
     var cache_b = align_up(k128, stride_b * sizeof[dtype]()) // sizeof[dtype]()
-    var cache_c = align_up(k128, stride_c * sizeof[dtype]()) // sizeof[dtype]()
+    var cache_c = align_up(k128, stride_c * sizeof[DType.bfloat16]()) // sizeof[
+        DType.bfloat16
+    ]()
 
     var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
-    var buffer_c = ctx.enqueue_create_buffer[dtype](cache_c)
+    var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
 
     var a_host = HostNDBuffer[dtype, 1](DimList(cache_a))
     var b_host = HostNDBuffer[dtype, 1](DimList(cache_b))
 
-    initialize(a_host.tensor, init_type)
-    initialize(b_host.tensor, init_type)
+    @parameter
+    if dtype == DType.float8_e4m3fn:
+        random_float8(a_host.tensor)
+        random_float8(b_host.tensor)
+    else:
+        initialize(a_host.tensor, init_type)
+        initialize(b_host.tensor, init_type)
 
     ctx.enqueue_copy(buffer_a, a_host.tensor.data)
     ctx.enqueue_copy(buffer_b, b_host.tensor.data)
     ctx.synchronize()
-
-    var handle = vendor_blas.Handle()
 
     @parameter
     @__copy_capture(
@@ -152,9 +159,9 @@ fn bench_matmul[
             var tensor_b = NDBuffer[dtype, 2, MutableAnyOrigin, shape_b](
                 buffer_b.unsafe_ptr() + offset_b, shape_b_dim
             )
-            var tensor_c = NDBuffer[dtype, 2, MutableAnyOrigin, shape_c](
-                buffer_c.unsafe_ptr() + offset_c, shape_c_dim
-            )
+            var tensor_c = NDBuffer[
+                DType.bfloat16, 2, MutableAnyOrigin, shape_c
+            ](buffer_c.unsafe_ptr() + offset_c, shape_c_dim)
 
             @parameter
             if use_vendor_blas:
@@ -196,8 +203,6 @@ fn bench_matmul[
         ),
     )
 
-    _ = handle^
-
     # Retain our buffers till the end.
     _ = buffer_a^
     _ = buffer_b^
@@ -214,6 +219,7 @@ fn create_matmul_bench[
     use_vendor_blas: Bool,
 ](
     ctx: DeviceContext,
+    handle: vendor_blas.Handle,
     mut b: Bench,
     m: ValOrDim,
     n: ValOrDim,
@@ -238,6 +244,7 @@ fn create_matmul_bench[
         use_vendor_blas=use_vendor_blas,
     ](
         ctx,
+        handle,
         b,
         (m.value, n.value),
         (m.value, k.value),
@@ -261,19 +268,40 @@ fn main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        # benchmarking matmul
-        create_matmul_bench[
-            dtype,
-            transpose_b=transpose_b,
-            cache_busting=cache_busting,
-            use_vendor_blas=use_vendor_blas,
-        ](
-            ctx,
-            m,
-            dynamic(M),
-            static[N](),
-            static[K](),
-            init_type,
-        )
+
+        @parameter
+        if dtype is DType.float8_e4m3fn:
+            with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
+                create_matmul_bench[
+                    dtype,
+                    transpose_b=transpose_b,
+                    cache_busting=cache_busting,
+                    use_vendor_blas=use_vendor_blas,
+                ](
+                    ctx,
+                    handle,
+                    m,
+                    dynamic(M),
+                    static[N](),
+                    static[K](),
+                    init_type,
+                )
+
+        else:
+            with vendor_blas.Handle() as handle:
+                create_matmul_bench[
+                    dtype,
+                    transpose_b=transpose_b,
+                    cache_busting=cache_busting,
+                    use_vendor_blas=use_vendor_blas,
+                ](
+                    ctx,
+                    handle,
+                    m,
+                    dynamic(M),
+                    static[N](),
+                    static[K](),
+                    init_type,
+                )
 
     m.dump_report()
