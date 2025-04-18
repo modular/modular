@@ -351,26 +351,3 @@ fn sum[
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
-
-
-@always_inline
-fn exp(
-    inp: LayoutTensor,
-) -> __type_of(inp.origin_cast[True, MutableAnyOrigin]()):
-    """Computes element-wise exponential function.
-
-    Returns a new tensor containing the
-    [element-wise exponential](/mojo/stdlib/math/math/exp/) of the input tensor.
-
-    Args:
-        inp: Input tensor.
-
-    Returns:
-        A new tensor containing the element-wise exponential.
-    """
-
-    @parameter
-    fn exp_func(val: inp.element_type) -> inp.element_type:
-        return math.exp(val)
-
-    return inp._stack_copy()._elementwise_unary[exp_func]()

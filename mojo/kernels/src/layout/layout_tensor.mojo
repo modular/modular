@@ -6,7 +6,7 @@
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
 from collections import Optional, OptionalReg
-from math import align_up, ceildiv
+from math import align_up, ceildiv, exp
 from sys import (
     alignof,
     bitwidthof,
@@ -1653,6 +1653,27 @@ struct LayoutTensor[
             return lhs / rhs
 
         _ = self._elementwise_binary_with_broadcast[div_val](other)
+
+    @always_inline
+    fn __exp__(self) -> Self:
+        """Computes element-wise exponential function.
+
+        Returns a new tensor containing the
+        [element-wise exponential](/mojo/stdlib/math/math/exp/) of the input tensor.
+
+        Returns:
+            A new tensor containing the element-wise exponential.
+        """
+
+        @parameter
+        fn exp_func(val: Self.element_type) -> Self.element_type:
+            return exp(val)
+
+        return (
+            self._stack_copy()
+            ._elementwise_unary[exp_func]()
+            .origin_cast[mut, origin]()
+        )
 
     @always_inline("nodebug")
     fn __getitem__(self, *dims: Int) -> Self.element_type:
