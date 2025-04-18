@@ -15,7 +15,8 @@
 from collections import Dict, KeyElement, Optional
 from collections.dict import OwnedKwargsDict
 
-from test_utils import CopyCounter
+from test_utils import CopyCounter, AbortOnCopy
+from os import abort
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -619,6 +620,13 @@ def test_compile_time_dict():
         assert_equal(val, i)
 
 
+def test_get_ptr():
+    var d = Dict[Int, AbortOnCopy]()
+    d[1] = AbortOnCopy()
+    assert_true(d.get_ptr(1))
+    assert_false(d.get_ptr(5))
+
+
 def main():
     test_dict()
     test_dict_fromkeys()
@@ -633,3 +641,4 @@ def main():
     test_init_initial_capacity()
     test_dict_setdefault()
     test_compile_time_dict()
+    test_get_ptr()
