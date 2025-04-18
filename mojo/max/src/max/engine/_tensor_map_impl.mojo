@@ -26,16 +26,6 @@ struct CTensorMap:
 
     var ptr: UnsafePointer[NoneType]
 
-    alias CopyAsyncTensorMapFnName = "M_copyAsyncTensorMap"
-    alias FreeAsyncTensorMapFnName = "M_freeAsyncTensorMap"
-    alias BorrowTensorIntoFnName = "M_borrowTensorInto"
-    alias BorrowValueIntoFnName = "M_borrowValueInto"
-    alias MoveMojoValueIntoFnName = "M_moveMojoValueInto"
-    alias GetTensorByNameFromFnName = "M_getTensorByNameFrom"
-    alias GetValueByNameFromFnName = "M_getValueByNameFrom"
-    alias GetTensorMapSizeFnName = "M_getTensorMapSize"
-    alias KeysFnName = "M_tensorMapKeys"
-
     @implicit
     fn __init__(out self, ptr: UnsafePointer[NoneType]):
         self.ptr = ptr
@@ -44,7 +34,7 @@ struct CTensorMap:
         var status = Status(lib)
         var tensor = call_dylib_func[CTensor](
             lib,
-            Self.GetTensorByNameFromFnName,
+            "M_getTensorByNameFrom",
             self,
             name.unsafe_cstr_ptr(),
             status.borrow_ptr(),
@@ -57,7 +47,7 @@ struct CTensorMap:
         var status = Status(lib)
         var value = call_dylib_func[CValue](
             lib,
-            Self.GetValueByNameFromFnName,
+            "M_getValueByNameFrom",
             self,
             name.unsafe_cstr_ptr(),
             status.borrow_ptr(),
@@ -75,7 +65,7 @@ struct CTensorMap:
         var status = Status(lib)
         call_dylib_func(
             lib,
-            Self.BorrowTensorIntoFnName,
+            "M_borrowTensorInto",
             self,
             ptr,
             spec._borrow_ptr(),
@@ -93,7 +83,7 @@ struct CTensorMap:
         var status = Status(lib)
         call_dylib_func(
             lib,
-            Self.BorrowValueIntoFnName,
+            "M_borrowValueInto",
             self,
             name.unsafe_ptr(),
             ptr,
@@ -128,7 +118,7 @@ struct CTensorMap:
         var status = Status(lib)
         call_dylib_func(
             lib,
-            Self.MoveMojoValueIntoFnName,
+            "M_moveMojoValueInto",
             self,
             name.unsafe_ptr(),
             data_ptr,
@@ -143,13 +133,13 @@ struct CTensorMap:
         self, size_ptr: UnsafePointer[Int64], lib: DLHandle
     ) -> UnsafePointer[CString]:
         return call_dylib_func[UnsafePointer[CString]](
-            lib, Self.KeysFnName, self, size_ptr
+            lib, "M_tensorMapKeys", self, size_ptr
         )
 
     fn size(self, lib: DLHandle) raises -> Int:
         var status = Status(lib)
         var size = call_dylib_func[Int](
-            lib, Self.GetTensorMapSizeFnName, self, status.borrow_ptr()
+            lib, "M_getTensorMapSize", self, status.borrow_ptr()
         )
         if status:
             raise status.__str__()
@@ -161,7 +151,7 @@ struct CTensorMap:
         """
         return call_dylib_func[CTensorMap, CTensorMap](
             lib,
-            Self.CopyAsyncTensorMapFnName,
+            "M_copyAsyncTensorMap",
             self,
         )
 
@@ -169,4 +159,4 @@ struct CTensorMap:
         """
         Free the AsyncTensorMap ptr.
         """
-        call_dylib_func(lib, Self.FreeAsyncTensorMapFnName, self)
+        call_dylib_func(lib, "M_freeAsyncTensorMap", self)

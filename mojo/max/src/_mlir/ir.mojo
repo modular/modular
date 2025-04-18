@@ -519,29 +519,6 @@ struct Operation(CollectionElement, Stringable, Writable):
         if result.value == 0:
             raise "Writing op bytecode to file failed"
 
-    fn bytecode(self, version: Optional[Int64] = None) raises -> List[Int8]:
-        var config = _c.IR.mlirBytecodeWriterConfigCreate()
-        if version:
-            _c.IR.mlirBytecodeWriterConfigDesiredEmitVersion(
-                config, version.value()
-            )
-
-        var data = String()
-        var result = _c.IR.mlirOperationWriteBytecodeWithConfig(
-            data,
-            self.c,
-            config,
-        )
-        _c.IR.mlirBytecodeWriterConfigDestroy(config)
-
-        if result.value == 0:
-            raise "Bytecode conversion failed"
-
-        # Add a trailing 0 for default-conversion to a string
-        data.write(0)
-
-        return rebind[List[Int8]](data._buffer)
-
     fn name(self) -> Identifier:
         return _c.IR.mlirOperationGetName(self.c)
 
