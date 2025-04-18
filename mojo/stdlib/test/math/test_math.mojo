@@ -36,6 +36,7 @@ from math import (
     sqrt,
     trunc,
     ulp,
+    atanh,
 )
 from sys.info import has_neon
 
@@ -479,6 +480,24 @@ def test_clamp():
     )
 
 
+def test_atanh():
+    assert_equal(atanh(Float32(1)), inf[DType.float32]())
+    assert_equal(atanh(Float32(-1)), -inf[DType.float32]())
+    assert_true(isnan(atanh(Float32(2))))
+    assert_true(isnan(atanh(Float32(-2))))
+    assert_almost_equal(
+        atanh(Float32(0.5)), 0.54930614433405489, atol=1e-10, rtol=1e-10
+    )
+    assert_almost_equal(
+        atanh(SIMD[DType.float32, 4](0.5, 0.15, 0.9, 0.0)),
+        atanh(SIMD[DType.float64, 4](0.5, 0.15, 0.9, 0.0)).cast[
+            DType.float32
+        ](),
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
 def main():
     test_sin()
     test_cos()
@@ -502,3 +521,4 @@ def main():
     test_align_down()
     test_align_up()
     test_clamp()
+    test_atanh()
