@@ -167,7 +167,7 @@ fn create_non_tracked_tensor_async[
         buffer.data,
         bytecount_with_dtype(buffer.dynamic_shape, type),
         tensor_rank,
-        UnsafePointer.address_of(buffer.dynamic_shape.data.array),
+        UnsafePointer(to=buffer.dynamic_shape.data.array),
         type,
         async_ptr,
     )
@@ -232,7 +232,7 @@ fn create_tensor_async[
         buffer.data,
         bytecount_with_dtype(buffer.dynamic_shape, type),
         tensor_rank,
-        UnsafePointer.address_of(buffer.dynamic_shape.data.array),
+        UnsafePointer(to=buffer.dynamic_shape.data.array),
         type,
         async_to_borrow,
         borrowee_type,
@@ -343,7 +343,7 @@ fn unpack_buffer_ref(
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
         UnsafePointer[NoneType],
-    ](async_ptr, UnsafePointer.address_of(size))
+    ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
@@ -367,7 +367,7 @@ fn unpack_tensor[
         "KGEN_CompilerRT_GetShapeAndDataFromTensor",
         UnsafePointer[NoneType],
     ](
-        UnsafePointer.address_of(shapes.data.array),
+        UnsafePointer(to=shapes.data.array),
         tensor_async_ptr,
     )
 
@@ -410,7 +410,7 @@ fn unpack_context(
     var ctx_ptr: UnsafePointer[NoneType] = external_call[
         "KGEN_CompilerRT_GetContextAndSizeFromAsync",
         UnsafePointer[NoneType],
-    ](UnsafePointer.address_of(num_slots), async_ptr)
+    ](UnsafePointer(to=num_slots), async_ptr)
     return StateContext(Int(num_slots), ctx_ptr)
 
 
@@ -750,7 +750,7 @@ fn mgp_buffer_get_cached(
     ](
         Int(buffer_slot),
         ctx.ctx_ptr,
-        UnsafePointer.address_of(buffer_size),
+        UnsafePointer(to=buffer_size),
         storage_ref_addr,
     )
 
@@ -883,7 +883,7 @@ fn mgp_debug_tensor_print[
         label_ptr,
         label_len,
         type,
-        UnsafePointer.address_of(shape.data.array),
+        UnsafePointer(to=shape.data.array),
         spec_rank,
         buffer.data,
         len(buffer),

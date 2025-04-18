@@ -8521,9 +8521,7 @@ struct Struct_min_p_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
-        var min_ps_buf = NDBuffer[type, 1, _, 1, 1](
-            UnsafePointer.address_of(min_p)
-        )
+        var min_ps_buf = NDBuffer[type, 1, _, 1, 1](UnsafePointer(to=min_p))
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
