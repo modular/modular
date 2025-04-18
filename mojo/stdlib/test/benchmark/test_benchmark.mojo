@@ -97,7 +97,7 @@ fn test_keep():
     var val = SIMD[DType.index, 4](1, 2, 3, 4)
     keep(val)
 
-    var ptr = UnsafePointer.address_of(val)
+    var ptr = UnsafePointer(to=val)
     keep(ptr)
 
     var s0 = SomeStruct()

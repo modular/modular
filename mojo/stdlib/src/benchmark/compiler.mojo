@@ -74,7 +74,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
         return
 
     var tmp = val
-    var tmp_ptr = UnsafePointer.address_of(tmp).origin_cast[
+    var tmp_ptr = UnsafePointer(to=tmp).origin_cast[
         mut=False, origin=ImmutableAnyOrigin
     ]()
 
@@ -113,7 +113,7 @@ fn keep[type: AnyType](val: UnsafePointer[type]):
       val: The value to not optimize away.
     """
     var tmp = val
-    var tmp_ptr = UnsafePointer.address_of(tmp)
+    var tmp_ptr = UnsafePointer(to=tmp)
     inlined_assembly[
         "",
         NoneType,
@@ -137,7 +137,7 @@ fn keep[type: AnyTrivialRegType](mut val: type):
       val: The value to not optimize away.
     """
     var tmp = val
-    var tmp_ptr = UnsafePointer.address_of(tmp)
+    var tmp_ptr = UnsafePointer(to=tmp)
     inlined_assembly[
         "",
         NoneType,
