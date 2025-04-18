@@ -49,25 +49,25 @@ fn _constrain_unix():
 
 
 @always_inline
-fn _get_stat_st_mode(path: StringSlice) raises -> Int:
+fn _get_stat_st_mode(owned path: String) raises -> Int:
     @parameter
     if os_is_macos():
-        return Int(_stat_macos(path).st_mode)
+        return Int(_stat_macos(path^).st_mode)
     elif has_neon():
-        return Int(_stat_linux_arm(path).st_mode)
+        return Int(_stat_linux_arm(path^).st_mode)
     else:
-        return Int(_stat_linux_x86(path).st_mode)
+        return Int(_stat_linux_x86(path^).st_mode)
 
 
 @always_inline
-fn _get_lstat_st_mode(path: StringSlice) raises -> Int:
+fn _get_lstat_st_mode(owned path: String) raises -> Int:
     @parameter
     if os_is_macos():
-        return Int(_lstat_macos(path).st_mode)
+        return Int(_lstat_macos(path^).st_mode)
     elif has_neon():
-        return Int(_lstat_linux_arm(path).st_mode)
+        return Int(_lstat_linux_arm(path^).st_mode)
     else:
-        return Int(_lstat_linux_x86(path).st_mode)
+        return Int(_lstat_linux_x86(path^).st_mode)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -156,7 +156,7 @@ fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
         var st_mode = _get_stat_st_mode(fspath)
         if S_ISDIR(st_mode):
             return True
-        return S_ISLNK(st_mode) and S_ISDIR(_get_lstat_st_mode(fspath))
+        return S_ISLNK(st_mode) and S_ISDIR(_get_lstat_st_mode(fspath^))
     except:
         return False
 

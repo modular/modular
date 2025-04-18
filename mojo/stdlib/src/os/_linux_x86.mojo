@@ -127,10 +127,10 @@ struct _c_stat(Stringable, Writable):
 
 
 @always_inline
-fn _stat(path: StringSlice) raises -> _c_stat:
+fn _stat(owned path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__xstat", Int32](
-        Int32(0), path.unsafe_ptr(), Pointer(to=stat)
+        Int32(0), path.unsafe_cstr_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise String("unable to stat '", path, "'")
@@ -138,10 +138,10 @@ fn _stat(path: StringSlice) raises -> _c_stat:
 
 
 @always_inline
-fn _lstat(path: StringSlice) raises -> _c_stat:
+fn _lstat(owned path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__lxstat", Int32](
-        Int32(0), path.unsafe_ptr(), Pointer(to=stat)
+        Int32(0), path.unsafe_cstr_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise String("unable to lstat '", path, "'")
