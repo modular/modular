@@ -21,7 +21,7 @@
 # RUN: not %t 5 2>&1 | FileCheck %s
 
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
-# CHECK: at {{.*}}test_amd_asan_oob.mojo:27
+# CHECK: at {{.*}}test_amd_asan_oob.mojo:34
 
 from sys import argv
 
