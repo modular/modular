@@ -27,7 +27,6 @@ from internal_utils import (
     HostNDBuffer,
     assert_equal,
     random,
-    random_float8,
     zero,
 )
 from layout import Layout, LayoutTensor
@@ -165,8 +164,8 @@ fn wgmma_e4m3_e4m3_f32[
     var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](ctx=ctx)
 
     # Initialize matmul operands
-    random_float8(a_host.tensor)
-    random_float8(b_host.tensor)
+    random(a_host.tensor)
+    random(b_host.tensor)
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 

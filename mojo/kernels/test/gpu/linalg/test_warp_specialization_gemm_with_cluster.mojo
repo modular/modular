@@ -42,7 +42,6 @@ from internal_utils import (
     fill,
     random,
     zero,
-    random_float8,
     assert_with_measure,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -127,13 +126,8 @@ fn test_warp_specialize_gemm_with_multicasting[
     )
 
     # Initialize matmul operands
-    @parameter
-    if a_type is DType.float8_e4m3fn:
-        random_float8(a_host.tensor)
-        random_float8(b_host.tensor)
-    else:
-        random(a_host.tensor)
-        random(b_host.tensor)
+    random(a_host.tensor)
+    random(b_host.tensor)
 
     zero(c_host.tensor)
     zero(c_host_ref.tensor)

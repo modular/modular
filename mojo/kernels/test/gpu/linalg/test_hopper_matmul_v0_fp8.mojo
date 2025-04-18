@@ -33,7 +33,6 @@ from internal_utils import (
     assert_with_measure,
     fill,
     random,
-    random_float8,
     zero,
 )
 from internal_utils._measure import cosine, relative_difference
@@ -120,8 +119,8 @@ fn test_hopper_fp8_matmul0_tma_wgmma[
     )
 
     # Initialize matmul operands
-    random_float8(a_host.tensor)
-    random_float8(b_host.tensor)
+    random(a_host.tensor)
+    random(b_host.tensor)
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 

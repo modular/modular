@@ -15,7 +15,7 @@ from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
-    random_float8,
+    random,
     zero,
 )
 from linalg.matmul_gpu import matmul_kernel_naive
@@ -38,8 +38,8 @@ fn test_cublaslt[
     var c_host = HostNDBuffer[DType.float32, 2, static_c_shape]()
     var c_host_ref = HostNDBuffer[DType.float32, 2, static_c_shape]()
 
-    random_float8(a_host.tensor)
-    random_float8(b_host.tensor)
+    random(a_host.tensor)
+    random(b_host.tensor)
 
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
