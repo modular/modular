@@ -48,12 +48,26 @@ what we publish.
 
 ### Standard library changes
 
+String types in Mojo got several significant improvements:
+
+- The types `StringSlice` and `StaticString` are now part of the prelude, there
+  is no need to import them anymore.  These are useful for code that just needs
+  a "view" of string data, not to own and mutate it.
+
 - The `StringLiteral` type has been moved to a more reliable "dependent type"
   design where the value of the string is carried in a parameter instead of a
   stored member. This defines away a category of compiler crashes when working
   with `StringLiteral` by making it impossible to express that.  As a
   consequence of this change, many APIs should switch to using `StaticString`
   instead of `StringLiteral`.
+
+- `String` supports working with legacy C APIs that assume "nul" termination,
+  but the details have changed: `String` is now no longer implicitly
+  nul-terminated, which means that it is incorrect to assume that
+  `str.unsafe_ptr()` will return a nul-terminated string.  For that, use the
+  `str.unsafe_cstr_ptr()` method. It now requires the string to be mutable in
+  order to make nul-termination lazy on demand. This improves performance for
+  strings that are not passed to legacy APIs.
 
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
@@ -103,9 +117,6 @@ for i in range(iteration_range):
 - The `is_power_of_two(x)` function in the `bit` package is now a method on
   `Int`, `UInt` and `SIMD`.
 
-- The types `StringSlice` and `StaticString` are now part of the prelude, there
-  is no need to import them anymore.
-
 - The `constrained[cond, string]()` function now accepts multiple strings that
   are printed concatenated on failure, so you can use:
   `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
@@ -125,11 +136,6 @@ for i in range(iteration_range):
   Instead, please use named constructors like
   `var x = Python.list(1, 2, "foo")`.  We hope to re-enable the syntax in
   the future as the standard library matures.
-
-- The `String.unsafe_cstr_ptr()` method (used for passing string pointers to
-  legacy C APIs) now requires the string to be mutable in order to make
-  nul-termination lazy on demand. This improves performance for strings that are
-  not passed to legacy APIs.
 
 ### GPU changes
 
