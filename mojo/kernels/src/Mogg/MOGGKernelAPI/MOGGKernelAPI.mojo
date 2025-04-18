@@ -7388,7 +7388,7 @@ struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
             target,
         ]()
         constrained[
-            type == DType.bfloat16, "fa3_fallback only support BF16 execution"
+            type is DType.bfloat16, "fa3_fallback only support BF16 execution"
         ]()
         var full_lookup_table = kv_collection.lookup_table
         var full_lookup_table_shape = full_lookup_table.dynamic_shape
