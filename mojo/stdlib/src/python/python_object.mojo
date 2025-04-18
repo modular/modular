@@ -171,6 +171,19 @@ struct TypedPythonObject[type_hint: StaticString](
         """
         self._obj = unsafe_unchecked_from^
 
+    fn __init__(
+        out self: TypedPythonObject["Module"], name: StaticString
+    ) raises:
+        """Construct a Python module with the given name.
+
+        Args:
+            name: The name of the module.
+
+        Raises:
+            If the module creation fails.
+        """
+        self = Python.create_module(name)
+
     fn __copyinit__(out self, other: Self):
         """Copy an instance of this type.
 
