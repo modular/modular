@@ -122,7 +122,7 @@ fn mma[
     mut a_iter: LayoutTensorIter,
     a_smem_iter: LayoutTensorIter,
     mut b_iter: LayoutTensorIter,
-    b_smem_iter: LayoutTensorIter,
+    b_smem_iter: LayoutTensorIter[*_, address_space = AddressSpace.SHARED, **_],
     num_b_rows: OptionalReg[Int] = None,
 ):
     alias BK = config.block_k()
@@ -171,29 +171,38 @@ fn mma[
     alias b_frag_size = num_matrix_reg[MMA_N, MMA_K]()
     alias c_frag_size = num_matrix_reg[MMA_M, MMA_N]()
 
+    var b_load_tile = tb[mma_input_type]().row_major[
+        2 * num_n_mmas * num_k_mmas2, b_frag_size * k_group_size
+    ]().local().alloc().split[2]()
+
     @parameter
     @always_inline
-    fn copy_dram_to_sram_b[tile_id: Int]():
+    fn copy_dram_to_local_b[reg_tile_id: Int]():
         @parameter
         if b_iter.address_space != AddressSpace.SHARED:
             alias b_stride = b_iter.layout.stride[0].value()
-            var b_smem_tile = b_smem_iter.next_unsafe(tile_id)[]
-
-            copy_dram_to_sram[thread_layout=thread_layout_b, swizzle=swizzle,](
-                b_smem_tile.vectorize[1, simd_width](),
+            copy_dram_to_local[src_thread_layout=thread_layout_b,](
+                b_load_tile[reg_tile_id].vectorize[1, simd_width](),
                 b_iter,
                 num_b_rows.value() * b_stride if num_b_rows else Int.MAX,
             )
             b_iter._incr()
 
-    copy_dram_to_sram_b[0]()
+    copy_dram_to_local_b[0]()
 
     @parameter
     for i in range(num_iters):
 
         @parameter
         if i < num_iters - 1:
-            copy_dram_to_sram_b[(i + 1) % 3]()
+            copy_dram_to_local_b[(i + 1) % 2]()
+
+        var b_smem_tile = b_smem_iter.next_unsafe(0)[]
+
+        copy[thread_layout=thread_layout_b, swizzle=swizzle, row_major=True](
+            b_smem_tile.vectorize[1, simd_width](),
+            b_load_tile[i % 2].vectorize[1, simd_width](),
+        )
 
         barrier()
 
@@ -208,7 +217,7 @@ fn mma[
         alias b_wtile_dim1 = BK if transpose_b else WN
         var b_wtile_coord0 = Int(warp_col) if transpose_b else 0
         var b_wtile_coord1 = 0 if transpose_b else Int(warp_col)
-        var b_warp_tile = b_smem_iter.next_unsafe(i % 3)[].tile[
+        var b_warp_tile = b_smem_iter.next_unsafe(0)[].tile[
             b_wtile_dim0, b_wtile_dim1
         ](b_wtile_coord0, b_wtile_coord1)
 
@@ -246,6 +255,8 @@ fn mma[
                 tensor_core_mma[k_group_size](
                     a_reg_tile, b_reg_tile, c.vectorize[1, c_frag_size]()
                 )
+
+        barrier()
 
 
 @always_inline
@@ -418,7 +429,7 @@ struct SharedMemoryManager[
     alias _alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     alias _accum_type = get_accum_type[dtype]()
     alias _p_smem_size = BM * BN if token_gen else 0
-    alias _k_v_smem_size = depth * BK * 3
+    alias _k_v_smem_size = depth * BK
 
     @always_inline
     fn __init__(out self):
@@ -958,7 +969,7 @@ fn mha_single_batch[
                 address_space = AddressSpace.SHARED,
                 circular=True,
             ](
-                smem_manager.get_v_iter().ptr.offset(depth * BK * (i % 3)),
+                smem_manager.get_v_iter().ptr,
                 depth * BK,
             )
 
@@ -1003,6 +1014,8 @@ fn mha_single_batch[
             v_reg_tile_mma.vectorize[1, simd_width]().copy_from(
                 v_smem_warp_tile_mma_tile
             )
+
+            barrier()
 
             var p_mma_tile_interleaved = tb[q_type]().row_major[
                 WM // MMA_M, simd_width
