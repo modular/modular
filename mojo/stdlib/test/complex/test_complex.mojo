@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-
-from complex import ComplexFloat32, ComplexSIMD, abs
+import math
+from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
 
 
@@ -79,9 +79,24 @@ def test_fma():
     assert_almost_equal(res1.im, res2.im)
 
 
+def test_exp():
+    var a = math.exp(ComplexFloat32(1, 2))
+    assert_almost_equal(a.re, -1.1312)
+    assert_almost_equal(a.im, 2.47173)
+
+    var b = math.exp(ComplexFloat32(0, 0))
+    assert_equal(b.re, 1)
+    assert_equal(b.im, 0)
+
+    var c = math.exp(ComplexFloat64(0, math.pi))
+    assert_almost_equal(c.re, -1)
+    assert_almost_equal(c.im, 0)
+
+
 def main():
     test_init()
     test_math()
     test_abs()
     test_complex_str()
     test_fma()
+    test_exp()

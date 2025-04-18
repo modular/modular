@@ -13,6 +13,7 @@ from complex import ComplexSIMD
 """
 
 from sys import llvm_intrinsic
+import math
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
 alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
@@ -262,6 +263,16 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
             self.re.fma(self.re, self.im.fma(-self.im, c.re)),
             self.re.fma(self.im + self.im, c.im),
         )
+
+    @always_inline
+    fn __exp__(self) -> Self:
+        """Computes the exponential of the complex value.
+
+        Returns:
+            The exponential of the complex value.
+        """
+        var exp_re = math.exp(self.re)
+        return Self(exp_re * math.cos(self.im), exp_re * math.sin(self.im))
 
 
 # TODO: we need this overload, because the Absable trait requires returning Self
