@@ -157,7 +157,7 @@ struct Deque[ElementType: CollectionElement](
 
         for i in range(args_length):
             dst = self._data + i
-            UnsafePointer.address_of(elements[i]).move_pointee_into(dst)
+            UnsafePointer(to=elements[i]).move_pointee_into(dst)
 
         # Do not destroy the elements when their backing storage goes away.
         __disable_del elements

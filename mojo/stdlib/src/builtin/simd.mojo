@@ -1919,7 +1919,7 @@ struct SIMD[dtype: DType, size: Int](
         if is_big_endian() != big_endian:
             value = byte_swap(value)
 
-        var ptr = UnsafePointer.address_of(value)
+        var ptr = UnsafePointer(to=value)
         var array = InlineArray[Byte, dtype.sizeof()](fill=0)
 
         memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), dtype.sizeof())
@@ -2020,7 +2020,7 @@ struct SIMD[dtype: DType, size: Int](
                 __get_mvalue_as_litref(array)
             )
 
-            var array_ptr = UnsafePointer.address_of(array)
+            var array_ptr = UnsafePointer(to=array)
 
             @parameter
             for idx in range(output_size):

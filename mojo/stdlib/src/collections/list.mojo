@@ -166,7 +166,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self = Self(capacity=length)
 
         for i in range(length):
-            var src = UnsafePointer.address_of(elements[i])
+            var src = UnsafePointer(to=elements[i])
             var dest = self.data + i
 
             src.move_pointee_into(dest)
@@ -680,7 +680,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         """
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
-        var v_ptr = UnsafePointer.address_of(value).bitcast[Scalar[D]]()
+        var v_ptr = UnsafePointer(to=value).bitcast[Scalar[D]]()
         memcpy(self._unsafe_next_uninit_ptr(), v_ptr, count)
         self._len += count
 

@@ -129,18 +129,18 @@ struct BlockingScopedLock:
             lock: A mutable reference to the underlying lock.
         """
 
-        self.lock = UnsafePointer.address_of(lock)
+        self.lock = UnsafePointer(to=lock)
 
     @no_inline
     fn __enter__(mut self):
         """Acquire the lock on entry.
         This is done by setting the owner of the lock to own address."""
-        var address = UnsafePointer[Self].address_of(self)
+        var address = UnsafePointer[Self](to=self)
         self.lock[].lock(Int(address))
 
     @no_inline
     fn __exit__(mut self):
         """Release the lock on exit.
         Reset the address on the underlying lock."""
-        var address = UnsafePointer[Self].address_of(self)
+        var address = UnsafePointer[Self](to=self)
         _ = self.lock[].unlock(Int(address))

@@ -342,7 +342,7 @@ struct VariadicListMem[
         var tmp = value
         # We need to bitcast different argument conventions to a consistent
         # representation.  This is ugly but effective.
-        self.value = UnsafePointer.address_of(tmp).bitcast[Self._mlir_type]()[]
+        self.value = UnsafePointer(to=tmp).bitcast[Self._mlir_type]()[]
         self._is_owned = False
 
     # Provide support for variadics of *owned* arguments.  The reference will
@@ -363,7 +363,7 @@ struct VariadicListMem[
         var tmp = value
         # We need to bitcast different argument conventions to a consistent
         # representation.  This is ugly but effective.
-        self.value = UnsafePointer.address_of(tmp).bitcast[Self._mlir_type]()[]
+        self.value = UnsafePointer(to=tmp).bitcast[Self._mlir_type]()[]
         self._is_owned = True
 
     @always_inline
@@ -395,7 +395,7 @@ struct VariadicListMem[
             # destroy in backwards order to match how arguments are normally torn
             # down when CheckLifetimes is left to its own devices.
             for i in reversed(range(len(self))):
-                UnsafePointer.address_of(self[i]).destroy_pointee()
+                UnsafePointer(to=self[i]).destroy_pointee()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -517,7 +517,7 @@ struct VariadicPack[
 
             @parameter
             for i in reversed(range(Self.__len__())):
-                UnsafePointer.address_of(self[i]).destroy_pointee()
+                UnsafePointer(to=self[i]).destroy_pointee()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

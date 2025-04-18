@@ -137,8 +137,8 @@ struct _fdopen[mode: StaticString = "a"]:
             Int,
             OpaquePointer,
         ](
-            UnsafePointer.address_of(buffer),
-            UnsafePointer.address_of(UInt64(0)),
+            UnsafePointer(to=buffer),
+            UnsafePointer(to=UInt64(0)),
             ord(delimiter),
             self.handle,
         )

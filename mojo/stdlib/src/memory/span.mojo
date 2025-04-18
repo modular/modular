@@ -208,7 +208,7 @@ struct Span[
         """
 
         self._data = (
-            UnsafePointer.address_of(array)
+            UnsafePointer(to=array)
             .bitcast[T]()
             .address_space_cast[address_space]()
         )

@@ -224,7 +224,7 @@ struct PyObjectPtr(CollectionElement):
         var mojo_obj_ptr = self.unchecked_cast_to_mojo_object[T]()
 
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer[T].address_of(mojo_obj_ptr[].mojo_value)
+        return UnsafePointer[T](to=mojo_obj_ptr[].mojo_value)
 
     fn is_null(self) -> Bool:
         """Check if the pointer is null.
@@ -1031,12 +1031,12 @@ struct CPython:
         var key = PyObjectPtr()
         var value = PyObjectPtr()
         var v = p
-        var position = UnsafePointer[Int].address_of(v)
+        var position = UnsafePointer[Int](to=v)
         var result = self.lib.call["PyDict_Next", c_int](
             dictionary,
             position,
-            UnsafePointer.address_of(key),
-            UnsafePointer.address_of(value),
+            UnsafePointer(to=key),
+            UnsafePointer(to=value),
         )
 
         self.log(
@@ -1778,7 +1778,7 @@ struct CPython:
         var length = Int(0)
         var ptr = self.lib.call[
             "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
-        ](py_object, UnsafePointer.address_of(length)).bitcast[UInt8]()
+        ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
         return StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)](
             ptr=ptr, length=length
         )
@@ -1808,9 +1808,9 @@ struct CPython:
         var traceback = PyObjectPtr()
 
         self.lib.call["PyErr_Fetch"](
-            UnsafePointer.address_of(type),
-            UnsafePointer.address_of(value),
-            UnsafePointer.address_of(traceback),
+            UnsafePointer(to=type),
+            UnsafePointer(to=value),
+            UnsafePointer(to=traceback),
         )
         var r = value
 

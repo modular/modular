@@ -47,8 +47,8 @@ def test_memcpy():
     var pair1 = Pair(1, 2)
     var pair2 = Pair(0, 0)
 
-    var src = UnsafePointer.address_of(pair1)
-    var dest = UnsafePointer.address_of(pair2)
+    var src = UnsafePointer(to=pair1)
+    var dest = UnsafePointer(to=pair2)
 
     # UnsafePointer test
     pair2.lo = 0
@@ -115,8 +115,8 @@ def test_memcmp():
     var pair1 = Pair(1, 2)
     var pair2 = Pair(1, 2)
 
-    var ptr1 = UnsafePointer.address_of(pair1)
-    var ptr2 = UnsafePointer.address_of(pair2)
+    var ptr1 = UnsafePointer(to=pair1)
+    var ptr2 = UnsafePointer(to=pair2)
 
     var errors = memcmp(ptr1, ptr2, 1)
 
@@ -261,7 +261,7 @@ def test_memcmp_extensive():
 def test_memset():
     var pair = Pair(1, 2)
 
-    var ptr = UnsafePointer.address_of(pair)
+    var ptr = UnsafePointer(to=pair)
     memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)

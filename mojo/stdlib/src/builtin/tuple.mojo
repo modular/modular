@@ -76,8 +76,8 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
         # Move each element into the tuple storage.
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer.address_of(storage[i]).move_pointee_into(
-                UnsafePointer.address_of(self[i])
+            UnsafePointer(to=storage[i]).move_pointee_into(
+                UnsafePointer(to=self[i])
             )
 
         # Do not destroy the elements when 'storage' goes away.
@@ -90,7 +90,7 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
         # trivial and won't do anything.
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer.address_of(self[i]).destroy_pointee()
+            UnsafePointer(to=self[i]).destroy_pointee()
 
     @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):
@@ -106,7 +106,7 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
 
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer.address_of(self[i]).init_pointee_copy(existing[i])
+            UnsafePointer(to=self[i]).init_pointee_copy(existing[i])
 
     @always_inline
     fn copy(self) -> Self:
@@ -131,8 +131,8 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
 
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer.address_of(existing[i]).move_pointee_into(
-                UnsafePointer.address_of(self[i])
+            UnsafePointer(to=existing[i]).move_pointee_into(
+                UnsafePointer(to=self[i])
             )
         # Note: The destructor on `existing` is auto-disabled in a moveinit.
 
@@ -175,7 +175,7 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer.address_of(self.storage).address
+        var storage_kgen_ptr = UnsafePointer(to=self.storage).address
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx.value](

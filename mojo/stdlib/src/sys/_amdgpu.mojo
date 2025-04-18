@@ -56,7 +56,7 @@ struct amd_signal_t:
 
 @always_inline
 fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
-    var mb = UnsafePointer.address_of(sig[].event_mailbox_ptr).bitcast[
+    var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
         UnsafePointer[UInt64, address_space = _GPUAddressSpace.GLOBAL]
     ]()[]
     if mb:
@@ -67,10 +67,10 @@ fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
 
 @always_inline
 fn hsa_signal_add(sig: UInt64, value: UInt64):
-    var s = UnsafePointer.address_of(sig).bitcast[
+    var s = UnsafePointer(to=sig).bitcast[
         UnsafePointer[amd_signal_t, address_space = _GPUAddressSpace.GLOBAL]
     ]()[]
-    _ = Atomic._fetch_add(UnsafePointer.address_of(s[].value), value)
+    _ = Atomic._fetch_add(UnsafePointer(to=s[].value), value)
     update_mbox(s)
 
 
@@ -581,7 +581,7 @@ struct Header:
         while True:
             var ready_flag = UInt32(1)
             if me == low:
-                var ptr = UnsafePointer.address_of(self._handle[].control)
+                var ptr = UnsafePointer(to=self._handle[].control)
                 var control = Atomic._fetch_add(ptr, 0)
                 ready_flag = get_ready_flag(control)
 
@@ -659,7 +659,7 @@ struct Buffer:
         while True:
             var p = self.get_header(f)
             var n = Atomic._fetch_add(
-                UnsafePointer.address_of(p._handle[].next),
+                UnsafePointer(to=p._handle[].next),
                 0,
             )
             if _compare_exchange_weak_integral_impl[scope=""](top, f, n):
@@ -677,7 +677,7 @@ struct Buffer:
         if me == low:
             packet_ptr = Self.pop(
                 self,
-                UnsafePointer.address_of(self._handle[].free_stack),
+                UnsafePointer(to=self._handle[].free_stack),
             )
 
         var ptr_lo = packet_ptr
@@ -705,7 +705,7 @@ struct Buffer:
         packet and signal the host.
         """
         if me == low:
-            self.push(UnsafePointer.address_of(self._handle[].ready_stack), ptr)
+            self.push(UnsafePointer(to=self._handle[].ready_stack), ptr)
             send_signal(self._handle[].doorbell)
 
     fn return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
@@ -714,7 +714,7 @@ struct Buffer:
         """
         if me == low:
             var ptr = inc_ptr_tag(ptr, self._handle[].index_mask)
-            self.push(UnsafePointer.address_of(self._handle[].free_stack), ptr)
+            self.push(UnsafePointer(to=self._handle[].free_stack), ptr)
 
 
 # Must match the ABI of:

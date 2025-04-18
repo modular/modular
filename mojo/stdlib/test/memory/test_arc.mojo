@@ -38,12 +38,14 @@ def test_is():
 
 def test_deleter_not_called_until_no_references():
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer.address_of(deleted)))
+    var p = ArcPointer(
+        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
+    )
     var p2 = p
     _ = p^
     assert_false(deleted)
 
-    var vec = List[ArcPointer[ObservableDel]]()
+    var vec = List[__type_of(p)]()
     vec.append(p2)
     _ = p2^
     assert_false(deleted)
@@ -53,12 +55,14 @@ def test_deleter_not_called_until_no_references():
 
 def test_deleter_not_called_until_no_references_explicit_copy():
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer.address_of(deleted)))
+    var p = ArcPointer(
+        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
+    )
     var p2 = p.copy()
     _ = p^
     assert_false(deleted)
 
-    var vec = List[ArcPointer[ObservableDel]]()
+    var vec = List[__type_of(p)]()
     vec.append(p2.copy())
     _ = p2^
     assert_false(deleted)

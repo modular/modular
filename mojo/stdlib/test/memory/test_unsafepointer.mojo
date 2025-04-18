@@ -97,18 +97,18 @@ def test_refitem_offset():
 
 def test_address_of():
     var local = 1
-    assert_not_equal(0, Int(UnsafePointer[Int].address_of(local)))
+    assert_not_equal(0, Int(UnsafePointer[Int](to=local)))
     _ = local
 
 
 def test_pointer_to():
     var local = 1
-    assert_not_equal(0, UnsafePointer.address_of(local)[])
+    assert_not_equal(0, UnsafePointer(to=local)[])
 
 
 def test_explicit_copy_of_pointer_address():
     var local = 1
-    var ptr = UnsafePointer[Int].address_of(local)
+    var ptr = UnsafePointer[Int](to=local)
     var copy = UnsafePointer(other=ptr)
     assert_equal(Int(ptr), Int(copy))
     _ = local
@@ -116,7 +116,7 @@ def test_explicit_copy_of_pointer_address():
 
 def test_bitcast():
     var local = 1
-    var ptr = UnsafePointer[Int].address_of(local)
+    var ptr = UnsafePointer[Int](to=local)
     var aliased_ptr = ptr.bitcast[SIMD[DType.uint8, 4]]()
 
     assert_equal(Int(ptr), Int(ptr.bitcast[Int]()))
@@ -142,15 +142,15 @@ def test_unsafepointer_string():
 
 def test_eq():
     var local = 1
-    var p1 = UnsafePointer.address_of(local).origin_cast[mut=False]()
+    var p1 = UnsafePointer(to=local).origin_cast[mut=False]()
     var p2 = p1
     assert_equal(p1, p2)
 
     var other_local = 2
-    var p3 = UnsafePointer.address_of(other_local).origin_cast[mut=False]()
+    var p3 = UnsafePointer(to=other_local).origin_cast[mut=False]()
     assert_not_equal(p1, p3)
 
-    var p4 = UnsafePointer.address_of(local).origin_cast[mut=False]()
+    var p4 = UnsafePointer(to=local).origin_cast[mut=False]()
     assert_equal(p1, p4)
     _ = local
     _ = other_local
@@ -211,7 +211,7 @@ def test_unsafepointer_alloc_origin():
         origin=MutableAnyOrigin
     ]()
 
-    var obj_1 = ObservableDel(UnsafePointer.address_of(did_del_1))
+    var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))
 
     # Object has not been deleted, because MutableAnyOrigin is keeping it alive.
     assert_false(did_del_1)
@@ -232,9 +232,7 @@ def test_unsafepointer_alloc_origin():
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
     #   MutableAnyOrigin pointer that interferes with this test.
-    _ = ObservableDel[__origin_of(did_del_2)](
-        UnsafePointer.address_of(did_del_2)
-    )
+    _ = ObservableDel[__origin_of(did_del_2)](UnsafePointer(to=did_del_2))
 
     # `obj_2` is ASAP destroyed, since `ptr_2` origin does not keep it alive.
     assert_true(did_del_2)

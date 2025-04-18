@@ -252,19 +252,17 @@ fn _time_function_windows[
     """Calculates elapsed time in Windows"""
 
     var ticks_per_sec: _WINDOWS_LARGE_INTEGER = 0
-    var ticks_per_sec_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER].address_of(
-        ticks_per_sec
+    var ticks_per_sec_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](
+        to=ticks_per_sec
     )
     external_call["QueryPerformanceFrequency", NoneType](ticks_per_sec_ptr)
 
     var starting_tick_count: _WINDOWS_LARGE_INTEGER = 0
-    var start_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER].address_of(
-        starting_tick_count
+    var start_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](
+        to=starting_tick_count
     )
     var ending_tick_count: _WINDOWS_LARGE_INTEGER = 0
-    var end_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER].address_of(
-        ending_tick_count
-    )
+    var end_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](to=ending_tick_count)
 
     external_call["QueryPerformanceCounter", NoneType](start_ptr)
     func()
@@ -348,7 +346,7 @@ fn sleep(sec: Float64):
         Int(total_secs),
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
-    var req = UnsafePointer[_CTimeSpec].address_of(tv_spec)
+    var req = UnsafePointer[_CTimeSpec](to=tv_spec)
     var rem = UnsafePointer[_CTimeSpec]()
     _ = external_call["nanosleep", Int32](req, rem)
     _ = tv_spec

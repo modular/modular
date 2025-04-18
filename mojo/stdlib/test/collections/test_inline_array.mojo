@@ -224,9 +224,7 @@ def test_array_contains():
 def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
     var destructor_counter = List[Int]()
-    var pointer_to_destructor_counter = UnsafePointer.address_of(
-        destructor_counter
-    )
+    var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
     alias capacity = 32
     var inline_list = InlineArray[DelRecorder, 4, run_destructors=True](
         DelRecorder(0, pointer_to_destructor_counter),

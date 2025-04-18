@@ -1618,7 +1618,7 @@ struct PythonObject(
             An `UnsafePointer` for the underlying Python data.
         """
         var tmp = Int(self)
-        var result = UnsafePointer.address_of(tmp).bitcast[
+        var result = UnsafePointer(to=tmp).bitcast[
             UnsafePointer[Scalar[dtype]]
         ]()[]
         _ = tmp

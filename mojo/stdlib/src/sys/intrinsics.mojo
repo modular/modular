@@ -117,9 +117,7 @@ fn llvm_intrinsic[
 fn _unsafe_aliasing_address_to_pointer[
     dtype: DType
 ](owned addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer.address_of(addr).bitcast[
-        UnsafePointer[Scalar[dtype]]
-    ]()[]
+    return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
 
 
 @always_inline("nodebug")
@@ -194,7 +192,7 @@ fn gather[
         "llvm.masked.gather",
         __mlir_type[`!pop.simd<`, size.value, `, `, dtype.value, `>`],
     ](
-        UnsafePointer.address_of(base).bitcast[
+        UnsafePointer(to=base).bitcast[
             __mlir_type[`!pop.simd<`, size.value, `, address>`],
         ]()[],
         Int32(alignment),
@@ -274,7 +272,7 @@ fn scatter[
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
-        UnsafePointer.address_of(base).bitcast[
+        UnsafePointer(to=base).bitcast[
             __mlir_type[`!pop.simd<`, size.value, `, address>`],
         ]()[],
         Int32(alignment),

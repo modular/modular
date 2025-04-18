@@ -440,9 +440,7 @@ struct Pointer[
         Returns:
             True if the two pointers are equal and False otherwise.
         """
-        return UnsafePointer.address_of(self[]) == UnsafePointer.address_of(
-            rhs[]
-        )
+        return UnsafePointer(to=self[]) == UnsafePointer(to=rhs[])
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
@@ -464,4 +462,4 @@ struct Pointer[
         Returns:
             The string representation of the Pointer.
         """
-        return String(UnsafePointer.address_of(self[]))
+        return String(UnsafePointer(to=self[]))

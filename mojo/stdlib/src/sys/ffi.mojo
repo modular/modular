@@ -292,7 +292,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         """
         var opaque_function_ptr = self.get_symbol[NoneType](name)
 
-        var result = UnsafePointer.address_of(opaque_function_ptr).bitcast[
+        var result = UnsafePointer(to=opaque_function_ptr).bitcast[
             result_type
         ]()[]
         _ = opaque_function_ptr
@@ -450,7 +450,7 @@ fn _get_dylib_function[
     alias func_cache_name = String(dylib_global.name) + "/" + String(func_name)
     var func_ptr = _get_global_or_null[func_cache_name]()
     if func_ptr:
-        var result = UnsafePointer.address_of(func_ptr).bitcast[result_type]()[]
+        var result = UnsafePointer(to=func_ptr).bitcast[result_type]()[]
         _ = func_ptr
         return result
 
@@ -459,7 +459,7 @@ fn _get_dylib_function[
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
-        UnsafePointer.address_of(new_func).bitcast[OpaquePointer]()[],
+        UnsafePointer(to=new_func).bitcast[OpaquePointer]()[],
     )
 
     return new_func

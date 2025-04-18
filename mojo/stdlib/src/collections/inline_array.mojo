@@ -270,7 +270,7 @@ struct InlineArray[
         # Move each element into the array storage.
         @parameter
         for i in range(size):
-            UnsafePointer.address_of(storage[i]).move_pointee_into(ptr)
+            UnsafePointer(to=storage[i]).move_pointee_into(ptr)
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
@@ -462,7 +462,7 @@ struct InlineArray[
             size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer.address_of(self._array).address,
+            UnsafePointer(to=self._array).address,
             i,
         )
         return UnsafePointer(ptr)[]
@@ -499,7 +499,7 @@ struct InlineArray[
         print(ptr[0])  # Prints 1
         ```
         """
-        return UnsafePointer.address_of(self._array).bitcast[Self.ElementType]()
+        return UnsafePointer(to=self._array).bitcast[Self.ElementType]()
 
     @always_inline
     fn __contains__[
