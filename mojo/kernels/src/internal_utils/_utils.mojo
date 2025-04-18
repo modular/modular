@@ -335,7 +335,7 @@ fn bench_compile_time[
                 with DeviceContext() as ctx:
                     var func = ctx.compile_function[func]()
                     # Ensure that the compilation step is not optimized away.
-                    keep(UnsafePointer.address_of(func))
+                    keep(UnsafePointer(to=func))
                     clobber_memory()
 
         b.iter[bench_iter]()
