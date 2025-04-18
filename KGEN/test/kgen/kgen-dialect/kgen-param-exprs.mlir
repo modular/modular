@@ -927,3 +927,14 @@ kgen.generator @data_to_str<s1: struct<(pointer<none>, index)>,
   %1 = kgen.param.constant: string = <data_to_str(:struct<(pointer<none>, index)> s1, [s2, s3])>
   kgen.return
 }
+
+// CHECK-LABEL: @string_address
+kgen.generator @string_address<s1: string>() {
+  // CHECK: %struct = kgen.param.constant: struct<(pointer<none>, index)> = <{ string_address(""), 0 }>
+  %0 = kgen.param.constant: struct<(pointer<none>, index)> = <{ string_address(""), 0 }>
+
+  // CHECK: %pointer = kgen.param.constant: pointer<none> = <string_address(s1)>
+  %1 = kgen.param.constant: pointer<none> = <string_address(s1)>
+
+  kgen.return
+}
