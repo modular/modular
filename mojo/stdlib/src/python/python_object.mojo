@@ -264,6 +264,9 @@ struct TypedPythonObject[type_hint: StaticString](
         return PythonObject.from_borrowed_ptr(item)
 
 
+alias PythonModule = TypedPythonObject["Module"]
+
+
 @register_passable
 struct PythonObject(
     ImplicitlyBoolable,

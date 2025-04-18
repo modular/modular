@@ -13,4 +13,9 @@
 """Implements the python package."""
 
 from .python import Python
-from .python_object import PythonObject, PythonObjectible, TypedPythonObject
+from .python_object import (
+    PythonObject,
+    PythonObjectible,
+    TypedPythonObject,
+    PythonModule,
+)

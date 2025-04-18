@@ -33,7 +33,7 @@ from ._cpython import (
     Py_ssize_t,
     PyMethodDef,
 )
-from .python_object import PythonObject, TypedPythonObject
+from .python_object import PythonObject, TypedPythonObject, PythonModule
 
 alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal, _init_python_global]
 
@@ -199,7 +199,7 @@ struct Python:
     # PythonObject "Module" Operations
     # ===-------------------------------------------------------------------===#
 
-    # TODO(MSTDL-880): Change this to return `TypedPythonObject["Module"]`
+    # TODO(MSTDL-880): Change this to return `PythonModule`
     @staticmethod
     fn import_module(module: StringSlice) raises -> PythonObject:
         """Imports a Python module.
@@ -231,7 +231,7 @@ struct Python:
         return PythonObject(module_maybe)
 
     @staticmethod
-    fn create_module(name: StaticString) raises -> TypedPythonObject["Module"]:
+    fn create_module(name: StaticString) raises -> PythonModule:
         """Creates a Python module using the provided name.
 
         Inspired by https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1227
@@ -252,25 +252,23 @@ struct Python:
         # This will throw an error if there are any errors during initialization.
         cpython.check_init_error()
 
-        var module = cpython.PyModule_Create(name)
+        var module_obj = cpython.PyModule_Create(name)
 
         # TODO: investigate when `PyModule_Create` can actually produce an error
         # This is cargo copy-pasted from other methods in this file essentially.
         Python.throw_python_exception_if_error_state(cpython)
 
-        return TypedPythonObject["Module"](
-            unsafe_unchecked_from=PythonObject(module)
-        )
+        return PythonModule(unsafe_unchecked_from=PythonObject(module_obj))
 
     @staticmethod
     fn add_functions(
-        module: TypedPythonObject["Module"],
+        module: PythonModule,
         owned functions: List[PyMethodDef],
     ) raises:
-        """Adds functions to a PyModule object.
+        """Adds functions to a PythonModule object.
 
         Args:
-            module: The PyModule object.
+            module: The PythonModule object.
             functions: List of function data.
         """
 
@@ -286,17 +284,17 @@ struct Python:
 
     @staticmethod
     fn unsafe_add_methods(
-        module: TypedPythonObject["Module"],
+        module: PythonModule,
         functions: UnsafePointer[PyMethodDef],
     ) raises:
-        """Adds methods to a PyModule object.
+        """Adds methods to a PythonModule object.
 
         Safety:
             The provided `functions` pointer must point to data that lives
             for the duration of the associated Python interpreter session.
 
         Args:
-            module: The PyModule object.
+            module: The PythonModule object.
             functions: A null terminated pointer to function data.
         """
         var cpython = _get_global_python_itf().cpython()
@@ -313,7 +311,7 @@ struct Python:
 
     @staticmethod
     fn add_object(
-        module: TypedPythonObject["Module"],
+        module: PythonModule,
         owned name: String,
         value: PythonObject,
     ) raises:

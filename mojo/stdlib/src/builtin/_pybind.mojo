@@ -16,7 +16,7 @@ from sys import alignof, sizeof
 
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
-from python import Python, PythonObject, TypedPythonObject
+from python import Python, PythonObject, PythonModule, TypedPythonObject
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
@@ -35,15 +35,13 @@ from python._cpython import (
 )
 from python.python import _get_global_python_itf
 
-alias PyModule = TypedPythonObject["Module"]
-
 
 fn get_cpython() -> CPython:
     return _get_global_python_itf().cpython()
 
 
 # This function is used by the compiler to create a new module.
-fn create_pybind_module[name: StaticString]() raises -> PyModule:
+fn create_pybind_module[name: StaticString]() raises -> PythonModule:
     return Python.create_module(name)
 
 
@@ -76,7 +74,7 @@ fn gen_pytype_wrapper[
     # instance so that callers can pass it around instead of performing a lookup
     # each time.
     Python.add_object(
-        PyModule(unsafe_unchecked_from=module), String(name), type_obj
+        PythonModule(unsafe_unchecked_from=module), String(name), type_obj
     )
 
 
@@ -86,7 +84,7 @@ fn add_wrapper_to_module[
     ) raises -> PythonObject,
     func_name: StaticString,
 ](mut module_obj: PythonObject) raises:
-    var module = TypedPythonObject["Module"](unsafe_unchecked_from=module_obj)
+    var module = PythonModule(unsafe_unchecked_from=module_obj)
     Python.add_functions(
         module,
         List[PyMethodDef](
