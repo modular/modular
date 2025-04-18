@@ -178,7 +178,7 @@ fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return (
         has_nvidia_gpu_accelerator()
         or env_get_bool["FLASH_ATTENTION_HW_SUPPORTED", False]()
-        or (has_amd_gpu_accelerator() and qkv_type == DType.bfloat16)
+        or (has_amd_gpu_accelerator() and qkv_type is DType.bfloat16)
     )
 
 
@@ -249,7 +249,7 @@ fn flash_attention[
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type == DType.float32 or q.type.is_half_float(),
+        q.type is DType.float32 or q.type.is_half_float(),
         "Only support single and half precision.",
     ]()
 

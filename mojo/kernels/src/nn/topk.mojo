@@ -140,7 +140,7 @@ fn top_k[
     @parameter
     if is_cpu[target]():
         constrained[
-            out_idx_type == DType.int64,
+            out_idx_type is DType.int64,
             "out_idx_type must be int64 for cpu",
         ]()
 
@@ -289,7 +289,7 @@ fn top_k_fused_sampling_cpu[
         input: NDBuffer[type, rank] (Any shape)- The input tensor.
         out_idxs: NDBuffer[out_idx_type, rank] (shape of [input_shape[:-1]] + [1]) - The output indices.
     """
-    constrained[out_idx_type == DType.int64, "out_idx_type must be int64"]()
+    constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
     # materialize the out_vals which is of shape [input[:-1]] + [k]
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = k

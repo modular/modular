@@ -1131,7 +1131,7 @@ fn flare_mla_prefill[
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type == DType.float32 or q.type.is_half_float(),
+        q.type is DType.float32 or q.type.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1223,7 +1223,7 @@ fn flare_mla_prefill[
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type == DType.float32 or q.type.is_half_float(),
+        q.type is DType.float32 or q.type.is_half_float(),
         "Only support single and half precision.",
     ]()
 

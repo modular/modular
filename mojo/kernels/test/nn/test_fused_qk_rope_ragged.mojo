@@ -32,7 +32,7 @@ from utils import IndexList
 
 def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    constrained[type == DType.float32, "goldens only for float32, currently"]()
+    constrained[type is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
     alias batch_size = 2

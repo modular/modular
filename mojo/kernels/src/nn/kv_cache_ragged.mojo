@@ -536,7 +536,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             not has_zp.value(), "Zero point is not supported for quantization."
         ]()
         constrained[
-            weight_type == DType.uint8,
+            weight_type is DType.uint8,
             "Expect GPTQ weights in an uint8 tensor.",
         ]()
         var new_weight = rebind[
@@ -672,7 +672,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             not has_zp.value(), "Zero point is not supported for quantization."
         ]()
         constrained[
-            weight_type == DType.uint8,
+            weight_type is DType.uint8,
             "Expect GPTQ weights to be a 'uint8' tensor.",
         ]()
         var new_weight = rebind[

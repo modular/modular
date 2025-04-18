@@ -39,7 +39,7 @@ fn cumsum[
         axis: The axis on which to perform the cumsum operation.
     """
 
-    alias accum_type = DType.float64 if type == DType.float32 else get_accum_type[
+    alias accum_type = DType.float64 if type is DType.float32 else get_accum_type[
         type
     ]()
     debug_assert(
