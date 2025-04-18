@@ -59,10 +59,11 @@ from gpu.id import block_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.math import exp, max, sum
+from layout.math import max, sum
 from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
+from math import exp
 
 from utils import Index
 from utils.index import IndexList
