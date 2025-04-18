@@ -1515,10 +1515,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // of `[A, B, Int]`.  If we had ParameterizedType then we could model this
     // correctly as have an unspecified first set of bindings for the type,
     // and the Int binding could go in a subsequent parameter list.
-    ASTType expectedSelfType =
-        memberDecls[0]->getParentDecl()->getTypeDeclSelf();
-    auto bindings = ParamBindings::getForDeclaredType(
-        emitter.getDeclScope(), baseRVType, this, expectedSelfType);
+    auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
+                                                      baseRVType, this);
     auto result =
         OverloadSetUValue::create(spelling, memberDecls, std::move(bindings),
                                   this, CallSyntax::kDirectCall);

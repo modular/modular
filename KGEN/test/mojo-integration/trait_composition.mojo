@@ -74,6 +74,27 @@ fn useCond1[
     p1.cond1(p2)
 
 
+# constructor overloading
+trait IntConstructable:
+    fn __init__(out self, x: Int):
+        ...
+
+
+fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
+    return T(33)
+
+
+@register_passable("trivial")
+struct MyStruct(Defaultable, IntConstructable):
+    var x: Int
+
+    fn __init__(out self):
+        self.x = 42
+
+    fn __init__(out self, x: Int):
+        self.x = x
+
+
 fn main():
     s123 = Struct123()
 
@@ -95,3 +116,6 @@ fn main():
 
     # CHECK: cond
     useCond1(Wrapper[Struct123](), Wrapper[Struct123]())
+
+    # CHECK: 33
+    print(useIntConstructable[MyStruct]().x)
