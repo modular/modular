@@ -124,7 +124,7 @@ fn bench_matmul[
     var b_host = HostNDBuffer[dtype, 1](DimList(cache_b))
 
     @parameter
-    if dtype == DType.float8_e4m3fn:
+    if dtype is DType.float8_e4m3fn:
         random_float8(a_host.tensor)
         random_float8(b_host.tensor)
     else:
