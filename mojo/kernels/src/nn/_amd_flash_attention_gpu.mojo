@@ -303,6 +303,9 @@ fn _apply_mask[
         @parameter
         for n_mma in range(Int(num_n_mmas)):
             alias mma_id = n_mma * num_m_mmas + m_mma
+            p_reg_vectorized[mma_id, 0] = (
+                p_reg_vectorized[mma_id, 0] * scale_log2e
+            )
             # Coordinates in mask for current mma tile.
             var mask_frag_row = mask_warp_row + m_mma * MMA_M
             var mask_frag_col = mask_warp_col + n_mma * MMA_N
@@ -334,12 +337,8 @@ fn _apply_mask[
                             Int(score_row_with_start_pos + fragment_row),
                             Int(score_col + fragment_col),
                         ),
-                        p_reg_vectorized[mma_id, 0][j] * scale_log2e,
+                        p_reg_vectorized[mma_id, 0][j],
                     )
-            else:
-                p_reg_vectorized[mma_id, 0] = (
-                    p_reg_vectorized[mma_id, 0] * scale_log2e
-                )
 
             @parameter
             if mask_t.apply_log2e_after_mask:
