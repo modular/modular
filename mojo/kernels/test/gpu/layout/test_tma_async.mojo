@@ -145,7 +145,7 @@ def test_tma_load_row_major[
     ](ctx)
 
     @parameter
-    if dtype == DType.float8_e4m3fn:
+    if dtype is DType.float8_e4m3fn:
         random(src.tensor())
     else:
         arange(src.tensor(), 0)

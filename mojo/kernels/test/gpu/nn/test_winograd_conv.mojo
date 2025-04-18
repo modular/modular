@@ -426,8 +426,8 @@ fn test_winograd_conv_gpu[
     var host_output = device_output.copy_from_device(ctx)
 
     # TODO: Should tolerances really this high for BFloat16?
-    alias atol = 1e-06 if type == DType.float32 else 1e-1
-    alias rtol = 1e-06 if type == DType.float32 else 1e-4
+    alias atol = 1e-06 if type is DType.float32 else 1e-1
+    alias rtol = 1e-06 if type is DType.float32 else 1e-4
 
     for x in range(output_dim.product().get()):
         assert_almost_equal(

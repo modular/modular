@@ -127,7 +127,7 @@ def test_tma_multicast_swizzle[
     var dst = ManagedLayoutTensor[dtype, layout](ctx)  # FIX THIS
 
     @parameter
-    if dtype == DType.float8_e4m3fn:
+    if dtype is DType.float8_e4m3fn:
         random(src.tensor())
         random(dst.tensor())
     else:

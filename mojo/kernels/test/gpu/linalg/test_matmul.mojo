@@ -100,7 +100,7 @@ fn test[
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    rtol: Float64 = 1e-3 if type == DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if type is DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
     constrained[

@@ -128,7 +128,7 @@ fn test_warp_specialize_gemm_with_multicasting[
 
     # Initialize matmul operands
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type is DType.float8_e4m3fn:
         random_float8(a_host.tensor)
         random_float8(b_host.tensor)
     else:
@@ -148,10 +148,10 @@ fn test_warp_specialize_gemm_with_multicasting[
 
     alias block_tile_shape = Index(
         128, wgmma_n, 128
-    ) if a_type == DType.float8_e4m3fn else Index(128, wgmma_n, 64)
+    ) if a_type is DType.float8_e4m3fn else Index(128, wgmma_n, 64)
     alias wgmma_shape = Index(
         64, wgmma_n, 32
-    ) if a_type == DType.float8_e4m3fn else Index(64, wgmma_n, 16)
+    ) if a_type is DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -242,7 +242,7 @@ fn test_warp_specialize_gemm_with_multicasting[
     ctx.synchronize()
 
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type is DType.float8_e4m3fn:
         vendor_blas.matmul(
             ctx,
             handle,
