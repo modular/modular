@@ -24,7 +24,16 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, TensorValue, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    Graph,
+    Shape,
+    TensorType,
+    TensorValue,
+    _reconcile_weights,
+    ops,
+)
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import Linear, ReturnLogits
 from max.nn.kv_cache import (
@@ -534,6 +543,7 @@ class LlamaVisionModel(Layer):
             num_global_layers=self.vision_config.num_global_layers,
             intermediate_layers_indices=self.vision_config.intermediate_layers_indices,
             weights=weights,
+            device=DeviceRef.GPU(),
         )
 
         self.multi_modal_projector = Linear(
@@ -543,10 +553,10 @@ class LlamaVisionModel(Layer):
                     self.text_config.hidden_size,
                     self.vision_config.vision_output_dim,
                 ],
+                device=DeviceRef.GPU(),
             ),
             weights.multi_modal_projector.bias.allocate(
-                dtype,
-                [self.text_config.hidden_size],
+                dtype, [self.text_config.hidden_size], device=DeviceRef.GPU()
             ),
         )
 
@@ -599,6 +609,7 @@ class LlamaVisionLanguageModel(Layer):
         num_text_kv_cache_inputs: int,
         huggingface_config: AutoConfig,
         dtype: DType,
+        device: DeviceRef,
     ) -> None:
         text_config = huggingface_config.text_config
 
@@ -616,6 +627,7 @@ class LlamaVisionLanguageModel(Layer):
             intermediate_size=text_config.intermediate_size,
             kv_params=kv_params,
             weights=weights,
+            device=device,
         )
         self.num_text_kv_cache_inputs = num_text_kv_cache_inputs
 
@@ -852,6 +864,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 num_text_kv_cache_inputs=len(list(text_kv_input_symbols)),
                 huggingface_config=self.huggingface_config,
                 dtype=self.dtype,
+                device=device,
             ),
             input_types=input_types,
         )
@@ -1250,7 +1263,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             vision_model_graph = self._llama3_vision_vision_graph()
             vision_model = session.load(
                 vision_model_graph,
-                weights_registry=self.weights.allocated_weights,
+                weights_registry=_reconcile_weights(
+                    vision_model_graph, self.weights.allocated_weights
+                ),
             )
             after = time.perf_counter()
             logger.info(
@@ -1264,7 +1279,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             language_model_graph = self._llama3_vision_language_graph()
             language_model = session.load(
                 language_model_graph,
-                weights_registry=self.weights.allocated_weights,
+                weights_registry=_reconcile_weights(
+                    language_model_graph, self.weights.allocated_weights
+                ),
             )
             after = time.perf_counter()
             logger.info(

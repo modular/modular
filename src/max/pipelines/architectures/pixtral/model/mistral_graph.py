@@ -16,7 +16,7 @@ import math
 from typing import Union
 
 from max.dtype import DType
-from max.graph import Graph, ops
+from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import Weights
 from max.nn import (
     MLP,
@@ -74,12 +74,17 @@ def linear(
     weights: Weights,
 ) -> Linear:
     return Linear(
-        weights.weight.allocate(dtype, [in_features, out_features], None)
+        weights.weight.allocate(
+            dtype, [in_features, out_features], device=DeviceRef.GPU()
+        )
     )
 
 
 def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
-    return RMSNorm(weights.weight.allocate(DType.bfloat16, [dims]), eps)
+    return RMSNorm(
+        weights.weight.allocate(DType.bfloat16, [dims], device=DeviceRef.GPU()),
+        eps,
+    )
 
 
 def embedding(
@@ -91,8 +96,7 @@ def embedding(
 ):
     return Embedding(
         weights.weight.allocate(
-            dtype,
-            [vocab_size, hidden_dim],
+            dtype, [vocab_size, hidden_dim], device=DeviceRef.GPU()
         )
     )
 
@@ -118,14 +122,17 @@ def _attention_opaque(
             * huggingface_config.text_config.head_dim,
             huggingface_config.text_config.hidden_size,
         ],
+        device=DeviceRef.GPU(),
     )
     wk = weights.self_attn.k_proj.weight.allocate(
         dtype,
         [kv_weight_dim, huggingface_config.text_config.hidden_size],
+        device=DeviceRef.GPU(),
     )
     wv = weights.self_attn.v_proj.weight.allocate(
         dtype,
         [kv_weight_dim, huggingface_config.text_config.hidden_size],
+        device=DeviceRef.GPU(),
     )
     wqkv = ops.concat((wq, wk, wv))
 
@@ -164,6 +171,7 @@ def _transformer(
             theta=huggingface_config.text_config.rope_theta,
             max_seq_len=max_seq_len,
             interleaved=False,
+            device=DeviceRef.GPU(),
         )
 
         layers = [

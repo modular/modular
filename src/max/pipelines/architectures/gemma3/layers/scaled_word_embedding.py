@@ -81,4 +81,6 @@ class ScaledWordEmbedding(EmbeddingV2):
             The result resides on the device specified in :obj:`device`.
         """
         result = super().__call__(indices)
-        return result * ops.constant(self.embed_scale, result.dtype)
+        return result * ops.constant(
+            self.embed_scale, result.dtype, device=result.type.device
+        )

@@ -42,6 +42,7 @@ class DeepseekV2(Transformer):
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_position_embeddings,
+            device=config.devices[0],
         )
 
         layers = [
@@ -59,6 +60,7 @@ class DeepseekV2(Transformer):
                     qk_nope_head_dim=config.qk_nope_head_dim,
                     qk_rope_head_dim=config.qk_rope_head_dim,
                     v_head_dim=config.v_head_dim,
+                    devices=config.devices,
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNormV2(
@@ -82,7 +84,10 @@ class DeepseekV2(Transformer):
             config.devices[0],
         )
         lm_head = self.lm_head = LinearV2(
-            config.hidden_size, config.vocab_size, dtype=config.dtype
+            config.hidden_size,
+            config.vocab_size,
+            dtype=config.dtype,
+            device=config.devices[0],
         )
 
         super().__init__(
@@ -117,6 +122,7 @@ class DeepseekV2(Transformer):
             and i >= config.first_k_dense_replace
             and i % config.moe_layer_freq == 0
         ):
+            assert len(config.devices) == 1, "Expect only one device"
             return MoE(
                 num_experts_per_tok=config.num_experts_per_tok,
                 ep_size=config.ep_size,
@@ -125,6 +131,7 @@ class DeepseekV2(Transformer):
                 max_position_embeddings=config.max_position_embeddings,
                 n_shared_experts=config.n_shared_experts,
                 dtype=config.dtype,
+                device=config.devices[0],
             )
         else:
             return MLPV2(

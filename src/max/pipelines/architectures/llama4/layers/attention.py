@@ -131,27 +131,39 @@ class _Llama4TextAttention(Module):
             name="q_proj.weight",
             dtype=dtype,
             shape=[self.q_weight_dim, hidden_size],
+            device=devices[0],
         )
         self.k_proj = Weight(
             name="k_proj.weight",
             dtype=dtype,
             shape=[self.kv_weight_dim, hidden_size],
+            device=devices[0],
         )
         self.v_proj = Weight(
             name="v_proj.weight",
             dtype=dtype,
             shape=[self.kv_weight_dim, hidden_size],
+            device=devices[0],
         )
 
         if has_bias:
             self.bias_q = Weight(
-                name="q_proj.bias", dtype=dtype, shape=[self.q_weight_dim]
+                name="q_proj.bias",
+                dtype=dtype,
+                shape=[self.q_weight_dim],
+                device=devices[0],
             )
             self.bias_k = Weight(
-                name="k_proj.bias", dtype=dtype, shape=[self.kv_weight_dim]
+                name="k_proj.bias",
+                dtype=dtype,
+                shape=[self.kv_weight_dim],
+                device=devices[0],
             )
             self.bias_v = Weight(
-                name="v_proj.bias", dtype=dtype, shape=[self.kv_weight_dim]
+                name="v_proj.bias",
+                dtype=dtype,
+                shape=[self.kv_weight_dim],
+                device=devices[0],
             )
 
         self.o_proj = linear_cls(

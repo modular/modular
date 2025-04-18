@@ -18,7 +18,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import Dim, StaticDim, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    StaticDim,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.graph.weights import Weights
 from max.nn import Conv2D, Embedding, LayerNorm, Linear
 from max.nn.layer import Layer
@@ -103,7 +110,9 @@ class VisionModel(Layer):
         batch_size, _, hidden_size = hidden_state.shape
         # This was a reshape in torch reference implementation but we need to
         # broadcast this into the right shapes.
-        class_embedding = TensorValue(self.class_embedding)
+        class_embedding = TensorValue(self.class_embedding).to(
+            hidden_state.type.device or DeviceRef.CPU()
+        )
 
         class_embedding = class_embedding.broadcast_to(
             (batch_size, 1, hidden_size)
@@ -131,8 +140,17 @@ class VisionModel(Layer):
         # The snippet below is a workaround for
         # attention_mask[:, :, 0 - pad_patches :] = 0
         valid_mask = attention_mask[:, :, :-pad_patches, :]
-        zero_pad = ops.constant(0, dtype).broadcast_to(
-            (batch_size, max_num_tiles, pad_patches, attention_mask.shape[-1])
+        zero_pad = (
+            ops.constant(0, dtype)
+            .broadcast_to(
+                (
+                    batch_size,
+                    max_num_tiles,
+                    pad_patches,
+                    attention_mask.shape[-1],
+                )
+            )
+            .to(aspect_ratio_mask.type.device or DeviceRef.CPU())
         )
         attention_mask = ops.concat((valid_mask, zero_pad), axis=2)
 
@@ -183,8 +201,10 @@ class VisionModel(Layer):
         new_height = height + top + bottom
         new_width = width + left + right
 
-        padded_tensor = ops.constant(value, dtype).broadcast_to(
-            (batch_size, channels, new_height, new_width)
+        padded_tensor = (
+            ops.constant(value, dtype)
+            .broadcast_to((batch_size, channels, new_height, new_width))
+            .to(input_tensor.type.device or DeviceRef.CPU())
         )
 
         # Insert the original tensor into the center of the padded tensor
@@ -454,6 +474,7 @@ def instantiate_vision_model(
     num_global_layers: int,
     intermediate_layers_indices: list[int],
     weights: Weights,
+    device: DeviceRef,
 ) -> VisionModel:
     # Shared variables.
     num_patches = (image_size // patch_size) ** 2 + 1
@@ -465,7 +486,7 @@ def instantiate_vision_model(
         hidden_size=hidden_size,
         max_num_tiles=max_num_tiles,
         gate=weights.vision_model.gated_positional_embedding.gate.allocate(
-            dtype, [1]
+            dtype, [1], device=device
         ),
         embedding=weights.vision_model.gated_positional_embedding.embedding.allocate(
             dtype,
@@ -473,6 +494,7 @@ def instantiate_vision_model(
                 num_patches,
                 hidden_size,
             ],
+            device=device,
         ),
         tile_embedding=Embedding(
             weights.vision_model.gated_positional_embedding.tile_embedding.weight.allocate(
@@ -481,6 +503,7 @@ def instantiate_vision_model(
                     max_aspect_ratio_id,
                     max_num_tiles * num_patches * hidden_size,
                 ],
+                device=device,
             ),
         ),
     )
@@ -489,13 +512,14 @@ def instantiate_vision_model(
         max_num_tiles=max_num_tiles,
         hidden_size=hidden_size,
         gate=weights.vision_model.pre_tile_positional_embedding.gate.allocate(
-            dtype, [1]
+            dtype, [1], device=device
         ),
         embedding=Embedding(
             weights.vision_model.pre_tile_positional_embedding.embedding.weight.allocate(
                 dtype,
                 [max_aspect_ratio_id, max_num_tiles * hidden_size],
             ),
+            device=device,
         ),
         is_gated=True,
     )
@@ -504,7 +528,7 @@ def instantiate_vision_model(
         max_num_tiles=max_num_tiles,
         hidden_size=hidden_size,
         gate=weights.vision_model.post_tile_positional_embedding.gate.allocate(
-            dtype, [1]
+            dtype, [1], device=device
         ),
         embedding=Embedding(
             weights.vision_model.post_tile_positional_embedding.embedding.weight.allocate(
@@ -513,6 +537,7 @@ def instantiate_vision_model(
                     max_aspect_ratio_id,
                     max_num_tiles * hidden_size,
                 ],
+                device=device,
             ),
         ),
         is_gated=True,
@@ -523,6 +548,7 @@ def instantiate_vision_model(
         filter=weights.vision_model.patch_embedding.weight.allocate(
             dtype,
             [hidden_size, num_channels, patch_size, patch_size],
+            device=device,
         ),
         stride=patch_size,
         padding=(0, 0, 0, 0),
@@ -530,26 +556,25 @@ def instantiate_vision_model(
     )
 
     class_embedding = weights.vision_model.class_embedding.allocate(
-        dtype,
-        [hidden_size],
+        dtype, [hidden_size], device=device
     )
 
     layernorm_pre = LayerNorm(
         weights.vision_model.layernorm_pre.weight.allocate(
-            dtype, [hidden_size]
+            dtype, [hidden_size], device=device
         ),
         bias=weights.vision_model.layernorm_pre.bias.allocate(
-            dtype, [hidden_size]
+            dtype, [hidden_size], device=device
         ),
         eps=norm_eps,
     )
 
     layernorm_post = LayerNorm(
         weights.vision_model.layernorm_post.weight.allocate(
-            dtype, [hidden_size]
+            dtype, [hidden_size], device=device
         ),
         bias=weights.vision_model.layernorm_post.bias.allocate(
-            dtype, [hidden_size]
+            dtype, [hidden_size], device=device
         ),
         eps=norm_eps,
     )
@@ -567,36 +592,38 @@ def instantiate_vision_model(
                         curr_layer_weight.mlp.fc1.weight.allocate(
                             dtype,
                             [intermediate_size, hidden_size],
+                            device=device,
                         ),
                         bias=curr_layer_weight.mlp.fc1.bias.allocate(
-                            dtype, [intermediate_size]
+                            dtype, [intermediate_size], device=device
                         ),
                     ),
                     Linear(
                         curr_layer_weight.mlp.fc2.weight.allocate(
                             dtype,
                             [hidden_size, intermediate_size],
+                            device=device,
                         ),
                         bias=curr_layer_weight.mlp.fc2.bias.allocate(
-                            dtype, [hidden_size]
+                            dtype, [hidden_size], device=device
                         ),
                     ),
                 ),
                 input_layernorm=LayerNorm(
                     curr_layer_weight.input_layernorm.weight.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     bias=curr_layer_weight.input_layernorm.bias.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     eps=norm_eps,
                 ),
                 post_attention_layernorm=LayerNorm(
                     curr_layer_weight.post_attention_layernorm.weight.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     bias=curr_layer_weight.post_attention_layernorm.bias.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     eps=norm_eps,
                 ),
@@ -607,6 +634,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.k_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -614,6 +642,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.v_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -621,6 +650,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.q_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -628,6 +658,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.o_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -653,36 +684,38 @@ def instantiate_vision_model(
                         curr_layer_weight.mlp.fc1.weight.allocate(
                             dtype,
                             [intermediate_size, hidden_size],
+                            device=device,
                         ),
                         bias=curr_layer_weight.mlp.fc1.bias.allocate(
-                            dtype, [intermediate_size]
+                            dtype, [intermediate_size], device=device
                         ),
                     ),
                     Linear(
                         curr_layer_weight.mlp.fc2.weight.allocate(
                             dtype,
                             [hidden_size, intermediate_size],
+                            device=device,
                         ),
                         bias=curr_layer_weight.mlp.fc2.bias.allocate(
-                            dtype, [hidden_size]
+                            dtype, [hidden_size], device=device
                         ),
                     ),
                 ),
                 input_layernorm=LayerNorm(
                     curr_layer_weight.input_layernorm.weight.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     bias=curr_layer_weight.input_layernorm.bias.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     eps=norm_eps,
                 ),
                 post_attention_layernorm=LayerNorm(
                     curr_layer_weight.post_attention_layernorm.weight.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     curr_layer_weight.post_attention_layernorm.bias.allocate(
-                        dtype, [hidden_size]
+                        dtype, [hidden_size], device=device
                     ),
                     eps=norm_eps,
                 ),
@@ -693,6 +726,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.k_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -700,6 +734,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.v_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -707,6 +742,7 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.q_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
+                            device=device,
                         ),
                         bias=None,
                     ),
@@ -714,13 +750,18 @@ def instantiate_vision_model(
                         curr_layer_weight.self_attn.o_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
+                            device=device,
                         ),
                         bias=None,
                     ),
                 ),
                 is_gated=True,
-                gate_attn=curr_layer_weight.gate_attn.allocate(dtype, [1]),
-                gate_ffn=curr_layer_weight.gate_ffn.allocate(dtype, [1]),
+                gate_attn=curr_layer_weight.gate_attn.allocate(
+                    dtype, [1], device=device
+                ),
+                gate_ffn=curr_layer_weight.gate_ffn.allocate(
+                    dtype, [1], device=device
+                ),
             )
         )
     global_transformer = VisionEncoder(global_transformer_layers)

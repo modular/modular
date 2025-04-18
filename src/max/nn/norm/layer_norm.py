@@ -16,9 +16,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
-from max.graph import TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight, ops
 
 from ..layer import Layer, Module
 
@@ -33,7 +34,7 @@ class LayerNorm(Layer):
 
     def __call__(self, input: TensorValue):
         # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
-        bias = (
+        bias: Any = (
             ops.cast(self.bias, input.dtype)
             if self.bias
             # If bias wasn't passed then use bias-less layer norm (beta = 0).
@@ -41,20 +42,35 @@ class LayerNorm(Layer):
                 ops.constant(0.0, input.dtype), shape=(input.shape[-1],)
             )
         )
-        return ops.layer_norm(
+
+        weight: Any = self.weight
+        if weight.type.device != input.type.device:
+            weight = weight.to(input.type.device or DeviceRef.CPU())
+
+        if bias and bias.type.device != input.type.device:
+            bias = bias.to(input.type.device or DeviceRef.CPU())
+
+        res = ops.layer_norm(
             input,
-            gamma=ops.cast(self.weight, input.dtype),
+            gamma=ops.cast(weight, input.dtype),
             beta=bias,
             epsilon=self.eps,
         )
+        return res
 
 
 class LayerNormV2(Module):
     """Layer normalization block."""
 
-    def __init__(self, dims: int, eps: float = 1e-5, use_bias=True):
-        self.weight = Weight("weight", DType.float32, (dims,))
-        self.bias = Weight("bias", DType.float32, (dims,)) if use_bias else None
+    def __init__(
+        self, dims: int, device: DeviceRef, eps: float = 1e-5, use_bias=True
+    ):
+        self.weight = Weight("weight", DType.float32, (dims,), device=device)
+        self.bias = (
+            Weight("bias", DType.float32, (dims,), device=device)
+            if use_bias
+            else None
+        )
         self.eps = eps
 
     def __call__(self, input: TensorValue):
@@ -64,7 +80,8 @@ class LayerNormV2(Module):
             if self.bias
             # If bias wasn't passed then use bias-less layer norm (beta = 0).
             else ops.broadcast_to(
-                ops.constant(0.0, input.dtype), shape=(input.shape[-1],)
+                ops.constant(0.0, input.dtype, self.weight.device),
+                shape=(input.shape[-1],),
             )
         )
         return ops.layer_norm(

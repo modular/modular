@@ -23,7 +23,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, _reconcile_weights
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
@@ -335,9 +335,11 @@ class MistralModel(PipelineModel[TextContext]):
         nn_model = Mistral(model_config)
         nn_model.load_state_dict(state_dict, weight_alignment=1)
 
-        tokens_type = TensorType(DType.int64, shape=["total_seq_len"])
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_refs[0]
+        )
         input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"]
+            DType.uint32, shape=["input_row_offsets_len"], device=device_refs[0]
         )
         return_n_logits_type = TensorType(
             DType.int64,
@@ -368,7 +370,10 @@ class MistralModel(PipelineModel[TextContext]):
             )
             graph.output(*outputs)
 
-        model = session.load(graph, weights_registry=nn_model.state_dict())
+        model = session.load(
+            graph,
+            weights_registry=_reconcile_weights(graph, nn_model.state_dict()),
+        )
         after = time.perf_counter()
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"

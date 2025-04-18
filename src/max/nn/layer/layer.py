@@ -77,12 +77,12 @@ class Module(Layer, ABC):
 
         from max import nn
         from max.dtype import DType
-        from max.graph import Weight, ops
+        from max.graph import Weight, ops, DeviceRef
 
         class Linear(nn.Module):
             def __init__(self, in_dims, out_dims):
                 super().__init__()
-                self.weight = Weight("weight", DType.float32, (in_dim, out_dim))
+                self.weight = Weight("weight", DType.float32, (in_dim, out_dim), DeviceRef.CPU())
 
             def __call__(self, x):
                 return x @ self.weight.T

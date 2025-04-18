@@ -14,7 +14,7 @@
 """Mixture of Experts Gate Layer."""
 
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn import LinearV2
 from max.nn.layer import Module
 
@@ -45,6 +45,7 @@ class MaxMoEGate(Module):
 
     def __init__(
         self,
+        device: DeviceRef,
         num_experts_per_tok: int = 6,
         n_routed_experts: int = 64,
         routed_scaling_factor: float = 1.0,
@@ -55,6 +56,7 @@ class MaxMoEGate(Module):
     ):
         """
         Args:
+            device: The device this layer's weights are on.
             gate_score: Linear layer that projects from hidden_size to intermediate_size.
             num_experts_per_tok: Number of experts to route each token to.
             n_routed_experts: Total number of experts in the model.
@@ -74,7 +76,7 @@ class MaxMoEGate(Module):
             in_dim=gating_dim,
             out_dim=n_routed_experts,
             dtype=DType.float32,
-            # device=DeviceRef.GPU(),  # TODO: GPU execution doesn't work
+            device=device,
             has_bias=False,
         )
         self.num_experts_per_tok = num_experts_per_tok

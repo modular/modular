@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from max.graph import DeviceRef
 from max.nn import (
     MLPV2,
     AttentionWithRopeV2,
@@ -42,6 +43,7 @@ class Mistral(Transformer):
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
             interleaved=False,
+            device=DeviceRef.GPU(),
         )
 
         layers = [

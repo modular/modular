@@ -22,7 +22,13 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    _reconcile_weights,
+)
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
@@ -404,7 +410,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         logger.info("Building and compiling model...")
         before = time.perf_counter()
         graph = self._build_graph(self.weights, self.adapter)
-        model = session.load(graph, weights_registry=self.state_dict)
+        model = session.load(
+            graph, weights_registry=_reconcile_weights(graph, self.state_dict)
+        )
         after = time.perf_counter()
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"

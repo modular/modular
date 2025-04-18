@@ -153,6 +153,7 @@ class Llama4TextModel(Module):
             max_seq_len=config.max_seq_len,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
+            device=config.devices[0],
         )
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(

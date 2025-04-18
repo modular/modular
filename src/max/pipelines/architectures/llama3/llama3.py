@@ -54,6 +54,7 @@ class Llama3(Transformer):
             max_seq_len=config.max_seq_len,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
+            device=config.devices[0],
         )
 
         # Select norm layer class.
@@ -68,7 +69,7 @@ class Llama3(Transformer):
             )
         else:
             create_norm = functools.partial(
-                ConstantLayerNorm, config.hidden_size
+                ConstantLayerNorm, config.hidden_size, config.devices[0]
             )
 
         # Select linear layer class.

@@ -43,13 +43,13 @@ class MoE(Module):
 
     def __init__(
         self,
+        device: DeviceRef,
         hidden_dim: int = 5120,
         top_k: int = 1,
         num_experts: int = 16,
         intermediate_size: int = 8192,
         intermediate_size_mlp: int = 16384,
         dtype: DType = DType.bfloat16,
-        device: DeviceRef | None = None,
     ):
         """
         Args:
@@ -90,7 +90,7 @@ class MoE(Module):
                 self.hidden_dim,
             ),
             dtype=dtype,
-            device=DeviceRef.CPU(),
+            device=device,
         )
 
         self.gate_up_proj = Weight(
@@ -101,7 +101,7 @@ class MoE(Module):
                 self.intermediate_size_mlp,
             ),
             dtype=dtype,
-            device=DeviceRef.CPU(),
+            device=device,
         )
 
         # Shared experts weights

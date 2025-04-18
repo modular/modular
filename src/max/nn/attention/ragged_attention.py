@@ -49,8 +49,8 @@ class RaggedAttention(Module):
         hidden_size: int,
         kv_params: KVCacheParams,
         layer_idx: int,
-        dtype: DType = DType.float32,
         devices: list[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
         linear_cls: Callable[..., LinearV2] = LinearV2,
         stacked_qkv: bool = False,
         scale: float | None = None,
@@ -100,7 +100,7 @@ class RaggedAttention(Module):
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.clip_qkv = clip_qkv
-        self.devices = devices
+        self.devices = devices or [DeviceRef.CPU()]
 
         kv_weight_dim = (
             hidden_size // num_attention_heads
@@ -115,42 +115,55 @@ class RaggedAttention(Module):
                 name="qkv_proj.weight",
                 dtype=dtype,
                 shape=[hidden_size + 2 * kv_weight_dim, hidden_size],
+                device=self.devices[0],
             )
         else:
             self.q_proj = Weight(
                 name="q_proj.weight",
                 dtype=dtype,
                 shape=[hidden_size, hidden_size],
+                device=self.devices[0],
             )
             self.k_proj = Weight(
                 name="k_proj.weight",
                 dtype=dtype,
                 shape=[kv_weight_dim, hidden_size],
+                device=self.devices[0],
             )
             self.v_proj = Weight(
                 name="v_proj.weight",
                 dtype=dtype,
                 shape=[kv_weight_dim, hidden_size],
+                device=self.devices[0],
             )
 
         if has_bias:
             assert not stacked_qkv, "Bias is not supported with stacked qkv."
 
             self.bias_q = Weight(
-                name="q_proj.bias", dtype=dtype, shape=[hidden_size]
+                name="q_proj.bias",
+                dtype=dtype,
+                shape=[hidden_size],
+                device=self.devices[0],
             )
             self.bias_k = Weight(
-                name="k_proj.bias", dtype=dtype, shape=[kv_weight_dim]
+                name="k_proj.bias",
+                dtype=dtype,
+                shape=[kv_weight_dim],
+                device=self.devices[0],
             )
             self.bias_v = Weight(
-                name="v_proj.bias", dtype=dtype, shape=[kv_weight_dim]
+                name="v_proj.bias",
+                dtype=dtype,
+                shape=[kv_weight_dim],
+                device=self.devices[0],
             )
 
         self.o_proj = linear_cls(
             in_dim=hidden_size,
             out_dim=hidden_size,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=self.devices[0],
         )
 
     @property

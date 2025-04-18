@@ -55,7 +55,9 @@ class RMSNormV2(Module):
         eps: float = 1e-6,
     ):
         super().__init__()
-        self.weight = Weight("weight", DType.float32, [dim])
+        self.weight = Weight(
+            "weight", DType.float32, [dim], device=DeviceRef.CPU()
+        )
         self.eps = eps
 
     def __call__(self, x: TensorValue) -> TensorValue:

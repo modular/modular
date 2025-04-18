@@ -312,7 +312,7 @@ class Conv3DV2(Module):
                     height,
                     width,
                 ],
-                device=DeviceRef.CPU() if self.device else None,
+                device=self.device or DeviceRef.CPU(),
             )
         else:
             self.filter = Weight(
@@ -325,7 +325,7 @@ class Conv3DV2(Module):
                     in_channels // num_groups,
                     out_channels,
                 ],
-                device=DeviceRef.CPU() if self.device else None,
+                device=self.device or DeviceRef.CPU(),
             )
 
         if has_bias:
@@ -333,7 +333,7 @@ class Conv3DV2(Module):
                 name=f"{name}.bias" if name else "bias",
                 dtype=dtype,
                 shape=(out_channels,),
-                device=DeviceRef.CPU() if self.device else None,
+                device=self.device or DeviceRef.CPU(),
             )
         # These need to be casted as the underlying ops.conv3d call
         # expects them to only be tuple types.

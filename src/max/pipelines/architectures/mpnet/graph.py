@@ -16,7 +16,7 @@ import math
 
 import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
 from max.nn import Embedding, LayerNorm, Linear, Sequential
@@ -43,6 +43,7 @@ class MPNetEmbeddings(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
+        device: DeviceRef,
     ):
         config = self.config = huggingface_config
         self.word_embeddings = Embedding(
@@ -53,7 +54,8 @@ class MPNetEmbeddings(Layer):
                     config.hidden_size,
                 ],
                 _quantization_encoding(pipeline_config),
-            )
+            ),
+            device,
         )
         self.position_embeddings = Embedding(
             weights.position_embeddings.weight.allocate(
@@ -62,7 +64,8 @@ class MPNetEmbeddings(Layer):
                     config.max_position_embeddings,
                     config.hidden_size,
                 ],
-            )
+            ),
+            device,
         )
         self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
@@ -351,7 +354,10 @@ class MPNetLayer(Layer):
             dtype,
         )
         self.intermediate = MPNetIntermediate(
-            pipeline_config, weights.intermediate, huggingface_config, dtype
+            pipeline_config,
+            weights.intermediate,
+            huggingface_config,
+            dtype,
         )
         self.output = MPNetOutput(
             pipeline_config, weights.output, huggingface_config, dtype
@@ -382,6 +388,7 @@ class MPNetEncoder(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
+        device: DeviceRef,
     ):
         config = self.config = huggingface_config
         self.n_heads = config.num_attention_heads
@@ -401,7 +408,8 @@ class MPNetEncoder(Layer):
                     config.relative_attention_num_buckets,
                     config.num_attention_heads,
                 ],
-            )
+            ),
+            device=device,
         )
         self.num_attention_heads = config.num_attention_heads
 
@@ -484,18 +492,21 @@ class MPNetModel(Layer):
         weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
+        device: DeviceRef,
     ):
         self.embeddings = MPNetEmbeddings(
             pipeline_config,
             weights.embeddings,
             huggingface_config=huggingface_config,
             dtype=dtype,
+            device=device,
         )
         self.encoder = MPNetEncoder(
             pipeline_config,
             weights.encoder,
             huggingface_config=huggingface_config,
             dtype=dtype,
+            device=device,
         )
         self.pool_outputs = pipeline_config.pool_embeddings
 
@@ -542,14 +553,19 @@ def build_graph(
     weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
+    input_device: DeviceRef,
 ) -> Graph:
     # Graph input types.
-    input_ids_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
+    input_ids_type = TensorType(
+        DType.int64, shape=["batch_size", "seq_len"], device=input_device
+    )
     attention_mask_type = TensorType(
-        DType.float32, shape=["batch_size", "seq_len"]
+        DType.float32, shape=["batch_size", "seq_len"], device=input_device
     )
 
-    mpnet = MPNetModel(pipeline_config, weights, huggingface_config, dtype)
+    mpnet = MPNetModel(
+        pipeline_config, weights, huggingface_config, dtype, device=input_device
+    )
 
     # Initialize Graph.
     return Graph(

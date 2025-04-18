@@ -13,7 +13,7 @@
 
 
 from max.dtype import DType
-from max.graph import Graph, ops
+from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import Weights
 from max.nn import Conv2D, Linear, RMSNorm
 from max.pipelines import PipelineConfig
@@ -94,7 +94,10 @@ def _feed_forward(
 
 
 def _rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
-    return RMSNorm(weights.weight.allocate(DType.bfloat16, [dims]), eps)
+    return RMSNorm(
+        weights.weight.allocate(DType.bfloat16, [dims], device=DeviceRef.GPU()),
+        eps,
+    )
 
 
 def _encoder_attention(

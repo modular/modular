@@ -46,16 +46,23 @@ class ConstantLayerNorm(Module):
     gamma: np.ndarray
     beta: np.ndarray
     eps: float = 1e-5
+    device: DeviceRef
 
-    def __init__(self, dims, eps: float = 1e-5):
+    def __init__(
+        self,
+        dims,
+        device: DeviceRef,
+        eps: float = 1e-5,
+    ):
         super().__init__()
         self.gamma = np.ones(dims)
         self.beta = np.zeros(dims)
         self.eps = eps
+        self.device = device
 
     def __call__(self, input: TensorValue):
-        gamma = ops.constant(self.gamma, DType.float32)
-        beta = ops.constant(self.beta, DType.float32)
+        gamma = ops.constant(self.gamma, DType.float32, self.device)
+        beta = ops.constant(self.beta, DType.float32, self.device)
         return ops.cast(
             ops.layer_norm(
                 ops.cast(input, DType.float32),
@@ -80,6 +87,7 @@ class NaiveLlama3(NaiveTransformer):
             max_seq_len=config.max_seq_len,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
+            device=config.devices[0],
         )
 
         create_norm: Callable[..., Module]
@@ -93,7 +101,7 @@ class NaiveLlama3(NaiveTransformer):
             )
         else:
             create_norm = functools.partial(
-                ConstantLayerNorm, config.hidden_size
+                ConstantLayerNorm, config.hidden_size, config.devices[0]
             )
 
         linear_cls: Callable[..., LinearV2]

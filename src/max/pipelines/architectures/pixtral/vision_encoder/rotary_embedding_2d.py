@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 from max.dtype import DType
-from max.graph import Dim, DimLike, TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, Dim, DimLike, TensorValue, TensorValueLike, ops
 from max.nn.layer import Layer
 
 
@@ -29,12 +29,14 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
         TensorValue(height),
         ops.constant(1, DType.int64),
         out_dim=height,
+        device=DeviceRef.GPU(),
     )
     col_indices = ops.range(
         ops.constant(0, DType.int64),
         TensorValue(width),
         ops.constant(1, DType.int64),
         out_dim=width,
+        device=DeviceRef.GPU(),
     )
 
     # repeat row indices for each row [[0, ..., 0], ..., [width=n_cols-1, ..., width-1]]
@@ -113,6 +115,7 @@ class RotaryEmbedding2D(Layer):
             ops.constant(head_dim, DType.float64),  # type: ignore
             ops.constant(2, DType.float64),
             out_dim=head_dim // 2,
+            device=DeviceRef.GPU(),
         )
         # 1D tensor of length head_dim // 2 = 32
         freqs = ops.cast(1.0 / (self.theta ** (iota / head_dim)), DType.float32)
@@ -124,6 +127,7 @@ class RotaryEmbedding2D(Layer):
             ops.constant(self.max_patches_per_side, DType.float32),
             ops.constant(1, DType.float32),
             out_dim=self.max_patches_per_side,
+            device=DeviceRef.GPU(),
         )
         # 1D tensor of length max_patches_per_side = 64
         w = ops.range(
@@ -131,6 +135,7 @@ class RotaryEmbedding2D(Layer):
             ops.constant(self.max_patches_per_side, DType.float32),
             ops.constant(1, DType.float32),
             out_dim=self.max_patches_per_side,
+            device=DeviceRef.GPU(),
         )
         # create matrices of freqs = outer product of height and width indices with their respective frequency.
         # 2D tensors mapping patch positions to rotary embeddings. shape =(max_patches_per_side = 64, head_dim//4 =16)

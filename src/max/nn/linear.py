@@ -74,7 +74,7 @@ class LinearV2(Module):
     """The optional bias vector stored on CPU with shape (out_dim,).
     Model init moves the bias to :obj:`device` if present."""
 
-    device: DeviceRef | None
+    device: DeviceRef
     """The device where matrix operations are performed."""
 
     def __init__(
@@ -103,14 +103,14 @@ class LinearV2(Module):
         """
         super().__init__()
 
-        self.device = device
+        self.device = device or DeviceRef.CPU()
         self.clip_weight = clip_weight
 
         self.weight = Weight(
             name=f"{name}.weight" if name else "weight",
             dtype=dtype,
             shape=(out_dim, in_dim),
-            device=DeviceRef.CPU() if self.device else None,
+            device=self.device,
             quantization_encoding=quantization_encoding,
         )
 
@@ -119,7 +119,7 @@ class LinearV2(Module):
                 name=f"{name}.bias" if name else "bias",
                 dtype=dtype,
                 shape=(out_dim,),
-                device=DeviceRef.CPU() if self.device else None,
+                device=self.device,
                 quantization_encoding=quantization_encoding,
             )
 
@@ -283,9 +283,14 @@ class Linear(Layer):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         weight = TensorValue(self.weight)
+        if weight.type.device != x.type.device:
+            weight = weight.to(x.type.device or DeviceRef.CPU())
         res = x @ weight.T
         if self.bias is not None:
-            res += self.bias
+            bias = TensorValue(self.bias)
+            if bias.type.device != x.type.device:
+                bias = bias.to(x.type.device or DeviceRef.CPU())
+            res += bias
         return res
 
     @classmethod
@@ -369,6 +374,7 @@ class QLinear(Linear):
     def __call__(self, x: TensorValue) -> TensorValue:
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
+        weight = weight.to(x.type.device or DeviceRef.CPU())
         res = ops.qmatmul(
             self.quantization_encoding,
             None,
@@ -376,7 +382,8 @@ class QLinear(Linear):
             weight,
         )
         if self.bias is not None:
-            res += TensorValue(self.bias)
+            bias = TensorValue(self.bias).to(x.type.device or DeviceRef.CPU())
+            res += bias
         return res
 
 
@@ -518,19 +525,19 @@ class GPTQLinearV2(LinearV2):
 
         # Skip LinearV2 initialization.
         Module.__init__(self)
-        self.device = device
+        self.device = device or DeviceRef.CPU()
         self.qweight = Weight(
             name="qweight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            device=DeviceRef.CPU() if device else None,
+            device=self.device,
             quantization_encoding=quantization_encoding,
         )
         self.scales = Weight(
             name="scales",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            device=DeviceRef.CPU() if device else None,
+            device=self.device,
             quantization_encoding=quantization_encoding,
         )
 
@@ -548,7 +555,7 @@ class GPTQLinearV2(LinearV2):
                 "perm_idx",
                 DType.int32,
                 [in_dim],
-                device=DeviceRef.CPU() if device else None,
+                device=self.device,
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:

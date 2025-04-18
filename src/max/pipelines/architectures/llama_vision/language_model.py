@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.graph.weights import Weights
 from max.nn import (
     MLP,
@@ -158,6 +158,7 @@ def cross_attention_decoder_layer(
     intermediate_size: int,
     weights: Weights,
     layer_idx: int,
+    device: DeviceRef,
 ) -> CrossAttentionDecoderLayer:
     head_dim = hidden_size // num_attention_heads
     sdpa_attn = CrossSdpaAttention(
@@ -171,6 +172,7 @@ def cross_attention_decoder_layer(
                     num_attention_heads * head_dim,
                     hidden_size,
                 ],
+                device=device,
             ),
             bias=None,
         ),
@@ -180,6 +182,7 @@ def cross_attention_decoder_layer(
                 num_key_value_heads * head_dim,
                 hidden_size,
             ],
+            device=device,
         ),
         wv=weights.cross_attn.v_proj.weight.allocate(
             dtype,
@@ -187,6 +190,7 @@ def cross_attention_decoder_layer(
                 num_key_value_heads * head_dim,
                 hidden_size,
             ],
+            device=device,
         ),
         o_proj=Linear(
             weight=weights.cross_attn.o_proj.weight.allocate(
@@ -195,20 +199,19 @@ def cross_attention_decoder_layer(
                     hidden_size,
                     num_attention_heads * head_dim,
                 ],
+                device=device,
             ),
             bias=None,
         ),
         q_norm=RMSNorm(
             weight=weights.cross_attn.q_norm.weight.allocate(
-                dtype,
-                [head_dim],
+                dtype, [head_dim], device=device
             ),
             eps=rms_norm_eps,
         ),
         k_norm=RMSNorm(
             weight=weights.cross_attn.k_norm.weight.allocate(
-                dtype,
-                [head_dim],
+                dtype, [head_dim], device=device
             ),
             eps=rms_norm_eps,
         ),
@@ -217,14 +220,12 @@ def cross_attention_decoder_layer(
         cross_attn=sdpa_attn,
         input_layernorm=RMSNorm(
             weight=weights.input_layernorm.weight.allocate(
-                dtype,
-                [hidden_size],
+                dtype, [hidden_size], device=device
             ),
             eps=rms_norm_eps,
         ),
         cross_attn_attn_gate=weights.cross_attn_attn_gate.allocate(
-            dtype,
-            [1],
+            dtype, [1], device=device
         ),
         mlp=MLP(
             gate_proj=Linear(
@@ -234,6 +235,7 @@ def cross_attention_decoder_layer(
                         intermediate_size,
                         hidden_size,
                     ],
+                    device=device,
                 ),
                 bias=None,
             ),
@@ -244,6 +246,7 @@ def cross_attention_decoder_layer(
                         hidden_size,
                         intermediate_size,
                     ],
+                    device=device,
                 ),
                 bias=None,
             ),
@@ -254,20 +257,19 @@ def cross_attention_decoder_layer(
                         intermediate_size,
                         hidden_size,
                     ],
+                    device=device,
                 ),
                 bias=None,
             ),
         ),
         post_attention_layernorm=RMSNorm(
             weight=weights.post_attention_layernorm.weight.allocate(
-                dtype,
-                [hidden_size],
+                dtype, [hidden_size], device=device
             ),
             eps=rms_norm_eps,
         ),
         cross_attn_mlp_gate=weights.cross_attn_mlp_gate.allocate(
-            dtype,
-            [1],
+            dtype, [1], device=device
         ),
     )
 
@@ -283,22 +285,30 @@ def self_attention_decoder_layer(
     weights: Weights,
     layer_idx: int,
     rotary_embedding: OptimizedRotaryEmbedding,
+    device: DeviceRef,
 ) -> TransformerBlock:
     head_dim = hidden_size // num_attention_heads
 
     wq = weights.self_attn.q_proj.weight.allocate(
-        dtype, shape=[num_attention_heads * head_dim, hidden_size]
+        dtype,
+        shape=[num_attention_heads * head_dim, hidden_size],
+        device=device,
     )
     wk = weights.self_attn.k_proj.weight.allocate(
-        dtype, shape=[num_key_value_heads * head_dim, hidden_size]
+        dtype,
+        shape=[num_key_value_heads * head_dim, hidden_size],
+        device=device,
     )
     wv = weights.self_attn.v_proj.weight.allocate(
-        dtype, shape=[num_key_value_heads * head_dim, hidden_size]
+        dtype,
+        shape=[num_key_value_heads * head_dim, hidden_size],
+        device=device,
     )
     o_proj = Linear(
         weight=weights.self_attn.o_proj.weight.allocate(
             dtype,
             shape=[hidden_size, num_attention_heads * head_dim],
+            device=device,
         )
     )
 
@@ -319,36 +329,32 @@ def self_attention_decoder_layer(
         mlp=MLP(
             gate_proj=Linear(
                 weight=weights.mlp.gate_proj.weight.allocate(
-                    dtype,
-                    [intermediate_size, hidden_size],
+                    dtype, [intermediate_size, hidden_size], device=device
                 ),
                 bias=None,
             ),
             down_proj=Linear(
                 weight=weights.mlp.down_proj.weight.allocate(
-                    dtype,
-                    [hidden_size, intermediate_size],
+                    dtype, [hidden_size, intermediate_size], device=device
                 ),
                 bias=None,
             ),
             up_proj=Linear(
                 weight=weights.mlp.up_proj.weight.allocate(
-                    dtype,
-                    [intermediate_size, hidden_size],
+                    dtype, [intermediate_size, hidden_size], device=device
                 ),
                 bias=None,
             ),
         ),
         attention_norm=RMSNorm(
             weight=weights.input_layernorm.weight.allocate(
-                dtype,
-                [hidden_size],
+                dtype, [hidden_size], device=device
             ),
             eps=rms_norm_eps,
         ),
         mlp_norm=RMSNorm(
             weight=weights.post_attention_layernorm.weight.allocate(
-                dtype, [hidden_size]
+                dtype, [hidden_size], device=device
             ),
             eps=rms_norm_eps,
         ),
@@ -369,6 +375,7 @@ def instantiate_language_model(
     intermediate_size: int,
     kv_params: KVCacheParams,
     weights: Weights,
+    device: DeviceRef,
 ) -> CausalLanguageModel:
     layers: list[CrossAttentionDecoderLayer | TransformerBlock] = []
 
@@ -381,6 +388,7 @@ def instantiate_language_model(
         theta=rope_theta,
         max_seq_len=max_seq_len,
         interleaved=False,
+        device=device,
     )
 
     # Track the cross attention KV cache layer index to compute the self
@@ -404,6 +412,7 @@ def instantiate_language_model(
                     intermediate_size=intermediate_size,
                     weights=curr_layer_weight,
                     layer_idx=cross_kv_layer_idx,
+                    device=device,
                 )
             )
         else:
@@ -421,6 +430,7 @@ def instantiate_language_model(
                     # number of cross KV layers so far.
                     layer_idx=layer_idx - cross_kv_layer_idx + 1,
                     rotary_embedding=rotary_embedding,
+                    device=device,
                 )
             )
 
@@ -435,12 +445,12 @@ def instantiate_language_model(
                     vocab_size + 8,
                     hidden_size,
                 ],
+                device=device,
             ),
         ),
         norm=RMSNorm(
             weight=weights.language_model.model.norm.weight.allocate(
-                dtype,
-                [hidden_size],
+                dtype, [hidden_size], device=device
             ),
             eps=rms_norm_eps,
         ),
@@ -461,6 +471,7 @@ def instantiate_language_model(
                     vocab_size,
                     hidden_size,
                 ],
+                device=device,
             ),
             bias=None,
         ),

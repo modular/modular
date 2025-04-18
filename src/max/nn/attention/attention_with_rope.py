@@ -165,8 +165,8 @@ class AttentionWithRopeV2(Module):
         hidden_size: int,
         kv_params: KVCacheParams,
         layer_idx: int,
-        dtype: DType = DType.float32,
         devices: list[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
         linear_cls: Callable[..., LinearV2] = LinearV2,
         stacked_qkv: bool = False,
         scale: float | None = None,
@@ -205,7 +205,7 @@ class AttentionWithRopeV2(Module):
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.clip_qkv = clip_qkv
-        self.devices = devices
+        self.devices = devices or [DeviceRef.CPU()]
 
         if stacked_qkv and clip_qkv:
             raise ValueError(
@@ -230,42 +230,55 @@ class AttentionWithRopeV2(Module):
                 name="qkv_proj.weight",
                 dtype=dtype,
                 shape=[q_weight_dim + 2 * kv_weight_dim, hidden_size],
+                device=self.devices[0],
             )
         else:
             self.q_proj = Weight(
                 name="q_proj.weight",
                 dtype=dtype,
                 shape=[q_weight_dim, hidden_size],
+                device=self.devices[0],
             )
             self.k_proj = Weight(
                 name="k_proj.weight",
                 dtype=dtype,
                 shape=[kv_weight_dim, hidden_size],
+                device=self.devices[0],
             )
             self.v_proj = Weight(
                 name="v_proj.weight",
                 dtype=dtype,
                 shape=[kv_weight_dim, hidden_size],
+                device=self.devices[0],
             )
 
         if has_bias:
             assert not stacked_qkv, "Bias is not supported with stacked qkv."
 
             self.bias_q = Weight(
-                name="q_proj.bias", dtype=dtype, shape=[q_weight_dim]
+                name="q_proj.bias",
+                dtype=dtype,
+                shape=[q_weight_dim],
+                device=self.devices[0],
             )
             self.bias_k = Weight(
-                name="k_proj.bias", dtype=dtype, shape=[kv_weight_dim]
+                name="k_proj.bias",
+                dtype=dtype,
+                shape=[kv_weight_dim],
+                device=self.devices[0],
             )
             self.bias_v = Weight(
-                name="v_proj.bias", dtype=dtype, shape=[kv_weight_dim]
+                name="v_proj.bias",
+                dtype=dtype,
+                shape=[kv_weight_dim],
+                device=self.devices[0],
             )
 
         self.o_proj = linear_cls(
             in_dim=q_weight_dim,
             out_dim=hidden_size,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=self.devices[0] if devices else None,
         )
 
     @property
@@ -434,36 +447,41 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         self.BUFFER_TOK_SIZE = 16 * 1024
 
         self.scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
-        self.devices = devices
+        self.devices = devices or [DeviceRef.CPU()]
 
         if self.q_lora_rank is not None:
             self.q_a_proj = Weight(
                 name="q_a_proj.weight",
                 dtype=dtype,
                 shape=(self.q_lora_rank, self.hidden_size),
+                device=self.devices[0],
             )
             self.q_a_layernorm = RMSNormV2(dim=self.q_lora_rank, eps=1e-6)
             self.q_b_proj = Weight(
                 name="q_b_proj.weight",
                 dtype=dtype,
                 shape=(self.n_heads * self.qk_head_dim, self.q_lora_rank),
+                device=self.devices[0],
             )
         else:
             self.q_proj = Weight(
                 name="q_proj.weight",
                 dtype=dtype,
                 shape=(self.n_heads * self.qk_head_dim, self.hidden_size),
+                device=self.devices[0],
             )
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
             dtype=dtype,
             shape=(self.kv_lora_rank,),
+            device=self.devices[0],
         )
         self.kv_a_proj_with_mqa = Weight(
             name="kv_a_proj_with_mqa.weight",
             dtype=dtype,
             shape=(self.cache_head_dim, self.hidden_size),
+            device=self.devices[0],
         )
         self.kv_b_proj = Weight(
             name="kv_b_proj.weight",
@@ -472,12 +490,13 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
                 self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
                 self.kv_lora_rank,
             ),
+            device=self.devices[0],
         )
         self.o_proj = linear_cls(
             in_dim=self.n_heads * self.v_head_dim,
             out_dim=self.hidden_size,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=self.devices[0],
         )
 
     @property
@@ -784,13 +803,14 @@ class GGUFQAttentionWithRope(AttentionWithRopeV2):
         self.scale = (
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
-        self.devices = devices
+        self.devices = devices or [DeviceRef.CPU()]
 
         self.q_proj = Weight(
             name="q_proj.weight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
             quantization_encoding=quantization_encoding,
+            device=self.devices[0],
         )
 
         self.k_proj = Weight(
@@ -798,12 +818,14 @@ class GGUFQAttentionWithRope(AttentionWithRopeV2):
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
             quantization_encoding=quantization_encoding,
+            device=self.devices[0],
         )
         self.v_proj = Weight(
             name="v_proj.weight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
             quantization_encoding=quantization_encoding,
+            device=self.devices[0],
         )
 
         self.o_proj = linear_cls(
@@ -899,8 +921,8 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
         hidden_size: int,
         kv_params: KVCacheParams,
         layer_idx: int,
-        dtype: DType = DType.float32,
         devices: list[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
         scale: float | None = None,
         linear_cls: Callable[..., LinearV2] = LinearV2,
     ):
@@ -913,7 +935,7 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.hidden_size = hidden_size
-        self.devices = devices
+        self.devices = devices or [DeviceRef.CPU()]
         self.scale = (
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
@@ -931,51 +953,51 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
             name="q_proj.qweight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
         self.k_proj_qweight = Weight(
             name="k_proj.qweight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
         self.v_proj_qweight = Weight(
             name="v_proj.qweight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
 
         self.q_proj_scales = Weight(
             name="q_proj.scales",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
         self.k_proj_scales = Weight(
             name="k_proj.scales",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
         self.v_proj_scales = Weight(
             name="v_proj.scales",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
         self.o_proj = linear_cls(
             in_dim=hidden_size,
             out_dim=hidden_size,
             dtype=dtype,
-            # device=device,
             quantization_encoding=QuantizationEncoding.GPTQ,
+            device=self.devices[0],
         )
 
         self.perm_idx = None
@@ -984,7 +1006,7 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
                 name="q_proj.perm_idx",
                 dtype=DType.int32,
                 shape=[hidden_size],
-                # device=device,
+                device=self.devices[0],
             )
 
     @property

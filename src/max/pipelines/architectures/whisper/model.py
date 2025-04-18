@@ -19,6 +19,7 @@ from typing import Optional
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
+from max.graph import _reconcile_weights
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.pipelines import (
@@ -95,7 +96,10 @@ class Whisper(PipelineModel):
             self.huggingface_config,
         )
         model = session.load(
-            graph, weights_registry=self.weights.allocated_weights
+            graph,
+            weights_registry=_reconcile_weights(
+                graph, self.weights.allocated_weights
+            ),
         )
         after = time.perf_counter()
         logger.info(

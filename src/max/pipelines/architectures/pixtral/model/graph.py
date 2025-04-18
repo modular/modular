@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights
 from max.nn import Linear
 from max.nn.kv_cache import KVCacheManager, KVCacheParams
@@ -180,23 +180,24 @@ def _build_graph(
     kv_cache_types = kv_manager.input_symbols()[0]
 
     input_ids_type = TensorType(
-        DType.int64,
-        shape=["total_seq_len"],
+        DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
     )
     # TODO: should be changed to add "batch_size", "n_images" dims when working with multiple images
     pixel_values_type = TensorType(
         DType.float32,
         shape=["image_height", "image_width", "num_channels"],
+        device=DeviceRef.GPU(),
     )
 
     attention_mask_type = TensorType(
         DType.float32,
         shape=["batch_size", 1, "num_patches", "num_patches"],
+        device=DeviceRef.GPU(),
     )
 
     # Type of start and end position of each batch in the combined total_seq_len dimension.
     input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"]
+        DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.GPU()
     )
 
     # Initialize Graph.
@@ -251,11 +252,13 @@ def _build_vision_graph(
     pixel_values_type = TensorType(
         DType.float32,
         shape=["image_height", "image_width", "num_channels"],
+        device=DeviceRef.GPU(),
     )
 
     attention_mask_type = TensorType(
         DType.float32,
         shape=["batch_size", 1, "num_patches", "num_patches"],
+        device=DeviceRef.GPU(),
     )
 
     # Initialize Graph.
@@ -298,13 +301,12 @@ def _build_text_graph(
     kv_cache_types = kv_manager.input_symbols()[0]
 
     input_ids_type = TensorType(
-        DType.int64,
-        shape=["total_seq_len"],
+        DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
     )
 
     # Type of start and end position of each batch in the combined total_seq_len dimension.
     input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"]
+        DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.GPU()
     )
 
     # num_images, num_patches_in_image, language_model_hidden_dim
@@ -316,6 +318,7 @@ def _build_text_graph(
             "num_patches_in_image",
             huggingface_config.text_config.hidden_size,
         ],
+        device=DeviceRef.GPU(),
     )
 
     # Initialize Graph.

@@ -14,7 +14,7 @@
 """Mixture of Experts Layer."""
 
 from max.dtype import DType
-from max.graph import TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
 from max.nn.linear import LinearV2
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import MaxMoEGate
@@ -41,6 +41,7 @@ class MoE(Module):
 
     def __init__(
         self,
+        device: DeviceRef,
         num_experts_per_tok: int = 6,
         ep_size: int = 1,
         experts_per_rank: int = 64,
@@ -51,6 +52,7 @@ class MoE(Module):
     ):
         """
         Args:
+            device: The device the experts are on.
             num_experts_per_tok: Number of experts to route each token to.
             ep_size: Size of expert parallel group.
             experts_per_rank: Number of experts per rank.
@@ -64,7 +66,7 @@ class MoE(Module):
         self.moe_intermediate_size = moe_intermediate_size
         self.max_position_embeddings = max_position_embeddings
         self.n_shared_experts = n_shared_experts
-        self.gate = MaxMoEGate()
+        self.gate = MaxMoEGate(device)
 
         # Initialize the weights for the MoE layer
         self.gate_proj, self.down_proj, self.up_proj = [], [], []
@@ -78,6 +80,7 @@ class MoE(Module):
                     self.moe_intermediate_size,
                 ),
                 dtype=dtype,
+                device=device,
             )
             setattr(self, f"experts.{i}.down_proj", d)
             self.down_proj.append(d)
@@ -89,6 +92,7 @@ class MoE(Module):
                     self.max_position_embeddings,
                 ),
                 dtype=dtype,
+                device=device,
             )
             setattr(self, f"experts.{i}.gate_proj", g)
             self.gate_proj.append(g)
@@ -100,6 +104,7 @@ class MoE(Module):
                     self.max_position_embeddings,
                 ),
                 dtype=dtype,
+                device=device,
             )
             setattr(self, f"experts.{i}.up_proj", u)
             self.up_proj.append(u)
@@ -109,16 +114,19 @@ class MoE(Module):
             in_dim=self.max_position_embeddings,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
             dtype=dtype,
+            device=device,
         )
         self.shared_expert_down_proj = LinearV2(
             in_dim=self.moe_intermediate_size * self.n_shared_experts,
             out_dim=self.max_position_embeddings,
             dtype=dtype,
+            device=device,
         )
         self.shared_expert_gate_proj = LinearV2(
             in_dim=self.max_position_embeddings,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
             dtype=dtype,
+            device=device,
         )
 
     def __call__(self, hidden_states: TensorValue):

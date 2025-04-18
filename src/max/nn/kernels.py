@@ -293,6 +293,7 @@ def fused_qkv_ragged_matmul_quantized(
     }
     if perm_idx:
         input = ops.gather(input, TensorValue(perm_idx), axis=1)
+        perm_idx = perm_idx.to(input.type.device or DeviceRef.CPU())
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128_desc_act",
             list((wqkv, perm_idx)),

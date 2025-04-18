@@ -59,6 +59,7 @@ class DistributedLlama3(DistributedTransformer):
             max_seq_len=config.max_seq_len,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
+            device=config.devices[0],
         )
 
         # Select norm layer class.

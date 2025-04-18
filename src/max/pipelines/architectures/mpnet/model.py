@@ -26,6 +26,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, _reconcile_weights
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
@@ -195,9 +196,13 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             self.weights,
             self.huggingface_config,
             self.dtype,
+            DeviceRef.from_device(self.devices[0]),
         )
         model = session.load(
-            graph, weights_registry=self.weights.allocated_weights
+            graph,
+            weights_registry=_reconcile_weights(
+                graph, self.weights.allocated_weights
+            ),
         )
         after = time.perf_counter()
         logger.info(

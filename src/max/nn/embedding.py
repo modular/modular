@@ -35,8 +35,13 @@ from .layer import Layer, Module
 @dataclass
 class Embedding(Layer):
     weights: TensorValueLike
+    device: Optional[DeviceRef] = None
 
     def __call__(self, indices: TensorValueLike) -> TensorValue:
+        if self.device is not None:
+            self.weights = TensorValue(self.weights).to(self.device)
+            indices = TensorValue(indices).to(self.device)
+
         result = ops.gather(self.weights, indices, axis=0)
         if (
             isinstance(self.weights, Weight)
@@ -75,7 +80,7 @@ class EmbeddingV2(Module):
     """The embedding weight matrix stored on the CPU.
     Model init moves weights to the device specified in :obj:`device`."""
 
-    device: DeviceRef | None
+    device: DeviceRef
     """The device on which embedding lookup is performed."""
 
     def __init__(
@@ -101,12 +106,12 @@ class EmbeddingV2(Module):
         """
         super().__init__()
 
-        self.device = device
+        self.device = device or DeviceRef.CPU()
         self.weight = Weight(
             name or "weight",
             dtype,
             shape=(vocab_size, hidden_dim),
-            device=DeviceRef.CPU() if self.device else None,
+            device=self.device,
             quantization_encoding=quantization_encoding,
         )
 

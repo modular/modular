@@ -54,18 +54,30 @@ class Replit(Transformer):
                 ),
                 mlp=Sequential(
                     layers=[
-                        LinearV2(config.hidden_size, 12288, config.dtype),
+                        LinearV2(
+                            config.hidden_size,
+                            12288,
+                            config.dtype,
+                            config.devices[0],
+                        ),
                         Gelu(),
-                        LinearV2(12288, config.hidden_size, config.dtype),
+                        LinearV2(
+                            12288,
+                            config.hidden_size,
+                            config.dtype,
+                            config.devices[0],
+                        ),
                     ]
                 ),
                 attention_norm=LayerNormV2(
                     config.hidden_size,
+                    config.devices[0],
                     1e-5,
                     use_bias=False,
                 ),
                 mlp_norm=LayerNormV2(
                     config.hidden_size,
+                    config.devices[0],
                     1e-5,
                     use_bias=False,
                 ),
@@ -95,6 +107,7 @@ class Replit(Transformer):
             layers=layers,
             norm=LayerNormV2(
                 config.hidden_size,
+                config.devices[0],
                 1e-5,
                 use_bias=False,
             ),
