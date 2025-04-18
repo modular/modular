@@ -39,10 +39,25 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var re: SIMD[type, size]
+    alias element_type = SIMD[type, size]
+    var re: Self.element_type
     """The real part of the complex SIMD value."""
-    var im: SIMD[type, size]
+    var im: Self.element_type
     """The imaginary part of the complex SIMD value."""
+
+    # ===-------------------------------------------------------------------===#
+    # Initialization
+    # ===-------------------------------------------------------------------===#
+
+    fn __init__(out self, re: Self.element_type, im: Self.element_type = 0):
+        """Initializes a complex SIMD value.
+
+        Args:
+            re: The real part of the complex value.
+            im: The imaginary part of the complex value.
+        """
+        self.re = re
+        self.im = im
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -147,6 +162,34 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         return Self(
             self.re.fma(rhs.re, -self.im * rhs.im),
             self.re.fma(rhs.im, self.im * rhs.re),
+        )
+
+    @always_inline
+    fn __sub__(self, rhs: Self) -> Self:
+        """Subtracts two complex values.
+
+        Args:
+            rhs: Complex value to subtract.
+
+        Returns:
+            A difference of this and RHS complex values.
+        """
+        return Self(self.re - rhs.re, self.im - rhs.im)
+
+    @always_inline
+    fn __truediv__(self, rhs: Self) -> Self:
+        """Divides two complex values.
+
+        Args:
+            rhs: Complex value to divide by.
+
+        Returns:
+            A quotient of this and RHS complex values.
+        """
+        var denom = rhs.squared_norm()
+        return Self(
+            self.re.fma(rhs.re, self.im * rhs.im) / denom,
+            self.re.fma(rhs.im, -self.im * rhs.re) / denom,
         )
 
     @always_inline
