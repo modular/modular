@@ -32,7 +32,7 @@ fn PyInit_mojo_module() -> PythonObject:
     var module: TypedPythonObject["Module"]
 
     try:
-        module = Python.create_module("bindings")
+        module = TypedPythonObject["Module"]("bindings")
     except:
         return abort[PythonObject]("failed to create Python module")
 
