@@ -47,6 +47,7 @@ from .layer_norm import layer_norm
 from .matmul import matmul
 from .nonzero import nonzero
 from .outer import outer
+from .pad import pad
 from .permute import permute
 from .quantized import dequantize, qmatmul
 from .range import range
