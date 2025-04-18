@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
 # RUN: %mojo-no-debug %s | FileCheck %s
@@ -44,7 +51,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:48:32
+        # CHECK: test_print.mojo:55:32
         print(__source_location())
 
         # ------------------------------
