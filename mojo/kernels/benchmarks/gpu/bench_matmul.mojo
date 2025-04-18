@@ -23,7 +23,7 @@ from internal_utils._utils import (
     dynamic,
     initialize,
     static,
-    random_float8,
+    random,
 )
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
@@ -125,8 +125,8 @@ fn bench_matmul[
 
     @parameter
     if dtype is DType.float8_e4m3fn:
-        random_float8(a_host.tensor)
-        random_float8(b_host.tensor)
+        random(a_host.tensor)
+        random(b_host.tensor)
     else:
         initialize(a_host.tensor, init_type)
         initialize(b_host.tensor, init_type)
