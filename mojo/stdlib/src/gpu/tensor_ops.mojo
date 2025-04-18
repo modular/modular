@@ -54,7 +54,7 @@ fn tc_reduce_gevm_8x[
     """
 
     constrained[
-        out_type == DType.float32 and in_type == DType.bfloat16,
+        out_type is DType.float32 and in_type is DType.bfloat16,
         "unsupported input/output type",
     ]()
 
@@ -90,7 +90,7 @@ fn tc_reduce_gevm_4x[
     """
 
     constrained[
-        out_type == DType.float32 and in_type == DType.bfloat16,
+        out_type is DType.float32 and in_type is DType.bfloat16,
         "unsupported input/output type",
     ]()
 
@@ -153,7 +153,7 @@ fn _tc_reduce_vector[
     """
 
     @parameter
-    if out_type == DType.float32 and in_type == DType.bfloat16:
+    if out_type is DType.float32 and in_type is DType.bfloat16:
 
         @parameter
         if simd_width == 1:

@@ -998,8 +998,8 @@ fn wgmma_async[
 
     @parameter
     if (
-        a_type == b_type == DType.bfloat16
-        and c_dtype == accum_type == DType.float32
+        a_type == b_type is DType.bfloat16
+        and c_dtype == accum_type is DType.float32
     ):
         var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
             shape_m = m.value,
@@ -1018,7 +1018,7 @@ fn wgmma_async[
 
         return rebind[StaticTuple[Scalar[c_dtype], width]](res)
 
-    elif a_type == b_type == DType.float8_e4m3fn and c_dtype == DType.float32:
+    elif a_type == b_type is DType.float8_e4m3fn and c_dtype is DType.float32:
         return __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
             shape_m = m.value,
             shape_n = n.value,
@@ -1478,13 +1478,13 @@ fn wgmma_async[
     # for now, limited support
     constrained[m == 64]()
     constrained[k == 16]()
-    constrained[a_type == DType.bfloat16]()
-    constrained[b_type == DType.bfloat16]()
-    constrained[accum_type == DType.float32]()
-    constrained[c_dtype == DType.float32]()
+    constrained[a_type is DType.bfloat16]()
+    constrained[b_type is DType.bfloat16]()
+    constrained[accum_type is DType.float32]()
+    constrained[c_dtype is DType.float32]()
     constrained[layout_a == "row"]()
     constrained[
-        layout_b == "col" or (layout_b == "row" and b_type == DType.bfloat16)
+        layout_b == "col" or (layout_b == "row" and b_type is DType.bfloat16)
     ]()
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
@@ -1496,8 +1496,8 @@ fn wgmma_async[
     if (
         m == 64
         and k == 16
-        and a_type == b_type == DType.bfloat16
-        and accum_type == c_dtype == DType.float32
+        and a_type == b_type is DType.bfloat16
+        and accum_type == c_dtype is DType.float32
     ):
         var a0 = bitcast[DType.uint32, 1](
             SIMD[DType.bfloat16, 2](
