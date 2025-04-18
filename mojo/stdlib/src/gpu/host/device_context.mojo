@@ -1540,6 +1540,7 @@ struct DeviceFunction[
             emission_kind = self._emission_kind,
             target=target,
         ]()
+        var debug_level = String(DebugLevel)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
@@ -1561,7 +1562,7 @@ struct DeviceFunction[
                 self._func_impl.asm.unsafe_ptr(),
                 len(self._func_impl.asm),
                 max_dynamic_shared_size_bytes,
-                String(DebugLevel).unsafe_cstr_ptr().bitcast[UInt8](),
+                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
             )
         )
@@ -2054,6 +2055,7 @@ struct DeviceExternalFunction:
         #     int32_t optimizationLevel)
         var module_name: String = ""
         var result = _DeviceFunctionPtr()
+        var debug_level = String(DebugLevel)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
@@ -2075,7 +2077,7 @@ struct DeviceExternalFunction:
                 asm.unsafe_ptr(),
                 len(asm),
                 max_dynamic_shared_size_bytes,
-                String(DebugLevel).unsafe_cstr_ptr().bitcast[UInt8](),
+                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
             )
         )
