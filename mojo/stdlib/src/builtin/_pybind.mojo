@@ -44,7 +44,7 @@ fn get_cpython() -> CPython:
 
 # This function is used by the compiler to create a new module.
 fn create_pybind_module[name: StaticString]() raises -> PyModule:
-    return Python.create_module(String(name))
+    return Python.create_module(name)
 
 
 fn fail_initialization(owned err: Error) -> PythonObject:

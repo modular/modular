@@ -231,7 +231,7 @@ struct Python:
         return PythonObject(module_maybe)
 
     @staticmethod
-    fn create_module(name: String) raises -> TypedPythonObject["Module"]:
+    fn create_module(name: StaticString) raises -> TypedPythonObject["Module"]:
         """Creates a Python module using the provided name.
 
         Inspired by https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1227
@@ -314,7 +314,7 @@ struct Python:
     @staticmethod
     fn add_object(
         module: TypedPythonObject["Module"],
-        name: String,
+        owned name: String,
         value: PythonObject,
     ) raises:
         """Add a new object to `module` with the given name and value.

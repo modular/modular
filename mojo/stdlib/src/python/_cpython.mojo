@@ -329,7 +329,7 @@ struct PyMethodDef(CollectionElement):
     https://docs.python.org/3/c-api/structures.html#c.PyMethodDef)."""
 
     var method_docstring: UnsafePointer[c_char]
-    """A pointer to the docstring for the method as a C string."""
+    """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -357,7 +357,7 @@ struct PyMethodDef(CollectionElement):
     fn function[
         func: fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
         func_name: StaticString,
-        docstring: String = "",
+        docstring: StaticString = StaticString(),
     ]() -> Self:
         """Create a PyMethodDef for a function.
 
@@ -375,11 +375,12 @@ struct PyMethodDef(CollectionElement):
         # Immortalize the string so we know it is permanent, and force it to be
         # nul terminated.
         alias func_name_str = get_static_string[func_name]()
+        alias docstring_str = get_static_string[docstring]()
         return PyMethodDef(
             func_name_str.unsafe_ptr().bitcast[c_char](),
             func,
             METH_VARARGS,
-            docstring.unsafe_cstr_ptr(),
+            docstring_str.unsafe_ptr().bitcast[c_char](),
         )
 
 
@@ -655,9 +656,9 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
     var free_fn: Self._free_fn_type
 
     @implicit
-    fn __init__(out self, name: String):
+    fn __init__(out self, name: StaticString):
         self.base = PyModuleDef_Base()
-        self.name = name.unsafe_cstr_ptr()
+        self.name = name.unsafe_ptr().bitcast[c_char]()
         self.docstring = UnsafePointer[c_char]()
         # means that the module does not support sub-interpreters
         self.size = -1
@@ -1099,7 +1100,7 @@ struct CPython:
 
     fn PyModule_Create(
         self,
-        name: String,
+        name: StaticString,
     ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/module.html#c.PyModule_Create).
