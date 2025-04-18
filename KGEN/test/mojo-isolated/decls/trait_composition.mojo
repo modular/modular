@@ -104,7 +104,7 @@ fn use12[T: Traits12](x: T):
 fn use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call[
     # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait3 upcast(:!Trait2_Trait3 T), "f3")
+    # CHECK-SAME: get_vtable_entry(:!Trait2_Trait3 T, "f3")
     x.f3()
 
 
@@ -194,3 +194,36 @@ fn useCond1[ElementType: Traits12](p1: Wrapper[ElementType], p2: Wrapper[Element
     # CHECK-SAME:    {"f1" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType,{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "f1")
     # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")
     p1.cond1(p2)
+
+# // -----
+
+# Check that constructor calls work with trait compositions.
+
+trait Defaultable:
+    fn __init__(out self):
+        ...
+
+
+trait IntConstructable:
+    fn __init__(out self, x: Int):
+        ...
+
+
+# CHECK-LABEL: lit.fn @"useIntConstructable
+fn useIntConstructable[T: Defaultable & IntConstructable]() -> T:
+    # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
+    # CHECK: lit.call[
+    # CHECK-SAME: get_vtable_entry(:!Defaultable_IntConstructable T, "__init__")
+    # CHECK-SAME: %[[INT33]]
+    return T(33)
+
+
+@register_passable("trivial")
+struct MyStruct(Defaultable, IntConstructable):
+    var x: Int
+
+    fn __init__(out self):
+        self.x = 42
+
+    fn __init__(out self, x: Int):
+        self.x = x
