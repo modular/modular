@@ -76,7 +76,7 @@ from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy
-from python import PythonObject, PythonObjectible
+from python import PythonObject, PythonConvertible
 
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import _TotalWritableBytes, _WriteBufferHeap, write_buffered
@@ -582,7 +582,7 @@ struct String(
     WritableCollectionElement,
     PathLike,
     _CurlyEntryFormattable,
-    PythonObjectible,
+    PythonConvertible,
 ):
     """Represents a mutable string."""
 

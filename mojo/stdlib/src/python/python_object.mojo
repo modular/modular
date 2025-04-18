@@ -33,7 +33,7 @@ from ._cpython import CPython, PyObjectPtr
 from .python import Python, _get_global_python_itf
 
 
-trait PythonObjectible:
+trait PythonConvertible:
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
@@ -137,7 +137,7 @@ struct _PyIter(Sized):
 
 @register_passable
 struct TypedPythonObject[type_hint: StaticString](
-    PythonObjectible,
+    PythonConvertible,
     SizedRaising,
 ):
     """A wrapper around `PythonObject` that indicates the type of the contained
@@ -276,7 +276,7 @@ struct PythonObject(
     SizedRaising,
     Stringable,
     Writable,
-    PythonObjectible,
+    PythonConvertible,
     _HashableWithHasher,
 ):
     """A Python object."""
@@ -469,7 +469,7 @@ struct PythonObject(
 
     @always_inline
     @staticmethod
-    fn list[T: PythonObjectible & CollectionElement](values: Span[T]) -> Self:
+    fn list[T: PythonConvertible & CollectionElement](values: Span[T]) -> Self:
         """Initialize the object from a list of values.
 
         Parameters:
@@ -492,7 +492,7 @@ struct PythonObject(
 
     @always_inline
     @staticmethod
-    fn list[*Ts: PythonObjectible](*values: *Ts) -> Self:
+    fn list[*Ts: PythonConvertible](*values: *Ts) -> Self:
         """Initialize the object from a list of values.
 
         Parameters:
@@ -508,8 +508,8 @@ struct PythonObject(
 
     @staticmethod
     fn _list[
-        *Ts: PythonObjectible
-    ](values: VariadicPack[_, _, PythonObjectible, *Ts]) -> Self:
+        *Ts: PythonConvertible
+    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> Self:
         """Initialize the object from a list literal.
 
         Parameters:
@@ -533,7 +533,7 @@ struct PythonObject(
 
     @always_inline
     @staticmethod
-    fn tuple[*Ts: PythonObjectible](*values: *Ts) -> Self:
+    fn tuple[*Ts: PythonConvertible](*values: *Ts) -> Self:
         """Initialize the object from a tuple literal.
 
         Parameters:
@@ -549,8 +549,8 @@ struct PythonObject(
 
     @staticmethod
     fn _tuple[
-        *Ts: PythonObjectible
-    ](values: VariadicPack[_, _, PythonObjectible, *Ts]) -> Self:
+        *Ts: PythonConvertible
+    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> Self:
         """Initialize the object from a tuple literal.
 
         Parameters:

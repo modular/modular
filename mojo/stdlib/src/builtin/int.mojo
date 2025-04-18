@@ -34,7 +34,7 @@ from builtin.math import (
     _CopyableLessThanComparable,
 )
 from memory import UnsafePointer
-from python import Python, PythonObject, PythonObjectible
+from python import Python, PythonObject, PythonConvertible
 from python._cpython import Py_ssize_t
 
 from utils import Writable, Writer
@@ -337,7 +337,7 @@ struct Int(
     _CurlyEntryFormattable,
     _CopyableLessThanComparable,
     EqualityComparableCollectionElement,
-    PythonObjectible,
+    PythonConvertible,
 ):
     """This type represents an integer value."""
 

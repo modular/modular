@@ -354,7 +354,7 @@ struct Python:
         return PythonObject(Dict[PythonObject, PythonObject]())
 
     @staticmethod
-    fn list[*Ts: PythonObjectible](*values: *Ts) -> PythonObject:
+    fn list[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
         """Construct an Python list of objects.
 
         Parameters:
@@ -369,7 +369,7 @@ struct Python:
         return PythonObject._list(values)
 
     @staticmethod
-    fn tuple[*Ts: PythonObjectible](*values: *Ts) -> PythonObject:
+    fn tuple[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
         """Construct an Python tuple of objects.
 
         Parameters:

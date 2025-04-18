@@ -73,7 +73,7 @@ from sys.intrinsics import likely, unlikely
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
-from python import PythonObject, PythonObjectible
+from python import PythonObject, PythonConvertible
 
 from utils.write import _WriteBufferStack
 
@@ -462,7 +462,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     FloatableRaising,
     Boolable,
     IntableRaising,
-    PythonObjectible,
+    PythonConvertible,
     RepresentableCollectionElement,
     EqualityComparableCollectionElement,
     _CurlyEntryFormattable,
