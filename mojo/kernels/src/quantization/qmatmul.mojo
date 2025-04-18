@@ -1107,7 +1107,7 @@ fn _matmul_qint4_m_any[
                     tile_n,
                     simd_width,
                     needs_correction=needs_correction,
-                    is_i8mm = kernel.aq_tuple_type() == DType.int64,
+                    is_i8mm = kernel.aq_tuple_type() is DType.int64,
                 ](
                     b_s8_buf,
                     b_ptr
