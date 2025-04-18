@@ -50,7 +50,7 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
             UnsafePointer[CUcontext],
             _DeviceContextPtr,
         ](
-            UnsafePointer.address_of(result),
+            UnsafePointer(to=result),
             ctx._handle,
         )
     )
@@ -70,7 +70,7 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
             UnsafePointer[CUstream],
             _DeviceStreamPtr,
         ](
-            UnsafePointer.address_of(result),
+            UnsafePointer(to=result),
             stream._handle,
         )
     )
@@ -242,9 +242,7 @@ fn create_tma_descriptor[
     """
     # Enforces host-side aligment
     var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
-    var tensor_map_ptr = UnsafePointer.address_of(tma_descriptor).bitcast[
-        NoneType
-    ]()
+    var tensor_map_ptr = UnsafePointer(to=tma_descriptor).bitcast[NoneType]()
 
     var global_dim_arg = stack_allocation[5, Int64]()
     var global_strides_arg = stack_allocation[5, Int64]()

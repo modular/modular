@@ -264,7 +264,7 @@ struct LaunchAttributeValue:
             policy: The `AccessPolicyWindow` to store in this attribute value.
         """
         var tmp = policy
-        var ptr = UnsafePointer.address_of(tmp)
+        var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
     @implicit
@@ -275,7 +275,7 @@ struct LaunchAttributeValue:
             dim: The dimension specification to store in this attribute value.
         """
         var tmp = StaticTuple[UInt32, 4](dim.x(), dim.y(), dim.z(), 0)
-        var ptr = UnsafePointer.address_of(tmp)
+        var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
     @implicit
@@ -286,7 +286,7 @@ struct LaunchAttributeValue:
             value: The boolean value to store in this attribute value.
         """
         var tmp = StaticTuple[UInt32, 4](Int(value), 0, 0, 0)
-        var ptr = UnsafePointer.address_of(tmp)
+        var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
 

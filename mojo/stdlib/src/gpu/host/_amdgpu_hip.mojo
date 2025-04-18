@@ -49,7 +49,7 @@ fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
             UnsafePointer[hipDevice_t],
             _DeviceContextPtr,
         ](
-            UnsafePointer.address_of(result),
+            UnsafePointer(to=result),
             ctx._handle,
         )
     )
@@ -69,7 +69,7 @@ fn HIP(stream: DeviceStream) raises -> hipStream_t:
             UnsafePointer[hipStream_t],
             _DeviceStreamPtr,
         ](
-            UnsafePointer.address_of(result),
+            UnsafePointer(to=result),
             stream._handle,
         )
     )

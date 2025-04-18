@@ -427,7 +427,7 @@ fn _start_range(
         var info = EventAttributes(
             message=message, color=color, category=category
         )
-        return _RangeStart()(UnsafePointer.address_of(info._value))
+        return _RangeStart()(UnsafePointer(to=info._value))
     else:
         return _RangeStart()(message.unsafe_ptr())
 
@@ -456,7 +456,7 @@ fn _mark(
         var info = EventAttributes(
             message=message, color=color, category=category
         )
-        _Mark()(UnsafePointer.address_of(info._value))
+        _Mark()(UnsafePointer(to=info._value))
     else:
         _Mark()(message.unsafe_ptr())
 
@@ -487,9 +487,7 @@ struct Range:
     fn __enter__(mut self):
         @parameter
         if has_nvidia_gpu_accelerator():
-            self._id = self._start_fn(
-                UnsafePointer.address_of(self._info._value)
-            )
+            self._id = self._start_fn(UnsafePointer(to=self._info._value))
         else:
             self._id = self._start_fn(self._info._value.message)
 
@@ -536,7 +534,7 @@ struct RangeStack:
     fn __enter__(mut self):
         @parameter
         if has_nvidia_gpu_accelerator():
-            _ = self._push_fn(UnsafePointer.address_of(self._info._value))
+            _ = self._push_fn(UnsafePointer(to=self._info._value))
         else:
             _ = self._push_fn(self._info._value.message)
 

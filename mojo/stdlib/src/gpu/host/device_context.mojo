@@ -179,8 +179,8 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
                 _SizeT,
                 _SizeT,
             ](
-                UnsafePointer.address_of(cpp_handle),
-                UnsafePointer.address_of(host_ptr),
+                UnsafePointer(to=cpp_handle),
+                UnsafePointer(to=host_ptr),
                 ctx._handle,
                 size,
                 elem_size,
@@ -227,7 +227,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
             _SizeT,
             Bool,
         ](
-            UnsafePointer.address_of(cpp_handle),
+            UnsafePointer(to=cpp_handle),
             ctx._handle,
             host_ptr,
             size,
@@ -371,8 +371,8 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
                 _SizeT,
                 _SizeT,
             ](
-                UnsafePointer.address_of(new_handle),
-                UnsafePointer.address_of(new_host_ptr),
+                UnsafePointer(to=new_handle),
+                UnsafePointer(to=new_host_ptr),
                 self._handle,
                 offset,
                 size,
@@ -726,8 +726,8 @@ struct DeviceBuffer[type: DType](
                     _SizeT,
                     _SizeT,
                 ](
-                    UnsafePointer.address_of(cpp_handle),
-                    UnsafePointer.address_of(device_ptr),
+                    UnsafePointer(to=cpp_handle),
+                    UnsafePointer(to=device_ptr),
                     ctx._handle,
                     size,
                     elem_size,
@@ -745,8 +745,8 @@ struct DeviceBuffer[type: DType](
                     _SizeT,
                     _SizeT,
                 ](
-                    UnsafePointer.address_of(cpp_handle),
-                    UnsafePointer.address_of(device_ptr),
+                    UnsafePointer(to=cpp_handle),
+                    UnsafePointer(to=device_ptr),
                     ctx._handle,
                     size,
                     elem_size,
@@ -801,7 +801,7 @@ struct DeviceBuffer[type: DType](
             _SizeT,
             Bool,
         ](
-            UnsafePointer.address_of(cpp_handle),
+            UnsafePointer(to=cpp_handle),
             ctx._handle,
             ptr,
             size,
@@ -947,8 +947,8 @@ struct DeviceBuffer[type: DType](
                 _SizeT,
                 _SizeT,
             ](
-                UnsafePointer.address_of(new_handle),
-                UnsafePointer.address_of(new_device_ptr),
+                UnsafePointer(to=new_handle),
+                UnsafePointer(to=new_device_ptr),
                 self._handle,
                 offset,
                 size,
@@ -1330,7 +1330,7 @@ struct DeviceStream:
                 _CharPtr,
                 UnsafePointer[_DeviceStreamPtr],
                 _DeviceContextPtr,
-            ](UnsafePointer.address_of(result), ctx._handle)
+            ](UnsafePointer(to=result), ctx._handle)
         )
         self._handle = result
 
@@ -1563,7 +1563,7 @@ struct DeviceFunction[
                 _CharPtr,
                 Int32,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 ctx._handle,
                 self._func_impl.module_name.unsafe_ptr(),
                 self._func_impl.function_name.unsafe_ptr(),
@@ -1823,7 +1823,7 @@ struct DeviceFunction[
 
         @parameter
         for i in range(num_args):
-            var first_word_addr = UnsafePointer.address_of(args[i])
+            var first_word_addr = UnsafePointer(to=args[i])
             dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
 
         if cluster_dim:
@@ -1962,7 +1962,7 @@ struct DeviceFunction[
                 _DeviceFunctionPtr,
                 Int32,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 self._handle,
                 attr.code,
             )
@@ -2078,7 +2078,7 @@ struct DeviceExternalFunction:
                 _CharPtr,
                 Int32,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 ctx._handle,
                 module_name.unsafe_ptr(),
                 function_name.unsafe_ptr(),
@@ -2166,7 +2166,7 @@ struct DeviceExternalFunction:
 
         @parameter
         for i in range(num_args):
-            var first_word_addr = UnsafePointer.address_of(args[i])
+            var first_word_addr = UnsafePointer(to=args[i])
             dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
 
         if cluster_dim:
@@ -2238,7 +2238,7 @@ struct DeviceExternalFunction:
                 _DeviceFunctionPtr,
                 Int32,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 self._handle,
                 attr.code,
             )
@@ -2341,7 +2341,7 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[c_char],
                 Int32,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 api.unsafe_cstr_ptr(),
                 device_id,
             )
@@ -2513,7 +2513,7 @@ struct DeviceContext(CollectionElement):
             UnsafePointer[StaticString],
             _DeviceContextPtr,
         ](
-            UnsafePointer.address_of(api_ptr),
+            UnsafePointer(to=api_ptr),
             self._handle,
         )
         return String(api_ptr)
@@ -3110,7 +3110,7 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[_DeviceTimerPtr],
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(timer_ptr),
+                UnsafePointer(to=timer_ptr),
                 self._handle,
             )
         )
@@ -3127,7 +3127,7 @@ struct DeviceContext(CollectionElement):
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
             ](
-                UnsafePointer.address_of(elapsed_nanos),
+                UnsafePointer(to=elapsed_nanos),
                 self._handle,
                 timer._handle,
             )
@@ -3180,7 +3180,7 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[_DeviceTimerPtr],
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(timer_ptr),
+                UnsafePointer(to=timer_ptr),
                 self._handle,
             )
         )
@@ -3197,7 +3197,7 @@ struct DeviceContext(CollectionElement):
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
             ](
-                UnsafePointer.address_of(elapsed_nanos),
+                UnsafePointer(to=elapsed_nanos),
                 self._handle,
                 timer._handle,
             )
@@ -3253,7 +3253,7 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[_DeviceTimerPtr],
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(timer_ptr),
+                UnsafePointer(to=timer_ptr),
                 self._handle,
             )
         )
@@ -3270,7 +3270,7 @@ struct DeviceContext(CollectionElement):
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
             ](
-                UnsafePointer.address_of(elapsed_nanos),
+                UnsafePointer(to=elapsed_nanos),
                 self._handle,
                 timer._handle,
             )
@@ -3760,7 +3760,7 @@ struct DeviceContext(CollectionElement):
                 _IntPtr,
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(value),
+                UnsafePointer(to=value),
                 self._handle,
             )
         )
@@ -3786,7 +3786,7 @@ struct DeviceContext(CollectionElement):
                 _DeviceContextPtr,
                 Int,
             ](
-                UnsafePointer.address_of(value),
+                UnsafePointer(to=value),
                 self._handle,
                 Int(attr._value),
             )
@@ -3885,7 +3885,7 @@ struct DeviceContext(CollectionElement):
                 _CharPtr,
                 _IntPtr,
                 _DeviceContextPtr,
-            ](UnsafePointer.address_of(compute_capability), self._handle)
+            ](UnsafePointer(to=compute_capability), self._handle)
         )
         return Int(compute_capability)
 
@@ -3930,8 +3930,8 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[_SizeT],
             ](
                 self._handle,
-                UnsafePointer.address_of(free),
-                UnsafePointer.address_of(total),
+                UnsafePointer(to=free),
+                UnsafePointer(to=total),
             )
         )
 
@@ -3982,7 +3982,7 @@ struct DeviceContext(CollectionElement):
                 _DeviceContextPtr,
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 self._handle,
                 peer._handle,
             )
@@ -4064,7 +4064,7 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[Bool],
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(result),
+                UnsafePointer(to=result),
                 self._handle,
             )
         )
@@ -4145,7 +4145,7 @@ struct DeviceMulticastBuffer[type: DType]:
                 _SizeT,
                 _SizeT,
             ](
-                UnsafePointer.address_of(handle),
+                UnsafePointer(to=handle),
                 ctxs_len,
                 ctxs,
                 size,
@@ -4172,8 +4172,8 @@ struct DeviceMulticastBuffer[type: DType]:
                 _DeviceMulticastBufferPtr,
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(buf_handle),
-                UnsafePointer.address_of(buf_ptr),
+                UnsafePointer(to=buf_handle),
+                UnsafePointer(to=buf_ptr),
                 self._handle,
                 ctx._handle,
             )
@@ -4198,8 +4198,8 @@ struct DeviceMulticastBuffer[type: DType]:
                 _DeviceMulticastBufferPtr,
                 _DeviceContextPtr,
             ](
-                UnsafePointer.address_of(buf_handle),
-                UnsafePointer.address_of(buf_ptr),
+                UnsafePointer(to=buf_handle),
+                UnsafePointer(to=buf_ptr),
                 self._handle,
                 ctx._handle,
             )
