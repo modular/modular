@@ -2942,8 +2942,15 @@ struct MutableStore:
                 tensor._fused_load[width](idx)
             )
 
+        @parameter
+        @always_inline
+        fn out_func[width: Int, rank: Int](index: IndexList[rank]) capturing:
+            var val = func[width](rebind[IndexList[buffer.rank]](index))
+            buffer.store(index, val)
+
         foreach[
             func,
+            out_func,
             target=target,
             _synchronous=_synchronous,
             _trace_name=_trace_name,
