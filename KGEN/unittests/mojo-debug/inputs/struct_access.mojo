@@ -39,7 +39,7 @@ fn main():
     p.first = 3
     p.second = 4
     print(p.first, p.second)  # breakpoint
-    use_address(UnsafePointer.address_of(p.first))
+    use_address(UnsafePointer(to=p.first))
 
     var pp = MyPairPair(5, 6, 7, 8)
     print(pp.second.first)  # breakpoint
