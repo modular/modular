@@ -33,7 +33,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, DEFAULT_GPU, H100, Vendor
+from gpu.host.info import A100, DEFAULT_GPU, H100
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout._ndbuffer_stub import (
@@ -352,9 +352,7 @@ fn _matmul_gpu[
     # fmt: on
 
     @parameter
-    if env_get_bool["MODULE_USE_VENDOR_BLAS", False]() or (
-        DEFAULT_GPU.vendor == Vendor.NVIDIA_GPU and DEFAULT_GPU > H100
-    ):
+    if env_get_bool["MODULE_USE_VENDOR_BLAS", False]() or DEFAULT_GPU > H100:
         return matmul_vendor[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
