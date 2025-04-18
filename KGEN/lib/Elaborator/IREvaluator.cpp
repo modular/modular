@@ -245,16 +245,21 @@ static StringAttr getBytesOf(MemoryBlobAttr value, size_t numBytes) {
 /// Extract a value of type `struct<(pointer<none>, index)>` into a StringAttr.
 FailureOr<StringAttr> IREvaluator::evaluateStringPart(TypedAttr part) {
   // Get the two parts of the struct, StructExtract will fold.
+  auto lengthAttr = dyn_cast<IntegerAttr>(StructExtractAttr::get(part, 1));
+  if (!lengthAttr) {
+    emitError({*errorLoc, "'data_to_str' length didn't resolve to a constant"});
+    return failure();
+  }
+  size_t numBytes = lengthAttr.getInt();
+  if (!numBytes)
+    return {StringAttr::get("", StringType::get(getContext()))};
 
   MemRefAttr pointerAttr =
       dyn_cast<MemRefAttr>(StructExtractAttr::get(part, 0));
-  auto lengthAttr = dyn_cast<IntegerAttr>(StructExtractAttr::get(part, 1));
-  if (!pointerAttr || !lengthAttr) {
+  if (!pointerAttr) {
     emitError({*errorLoc, "'data_to_str' did not narrow to a constant"});
     return failure();
   }
-
-  size_t numBytes = lengthAttr.getInt();
 
   // Check to see if we have a memref(interp.memory_handle(...)) because
   // we can just immediately fold it in common cases without materializing the
