@@ -648,7 +648,8 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
         pass
 
 
-# CHECK: "signature": "struct HList[T: CollectionElement, hint_trivial_type: Bool = False]",
+# FIXME(MOTO-692): This should say `T: CollectionElement`.
+# CHECK: "signature": "struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]",
 
 
 # Check that we don't generate any synthesized thunk methods

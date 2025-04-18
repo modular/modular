@@ -94,8 +94,7 @@ struct _lit_indirect_origin[
 # ===----------------------------------------------------------------------=== #
 
 
-trait CollectionElement(Copyable, Movable):
-    pass
+alias CollectionElement = Copyable & Movable
 
 
 trait KeyElement:
