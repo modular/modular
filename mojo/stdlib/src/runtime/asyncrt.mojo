@@ -65,12 +65,12 @@ struct AsyncContext:
 
     @staticmethod
     fn get_chain(ctx: UnsafePointer[AsyncContext]) -> UnsafePointer[Chain]:
-        return UnsafePointer.address_of(ctx[].chain)
+        return UnsafePointer(to=ctx[].chain)
 
     @staticmethod
     fn complete(ch: Chain):
         var tmp = ch
-        _async_complete(UnsafePointer.address_of(tmp))
+        _async_complete(UnsafePointer(to=tmp))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -121,7 +121,7 @@ struct ChainPromise:
 
     fn __init__(out self):
         self.chain = Chain()
-        _init_asyncrt_chain(UnsafePointer.address_of(self.chain))
+        _init_asyncrt_chain(UnsafePointer(to=self.chain))
 
     @implicit
     fn __init__(out self, owned chain: Chain):
@@ -129,19 +129,19 @@ struct ChainPromise:
 
     fn __del__(owned self):
         if self.chain:
-            _del_asyncrt_chain(UnsafePointer.address_of(self.chain))
+            _del_asyncrt_chain(UnsafePointer(to=self.chain))
 
     @always_inline
     fn __await__(self):
         @always_inline
         @parameter
         fn await_body(cur_hdl: AnyCoroutine):
-            _async_and_then(cur_hdl, UnsafePointer.address_of(self.chain))
+            _async_and_then(cur_hdl, UnsafePointer(to=self.chain))
 
         _suspend_async[await_body]()
 
     fn wait(self):
-        _async_wait(UnsafePointer.address_of(self.chain))
+        _async_wait(UnsafePointer(to=self.chain))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -177,7 +177,7 @@ fn run(owned handle: Coroutine[*_], out result: handle.type):
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
-    handle._set_result_slot(UnsafePointer.address_of(result))
+    handle._set_result_slot(UnsafePointer(to=result))
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(AsyncContext.get_chain(ctx))
@@ -223,7 +223,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._result)
         )
-        self._handle._set_result_slot(UnsafePointer.address_of(self._result))
+        self._handle._set_result_slot(UnsafePointer(to=self._result))
 
     fn get(self) -> ref [self._result] type:
         """Get the task's result value. Calling this on an incomplete task is
@@ -323,13 +323,13 @@ struct TaskGroup:
 
     fn __init__(out self):
         var chain = Chain()
-        _init_asyncrt_chain(UnsafePointer[Chain].address_of(chain))
+        _init_asyncrt_chain(UnsafePointer[Chain](to=chain))
         self.counter = Atomic[DType.index](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(owned self):
-        _del_asyncrt_chain(UnsafePointer[Chain].address_of(self.chain))
+        _del_asyncrt_chain(UnsafePointer[Chain](to=self.chain))
 
     @always_inline
     fn _counter_decr(mut self) -> Int:
@@ -342,7 +342,7 @@ struct TaskGroup:
 
     fn _task_complete(mut self):
         if self._counter_decr() == 0:
-            _async_complete(UnsafePointer[Chain].address_of(self.chain))
+            _async_complete(UnsafePointer[Chain](to=self.chain))
 
     fn create_task(
         mut self,
@@ -364,14 +364,14 @@ struct TaskGroup:
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer[Self].address_of(self),
+            UnsafePointer[Self](to=self),
         )
         _async_execute[task.type](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
 
     @staticmethod
     fn await_body_impl(hdl: AnyCoroutine, mut task_group: Self):
-        _async_and_then(hdl, UnsafePointer[Chain].address_of(task_group.chain))
+        _async_and_then(hdl, UnsafePointer[Chain](to=task_group.chain))
         task_group._task_complete()
 
     @always_inline
@@ -385,7 +385,7 @@ struct TaskGroup:
 
     fn wait[origins: OriginSet = __origin_of()](mut self):
         self._task_complete()
-        _async_wait(UnsafePointer[Chain].address_of(self.chain))
+        _async_wait(UnsafePointer[Chain](to=self.chain))
 
 
 # ===-----------------------------------------------------------------------===#
