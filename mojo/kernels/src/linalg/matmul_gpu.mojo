@@ -107,20 +107,20 @@ fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
     alias alignment = Int32(alignof[SIMD[type, 4]]())
 
     @parameter
-    if type == DType.float32:
+    if type is DType.float32:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
             ](x.bitcast[Float32](), alignment)
         )
-    elif type == DType.bfloat16:
+    elif type is DType.bfloat16:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
                 SIMD[DType.bfloat16, 4],
             ](x.bitcast[BFloat16](), alignment)
         )
-    elif type == DType.float16:
+    elif type is DType.float16:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
@@ -319,7 +319,7 @@ fn _matmul_gpu[
     var k = shape.K
 
     alias s_type = DType.float32 if (
-        a_type == DType.bfloat16 or a_type == DType.float16
+        a_type is DType.bfloat16 or a_type is DType.float16
     ) else c_type
 
     alias matmul_supported_format_nvidia = (
@@ -329,9 +329,9 @@ fn _matmul_gpu[
     )
 
     alias matmul_supported_format_amd = (
-        a_type == DType.bfloat16
-        and b_type == DType.bfloat16
-        and c_type == DType.bfloat16
+        a_type is DType.bfloat16
+        and b_type is DType.bfloat16
+        and c_type is DType.bfloat16
     )
 
     alias matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
@@ -2233,7 +2233,7 @@ fn multistage_gemm[
         @parameter
         if serial_reduction:
             constrained[
-                c_type == DType.bfloat16,
+                c_type is DType.bfloat16,
                 "serial reduction is unsupported for this config",
             ]()
             alias work_space_type = config.split_k_reduction_type

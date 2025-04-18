@@ -454,9 +454,9 @@ fn _cublas_matmul[
     var compute_type: ComputeType
 
     @parameter
-    if a.type == DType.float16:
+    if a.type is DType.float16:
         compute_type = ComputeType.COMPUTE_32F
-    elif a.type == DType.bfloat16:
+    elif a.type is DType.bfloat16:
         compute_type = ComputeType.COMPUTE_32F
     else:
         compute_type = (
@@ -714,7 +714,7 @@ fn _cublasLt_matmul(
     ]()
 
     constrained[
-        not (a_type == b_type == DType.float8_e5m2),
+        not (a_type == b_type is DType.float8_e5m2),
         (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"

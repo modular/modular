@@ -363,7 +363,7 @@ fn consumer_main_loop[
     alias CLUSTER_SIZE = cluster_size[cluster_shape]()
 
     @parameter
-    if a_type == DType.float8_e4m3fn:
+    if a_type is DType.float8_e4m3fn:
         _ = final_c_reg_tile.fill(0.0)
     else:
         _ = c_reg_tile.fill(0.0)
@@ -379,7 +379,7 @@ fn consumer_main_loop[
         var b_smem_tile = b_smem_iter.next(read_idx)[]
 
         wgmma_op.arrive()
-        alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
+        alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
         wgmma_op.wgmma[num_consumer, scale_c=scale_c](
             a_smem_tile,
             b_smem_tile,
@@ -470,8 +470,8 @@ fn warp_specialized_gemm_output[
     alias WG_BN = c_smem_tile.layout.shape[1].value()
     alias TMA_BN = c_tma_op.layout.shape[1].value() if use_tma_store else WG_BN
     # fmt: off
-    alias use_stmatrix = accum_type == DType.float32 \
-            and c_type == DType.bfloat16 \
+    alias use_stmatrix = accum_type is DType.float32 \
+            and c_type is DType.bfloat16 \
             and c_frag_size % 8 == 0 \
             and wgmma_shape[1] % 16 == 0 \
             and BM % wgmma_shape[0] == 0 \
@@ -974,7 +974,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             warp_group_thread_idx,
         )
 
-        var output_reg_tile = final_c_reg_tile if a_type == DType.float8_e4m3fn else c_reg_tile
+        var output_reg_tile = final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
 
         warp_specialized_gemm_output[
             c_tile_shape = Index(BM, BN),
@@ -1278,7 +1278,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
             var block_y = UInt(Int(ceildiv(work_info.m, BM)))
             var block_x = UInt(Int(ceildiv(work_info.n, BN)))
-            var output_reg_tile = final_c_reg_tile if a_type == DType.float8_e4m3fn else c_reg_tile
+            var output_reg_tile = final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
 
             warp_specialized_gemm_output[
                 c_tile_shape = Index(BM, BN),
@@ -1437,7 +1437,7 @@ fn hopper_matmul_tma_wgmma_kernel[
 
         wgmma_op.arrive()
 
-        alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
+        alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
         wgmma_op.wgmma[scale_c=scale_c](a_smem_tile, b_smem_tile, c_reg_tile)
 
         wgmma_op.commit_group()
@@ -1519,8 +1519,8 @@ fn hopper_matmul_tma_wgmma[
     ]()
 
     constrained[
-        (a_type == b_type == DType.float8_e4m3fn)
-        or (a_type == b_type == DType.bfloat16),
+        (a_type == b_type is DType.float8_e4m3fn)
+        or (a_type == b_type is DType.bfloat16),
         "Unsupported input dtype",
     ]()
 
@@ -1702,8 +1702,8 @@ fn warp_specialize_gemm_with_multicasting[
     alias BK = config.block_tile_shape[2]
 
     constrained[
-        (a_type == b_type == DType.float8_e4m3fn)
-        or (a_type == b_type == DType.bfloat16),
+        (a_type == b_type is DType.float8_e4m3fn)
+        or (a_type == b_type is DType.bfloat16),
         "Unsupported input dtype",
     ]()
 

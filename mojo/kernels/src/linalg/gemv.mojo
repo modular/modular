@@ -734,7 +734,7 @@ fn gemv_gpu[
     if n == 1:
 
         @parameter
-        if a.type == DType.bfloat16:
+        if a.type is DType.bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -745,7 +745,7 @@ fn gemv_gpu[
     elif m == 1 and transpose_b == True:
 
         @parameter
-        if a.type == DType.bfloat16:
+        if a.type is DType.bfloat16:
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
@@ -761,7 +761,7 @@ fn gemv_gpu[
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
 
         @parameter
-        if a.type == DType.bfloat16 and has_nvidia_gpu_accelerator():
+        if a.type is DType.bfloat16 and has_nvidia_gpu_accelerator():
             if (
                 k >= 4096
                 and n >= 4096
