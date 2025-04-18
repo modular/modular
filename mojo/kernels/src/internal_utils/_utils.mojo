@@ -596,7 +596,7 @@ fn ulp_distance[type: DType](a: Scalar[type], b: Scalar[type]) -> Int:
 fn random_float8[
     dtype: DType
 ](buffer: NDBuffer[mut=True, dtype, **_],):
-    constrained[dtype == DType.float8_e4m3fn, "Only support float8_e4m3fn"]()
+    constrained[dtype is DType.float8_e4m3fn, "Only support float8_e4m3fn"]()
     var size = buffer.num_elements()
     for i in range(size):
         var rnd = (random_float64(0, 1.0) - 0.5) * 2.0
