@@ -5,6 +5,7 @@ modular_py_test(
     srcs = glob(["*.py"]),
     deps = [
         "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -18,6 +19,7 @@ modular_py_test(
     tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
         requirement("numpy"),
         requirement("torch"),
     ],

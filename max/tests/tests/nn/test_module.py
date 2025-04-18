@@ -9,14 +9,14 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, Weight
+from max.graph import DeviceRef, Graph, Weight
 from max.nn import Module
 
 
 class TestLayer(Module):
     def __init__(self):
         super().__init__()
-        self.weight = Weight("weight", DType.float32, [10])
+        self.weight = Weight("weight", DType.float32, [10], DeviceRef.CPU())
 
     def __call__(self):
         return self.weight
