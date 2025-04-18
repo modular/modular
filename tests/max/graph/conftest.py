@@ -22,7 +22,6 @@ import pytest
 from hypothesis import Phase, assume, settings
 from hypothesis import strategies as st
 from max import mlir
-from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -322,14 +321,10 @@ def modular_path() -> Path:
     return Path(modular_path)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="module")
 def mlir_context() -> mlir.Context:
     """Set up the MLIR context by registering and loading Modular dialects."""
     with mlir.Context() as ctx, mlir.Location.unknown():
-        registry = mlir.DialectRegistry()
-        _graph.load_modular_dialects(registry)
-        ctx.append_dialect_registry(registry)
-        ctx.load_all_available_dialects()
         yield ctx
 
 

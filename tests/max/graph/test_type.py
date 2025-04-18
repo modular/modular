@@ -24,7 +24,6 @@ from max.graph import (
     SymbolicDim,
     TensorType,
     _ChainType,
-    _OpaqueType,
 )
 
 
@@ -122,27 +121,10 @@ def test_symbolic_dim_to_int_error() -> None:
         int(SymbolicDim("x"))
 
 
-@given(dim=...)
-def test_dim_to_mlir_no_context(dim: Dim):
-    with pytest.raises(RuntimeError):
-        print(dim.to_mlir())
-
-
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(tensor_type=...)
 def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType):
     assert tensor_type == TensorType.from_mlir(tensor_type.to_mlir())
-
-
-@given(tensor_type=...)
-def test_tensor_type_to_mlir_no_context(tensor_type: TensorType):
-    with pytest.raises(RuntimeError):
-        tensor_type.to_mlir()
-
-
-def test_opaque_type_to_mlir_no_context():
-    with pytest.raises(RuntimeError):
-        _OpaqueType("something").to_mlir()
 
 
 def test_bool_type(mlir_context) -> None:
@@ -255,12 +237,6 @@ def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType):
     assert buffer_type == BufferType.from_mlir(buffer_type.to_mlir())
 
 
-@given(buffer_type=...)
-def test_buffer_mlir_roundtrip_no_context(buffer_type: BufferType):
-    with pytest.raises(RuntimeError):
-        buffer_type.to_mlir()
-
-
 def test_buffer_type(mlir_context) -> None:
     """Tests buffer type creation."""
     dtype = _graph.dtype_type(mlir_context, "f32")
@@ -305,11 +281,6 @@ def test_buffer_type_with_device_accessors(mlir_context) -> None:
 
 def test_chain_type(mlir_context):
     assert _ChainType() == _ChainType.from_mlir(_ChainType().to_mlir())
-
-
-def test_chain_type__no_mir_context():
-    with pytest.raises(TypeError):
-        _ChainType().to_mlir()
 
 
 def test_invalid_dimension(mlir_context):
