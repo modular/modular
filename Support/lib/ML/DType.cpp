@@ -11,6 +11,9 @@
 #include <limits>
 using namespace M;
 
+/// Returns true if the type is a float8 type.
+bool DType::isFloat8() const { return isFloat() && getWidthInBits() == 8; }
+
 /// Return the width of this element in bits.  This returns -1 for unknown
 /// width values.
 ssize_t DType::getWidthInBits() const {
