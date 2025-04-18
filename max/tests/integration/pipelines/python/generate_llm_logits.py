@@ -613,6 +613,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
         use_cache=False,
     ),
+    "gemma3-1b": GenericOracle(
+        model_path="google/gemma-3-1b-it",
+        config_params={"max_length": 8192},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
 }
 
 
