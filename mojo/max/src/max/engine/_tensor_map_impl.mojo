@@ -30,7 +30,9 @@ struct CTensorMap:
     fn __init__(out self, ptr: UnsafePointer[NoneType]):
         self.ptr = ptr
 
-    fn get_tensor_by_name(self, name: String, lib: DLHandle) raises -> CTensor:
+    fn get_tensor_by_name(
+        self, owned name: String, lib: DLHandle
+    ) raises -> CTensor:
         var status = Status(lib)
         var tensor = call_dylib_func[CTensor](
             lib,
@@ -43,7 +45,9 @@ struct CTensorMap:
             raise status.__str__()
         return tensor
 
-    fn get_value_by_name(self, name: String, lib: DLHandle) raises -> CValue:
+    fn get_value_by_name(
+        self, owned name: String, lib: DLHandle
+    ) raises -> CValue:
         var status = Status(lib)
         var value = call_dylib_func[CValue](
             lib,

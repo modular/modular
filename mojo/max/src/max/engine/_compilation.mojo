@@ -153,6 +153,8 @@ struct TorchInputSpec(Movable):
         var converted_shape = Self.shape_type()
         var converted_dim_names = List[UnsafePointer[c_char]]()
         converted_shape.reserve(len(shape))
+
+        var strs = List[String]()
         for dim in shape:
             if dim[].is_static():
                 converted_shape.append(dim[].static_value())
@@ -161,7 +163,10 @@ struct TorchInputSpec(Movable):
                 converted_shape.append(
                     CTensorSpec.get_dynamic_dimension_value(engine_lib)
                 )
-                converted_dim_names.append(dim[]._name.unsafe_cstr_ptr())
+                var str = dim[]._name
+                strs.append(str^)  # Keep the string alive.
+                var c_str = strs[len(strs) - 1].unsafe_cstr_ptr()
+                converted_dim_names.append(c_str)
 
         self.shape = converted_shape^
         self.dtype = dtype
