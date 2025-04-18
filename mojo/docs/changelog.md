@@ -61,6 +61,12 @@ String types in Mojo got several significant improvements:
   consequence of this change, many APIs should switch to using `StaticString`
   instead of `StringLiteral`.
 
+- `String` supports a new `String(unsafe_uninit_length=x)` constructor for
+  clients that want to use custom advanced initialization patterns.  The
+  (quite dangerous) `String(ptr=x, length=y)` constructor has been renamed to
+  `String(steal_ptr=x, length=y)` (since it takes ownership of the pointer) and
+  is very likely to be entirely removed in the future.
+
 - `String` supports working with legacy C APIs that assume "nul" termination,
   but the details have changed: `String` is now no longer implicitly
   nul-terminated, which means that it is incorrect to assume that

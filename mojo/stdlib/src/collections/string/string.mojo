@@ -1067,7 +1067,7 @@ struct String(
         self._buffer.append(byte)
 
     @always_inline
-    fn __radd__(self, other: StringSlice) -> String:
+    fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
 
         Args:
@@ -1078,7 +1078,7 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
-    fn _iadd(mut self, other: Span[Byte]):
+    fn _iadd(mut self, other: Span[mut=False, Byte]):
         var o_len = len(other)
         if o_len == 0:
             return
@@ -1090,7 +1090,7 @@ struct String(
         self._buffer.extend(other)
 
     @always_inline
-    fn __iadd__(mut self, other: StringSlice):
+    fn __iadd__(mut self, other: StringSlice[mut=False]):
         """Appends another string slice to this string.
 
         Args:
