@@ -78,8 +78,10 @@ fn _getpw_macos(uid: UInt32) raises -> Passwd:
     return _build_pw_struct(passwd_ptr)
 
 
-fn _getpw_macos(name: String) raises -> Passwd:
-    var passwd_ptr = external_call["getpwnam", UnsafePointer[_C_Passwd]](name)
+fn _getpw_macos(owned name: String) raises -> Passwd:
+    var passwd_ptr = external_call["getpwnam", UnsafePointer[_C_Passwd]](
+        name.unsafe_cstr_ptr()
+    )
     if not passwd_ptr:
         raise Error("user name not found in the password database: ", name)
     return _build_pw_struct(passwd_ptr)

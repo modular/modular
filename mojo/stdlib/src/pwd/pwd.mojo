@@ -77,25 +77,6 @@ struct Passwd(Stringable, Writable):
         return String.write(self)
 
 
-fn _getpw_platform_specific[
-    T: AnyType
-](
-    arg: T,
-    macos_fn: fn (T) raises -> Passwd,
-    linux_fn: fn (T) raises -> Passwd,
-) raises -> Passwd:
-    """Helper function to retrieve password database entry based on OS."""
-    constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
-    ]()
-
-    @parameter
-    if os_is_macos():
-        return macos_fn(arg)
-    else:
-        return linux_fn(arg)
-
-
 fn getpwuid(uid: Int) raises -> Passwd:
     """Retrieve the password database entry for a given user ID.
 
@@ -118,12 +99,15 @@ fn getpwuid(uid: Int) raises -> Passwd:
     constrained[
         not os_is_windows(), "operating system must be Linux or macOS"
     ]()
-    return _getpw_platform_specific[UInt32](
-        UInt32(uid), _getpw_macos, _getpw_linux
-    )
+
+    @parameter
+    if os_is_macos():
+        return _getpw_macos(UInt32(uid))
+    else:
+        return _getpw_linux(UInt32(uid))
 
 
-fn getpwnam(name: String) raises -> Passwd:
+fn getpwnam(owned name: String) raises -> Passwd:
     """
     Retrieves the user ID in the password database for the given user name.
 
@@ -146,4 +130,9 @@ fn getpwnam(name: String) raises -> Passwd:
     constrained[
         not os_is_windows(), "operating system must be Linux or macOS"
     ]()
-    return _getpw_platform_specific[String](name, _getpw_macos, _getpw_linux)
+
+    @parameter
+    if os_is_macos():
+        return _getpw_macos(name)
+    else:
+        return _getpw_linux(name)
