@@ -82,6 +82,7 @@ from layout import Layout
 from memory import UnsafePointer
 
 from utils.variant import Variant
+from gpu.host.info import DEFAULT_GPU, H100, Vendor
 
 # ===----------------------------------------------------------------------===#
 # Backend
@@ -139,7 +140,9 @@ fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
         return backend
     elif has_amd_gpu_accelerator():
         return Backend.ROCBLAS
-    elif type.is_float8():
+    elif type.is_float8() or (
+        DEFAULT_GPU.vendor == Vendor.NVIDIA_GPU and DEFAULT_GPU > H100
+    ):
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -736,6 +739,8 @@ fn _cublasLt_matmul(
             " transpose_a=False and transpose_b=True"
         )
 
+    var cuda_stream = CUDA(ctx.stream())
+
     # CublasLt is by default column-major but we like to have the output in row-major
     # to compare with our results. Use `c_row_major` to determine the output layout.
 
@@ -873,11 +878,9 @@ fn _cublasLt_matmul(
     if returned_results == 0:
         raise Error("No algorithm was found!")
 
-    var matmul_workspace_ptr = ctx.enqueue_create_buffer[DType.uint8](
+    var matmul_workspace = ctx.enqueue_create_buffer[DType.uint8](
         workspace_size
-    ).unsafe_ptr()
-
-    var cuda_stream = CUDA(ctx.stream())
+    )
 
     if c_row_major:
         check_cublas_error(
@@ -896,7 +899,7 @@ fn _cublasLt_matmul(
                 _ddesc,  # _ddesc
                 UnsafePointer.address_of(heuristic_result.algo),  # algo
                 UnsafePointer(
-                    matmul_workspace_ptr.bitcast[NoneType]()
+                    matmul_workspace.unsafe_ptr().bitcast[NoneType]()
                 ),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
@@ -919,7 +922,7 @@ fn _cublasLt_matmul(
                 _ddesc,  # _ddesc
                 UnsafePointer.address_of(heuristic_result.algo),  # algo
                 UnsafePointer(
-                    matmul_workspace_ptr.bitcast[NoneType]()
+                    matmul_workspace.unsafe_ptr().bitcast[NoneType]()
                 ),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
@@ -932,6 +935,8 @@ fn _cublasLt_matmul(
     check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_ddesc))
     check_cublas_error(cublasLtMatmulPreferenceDestroy(preference))
+
+    _ = matmul_workspace^
 
 
 # ===----------------------------------------------------------------------===#
