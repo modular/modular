@@ -30,6 +30,7 @@ def register_all_models():
     from .llama4 import llama4_arch
     from .llama_vision import llama_vision_arch
     from .mistral import mistral_arch
+    from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
     from .olmo import olmo_arch
     from .phi3 import phi3_arch
@@ -44,6 +45,7 @@ def register_all_models():
         llama4_arch,
         llama_vision_arch,
         mistral_arch,
+        mistral3_arch,
         mpnet_arch,
         olmo_arch,
         phi3_arch,

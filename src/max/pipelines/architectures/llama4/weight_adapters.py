@@ -27,8 +27,8 @@ def convert_safetensor_state_dict(
 ) -> dict[str, WeightData]:
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
-    for gguf_name, value in state_dict.items():
-        max_name = gguf_name
+    for weight_name, value in state_dict.items():
+        max_name = weight_name
         for before, after in LLAMA4_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()

@@ -25,7 +25,11 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.nn.kv_cache import FetchContinuousBatchingKVCacheCollection
+from max.nn.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheStrategy,
+)
 
 from .model_config import MistralConfig
 
@@ -94,6 +98,19 @@ class Mistral(Transformer):
             embedding_output_dtype,
             config.devices[0],
         )
+        kv_collection_cls: (
+            type[FetchContinuousBatchingKVCacheCollection]
+            | type[FetchPagedKVCacheCollection]
+        )
+        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
+            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
+        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+            kv_collection_cls = FetchPagedKVCacheCollection
+        else:
+            raise ValueError(
+                "Unsupported caching strategy "
+                + str(config.kv_params.cache_strategy)
+            )
 
         super().__init__(
             dim=config.hidden_size,
@@ -106,8 +123,6 @@ class Mistral(Transformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=FetchContinuousBatchingKVCacheCollection(
-                config.kv_params
-            ),
+            kv_collection_constructor=kv_collection_cls(config.kv_params),
             return_logits=config.return_logits,
         )
