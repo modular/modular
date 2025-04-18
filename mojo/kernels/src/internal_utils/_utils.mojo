@@ -305,10 +305,6 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn random(buffer: NDBuffer, min: Float64 = 0, max: Float64 = 1):
-    rand(buffer.data, buffer.num_elements(), min=min, max=max)
-
-
 fn zero(buffer: NDBuffer):
     buffer.zero()
 
@@ -593,11 +589,14 @@ fn ulp_distance[type: DType](a: Scalar[type], b: Scalar[type]) -> Int:
     return abs(a_int - b_int)
 
 
-fn random_float8[
+fn random[
     dtype: DType
-](buffer: NDBuffer[mut=True, dtype, **_],):
-    constrained[dtype is DType.float8_e4m3fn, "Only support float8_e4m3fn"]()
-    var size = buffer.num_elements()
-    for i in range(size):
-        var rnd = (random_float64(0, 1.0) - 0.5) * 2.0
-        buffer.data[i] = rnd.cast[dtype]()
+](buffer: NDBuffer[mut=True, dtype, **_], min: Float64 = 0, max: Float64 = 1):
+    @parameter
+    if dtype.is_float8():
+        var size = buffer.num_elements()
+        for i in range(size):
+            var rnd = (random_float64(min, max) - 0.5) * 2.0
+            buffer.data[i] = rnd.cast[dtype]()
+    else:
+        rand(buffer.data, buffer.num_elements(), min=min, max=max)

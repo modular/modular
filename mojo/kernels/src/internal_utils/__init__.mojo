@@ -26,6 +26,5 @@ from ._utils import (
     ndbuffer_to_str,
     parse_shape,
     random,
-    random_float8,
     zero,
 )
