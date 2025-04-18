@@ -551,6 +551,18 @@ fn ldexp[
 # ===----------------------------------------------------------------------=== #
 
 
+trait _Expable:
+    """Trait for types that support the exp function."""
+
+    fn __exp__(self) -> Self:
+        """Computes the exponential of the input value.
+
+        Returns:
+            The exponential of the input value.
+        """
+        ...
+
+
 @always_inline
 fn _exp_taylor[
     dtype: DType, simd_width: Int, //
@@ -628,6 +640,22 @@ fn exp[
     var k = floor(xc.fma(log2e, 0.5))
     var r = k.fma(neg_ln2, xc)
     return max(_ldexp_impl(_exp_taylor(r), k), xc)
+
+
+@always_inline
+fn exp[T: _Expable](x: T) -> T:
+    """Computes the exponential of the input value.
+
+    Parameters:
+        T: The type of the input value.
+
+    Args:
+        x: The input value.
+
+    Returns:
+        The exponential of the input value.
+    """
+    return x.__exp__()
 
 
 # ===----------------------------------------------------------------------=== #
