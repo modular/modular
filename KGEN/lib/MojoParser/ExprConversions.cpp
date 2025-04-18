@@ -1190,16 +1190,26 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // conforms because we called `doesNominalTypeConformTo` above.
       assert(impls.size() == 1);
       auto implAlias = cast<AliasDeclOp>(impls.front());
-      assert(implAlias.getValueAttr() && "struct's alias should have value");
 
       TypedAttr newValue = implAlias.getValueAttr();
-      newValue = implGenericsReplacer.replace(newValue);
-      // If a decl has a parameter "T : Trait" where Trait defines an associated
-      // type "U : Trait2", then when we emit vtable for T, we must also emit
-      // vtable for T.U.  We perform this by implicitly converting to the alias'
-      // declared type.
-      newValue = emitPValue({newValue, value.expr}, EC_Trait,
-                            traitAliasDecl.getType());
+      if (newValue) {
+        newValue = implGenericsReplacer.replace(newValue);
+        // If a decl has a parameter "T : Trait" where Trait defines an
+        // associated type "U : Trait2", then when we emit vtable for T, we must
+        // also emit vtable for T.U.  We perform this by implicitly converting
+        // to the alias' declared type.
+        newValue = emitPValue({newValue, value.expr}, EC_Trait,
+                              traitAliasDecl.getType());
+      } else {
+        // Must come from a child trait. Simply forward the alias value with the
+        // child trait alias' type.
+        newValue = ParamOperatorAttr::get(
+            POC::GetVTableEntry,
+            {PValue(type),
+             StringAttr::get(name.getValue(), StringType::get(getContext()))},
+            implAlias.getType());
+      }
+
       if (!newValue)
         return {};
 

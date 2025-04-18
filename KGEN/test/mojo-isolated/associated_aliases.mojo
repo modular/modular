@@ -42,6 +42,20 @@ fn testTraitWithAliasAndStructWithMatchingAlias():
     _ = getNFromTraitWithAlias(StructWithMatchingAlias())
 
 
+trait TraitWithTypeAlias:
+    alias T: TraitWithAlias
+
+
+trait TraitWithSameTypeAlias(TraitWithTypeAlias):
+    alias T: TraitWithAlias
+
+
+# CHECK-LABEL: testTraitWithRefinedTypeAlias
+fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
+    # CHECK-NEXT: !TraitWithAlias = <get_vtable_entry(:!TraitWithSameTypeAlias T, "T")>
+    alias MyT: TraitWithAlias = T.T
+
+
 trait ATrait:
     pass
 
