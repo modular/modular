@@ -1004,10 +1004,8 @@ struct Info(Writable):
         Returns:
             True if this GPU has higher compute capability, False otherwise.
         """
-        debug_assert(
-            self.vendor == other.vendor,
-            "the vendors must be the same to perform the comparison",
-        )
+        if self.vendor != other.vendor:
+            return False
         return self.compute > other.compute
 
     fn __ge__(self, other: Self) -> Bool:
@@ -1020,10 +1018,8 @@ struct Info(Writable):
         Returns:
             True if this GPU has higher or equal compute capability.
         """
-        debug_assert(
-            self.vendor == other.vendor,
-            "the vendors must be the same to perform the comparison",
-        )
+        if self.vendor != other.vendor:
+            return False
         return self.compute >= other.compute
 
     fn __eq__(self, other: Self) -> Bool:
