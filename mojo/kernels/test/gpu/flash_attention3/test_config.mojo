@@ -22,7 +22,7 @@ def test_config():
     )
 
     assert_equal(
-        str(config),
+        String(config),
         (
             '{"function_name":flash_attention3, "hdim":1024, "dtype":float16,'
             ' "split":True, "paged":True, "softcap":True, "pack_gqa":True,'
