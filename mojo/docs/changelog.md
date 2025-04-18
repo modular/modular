@@ -258,3 +258,6 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 
 - [#4163](https://github.com/modular/max/issues/4163) - Corner case in
   initializers.
+
+- [#4360](https://github.com/modular/max/issues/4360) - Fix constructor emission
+  for parameterized types conforming to a trait composition.
