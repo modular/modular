@@ -389,7 +389,7 @@ struct Operation(CollectionElement, Stringable, Writable):
             regions.elements,
             successors.elements,
         )
-        self.c = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
+        self.c = _c.IR.mlirOperationCreate(UnsafePointer(to=state))
 
     fn __init__(
         out self,
@@ -418,12 +418,12 @@ struct Operation(CollectionElement, Stringable, Writable):
         )
         if enable_result_type_inference:
             _c.IR.mlirOperationStateEnableResultTypeInference(
-                UnsafePointer.address_of(state)
+                UnsafePointer(to=state)
             )
 
         var result: Self.cType
         with location.context().diagnostic_error():
-            result = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
+            result = _c.IR.mlirOperationCreate(UnsafePointer(to=state))
             if not result.ptr:
                 raise "operation create failed"
 
@@ -440,20 +440,20 @@ struct Operation(CollectionElement, Stringable, Writable):
     ):
         if attributes:
             _c.IR.mlirOperationStateAddAttributes(
-                UnsafePointer.address_of(state),
+                UnsafePointer(to=state),
                 len(attributes),
                 # This technically works as long as `Attribute` is only `MlirAttribute`.
                 attributes.data.bitcast[NamedAttribute.cType](),
             )
         if operands:
             _c.IR.mlirOperationStateAddOperands(
-                UnsafePointer.address_of(state),
+                UnsafePointer(to=state),
                 len(operands),
                 operands.data.bitcast[Value.cType](),
             )
         if results:
             _c.IR.mlirOperationStateAddResults(
-                UnsafePointer.address_of(state),
+                UnsafePointer(to=state),
                 len(results),
                 results.data.bitcast[Type.cType](),
             )
@@ -461,13 +461,13 @@ struct Operation(CollectionElement, Stringable, Writable):
         #       over Regions.
         if regions:
             _c.IR.mlirOperationStateAddOwnedRegions(
-                UnsafePointer.address_of(state),
+                UnsafePointer(to=state),
                 len(regions),
                 regions.data.bitcast[Region.cType](),
             )
         if successors:
             _c.IR.mlirOperationStateAddSuccessors(
-                UnsafePointer.address_of(state),
+                UnsafePointer(to=state),
                 len(successors),
                 successors.data.bitcast[Block.cType](),
             )

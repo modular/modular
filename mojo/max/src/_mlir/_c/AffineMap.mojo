@@ -69,7 +69,7 @@ fn mlirAffineMapPrint[W: Writer](mut writer: W, affine_map: MlirAffineMap):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirAffineMapPrint", NoneType._mlir_type](
-        affine_map, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        affine_map, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 

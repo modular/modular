@@ -104,7 +104,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         var status = Status(device._lib.value())
         # CAUTION: this assumes that TensorSpec is bitwise identical in mojo and cpp
         self._impl_ptr = device._lib.value().create_device_memory_fn(
-            UnsafePointer[TensorSpec].address_of(tmp_spec),
+            UnsafePointer[TensorSpec](to=tmp_spec),
             self._device._cdev._ptr,
             status.impl,
         )

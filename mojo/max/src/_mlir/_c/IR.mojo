@@ -470,7 +470,7 @@ fn mlirLocationPrint[W: Writer](mut writer: W, location: MlirLocation):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirLocationPrint", NoneType._mlir_type](
-        location, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        location, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1073,7 +1073,7 @@ fn mlirOperationPrint[W: Writer](mut writer: W, op: MlirOperation):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirOperationPrint", NoneType._mlir_type](
-        op, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        op, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1085,7 +1085,7 @@ fn mlirOperationPrintWithFlags[
     behavior."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirOperationPrintWithFlags", NoneType._mlir_type](
-        op, flags, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        op, flags, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1097,7 +1097,7 @@ fn mlirOperationPrintWithState[
     behavior as well as caching computed names."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirOperationPrintWithState", NoneType._mlir_type](
-        op, state, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        op, state, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1106,7 +1106,7 @@ fn mlirOperationWriteBytecode[W: Writer](mut writer: W, op: MlirOperation):
     """Same as mlirOperationPrint but writing the bytecode format."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirOperationWriteBytecode", NoneType._mlir_type](
-        op, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        op, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1125,7 +1125,7 @@ fn mlirOperationWriteBytecodeWithConfig[
         op,
         config,
         write_buffered_callback[W],
-        UnsafePointer.address_of(buffer),
+        UnsafePointer(to=buffer),
     )
     buffer.flush()
     return result
@@ -1431,7 +1431,7 @@ fn mlirBlockPrint[W: Writer](mut writer: W, block: MlirBlock):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirBlockPrint", NoneType._mlir_type](
-        block, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        block, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1509,7 +1509,7 @@ fn mlirValuePrint[W: Writer](mut writer: W, value: MlirValue):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirValuePrint", NoneType._mlir_type](
-        value, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        value, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1523,7 +1523,7 @@ fn mlirValuePrintAsOperand[
         value,
         state,
         write_buffered_callback[W],
-        UnsafePointer.address_of(buffer),
+        UnsafePointer(to=buffer),
     )
     buffer.flush()
 
@@ -1613,7 +1613,7 @@ fn mlirTypePrint[W: Writer](mut writer: W, type: MlirType):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirTypePrint", NoneType._mlir_type](
-        type, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        type, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 
@@ -1669,7 +1669,7 @@ fn mlirAttributePrint[W: Writer](mut writer: W, attr: MlirAttribute):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirAttributePrint", NoneType._mlir_type](
-        attr, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        attr, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 

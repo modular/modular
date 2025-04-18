@@ -50,7 +50,7 @@ fn cfunc[func_name: StaticString, T: AnyTrivialRegType]() -> T:
         func_name,
         T,
     ]()
-    var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
+    var ptr = UnsafePointer(to=f).bitcast[UnsafePointer[NoneType]]()[]
     if not ptr:
         abort("cannot load ", func_name, " from graph library")
     return f

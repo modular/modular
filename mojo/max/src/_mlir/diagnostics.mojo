@@ -169,7 +169,7 @@ struct ErrorCapturingDiagnosticHandler:
             raise "The same ErrorCapturingDiagnosticHandler instance cannot be entered multiple times at once."
 
         self.handler = Self.Handler.attach(
-            self.ctx, UnsafePointer.address_of(self.error)
+            self.ctx, UnsafePointer(to=self.error)
         )
 
     fn __exit__(mut self) raises:

@@ -348,7 +348,7 @@ struct Model:
 
         var output_list = List[AnyMemory]()
         output_list.reserve(self.num_model_outputs())
-        var output_list_address = UnsafePointer.address_of(output_list)
+        var output_list_address = UnsafePointer(to=output_list)
         var status = Status(self._lib)
 
         # FIXME: This has too many arguments now. Refactor this into something
@@ -387,7 +387,7 @@ struct Model:
             len(values_impl),
             Self._add_tensor_to_output_list,
             Self._add_value_to_output_list,
-            UnsafePointer.address_of(self),
+            UnsafePointer(to=self),
             output_list_address.bitcast[NoneType](),
             status.borrow_ptr(),
         )

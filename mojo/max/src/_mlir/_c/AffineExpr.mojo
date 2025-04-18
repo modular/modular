@@ -71,7 +71,7 @@ fn mlirAffineExprPrint[W: Writer](mut writer: W, affine_expr: MlirAffineExpr):
     MLIR_func["mlirAffineExprPrint", NoneType._mlir_type](
         affine_expr,
         write_buffered_callback[W],
-        UnsafePointer.address_of(buffer),
+        UnsafePointer(to=buffer),
     )
     buffer.flush()
 

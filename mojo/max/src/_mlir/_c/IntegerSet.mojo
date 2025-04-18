@@ -73,7 +73,7 @@ fn mlirIntegerSetPrint[W: Writer](mut writer: W, set: MlirIntegerSet):
     several times with consecutive chunks of the string."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirIntegerSetPrint", NoneType._mlir_type](
-        set, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        set, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 

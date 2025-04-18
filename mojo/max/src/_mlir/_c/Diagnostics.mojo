@@ -71,7 +71,7 @@ fn mlirDiagnosticPrint[W: Writer](mut writer: W, diagnostic: MlirDiagnostic):
     """Prints a diagnostic using the provided callback."""
     var buffer = _WriteBufferStack(writer)
     MLIR_func["mlirDiagnosticPrint", NoneType._mlir_type](
-        diagnostic, write_buffered_callback[W], UnsafePointer.address_of(buffer)
+        diagnostic, write_buffered_callback[W], UnsafePointer(to=buffer)
     )
     buffer.flush()
 

@@ -195,7 +195,7 @@ fn mlirOpPassManagerAddPipeline[
         pass_manager,
         pipeline_elements,
         write_buffered_callback[W],
-        UnsafePointer.address_of(buffer),
+        UnsafePointer(to=buffer),
     )
     buffer.flush()
     return result
@@ -212,7 +212,7 @@ fn mlirPrintPassPipeline[
     var result = MLIR_func["mlirPrintPassPipeline", NoneType._mlir_type](
         pass_manager,
         write_buffered_callback[W],
-        UnsafePointer.address_of(buffer),
+        UnsafePointer(to=buffer),
     )
     buffer.flush()
     return result
@@ -233,7 +233,7 @@ fn mlirParsePassPipeline[
         pass_manager,
         pipeline,
         write_buffered_callback[W],
-        UnsafePointer.address_of(buffer),
+        UnsafePointer(to=buffer),
     )
     buffer.flush()
     return result

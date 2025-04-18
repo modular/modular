@@ -55,9 +55,7 @@ fn MLIR_func[
             name,
             fn (__type_of(loaded_args_pack)) -> T,
         ]()
-        var ptr = UnsafePointer.address_of(f).bitcast[
-            UnsafePointer[NoneType]
-        ]()[]
+        var ptr = UnsafePointer(to=f).bitcast[UnsafePointer[NoneType]]()[]
         if not ptr:
             abort(String("cannot load ", name, " from graph library"))
         return f(loaded_args_pack)
