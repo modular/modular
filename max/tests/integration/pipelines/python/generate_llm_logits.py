@@ -556,6 +556,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "mistral3": GenericOracle(
+        model_path="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
     "qwen": GenericOracle(
