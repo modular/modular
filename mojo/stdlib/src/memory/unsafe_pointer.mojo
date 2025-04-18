@@ -171,6 +171,7 @@ struct UnsafePointer[
 
     @staticmethod
     @always_inline("nodebug")
+    @deprecated("Use UnsafePointer(to=...) constructor instead.")
     fn address_of(
         ref [address_space]arg: type,
         out result: UnsafePointer[
