@@ -512,7 +512,7 @@ struct _TensorShapeStorage:
     fn __init__(out self):
         """Default initializes the _TensorShapeStorage type."""
         var rep = _Rep32()
-        var rep_ptr = UnsafePointer.address_of(rep)
+        var rep_ptr = UnsafePointer(to=rep)
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
@@ -524,7 +524,7 @@ struct _TensorShapeStorage:
           rep: A shape representation.
         """
         var rep_copy = rep
-        var rep_ptr = UnsafePointer.address_of(rep_copy)
+        var rep_ptr = UnsafePointer(to=rep_copy)
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
@@ -536,7 +536,7 @@ struct _TensorShapeStorage:
           rep: A shape representation.
         """
         var rep_copy = rep
-        var rep_ptr = UnsafePointer.address_of(rep_copy)
+        var rep_ptr = UnsafePointer(to=rep_copy)
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
@@ -550,7 +550,7 @@ struct _TensorShapeStorage:
           rep: A shape representation.
         """
         var rep_copy = rep
-        var rep_ptr = UnsafePointer.address_of(rep_copy)
+        var rep_ptr = UnsafePointer(to=rep_copy)
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
 
@@ -565,7 +565,7 @@ fn _as_rep16(rep0: _TensorShapeStorage) -> _Rep16:
       The _Rep16 representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_Rep16]()[]
+    return UnsafePointer(to=rep).bitcast[_Rep16]()[]
 
 
 @always_inline
@@ -592,7 +592,7 @@ fn _as_rep16(rep0: _Rep32) -> _Rep16:
       The _Rep16 representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_Rep16]()[]
+    return UnsafePointer(to=rep).bitcast[_Rep16]()[]
 
 
 @always_inline
@@ -606,7 +606,7 @@ fn _as_rep32(rep0: _TensorShapeStorage) -> _Rep32:
       The _Rep32 representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_Rep32]()[]
+    return UnsafePointer(to=rep).bitcast[_Rep32]()[]
 
 
 @always_inline
@@ -620,7 +620,7 @@ fn _as_rep32(rep0: _Rep16) -> _Rep32:
       The _Rep32 representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_Rep32]()[]
+    return UnsafePointer(to=rep).bitcast[_Rep32]()[]
 
 
 @always_inline
@@ -647,7 +647,7 @@ fn _as_rep_out_of_line(rep0: _TensorShapeStorage) -> _RepOutOfLine:
       The _RepOutOfLine representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_RepOutOfLine]()[]
+    return UnsafePointer(to=rep).bitcast[_RepOutOfLine]()[]
 
 
 @always_inline
@@ -661,7 +661,7 @@ fn _as_rep_out_of_line(rep0: _Rep16) -> _RepOutOfLine:
       The _RepOutOfLine representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_RepOutOfLine]()[]
+    return UnsafePointer(to=rep).bitcast[_RepOutOfLine]()[]
 
 
 @always_inline
@@ -675,7 +675,7 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
       The _RepOutOfLine representation.
     """
     var rep = rep0
-    return UnsafePointer.address_of(rep).bitcast[_RepOutOfLine]()[]
+    return UnsafePointer(to=rep).bitcast[_RepOutOfLine]()[]
 
 
 # ===-----------------------------------------------------------------------===#
