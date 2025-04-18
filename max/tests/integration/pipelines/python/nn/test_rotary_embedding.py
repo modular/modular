@@ -14,7 +14,15 @@ from context_utils import create_text_context
 from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
-from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.nn import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -111,6 +119,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
             params.theta,
             MAX_SEQ_LEN,
             head_dim=params.head_dim,
+            device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
@@ -176,6 +185,7 @@ def test_llama3_freqs_cis(
             MAX_SEQ_LEN,
             scaling_params=scaling_params,
             head_dim=base_params.head_dim,
+            device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
@@ -232,13 +242,21 @@ def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
 
 @pytest.mark.parametrize(
     "input_type",
-    [TensorType(DType.float32, ["batch", "seqlen", "n_kv_heads", 32])],
+    [
+        TensorType(
+            DType.float32,
+            ["batch", "seqlen", "n_kv_heads", 32],
+            device=DeviceRef.CPU(),
+        )
+    ],
 )
 @pytest.mark.parametrize("start_pos", [0, 15])
 def test_rope(session, input_type: TensorType, start_pos: Dim):
     _, seqlen, _, head_dim = input_type.shape
-    freqs_cis_type = TensorType(input_type.dtype, [MAX_SEQ_LEN, head_dim])
-    cachelike = TensorType(DType.int64, [start_pos])
+    freqs_cis_type = TensorType(
+        input_type.dtype, [MAX_SEQ_LEN, head_dim], device=DeviceRef.CPU()
+    )
+    cachelike = TensorType(DType.int64, [start_pos], device=DeviceRef.CPU())
     with Graph(
         "rope", input_types=[input_type, freqs_cis_type, cachelike]
     ) as graph:
@@ -280,17 +298,22 @@ def test_kv_cache_ragged_rope(session):
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
     input_type = TensorType(
-        DType.float32, ["total_seq_len", num_q_heads, kv_params.head_dim]
+        DType.float32,
+        ["total_seq_len", num_q_heads, kv_params.head_dim],
+        device=DeviceRef.CPU(),
     )
     input_row_offsets_type = TensorType(
         DType.uint32,
         [
             "input_row_offsets_len",
         ],
+        device=DeviceRef.CPU(),
     )
 
     freqs_cis_type = TensorType(
-        input_type.dtype, [MAX_SEQ_LEN, kv_params.head_dim]
+        input_type.dtype,
+        [MAX_SEQ_LEN, kv_params.head_dim],
+        device=DeviceRef.CPU(),
     )
 
     kv_manager = ContinuousBatchingKVCacheManager(

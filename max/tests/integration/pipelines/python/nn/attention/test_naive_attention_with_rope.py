@@ -12,6 +12,7 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceRef,
     Graph,
     TensorType,
     TensorValue,
@@ -106,9 +107,13 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
     max_seq_len = config.max_position_embeddings
 
     input_dtype = DType.float32
-    input_type = TensorType(input_dtype, ["batch_size", "seq_len", dim])
+    input_type = TensorType(
+        input_dtype, ["batch_size", "seq_len", dim], device=DeviceRef.CPU()
+    )
     attn_mask_type = TensorType(
-        DType.float32, ["batch_size", "seq_len", "post_seq_len"]
+        DType.float32,
+        ["batch_size", "seq_len", "post_seq_len"],
+        device=DeviceRef.CPU(),
     )
     cache_type = BufferType(
         DType.float32,
@@ -122,10 +127,18 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
     )
     attn_input_types = [input_type, attn_mask_type, cache_type, cache_type]
 
-    wq_type = TensorType(input_dtype, [n_heads * head_dim, dim])
-    wk_type = TensorType(input_dtype, [n_kv_heads * head_dim, dim])
-    wv_type = TensorType(input_dtype, [n_kv_heads * head_dim, dim])
-    wo_type = TensorType(input_dtype, [dim, n_heads * head_dim])
+    wq_type = TensorType(
+        input_dtype, [n_heads * head_dim, dim], device=DeviceRef.CPU()
+    )
+    wk_type = TensorType(
+        input_dtype, [n_kv_heads * head_dim, dim], device=DeviceRef.CPU()
+    )
+    wv_type = TensorType(
+        input_dtype, [n_kv_heads * head_dim, dim], device=DeviceRef.CPU()
+    )
+    wo_type = TensorType(
+        input_dtype, [dim, n_heads * head_dim], device=DeviceRef.CPU()
+    )
     weight_types = [wq_type, wk_type, wv_type, wo_type]
 
     kv_params = KVCacheParams(
@@ -162,6 +175,7 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                     n_heads=n_heads,
                     theta=theta,
                     max_seq_len=max_seq_len,
+                    device=DeviceRef.CPU(),
                 ),
             )(
                 x,

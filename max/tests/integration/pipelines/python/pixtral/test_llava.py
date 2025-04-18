@@ -12,7 +12,7 @@ import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 from max.nn import MLP as nnMLP
 from max.nn import (
     AttentionWithRope,
@@ -162,6 +162,7 @@ def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
             name="linear_1",
             dtype=DType.from_numpy(weights_registry["linear_1"].numpy().dtype),
             shape=weights_registry["linear_1"].shape,
+            device=DeviceRef.CPU(),
         )
     )
     linear_2 = Linear(
@@ -169,6 +170,7 @@ def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
             name="linear_2",
             dtype=DType.from_numpy(weights_registry["linear_2"].numpy().dtype),
             shape=weights_registry["linear_2"].shape,
+            device=DeviceRef.CPU(),
         )
     )
     connector = LlavaMultiModalConnector(linear_1, linear_2)
@@ -188,6 +190,7 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
                 shape=array.shape,
+                device=DeviceRef.CPU(),
             )
         )
 
@@ -341,6 +344,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
                 shape=array.shape,
+                device=DeviceRef.CPU(),
             )
         )
 
@@ -350,6 +354,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
             name=name,
             dtype=DType.from_numpy(array.numpy().dtype),
             shape=array.shape,
+            device=DeviceRef.CPU(),
         )
 
     def attention(

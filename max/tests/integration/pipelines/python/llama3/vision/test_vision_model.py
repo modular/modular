@@ -13,7 +13,7 @@ import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, Weight
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
 from max.nn import Embedding, LayerNorm, Linear
 from max.pipelines.architectures.llama_vision.attention import Attention
 from max.pipelines.architectures.llama_vision.encoder import (
@@ -107,17 +107,20 @@ class WrappedVisionModel:
                 name="gated_positional_embedding.gate",
                 dtype=dtype,
                 shape=torch_vision_model.gated_positional_embedding.gate.shape,
+                device=DeviceRef.CPU(),
             ),
             embedding=Weight(
                 name="gated_positional_embedding.embedding",
                 dtype=dtype,
                 shape=torch_vision_model.gated_positional_embedding.embedding.shape,
+                device=DeviceRef.CPU(),
             ),
             tile_embedding=Embedding(
                 Weight(
                     name="gated_positional_embedding.tile_embedding",
                     dtype=dtype,
                     shape=torch_vision_model.gated_positional_embedding.tile_embedding.weight.shape,
+                    device=DeviceRef.CPU(),
                 ),
             ),
         )
@@ -129,12 +132,14 @@ class WrappedVisionModel:
                 name="pre_tile_positional_embedding.gate",
                 dtype=dtype,
                 shape=torch_vision_model.pre_tile_positional_embedding.gate.shape,
+                device=DeviceRef.CPU(),
             ),
             embedding=Embedding(
                 Weight(
                     name="pre_tile_positional_embedding.embedding",
                     dtype=dtype,
                     shape=torch_vision_model.pre_tile_positional_embedding.embedding.weight.shape,
+                    device=DeviceRef.CPU(),
                 ),
             ),
             is_gated=True,
@@ -147,12 +152,14 @@ class WrappedVisionModel:
                 name="post_tile_positional_embedding.gate",
                 dtype=dtype,
                 shape=torch_vision_model.post_tile_positional_embedding.gate.shape,
+                device=DeviceRef.CPU(),
             ),
             embedding=Embedding(
                 Weight(
                     name="post_tile_positional_embedding.embedding",
                     dtype=dtype,
                     shape=torch_vision_model.post_tile_positional_embedding.embedding.weight.shape,
+                    device=DeviceRef.CPU(),
                 ),
             ),
             is_gated=True,
@@ -164,6 +171,7 @@ class WrappedVisionModel:
                 name="patch_embedding",
                 dtype=dtype,
                 shape=torch_vision_model.patch_embedding.weight.shape,
+                device=DeviceRef.CPU(),
             ),
             stride=patch_size,
             padding=(0, 0, 0, 0),
@@ -174,6 +182,7 @@ class WrappedVisionModel:
             name="class_embedding",
             dtype=dtype,
             shape=torch_vision_model.class_embedding.shape,
+            device=DeviceRef.CPU(),
         )
 
         layernorm_pre = LayerNorm(
@@ -181,6 +190,7 @@ class WrappedVisionModel:
                 name="layernorm_pre",
                 dtype=dtype,
                 shape=torch_vision_model.layernorm_pre.weight.shape,
+                device=DeviceRef.CPU(),
             ),
             eps=norm_eps,
         )
@@ -190,6 +200,7 @@ class WrappedVisionModel:
                 name="layernorm_post",
                 dtype=dtype,
                 shape=torch_vision_model.layernorm_post.weight.shape,
+                device=DeviceRef.CPU(),
             ),
             eps=norm_eps,
         )
@@ -208,6 +219,7 @@ class WrappedVisionModel:
                                 name=f"transformer.{index}.mlp.fc1",
                                 dtype=dtype,
                                 shape=curr_layer.mlp.fc1.weight.shape,
+                                device=DeviceRef.CPU(),
                             ),
                             bias=None,
                         ),
@@ -216,6 +228,7 @@ class WrappedVisionModel:
                                 name=f"transformer.{index}.mlp.fc2",
                                 dtype=dtype,
                                 shape=curr_layer.mlp.fc2.weight.shape,
+                                device=DeviceRef.CPU(),
                             ),
                             bias=None,
                         ),
@@ -225,6 +238,7 @@ class WrappedVisionModel:
                             name=f"transformer.{index}.input_layernorm",
                             dtype=dtype,
                             shape=curr_layer.input_layernorm.weight.shape,
+                            device=DeviceRef.CPU(),
                         ),
                         eps=norm_eps,
                     ),
@@ -233,6 +247,7 @@ class WrappedVisionModel:
                             name=f"transformer.{index}.post_attention_layernorm",
                             dtype=dtype,
                             shape=curr_layer.post_attention_layernorm.weight.shape,
+                            device=DeviceRef.CPU(),
                         ),
                         eps=norm_eps,
                     ),
@@ -244,6 +259,7 @@ class WrappedVisionModel:
                                 name=f"transformer.{index}.self_attn.k_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.k_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                         wv=Linear(
@@ -251,6 +267,7 @@ class WrappedVisionModel:
                                 name=f"transformer.{index}.self_attn.v_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.v_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                         wq=Linear(
@@ -258,6 +275,7 @@ class WrappedVisionModel:
                                 name=f"transformer.{index}.self_attn.q_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.q_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                         wo=Linear(
@@ -265,6 +283,7 @@ class WrappedVisionModel:
                                 name=f"transformer.{index}.self_attn.o_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.o_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                     ),
@@ -288,6 +307,7 @@ class WrappedVisionModel:
                                 name=f"global_transformer.{index}.mlp.fc1",
                                 dtype=dtype,
                                 shape=curr_layer.mlp.fc1.weight.shape,
+                                device=DeviceRef.CPU(),
                             ),
                             bias=None,
                         ),
@@ -296,6 +316,7 @@ class WrappedVisionModel:
                                 name=f"global_transformer.{index}.mlp.fc2",
                                 dtype=dtype,
                                 shape=curr_layer.mlp.fc2.weight.shape,
+                                device=DeviceRef.CPU(),
                             ),
                             bias=None,
                         ),
@@ -305,6 +326,7 @@ class WrappedVisionModel:
                             name=f"global_transformer.{index}.input_layernorm",
                             dtype=dtype,
                             shape=curr_layer.input_layernorm.weight.shape,
+                            device=DeviceRef.CPU(),
                         ),
                         eps=norm_eps,
                     ),
@@ -313,6 +335,7 @@ class WrappedVisionModel:
                             name=f"global_transformer.{index}.post_attention_layernorm",
                             dtype=dtype,
                             shape=curr_layer.post_attention_layernorm.weight.shape,
+                            device=DeviceRef.CPU(),
                         ),
                         eps=norm_eps,
                     ),
@@ -324,6 +347,7 @@ class WrappedVisionModel:
                                 name=f"global_transformer.{index}.self_attn.k_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.k_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                         wv=Linear(
@@ -331,6 +355,7 @@ class WrappedVisionModel:
                                 name=f"global_transformer.{index}.self_attn.v_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.v_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                         wq=Linear(
@@ -338,6 +363,7 @@ class WrappedVisionModel:
                                 name=f"global_transformer.{index}.self_attn.q_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.q_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                         wo=Linear(
@@ -345,6 +371,7 @@ class WrappedVisionModel:
                                 name=f"global_transformer.{index}.self_attn.o_proj",
                                 dtype=dtype,
                                 shape=curr_layer.self_attn.o_proj.weight.shape,
+                                device=DeviceRef.CPU(),
                             )
                         ),
                     ),
@@ -353,11 +380,13 @@ class WrappedVisionModel:
                         name=f"global_transformer.{index}.gate_attn",
                         dtype=dtype,
                         shape=curr_layer.gate_attn.shape,
+                        device=DeviceRef.CPU(),
                     ),
                     gate_ffn=Weight(
                         name=f"global_transformer.{index}.gate_ffn",
                         dtype=dtype,
                         shape=curr_layer.gate_ffn.shape,
+                        device=DeviceRef.CPU(),
                     ),
                 )
             )
@@ -475,12 +504,17 @@ def test_vision_model(
             image_size,
             num_channels,
         ],
+        device=DeviceRef.CPU(),
     )
     aspect_ratio_ids_type = TensorType(
-        DType.int64, ["batch_size", "num_concurrent_media"]
+        DType.int64,
+        ["batch_size", "num_concurrent_media"],
+        device=DeviceRef.CPU(),
     )
     aspect_ratio_mask_type = TensorType(
-        DType.int64, ["batch_size", "num_concurrent_media", max_num_tiles]
+        DType.int64,
+        ["batch_size", "num_concurrent_media", max_num_tiles],
+        device=DeviceRef.CPU(),
     )
 
     # Phase 1: op staging.

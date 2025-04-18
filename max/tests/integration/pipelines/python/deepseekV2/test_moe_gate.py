@@ -11,9 +11,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import MaxMoEGate
 from torch.utils.dlpack import from_dlpack
-from torch_reference.configuration_deepseek import (
-    DeepseekV2Config,
-)
+from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import MoEGate
 
 
@@ -44,7 +42,7 @@ def generate_max_outputs(
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
     state_dict = {"gate_score.weight": dummy_moe_weight.to(torch.float32).cpu()}
-    model = MaxMoEGate()
+    model = MaxMoEGate(DeviceRef.GPU() if is_gpu else DeviceRef.CPU())
     model.load_state_dict(state_dict)
     session = InferenceSession(devices=[device])
     graph = Graph(

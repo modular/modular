@@ -18,7 +18,15 @@ import torch
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
-from max.graph import DeviceRef, Graph, TensorType, Value, Weight
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    Value,
+    Weight,
+)
 from max.mlir.dialects import mo
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
@@ -462,26 +470,14 @@ class ExternalWeightsModel:
     num_elems: int
     device: Device = field(default_factory=CPU)
 
-    def __call__(self, input: Value) -> Value:
-        weights_tensor_type = TensorType(
-            DType.float32, (self.num_elems,)
-        ).to_mlir()
-        weights_tensor = Graph.current._add_op(
-            mo.constant_external,
-            result=weights_tensor_type,
-            name="foo",
-            align=np.dtype(np.float32).alignment,
-        )[0]
-
-        # Set the constant external op's device explicitly.
-        const_external_op = weights_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = (
-            DeviceRef.CPU().to_mlir()
-            if self.device.is_host
-            else DeviceRef.GPU(0).to_mlir()
+    def __call__(self, input: TensorValueLike) -> Value:
+        weights_tensor = Weight(
+            "foo",
+            DType.float32,
+            (self.num_elems,),
+            DeviceRef.CPU() if self.device.is_host else DeviceRef.GPU(),
         )
-
-        return input + weights_tensor
+        return TensorValue(input) + weights_tensor
 
 
 @pytest.fixture(scope="module")
@@ -494,7 +490,11 @@ def external_weights_graph(external_weights_size: int) -> Graph:
     graph = Graph(
         "external_weights",
         ExternalWeightsModel(external_weights_size),
-        input_types=(TensorType(DType.float32, (external_weights_size,)),),
+        input_types=(
+            TensorType(
+                DType.float32, (external_weights_size,), DeviceRef.CPU()
+            ),
+        ),
     )
     graph._mlir_op.verify()
     return graph
@@ -509,11 +509,8 @@ def test_execute_external_weights_numpy(
     compiled = session.load(
         external_weights_graph, weights_registry={"foo": weights}
     )
-
     input = np.random.randn(external_weights_size).astype(np.float32)
-    output = compiled.execute(
-        Tensor.from_numpy(input).to(compiled.input_devices[0])
-    )
+    output = compiled(input)
     assert isinstance(output[0], Tensor)
     assert np.allclose(output[0].to_numpy(), input + weights)
 
@@ -545,12 +542,18 @@ def test_execute_external_weights_resident(
 ) -> None:
     """Executes a model with external weights already resident on device."""
     weights_np = np.arange(external_weights_size, dtype=np.float32)
-    weights = Tensor.from_numpy(weights_np).to(session.devices[0])
+    weights = Tensor.from_numpy(weights_np)
 
     graph = Graph(
         "external_weights_gpu_resident",
         ExternalWeightsModel(external_weights_size, device=session.devices[0]),
-        input_types=(TensorType(DType.float32, (external_weights_size,)),),
+        input_types=(
+            TensorType(
+                DType.float32,
+                (external_weights_size,),
+                DeviceRef.from_device(session.devices[0]),
+            ),
+        ),
     )
     compiled = session.load(graph, weights_registry={"foo": weights})
 
@@ -560,10 +563,6 @@ def test_execute_external_weights_resident(
         for op in graph._mlir_op.regions[0].blocks[0].operations
         if isinstance(op, mo.ConstantExternalOp)
     )
-    if accelerator_count() == 0:
-        assert "cpu" in str(const_external_op.attributes["device"])
-    else:
-        assert "gpu" in str(const_external_op.attributes["device"])
 
     # Compile and execute with the device-resident weights.
     compiled = session.load(graph, weights_registry={"foo": weights})
@@ -590,10 +589,11 @@ def test_weight_device_mismatch(
     # Create graph with CPU-based weight
     with Graph(
         "test_device_validation",
-        input_types=[TensorType(DType.float32, (10, 10))],
+        input_types=[TensorType(DType.float32, (10, 10), DeviceRef.GPU())],
     ) as g:
         x = g.inputs[0].tensor
-        weight = Weight("w", DType.float32, (10, 10), device=DeviceRef.CPU())
+        # Note: this is actually a weight on CPU which is tranfered to GPU by runtime
+        weight = Weight("w", DType.float32, (10, 10), device=DeviceRef.GPU())
         y = x @ weight
         g.output(y)
 
@@ -625,13 +625,16 @@ def test_weight_device_implicit_mismatch(
     session: InferenceSession,
 ):
     cuda = Accelerator()
-    # Create graph with CPU-based weight
     with Graph(
         "test_device_validation",
-        input_types=[TensorType(DType.float32, (10, 10))],
+        input_types=[
+            TensorType(DType.float32, (10, 10), device=DeviceRef.GPU())
+        ],
     ) as g:
         x = g.inputs[0].tensor
-        weight = Weight("w", DType.float32, (10, 10))
+
+        # Note: weight is implictly on host (and has automatic transfer inserted)
+        weight = Weight("w", DType.float32, (10, 10), device=DeviceRef.GPU())
         y = x @ weight
         g.output(y)
 

@@ -12,7 +12,7 @@ from datasets import load_dataset
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from max.pipelines.architectures.whisper.encoder import (
     WhisperEncoder,
@@ -69,6 +69,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             "conv1_weight",
             DType.from_numpy(weights_registry["conv1_weight"].numpy().dtype),
             shape=weights_registry["conv1_weight"].shape,
+            device=DeviceRef.CPU(),
         ),
         stride=1,
         padding=1,
@@ -76,6 +77,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             "conv1_bias",
             DType.from_numpy(weights_registry["conv1_bias"].numpy().dtype),
             shape=weights_registry["conv1_bias"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
     graph_api_conv2 = Conv1D(
@@ -83,6 +85,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             "conv2_weight",
             DType.from_numpy(weights_registry["conv2_weight"].numpy().dtype),
             shape=weights_registry["conv2_weight"].shape,
+            device=DeviceRef.CPU(),
         ),
         stride=2,
         padding=1,
@@ -90,6 +93,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             "conv2_bias",
             DType.from_numpy(weights_registry["conv2_bias"].numpy().dtype),
             shape=weights_registry["conv2_bias"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
     graph_api_embed_positions = Embedding(
@@ -97,6 +101,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             "embed_positions",
             DType.from_numpy(weights_registry["embed_positions"].numpy().dtype),
             shape=weights_registry["embed_positions"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
     layers = [
@@ -113,6 +118,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                             .dtype
                         ),
                         shape=weights_registry[f"layer{i}_self_att_wq"].shape,
+                        device=DeviceRef.CPU(),
                     ),
                     bias=Weight(
                         f"layer{i}_self_att_wq_bias",
@@ -124,6 +130,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         shape=weights_registry[
                             f"layer{i}_self_att_wq_bias"
                         ].shape,
+                        device=DeviceRef.CPU(),
                     ),
                 ),
                 wk=Linear(
@@ -135,6 +142,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                             .dtype
                         ),
                         shape=weights_registry[f"layer{i}_self_att_wk"].shape,
+                        device=DeviceRef.CPU(),
                     )
                 ),
                 wv=Linear(
@@ -146,6 +154,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                             .dtype
                         ),
                         shape=weights_registry[f"layer{i}_self_att_wv"].shape,
+                        device=DeviceRef.CPU(),
                     ),
                     bias=Weight(
                         f"layer{i}_self_att_wv_bias",
@@ -157,6 +166,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         shape=weights_registry[
                             f"layer{i}_self_att_wv_bias"
                         ].shape,
+                        device=DeviceRef.CPU(),
                     ),
                 ),
                 wo=Linear(
@@ -168,6 +178,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                             .dtype
                         ),
                         shape=weights_registry[f"layer{i}_self_att_wo"].shape,
+                        device=DeviceRef.CPU(),
                     ),
                     bias=Weight(
                         f"layer{i}_self_att_wo_bias",
@@ -179,6 +190,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         shape=weights_registry[
                             f"layer{i}_self_att_wo_bias"
                         ].shape,
+                        device=DeviceRef.CPU(),
                     ),
                 ),
             ),
@@ -191,6 +203,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                                 weights_registry[f"layer{i}_fc1"].numpy().dtype
                             ),
                             shape=weights_registry[f"layer{i}_fc1"].shape,
+                            device=DeviceRef.CPU(),
                         ),
                         bias=Weight(
                             f"layer{i}_fc1_bias",
@@ -200,6 +213,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                                 .dtype
                             ),
                             shape=weights_registry[f"layer{i}_fc1_bias"].shape,
+                            device=DeviceRef.CPU(),
                         ),
                     ),
                     ops.gelu,  # type: ignore
@@ -210,6 +224,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                                 weights_registry[f"layer{i}_fc2"].numpy().dtype
                             ),
                             shape=weights_registry[f"layer{i}_fc2"].shape,
+                            device=DeviceRef.CPU(),
                         ),
                         bias=Weight(
                             f"layer{i}_fc2_bias",
@@ -219,6 +234,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                                 .dtype
                             ),
                             shape=weights_registry[f"layer{i}_fc2_bias"].shape,
+                            device=DeviceRef.CPU(),
                         ),
                     ),
                 ]
@@ -232,6 +248,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         .dtype
                     ),
                     shape=weights_registry[f"layer{i}_attention_norm"].shape,
+                    device=DeviceRef.CPU(),
                 ),
                 eps=1e-5,
                 bias=Weight(
@@ -244,6 +261,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                     shape=weights_registry[
                         f"layer{i}_attention_norm_bias"
                     ].shape,
+                    device=DeviceRef.CPU(),
                 ),
             ),
             mlp_norm=LayerNorm(
@@ -253,6 +271,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         weights_registry[f"layer{i}_mlp_norm"].numpy().dtype
                     ),
                     shape=weights_registry[f"layer{i}_mlp_norm"].shape,
+                    device=DeviceRef.CPU(),
                 ),
                 eps=1e-5,
                 bias=Weight(
@@ -263,6 +282,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         .dtype
                     ),
                     shape=weights_registry[f"layer{i}_mlp_norm_bias"].shape,
+                    device=DeviceRef.CPU(),
                 ),
             ),
         )
@@ -273,12 +293,14 @@ def graph_api_whisper_encoder(weights_registry, model):
             "final_norm",
             DType.from_numpy(weights_registry["final_norm"].numpy().dtype),
             shape=weights_registry["final_norm"].shape,
+            device=DeviceRef.CPU(),
         ),
         eps=1e-5,
         bias=Weight(
             "final_norm_bias",
             DType.from_numpy(weights_registry["final_norm_bias"].numpy().dtype),
             shape=weights_registry["final_norm_bias"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
     return WhisperEncoder(
@@ -336,6 +358,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             "conv1_weight",
             DType.from_numpy(weights_registry["conv1_weight"].numpy().dtype),
             shape=weights_registry["conv1_weight"].shape,
+            device=DeviceRef.CPU(),
         ),
         stride=1,
         padding=1,
@@ -343,6 +366,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             "conv1_bias",
             DType.from_numpy(weights_registry["conv1_bias"].numpy().dtype),
             shape=weights_registry["conv1_bias"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
     graph_api_conv2 = Conv1D(
@@ -350,6 +374,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             "conv2_weight",
             DType.from_numpy(weights_registry["conv2_weight"].numpy().dtype),
             shape=weights_registry["conv2_weight"].shape,
+            device=DeviceRef.CPU(),
         ),
         stride=2,
         padding=1,
@@ -357,6 +382,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             "conv2_bias",
             DType.from_numpy(weights_registry["conv2_bias"].numpy().dtype),
             shape=weights_registry["conv2_bias"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
 
@@ -365,6 +391,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             "embed_positions",
             DType.from_numpy(weights_registry["embed_positions"].numpy().dtype),
             shape=weights_registry["embed_positions"].shape,
+            device=DeviceRef.CPU(),
         ),
     )
 

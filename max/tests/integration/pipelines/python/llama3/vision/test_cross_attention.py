@@ -14,7 +14,13 @@ from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, Weight
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Weight,
+)
 from max.nn import Linear, RMSNorm
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -66,23 +72,27 @@ class CrossAttentionModel:
                     name="wq",
                     dtype=self.dtype,
                     shape=torch_cross_attn.q_proj.weight.shape,
+                    device=DeviceRef.CPU(),
                 )
             ),
             wk=Weight(
                 name="wk",
                 dtype=self.dtype,
                 shape=torch_cross_attn.k_proj.weight.shape,
+                device=DeviceRef.CPU(),
             ),
             wv=Weight(
                 name="wv",
                 dtype=self.dtype,
                 shape=torch_cross_attn.v_proj.weight.shape,
+                device=DeviceRef.CPU(),
             ),
             o_proj=Linear(
                 Weight(
                     name="wo",
                     dtype=self.dtype,
                     shape=torch_cross_attn.o_proj.weight.shape,
+                    device=DeviceRef.CPU(),
                 )
             ),
             q_norm=RMSNorm(
@@ -90,6 +100,7 @@ class CrossAttentionModel:
                     name="q_norm",
                     dtype=self.dtype,
                     shape=torch_cross_attn.q_norm.weight.shape,
+                    device=DeviceRef.CPU(),
                 )
             ),
             k_norm=RMSNorm(
@@ -97,6 +108,7 @@ class CrossAttentionModel:
                     name="k_norm",
                     dtype=self.dtype,
                     shape=torch_cross_attn.k_norm.weight.shape,
+                    device=DeviceRef.CPU(),
                 )
             ),
         )
@@ -158,14 +170,18 @@ def test_cross_attention(
 
     dtype = DType.float32
     hidden_states_type = TensorType(
-        dtype, ["total_seq_len", config.hidden_size]
+        dtype, ["total_seq_len", config.hidden_size], DeviceRef.CPU()
     )
     cross_attention_states_type = TensorType(
-        dtype, shape=[batch_size * cross_seq_len, config.hidden_size]
+        dtype,
+        shape=[batch_size * cross_seq_len, config.hidden_size],
+        device=DeviceRef.CPU(),
     )
 
-    input_row_offsets_type = TensorType(DType.uint32, [batch_size + 1])
-    hidden_max_seq_len_type = TensorType(DType.uint32, [1])
+    input_row_offsets_type = TensorType(
+        DType.uint32, [batch_size + 1], DeviceRef.CPU()
+    )
+    hidden_max_seq_len_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
 
     kv_params = KVCacheParams(
         dtype=dtype,

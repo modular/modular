@@ -24,6 +24,7 @@ def test_weight(session) -> None:
             "random_weight",
             dtype=DType.int64,
             shape=weight_shape,
+            device=DeviceRef.CPU(),
         )
         device_ref = (
             DeviceRef.CPU() if accelerator_count() == 0 else DeviceRef.GPU()
@@ -51,6 +52,7 @@ def test_weight_offset(session) -> None:
             "random_weight",
             dtype=DType.int64,
             shape=weight_shape,
+            device=DeviceRef.CPU(),
         )
         device_ref = (
             DeviceRef.CPU() if accelerator_count() == 0 else DeviceRef.GPU()
@@ -102,10 +104,7 @@ def test_load_pytorch(session, graph_testdata) -> None:
 
     weights = PytorchWeights(graph_testdata / "example_data.pt")
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {
-            k: graph.add_weight(w.allocate(), DeviceRef.CPU())
-            for k, w in weights.items()
-        }
+        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
         device_ref = (
             DeviceRef.CPU() if accelerator_count() == 0 else DeviceRef.GPU()
         )
@@ -150,10 +149,7 @@ def test_load_gguf(session, graph_testdata) -> None:
 
     weights = GGUFWeights(graph_testdata / "example_data.gguf")
     with Graph("graph_with_gguf_weights") as graph:
-        loaded = {
-            k: graph.add_weight(w.allocate(), DeviceRef.CPU())
-            for k, w in weights.items()
-        }
+        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
         device_ref = (
             DeviceRef.CPU() if accelerator_count() == 0 else DeviceRef.GPU()
         )
@@ -198,10 +194,7 @@ def test_load_safetensors(session, graph_testdata) -> None:
         [graph_testdata / f"example_data_{i}.safetensors" for i in range(1, 3)]
     )
     with Graph("graph_with_pt_weights") as graph:
-        loaded = {
-            k: graph.add_weight(w.allocate(), device=DeviceRef.CPU())
-            for k, w in weights.items()
-        }
+        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
         device_ref = (
             DeviceRef.CPU() if accelerator_count() == 0 else DeviceRef.GPU()
         )

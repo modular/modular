@@ -9,7 +9,7 @@ import torch.nn as nn
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight
+from max.graph import DeviceRef, Graph, TensorType, Weight
 from max.nn import Conv1D, Conv3D, Conv3DV2
 
 ACCURACY_RTOL = 1e-4
@@ -60,11 +60,13 @@ def test_conv1d() -> None:
         name="conv1d_weight",
         dtype=DType.from_numpy(weights_registry["conv1d_weight"].numpy().dtype),
         shape=weights_registry["conv1d_weight"].shape,
+        device=DeviceRef.CPU(),
     )
     graph_api_bias = Weight(
         name="conv1d_bias",
         dtype=DType.from_numpy(weights_registry["conv1d_bias"].numpy().dtype),
         shape=weights_registry["conv1d_bias"].shape,
+        device=DeviceRef.CPU(),
     )
 
     # out_channels=hidden_size and kernel_size=kernel_size are inferred from kernel.
@@ -141,6 +143,7 @@ def test_conv3d() -> None:
         name="conv3d_weight",
         dtype=DType.from_numpy(weights_registry["conv3d_weight"].numpy().dtype),
         shape=weights_registry["conv3d_weight"].shape,
+        device=DeviceRef.CPU(),
     )
 
     session = InferenceSession()

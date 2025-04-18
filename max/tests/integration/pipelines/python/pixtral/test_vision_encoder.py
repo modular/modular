@@ -11,7 +11,7 @@ import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight
+from max.graph import DeviceRef, Graph, TensorType, Weight
 from max.nn import Conv2D, Linear
 from max.nn.norm import RMSNorm
 from max.pipelines.architectures.pixtral.vision_encoder.attention import (
@@ -126,6 +126,7 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
                 shape=array.shape,
+                device=DeviceRef.CPU(),
             )
         )
 

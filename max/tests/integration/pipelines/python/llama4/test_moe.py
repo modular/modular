@@ -56,7 +56,6 @@ def generate_max_outputs(
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
-    # TODO: .cpu()s added as workaround for GEX-1967
     state_dict = {"router.weight": dummy_router_weight.cpu()}
 
     state_dict["experts.gate_up_proj"] = expert_weights["gate_up_proj"].cpu()

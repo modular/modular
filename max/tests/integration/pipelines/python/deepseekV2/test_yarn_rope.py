@@ -8,7 +8,7 @@ import torch
 from max._core.engine import PrintStyle
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, Shape, TensorType
+from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -97,11 +97,13 @@ def generate_max_outputs(
             n_heads=config.num_attention_heads,
             max_seq_len=config.max_position_embeddings,
             scaling_params=scaling_params,
+            device=DeviceRef.CPU(),
         ),
         input_types=(
             TensorType(
                 DType.bfloat16,
                 (Shape(input_tensor_rope.shape)),
+                DeviceRef.CPU(),
             ),
         ),
     )

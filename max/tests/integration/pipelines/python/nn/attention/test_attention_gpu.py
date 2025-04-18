@@ -72,16 +72,30 @@ def _attention_layer(
     session: InferenceSession,
 ) -> tuple[Graph, KVCacheParams, ContinuousBatchingKVCacheManager]:
     # Initialize input types
-    input_type = TensorType(dtype, ["batch_size", "seq_len", HIDDEN_DIM])
+    input_type = TensorType(
+        dtype, ["batch_size", "seq_len", HIDDEN_DIM], DeviceRef.GPU()
+    )
     attn_mask_type = TensorType(
-        mask_dtype, ["batch_size", "n_heads", "seq_len", "post_seq_len"]
+        mask_dtype,
+        ["batch_size", "n_heads", "seq_len", "post_seq_len"],
+        DeviceRef.GPU(),
     )
 
-    wq_type = TensorType(dtype, [HIDDEN_DIM, N_HEADS * HEAD_DIM])
-    wk_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
-    wv_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
-    wo_type = TensorType(dtype, [N_HEADS * HEAD_DIM, HIDDEN_DIM])
-    valid_lengths_type = TensorType(DType.uint32, ["batch_size"])
+    wq_type = TensorType(
+        dtype, [HIDDEN_DIM, N_HEADS * HEAD_DIM], DeviceRef.GPU()
+    )
+    wk_type = TensorType(
+        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], DeviceRef.GPU()
+    )
+    wv_type = TensorType(
+        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], DeviceRef.GPU()
+    )
+    wo_type = TensorType(
+        dtype, [N_HEADS * HEAD_DIM, HIDDEN_DIM], DeviceRef.GPU()
+    )
+    valid_lengths_type = TensorType(
+        DType.uint32, ["batch_size"], DeviceRef.GPU()
+    )
 
     # Initialize kv cache params and manager
     kv_params = KVCacheParams(
@@ -254,6 +268,7 @@ def test_aspect_ratio_mask() -> None:
     aspect_ratio_mask_type = TensorType(
         DType.bfloat16,
         shape=["batch_size", "num_concurrent_media", 4, 1],
+        device=DeviceRef.GPU(),
     )
     graph = Graph(
         "aspect_ratio_mask",
@@ -301,23 +316,27 @@ class CrossAttentionModel:
                     name="wq",
                     dtype=self.dtype,
                     shape=torch_cross_attn.q_proj.weight.shape,
+                    device=DeviceRef.GPU(),
                 )
             ),
             wk=Weight(
                 name="wk",
                 dtype=self.dtype,
                 shape=torch_cross_attn.k_proj.weight.shape,
+                device=DeviceRef.GPU(),
             ),
             wv=Weight(
                 name="wv",
                 dtype=self.dtype,
                 shape=torch_cross_attn.v_proj.weight.shape,
+                device=DeviceRef.GPU(),
             ),
             o_proj=Linear(
                 Weight(
                     name="wo",
                     dtype=self.dtype,
                     shape=torch_cross_attn.o_proj.weight.shape,
+                    device=DeviceRef.GPU(),
                 )
             ),
             q_norm=RMSNorm(
@@ -325,6 +344,7 @@ class CrossAttentionModel:
                     name="q_norm",
                     dtype=self.dtype,
                     shape=torch_cross_attn.q_norm.weight.shape,
+                    device=DeviceRef.GPU(),
                 )
             ),
             k_norm=RMSNorm(
@@ -332,6 +352,7 @@ class CrossAttentionModel:
                     name="k_norm",
                     dtype=self.dtype,
                     shape=torch_cross_attn.k_norm.weight.shape,
+                    device=DeviceRef.GPU(),
                 )
             ),
         )
@@ -555,9 +576,13 @@ def test_kv_cache_paged_fa3_fallback():
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
     input_type = TensorType(
-        DType.bfloat16, ["total_seq_len", num_q_heads, kv_params.head_dim]
+        DType.bfloat16,
+        ["total_seq_len", num_q_heads, kv_params.head_dim],
+        DeviceRef.GPU(),
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
+    )
     kv_manager = PagedKVCacheManagerFA3Fallback(
         kv_params,
         cache_memory=1024 * 1024 * 1024,
@@ -686,15 +711,23 @@ def test_kv_cache_paged_mla_prefill():
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
     input_type = TensorType(
-        DType.bfloat16, ["total_seq_len", num_q_heads, q_head_dim]
+        DType.bfloat16,
+        ["total_seq_len", num_q_heads, q_head_dim],
+        DeviceRef.GPU(),
     )
     k_buffer_type = TensorType(
-        DType.bfloat16, ["total_seq_len", num_q_heads, k_head_dim]
+        DType.bfloat16,
+        ["total_seq_len", num_q_heads, k_head_dim],
+        DeviceRef.GPU(),
     )
     v_buffer_type = TensorType(
-        DType.bfloat16, ["total_seq_len", num_q_heads, k_head_dim]
+        DType.bfloat16,
+        ["total_seq_len", num_q_heads, k_head_dim],
+        DeviceRef.GPU(),
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
+    )
     kv_manager = PagedKVCacheManager(
         kv_params,
         cache_memory=1024 * 1024 * 32,

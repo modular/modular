@@ -12,7 +12,7 @@ from max._core.engine import PrintStyle
 from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn.attention.attention_with_rope import LatentAttentionWithRope
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
@@ -51,6 +51,8 @@ def generate_max_outputs(
     attention_weights: dict[str, torch.Tensor],
     use_prefill: bool = True,
 ) -> torch.Tensor:
+    attention_weights = {k: v for k, v in attention_weights.items()}
+
     device0 = Accelerator(0)
     session = InferenceSession(devices=[device0])
     session.set_debug_print_options(style=PrintStyle.COMPACT)
@@ -73,6 +75,7 @@ def generate_max_outputs(
         theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
         scaling_params=scaling_params,
+        device=DeviceRef.GPU(),
     )
 
     kv_params = KVCacheParams(
@@ -97,17 +100,18 @@ def generate_max_outputs(
         qk_nope_head_dim=config.qk_nope_head_dim,
         qk_rope_head_dim=config.qk_rope_head_dim,
         v_head_dim=config.v_head_dim,
+        devices=[DeviceRef.GPU()],
     )
     latent_attention.load_state_dict(attention_weights)
 
     kv_manager = PagedKVCacheManager(
+        devices=[Accelerator(0)],
         params=kv_params,
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
         max_batch_size=1,
         max_seq_len=config.max_position_embeddings,
         num_layers=config.num_hidden_layers,
-        devices=[Accelerator(0)],
         session=session,
     )
 
@@ -116,9 +120,11 @@ def generate_max_outputs(
 
     # Set input types for the graph.
     hidden_state_type = TensorType(
-        DType.bfloat16, ["total_seq_len", config.hidden_size]
+        DType.bfloat16, ["total_seq_len", config.hidden_size], DeviceRef.GPU()
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
+    )
 
     def construct() -> Graph:
         with Graph(
@@ -144,7 +150,6 @@ def generate_max_outputs(
     g = construct()
 
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
-
     batch_size = 1
     total_tokens = input_tensor.shape[1]
     prompt_lens = [total_tokens] if use_prefill else [1]

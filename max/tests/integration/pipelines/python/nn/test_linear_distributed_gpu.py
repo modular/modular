@@ -5,14 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    _reconcile_weights,
+)
 from max.nn import ColumnParallelLinear, LinearV2
 
 
@@ -26,14 +33,17 @@ def _single_gpu_linear(
     batch_size: int,
     in_dim: int,
     out_dim: int,
-    state_dict: dict[str, np.ndarray],
+    state_dict: Mapping[str, npt.NDArray],
     session: InferenceSession,
 ) -> Model:
     """Compiles a Linear layer that runs on a single device."""
     linear = LinearV2(
-        in_dim, out_dim, DType.float32, has_bias="bias" in state_dict
+        in_dim,
+        out_dim,
+        DType.float32,
+        has_bias="bias" in state_dict,
+        device=DeviceRef.GPU(),
     )
-    linear.load_state_dict(state_dict)
     graph = Graph(
         "linear",
         linear,
@@ -43,14 +53,16 @@ def _single_gpu_linear(
             )
         ],
     )
-    return session.load(graph, weights_registry=linear.state_dict())
+    final_dict = _reconcile_weights(graph, state_dict)
+    linear.load_state_dict(final_dict)
+    return session.load(graph, weights_registry=final_dict)
 
 
 def _multi_gpu_linear(
     batch_size: int,
     in_dim: int,
     out_dim: int,
-    state_dict: dict[str, np.ndarray],
+    state_dict: Mapping[str, npt.NDArray],
     session: InferenceSession,
     devices: Sequence[Device],
 ) -> Model:
@@ -76,7 +88,10 @@ def _multi_gpu_linear(
         distributed_graph.output(*distributed_linear(inputs))
 
     return session.load(
-        distributed_graph, weights_registry=distributed_linear.state_dict()
+        distributed_graph,
+        weights_registry=_reconcile_weights(
+            distributed_graph, distributed_linear.state_dict()
+        ),
     )
 
 
@@ -109,6 +124,7 @@ def test_linear(
         state_dict["bias"] = np.random.uniform(size=(out_dim,)).astype(
             np.float32
         )
+
     compiled_linear = _single_gpu_linear(
         batch_size, in_dim, out_dim, state_dict, session
     )
@@ -116,6 +132,7 @@ def test_linear(
     input = Tensor.from_numpy(
         np.random.uniform(size=(batch_size, in_dim)).astype(np.float32)
     ).to(Accelerator())
+
     outputs = compiled_linear(input)
 
     assert len(outputs) == 1

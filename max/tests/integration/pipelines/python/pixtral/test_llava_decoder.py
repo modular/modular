@@ -13,7 +13,7 @@ from context_utils import create_text_context
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 from max.nn import (
     MLP,
     AttentionWithRope,
@@ -111,6 +111,7 @@ def mistral_given_pytorch_mistral(
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
                 shape=array.shape,
+                device=DeviceRef.CPU(),
             )
         )
 
@@ -120,6 +121,7 @@ def mistral_given_pytorch_mistral(
             name=name,
             dtype=DType.from_numpy(array.numpy().dtype),
             shape=array.shape,
+            device=DeviceRef.CPU(),
         )
 
     def attention(kv_params, rope: OptimizedRotaryEmbedding, layer_idx: int):

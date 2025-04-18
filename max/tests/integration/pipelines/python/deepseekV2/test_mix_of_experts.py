@@ -10,12 +10,8 @@ from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import (
-    MoE,
-)
-from torch_reference.configuration_deepseek import (
-    DeepseekV2Config,
-)
+from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import MoE
+from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2MoE
 
 
@@ -59,7 +55,6 @@ def generate_max_outputs(
     is_gpu = isinstance(device, Accelerator)
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
-    # TODO: .cpu()s added as workaround for GEX-1967
     state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
     for i in range(len(expert_weights)):
@@ -83,7 +78,9 @@ def generate_max_outputs(
         "up_proj.weight"
     ].cpu()
 
-    moe = MoE(dtype=dtype)
+    moe = MoE(
+        dtype=dtype, device=DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+    )
     moe.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[Accelerator(0)])

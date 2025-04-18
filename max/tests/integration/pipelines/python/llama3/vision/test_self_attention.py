@@ -15,7 +15,7 @@ from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -77,16 +77,29 @@ def _attention_layer(
     head_dim = dim // n_heads
 
     dtype = DType.float32
-    input_type = TensorType(dtype, [BATCH_SIZE * seq_len, dim])
-    wq_type = TensorType(dtype, [n_heads * head_dim, config.hidden_size])
-    wk_type = TensorType(dtype, [n_kv_heads * head_dim, config.hidden_size])
-    wv_type = TensorType(dtype, [n_kv_heads * head_dim, config.hidden_size])
-    wo_type = TensorType(dtype, [config.hidden_size, n_heads * head_dim])
+    input_type = TensorType(
+        dtype, [BATCH_SIZE * seq_len, dim], device=DeviceRef.CPU()
+    )
+    wq_type = TensorType(
+        dtype, [n_heads * head_dim, config.hidden_size], device=DeviceRef.CPU()
+    )
+    wk_type = TensorType(
+        dtype,
+        [n_kv_heads * head_dim, config.hidden_size],
+        device=DeviceRef.CPU(),
+    )
+    wv_type = TensorType(
+        dtype,
+        [n_kv_heads * head_dim, config.hidden_size],
+        device=DeviceRef.CPU(),
+    )
+    wo_type = TensorType(
+        dtype, [config.hidden_size, n_heads * head_dim], device=DeviceRef.CPU()
+    )
     weight_types = [wq_type, wk_type, wv_type, wo_type]
 
     input_row_offsets_type = TensorType(
-        DType.uint32,
-        [BATCH_SIZE + 1],
+        DType.uint32, [BATCH_SIZE + 1], device=DeviceRef.CPU()
     )
     session = InferenceSession()
 
@@ -137,6 +150,7 @@ def _attention_layer(
             theta=config.rope_theta,
             # TODO: Check if this param value used is correct for "max_seq_len".
             max_seq_len=config.max_position_embeddings,
+            device=DeviceRef.CPU(),
         )
         attention = AttentionWithRopeQKV(
             n_heads=config.num_attention_heads,

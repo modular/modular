@@ -12,7 +12,7 @@ import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, Weight
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
 from max.nn import Embedding
 from max.pipelines.architectures.llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
@@ -55,17 +55,20 @@ class PositionalEmbedding:
                 name="gate",
                 dtype=self.dtype,
                 shape=torch_pos_embed.gate.shape,
+                device=DeviceRef.CPU(),
             ),
             embedding=Weight(
                 name="embedding",
                 dtype=self.dtype,
                 shape=torch_pos_embed.embedding.shape,
+                device=DeviceRef.CPU(),
             ),
             tile_embedding=Embedding(
                 Weight(
                     name="tile_embedding",
                     dtype=self.dtype,
                     shape=torch_pos_embed.tile_embedding.weight.shape,
+                    device=DeviceRef.CPU(),
                 )
             ),
         )
@@ -109,12 +112,14 @@ class AspectRatioEmbedding:
                 name="gate",
                 dtype=self.dtype,
                 shape=torch_aspect_ratio_embed.gate.shape,
+                device=DeviceRef.CPU(),
             ),
             embedding=Embedding(
                 Weight(
                     name="embedding",
                     dtype=self.dtype,
                     shape=torch_aspect_ratio_embed.embedding.weight.shape,
+                    device=DeviceRef.CPU(),
                 )
             ),
             is_gated=is_gated,
