@@ -26,7 +26,7 @@ from sys.ffi import c_int
 from memory import UnsafePointer
 
 
-fn setenv(name: String, value: String, overwrite: Bool = True) -> Bool:
+fn setenv(name: String, owned value: String, overwrite: Bool = True) -> Bool:
     """Changes or adds an environment variable.
 
     Constraints:
@@ -54,7 +54,7 @@ fn setenv(name: String, value: String, overwrite: Bool = True) -> Bool:
     return status == 0
 
 
-fn unsetenv(name: String) -> Bool:
+fn unsetenv(owned name: String) -> Bool:
     """Unsets an environment variable.
 
     Args:
@@ -70,7 +70,7 @@ fn unsetenv(name: String) -> Bool:
     return external_call["unsetenv", c_int](name.unsafe_cstr_ptr()) == 0
 
 
-fn getenv(name: String, default: String = "") -> String:
+fn getenv(owned name: String, default: String = "") -> String:
     """Returns the value of the given environment variable.
 
     Constraints:

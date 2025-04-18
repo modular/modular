@@ -961,9 +961,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         raise "Unable to query macOS version"
 
     # Truncate the string down to the actual length.
-    # FIXME: Stop using internals of String!
-    osver._buffer.resize(buf_len + 1)
-    osver._buffer[buf_len] = 0
+    osver = osver[0:buf_len]
 
     var major = 0
     var minor = 0
