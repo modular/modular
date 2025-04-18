@@ -92,6 +92,23 @@ fn reciprocal(x: SIMD) -> __type_of(x):
     return 1 / x
 
 
+@always_inline
+fn _exp_concrete(x: SIMD) -> __type_of(x):
+    """The concrete implementation of the exp function.
+
+    This is a helper function that is used to provide a concrete implementation
+    of the exp function. This is necessary because exp uses the _Expable trait
+    and mojo cannot disambiguate between the different exp functions otherwise.
+    """
+    return exp(x)
+
+
+@always_inline
+fn _exp2_concrete(x: SIMD) -> __type_of(x):
+    """The concrete implementation of the exp2 function."""
+    return exp2(x)
+
+
 # ===-----------------------------------------------------------------------===#
 # Softmax 2 Pass
 # ===-----------------------------------------------------------------------===#
@@ -1155,6 +1172,8 @@ fn _online_softmax_iter_for_mma_output[
     alias num_colwise_lanes = UInt32(warp_layout.shape[0].value())
     alias rowwise_lanes_stride = UInt32(warp_layout.stride[1].value())
 
+    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
+
     # Online softmax
     @parameter
     for col_tile in range(num_colwise_tiles):
@@ -1262,7 +1281,6 @@ fn _online_softmax_iter_for_mma_output[
         # Corrention since previous max may be updated.
         @parameter
         for row in range(frag_num_rows):
-            alias exp_function = exp2 if use_exp2 else exp
             correction[col_tile, row] = exp_function(
                 rowmax_tensor[col_tile, row] - score_frag_rowmax[col_tile, row]
             )
@@ -1271,7 +1289,6 @@ fn _online_softmax_iter_for_mma_output[
         @parameter
         for row_tile in range(num_rowwise_tiles):
             alias tile_id = col_tile + num_colwise_tiles * row_tile
-            alias exp_function = exp2 if use_exp2 else exp
 
             @parameter
             if frag_is_row_vector:
@@ -1554,6 +1571,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         WM * WN // (2 * frag_size), frag_size
     )
 
+    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
+
     var interwarp_frag_rowmax = tb[type]().row_major[
         num_m_mmas, frag_num_rows
     ]().local().alloc()
@@ -1617,8 +1636,6 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                             ]
                         ),
                     )
-
-    alias exp_function = exp2 if use_exp2 else exp
 
     @parameter
     for col_tile in range(num_m_mmas):
@@ -1867,7 +1884,8 @@ fn _rowmax_online_softmax[
     score_frag_rowmax = __type_of(rowmax_tensor).stack_allocation()
 
     alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
-    alias exp_function = exp2 if use_exp2 else exp
+
+    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     # Online softmax
     @parameter
@@ -2008,7 +2026,7 @@ fn _online_softmax_correction[
     ],
 ):
     alias num_colwise_tiles = row_accum_layout.size()
-    alias exp_function = exp2 if use_exp2 else exp
+    alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     @parameter
     for col_tile in range(num_colwise_tiles):
@@ -2104,8 +2122,6 @@ fn _online_softmax_iter_for_mma_output_sm90[
     correction = _rowmax_online_softmax[
         block_layout_by_warp, warp_layout, use_exp2=use_exp2
     ](score_reg_tile, rowmax_tensor)
-
-    alias exp_function = exp2 if use_exp2 else exp
 
     score_frag_rowsum = _rowsum[warp_layout](score_reg_tile)
 
