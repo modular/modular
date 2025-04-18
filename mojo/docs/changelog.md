@@ -242,4 +242,13 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
   cannot run at compile time.
 
 - [#4273](https://github.com/modular/max/issues/4273) - `count_leading_zeros`
-  doesn't work for vectors with size > 1 at comptime
+  doesn't work for vectors with size > 1 at comptime.
+
+- [#4320](https://github.com/modular/max/issues/4320) - Intermittent
+  miscompilation with bytecode imported traits.
+
+- [#4281](https://github.com/modular/max/issues/4281) - MAX does not support RTX
+  5000-series GPUs.
+
+- [#4163](https://github.com/modular/max/issues/4163) - Corner case in
+  initializers.
