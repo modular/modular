@@ -26,7 +26,9 @@ from sys.ffi import c_int
 from memory import UnsafePointer
 
 
-fn setenv(name: String, owned value: String, overwrite: Bool = True) -> Bool:
+fn setenv(
+    owned name: String, owned value: String, overwrite: Bool = True
+) -> Bool:
     """Changes or adds an environment variable.
 
     Constraints:

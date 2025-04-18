@@ -603,10 +603,19 @@ struct String(
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self):
-        """Construct an uninitialized string."""
+        """Construct an empty string."""
         self._buffer = Self._buffer_type()
+
+    @always_inline
+    fn __init__(out self, *, capacity: Int):
+        """Construct an empty string with a given capacity.
+
+        Args:
+            capacity: The capacity of the string.
+        """
+        self._buffer = Self._buffer_type(capacity=capacity)
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -716,15 +725,6 @@ struct String(
         """
         self = String()
         write_buffered(self, args, sep=sep, end=end)
-
-    @always_inline
-    fn __init__(out self, *, capacity: Int):
-        """Construct an uninitialized string with the given capacity.
-
-        Args:
-            capacity: The capacity of the string.
-        """
-        self._buffer = Self._buffer_type(capacity=capacity)
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
@@ -1340,12 +1340,8 @@ struct String(
         return self._buffer.unsafe_ptr()
 
     fn unsafe_cstr_ptr(
-        self,
-    ) -> UnsafePointer[
-        c_char,
-        mut = Origin(__origin_of(self)).is_mutable,
-        origin = __origin_of(self),
-    ]:
+        mut self,
+    ) -> UnsafePointer[c_char, mut=True, origin = __origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1353,6 +1349,9 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
+        # The string may be empty, add a nul terminator if so.
+        if len(self._buffer) == 0:
+            self._buffer.append(0)
         return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline

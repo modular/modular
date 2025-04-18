@@ -1413,6 +1413,22 @@ def test_uninit_ctor():
     assert_equal(s, "hello")
 
 
+def test_unsafe_cstr():
+    var s1: String = "ab"
+    var p1 = s1.unsafe_cstr_ptr()
+    assert_equal(p1[0], ord("a"))
+    assert_equal(p1[1], ord("b"))
+    assert_equal(p1[2], 0)
+
+    var s2: String = ""
+    var p2 = s2.unsafe_cstr_ptr()
+    assert_equal(p2[0], 0)
+
+    var s3 = String()
+    var p3 = s3.unsafe_cstr_ptr()
+    assert_equal(p3[0], 0)
+
+
 def test_variadic_ctors():
     var s = String("message", 42, 42.2, True, sep=", ")
     assert_equal(s, "message, 42, 42.2, True")
@@ -1473,4 +1489,5 @@ def main():
     test_float_conversion()
     test_slice_contains()
     test_uninit_ctor()
+    test_unsafe_cstr()
     test_variadic_ctors()

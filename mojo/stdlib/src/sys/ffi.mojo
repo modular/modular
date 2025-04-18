@@ -190,7 +190,8 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
         @parameter
         if not os_is_windows():
-            var handle = dlopen(path.__fspath__().unsafe_cstr_ptr(), flags)
+            var fspath = path.__fspath__()
+            var handle = dlopen(fspath.unsafe_cstr_ptr(), flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
                 abort(
@@ -213,7 +214,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         """
         return self
 
-    fn check_symbol(self, name: String) -> Bool:
+    fn check_symbol(self, owned name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
 
         Args:
@@ -257,7 +258,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
     @always_inline
     fn get_function[
         result_type: AnyTrivialRegType
-    ](self, name: String) -> result_type:
+    ](self, owned name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -332,11 +333,6 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         Returns:
             A pointer to the symbol.
         """
-        # TODO(performance): It is unfortunate to copy the name here, but we
-        # don't have a way to pass a StringSlice to the `dlsym` function because
-        # we don't know it is nul-terminated.  It would be nice to have a
-        # StringSliceNulTerminated type.  Such a thing would carry an origin so
-        # it can reference other string data, but would not be subslicable.
         name_copy = String(name)
         return self.get_symbol[result_type](name_copy.unsafe_cstr_ptr())
 

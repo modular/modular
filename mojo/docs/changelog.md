@@ -126,6 +126,11 @@ for i in range(iteration_range):
   `var x = Python.list(1, 2, "foo")`.  We hope to re-enable the syntax in
   the future as the standard library matures.
 
+- The `String.unsafe_cstr_ptr()` method (used for passing string pointers to
+  legacy C APIs) now requires the string to be mutable in order to make
+  nul-termination lazy on demand. This improves performance for strings that are
+  not passed to legacy APIs.
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
