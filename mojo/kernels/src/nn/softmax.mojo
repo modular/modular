@@ -2125,7 +2125,7 @@ fn _online_softmax_iter_for_mma_output_sm90[
 
     score_frag_rowsum = _rowsum[warp_layout](score_reg_tile)
 
-    _online_softmax_correction[use_exp2=True](rowmax_tensor, correction)
+    _online_softmax_correction[use_exp2=use_exp2](rowmax_tensor, correction)
 
     @parameter
     for col_tile in range(num_colwise_tiles):
