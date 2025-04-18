@@ -995,6 +995,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
 
     return success();
+
+  case (uint32_t)POC::StringAddress:
+    return parseParamValue(p, operands.emplace_back(),
+                           StringType::get(type.getContext()));
   }
   llvm_unreachable("unknown operator");
 }
