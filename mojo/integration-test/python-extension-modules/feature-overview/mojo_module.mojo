@@ -17,7 +17,7 @@ from builtin._pybind import (
     check_arguments_arity,
 )
 from memory import UnsafePointer
-from python import Python, PythonObject, TypedPythonObject
+from python import Python, PythonObject, TypedPythonObject, PythonModule
 from python._bindings import (
     PyMojoObject,
     py_c_function_wrapper,
@@ -34,10 +34,10 @@ fn PyInit_mojo_module() -> PythonObject:
 
     # This will initialize the Python interpreter and create
     # an extension module with the provided name.
-    var module: TypedPythonObject["Module"]
+    var module: PythonModule
 
     try:
-        module = TypedPythonObject["Module"]("bindings")
+        module = PythonModule("bindings")
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
 
@@ -173,7 +173,7 @@ struct Person:
         return PythonObject(self0[].name).steal_data()
 
 
-fn add_person_type(mut module: TypedPythonObject["Module"]):
+fn add_person_type(mut module: PythonModule):
     # ----------------------------------------------
     # Construct a 'type' object describing `Person`
     # ----------------------------------------------
@@ -208,7 +208,7 @@ fn add_person_type(mut module: TypedPythonObject["Module"]):
 # ====================================
 
 
-fn add_int_type(mut module: TypedPythonObject["Module"]):
+fn add_int_type(mut module: PythonModule):
     try:
         var type_obj = python_type_object[Int, "Int"](
             methods=List[PyMethodDef]()
@@ -276,7 +276,7 @@ fn add_to_int__wrapper(
 # ====================================
 
 
-fn add_string_type(mut module: TypedPythonObject["Module"]):
+fn add_string_type(mut module: PythonModule):
     try:
         var type_obj = python_type_object[String, "String"](
             methods=List[PyMethodDef]()

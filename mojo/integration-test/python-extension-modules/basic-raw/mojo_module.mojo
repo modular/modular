@@ -7,7 +7,7 @@
 from os import abort
 
 import builtin
-from python import Python, PythonObject, TypedPythonObject
+from python import Python, PythonObject, TypedPythonObject, PythonModule
 from python._cpython import PyMethodDef, PyObjectPtr
 
 
@@ -19,10 +19,10 @@ fn PyInit_mojo_module() -> PythonObject:
 
     # This will initialize the Python interpreter and create
     # an extension module with the provided name.
-    var module: TypedPythonObject["Module"]
+    var module: PythonModule
 
     try:
-        module = TypedPythonObject["Module"]("bindings")
+        module = PythonModule("bindings")
     except:
         return abort[PythonObject]("failed to create Python module")
 
