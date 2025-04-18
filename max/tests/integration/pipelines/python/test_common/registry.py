@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for loading and ensuring registry works in test suite."""
 
+from functools import wraps
+
 import pytest
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures import register_all_models
@@ -32,3 +34,14 @@ def pipeline_registry():
         register_all_models()
 
     yield PIPELINE_REGISTRY
+
+
+def prepare_registry(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        PIPELINE_REGISTRY.reset()
+        result = func(*args, **kwargs)
+
+        return result
+
+    return wrapper

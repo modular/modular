@@ -17,10 +17,8 @@ from max.pipelines import (
     SupportedEncoding,
 )
 from test_common.mocks import mock_estimate_memory_footprint
-from test_common.pipeline_model_dummy import (
-    DUMMY_ARCH,
-    prepare_registry,
-)
+from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.registry import prepare_registry
 
 
 @prepare_registry

@@ -13,10 +13,8 @@ from max.pipelines import (
     PipelineEngine,
 )
 from test_common.mocks import mock_pipeline_config_hf_dependencies
-from test_common.pipeline_model_dummy import (
-    DUMMY_ARCH,
-    prepare_registry,
-)
+from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.registry import prepare_registry
 
 
 @prepare_registry

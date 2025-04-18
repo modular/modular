@@ -28,8 +28,8 @@ from test_common.pipeline_model_dummy import (
     DUMMY_ARCH,
     DUMMY_GPTQ_ARCH,
     REPLIT_ARCH,
-    prepare_registry,
 )
+from test_common.registry import prepare_registry
 
 
 @prepare_registry

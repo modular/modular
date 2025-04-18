@@ -8,7 +8,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Optional, Union
-from unittest.mock import MagicMock, PropertyMock, patch
 
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode

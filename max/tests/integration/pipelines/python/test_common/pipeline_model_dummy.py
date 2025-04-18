@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from functools import wraps
 from typing import Any, cast
 
 from max.driver import Device, Tensor, load_devices
@@ -23,7 +22,6 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines import (
-    PIPELINE_REGISTRY,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -344,14 +342,3 @@ DUMMY_GPTQ_ARCH = SupportedArchitecture(
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
 )
-
-
-def prepare_registry(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        PIPELINE_REGISTRY.reset()
-        result = func(*args, **kwargs)
-
-        return result
-
-    return wrapper

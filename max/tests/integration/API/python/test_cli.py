@@ -35,10 +35,8 @@ from test_common.pipeline_cli_utils import (
     CLITestEnum,
     Output,
 )
-from test_common.pipeline_model_dummy import (
-    DUMMY_ARCH,
-    prepare_registry,
-)
+from test_common.pipeline_model_dummy import DUMMY_ARCH
+from test_common.registry import prepare_registry
 
 
 @click.group()
