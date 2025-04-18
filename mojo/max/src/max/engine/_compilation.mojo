@@ -68,14 +68,16 @@ struct CCompileConfig:
             lib, Self.SetPipelineNameFnName, self, name.unsafe_ptr()
         )
 
-    fn set_model_path(self, path: String, lib: DLHandle):
+    fn set_model_path(self, owned path: String, lib: DLHandle):
         """Sets the path of model to compile."""
-        call_dylib_func(lib, Self.SetModelPathFnName, self, path.unsafe_ptr())
+        call_dylib_func(
+            lib, Self.SetModelPathFnName, self, path.unsafe_cstr_ptr()
+        )
 
-    fn replace_ops(self, path: String, lib: DLHandle) raises:
+    fn replace_ops(self, owned path: String, lib: DLHandle) raises:
         var status = Status(lib)
         call_dylib_func(
-            lib, Self.ReplaceOpsFnName, self, path.unsafe_ptr(), status.ptr
+            lib, Self.ReplaceOpsFnName, self, path.unsafe_cstr_ptr(), status.ptr
         )
         if status:
             raise Error(status.__str__())
@@ -374,7 +376,7 @@ struct CCompiledModel:
 
     fn get_model_input_spec_by_name(
         self,
-        tensor_name: String,
+        owned tensor_name: String,
         lib: DLHandle,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
@@ -384,7 +386,7 @@ struct CCompiledModel:
             lib,
             Self.GetModelInputSpecByNameFnName,
             self,
-            tensor_name.unsafe_ptr(),
+            tensor_name.unsafe_cstr_ptr(),
             status.ptr,
         )
         if status:
@@ -393,7 +395,7 @@ struct CCompiledModel:
 
     fn get_model_output_spec_by_name(
         self,
-        tensor_name: String,
+        owned tensor_name: String,
         lib: DLHandle,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
@@ -403,17 +405,21 @@ struct CCompiledModel:
             lib,
             Self.GetModelOutputSpecByNameFnName,
             self,
-            tensor_name.unsafe_ptr(),
+            tensor_name.unsafe_cstr_ptr(),
             status.ptr,
         )
         if status:
             raise Error(status.__str__())
         return EngineTensorSpec(output_spec, lib, session)
 
-    fn export_compiled_model(self, lib: DLHandle, path: String) raises:
+    fn export_compiled_model(self, lib: DLHandle, owned path: String) raises:
         var status = Status(lib)
         call_dylib_func(
-            lib, Self.ExportModelFnName, self, path.unsafe_ptr(), status.ptr
+            lib,
+            Self.ExportModelFnName,
+            self,
+            path.unsafe_cstr_ptr(),
+            status.ptr,
         )
         if status:
             raise Error(status.__str__())
