@@ -24,13 +24,19 @@ def _alibi_bias(
     # This bias has to be calculated in fp32, as numpy does not have support for bf16.
     bias = np.arange(1 - max_seq_len, 1, 1).reshape((1, 1, 1, max_seq_len))
     rounded_n_heads = int(
-        np.power(np.asfarray(2), np.ceil(np.log2(np.asfarray(n_heads))))
+        np.power(
+            np.asarray(2, dtype=float),
+            np.ceil(np.log2(np.asarray(n_heads, dtype=float))),
+        )
     )
     m = np.arange(1.0, 1.0 + rounded_n_heads) * (
-        np.asfarray(alibi_bias_max) / np.asfarray(rounded_n_heads)
+        np.asarray(alibi_bias_max, dtype=float)
+        / np.asarray(rounded_n_heads, dtype=float)
     )
 
-    slopes = np.asfarray(1.0) / np.power(2.0, m)
+    slopes = np.asarray(1.0, dtype=float) / np.power(
+        np.asarray(2.0, dtype=float), m
+    )
 
     if rounded_n_heads != n_heads:
         slopes = np.concatenate(
