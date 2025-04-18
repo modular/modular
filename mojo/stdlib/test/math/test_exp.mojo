@@ -17,7 +17,7 @@ from random import randn_float64, seed
 from sys import has_neon
 
 from test_utils import libm_call
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal, assert_equal, Testable
 
 
 def test_exp_bfloat16():
@@ -70,6 +70,52 @@ def test_exp_libm[type: DType]():
         )
 
 
+@value
+struct Float32Expable(Testable):
+    """This is a test struct that implements the Expable trait for Float32."""
+
+    var x: Float32
+
+    fn __exp__(self) -> Self:
+        return Self(exp(self.x))
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.x == other.x
+
+    fn __ne__(self, other: Self) -> Bool:
+        return self.x != other.x
+
+    fn __str__(self) -> String:
+        return String("Float32Expable(", self.x, ")")
+
+
+@value
+struct FakeExpable(Testable):
+    """This is a test struct that has a dummy definition of exp function."""
+
+    var x: Int
+
+    fn __init__(out self, x: Int):
+        self.x = x
+
+    fn __exp__(self) -> Self:
+        return Self(99)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.x == other.x
+
+    fn __ne__(self, other: Self) -> Bool:
+        return self.x != other.x
+
+    fn __str__(self) -> String:
+        return String("FakeExpable(", self.x, ")")
+
+
+def test_exapble_trait():
+    assert_equal(exp(Float32Expable(1.0)), Float32Expable(exp(Float32(1.0))))
+    assert_equal(exp(FakeExpable(1)), FakeExpable(99))
+
+
 def main():
     test_exp_bfloat16()
     test_exp_float16()
@@ -77,3 +123,4 @@ def main():
     test_exp_float64()
     test_exp_libm[DType.float32]()
     test_exp_libm[DType.float64]()
+    test_exapble_trait()
