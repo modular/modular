@@ -704,22 +704,31 @@ fn _cublasLt_matmul(
 
     constrained[
         (
-            a_type in [DType.float8_e4m3fn, DType.float8_e5m2]
-            and b_type in [DType.float8_e4m3fn, DType.float8_e5m2]
+            a_type
+            in (
+                DType.float8_e4m3fn,
+                DType.float8_e5m2,
+                DType.bfloat16,
+                DType.float16,
+            )
         ),
         (
-            "Only E4M3 and E5M2 input data types are supported. Please extend"
-            " it if you need more data types."
+            "Only E4M3, E5M2, bfloat16, and float16 input data types are"
+            " supported. Please extend it if you need more data types."
         ),
     ]()
 
-    constrained[
-        not (a_type == b_type is DType.float8_e5m2),
-        (
-            "E5M2xE5m2 is not supported! Please refer to"
-            " `https://docs.nvidia.com/cuda/cublas/#id105`"
-        ),
-    ]()
+    constrained[a_type == b_type, "A and B must have the same type"]()
+
+    @parameter
+    if a_type.is_float8():
+        constrained[
+            not (a_type == b_type == DType.float8_e5m2),
+            (
+                "E5M2xE5m2 is not supported! Please refer to"
+                " `https://docs.nvidia.com/cuda/cublas/#id105`"
+            ),
+        ]()
 
     if transpose_a or not transpose_b:
         raise Error(
@@ -916,8 +925,6 @@ fn _cublasLt_matmul(
                 cuda_stream[],  # stream
             )
         )
-
-    ctx.synchronize()
 
     check_cublas_error(cublasLtMatmulDescDestroy(compute_desc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_adesc))
