@@ -41,7 +41,7 @@ trait Writer:
 
         # Writer requirement to write a Span of Bytes
         fn write_bytes(mut self, bytes: Span[Byte, _]):
-            self.s._iadd[False](bytes)
+            self.s._iadd(bytes)
 
         # Writer requirement to take multiple args
         fn write[*Ts: Writable](mut self, *args: *Ts):
@@ -387,7 +387,7 @@ fn write_buffered[
         *args: *Ts, sep: StaticString, end: StaticString
     ):
         var stderr = sys.stderr
-        write_buffered(stdout, args, sep=sep, end=end)
+        write_buffered(stderr, args, sep=sep, end=end)
 
         # Buffer before allocating a string
         var string = String()
