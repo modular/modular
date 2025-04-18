@@ -317,9 +317,9 @@ struct Q4sym[
 
                 # TODO: use the memory more directly instead of memcpy
                 var encoded_data = Q4sym[group_size, float_dtype](loaded_group)
-                var src_ptr = UnsafePointer.address_of(
-                    encoded_data
-                ).address_space_cast[output_ptr.address_space]()
+                var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
+                    output_ptr.address_space
+                ]()
                 memcpy(output_ptr, src_ptr, 1)
                 _ = encoded_data^
 
@@ -370,7 +370,7 @@ struct Q4sym[
                 var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[group_size, float_dtype]()
                 memcpy(
-                    UnsafePointer.address_of(encoded),
+                    UnsafePointer(to=encoded),
                     base_block_ptr + flat_index_input,
                     1,
                 )
