@@ -84,16 +84,19 @@ fn bitcast[
     ](val.value)
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn _uint(n: Int) -> DType:
-    if n == 8:
-        return DType.uint8
-    elif n == 16:
-        return DType.uint16
-    elif n == 32:
-        return DType.uint32
-    else:
-        return DType.uint64
+    # fmt: off
+    return (
+        DType.uint8 if n == 8
+        else DType.uint16 if n == 16
+        else DType.uint32 if n == 32
+        else DType.uint64 if n == 64
+        else DType.uint128 if n == 128
+        else DType.uint256 if n == 256
+        else DType.invalid
+    )
+    # fmt: on
 
 
 @always_inline("nodebug")

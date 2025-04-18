@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from memory import bitcast
+from memory import bitcast, pack_bits
 from testing import assert_equal
 
 
@@ -28,5 +28,11 @@ def test_bitcast():
     )
 
 
+def test_pack_bits():
+    alias b = SIMD[DType.bool, 8](1, 1, 1, 0, 1, 0, 1, 1)
+    assert_equal(pack_bits(b), UInt8(0b1101_0111))
+
+
 def main():
     test_bitcast()
+    test_pack_bits()
