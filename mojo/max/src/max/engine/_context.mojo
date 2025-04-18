@@ -171,7 +171,7 @@ struct RuntimeContext:
         mut self,
         style: PrintStyle,
         precision: UInt,
-        output_directory: String,
+        owned output_directory: String,
     ):
         _ = call_dylib_func[CRuntimeContext](
             self.lib,
@@ -179,7 +179,7 @@ struct RuntimeContext:
             self.ptr,
             style.style,
             precision,
-            output_directory.unsafe_ptr(),
+            output_directory.unsafe_cstr_ptr(),
         )
 
 

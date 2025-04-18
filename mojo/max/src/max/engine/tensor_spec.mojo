@@ -96,7 +96,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
 
     fn __init__(
         out self,
-        name: String,
+        owned name: String,
         spec: TensorSpec,
         lib: DLHandle,
         owned session: InferenceSession,
@@ -115,7 +115,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         var dtype = spec.dtype()
         var rank = spec.rank()
         var shape = List[Int64]()
-        var name_str = name.unsafe_ptr()
+        var name_str = name.unsafe_cstr_ptr()
         for i in range(rank):
             shape.append(spec[i])
         self._ptr = call_dylib_func[CTensorSpec](
@@ -173,7 +173,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
 
     fn __init__(
         out self,
-        name: String,
+        owned name: String,
         shape: Optional[List[Optional[Int64]]],
         dtype: DType,
         lib: DLHandle,
@@ -193,7 +193,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             session: Copy of InferenceSession from which this instance
                      was created.
         """
-        var name_str = name.unsafe_ptr()
+        var name_str = name.unsafe_cstr_ptr()
         if shape:
             var inner_shape = shape.value()
             var rank = len(inner_shape)
