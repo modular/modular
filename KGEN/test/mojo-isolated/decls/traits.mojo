@@ -1025,11 +1025,11 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 fn take_movable_pointer[T: Movable](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType [!kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable [!kgen.param<:!kgen.param<:!lit.anytrait<!CollectionElement> element_trait>
+        # CHECK-SAME: <:!Movable [!kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
         take_movable_pointer(ptr)

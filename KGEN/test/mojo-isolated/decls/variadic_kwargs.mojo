@@ -18,7 +18,7 @@
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: "[mut [[LT:.*]]](
 # CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> var, *, %c: index, %d: index,
-# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
+# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
 fn variadic_kwargs(a: Index, b: Index, *args: Index, c: Index, d: Index, **kwargs: Index):
     pass
 
@@ -28,7 +28,7 @@ def variadic_kwargs_def_with_type(**kwargs: Index):
     pass
 
 
-# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var,
+# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var,
 fn takes_int_variadic_kwargs(**kwargs: Index):
     pass
 
@@ -42,7 +42,7 @@ fn takes_int_variadic_kwargs_multiline(
 # CHECK-LABEL: lit.fn @"test_variadic_kwargs
 fn test_variadic_kwargs():
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
-    # CHECK-SAME: @OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>
+    # CHECK-SAME: @OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
 
     # CHECK: %[[X_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "x">
@@ -83,7 +83,7 @@ fn test_variadic_kwargs_param_inference():
     # CHECK: %[[M:.*]] = lit.var.decl
     # CHECK: lit.call {{.*}}MemOnly::@"__init__{{.*}}(%[[M]])
 
-    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}@OwnedKwargsDict<:!CollectionElement #[[MEM_ONLY]]>
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[MEM_ONLY]]>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
     # CHECK: %[[Y_KEY:.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "y">
 
@@ -108,7 +108,7 @@ fn takes_kw(**kwargs: MemOnly) -> Index:
 fn test_takes_kw_in_assignment(x: MemOnly):
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
-    # CHECK-SAME: @OwnedKwargsDict<:!CollectionElement #[[MEM_ONLY]]>
+    # CHECK-SAME: @OwnedKwargsDict<:!Copyable_Movable #[[MEM_ONLY]]>
     # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
     # CHECK: lit.ref.store %[[RES]], %b
     var b = takes_kw(y=x, z=x)
