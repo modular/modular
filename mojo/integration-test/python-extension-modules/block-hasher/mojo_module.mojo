@@ -141,22 +141,12 @@ fn mojo_block_hasher_return_list(
 
     # Parse block size
     # ~13us
-    var block_size: Int = check_and_get_or_convert_arg[Int](
-        "mojo_block_hasher",
-        "Int",
-        py_args,
-        1,
-    )[]
+    var block_size = Int.try_from_python(py_args[1])
 
     # Parse enable_dbg_prints
     # note: struct 'Bool' does not implement all requirements for 'ConvertibleFromPython'
     # ~13us
-    var enable_dbg_prints_int: Int = check_and_get_or_convert_arg[Int](
-        "mojo_block_hasher",
-        "Int",
-        py_args,
-        2,
-    )[]
+    var enable_dbg_prints_int = Int.try_from_python(py_args[2])
     var enable_dbg_prints: Bool = enable_dbg_prints_int != 0
 
     # Perfoming hashing
@@ -189,22 +179,12 @@ fn mojo_block_hasher_inplace(
 
     # Parse block size
     # ~13us
-    var block_size: Int = check_and_get_or_convert_arg[Int](
-        "mojo_block_hasher",
-        "Int",
-        py_args,
-        2,
-    )[]
+    var block_size = Int.try_from_python(py_args[2])
 
     # Parse enable_dbg_prints
     # note: struct 'Bool' does not implement all requirements for 'ConvertibleFromPython'
     # ~13us
-    var enable_dbg_prints_int: Int = check_and_get_or_convert_arg[Int](
-        "mojo_block_hasher",
-        "Int",
-        py_args,
-        3,
-    )[]
+    var enable_dbg_prints_int = Int.try_from_python(py_args[3])
     var enable_dbg_prints: Bool = enable_dbg_prints_int != 0
 
     # Perform hashing
