@@ -165,6 +165,7 @@ public:
   constexpr bool isFloat() const {
     return !isInt() && ((value & mIsFloat) != 0);
   }
+  bool isFloat8() const;
 
   constexpr bool isTF32() const { return value == DType::tf32; }
 
