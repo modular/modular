@@ -388,7 +388,7 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetHandleByIndex_v2",
                 fn (UInt32, UnsafePointer[_DeviceImpl]) -> Result,
-            ]()(UInt32(idx), UnsafePointer.address_of(device))
+            ]()(UInt32(idx), UnsafePointer(to=device))
         )
         self.idx = idx
         self.device = device
@@ -420,7 +420,7 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetMaxClockInfo",
                 fn (_DeviceImpl, ClockType, UnsafePointer[UInt32]) -> Result,
-            ]()(self.device, clock_type, UnsafePointer.address_of(clock))
+            ]()(self.device, clock_type, UnsafePointer(to=clock))
         )
         return Int(clock)
 
@@ -440,7 +440,7 @@ struct Device(Writable):
             ) -> Result,
         ]()(
             self.device,
-            UnsafePointer.address_of(num_clocks),
+            UnsafePointer(to=num_clocks),
             UnsafePointer[UInt32](),
         )
         if result != Result.INSUFFICIENT_SIZE:
@@ -455,7 +455,7 @@ struct Device(Writable):
                 fn (
                     _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
                 ) -> Result,
-            ]()(self.device, UnsafePointer.address_of(num_clocks), clocks.data)
+            ]()(self.device, UnsafePointer(to=num_clocks), clocks.data)
         )
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
@@ -480,7 +480,7 @@ struct Device(Writable):
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
-            UnsafePointer.address_of(num_clocks),
+            UnsafePointer(to=num_clocks),
             UnsafePointer[UInt32](),
         )
 
@@ -505,7 +505,7 @@ struct Device(Writable):
             ]()(
                 self.device,
                 UInt32(memory_clock_mhz),
-                UnsafePointer.address_of(num_clocks),
+                UnsafePointer(to=num_clocks),
                 clocks.data,
             )
         )
@@ -538,8 +538,8 @@ struct Device(Writable):
                 ) -> Result,
             ]()(
                 self.device,
-                UnsafePointer.address_of(is_enabled),
-                UnsafePointer.address_of(default_is_enabled),
+                UnsafePointer(to=is_enabled),
+                UnsafePointer(to=default_is_enabled),
             )
         )
         return is_enabled == _EnableState.ENABLED
@@ -565,7 +565,7 @@ struct Device(Writable):
                 fn (_DeviceImpl, UnsafePointer[_EnableState]) -> Result,
             ]()(
                 self.device,
-                UnsafePointer.address_of(is_enabled),
+                UnsafePointer(to=is_enabled),
             )
         )
         return is_enabled == _EnableState.ENABLED
