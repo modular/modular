@@ -63,7 +63,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
     ctx.enqueue_function[copy_to_sram_test_kernel[tensor_layout]](
         tensor.device_tensor(),
-        UnsafePointer.address_of(check_state),
+        UnsafePointer(to=check_state),
         grid_dim=(4),
         block_dim=(1),
     )

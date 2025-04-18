@@ -41,9 +41,7 @@ fn kernel_copy_async_tma(descriptor: TMADescriptor):
     var mbar = stack_allocation[
         1, Int64, address_space = _GPUAddressSpace.SHARED
     ]()
-    var descriptor_ptr = UnsafePointer.address_of(descriptor).bitcast[
-        NoneType
-    ]()
+    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     mbarrier_arrive_expect_tx_shared(mbar, 64)
