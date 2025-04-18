@@ -5742,7 +5742,7 @@ fn copy_sram_to_dram[
     else:
         constrained[
             src.dtype == dst.dtype
-            or (src.dtype == DType.float32 and dst.dtype.is_half_float()),
+            or (src.dtype is DType.float32 and dst.dtype.is_half_float()),
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
@@ -6397,7 +6397,7 @@ fn copy[
 
     constrained[
         src.dtype == dst.dtype
-        or (src.dtype == DType.float32 and dst.dtype.is_half_float()),
+        or (src.dtype is DType.float32 and dst.dtype.is_half_float()),
         "Only support FP32 -> half precision downcast during copy.",
     ]()
     constrained[
@@ -6544,7 +6544,7 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
     ]()
 
     constrained[
-        dst.dtype.is_half_float() and src.dtype == DType.float32,
+        dst.dtype.is_half_float() and src.dtype is DType.float32,
         "Only support copy float32 to bfloat16 for now",
     ]()
 

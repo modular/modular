@@ -164,7 +164,7 @@ struct TensorCore[
 
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
 
-    alias supported_fp32 = in_type == DType.float32 and (
+    alias supported_fp32 = in_type is DType.float32 and (
         shape == shape_16x8x8 if is_nvidia_gpu() else shape == shape_16x16x4
     )
     alias supported_half = in_type.is_half_float() and (
@@ -926,7 +926,7 @@ struct TensorCore[
         if transpose_b:
 
             @parameter
-            if in_type == DType.float32:
+            if in_type is DType.float32:
                 var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
 
                 @parameter
@@ -969,7 +969,7 @@ struct TensorCore[
         else:
 
             @parameter
-            if in_type == DType.float32:
+            if in_type is DType.float32:
 
                 @parameter
                 for i in range(num_frags):
