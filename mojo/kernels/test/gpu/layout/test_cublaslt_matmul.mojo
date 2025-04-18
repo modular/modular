@@ -108,7 +108,9 @@ fn test_cublaslt[
 
 
 fn main() raises:
-    with DeviceContext() as ctx:
-        with Handle[Backend.CUBLASLT]() as handle:
-            test_cublaslt[DType.float8_e4m3fn, 64, 16, 32](ctx, handle)
-            test_cublaslt[DType.float8_e4m3fn, 512, 2560, 512](ctx, handle)
+    with DeviceContext() as ctx, Handle[Backend.CUBLASLT]() as handle:
+        test_cublaslt[DType.float8_e4m3fn, 64, 16, 32](ctx, handle)
+        test_cublaslt[DType.float8_e4m3fn, 512, 2560, 512](ctx, handle)
+
+        test_cublaslt[DType.bfloat16, 64, 16, 32](ctx, handle)
+        test_cublaslt[DType.bfloat16, 512, 2560, 512](ctx, handle)
