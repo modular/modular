@@ -1589,6 +1589,48 @@ fn asinh(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
+fn _atanh_float32(x: SIMD) -> __type_of(x):
+    """This computes the `atanh` of the inputs for float32. It uses the same
+    approximation used by Eigen library."""
+    var is_neg = x < 0
+    var x_abs = abs(x)
+    var x2 = x_abs * x_abs
+    var x3 = x2 * x_abs
+
+    # When x is in the range [0, 0.5], we use a polynomial approximation.
+    # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
+    var p = polynomial_evaluate[
+        List[__type_of(x)](
+            0.1819281280040740966796875,
+            8.2311116158962249755859375e-2,
+            0.14672131836414337158203125,
+            0.1997792422771453857421875,
+            0.3333373963832855224609375,
+        )
+    ](x2)
+    p = x3.fma(p, x_abs)
+    p = is_neg.select(-p, p)
+
+    # For x in the range [0.5, 1), we use the identity:
+    # atanh(x) = 0.5 * log((1 + x) / (1 - x))
+    var r = 0.5 * (log(x_abs + 1) - log(1 - x_abs))
+    r = is_neg.select(-r, r)
+
+    # If If x is >= 1, NaN is returned.
+    alias nan_val = __type_of(x)(nan[DType.float32]())
+    alias inf_val = __type_of(x)(inf[DType.float32]())
+    alias neg_inf_val = __type_of(x)(-inf[DType.float32]())
+
+    # If x is 1, then the result is +infinity if x is negative, and -infinity
+    # if x is positive. If x is >= 1, NaN is returned. Otherwise, if x is >= 0.5,
+    # we use the r approximation, otherwise we use the p polynomial approximation.
+    return (x_abs == 1).select(
+        is_neg.select(neg_inf_val, inf_val),
+        (x_abs >= 1).select(nan_val, (x_abs >= 0.5).select(r, p)),
+    )
+
+
+@always_inline
 fn atanh(x: SIMD) -> __type_of(x):
     """Computes the `atanh` of the inputs.
 
@@ -1601,6 +1643,21 @@ fn atanh(x: SIMD) -> __type_of(x):
     Returns:
         The `atanh` of the input.
     """
+    alias dtype = x.dtype
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if bitwidthof[dtype]() <= 16:
+        # We promote the input to float32 and then cast back to the original
+        # type. This is done to avoid precision issues that can occur when
+        # using the lower-precision floating-point types.
+        return _atanh_float32(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float32:
+        return _atanh_float32(x)
+
+    # Otherwise, this is a double and we can just call the libm function.
     return _call_libm["atanh"](x)
 
 
