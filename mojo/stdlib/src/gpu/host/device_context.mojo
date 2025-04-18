@@ -16,6 +16,7 @@ from collections import List, Optional
 from collections.string import StaticString, StringSlice
 from pathlib import Path
 from sys import env_get_int, env_get_string, external_call, is_defined, sizeof
+from sys.ffi import c_char
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
 from sys.param_env import _is_bool_like
@@ -2294,7 +2295,7 @@ struct DeviceContext(CollectionElement):
         out self,
         device_id: Int = 0,
         *,
-        api: String = String(Self.device_api),
+        owned api: String = String(Self.device_api),
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
 
@@ -2330,11 +2331,11 @@ struct DeviceContext(CollectionElement):
                 "AsyncRT_DeviceContext_create",
                 _CharPtr,
                 UnsafePointer[_DeviceContextPtr],
-                _CharPtr,
+                UnsafePointer[c_char],
                 Int32,
             ](
                 UnsafePointer.address_of(result),
-                api.unsafe_ptr(),
+                api.unsafe_cstr_ptr(),
                 device_id,
             )
         )
