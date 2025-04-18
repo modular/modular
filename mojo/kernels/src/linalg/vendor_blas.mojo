@@ -48,6 +48,7 @@ from gpu._cublas.cublaslt import (
     cublasLtMatrixLayout_t,
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
+    cublasLtLoggerSetLevel,
 )
 from gpu._cublas.dtype import DataType
 from gpu._cublas.result import Result
@@ -273,7 +274,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 # Matmul
 # ===----------------------------------------------------------------------===#
 
-alias _DEBUG_CUBLAS = False
+alias _DEBUG_VENDOR_BLAS = False
 
 
 fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
@@ -284,10 +285,15 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
         )
 
         @parameter
-        if _DEBUG_CUBLAS:
+        if _DEBUG_VENDOR_BLAS:
             check_cublas_error(
                 cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
             )
+    elif handle.resolved_backend is Backend.CUBLASLT:
+
+        @parameter
+        if _DEBUG_VENDOR_BLAS:
+            check_cublas_error(cublasLtLoggerSetLevel(5))
 
 
 fn _get_global_handle[
@@ -777,7 +783,8 @@ fn _cublasLt_matmul(
             UnsafePointer.address_of(compute_desc),
             ComputeType.COMPUTE_32F,
             DataType.R_32F,
-        )
+        ),
+        msg="failed to create cublasLtMatmulDesc",
     )
 
     check_cublas_error(
@@ -786,7 +793,8 @@ fn _cublasLt_matmul(
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
             UnsafePointer.address_of(transa).bitcast[NoneType](),
             sizeof[cublasOperation_t](),
-        )
+        ),
+        msg="failed to set cublasLtMatmulDescAttribute for transa",
     )
     check_cublas_error(
         cublasLtMatmulDescSetAttribute(
@@ -794,7 +802,8 @@ fn _cublasLt_matmul(
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
             UnsafePointer.address_of(transb).bitcast[NoneType](),
             sizeof[cublasOperation_t](),
-        )
+        ),
+        msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
     # create matrix descriptors, we are good with the details here so no need to set any extra attributes
@@ -807,7 +816,8 @@ fn _cublasLt_matmul(
             K,
             N if c_row_major else M,
             K,
-        )
+        ),
+        msg="failed to create cublasLtMatrixLayout for adesc",
     )
 
     var _bdesc = cublasLtMatrixLayout_t()
@@ -818,7 +828,8 @@ fn _cublasLt_matmul(
             K,
             M if c_row_major else N,
             K,
-        )
+        ),
+        msg="failed to create cublasLtMatrixLayout for bdesc",
     )
 
     var _ddesc = cublasLtMatrixLayout_t()
@@ -829,7 +840,8 @@ fn _cublasLt_matmul(
             N if c_row_major else M,
             M if c_row_major else N,
             N if c_row_major else M,
-        )
+        ),
+        msg="failed to create cublasLtMatrixLayout for ddesc",
     )
 
     var _cdesc = cublasLtMatrixLayout_t()
@@ -840,12 +852,14 @@ fn _cublasLt_matmul(
             N if c_row_major else M,
             M if c_row_major else N,
             N if c_row_major else M,
-        )
+        ),
+        msg="failed to create cublasLtMatrixLayout for cdesc",
     )
 
     var preference = cublasLtMatmulPreference_t()
     check_cublas_error(
-        cublasLtMatmulPreferenceCreate(UnsafePointer.address_of(preference))
+        cublasLtMatmulPreferenceCreate(UnsafePointer.address_of(preference)),
+        msg="failed to create cublasLtMatmulPreference",
     )
 
     var workspace_size = 32 * 1024 * 1024
@@ -855,7 +869,11 @@ fn _cublasLt_matmul(
             Preference.MAX_WORKSPACE_BYTES,
             UnsafePointer.address_of(workspace_size).bitcast[NoneType](),
             sizeof[Int64](),
-        )
+        ),
+        msg=(
+            "failed to set cublasLtMatmulPreferenceAttribute for"
+            " max_workspace_bytes"
+        ),
     )
 
     var heuristic_result = cublasLtMatmulHeuristicResult_t()
@@ -872,7 +890,8 @@ fn _cublasLt_matmul(
             1,
             UnsafePointer.address_of(heuristic_result),
             UnsafePointer.address_of(returned_results),
-        )
+        ),
+        msg="failed to get cublasLtMatmulAlgoGetHeuristic",
     )
 
     if returned_results == 0:
@@ -903,7 +922,8 @@ fn _cublasLt_matmul(
                 ),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
-            )
+            ),
+            msg="failed to cublasLtMatmul for c_row_major=True",
         )
     else:
         check_cublas_error(
@@ -926,15 +946,34 @@ fn _cublasLt_matmul(
                 ),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
-            )
+            ),
+            msg="failed to cublasLtMatmul for c_row_major=False",
         )
 
-    check_cublas_error(cublasLtMatmulDescDestroy(compute_desc))
-    check_cublas_error(cublasLtMatrixLayoutDestroy(_adesc))
-    check_cublas_error(cublasLtMatrixLayoutDestroy(_bdesc))
-    check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
-    check_cublas_error(cublasLtMatrixLayoutDestroy(_ddesc))
-    check_cublas_error(cublasLtMatmulPreferenceDestroy(preference))
+    check_cublas_error(
+        cublasLtMatmulDescDestroy(compute_desc),
+        msg="failed to destroy cublasLtMatmulDesc",
+    )
+    check_cublas_error(
+        cublasLtMatrixLayoutDestroy(_adesc),
+        msg="failed to destroy cublasLtMatrixLayout for adesc",
+    )
+    check_cublas_error(
+        cublasLtMatrixLayoutDestroy(_bdesc),
+        msg="failed to destroy cublasLtMatrixLayout for bdesc",
+    )
+    check_cublas_error(
+        cublasLtMatrixLayoutDestroy(_cdesc),
+        msg="failed to destroy cublasLtMatrixLayout for cdesc",
+    )
+    check_cublas_error(
+        cublasLtMatrixLayoutDestroy(_ddesc),
+        msg="failed to destroy cublasLtMatrixLayout for ddesc",
+    )
+    check_cublas_error(
+        cublasLtMatmulPreferenceDestroy(preference),
+        msg="failed to destroy cublasLtMatmulPreference",
+    )
 
     _ = matmul_workspace^
 
