@@ -742,8 +742,6 @@ struct CPython:
 
     var lib: DLHandle
     """The handle to the CPython shared library."""
-    var dict_type: PyObjectPtr
-    """The type object for Python dictionaries."""
     var logging_enabled: Bool
     """Whether logging is enabled."""
     var version: PythonVersion
@@ -794,7 +792,6 @@ struct CPython:
 
         self.lib = DLHandle(python_lib)
         self.total_ref_count = UnsafePointer[Int].alloc(1)
-        self.dict_type = PyObjectPtr()
         self.logging_enabled = logging_enabled
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
