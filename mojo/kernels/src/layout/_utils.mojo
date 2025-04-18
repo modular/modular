@@ -281,7 +281,7 @@ fn hash(tensor: LayoutTensor) -> Int:
     for i in range(tensor.dim(0)):
         for j in range(tensor.dim(1)):
             var val = tensor[i, j]
-            var addr = UnsafePointer.address_of(val)
+            var addr = UnsafePointer(to=val)
             var addr_int = addr.bitcast[Int16]()
             var val_int = addr_int[0]
             hash_value = ((hash_value << 5) + hash_value) + Int(val_int)

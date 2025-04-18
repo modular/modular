@@ -240,7 +240,7 @@ struct SharedMemBarrier(CollectionElement):
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return __type_of(result)(UnsafePointer.address_of(self.mbar))
+        return __type_of(result)(UnsafePointer(to=self.mbar))
 
     @always_inline
     fn arrive_cluster(
@@ -459,9 +459,7 @@ struct TMATensorTile[
         This method helps hide memory access latency by prefetching the descriptor
         before it's needed for actual data transfers.
         """
-        var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
-            NoneType
-        ]()
+        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
@@ -521,9 +519,7 @@ struct TMATensorTile[
 
                 cp_async_bulk_tensor_shared_cluster_global(
                     dst.ptr + copy_offset,
-                    UnsafePointer.address_of(self.descriptor).bitcast[
-                        NoneType
-                    ](),
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
                 )
@@ -592,9 +588,7 @@ struct TMATensorTile[
 
                     cp_async_bulk_tensor_shared_cluster_global(
                         dst.ptr + copy_offset,
-                        UnsafePointer.address_of(self.descriptor).bitcast[
-                            NoneType
-                        ](),
+                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + j * copy_dim2,
@@ -655,9 +649,7 @@ struct TMATensorTile[
 
                 cp_async_bulk_tensor_shared_cluster_global_multicast(
                     dst.ptr + copy_offset,
-                    UnsafePointer.address_of(self.descriptor).bitcast[
-                        NoneType
-                    ](),
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
                     multicast_mask,
@@ -707,9 +699,7 @@ struct TMATensorTile[
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
-                    UnsafePointer.address_of(self.descriptor).bitcast[
-                        NoneType
-                    ](),
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
                 )
 
@@ -749,7 +739,7 @@ struct TMATensorTile[
         ]()
         cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
             src.ptr,
-            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
+            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
             Index(coords[0], coords[1]),
         )
 
@@ -801,7 +791,7 @@ struct TMATensorTile[
         """
         # NOTE: Only one thread should call this
 
-        var src_desc = UnsafePointer.address_of(self.descriptor).bitcast[
+        var src_desc = UnsafePointer(to=self.descriptor).bitcast[
             UInt8
         ]().address_space_cast[_GPUAddressSpace.GLOBAL]()
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
@@ -849,9 +839,7 @@ struct TMATensorTile[
             "src address space must be GENERIC or GLOBAL.",
         ]()
 
-        var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
-            NoneType
-        ]()
+        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
 
         inlined_assembly[
             "tensormap.replace.tile.global_address.global.b1024.b64 [$0], $1;",
@@ -882,7 +870,7 @@ struct TMATensorTile[
         llvm_intrinsic[
             "llvm.nvvm.fence.proxy.tensormap_generic.acquire.gpu", NoneType
         ](
-            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
+            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
             Int32(128),
         )
 
@@ -993,9 +981,9 @@ struct TMATensorTile[
         """
         # This fence is needed when modifying tensormap directly in SMEM
         # NOTE: Entire warp must call this function as the instruction is aligned
-        var gmem_tma_descriptor_ptr = UnsafePointer.address_of(
-            self.descriptor
-        ).bitcast[NoneType]()
+        var gmem_tma_descriptor_ptr = UnsafePointer(to=self.descriptor).bitcast[
+            NoneType
+        ]()
 
         inlined_assembly[
             (
