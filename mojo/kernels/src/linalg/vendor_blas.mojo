@@ -169,25 +169,21 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
         @parameter
         if Self.resolved_backend is Backend.CUBLAS:
             var handle = Self._cublas_type()
-            check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+            check_cublas_error(cublasCreate(UnsafePointer(to=handle)))
             self._handle = handle
         elif Self.resolved_backend is Backend.CUBLASLT:
             var handle = Self._cublaslt_type()
-            check_cublas_error(cublasLtCreate(UnsafePointer.address_of(handle)))
+            check_cublas_error(cublasLtCreate(UnsafePointer(to=handle)))
             self._handle = handle
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
             _rocblas.check_error(
-                _rocblas.rocblas.rocblas_create_handle(
-                    UnsafePointer.address_of(handle)
-                )
+                _rocblas.rocblas.rocblas_create_handle(UnsafePointer(to=handle))
             )
             self._handle = handle
         elif Self.resolved_backend is Backend.HIPBLASLT:
             var handle = Self._hipblaslt_type()
-            _check_hipblas_error(
-                hipblasLtCreate(UnsafePointer.address_of(handle))
-            )
+            _check_hipblas_error(hipblasLtCreate(UnsafePointer(to=handle)))
             self._handle = handle
         else:
             raise Error(
@@ -505,14 +501,14 @@ fn _cublas_matmul[
                 N,
                 M,
                 K,
-                UnsafePointer.address_of(alpha).bitcast[NoneType](),
+                UnsafePointer(to=alpha).bitcast[NoneType](),
                 UnsafePointer(b.data.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[b.type](),
                 K if transpose_b else N,
                 UnsafePointer(a.data.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a.type](),
                 K,
-                UnsafePointer.address_of(beta).bitcast[NoneType](),
+                UnsafePointer(to=beta).bitcast[NoneType](),
                 UnsafePointer(c.data.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c.type](),
                 N,
@@ -543,14 +539,14 @@ fn _cublas_matmul[
             M,
             N,
             K,
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),
+            UnsafePointer(to=alpha).bitcast[NoneType](),
             UnsafePointer(a.data.bitcast[NoneType]()),
             _convert_to_cublas_datatype[a.type](),
             M,
             UnsafePointer(b.data.bitcast[NoneType]()),
             _convert_to_cublas_datatype[b.type](),
             N if transpose_b else K,
-            UnsafePointer.address_of(beta).bitcast[NoneType](),
+            UnsafePointer(to=beta).bitcast[NoneType](),
             UnsafePointer(c.data.bitcast[NoneType]()),
             _convert_to_cublas_datatype[c.type](),
             M,
@@ -635,14 +631,14 @@ fn _rocblas_matmul[
                 N,
                 M,
                 K,
-                UnsafePointer.address_of(alpha).bitcast[NoneType](),
+                UnsafePointer(to=alpha).bitcast[NoneType](),
                 UnsafePointer(b.data.bitcast[NoneType]()),
                 _rocblas.types.DataType(b.type),
                 K if transpose_b else N,
                 UnsafePointer(a.data.bitcast[NoneType]()),
                 _rocblas.types.DataType(a.type),
                 K,
-                UnsafePointer.address_of(beta).bitcast[NoneType](),
+                UnsafePointer(to=beta).bitcast[NoneType](),
                 UnsafePointer(c.data.bitcast[NoneType]()),
                 _rocblas.types.DataType(c.type),
                 N,
@@ -664,14 +660,14 @@ fn _rocblas_matmul[
             M,
             N,
             K,
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),
+            UnsafePointer(to=alpha).bitcast[NoneType](),
             UnsafePointer(a.data.bitcast[NoneType]()),
             _rocblas.types.DataType(a.type),
             M,
             UnsafePointer(b.data.bitcast[NoneType]()),
             _rocblas.types.DataType(b.type),
             N if transpose_b else K,
-            UnsafePointer.address_of(beta).bitcast[NoneType](),
+            UnsafePointer(to=beta).bitcast[NoneType](),
             UnsafePointer(c.data.bitcast[NoneType]()),
             _rocblas.types.DataType(c.type),
             M,
@@ -780,7 +776,7 @@ fn _cublasLt_matmul(
     var compute_desc = cublasLtMatmulDesc_t()
     check_cublas_error(
         cublasLtMatmulDescCreate(
-            UnsafePointer.address_of(compute_desc),
+            UnsafePointer(to=compute_desc),
             ComputeType.COMPUTE_32F,
             DataType.R_32F,
         ),
@@ -791,7 +787,7 @@ fn _cublasLt_matmul(
         cublasLtMatmulDescSetAttribute(
             compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
-            UnsafePointer.address_of(transa).bitcast[NoneType](),
+            UnsafePointer(to=transa).bitcast[NoneType](),
             sizeof[cublasOperation_t](),
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transa",
@@ -800,7 +796,7 @@ fn _cublasLt_matmul(
         cublasLtMatmulDescSetAttribute(
             compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
-            UnsafePointer.address_of(transb).bitcast[NoneType](),
+            UnsafePointer(to=transb).bitcast[NoneType](),
             sizeof[cublasOperation_t](),
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transb",
@@ -811,7 +807,7 @@ fn _cublasLt_matmul(
     var _adesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer.address_of(_adesc),
+            UnsafePointer(to=_adesc),
             _convert_to_cublas_datatype[a_type](),
             K,
             N if c_row_major else M,
@@ -823,7 +819,7 @@ fn _cublasLt_matmul(
     var _bdesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer.address_of(_bdesc),
+            UnsafePointer(to=_bdesc),
             _convert_to_cublas_datatype[b_type](),
             K,
             M if c_row_major else N,
@@ -835,7 +831,7 @@ fn _cublasLt_matmul(
     var _ddesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer.address_of(_ddesc),
+            UnsafePointer(to=_ddesc),
             _convert_to_cublas_datatype[d_type](),
             N if c_row_major else M,
             M if c_row_major else N,
@@ -847,7 +843,7 @@ fn _cublasLt_matmul(
     var _cdesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            UnsafePointer.address_of(_cdesc),
+            UnsafePointer(to=_cdesc),
             _convert_to_cublas_datatype[d_type](),
             N if c_row_major else M,
             M if c_row_major else N,
@@ -858,7 +854,7 @@ fn _cublasLt_matmul(
 
     var preference = cublasLtMatmulPreference_t()
     check_cublas_error(
-        cublasLtMatmulPreferenceCreate(UnsafePointer.address_of(preference)),
+        cublasLtMatmulPreferenceCreate(UnsafePointer(to=preference)),
         msg="failed to create cublasLtMatmulPreference",
     )
 
@@ -867,7 +863,7 @@ fn _cublasLt_matmul(
         cublasLtMatmulPreferenceSetAttribute(
             preference,
             Preference.MAX_WORKSPACE_BYTES,
-            UnsafePointer.address_of(workspace_size).bitcast[NoneType](),
+            UnsafePointer(to=workspace_size).bitcast[NoneType](),
             sizeof[Int64](),
         ),
         msg=(
@@ -888,8 +884,8 @@ fn _cublasLt_matmul(
             _ddesc,
             preference,
             1,
-            UnsafePointer.address_of(heuristic_result),
-            UnsafePointer.address_of(returned_results),
+            UnsafePointer(to=heuristic_result),
+            UnsafePointer(to=returned_results),
         ),
         msg="failed to get cublasLtMatmulAlgoGetHeuristic",
     )
@@ -906,17 +902,17 @@ fn _cublasLt_matmul(
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
                 UnsafePointer(b.data.bitcast[NoneType]()),  # _a
                 _adesc,  # _adesc
                 UnsafePointer(a.data.bitcast[NoneType]()),  # _b
                 _bdesc,  # _bdesc
-                UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+                UnsafePointer(to=beta).bitcast[NoneType](),  # beta
                 UnsafePointer[NoneType](),  # _c
                 _cdesc,  # _cdesc
                 UnsafePointer(d.data.bitcast[NoneType]()),  # _d
                 _ddesc,  # _ddesc
-                UnsafePointer.address_of(heuristic_result.algo),  # algo
+                UnsafePointer(to=heuristic_result.algo),  # algo
                 UnsafePointer(
                     matmul_workspace.unsafe_ptr().bitcast[NoneType]()
                 ),  # workspace
@@ -930,17 +926,17 @@ fn _cublasLt_matmul(
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
                 UnsafePointer(a.data.bitcast[NoneType]()),  # _a
                 _adesc,  # _adesc
                 UnsafePointer(b.data.bitcast[NoneType]()),  # _b
                 _bdesc,  # _bdesc
-                UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+                UnsafePointer(to=beta).bitcast[NoneType](),  # beta
                 UnsafePointer[NoneType](),  # _c
                 _cdesc,  # _cdesc
                 UnsafePointer(d.data.bitcast[NoneType]()),  # _d
                 _ddesc,  # _ddesc
-                UnsafePointer.address_of(heuristic_result.algo),  # algo
+                UnsafePointer(to=heuristic_result.algo),  # algo
                 UnsafePointer(
                     matmul_workspace.unsafe_ptr().bitcast[NoneType]()
                 ),  # workspace
@@ -1015,7 +1011,7 @@ fn _hipblasLt_matmul(
         var _desc = hipblasLtMatrixLayout_t()
         _check_hipblas_error(
             hipblasLtMatrixLayoutCreate(
-                UnsafePointer.address_of(_desc),
+                UnsafePointer(to=_desc),
                 _convert_to_hip_datatype[buf.type](),
                 buf.dim[1](),
                 buf.dim[0](),
@@ -1045,7 +1041,7 @@ fn _hipblasLt_matmul(
     var operationDesc = hipblasLtMatmulDesc_t()
     _check_hipblas_error(
         hipblasLtMatmulDescCreate(
-            UnsafePointer.address_of(operationDesc),
+            UnsafePointer(to=operationDesc),
             hipblasComputeType_t.COMPUTE_32F,
             hipDataType_t.R_32F,
         )
@@ -1055,7 +1051,7 @@ fn _hipblasLt_matmul(
         hipblasLtMatmulDescSetAttribute(
             operationDesc,
             hipblasLtMatmulDescAttributes_t.TRANSA,
-            UnsafePointer.address_of(transa).bitcast[NoneType](),
+            UnsafePointer(to=transa).bitcast[NoneType](),
             sizeof[hipblasOperation_t](),
         )
     )
@@ -1063,14 +1059,14 @@ fn _hipblasLt_matmul(
         hipblasLtMatmulDescSetAttribute(
             operationDesc,
             hipblasLtMatmulDescAttributes_t.TRANSB,
-            UnsafePointer.address_of(transb).bitcast[NoneType](),
+            UnsafePointer(to=transb).bitcast[NoneType](),
             sizeof[hipblasOperation_t](),
         )
     )
 
     var preference = hipblasLtMatmulPreference_t()
     _check_hipblas_error(
-        hipblasLtMatmulPreferenceCreate(UnsafePointer.address_of(preference))
+        hipblasLtMatmulPreferenceCreate(UnsafePointer(to=preference))
     )
 
     var heuristicResult = hipblasLtMatmulHeuristicResult_t()
@@ -1085,8 +1081,8 @@ fn _hipblasLt_matmul(
             _ddesc,
             preference,
             1,
-            UnsafePointer.address_of(heuristicResult),
-            UnsafePointer.address_of(returnedResults),
+            UnsafePointer(to=heuristicResult),
+            UnsafePointer(to=returnedResults),
         )
     )
 
@@ -1097,17 +1093,17 @@ fn _hipblasLt_matmul(
         hipblasLtMatmul(
             handle,  # light_handle
             operationDesc,  # compute_desc
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+            UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
             _adata,  # _a
             _adesc,  # _adesc
             _bdata,  # _b
             _bdesc,  # _bdesc
-            UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+            UnsafePointer(to=beta).bitcast[NoneType](),  # beta
             _ddata,  # _c
             _ddesc,  # _cdesc
             _ddata,  # _d
             _ddesc,  # _ddesc
-            UnsafePointer.address_of(heuristicResult.algo),  # algo
+            UnsafePointer(to=heuristicResult.algo),  # algo
             UnsafePointer[NoneType](),  # workspace
             0,  # workspace_size_in_bytes
             HIP(ctx.stream())[],  # stream

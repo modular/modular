@@ -113,7 +113,7 @@
 
 # fn setup_tile_config() -> tileconfig:
 #     var tc: tileconfig
-#     var ptr = UnsafePointer.address_of(tc)
+#     var ptr = UnsafePointer(to=tc)
 #     var tc_ptr = UnsafePointer[Int8](ptr.bitcast[int8_pop]())
 #     memset_zero(tc_ptr, 64)
 
