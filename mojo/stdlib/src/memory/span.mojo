@@ -137,6 +137,12 @@ struct Span[
     # Life cycle methods
     # ===------------------------------------------------------------------===#
 
+    @always_inline("nodebug")
+    fn __init__(out self):
+        """Create an empty / zero-length span."""
+        self._data = __type_of(self._data)()
+        self._len = 0
+
     @doc_private
     @implicit
     @always_inline("nodebug")

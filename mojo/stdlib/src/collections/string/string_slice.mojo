@@ -493,6 +493,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # Initializers
     # ===------------------------------------------------------------------===#
 
+    @always_inline("nodebug")
+    fn __init__(out self):
+        """Create an empty / zero-length slice."""
+        self._slice = Span[Byte, origin]()
+
     @doc_private
     @implicit
     @always_inline("nodebug")
