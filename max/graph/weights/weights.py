@@ -26,7 +26,7 @@ except ImportError:
 from max.dtype import DType, max_to_torch_type
 
 from ..quantization import QuantizationEncoding
-from ..type import Shape, ShapeLike
+from ..type import DeviceRef, Shape, ShapeLike
 from ..weight import Weight
 
 _Self = TypeVar("_Self", bound="Weights")
@@ -89,6 +89,7 @@ class Weights(Protocol):
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
+        device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
         ...

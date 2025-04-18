@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
+from max.graph import DeviceRef
 
 try:
     import torch  # type: ignore
@@ -189,6 +190,7 @@ class PytorchWeights:
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
+        device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
         if quantization_encoding:
@@ -202,6 +204,7 @@ class PytorchWeights:
             self._prefix,
             torch_to_max_type(tensor_info.dtype),
             tensor_info.shape,
+            device=device,
         )
         self._allocated[self._prefix] = np.memmap(
             self._filepath, mode="r", dtype=np.uint8, offset=tensor_info.offset

@@ -15,7 +15,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 
 SEED = ContextVar[TensorValue]("Seed")
@@ -56,7 +56,9 @@ def set_seed(seed: TensorValue | int = 0):
             random operation will rotate this seed value automatically.
     """
     assert_scalar(seed)
-    seed = dtype_promotion._promote_to_strong(seed, DType.int64)
+    seed = dtype_promotion._promote_to_strong(
+        seed, DType.int64, DeviceRef.CPU()
+    )
     if seed.dtype != DType.int64:
         raise TypeError("Seed value must be int64")
     return SEED.set(seed)
@@ -75,8 +77,12 @@ def gaussian(
         rmo.mo_random_normal,
         result=like.to_mlir(),
         shape=TensorValue(like.shape),
-        mean=dtype_promotion._promote_to_strong(mean, DType.float32),
-        variance=dtype_promotion._promote_to_strong(std, DType.float32),
+        mean=dtype_promotion._promote_to_strong(
+            mean, DType.float32, DeviceRef.CPU()
+        ),
+        variance=dtype_promotion._promote_to_strong(
+            std, DType.float32, DeviceRef.CPU()
+        ),
         seed=seed,
     )[0].tensor
 
@@ -99,7 +105,11 @@ def uniform(
         rmo.mo_random_uniform,
         result=like.to_mlir(),
         shape=TensorValue(like.shape),
-        lower_bound=dtype_promotion._promote_to_strong(lower, like.dtype),
-        upper_bound=dtype_promotion._promote_to_strong(upper, like.dtype),
+        lower_bound=dtype_promotion._promote_to_strong(
+            lower, like.dtype, DeviceRef.CPU()
+        ),
+        upper_bound=dtype_promotion._promote_to_strong(
+            upper, like.dtype, DeviceRef.CPU()
+        ),
         seed=seed,
     )[0].tensor

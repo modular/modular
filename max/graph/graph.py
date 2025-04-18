@@ -28,15 +28,7 @@ from max.support.paths import (
     is_mojo_source_package_path,
 )
 
-from .type import (
-    BufferType,
-    DeviceKind,
-    DeviceRef,
-    Dim,
-    SymbolicDim,
-    TensorType,
-    Type,
-)
+from .type import BufferType, DeviceRef, Dim, SymbolicDim, TensorType, Type
 from .value import TensorValue, Value, _ChainValue
 from .weight import Weight
 
@@ -559,7 +551,10 @@ class Graph:
         self._kernel_library = KernelLibrary(self._context, kernels_paths)
 
     def add_weight(
-        self, weight: Weight, device: DeviceRef | None = None
+        # TODO(GEX-2121): Remove `force_initial_weight_on_host`
+        self,
+        weight: Weight,
+        force_initial_weight_on_host: bool = True,
     ) -> TensorValue:
         """Adds a weight to the graph.
 
@@ -567,8 +562,11 @@ class Graph:
 
         Args:
             weight: The weight to add to the graph.
-            device: The device that the weight is placed on before passing the
-                weight to the graph.
+            force_initial_weight_on_host: If true, then forces weights
+                to initially be allocated on host before being moved to
+                the indicated device. This is needed as a stop gap
+                until we have a more fleshed out ownership model of
+                external constants.
 
         Returns:
             A :obj:`TensorValue` that contains this weight.
@@ -578,14 +576,21 @@ class Graph:
         """
         if graph_weight := self._weights.get(weight.name):
             if graph_weight.weight is weight:
-                return graph_weight.value
+                if force_initial_weight_on_host:
+                    return graph_weight.value.to(weight.device)
+                else:
+                    return graph_weight.value
             else:
                 raise ValueError(
                     f"Weight '{weight.name}' already exists in Graph {self}"
                 )
 
+        initial_device = (
+            DeviceRef.CPU() if force_initial_weight_on_host else weight.device
+        )
+
         tensor_type = TensorType(
-            weight.dtype, weight.shape, device=device
+            weight.dtype, weight.shape, device=initial_device
         ).to_mlir()
         weight_tensor = Graph.current._add_op(
             mo.constant_external,
@@ -603,11 +608,10 @@ class Graph:
         # mo.constant.external to the default device, which could differ from
         # the passed device (for example default is GPU, passed weights on CPU).
         const_external_op = weight_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = (
-            device or DeviceRef(DeviceKind.CPU, 0)
-        ).to_mlir()
-
+        const_external_op.attributes["device"] = (initial_device).to_mlir()
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
+        if initial_device != weight.device:
+            weight_tensor = weight_tensor.to(weight.device)
         return weight_tensor
 
     def __repr__(self) -> str:

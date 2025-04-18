@@ -32,4 +32,4 @@ from .value import (
     _ChainValue,
     _OpaqueValue,
 )
-from .weight import Weight
+from .weight import Weight, _reconcile_weights

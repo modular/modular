@@ -14,6 +14,7 @@ from typing import Any, Optional
 import numpy as np
 import numpy.typing as npt
 from max.dtype import DType
+from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
 from ..type import ShapeLike
@@ -71,6 +72,7 @@ class RandomWeights(Weights):
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
+        device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
         if dtype is None or shape is None:
@@ -97,7 +99,9 @@ class RandomWeights(Weights):
                 np.random.randn(*shape)
             ).astype(dtype.to_numpy())
 
-        return Weight(name=self._prefix, dtype=dtype, shape=shape)
+        return Weight(
+            name=self._prefix, dtype=dtype, shape=shape, device=device
+        )
 
     @property
     def allocated_weights(self) -> dict[str, np.ndarray]:

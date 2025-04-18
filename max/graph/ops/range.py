@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from max.mlir.dialects import rmo
 
-from ..graph import DeviceRef, Graph
-from ..type import DimLike
+from ..graph import Graph
+from ..type import DeviceRef, DimLike
 from ..value import TensorType, TensorValue, TensorValueLike
 
 

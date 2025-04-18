@@ -13,7 +13,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .nonzero import nonzero
 
@@ -33,7 +33,9 @@ def masked_scatter(
         A new symbolic tensor representing the result of the masked_scatter operation.
     """
     input, updates = TensorValue(input), TensorValue(updates)
-    mask = dtype_promotion._promote_to_strong(mask, DType.bool)
+    mask = dtype_promotion._promote_to_strong(
+        mask, DType.bool, input.type.device or DeviceRef.CPU()
+    )
 
     if input.dtype != updates.dtype:
         raise ValueError(

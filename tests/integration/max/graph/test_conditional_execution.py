@@ -32,7 +32,8 @@ def custom_ops_path() -> Path:
 
 def test_conditional_execution_no_results(session, capfd):
     with Graph(
-        "conditional", input_types=(TensorType(DType.bool, []),)
+        "conditional",
+        input_types=(TensorType(DType.bool, [], device=DeviceRef.CPU()),),
     ) as graph:
 
         def then_fn():
@@ -60,7 +61,8 @@ def test_conditional_execution_no_results(session, capfd):
 
 def test_conditional_execution_with_results(session):
     with Graph(
-        "conditional", input_types=(TensorType(DType.bool, []),)
+        "conditional",
+        input_types=(TensorType(DType.bool, [], device=DeviceRef.CPU()),),
     ) as graph:
         cond = graph.inputs[0]
 
@@ -70,7 +72,12 @@ def test_conditional_execution_with_results(session):
         def else_fn():
             return ops.constant(0, DType.int32)
 
-        result = ops.cond(cond, [TensorType(DType.int32, [])], then_fn, else_fn)
+        result = ops.cond(
+            cond,
+            [TensorType(DType.int32, [], device=DeviceRef.CPU())],
+            then_fn,
+            else_fn,
+        )
         graph.output(result[0])
 
     compiled = session.load(graph)
@@ -82,7 +89,9 @@ def test_conditional_execution_with_results(session):
 
 
 def test_conditional_shape_to_tensor_solo_dim(session):
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
+    )
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape
 
@@ -94,7 +103,7 @@ def test_conditional_shape_to_tensor_solo_dim(session):
 
         result = ops.cond(
             TensorValue(shape[1]) == 3,
-            [TensorType(DType.int32, [])],
+            [TensorType(DType.int32, [], device=DeviceRef.CPU())],
             then_fn,
             else_fn,
         )
@@ -121,7 +130,7 @@ def test_conditional_inplace_user_supplied(
     custom_ops_path, session: InferenceSession
 ):
     bt = BufferType(DType.float32, [2, 2])
-    bool_type = TensorType(DType.bool, [])
+    bool_type = TensorType(DType.bool, [], device=DeviceRef.CPU())
 
     with Graph(
         "basic",
@@ -164,8 +173,8 @@ def test_conditional_nested_conditionals(session, capfd):
     with Graph(
         "nested_conditionals",
         input_types=(
-            TensorType(DType.bool, []),
-            TensorType(DType.bool, []),
+            TensorType(DType.bool, [], device=DeviceRef.CPU()),
+            TensorType(DType.bool, [], device=DeviceRef.CPU()),
         ),
     ) as graph:
         cond_1 = graph.inputs[0]
@@ -238,7 +247,8 @@ def test_conditional_with_same_name_weight(session) -> None:
     """Tests adding an external weight to a graph."""
     weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
     with Graph(
-        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+        "graph_with_cond_weights",
+        input_types=[TensorType(DType.bool, [], device=DeviceRef.CPU())],
     ) as graph:
 
         def true_fn():
@@ -281,19 +291,30 @@ def test_conditional_with_same_name_weight(session) -> None:
 def test_conditional_with_diff_names_weights(session) -> None:
     """Tests adding an external weight to a graph."""
     with Graph(
-        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+        "graph_with_cond_weights",
+        input_types=[TensorType(DType.bool, [], device=DeviceRef.CPU())],
     ) as graph:
         true_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
         false_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
 
         def true_fn():
-            w = Weight("true_weight", dtype=DType.int64, shape=[5, 10])
-            graph.add_weight(w, DeviceRef.CPU())
+            w = Weight(
+                "true_weight",
+                dtype=DType.int64,
+                shape=[5, 10],
+                device=DeviceRef.CPU(),
+            )
+            graph.add_weight(w)
             return w * 2
 
         def false_fn():
-            w = Weight("false_weight", dtype=DType.int64, shape=[5, 10])
-            graph.add_weight(w, DeviceRef.CPU())
+            w = Weight(
+                "false_weight",
+                dtype=DType.int64,
+                shape=[5, 10],
+                device=DeviceRef.CPU(),
+            )
+            graph.add_weight(w)
             return w * 3
 
         graph.output(
@@ -322,11 +343,17 @@ def test_conditional_with_diff_names_weights(session) -> None:
 def test_conditional_with_returned_weights(session) -> None:
     """Tests adding an external weight to a graph."""
     with Graph(
-        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+        "graph_with_cond_weights",
+        input_types=[TensorType(DType.bool, [], device=DeviceRef.CPU())],
     ) as graph:
         weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
-        w = Weight("random_weight", dtype=DType.int64, shape=[5, 10])
-        graph.add_weight(w, DeviceRef.CPU())
+        w = Weight(
+            "random_weight",
+            dtype=DType.int64,
+            shape=[5, 10],
+            device=DeviceRef.CPU(),
+        )
+        graph.add_weight(w)
 
         graph.output(
             *ops.cond(
@@ -349,19 +376,30 @@ def test_conditional_with_returned_weights(session) -> None:
 def test_cond_returned_diff_weights(session) -> None:
     """Tests adding an external weight to a graph."""
     with Graph(
-        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+        "graph_with_cond_weights",
+        input_types=[TensorType(DType.bool, [], device=DeviceRef.CPU())],
     ) as graph:
         true_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
         false_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
 
         def true_fn():
-            w = Weight("true_weight", dtype=DType.int64, shape=[5, 10])
-            graph.add_weight(w, DeviceRef.CPU())
+            w = Weight(
+                "true_weight",
+                dtype=DType.int64,
+                shape=[5, 10],
+                device=DeviceRef.CPU(),
+            )
+            graph.add_weight(w)
             return w
 
         def false_fn():
-            w = Weight("false_weight", dtype=DType.int64, shape=[5, 10])
-            graph.add_weight(w, DeviceRef.CPU())
+            w = Weight(
+                "false_weight",
+                dtype=DType.int64,
+                shape=[5, 10],
+                device=DeviceRef.CPU(),
+            )
+            graph.add_weight(w)
             return w
 
         results = ops.cond(

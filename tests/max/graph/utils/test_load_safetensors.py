@@ -7,7 +7,7 @@
 
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Graph, TensorType
 from max.graph.weights import SafetensorWeights
 
 
@@ -17,7 +17,7 @@ def test_load_safetensors_one(testdata_directory) -> None:
     )
     with Graph("test_load_safetensors1") as graph:
         data = {
-            key: graph.add_weight(weight.allocate(), DeviceRef.CPU())
+            key: graph.add_weight(weight.allocate())
             for key, weight in weights.items()
         }
         assert len(data) == 7
@@ -41,7 +41,7 @@ def test_load_safetensors_multi(testdata_directory) -> None:
     )
     with Graph("test_load_safetensors_multi") as graph:
         data = {
-            key: graph.add_weight(weight.allocate(), DeviceRef.CPU())
+            key: graph.add_weight(weight.allocate())
             for key, weight in weights.items()
         }
         assert len(data) == 14
@@ -73,9 +73,9 @@ def test_load_using_prefix(testdata_directory) -> None:
         ]
     )
     with Graph("test_load_safetensors_by_prefix") as graph:
-        a = graph.add_weight(weights[1].a.allocate(), DeviceRef.CPU())
+        a = graph.add_weight(weights[1].a.allocate())
         assert a.type == TensorType(DType.int32, [5, 2])
-        b = graph.add_weight(weights["1.b"].allocate(), DeviceRef.CPU())
+        b = graph.add_weight(weights["1.b"].allocate())
         assert b.type == TensorType(DType.float64, [1, 2, 3])
 
 
@@ -87,9 +87,9 @@ def test_load_same_weight(testdata_directory) -> None:
         ]
     )
     with Graph("test_load_safetensors_same_weight") as graph:
-        graph.add_weight(weights[1].a.allocate(), DeviceRef.CPU())
+        graph.add_weight(weights[1].a.allocate())
         with pytest.raises(ValueError, match="already exists"):
-            graph.add_weight(weights[1]["a"].allocate(), DeviceRef.CPU())
+            graph.add_weight(weights[1]["a"].allocate())
 
 
 def test_load_allocate_as_bytes(testdata_directory) -> None:
@@ -98,7 +98,7 @@ def test_load_allocate_as_bytes(testdata_directory) -> None:
     )
     with Graph("test_load_safetensors1") as graph:
         data = {
-            key: graph.add_weight(weight.allocate_as_bytes(), DeviceRef.CPU())
+            key: graph.add_weight(weight.allocate_as_bytes())
             for key, weight in weights.items()
         }
         assert len(data) == 7

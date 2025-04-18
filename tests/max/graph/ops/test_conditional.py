@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def test_conditional_no_results() -> None:
@@ -38,7 +38,10 @@ def test_conditional_with_results() -> None:
             return ops.constant(0, DType.int32)
 
         result = ops.cond(
-            cond, [TensorType(DType.int32, shape=[])], then_fn, else_fn
+            cond,
+            [TensorType(DType.int32, shape=[], device=DeviceRef.CPU())],
+            then_fn,
+            else_fn,
         )
         graph.output(result[0])
 
@@ -59,7 +62,10 @@ def test_conditional_type_check() -> None:
 
         try:
             ops.cond(
-                cond, [TensorType(DType.float32, shape=[])], then_fn, else_fn
+                cond,
+                [TensorType(DType.float32, shape=[], device=DeviceRef.CPU())],
+                then_fn,
+                else_fn,
             )
         except TypeError as e:
             assert "Results don't match expected types" in str(e)

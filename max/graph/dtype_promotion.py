@@ -31,6 +31,7 @@ import numpy as np
 from max.dtype import DType
 
 from . import ops
+from .graph import DeviceRef
 from .value import TensorValue, TensorValueLike, _strong_tensor_value_like
 
 
@@ -59,17 +60,23 @@ def _restrict_to_strong_dtypes(value: TensorValueLike) -> TensorValue:
 def _promote_weak_dtypes(
     x: TensorValueLike, y: TensorValueLike
 ) -> tuple[TensorValue, TensorValue]:
-    """Promotes weak dtypes on TensorValueLike objects.
+    """Promote weak dtypes and handle device placement.
 
     Most of dtype promotion is dealt with in RMO.
     This function specifically deals with promotion of non-max objects.
     All non-max objects have a weak dtype and will promote to a max object dtype.
     That said, we will always scan the non-max object to ensure it is representable in the max object dtype.
+    Finally, if a mix of weak and strong types are given, place weak types
+    on the strong type's device.
     """
-    if _is_strong(x) and _is_strong(y):
+
+    x_was_strong = _is_strong(x)
+    y_was_strong = _is_strong(y)
+
+    if x_was_strong and y_was_strong:
         return (TensorValue(x), TensorValue(y))
 
-    if not _is_strong(x) and not _is_strong(y):
+    if not x_was_strong and not y_was_strong:
         raise TypeError(
             "Binary ops require at least one max object as input. Non-max"
             " objects tend to overpromote the dtype, leading to significant"
@@ -77,18 +84,29 @@ def _promote_weak_dtypes(
             " input to a graph.Value. This can be done with ops.constant."
         )
 
-    if _is_strong(x):
+    if x_was_strong:
         max_value = TensorValue(x)
-        return (max_value, _promote_to_strong(y, max_value.dtype))
+        # TODO(GEX-2125): remove `or DeviceRef.CPU()` if once they are a non-optional field
+        return (
+            max_value,
+            _promote_to_strong(
+                y, max_value.dtype, max_value.device or DeviceRef.CPU()
+            ),
+        )
     else:
         max_value = TensorValue(y)
-        return (_promote_to_strong(x, max_value.dtype), max_value)
+        return (
+            _promote_to_strong(
+                x, max_value.dtype, max_value.device or DeviceRef.CPU()
+            ),
+            max_value,
+        )
 
 
 def _promote_to_strong(
-    value: TensorValueLike, strong_dtype: DType
+    value: TensorValueLike, strong_dtype: DType, device: DeviceRef
 ) -> TensorValue:
-    """Promotes weak dtypes to the specified strong dtype.
+    """Promotes weak dtypes and handle device placement.
 
     If the the input value is already strong, its dtype will not be changed.
     Instead, strong dtype promotion will be handled by the individual ops in RMO.
@@ -98,7 +116,7 @@ def _promote_to_strong(
     elif isinstance(value, (int, np.integer)):
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
         if min <= value <= max:
-            return ops.constant(value, strong_dtype)
+            return ops.constant(value, strong_dtype, device)
 
         raise ValueError(
             f"Unsafe cast: Can't promote python int with value ({value}) to"
@@ -107,7 +125,7 @@ def _promote_to_strong(
 
     elif isinstance(value, (float, np.floating)):
         if strong_dtype.is_float():
-            return ops.constant(value, strong_dtype)
+            return ops.constant(value, strong_dtype, device)
 
         raise ValueError(
             f"Unsafe cast: Can't promote python float to dtype({strong_dtype})."
@@ -116,7 +134,7 @@ def _promote_to_strong(
     elif isinstance(value, (np.ndarray)):
         if DType.from_numpy(value.dtype).is_float():
             if strong_dtype.is_float():
-                return ops.constant(value, strong_dtype)
+                return ops.constant(value, strong_dtype, device)
             else:
                 raise ValueError(
                     "Unsafe cast: Can't promote numpy float array to"
@@ -125,7 +143,7 @@ def _promote_to_strong(
 
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
         if np.all(min <= value) and np.all(value <= max):
-            return ops.constant(value, strong_dtype)
+            return ops.constant(value, strong_dtype, device)
 
         raise ValueError(
             "Unsafe cast: Can't promote numpy integer array with value"

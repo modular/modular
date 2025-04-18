@@ -6,13 +6,14 @@
 """Test while loop operations."""
 
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def test_while_loop_basic() -> None:
     """Test basic while loop functionality."""
     with Graph(
-        "while_loop_basic", input_types=[TensorType(DType.int32, [])]
+        "while_loop_basic",
+        input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
     ) as graph:
         x = graph.inputs[0]
 
@@ -35,7 +36,10 @@ def test_while_loop_multiple_args() -> None:
     """Test while loop with multiple arguments."""
     with Graph(
         "while_loop_multiple_args",
-        input_types=[TensorType(DType.int32, []), TensorType(DType.int32, [])],
+        input_types=[
+            TensorType(DType.int32, [], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [], device=DeviceRef.CPU()),
+        ],
     ) as graph:
         x, y = graph.inputs
 
@@ -68,7 +72,8 @@ def test_while_loop_empty_init() -> None:
 def test_while_loop_type_check() -> None:
     """Test type checking in while loop."""
     with Graph(
-        "while_loop_type_check", input_types=[TensorType(DType.int32, [])]
+        "while_loop_type_check",
+        input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
     ) as graph:
         x = graph.inputs[0]
 
@@ -91,7 +96,8 @@ def test_while_loop_type_check() -> None:
 
 def test_while_loop_with_raising() -> None:
     with Graph(
-        "while_loop_with_raising", input_types=[TensorType(DType.int32, [])]
+        "while_loop_with_raising",
+        input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
     ) as graph:
         x = graph.inputs[0]
         chain = graph._current_chain
@@ -115,7 +121,7 @@ def test_while_loop_with_raising() -> None:
 def test_while_loop_with_pred_block_chain_mutation() -> None:
     with Graph(
         "while_loop_with_pred_block_chain_mutation",
-        input_types=[TensorType(DType.int32, [])],
+        input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
     ) as graph:
         x = graph.inputs[0]
 

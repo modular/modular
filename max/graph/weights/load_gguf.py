@@ -14,6 +14,7 @@ from typing import Any, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
+from max.graph import DeviceRef
 
 # Only import gguf when used.
 try:
@@ -211,7 +212,9 @@ class GGUFWeights(Weights):
     def exists(self) -> bool:
         return self._prefix in self._tensors
 
-    def _parse_weight(self, tensor: gguf.ReaderTensor) -> Weight:
+    def _parse_weight(
+        self, tensor: gguf.ReaderTensor, device: DeviceRef
+    ) -> Weight:
         # Dims are reversed for some reason:
         # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
         # We have to un-reverse them here.
@@ -233,6 +236,7 @@ class GGUFWeights(Weights):
             shape=shape,
             quantization_encoding=encoding,
             align=self._reader.alignment,
+            device=device,
         )
 
     def allocate(
@@ -240,10 +244,11 @@ class GGUFWeights(Weights):
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
+        device=DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
         tensor = self._raw_tensor()
-        weight = self._parse_weight(tensor)
+        weight = self._parse_weight(tensor, device)
         self._allocated[self._prefix] = tensor.data
 
         # Validate the loaded weight.

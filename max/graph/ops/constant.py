@@ -14,8 +14,8 @@ from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir.dialects import mo
 
-from ..graph import DeviceRef, Graph
-from ..type import TensorType
+from ..graph import Graph
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue
 
 
@@ -50,6 +50,8 @@ def constant(
 
     if isinstance(value, (int, float, np.integer, np.floating)):
         value = np.array(value)
+
+    device = device or DeviceRef.CPU()
 
     if dtype == DType.bfloat16:
         # Numpy can't natively generate in bf16.

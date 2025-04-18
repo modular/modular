@@ -17,7 +17,7 @@ from conftest import (
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 static_tensor_type = tensor_types(
@@ -85,7 +85,9 @@ def test_conv_valid(
 
 
 def test_conv_dtype_promote_np():
-    x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
+    x_type = TensorType(
+        DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
+    )
     filter_shape = [3, 3, 4, 5]
     filter = np.ones(filter_shape, dtype=np.float32)
     with Graph("conv", input_types=[x_type]) as graph:
@@ -99,12 +101,15 @@ def test_conv_dtype_promote_np():
 
 
 def test_conv_dtype_promote_weight():
-    x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
+    x_type = TensorType(
+        DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
+    )
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
         "filter",
         dtype=DType.bfloat16,
         shape=filter_shape,
+        device=DeviceRef.CPU(),
     )
     with Graph("conv", input_types=[x_type]) as graph:
         out = ops.conv2d(
@@ -117,12 +122,15 @@ def test_conv_dtype_promote_weight():
 
 
 def test_conv_dtype_promote_weight_success():
-    x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
+    x_type = TensorType(
+        DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
+    )
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
         "filter",
         dtype=DType.float32,
         shape=filter_shape,
+        device=DeviceRef.CPU(),
     )
     with Graph("conv", input_types=[x_type]) as graph:
         # Both the input and weight have strong dtypes. Conv requires them to match.
@@ -134,12 +142,13 @@ def test_conv_dtype_promote_weight_success():
 
 
 def test_conv_dtype_promote_weight_failed():
-    x_type = TensorType(DType.int32, [1, 128, 128, 4])
+    x_type = TensorType(DType.int32, [1, 128, 128, 4], device=DeviceRef.CPU())
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
         "filter",
         dtype=DType.float16,
         shape=filter_shape,
+        device=DeviceRef.CPU(),
     )
     with Graph("conv", input_types=[x_type]) as graph:
         # Both the input and weight have strong dtypes. Conv requires them to match.
@@ -157,8 +166,14 @@ def test_conv_dtype_promote_weight_failed():
 
 
 def test_conv_symbolic_shapes():
-    input_type = TensorType(DType.bfloat16, [1, "height", "width", "channels"])
-    filter_type = TensorType(DType.bfloat16, [16, 16, 3, 1024])
+    input_type = TensorType(
+        DType.bfloat16,
+        [1, "height", "width", "channels"],
+        device=DeviceRef.CPU(),
+    )
+    filter_type = TensorType(
+        DType.bfloat16, [16, 16, 3, 1024], device=DeviceRef.CPU()
+    )
 
     strides = (16, 16)
     dilations = (1, 1)

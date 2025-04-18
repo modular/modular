@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 import numpy.typing as npt
 from max.dtype import DType, max_to_torch_type, torch_to_max_type
+from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
@@ -188,6 +189,7 @@ class SafetensorWeights(Weights):
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
+        device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
         assert torch is not None
@@ -218,6 +220,7 @@ class SafetensorWeights(Weights):
             # not the tensor dtype. This has no effect on GPU because once the
             # data is copied on GPU, the tensor will be properly aligned.
             align=1,
+            device=device,
         )
         self._allocated[self._prefix] = np_tensor
 
@@ -246,7 +249,10 @@ class SafetensorWeights(Weights):
         weight_dtype = DType.from_numpy(np_tensor.dtype)
 
         weight = Weight(
-            name=self._prefix, dtype=weight_dtype, shape=tensor.shape
+            name=self._prefix,
+            dtype=weight_dtype,
+            shape=tensor.shape,
+            device=DeviceRef.CPU(),
         )
         self._allocated[self._prefix] = np_tensor
         return weight

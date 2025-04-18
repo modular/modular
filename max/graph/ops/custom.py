@@ -15,8 +15,8 @@ from max.dtype import DType
 from max.mlir import BoolAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
-from ..graph import DeviceRef, Graph
-from ..type import Type, _ChainType
+from ..graph import Graph
+from ..type import DeviceRef, Type, _ChainType
 from ..value import BufferValue, Value, _OpaqueValue
 
 
