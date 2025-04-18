@@ -186,16 +186,7 @@ trait Defaultable:
         ...
 
 
-trait CollectionElement(Copyable, Movable):
-    """The CollectionElement trait denotes a trait composition
-    of the `Copyable` and `Movable` traits.
-
-    This is useful to have as a named entity since Mojo does not
-    currently support anonymous trait compositions to constrain
-    on `Copyable & Movable` in the parameter.
-    """
-
-    pass
+alias CollectionElement = Copyable & Movable
 
 
 trait CollectionElementNew(ExplicitlyCopyable, Movable):
