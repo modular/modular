@@ -3087,12 +3087,10 @@ fn conv_cudnn[
     ctx: DeviceContext,
 ) raises:
     var cudnn_handle = UnsafePointer[cudnnContext]()
-    check_cudnn_error(cudnnCreate(UnsafePointer.address_of(cudnn_handle)))
+    check_cudnn_error(cudnnCreate(UnsafePointer(to=cudnn_handle)))
 
     var input_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(
-        cudnnCreateTensorDescriptor(UnsafePointer.address_of(input_desc))
-    )
+    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=input_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
             input_desc,
@@ -3107,7 +3105,7 @@ fn conv_cudnn[
 
     var filter_desc = UnsafePointer[cudnnFilterStruct]()
     check_cudnn_error(
-        cudnnCreateFilterDescriptor(UnsafePointer.address_of(filter_desc))
+        cudnnCreateFilterDescriptor(UnsafePointer(to=filter_desc))
     )
     check_cudnn_error(
         cudnnSetFilter4dDescriptor(
@@ -3123,7 +3121,7 @@ fn conv_cudnn[
 
     var conv_desc = UnsafePointer[cudnnConvolutionStruct]()
     check_cudnn_error(
-        cudnnCreateConvolutionDescriptor(UnsafePointer.address_of(conv_desc))
+        cudnnCreateConvolutionDescriptor(UnsafePointer(to=conv_desc))
     )
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
@@ -3141,7 +3139,7 @@ fn conv_cudnn[
 
     var output_desc = UnsafePointer[cudnnTensorStruct]()
     check_cudnn_error(
-        cudnnCreateTensorDescriptor(UnsafePointer.address_of(output_desc))
+        cudnnCreateTensorDescriptor(UnsafePointer(to=output_desc))
     )
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
@@ -3161,7 +3159,7 @@ fn conv_cudnn[
     check_cudnn_error(
         cudnnConvolutionForward(
             cudnn_handle,
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),
+            UnsafePointer(to=alpha).bitcast[NoneType](),
             input_desc,
             input.bitcast[NoneType](),
             filter_desc,
@@ -3170,7 +3168,7 @@ fn conv_cudnn[
             cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
             UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
             0,
-            UnsafePointer.address_of(beta).bitcast[NoneType](),
+            UnsafePointer(to=beta).bitcast[NoneType](),
             output_desc,
             output.bitcast[NoneType](),
         )
