@@ -187,9 +187,7 @@ struct Codepoint(
         # SAFETY:
         #   This is safe because `StringSlice` is guaranteed to point to valid
         #   UTF-8.
-        char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            string.unsafe_ptr()
-        )
+        char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(string._slice)
 
         debug_assert(
             string.byte_length() == Int(num_bytes),
@@ -200,7 +198,7 @@ struct Codepoint(
 
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
-        _ptr: UnsafePointer[Byte],
+        s: Span[mut=False, UInt8, *_],
     ) -> (Codepoint, Int):
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
@@ -211,7 +209,7 @@ struct Codepoint(
             input.
 
         Args:
-            _ptr: Pointer to UTF-8 encoded data containing at least one valid
+            s: Span to UTF-8 encoded data containing at least one valid
                 encoded codepoint.
 
         Returns:
@@ -224,7 +222,11 @@ struct Codepoint(
         # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
         # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
         # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
-        var ptr = _ptr
+        var ptr = s.unsafe_ptr()
+        var end = ptr + len(s)
+
+        if ptr == end:
+            return Codepoint(0), 0
 
         var b1 = ptr[]
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
@@ -261,7 +263,6 @@ struct Codepoint(
         #   pair code points are actually relatively common (as I understand
         #   it); the algorithm above does not check for that.
         var char = Codepoint(unsafe_unchecked_codepoint=result)
-
         return char, Int(num_bytes)
 
     # ===-------------------------------------------------------------------===#

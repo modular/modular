@@ -418,7 +418,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]]:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
-                self._slice.unsafe_ptr()
+                self._slice._slice
             )
             return codepoint
         else:
@@ -985,11 +985,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A new string containing the character at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-        var buf = String._buffer_type(capacity=1)
-        buf.append(self._slice[idx])
-        buf.append(0)
-        return String(buf^)
+        # TODO(#933): implement this for unicode when we support llvm intrinsic
+        # evaluation at compile time
+        var result = String(capacity=1)
+        result.append_byte(self._slice[idx])
+        return result^
 
     fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
@@ -1100,8 +1100,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var old_len = old.byte_length()
         var new_len = new.byte_length()
 
-        var res = String._buffer_type()
-        res.reserve(self_len + (old_len - new_len) * occurrences + 1)
+        var res = String(capacity=self_len + (old_len - new_len) * occurrences)
 
         for _ in range(occurrences):
             var curr_offset = Int(self_ptr) - Int(self_start)
@@ -1112,36 +1111,30 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
             # Copy preceding unchanged chars
             for _ in range(curr_offset, idx):
-                res.append(self_ptr[])
+                res.append_byte(self_ptr[])
                 self_ptr += 1
 
             # Insert a copy of the new replacement string
             for i in range(new_len):
-                res.append(new_ptr[i])
+                res.append_byte(new_ptr[i])
 
             self_ptr += old_len
 
-        while True:
-            var val = self_ptr[]
-            if val == 0:
-                break
-            res.append(self_ptr[])
+        while self_ptr < self.unsafe_ptr() + self_len:
+            res.append_byte(self_ptr[])
             self_ptr += 1
 
-        res.append(0)
-        return String(res^)
+        return res^
 
     fn _interleave(self, val: StringSlice) -> String:
-        var res = String._buffer_type()
         var val_ptr = val.unsafe_ptr()
         var self_ptr = self.unsafe_ptr()
-        res.reserve(val.byte_length() * self.byte_length() + 1)
+        var res = String(capacity=val.byte_length() * self.byte_length())
         for i in range(self.byte_length()):
             for j in range(val.byte_length()):
-                res.append(val_ptr[j])
-            res.append(self_ptr[i])
-        res.append(0)
-        return String(res^)
+                res.append_byte(val_ptr[j])
+            res.append_byte(self_ptr[i])
+        return res^
 
     fn split(
         self, sep: StringSlice, maxsplit: Int = -1

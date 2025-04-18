@@ -174,12 +174,11 @@ fn to_lowercase(s: StringSlice) -> String:
     Returns:
         A new string where cased letters have been converted to lowercase.
     """
-    var input = s.unsafe_ptr()
     var result = String(capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            input + input_offset
+            s._slice[input_offset:]
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
@@ -204,14 +203,12 @@ fn to_uppercase(s: StringSlice) -> String:
     Returns:
         A new string where cased letters have been converted to uppercase.
     """
-    var input = s.unsafe_ptr()
     var result = String(capacity=_estimate_needed_size(s.byte_length()))
     var input_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            input + input_offset
+            s._slice[input_offset:]
         )
-
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 
         if uppercase_replacement_opt:

@@ -126,7 +126,9 @@ fn chr(c: Int) -> String:
     """
 
     if c < 0b1000_0000:  # 1 byte ASCII char
-        return String(String._buffer_type(c, 0))
+        var str = String(capacity=1)
+        str.append_byte(c)
+        return str^
 
     var char_opt = Codepoint.from_u32(c)
     if not char_opt:
@@ -589,6 +591,9 @@ struct String(
     var _buffer: Self._buffer_type
     """The underlying storage for the string."""
 
+    var has_nul_terminator: Bool
+    """Whether the _buffer has a nul terminator at its end."""
+
     # Useful string aliases.
     alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
     alias ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -607,6 +612,7 @@ struct String(
     fn __init__(out self):
         """Construct an empty string."""
         self._buffer = Self._buffer_type()
+        self.has_nul_terminator = False
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
@@ -616,6 +622,7 @@ struct String(
             capacity: The capacity of the string.
         """
         self._buffer = Self._buffer_type(capacity=capacity)
+        self.has_nul_terminator = False
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -653,8 +660,7 @@ struct String(
         """
         self._buffer = Self._buffer_type(capacity=len(bytes) + 1)
         self._buffer.append(bytes)
-        # add nul terminator.
-        self._buffer.append(0)
+        self.has_nul_terminator = False
 
     @no_inline
     fn __init__[
@@ -756,16 +762,17 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self._buffer = Self._buffer_type(
-            unsafe_uninit_length=unsafe_uninit_length + 1
+            unsafe_uninit_length=unsafe_uninit_length
         )
-        self._buffer[unsafe_uninit_length] = 0
+        self.has_nul_terminator = False
 
     @always_inline
     fn __init__(out self, *, steal_ptr: UnsafePointer[Byte], length: UInt):
         """Creates a string from the buffer. Note that the string now owns
         the buffer.
 
-        The buffer must be terminated with a null byte.
+        The buffer must be terminated with a null byte, which is not counted
+        in the string length.
 
         Args:
             steal_ptr: The pointer to the buffer.
@@ -773,11 +780,10 @@ struct String(
         """
         # we don't know the capacity of ptr, but we'll assume it's the same or
         # larger than len
-        self = Self(
-            Self._buffer_type(
-                steal_ptr=steal_ptr, length=length, capacity=length
-            )
+        self._buffer = Self._buffer_type(
+            steal_ptr=steal_ptr, length=length, capacity=length
         )
+        self.has_nul_terminator = True
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -890,7 +896,9 @@ struct String(
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](idx, len(self))
-        return _chr_ascii(self._buffer[normalized_idx])
+        var result = String(capacity=1)
+        result.append_byte(self._buffer[normalized_idx])
+        return result^
 
     fn __getitem__(self, span: Slice) -> String:
         """Gets the sequence of characters at the specified positions.
@@ -915,10 +923,10 @@ struct String(
                 )
             )
 
-        var result = String(capacity=len(r) + 1)
+        var result = String(capacity=len(r))
         var ptr = self.unsafe_ptr()
         for i in r:
-            result += _chr_ascii(ptr[i])
+            result.append_byte(ptr[i])
         return result^
 
     @always_inline
@@ -1030,7 +1038,6 @@ struct String(
         var buffer = Self._buffer_type(capacity=lhs_len + rhs_len + 1)
         buffer.extend(lhs)
         buffer.extend(rhs)
-        buffer.append(0)  # nul terminator
         var result = String()
         result._buffer = buffer^
         return result^
@@ -1046,6 +1053,18 @@ struct String(
             The new constructed string.
         """
         return Self._add(self.as_bytes(), other.as_bytes())
+
+    fn append_byte(mut self, byte: Byte):
+        """Append a byte to the string.
+
+        Args:
+            byte: The byte to append.
+        """
+        if self.has_nul_terminator:
+            _ = self._buffer.pop()
+            self.has_nul_terminator = False
+
+        self._buffer.append(byte)
 
     @always_inline
     fn __radd__(self, other: StringSlice) -> String:
@@ -1063,12 +1082,12 @@ struct String(
         var o_len = len(other)
         if o_len == 0:
             return
-        self._buffer.reserve(self.byte_length() + o_len + 1)
         # remove the nul terminator if it exists.
-        if len(self._buffer) > 0:
+        if self.has_nul_terminator:
             _ = self._buffer.pop()
+            self.has_nul_terminator = False
+        self._buffer.reserve(self.byte_length() + o_len + 1)
         self._buffer.extend(other)
-        self._buffer.append(0)
 
     @always_inline
     fn __iadd__(mut self, other: StringSlice):
@@ -1350,8 +1369,9 @@ struct String(
             The pointer to the underlying memory.
         """
         # The string may be empty, add a nul terminator if so.
-        if len(self._buffer) == 0:
+        if not self.has_nul_terminator:
             self._buffer.append(0)
+            self.has_nul_terminator = True
         return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline
@@ -1393,7 +1413,7 @@ struct String(
             This does not include the trailing null terminator in the count.
         """
         var length = len(self._buffer)
-        return length - Int(length > 0)
+        return length - (1 if self.has_nul_terminator else 0)
 
     fn _steal_ptr(mut self) -> UnsafePointer[UInt8]:
         """Transfer ownership of pointer to the underlying memory.
