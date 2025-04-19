@@ -312,6 +312,25 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self)[idx]
 
+    # TODO(MSTDL-1327): Reduce pain when string literals can't be
+    # non-materializable by making them merge into StaticString.  They should
+    # eventually merge into String through nonmaterialization.
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_value: __mlir_type.`!kgen.string`, //,
+        other_type: __type_of(StringLiteral[other_value]),
+    ](self) -> StaticString:
+        """Returns a StaticString after merging with another string literal.
+
+        Parameters:
+            other_value: The value of the other string literal.
+            other_type: The type of the string literal to merge with.
+
+        Returns:
+            A StaticString after merging with the specified `other_type`.
+        """
+        return self
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
