@@ -148,7 +148,7 @@ fn wgmma_e4m3_e4m3_f32[
     print(
         "== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => ",
         N,
-        ", r" if a_reg else StaticString(", s"),
+        ", r" if a_reg else ", s",
         sep="",
     )
 

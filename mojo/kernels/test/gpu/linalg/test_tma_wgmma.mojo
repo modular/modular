@@ -274,7 +274,7 @@ def test_tma_wgmma[
 
     print(
         "wgmma_"
-        + ("s" if a_smem else StaticString("r"))
+        + ("s" if a_smem else "r")
         + "s_bf16_bf16_f32 block tile "
         + String(block_tile_shape)
         + " transb="

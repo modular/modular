@@ -216,7 +216,7 @@ fn test_is_sorted_descending[
 fn print_test_case(test_case: TestCase):
     print(
         "==== Running",
-        "Top-P" if test_case.is_top_p else StaticString("Min-P"),
+        "Top-P" if test_case.is_top_p else "Min-P",
         ", type=",
         test_case.type,
         ", out_idx_type=",

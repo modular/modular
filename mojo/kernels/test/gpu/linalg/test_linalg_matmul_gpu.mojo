@@ -98,7 +98,7 @@ fn _get_test_name[
         + shape_a_dim[1].__str__() if shape_b.at[1]().is_dynamic() else " x "
         + shape_a_dim[1].__str__()
     )
-    str += "_dynamic" if shape_a.at[1]().is_dynamic() else StaticString("")
+    str += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
     str += ", ... "
     return str
 
