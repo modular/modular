@@ -17,12 +17,13 @@ using namespace M;
 #define STRINGIFY_MAX_CONFIG _X_STRINGIFY(MAX_CONFIG_SECTION)
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
-KGEN_CompilerRT_getMAXConfigValue(const char *key) {
+KGEN_CompilerRT_getMAXConfigValue(const char *key, size_t length) {
   ErrorOr<Config> configOr = Config::open();
   if (configOr.isError())
     return nullptr;
 
-  llvm::Twine configKey = llvm::Twine(STRINGIFY_MAX_CONFIG).concat(key);
+  llvm::Twine configKey =
+      llvm::Twine(STRINGIFY_MAX_CONFIG).concat(StringRef(key, length));
   StringRef value = configOr->getValue(configKey.str());
   char *res = (char *)KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment,
                                                    value.size() + 1);
