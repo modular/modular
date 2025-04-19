@@ -3770,6 +3770,20 @@ struct DeviceContext(CollectionElement):
     fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
 
+        Use the aliases defined by
+        [DeviceAttribute](/mojo/stdlib/gpu/host/device_attribute/DeviceAttribute)
+        to specify attributes. For example:
+
+        ```mojo
+        from gpu.host import DeviceAttribute, DeviceContext
+
+        def main():
+            var ctx = DeviceContext()
+            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
+            var max_blocks = ctx.get_attribute(attr)
+            print(max_blocks)
+        ```
+
         Args:
             attr: The device attribute to query.
 
