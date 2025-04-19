@@ -795,7 +795,7 @@ class AttentionMaskVariant(str, Enum):
     CAUSAL_MASK = "causal_mask"
     TENSOR_MASK = "tensor_mask"
     CHUNKED_CAUSAL_MASK = "chunked_causal_mask"
-    SLIDING_WINDOW_MASK = "sliding_window_mask"
+    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal_mask"
 
 
 class PositionalEncodingVariant(str, Enum):
@@ -808,7 +808,7 @@ class MHAMaskVariant(str, Enum):
     CAUSAL_ALIBI_MASK = 1
     NULL_MASK = 2
     CHUNKED_CAUSAL_MASK = 3
-    SLIDING_WINDOW_MASK = 4
+    SLIDING_WINDOW_CAUSAL_MASK = 4
 
 
 _MHA_MASK_CONFIG_DICT = {
@@ -828,8 +828,8 @@ _MHA_MASK_CONFIG_DICT = {
         attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
         positional_encoding_variant=PositionalEncodingVariant.NO_POS,
     ),
-    MHAMaskVariant.SLIDING_WINDOW_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_MASK,
+    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
         positional_encoding_variant=PositionalEncodingVariant.NO_POS,
     ),
 }
@@ -972,7 +972,7 @@ def flash_attention_ragged(
 
     if (
         mask_variant == MHAMaskVariant.CHUNKED_CAUSAL_MASK
-        or mask_variant == MHAMaskVariant.SLIDING_WINDOW_MASK
+        or mask_variant == MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
     ):
         parameters["local_window_size"] = local_window_size
 
