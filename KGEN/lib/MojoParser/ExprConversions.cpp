@@ -838,57 +838,128 @@ RefType ExprEmitter::getCommonRefType(RefType ref1, RefType ref2) {
   return RefType::get(eltType, origin, ref1.getAddressSpace());
 }
 
-/// Returns a type if there is a shared supertype for the two specified types,
-/// e.g. two derived classes may have the same base class even if neither is
-/// convertible to the other.  This returns null if there is no common type.
-enum CommonTypeResult { CTR_Success, CTR_Ambiguous, CTR_NoCommonType };
-static CommonTypeResult findCommonType(ASTExprAnd<CValue> val1,
-                                       ASTExprAnd<CValue> val2, ASTType &result,
-                                       ASTDecl &declScope) {
-  auto succeed = [&](ASTType type) {
-    result = type;
-    return CTR_Success;
-  };
+/// If there is a shared supertype for the two specified types, return it in
+/// 'result' and return success.
+///
+/// For example, we may have two derived classes that have the same base class
+/// even if neither is convertible to the other.
+///
+/// This function uses `__merge_with__` if available, otherwise it uses
+/// implicit conversions to find a common match.  If a `__merge_with__` is
+/// involved, the PValue for the function to invoke is returned.
+enum CommonTypeResult {
+  CTR_Success,
+  CTR_Ambiguous,
+  CTR_NoCommonType,
+  CTR_MergeWithConflict,
+  CTR_MergeWithConvertFail, // One __merge_with__ exists, but other doesn't work
+};
+
+static std::tuple<CommonTypeResult, PValue, PValue>
+findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
+               ASTType &result, ExprEmitter &emitter) {
 
   // If the types already match, then we're done.
   ASTType type1 = val1.ir.getRValueType();
   ASTType type2 = val2.ir.getRValueType();
+
+  auto succeed =
+      [&](ASTType type, PValue lhsMWPV = {},
+          PValue rhsMWPV = {}) -> std::tuple<CommonTypeResult, PValue, PValue> {
+    result = type;
+    return {CTR_Success, lhsMWPV, rhsMWPV};
+  };
+
   if (type1.isEqualCanon(type2))
     return succeed(type1);
 
+  // Ok, they are different types.  If either type has a __merge_with__ member,
+  // then we use that in preference to anything else.
+
+  // This checks to see if 'src' has a __merge_with__ member that unambiguously
+  // takes 'other' as an parameter. If so it returns the PValue for the method
+  // and the result type of calling the method.
+  auto lookupMergeWith = [&](ASTExprAnd<CValue> srcValue, ASTType srcType,
+                             ASTType otherType) -> std::pair<PValue, ASTType> {
+    // Look up __merge_with__ and bind other_type.
+    OverloadSet os =
+        OverloadSet::lookup(emitter.declScope, srcType, "__merge_with__",
+                            srcValue.expr, CallSyntax::kMethodCall);
+    os.paramBindings.add(srcValue.expr, PValue(otherType),
+                         StringAttr::get(emitter.getContext(), "other_type"));
+    CallOperands operands({srcValue});
+    auto res = os.filterOverloadSet(operands, /*emitDiag*/ false, emitter);
+    if (!res)
+      return {{}, {}};
+    return {res, res.getType().getSignatureUserResultType()};
+  };
+
+  auto [lhsMWPV, lhsMPType] = lookupMergeWith(val1, type1, type2);
+  auto [rhsMWPV, rhsMPType] = lookupMergeWith(val2, type2, type1);
+
+  // Handle two __merge_with__ methods.
+  if (lhsMWPV && rhsMWPV) {
+    if (!lhsMPType.isEqualCanon(rhsMPType))
+      return {CTR_MergeWithConflict, lhsMWPV, rhsMWPV};
+    // If both convert to the same type, then we're good.
+    return succeed(lhsMPType, lhsMWPV, rhsMWPV);
+  }
+  // If there is one __merge_with__ method, then we use that if the other type
+  // converts to the result value.
+  if (lhsMWPV) {
+    if (ExprEmitter::canImplicitlyConvertToType(val2, lhsMPType,
+                                                emitter.declScope))
+      return succeed(lhsMPType, lhsMWPV, PValue());
+    result = lhsMPType;
+    return {CTR_MergeWithConvertFail, lhsMWPV, PValue()};
+  }
+  if (rhsMWPV) {
+    if (ExprEmitter::canImplicitlyConvertToType(val1, rhsMPType,
+                                                emitter.declScope))
+      return succeed(rhsMPType, PValue(), rhsMWPV);
+    result = rhsMPType;
+    return {CTR_MergeWithConvertFail, PValue(), rhsMWPV};
+  }
+
+  // Otherwise, we have no __merge_with__ method, check out implicit
+  // conversions.
+
   // Check reference downcasting.
+  // FIXME: REMOVE THIS, we shouldn't be handling raw !lit.ref types here now
+  // that we can do generalized type merging. yay.
   if (auto type1Ref = dyn_cast<RefType>(type1))
     if (auto type2Ref = dyn_cast<RefType>(type2)) {
-      result = ExprEmitter::getCommonRefType(type1Ref, type2Ref);
-      return result ? CTR_Success : CTR_NoCommonType;
+      if (auto result = ExprEmitter::getCommonRefType(type1Ref, type2Ref))
+        return succeed(result);
+      return {CTR_NoCommonType, PValue(), PValue()};
     }
 
   // If one type implicit converts to the other, then the other is a common
   // type.  Don't do this if both convert to each other, this would be
   // ambiguous.
   bool isConvertibleToType2 =
-      ExprEmitter::canImplicitlyConvertToType(val1, type2, declScope);
+      ExprEmitter::canImplicitlyConvertToType(val1, type2, emitter.declScope);
   bool isConvertibleToType1 =
-      ExprEmitter::canImplicitlyConvertToType(val2, type1, declScope);
+      ExprEmitter::canImplicitlyConvertToType(val2, type1, emitter.declScope);
   if (isConvertibleToType2 && !isConvertibleToType1)
     return succeed(type2);
   if (isConvertibleToType1 && !isConvertibleToType2)
     return succeed(type1);
   if (isConvertibleToType1 && isConvertibleToType2)
-    return CTR_Ambiguous;
+    return {CTR_Ambiguous, PValue(), PValue()};
 
   // If one or the other type is non-materializable, the conversion is free,
   // so check to see if there is an unambiguous common type.
   bool type2ConvertsToType1Nonmat = false;
   bool type1ConvertsToType2Nonmat = false;
-  auto type1Nonmat = type1.getNonmaterializableTarget(declScope.getShared());
-  auto type2Nonmat = type2.getNonmaterializableTarget(declScope.getShared());
+  auto type1Nonmat = type1.getNonmaterializableTarget(emitter.shared);
+  auto type2Nonmat = type2.getNonmaterializableTarget(emitter.shared);
   if (type1Nonmat)
-    type2ConvertsToType1Nonmat =
-        ExprEmitter::canImplicitlyConvertToType(val2, type1Nonmat, declScope);
+    type2ConvertsToType1Nonmat = ExprEmitter::canImplicitlyConvertToType(
+        val2, type1Nonmat, emitter.declScope);
   if (type2Nonmat)
-    type1ConvertsToType2Nonmat =
-        ExprEmitter::canImplicitlyConvertToType(val1, type2Nonmat, declScope);
+    type1ConvertsToType2Nonmat = ExprEmitter::canImplicitlyConvertToType(
+        val1, type2Nonmat, emitter.declScope);
 
   if (type2ConvertsToType1Nonmat && !type1ConvertsToType2Nonmat)
     return succeed(type1Nonmat);
@@ -897,11 +968,11 @@ static CommonTypeResult findCommonType(ASTExprAnd<CValue> val1,
   if (type1ConvertsToType2Nonmat && type2ConvertsToType1Nonmat) {
     if (type1Nonmat.isEqualCanon(type2Nonmat))
       return succeed(type1Nonmat);
-    return CTR_Ambiguous;
+    return {CTR_Ambiguous, PValue(), PValue()};
   }
 
   // No common type found.
-  return CTR_NoCommonType;
+  return {CTR_NoCommonType, PValue(), PValue()};
 }
 
 /// Given two values that need to match, try to coerce one to the other if they
@@ -922,60 +993,95 @@ ParseResult ExprEmitter::coerceTypesToEachOther(
   // If they are the same or if there is a common type between these, convert
   // them to it.
   ASTType commonType;
-  auto commonTypeResult =
-      findCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType, declScope);
+  auto [commonTypeResult, lhsMWPV, rhsMWPV] =
+      findCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType, *this);
+
+  // If we failed and have no source location, we just return failure without
+  // returning an error.
+  if (commonTypeResult != CTR_Success && !loc.isValid())
+    return failure();
 
   ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
   switch (commonTypeResult) {
   case CTR_Success:
-    if (!lhsType.isEqualCanon(commonType)) {
-      configEmitter(/*isLHS*/ true);
-      lhs = emitCValue({lhs, lhsExpr}, EC_OperatorOperandValue, commonType);
-    }
-    if (!rhsType.isEqualCanon(commonType)) {
-      configEmitter(/*isLHS*/ false);
-      rhs = emitCValue({rhs, rhsExpr}, EC_OperatorOperandValue, commonType);
-    }
-
-    // If we are in a dynamic context and the result is nonmaterializable, then
-    // we need to emit the conversion in the parameter domain before the
-    // conditional and decide what the result type should be based on that.
-    if (builder) {
-      if (auto mat = commonType.getNonmaterializableTarget(shared)) {
-        configEmitter(/*isLHS*/ true);
-        lhs = emitCValue({lhs, lhsExpr}, EC_CondExpr, mat);
-        configEmitter(/*isLHS*/ false);
-        rhs = emitCValue({rhs, rhsExpr}, EC_CondExpr, mat);
-      }
-    }
-
-    return success(lhs && rhs);
-
+    break;
   case CTR_NoCommonType:
-    // If we failed and have no source location, we just return failure without
-    // returning an error.
-    if (loc.isValid()) {
-      emitError(loc, "value of type ")
-          << lhsType << " is not compatible with value of type " << rhsType
-          << lhsExpr->getRange() << rhsExpr->getRange();
-    }
+    emitError(loc, "value of type ")
+        << lhsType << " is not compatible with value of type " << rhsType
+        << lhsExpr->getRange() << rhsExpr->getRange();
     return failure();
-  case CTR_Ambiguous:
-    // If we failed and have no source location, we just return failure without
-    // returning an error.
-    if (loc.isValid()) {
-      auto diag = emitError(loc, "ambiguous merge: left value has type ")
-                  << lhsType << " and right value has type " << rhsType
-                  << ", and both convert to each other" << lhsExpr->getRange()
-                  << rhsExpr->getRange();
-      diag.attachNote(loc)
-          << "you could disambiguate by casting the left value to " << rhsType
-          << lhsExpr->getRange();
-      diag.attachNote(loc) << "or cast the right value to " << lhsType
-                           << rhsExpr->getRange();
-    }
+  case CTR_Ambiguous: {
+    auto diag = emitError(loc, "ambiguous merge: left value has type ")
+                << lhsType << " and right value has type " << rhsType
+                << ", and both convert to each other" << lhsExpr->getRange()
+                << rhsExpr->getRange();
+    diag.attachNote(loc)
+        << "you could disambiguate by casting the left value to " << rhsType
+        << lhsExpr->getRange();
+    diag.attachNote(loc) << "or cast the right value to " << lhsType
+                         << rhsExpr->getRange();
     return failure();
   }
+  case CTR_MergeWithConflict: {
+    auto diag = emitError(loc, "value of types ")
+                << lhsType << " and " << rhsType
+                << " have '__merge_with__' methods that disagree on common type"
+                << lhsExpr->getRange() << rhsExpr->getRange();
+    auto lhsDest = lhsMWPV.getType().getSignatureUserResultType();
+    auto rhsDest = rhsMWPV.getType().getSignatureUserResultType();
+    diag.attachNote(loc) << "one returns " << lhsDest
+                         << " and the other returns " << rhsDest;
+    return failure();
+  }
+  case CTR_MergeWithConvertFail: {
+    auto diag = emitError(loc, "value of types ")
+                << lhsType << " and " << rhsType << " cannot be merged to type "
+                << commonType << lhsExpr->getRange() << rhsExpr->getRange();
+    // One of lhsMWPV/rhsMWPV will be nonnull, indicating which mergewith.
+    diag.attachNote(loc) << (lhsMWPV ? rhsType : lhsType)
+                         << " does not implicitly convert to " << commonType;
+    return failure();
+  }
+  }
+
+  // Okay we found a successful conversion path.  See if we need to apply any
+  // __merge_with__ methods first.
+  if (lhsMWPV) {
+    configEmitter(/*isLHS*/ true);
+    ValueDest dest(EC_MergeWith);
+    lhs = emitIndirectCall(lhsMWPV, CallOperands({{lhs, lhsExpr}}), dest,
+                           CallSyntax::kMethodCall, lhsExpr);
+  }
+  if (rhsMWPV) {
+    configEmitter(/*isLHS*/ false);
+    ValueDest dest(EC_MergeWith);
+    rhs = emitIndirectCall(rhsMWPV, CallOperands({{rhs, rhsExpr}}), dest,
+                           CallSyntax::kMethodCall, rhsExpr);
+  }
+
+  // Next apply any implicit conversions that may be needed.
+  if (!lhsType.isEqualCanon(commonType)) {
+    configEmitter(/*isLHS*/ true);
+    lhs = emitCValue({lhs, lhsExpr}, EC_OperatorOperandValue, commonType);
+  }
+  if (!rhsType.isEqualCanon(commonType)) {
+    configEmitter(/*isLHS*/ false);
+    rhs = emitCValue({rhs, rhsExpr}, EC_OperatorOperandValue, commonType);
+  }
+
+  // If we are in a dynamic context and the result is nonmaterializable, then
+  // we need to emit the conversion in the parameter domain before the
+  // conditional and decide what the result type should be based on that.
+  if (builder) {
+    if (auto mat = commonType.getNonmaterializableTarget(shared)) {
+      configEmitter(/*isLHS*/ true);
+      lhs = emitCValue({lhs, lhsExpr}, EC_CondExpr, mat);
+      configEmitter(/*isLHS*/ false);
+      rhs = emitCValue({rhs, rhsExpr}, EC_CondExpr, mat);
+    }
+  }
+
+  return success(lhs && rhs);
 }
 
 /// Given a value of a type that can be zero cost converted to another type,

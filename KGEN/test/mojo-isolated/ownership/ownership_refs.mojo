@@ -77,18 +77,14 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
-  var aref = __get_mvalue_as_litref(a)
-  var bref = __get_mvalue_as_litref(b)
-
-  # CHECK: %cref = lit.var.decl "cref"
-  var cref = aref if cond else bref
+  # CHECK: %cptr = lit.var.decl "cptr"
+  var cptr = Pointer(to=a) if cond else Pointer(to=b)
 
   # This uses both A and B, so it needs to extend both of their origins.
-  Pointer(to=__get_litref_as_mvalue(cref))[].noop()
-  # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: lit.var.lifetime.end %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[CR]])
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[REF]])
+  cptr[].noop()
+  # CHECK: [[CV:%.*]] = lit.ref.load %cptr
+  # CHECK-NEXT: lit.var.lifetime.end %cptr
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CV]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call @{{.*}}noop
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
@@ -101,14 +97,14 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NOT: lit.call {{[^)]*}}__del__
 
   var a = MemExample()
-
   var b = MemExample()
 
-  var aref = __get_mvalue_as_litref(a)
-  var bref = __get_mvalue_as_litref(b)
+  var aptr = Pointer(to=a)
+  var bptr = Pointer(to=b)
 
   # CHECK: %cref = lit.var.decl "cref"
-  var cref = aref if cond else bref
+  var cptr = aptr if cond else bptr
+  var cref = cptr._value
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
