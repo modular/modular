@@ -831,7 +831,7 @@ fn matmul[
         get_static_string[
             "matmul(",
             _trace_description,
-            StaticString(")") if _trace_description else StaticString("matmul"),
+            ")" if _trace_description else "matmul",
         ](),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
