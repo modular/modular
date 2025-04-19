@@ -246,9 +246,10 @@ struct CompileConfig:
     fn _get_torch_lib() -> Optional[DLHandle]:
         # Since we only need to open this library for this case we
         # can lazy load it here.
+        alias key = StaticString(".torch_ext_lib")
         var torch_ext_lib_path_str_ptr = external_call[
             "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-        ](StringSlice(".torch_ext_lib"))
+        ](key.unsafe_ptr(), key.byte_length())
 
         if not torch_ext_lib_path_str_ptr:
             return None

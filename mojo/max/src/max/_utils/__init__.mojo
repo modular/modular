@@ -64,7 +64,7 @@ fn exchange[T: AnyTrivialRegType](mut old_var: T, owned new_value: T) -> T:
 fn handle_from_config(name: String, param: String) -> DLHandle:
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](StaticString(ptr=param.unsafe_ptr(), length=param.byte_length()))
+    ](param.unsafe_ptr(), param.byte_length())
 
     if not lib_path_str_ptr:
         abort("cannot get " + name + " library location from modular.cfg")
@@ -150,7 +150,7 @@ fn get_lib_path_from_cfg(
 ) raises -> String:
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](name)
+    ](name.unsafe_ptr(), name.byte_length())
 
     if not lib_path_str_ptr:
         raise Error(

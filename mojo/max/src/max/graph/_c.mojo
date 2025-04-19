@@ -26,9 +26,10 @@ alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
+    alias key = StaticString(".graph_lib")
     var max_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](StringSlice(".graph_lib"))
+    ](key.unsafe_ptr(), key.byte_length())
 
     if not max_lib_path_str_ptr:
         abort("cannot get graph library location from modular.cfg")

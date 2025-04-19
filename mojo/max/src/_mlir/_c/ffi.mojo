@@ -24,7 +24,7 @@ fn _init_dylib() -> _OwnedDLHandle:
     alias mlirc_dylib = env_get_string["MLIRC_DYLIB", ".graph_lib"]()
     var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](mlirc_dylib)
+    ](mlirc_dylib.unsafe_ptr(), mlirc_dylib.byte_length())
 
     if not mof_lib_path_str_ptr:
         abort("cannot get graph library location from modular.cfg")
