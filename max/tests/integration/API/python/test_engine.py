@@ -104,7 +104,7 @@ def test_devicetensor_wrong_num_inputs(
     with pytest.raises(
         ValueError,
         match=(
-            r"Number of inputs does not match "
+            r"Number of inputs \(2\) does not match "
             r"expected number \(1\) for model"
         ),
     ):
@@ -859,7 +859,7 @@ def test_execute_wrong_device_input(session: InferenceSession) -> None:
         TypeError,
         # Escape because CPU and Accelerator's repr's include parentheses.
         match=re.escape(
-            f"expected arg 0 to be on device {CPU()}, but was on device {Accelerator()}"
+            f"expected argument 0 to be on device {CPU()}, but was on device {Accelerator()}"
         ),
     ):
         x = Tensor(DType.float32, shape=(N,), device=Accelerator())
