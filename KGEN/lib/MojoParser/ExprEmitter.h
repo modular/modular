@@ -327,12 +327,16 @@ public:
                                     SharedState &shared);
   CValue emitZeroCostConvert(ASTExprAnd<CValue> value, ASTType toType);
 
-  /// Returns a type if there is a shared supertype for the two specified types,
-  /// e.g. two derived classes may have the same base class even if neither is
-  /// convertible to the other.  This returns null if there is no common type.
-  enum CommonTypeResult { CTR_Success, CTR_Ambiguous, CTR_NoCommonType };
-  CommonTypeResult getCommonType(ASTExprAnd<CValue> val1,
-                                 ASTExprAnd<CValue> val2, ASTType &result);
+  /// Given two values that need to match, try to coerce one to the other if
+  /// they disagree on type.  This emits an error (when loc is non-null) and
+  /// returns failure if the request is ambiguous or impossible.
+  ///
+  /// The 'configEmitter' function is called to set the insertion point of the
+  /// emitter for the true/false branches of the conditional.
+  ParseResult
+  coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
+                         CValue &rhs, const ExprNode *rhsExpr,
+                         std::function<void(bool isLHS)> configEmitter);
 
   /// If there is a common type shared between the two reference types, return
   /// it. Otherwise return null.
