@@ -52,19 +52,19 @@ fn _get_run_name[
     # N
     var n_str = String(
         shape_c_dim[1],
-        "_dynamic" if shape_c.at[1]().is_dynamic() else StaticString(""),
+        "_dynamic" if shape_c.at[1]().is_dynamic() else "",
     )
     # K
     var k_str = String(
         shape_a_dim[1],
-        "_dynamic" if shape_a.at[1]().is_dynamic() else StaticString(""),
+        "_dynamic" if shape_a.at[1]().is_dynamic() else "",
     )
 
     var transpose_b_str = String(
-        "/transpose_b=", "True" if transpose_b else StaticString("False")
+        "/transpose_b=", "True" if transpose_b else "False"
     )
     var cache_busting_str = String(
-        "/cache_busting=", "True" if cache_busting else StaticString("False")
+        "/cache_busting=", "True" if cache_busting else "False"
     )
     return String(
         vendor_str,
