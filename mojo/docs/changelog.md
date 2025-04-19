@@ -46,6 +46,10 @@ what we publish.
   `var x: Int`.  You may also silence this warning entirely for a variable by
   renaming it to start with an underscore, e.g. `_x`.
 
+- Mojo can now use [user-declared `__merge_with__` dunder
+  methods](https://github.com/modular/max/blob/main/mojo/proposals/custom-type-merging.md)
+  to merge values if different types in ternary operations.
+
 ### Standard library changes
 
 String types in Mojo got several significant improvements:

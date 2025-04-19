@@ -16,7 +16,7 @@ homogenous element type (e.g. `Float64`).
 ## Type Merging in Mojo Today (as of Feb 2025)
 
 As of this writing, Mojo’s type unification follows the following algorithm in
-pseudo code, implemented in `ExprEmitter::getCommonType` :
+pseudo code, implemented in `ExprEmitter::coerceTypesToEachOther` :
 
 ```mojo
 fn get_common_type(typea, typeb) raises -> Type:
@@ -105,7 +105,7 @@ We do this by defining a new dunder (we should support both the forward and the
 ```mojo
 struct StringLiteral[value: ...]:  # slightly simplified from StringLiteral.mojo
    fn __merge_with__[
-         otherType: __type_of(StringLiteral[_])
+         other_type: __type_of(StringLiteral[_])
       ](self) -> StaticString:
         return self
 ```
@@ -115,9 +115,10 @@ result, and has an implementation:
 
 1. It takes `self` which is the **value** to be converted.
 
-2. It takes `otherType` which is a **type parameter** which is the type to
+2. It takes `other_type` which is a **type parameter** which is the type to
    convert to, so the parameter is either the metatype of a struct, or a Trait
-   that all the destination types convert to.
+   that all the destination types convert to. The parameter name must be
+   `other_type`.
 
 3. It returns a `result` which has a type that is computed from the input value
    and parameter. In this case, by unioning the origins of the two together.
@@ -136,8 +137,10 @@ generics:
 
 ```mojo
 struct Pointer[type, origin]:  # slightly simplified from pointer.mojo
-   fn __merge_with__[otherType: __type_of(Pointer[type, _])]
-      (self, out result: Pointer[type, __origin_of(self.origin, otherType.origin)):
+   # TODO: '_' doesn't work right in parameter lists currently, so the unbound
+   # params of Pointer need to be explicitly declared.
+   fn __merge_with__[other_type: __type_of(Pointer[type, _])]
+      (self, out result: Pointer[type, __origin_of(self.origin, other_type.origin)):
         return __type_of(result)(self._value)
 ```
 
@@ -148,8 +151,8 @@ This would also solve the numeric issue it would look like:
 
 ```mojo
 struct SIMD[type: DType, size: Int](
-    fn __merge_with__[otherType: __type_of(SIMD[_, size])]
-      (self, out result: SIMD[type.merged_with(otherType.type), size]):
+    fn __merge_with__[other_type: __type_of(SIMD[_, size])]
+      (self, out result: SIMD[type.merged_with(other_type.type), size]):
         return __type_of(result)(self) # Use explicit conversion ctor
         
 struct DType:
@@ -164,12 +167,60 @@ might also want to allow broadcasting. This could be supported in a few ways,
 e.g. do the same thing as “merged_with” to decide the result type using
 dependent types, or by using overloads of `__merge_with__`.
 
-## Future: Use this for list literals also
+## Type Merging with this proposal
 
-List literals are still modeled incorrectly: generating a `ListLiteral` which
-is a heterogenous type. We need to move to generating a homogenous literal,
-e.g. turning `[1, 2]` into `List[Int](1, 2)`. When we do this, we’ll have to
-decide what the common type is for the element, allowing things like `[1, 2.0]`
-to turn into a `List[Float64]` instead of being a compile-time error. This
-infrastructure will naturally build on the logic above, linearly combining the
-types into a common type.
+With this proposal, Mojo’s type unification follows the following algorithm in
+pseudo code:
+
+```mojo
+fn get_common_type(typea, typeb) raises -> Type:
+   # If the types are already identical, then we are done.
+   if typea == typeb:
+       return typea
+
+   # If either type has a __merge_with__ function that accepts the other type
+   # then this completely overrides any other behavior.
+   amerge = typea.lookup_merge_with, typea, typeb)
+   bmerge = typea.lookup_merge_with, typea, typeb)
+   if amerge and bmerge:
+      if amerge.result_type != bmerge_result_type:
+         throw "conflicting merge types"
+      return amerge.result_type
+   if amerge:
+      if is_implicitly_convertible(typeb -> amerge.result_type)
+        return amerge.result_type
+      throw "cannot convert"
+   if bmerge:
+      if is_implicitly_convertible(typea -> bmerge.result_type)
+        return bmerge.result_type
+      throw "cannot convert"
+   
+   # Check for implicit conversions.
+   a_impl_converts_to_b = is_implicitly_convertible(typea -> typeb)
+   b_impl_converts_to_a = is_implicitly_convertible(typeb -> typea)
+   if b_impl_converts_to_a and a_impl_converts_to_b:
+       throw "ambiguous conversion"
+   if a_impl_converts_to_b:
+       return typeb  # Use implicit conversion
+   if b_impl_converts_to_a:
+       return typea  # Use implicit conversion
+   
+   # Elided: do similar test for @nonmaterializable types.
+   throw "no common type found"
+```
+
+This works great for simple cases, e.g. it allows merging an `Optional[Int]`
+and an `Int` into an `Optional[Int]` and many other cases. However, this isn’t
+enough for numeric conversions, e.g. consider:
+
+```mojo
+fn int_example(a: Int8, b: Int16, cond: Bool):
+  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]' 
+  c = a if cond else b
+  # Desired type: Int16
+```
+
+This really should work, but we don’t want all `Scalar[dt1]` to be implicitly
+convertible to `Scalar[dt2]` for any dt1 and dt2, and we don’t want Mojo to
+have hard coded knowledge of library types like SIMD. Furthermore, the approach
+above only works when one or the other types is the right answer.
