@@ -2344,82 +2344,6 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitBinOpCall({lhsRV, lhs}, {rhsRV, rhs}, kind, dest, this, emitter);
 }
 
-/// Given two values that need to match, try to coerce one to the other if they
-/// disagree on type.  This emits an error (when loc is non-null) and returns
-/// failure if the request is ambiguous or impossible.
-static ParseResult
-coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
-                       CValue &rhs, const ExprNode *rhsExpr,
-                       ExprEmitter &emitter,
-                       std::function<void(bool isLHS)> configEmitter) {
-  if (!configEmitter)
-    configEmitter = [&](bool isLHS) {};
-
-  if (!lhs || !rhs)
-    return failure();
-
-  // If they are the same or if there is a common type between these, convert
-  // them to it.
-  ASTType commonType;
-  auto commonTypeResult =
-      emitter.getCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType);
-
-  ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
-  switch (commonTypeResult) {
-  case ExprEmitter::CTR_Success:
-    if (!lhsType.isEqualCanon(commonType)) {
-      configEmitter(/*isLHS*/ true);
-      lhs = emitter.emitCValue({lhs, lhsExpr}, EC_OperatorOperandValue,
-                               commonType);
-    }
-    if (!rhsType.isEqualCanon(commonType)) {
-      configEmitter(/*isLHS*/ false);
-      rhs = emitter.emitCValue({rhs, rhsExpr}, EC_OperatorOperandValue,
-                               commonType);
-    }
-
-    // If we are in a dynamic context and the result is nonmaterializable, then
-    // we need to emit the conversion in the parameter domain before the
-    // conditional and decide what the result type should be based on that.
-    if (emitter.builder) {
-      if (auto mat = commonType.getNonmaterializableTarget(emitter.shared)) {
-        configEmitter(/*isLHS*/ true);
-        lhs = emitter.emitCValue({lhs, lhsExpr}, EC_CondExpr, mat);
-        configEmitter(/*isLHS*/ false);
-        rhs = emitter.emitCValue({rhs, rhsExpr}, EC_CondExpr, mat);
-      }
-    }
-
-    return success(lhs && rhs);
-
-  case ExprEmitter::CTR_NoCommonType:
-    // If we failed and have no source location, we just return failure without
-    // returning an error.
-    if (loc.isValid()) {
-      emitter.emitError(loc, "value of type ")
-          << lhsType << " is not compatible with value of type " << rhsType
-          << lhsExpr->getRange() << rhsExpr->getRange();
-    }
-    return failure();
-  case ExprEmitter::CTR_Ambiguous:
-    // If we failed and have no source location, we just return failure without
-    // returning an error.
-    if (loc.isValid()) {
-      auto diag =
-          emitter.emitError(loc, "ambiguous merge: left value has type ")
-          << lhsType << " and right value has type " << rhsType
-          << ", and both convert to each other" << lhsExpr->getRange()
-          << rhsExpr->getRange();
-      diag.attachNote(loc)
-          << "you could disambiguate by casting the left value to " << rhsType
-          << lhsExpr->getRange();
-      diag.attachNote(loc) << "or cast the right value to " << lhsType
-                           << rhsExpr->getRange();
-    }
-    return failure();
-  }
-}
-
 /// This method emits the `x and y`, `x or y` operators.  These are
 /// interesting in Python:
 ///
@@ -2449,7 +2373,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
 
     // Coerce the true/false values into a compatible type if they disagree.
-    if (coerceTypesToEachOther(getLoc(), lhsV, lhs, rhsV, rhs, emitter, {}))
+    if (emitter.coerceTypesToEachOther(getLoc(), lhsV, lhs, rhsV, rhs, {}))
       return {};
 
     PValue lhsPV = emitter.emitPValue({lhsV, lhs}, EC_OperatorOperandValue);
@@ -2494,8 +2418,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   };
   // Try to find compatibility between the raw values.  Pass in a null SMLoc so
   // that an error isn't diagnosed with an error message.
-  if (coerceTypesToEachOther(SMLoc(), lhsV, lhs, rhsV, rhs, emitter,
-                             configEmitter)) {
+  if (emitter.coerceTypesToEachOther(SMLoc(), lhsV, lhs, rhsV, rhs,
+                                     configEmitter)) {
     // If the two types are incompatible or ambiguously convertible to each
     // other, then the user wrote something like `if someInt and someString`.
     // This has no common type to return, but the result should still be
@@ -2749,8 +2673,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
     CValue falseVal = emitter.emitExprCValue(falseExpr, EC_CondExpr);
 
-    if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
-                               emitter, {}))
+    if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
+                                       falseExpr, {}))
       return {};
 
     PValue truePVal = emitter.emitPValue({trueVal, trueExpr}, EC_CondExpr);
@@ -2903,8 +2827,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     Block &b = isLHS ? ifOp.getThenBlock() : ifOp.getElseBlock();
     emitter.builder->setInsertionPointToEnd(&b);
   };
-  if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
-                             emitter, configEmitter)) {
+  if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
+                                     falseExpr, configEmitter)) {
     dest.resetForError();
     return {};
   }

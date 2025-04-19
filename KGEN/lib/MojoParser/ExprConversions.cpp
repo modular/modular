@@ -841,9 +841,10 @@ RefType ExprEmitter::getCommonRefType(RefType ref1, RefType ref2) {
 /// Returns a type if there is a shared supertype for the two specified types,
 /// e.g. two derived classes may have the same base class even if neither is
 /// convertible to the other.  This returns null if there is no common type.
-ExprEmitter::CommonTypeResult
-ExprEmitter::getCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
-                           ASTType &result) {
+enum CommonTypeResult { CTR_Success, CTR_Ambiguous, CTR_NoCommonType };
+static CommonTypeResult findCommonType(ASTExprAnd<CValue> val1,
+                                       ASTExprAnd<CValue> val2, ASTType &result,
+                                       ASTDecl &declScope) {
   auto succeed = [&](ASTType type) {
     result = type;
     return CTR_Success;
@@ -858,7 +859,7 @@ ExprEmitter::getCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // Check reference downcasting.
   if (auto type1Ref = dyn_cast<RefType>(type1))
     if (auto type2Ref = dyn_cast<RefType>(type2)) {
-      result = getCommonRefType(type1Ref, type2Ref);
+      result = ExprEmitter::getCommonRefType(type1Ref, type2Ref);
       return result ? CTR_Success : CTR_NoCommonType;
     }
 
@@ -866,9 +867,9 @@ ExprEmitter::getCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // type.  Don't do this if both convert to each other, this would be
   // ambiguous.
   bool isConvertibleToType2 =
-      canImplicitlyConvertToType(val1, type2, declScope);
+      ExprEmitter::canImplicitlyConvertToType(val1, type2, declScope);
   bool isConvertibleToType1 =
-      canImplicitlyConvertToType(val2, type1, declScope);
+      ExprEmitter::canImplicitlyConvertToType(val2, type1, declScope);
   if (isConvertibleToType2 && !isConvertibleToType1)
     return succeed(type2);
   if (isConvertibleToType1 && !isConvertibleToType2)
@@ -880,14 +881,14 @@ ExprEmitter::getCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // so check to see if there is an unambiguous common type.
   bool type2ConvertsToType1Nonmat = false;
   bool type1ConvertsToType2Nonmat = false;
-  auto type1Nonmat = type1.getNonmaterializableTarget(shared);
-  auto type2Nonmat = type2.getNonmaterializableTarget(shared);
+  auto type1Nonmat = type1.getNonmaterializableTarget(declScope.getShared());
+  auto type2Nonmat = type2.getNonmaterializableTarget(declScope.getShared());
   if (type1Nonmat)
     type2ConvertsToType1Nonmat =
-        canImplicitlyConvertToType(val2, type1Nonmat, declScope);
+        ExprEmitter::canImplicitlyConvertToType(val2, type1Nonmat, declScope);
   if (type2Nonmat)
     type1ConvertsToType2Nonmat =
-        canImplicitlyConvertToType(val1, type2Nonmat, declScope);
+        ExprEmitter::canImplicitlyConvertToType(val1, type2Nonmat, declScope);
 
   if (type2ConvertsToType1Nonmat && !type1ConvertsToType2Nonmat)
     return succeed(type1Nonmat);
@@ -901,6 +902,80 @@ ExprEmitter::getCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
 
   // No common type found.
   return CTR_NoCommonType;
+}
+
+/// Given two values that need to match, try to coerce one to the other if they
+/// disagree on type.  This emits an error (when loc is non-null) and returns
+/// failure if the request is ambiguous or impossible.
+///
+/// The 'configEmitter' function is called to set the insertion point of the
+/// emitter for the true/false branches of the conditional.
+ParseResult ExprEmitter::coerceTypesToEachOther(
+    SMLoc loc, CValue &lhs, const ExprNode *lhsExpr, CValue &rhs,
+    const ExprNode *rhsExpr, std::function<void(bool isLHS)> configEmitter) {
+  if (!configEmitter)
+    configEmitter = [&](bool isLHS) {};
+
+  if (!lhs || !rhs)
+    return failure();
+
+  // If they are the same or if there is a common type between these, convert
+  // them to it.
+  ASTType commonType;
+  auto commonTypeResult =
+      findCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType, declScope);
+
+  ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
+  switch (commonTypeResult) {
+  case CTR_Success:
+    if (!lhsType.isEqualCanon(commonType)) {
+      configEmitter(/*isLHS*/ true);
+      lhs = emitCValue({lhs, lhsExpr}, EC_OperatorOperandValue, commonType);
+    }
+    if (!rhsType.isEqualCanon(commonType)) {
+      configEmitter(/*isLHS*/ false);
+      rhs = emitCValue({rhs, rhsExpr}, EC_OperatorOperandValue, commonType);
+    }
+
+    // If we are in a dynamic context and the result is nonmaterializable, then
+    // we need to emit the conversion in the parameter domain before the
+    // conditional and decide what the result type should be based on that.
+    if (builder) {
+      if (auto mat = commonType.getNonmaterializableTarget(shared)) {
+        configEmitter(/*isLHS*/ true);
+        lhs = emitCValue({lhs, lhsExpr}, EC_CondExpr, mat);
+        configEmitter(/*isLHS*/ false);
+        rhs = emitCValue({rhs, rhsExpr}, EC_CondExpr, mat);
+      }
+    }
+
+    return success(lhs && rhs);
+
+  case CTR_NoCommonType:
+    // If we failed and have no source location, we just return failure without
+    // returning an error.
+    if (loc.isValid()) {
+      emitError(loc, "value of type ")
+          << lhsType << " is not compatible with value of type " << rhsType
+          << lhsExpr->getRange() << rhsExpr->getRange();
+    }
+    return failure();
+  case CTR_Ambiguous:
+    // If we failed and have no source location, we just return failure without
+    // returning an error.
+    if (loc.isValid()) {
+      auto diag = emitError(loc, "ambiguous merge: left value has type ")
+                  << lhsType << " and right value has type " << rhsType
+                  << ", and both convert to each other" << lhsExpr->getRange()
+                  << rhsExpr->getRange();
+      diag.attachNote(loc)
+          << "you could disambiguate by casting the left value to " << rhsType
+          << lhsExpr->getRange();
+      diag.attachNote(loc) << "or cast the right value to " << lhsType
+                           << rhsExpr->getRange();
+    }
+    return failure();
+  }
 }
 
 /// Given a value of a type that can be zero cost converted to another type,
