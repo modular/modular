@@ -88,7 +88,7 @@ fn test_cumsum_1d_precision():
             passed = False
             break
 
-    print("Passed" if passed else StaticString("Failed"))
+    print("Passed" if passed else "Failed")
 
     f32_data.free()
     f64_data.free()
