@@ -72,7 +72,7 @@ class Model:
     @property
     def input_devices(self) -> list[max._core.driver.Device]:
         """
-        Device of the model's input tensors, as a list of :obj:`Device` objects.
+        Devices of the model's input tensors, as a list of :obj:`Device` objects.
         """
 
     @property
@@ -92,7 +92,7 @@ class Model:
     @property
     def output_devices(self) -> list[max._core.driver.Device]:
         """
-        Device of the model's output tensors, as a list of :obj:`Device` objects.
+        Devices of the model's output tensors, as a list of :obj:`Device` objects.
         """
 
     @property
