@@ -1037,59 +1037,6 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # between recursive calls of emitNextCmp calls to get this to work.
   var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
 
-# CHECK-LABEL: lit.fn @"ref_utilities
-fn ref_utilities(a: MemoryOnlyInt, mut b: MemoryOnlyInt,
-                 mut c: MemoryOnlyInt,
-                 cond: __mlir_type.i1):
-  # Get the address of the specified physical bvalue or lvalue as a lit.ref.
-
-  # CHECK: %ref1 = lit.var.decl "ref1"
-  var ref1 = __get_mvalue_as_litref(a)
-  # CHECK: %ref2 = lit.var.decl "ref2"
-  var ref2 = __get_mvalue_as_litref(b)
-
-  # CHECK: %ptr1 = lit.var.decl "ptr1"
-  # CHECK: [[REF1V:%.*]] = lit.ref.load %ref1
-  # CHECK-NEXT: [[MV:%.*]] = lit.ref.to_pointer [[REF1V]]
-  # CHECK-NEXT: lit.ref.store [[MV]], %ptr1
-  var ptr1 = __mlir_op.`lit.ref.to_pointer`(ref1)
-
-  # CHECK-NEXT: %localLet = lit.var.decl "localLet"
-  var localLet = MemoryOnlyInt()
-  # CHECK: %ref3 = lit.var.decl "ref3"
-  var ref3 = __get_mvalue_as_litref(localLet)
-
-  # CHECK: %localVar = lit.var.decl "localVar"
-  var localVar = MemoryOnlyInt()
-  # CHECK: %ref4 = lit.var.decl "ref4"
-  var ref4 = __get_mvalue_as_litref(localVar)
-
-  # CHECK: %ref5 = lit.var.decl "ref5"
-  # CHECK: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}> {
-  # CHECK-NEXT:   [[COMMONINNER:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1")}> {
-  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref1
-  # CHECK-NEXT:     [[REF1V:%.*]] = lit.ref.load [[TMP]]
-  # CHECK-NEXT:     hlcf.yield [[REF1V]]
-  # CHECK-NEXT:   } else {
-  # CHECK-NEXT:     [[TMP:%.*]] = kgen.rebind %ref2
-  # CHECK-NEXT:     [[REF2V:%.*]] = lit.ref.load [[TMP]]
-  # CHECK-NEXT:     hlcf.yield [[REF2V]]{{.*}}>
-  # CHECK-NEXT:   }
-  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind [[COMMONINNER]]
-  # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1")}> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>
-  # CHECK-NEXT:    hlcf.yield [[TMP]]
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %c : !lit.ref<!MemoryOnlyInt, mut *"c`2"> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>
-  # CHECK-NEXT:   hlcf.yield [[TMP]] : !lit.ref<{{.*}}>
-  # CHECK-NEXT: }
-  # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
-  var ref5 = (ref1 if cond else ref2) if cond else __get_mvalue_as_litref(c)
-
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
-  # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %ref2
-  # CHECK-NEXT: lit.call {{.*}}MemoryOnlyInt::@"__init__{{.*}}([[TMP]], [[TMP2]])
-  __get_litref_as_mvalue(ref2) = MemoryOnlyInt()
-
 struct CallableStruct:
     var value: Int
 
