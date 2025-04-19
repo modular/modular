@@ -65,6 +65,9 @@ from memory.pointer import _GPUAddressSpace
 from utils.index import StaticTuple
 from utils.numerics import get_accum_type
 
+from sys.ffi import external_call, _get_global_or_null, OpaquePointer
+from sys.intrinsics import _unsafe_aliasing_address_to_pointer
+
 alias elementwise_epilogue_type = fn[
     input_index: Int, type: DType, rank: Int, width: Int, *, alignment: Int
 ] (IndexList[rank], SIMD[type, size=width]) capturing -> None
@@ -161,7 +164,7 @@ fn _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
-fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
+fn _can_enable_p2p_impl(ctxs: List[DeviceContext]) raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.
 
@@ -184,6 +187,39 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
                 continue
 
     return True
+
+
+fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
+    """
+    If peer-to-peer access is supported, enables it between all GPU pairs.
+
+    Args:
+        ctxs: List of device contexts representing different GPUs.
+
+    Returns:
+        True if P2P access is possible between all GPU pairs, False otherwise.
+    """
+    alias p2p_not_available = Scalar[DType.index](1)
+    alias p2p_available = Scalar[DType.index](2)
+
+    alias cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
+    # We use 0 to indicate that the cache is not found, 1 to indicate that it is
+    # found and p2p is not present and 2 to indicate that the cache is found and
+    # that p2p is present.
+    var found = Scalar[DType.index](Int(_get_global_or_null[cache_name]()))
+    if found:
+        return found == p2p_available
+
+    var res = _can_enable_p2p_impl(ctxs)
+    var ok = p2p_available if res else p2p_not_available
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(cache_name),
+        _unsafe_aliasing_address_to_pointer[DType.index](ok).bitcast[
+            OpaquePointer
+        ](),
+    )
+
+    return res
 
 
 fn _naive_reduce_kernel_with_lambda[
