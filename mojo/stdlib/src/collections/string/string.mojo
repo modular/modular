@@ -155,7 +155,9 @@ fn _chr_ascii(c: UInt8) -> String:
     Returns:
         A string containing a single character based on the given code point.
     """
-    return String(String._buffer_type(c, 0))
+    var result = String(capacity=1)
+    result.append_byte(c)
+    return result
 
 
 fn _repr_ascii(c: UInt8) -> String:

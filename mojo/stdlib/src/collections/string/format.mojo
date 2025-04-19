@@ -378,9 +378,9 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         # performance benefits. This also needs to be able to check if the given
         # args[i] conforms to the trait needed by the conversion_flag to avoid
         # needing to constraint that every type needs to conform to every trait.
-        alias `r` = UInt8(ord("r"))
-        alias `s` = UInt8(ord("s"))
-        # alias `a` = UInt8(ord("a")) # TODO
+        alias r_value = UInt8(ord("r"))
+        alias s_value = UInt8(ord("s"))
+        # alias a_value = UInt8(ord("a")) # TODO
 
         @parameter
         fn _format(idx: Int) raises:
@@ -399,19 +399,19 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                         data = String(args[i])  # TODO: use writer and return
                     elif empty and type_impls_str:
                         data = String(args[i])
-                    elif flag == `s` and type_impls_write_str:
+                    elif flag == s_value and type_impls_write_str:
                         if empty:
                             # TODO: use writer and return
                             pass
                         data = String(args[i])
-                    elif flag == `s` and type_impls_str:
+                    elif flag == s_value and type_impls_str:
                         data = String(args[i])
-                    elif flag == `r` and type_impls_write_repr:
+                    elif flag == r_value and type_impls_write_repr:
                         if empty:
                             # TODO: use writer and return
                             pass
                         data = repr(args[i])
-                    elif flag == `r` and type_impls_repr:
+                    elif flag == r_value and type_impls_repr:
                         data = repr(args[i])
                     elif self.format_spec:
                         self.format_spec.value().format(res, args[i])
