@@ -442,6 +442,10 @@ struct Bool(AnyType):
     fn __invert__(self) -> Bool:
         return self  # Incorrect impl
 
+    @always_inline("builtin")
+    fn __and__(self, rhs: Bool) -> Bool:
+        return __mlir_op.`pop.and`(self.value, rhs.value)
+
 
 @register_passable("trivial")
 struct Slice:
@@ -762,6 +766,19 @@ struct Pointer[
     @always_inline("nodebug")
     fn __eq__(self, rhs: Pointer[type, _, address_space]) -> Bool:
         return True
+
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_is_mut: Bool,
+        other_origin: Origin[other_is_mut], //,
+        other_type: __type_of(Pointer[type, other_origin, address_space]),
+    ](self) -> Pointer[
+        is_mutable = is_mutable & other_is_mut,
+        type=type,
+        origin = __origin_of(origin, other_origin),
+        address_space=address_space,
+    ]:
+        return self._value  # allow lit.ref to convert.
 
 
 struct Tuple[*element_types: AnyType]:

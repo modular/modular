@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
-
-
 struct Unmovable:
     fn __init__(out self):
         pass
@@ -113,10 +111,81 @@ fn test_in(a: String, b: String):
 # String literals
 ##===----------------------------------------------------------------------===##
 
-fn test_string_literal1():
+# CHECK-LABEL: lit.fn @"test_string_literal1
+fn test_string_literal1(cond: Bool):
   _ = 4
 
   # String literals should be fine at start of expression.
   # expected-warning @+1 {{'Bool' value is unused}}
   "a" == "abc" 
 
+
+##===----------------------------------------------------------------------===##
+# MergeWith
+##===----------------------------------------------------------------------===##
+
+@register_passable("trivial")
+struct TypeA:
+    fn __merge_with__[other_type: __type_of(TypeB)](self) -> TypeB:
+        pass
+    fn __merge_with__[other_type: __type_of(TypeC)](self) -> Int:
+        pass
+
+@register_passable("trivial")
+struct TypeB:
+    fn __merge_with__[other_type: __type_of(Int)](self) -> Int:
+        pass
+
+@register_passable("trivial")
+struct TypeC:
+    fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
+        pass
+    fn __merge_with__[other_type: __type_of(TypeD)](self) -> TypeE:
+        pass
+
+
+@register_passable("trivial")
+struct TypeD:
+    fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
+        pass
+
+@register_passable("trivial")
+struct TypeE:
+    @implicit
+    fn __init__(out self, other: TypeD):
+        pass
+
+
+
+
+# CHECK-LABEL: lit.fn @"test_mergewith
+fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
+
+  # One merges to the other.
+  _ = a if cond else b
+  # CHECK: hlcf.if %cond
+  # CHECK-NEXT:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
+  # CHECK-NEXT:   hlcf.yield [[ARES]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   hlcf.yield %b
+  # CHECK-NEXT: }
+  
+  # This merge with two merge_with
+  _ = a if cond else c
+  # CHECK: hlcf.if %cond
+  # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
+  # CHECK:   hlcf.yield [[ARES]]
+  # CHECK: } else {
+  # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
+  # CHECK:   hlcf.yield [[CRES]]
+  # CHECK: }
+
+  # One merge and one implicit conversion.
+  _ = c if cond else d
+  # CHECK: hlcf.if %cond
+  # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
+  # CHECK:   hlcf.yield [[CRES]]
+  # CHECK: } else {
+  # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeE::@"__init__
+  # CHECK:   hlcf.yield [[ARES]]
+  # CHECK: }

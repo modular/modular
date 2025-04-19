@@ -784,3 +784,35 @@ fn test3830_2[o: ImmutableOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
     # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin '*"anonymous*"' doesn't match expected origin 'o'}}
     f(x)
+
+
+
+
+##===----------------------------------------------------------------------===##
+# MergeWith
+##===----------------------------------------------------------------------===##
+
+struct TypeA:
+    fn __merge_with__[other_type: __type_of(TypeB)](self) -> TypeB:
+        pass
+    fn __merge_with__[other_type: __type_of(TypeC)](self) -> Int:
+        pass
+
+struct TypeB:
+    fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
+        pass
+
+struct TypeC:
+    pass
+
+
+# CHECK-LABEL: lit.fn @"test_mergewith
+fn test_mergewith(cond: Bool, a: TypeA, b: TypeB, c: TypeC):
+  # expected-error @+2 {{value of types 'TypeA' and 'TypeB' have '__merge_with__' methods that disagree on common type}}
+  # expected-note @+1 {{one returns 'TypeB' and the other returns 'Int'}}
+  _ = a if cond else b
+
+  # expected-error @+2 {{value of types 'TypeA' and 'TypeC' cannot be merged to type 'Int'}}
+  # expected-note @+1 {{'TypeC' does not implicitly convert to 'Int'}}
+  _ = a if cond else c
+  

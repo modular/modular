@@ -81,6 +81,7 @@ enum ExprContext {
   EC_TypeOf,               // __type_of(x)
   EC_PyBindGen,            // within Python binding generation
   EC_DisableDel,           // within Python binding generation
+  EC_MergeWith,            // implicit __merge_with__ call
 };
 const char *getContextMessage(ExprContext context);
 
