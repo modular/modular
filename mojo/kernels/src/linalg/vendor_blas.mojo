@@ -871,7 +871,7 @@ fn _cublasLt_matmul(
     )
 
     var heuristic_result = cublasLtMatmulHeuristicResult_t()
-    var returned_results = 0
+    var algorithm_count = 0
     check_cublas_error(
         cublasLtMatmulAlgoGetHeuristic(
             handle,
@@ -883,12 +883,12 @@ fn _cublasLt_matmul(
             preference,
             1,
             UnsafePointer(to=heuristic_result),
-            UnsafePointer(to=returned_results),
+            UnsafePointer(to=algorithm_count),
         ),
         msg="failed to get cublasLtMatmulAlgoGetHeuristic",
     )
 
-    if returned_results == 0:
+    if algorithm_count == 0:
         raise Error("No algorithm was found!")
 
     var matmul_workspace = ctx.enqueue_create_buffer[DType.uint8](
@@ -901,19 +901,17 @@ fn _cublasLt_matmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-                UnsafePointer(b.data.bitcast[NoneType]()),  # _a
+                b.data.bitcast[NoneType](),  # _a
                 _adesc,  # _adesc
-                UnsafePointer(a.data.bitcast[NoneType]()),  # _b
+                a.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
                 UnsafePointer[NoneType](),  # _c
                 _cdesc,  # _cdesc
-                UnsafePointer(d.data.bitcast[NoneType]()),  # _d
+                d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo),  # algo
-                UnsafePointer(
-                    matmul_workspace.unsafe_ptr().bitcast[NoneType]()
-                ),  # workspace
+                matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
             ),
@@ -925,19 +923,17 @@ fn _cublasLt_matmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-                UnsafePointer(a.data.bitcast[NoneType]()),  # _a
+                a.data.bitcast[NoneType](),  # _a
                 _adesc,  # _adesc
-                UnsafePointer(b.data.bitcast[NoneType]()),  # _b
+                b.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
                 UnsafePointer[NoneType](),  # _c
                 _cdesc,  # _cdesc
-                UnsafePointer(d.data.bitcast[NoneType]()),  # _d
+                d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo),  # algo
-                UnsafePointer(
-                    matmul_workspace.unsafe_ptr().bitcast[NoneType]()
-                ),  # workspace
+                matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
             ),
