@@ -329,13 +329,13 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
 
 
 # ===-----------------------------------------------------------------------===#
-# SlidingWindowMask
+# SlidingWindowCausalMask
 # ===-----------------------------------------------------------------------===#
 
 
 @value
 @register_passable("trivial")
-struct SlidingWindowMask[window_size: Int](MHAMask):
+struct SlidingWindowCausalMask[window_size: Int](MHAMask):
     """Mask implementing Sliding Window attention.
 
     Considering the following case:

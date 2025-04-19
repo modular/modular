@@ -33,7 +33,7 @@ from nn.mha_mask import (
     ChunkedCausalMask,
     MHAMask,
     NullMask,
-    SlidingWindowMask,
+    SlidingWindowCausalMask,
 )
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.mla import (
@@ -1667,7 +1667,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged[
+fn generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged[
     target: StaticString, type: DType, local_window_size: Int
 ](
     q: NDBuffer[type, 3, *_],
@@ -1690,7 +1690,7 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged[
             "local_window_size=" + String(local_window_size),
         )
 
-    alias name = "mo.mha.ragged.paged.sliding_window_mask.no_pos.nhead_" + String(
+    alias name = "mo.mha.ragged.paged.sliding_window_causal_mask.no_pos.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(
         kv_collection.kv_params.head_size
@@ -1707,7 +1707,7 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged[
             input_row_offsets,
             kv_collection,
             layer_idx,
-            SlidingWindowMask[local_window_size](),
+            SlidingWindowCausalMask[local_window_size](),
             scale,
             output,
             context,
@@ -1853,7 +1853,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged[
+fn generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged[
     type: DType, //,
     local_window_size: Int,
     target: StaticString,
@@ -1880,13 +1880,13 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.ragged.continuous_batching.sliding_window_mask.no_pos.nhead_"
+        "mo.mha.ragged.continuous_batching.sliding_window_causal_mask.no_pos.nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        return _flash_attention_kv_cache_sliding_window_mask_ragged[
+        return _flash_attention_kv_cache_sliding_window_causal_mask_ragged[
             local_window_size=local_window_size, target=target
         ](
             q,
@@ -2277,7 +2277,7 @@ fn _flash_attention_kv_cache_chunked_causal_mask_ragged[
 
 
 @always_inline
-fn _flash_attention_kv_cache_sliding_window_mask_ragged[
+fn _flash_attention_kv_cache_sliding_window_causal_mask_ragged[
     type: DType,
     collection_t: KVCollectionT, //,
     *,
@@ -2308,7 +2308,7 @@ fn _flash_attention_kv_cache_sliding_window_mask_ragged[
         input_row_offsets,
         kv_collection,
         layer_idx,
-        SlidingWindowMask[local_window_size](),
+        SlidingWindowCausalMask[local_window_size](),
         scale,
         output,
         cuda_ctx,
