@@ -738,11 +738,11 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   //   Conversion from KNOWN mutable to any mutability is fine.
   //   Conversion from with mutability "X" to "X&Y" is known to be fine.
   // We allow KGEN to fold the true and false cases for us.
-  if (auto fromLife = dyn_cast<OriginType>(fromType))
-    if (auto toLife = dyn_cast<OriginType>(toType)) {
-      auto toMut = toLife.getIsMutable();
+  if (auto fromOrigin = dyn_cast<OriginType>(fromType))
+    if (auto toOrigin = dyn_cast<OriginType>(toType)) {
+      auto toMut = toOrigin.getIsMutable();
       auto result =
-          ParamOperatorAttr::get(POC::And, toMut, fromLife.getIsMutable());
+          ParamOperatorAttr::get(POC::And, toMut, fromOrigin.getIsMutable());
       if (result == toMut)
         return true;
     }
