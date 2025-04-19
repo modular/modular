@@ -380,10 +380,10 @@ module attributes {M.target_info = #M.target<triple = "nvptx-nvidia-cuda", arch=
   kgen.func @scalar_cast_f32_to_f8(%f32: !pop.simd<1, f32>) -> (!pop.simd<1, f8e4m3fn>, !pop.simd<1, f8e5m2>) {
     // CHECK-DAG:    %[[FP32_ZERO:.+]] = llvm.mlir.constant(0.000000e+00 : f32) : f3
     // CHECK-DAG:    %[[I16_RES0:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e4m3x2.f32 $0, $1, $2;", "=h,f,f" %[[FP32_ZERO]], %arg0 : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.bitcast %[[I16_RES0]] : i16 to i8
+    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.trunc %[[I16_RES0]] : i16 to i8
     %0 = pop.cast %f32 : !pop.simd<1, f32> to !pop.simd<1, f8e4m3fn>
     // CHECK-DAG:    %[[I16_RES1:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e5m2x2.f32 $0, $1, $2;", "=h,f,f" %[[FP32_ZERO]], %arg0 : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.bitcast %[[I16_RES1]] : i16 to i8
+    // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.trunc %[[I16_RES1]] : i16 to i8
     %1 = pop.cast %f32 : !pop.simd<1, f32> to !pop.simd<1, f8e5m2>
     kgen.return %0, %1: !pop.simd<1, f8e4m3fn>, !pop.simd<1, f8e5m2>
   }
