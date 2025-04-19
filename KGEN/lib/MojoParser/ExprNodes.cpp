@@ -2351,9 +2351,7 @@ static ParseResult
 coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
                        CValue &rhs, const ExprNode *rhsExpr,
                        ExprEmitter &emitter,
-                       std::function<CValue(ASTExprAnd<AnyValue> value,
-                                            ASTType destType, bool isLHS)>
-                           convert) {
+                       std::function<void(bool isLHS)> configEmitter) {
   if (!lhs || !rhs)
     return failure();
 
@@ -2371,13 +2369,23 @@ coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
   ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
   switch (commonTypeResult) {
   case ExprEmitter::CTR_Success:
-    if (!lhsType.isEqualCanon(commonType))
-      lhs = convert({lhs, lhsExpr}, commonType, /*isLHS*/ true);
-    if (!lhs)
-      return failure();
-    if (!rhsType.isEqualCanon(commonType))
-      rhs = convert({rhs, rhsExpr}, commonType, /*isLHS*/ false);
-    return failure(!rhs);
+    if (!lhsType.isEqualCanon(commonType)) {
+      if (configEmitter)
+        configEmitter(/*isLHS*/ true);
+      lhs = emitter.emitCValue({lhs, lhsExpr}, EC_OperatorOperandValue,
+                               commonType);
+      if (!lhs)
+        return failure();
+    }
+    if (!rhsType.isEqualCanon(commonType)) {
+      if (configEmitter)
+        configEmitter(/*isLHS*/ false);
+      rhs = emitter.emitCValue({rhs, rhsExpr}, EC_OperatorOperandValue,
+                               commonType);
+      if (!rhs)
+        return failure();
+    }
+    return success();
 
   case ExprEmitter::CTR_NoCommonType:
     emitter.emitError(loc, "value of type ")
@@ -2452,12 +2460,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
 
     // Coerce the true/false values into a compatible type if they disagree.
-    auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
-                            bool isLHS) -> CValue {
-      return emitter.emitCValue(value, EC_OperatorOperandValue, type);
-    };
-    if (coerceTypesToEachOther(getLoc(), lhsV, lhs, rhsV, rhs, emitter,
-                               convertValue))
+    if (coerceTypesToEachOther(getLoc(), lhsV, lhs, rhsV, rhs, emitter, {}))
       return {};
 
     PValue lhsPV = emitter.emitPValue({lhsV, lhs}, EC_OperatorOperandValue);
@@ -2503,15 +2506,13 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   /// If the types disagree, then we need to emit a conversion to a common
   /// type. See if one is convertible to the other, and if so, emit a
   /// conversion to get to a common type.
-  auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
-                          bool isLHS) -> CValue {
+  auto configEmitter = [&](bool isLHS) {
     emitter.builder = isLHS ? falseBuilder : trueBuilder;
-    return emitter.emitCValue(value, EC_OperatorOperandValue, type);
   };
   // Try to find compatibility between the raw values.  Pass in a null SMLoc so
   // that an error isn't diagnosed with an error message.
   if (coerceTypesToEachOther(SMLoc(), lhsV, lhs, rhsV, rhs, emitter,
-                             convertValue)) {
+                             configEmitter)) {
     // If the two types are incompatible or ambiguously convertible to each
     // other, then the user wrote something like `if someInt and someString`.
     // This has no common type to return, but the result should still be
@@ -2524,13 +2525,18 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     // back to Bool with a ctor.
     if (!rhsV.getRValueType().isEqualCanon(boolType)) {
       RValue rhsI1Value = emitter.emitI1({rhsV, rhs}, EC_OperatorOperandValue);
-      rhsV = convertValue({rhsI1Value, rhs}, boolType, /*isLHS=*/false);
+      emitter.builder = trueBuilder;
+      rhsV = emitter.emitCValue({rhsI1Value, rhs}, EC_OperatorOperandValue,
+                                boolType);
     }
 
     // Similarly, if the LHS was already a Bool then use it, otherwise convert
     // the i1 we already have back to Bool with a ctor.
-    if (!lhsV.getRValueType().isEqualCanon(boolType))
-      lhsV = convertValue({lhsI1SRValue, lhs}, boolType, /*isLHS=*/true);
+    if (!lhsV.getRValueType().isEqualCanon(boolType)) {
+      emitter.builder = falseBuilder;
+      lhsV = emitter.emitCValue({lhsI1SRValue, lhs}, EC_OperatorOperandValue,
+                                boolType);
+    }
 
     if (!lhsV || !rhsV)
       return {};
@@ -2760,13 +2766,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
     CValue falseVal = emitter.emitExprCValue(falseExpr, EC_CondExpr);
 
-    // Coerce the true/false values into a compatible type.
-    auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
-                            bool isLHS) -> CValue {
-      return emitter.emitCValue(value, EC_CondExpr, type);
-    };
     if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
-                               emitter, convertValue))
+                               emitter, {}))
       return {};
 
     PValue truePVal = emitter.emitPValue({trueVal, trueExpr}, EC_CondExpr);
@@ -2915,14 +2916,12 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   /// If the types disagree, then we need to emit a conversion to a common
   /// type. See if one is convertible to the other, and if so, emit a
   /// conversion to get to a common type.
-  auto convertValue = [&](ASTExprAnd<AnyValue> value, ASTType type,
-                          bool isLHS) -> CValue {
+  auto configEmitter = [&](bool isLHS) {
     Block &b = isLHS ? ifOp.getThenBlock() : ifOp.getElseBlock();
     emitter.builder->setInsertionPointToEnd(&b);
-    return emitter.emitCValue(value, EC_CondExpr, type);
   };
   if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
-                             emitter, convertValue)) {
+                             emitter, configEmitter)) {
     dest.resetForError();
     return {};
   }
