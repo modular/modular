@@ -1460,7 +1460,7 @@ fn _load_impl[
     alias pretch_size_mnemonic = (
         ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
     ) if prefetch_size else ""
-    alias cache_operation = StaticString(".nc") if read_only else ""
+    alias cache_operation = ".nc" if read_only else ""
 
     alias cache_policy_inst = (
         "" if cache_policy

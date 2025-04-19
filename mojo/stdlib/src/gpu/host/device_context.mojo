@@ -1457,7 +1457,7 @@ struct DeviceFunction[
     # emit asm if cross compiling for nvidia gpus.
     alias _emission_kind = "asm" if (
         _cross_compilation() and _is_nvidia_gpu[target]()
-    ) else StaticString("object")
+    ) else "object"
     var _handle: _DeviceFunctionPtr
     """Internal handle to the compiled device function."""
 
