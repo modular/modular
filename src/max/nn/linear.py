@@ -651,6 +651,7 @@ class MLPV2(Module):
         hidden_dim: int,
         feed_forward_length: int,
         linear_cls: Callable[..., LinearV2] = LinearV2,
+        has_bias: bool = False,
         devices: Sequence[DeviceRef] = (),
         activation_function: str = "silu",
     ):
@@ -681,6 +682,7 @@ class MLPV2(Module):
             dtype=dtype,
             device=devices[0] if devices else None,
             quantization_encoding=quantization_encoding,
+            has_bias=has_bias,
         )
         self.down_proj = linear_cls(
             in_dim=feed_forward_length,
@@ -688,6 +690,7 @@ class MLPV2(Module):
             dtype=dtype,
             device=devices[0] if devices else None,
             quantization_encoding=quantization_encoding,
+            has_bias=has_bias,
         )
         self.up_proj = linear_cls(
             in_dim=hidden_dim,
@@ -695,6 +698,7 @@ class MLPV2(Module):
             dtype=dtype,
             device=devices[0] if devices else None,
             quantization_encoding=quantization_encoding,
+            has_bias=has_bias,
         )
         self.quantization_encoding = quantization_encoding
         assert activation_function in _ACTIVATION_FUNCTIONS.keys()
@@ -731,7 +735,27 @@ class MLPV2(Module):
             up_proj_weight: TensorValue = self.up_proj.weight
             if self.up_proj.device:
                 up_proj_weight = up_proj_weight.to(self.up_proj.device)
-            output = x @ ops.concat((gate_proj_weight, up_proj_weight)).T
+
+            bias = None
+            if (
+                self.gate_proj.bias is not None
+                and self.up_proj.bias is not None
+            ):
+                gate_proj_bias: TensorValue = self.gate_proj.bias
+                if self.gate_proj.device:
+                    gate_proj_bias = gate_proj_bias.to(self.gate_proj.device)
+                up_proj_bias: TensorValue = self.up_proj.bias
+                if self.up_proj.device:
+                    up_proj_bias = up_proj_bias.to(self.up_proj.device)
+                bias = ops.concat((gate_proj_bias, up_proj_bias))
+
+            if bias is not None:
+                output = (
+                    x @ ops.concat((gate_proj_weight, up_proj_weight)).T
+                ) + bias
+            else:
+                output = x @ ops.concat((gate_proj_weight, up_proj_weight)).T
+
             gate_out, up_out = ops.split(
                 output, [feed_forward_length, feed_forward_length], axis=1
             )
@@ -750,6 +774,11 @@ class DistributedMLP(MLPV2):
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
+        if kwargs.get("has_bias"):
+            raise ValueError(
+                "has_bias=True is not supported in DistributedMLP."
+            )
+
         self.num_devices = len(self.devices)
 
         def col_sharding_strategy(weight: Weight, i) -> TensorValue:
