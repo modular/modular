@@ -260,15 +260,14 @@ struct Span[
         var step: Int
         start, end, step = slc.indices(len(self))
 
-        debug_assert(
-            step == 1, "Slice must be within bounds and step must be 1"
-        )
+        # TODO: Introduce a new slice type that just has a start+end but no
+        # step.  Mojo supports slice type inference that can express this in the
+        # static type system instead of debug_assert.
+        debug_assert(step == 1, "Slice step must be 1")
 
-        var res = Self(
+        return Self(
             ptr=(self._data + start), length=len(range(start, end, step))
         )
-
-        return res
 
     @always_inline
     fn __iter__(

@@ -820,7 +820,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return self.__str__()
 
     @always_inline
-    fn __getitem__(self, span: Slice) raises -> Self:
+    fn __getitem__(self, span: Slice) -> Self:
         """Gets the sequence of characters at the specified positions.
 
         Args:
@@ -833,28 +833,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             position are outside the bounds of the string, or if they do not
             both fall on codepoint boundaries.
         """
-        var step: Int
-        var start: Int
-        var end: Int
-        start, end, step = span.indices(len(self))
-
-        if step != 1:
-            raise Error("Slice must be within bounds and step must be 1")
-
-        if not self.is_codepoint_boundary(start):
-            var msg = String.format(
-                "String `Slice` start byte {} must fall on codepoint boundary.",
-                start,
-            )
-            raise Error(msg^)
-
-        if not self.is_codepoint_boundary(end):
-            var msg = String.format(
-                "String `Slice` end byte {} must fall on codepoint boundary.",
-                end,
-            )
-            raise Error(msg^)
-
+        # TODO: Introduce a new slice type that just has a start+end but no
+        # step.  Mojo supports slice type inference that can express this in the
+        # static type system instead of debug_assert.
+        debug_assert(span.step.or_else(1) == 1, "Slice step must be 1")
         return Self(unsafe_from_utf8=self._slice[span])
 
     fn to_python_object(self) -> PythonObject:
@@ -1237,42 +1219,37 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var lhs = 0
         var items = 0
         while lhs <= str_byte_len:
-            try:
-                # Python adds all "whitespace chars" as one separator
-                # if no separator was specified
-                for s in self[lhs:].codepoint_slices():
-                    if not s.isspace():
-                        break
-                    lhs += s.byte_length()
-                # if it went until the end of the String, then
-                # it should be sliced up until the original
-                # start of the whitespace which was already appended
-                if lhs - 1 == str_byte_len:
+            # Python adds all "whitespace chars" as one separator if no
+            # separator was specified.
+            for s in self[lhs:].codepoint_slices():
+                if not s.isspace():
                     break
-                elif lhs == str_byte_len:
-                    # if the last char is not whitespace
-                    output.append(rebind[Self.Immutable](self[str_byte_len:]))
+                lhs += s.byte_length()
+            # If it went until the end of the String, then it should be sliced
+            # up until the original start of the whitespace which was already
+            # appended.
+            if lhs - 1 == str_byte_len:
+                break
+            elif lhs == str_byte_len:
+                # If the last char is not whitespace
+                output.append(rebind[Self.Immutable](self[str_byte_len:]))
+                break
+            var rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
+            for s in self[
+                lhs + num_bytes(self.unsafe_ptr()[lhs]) :
+            ].codepoint_slices():
+                if s.isspace():
                     break
-                var rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
-                for s in self[
-                    lhs + num_bytes(self.unsafe_ptr()[lhs]) :
-                ].codepoint_slices():
-                    if s.isspace():
-                        break
-                    rhs += s.byte_length()
+                rhs += s.byte_length()
 
-                if maxsplit > -1:
-                    if items == maxsplit:
-                        output.append(rebind[Self.Immutable](self[lhs:]))
-                        break
-                    items += 1
+            if maxsplit > -1:
+                if items == maxsplit:
+                    output.append(rebind[Self.Immutable](self[lhs:]))
+                    break
+                items += 1
 
-                output.append(rebind[Self.Immutable](self[lhs:rhs]))
-                lhs = rhs
-            except e:
-                return abort[List[Self.Immutable]](
-                    "unexpected exception during split()"
-                )
+            output.append(rebind[Self.Immutable](self[lhs:rhs]))
+            lhs = rhs
 
         return output^
 

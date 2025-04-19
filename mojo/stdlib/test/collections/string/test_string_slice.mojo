@@ -189,18 +189,6 @@ fn test_string_byte_span() raises:
     assert_equal(unicode_str1[0:0], "")
     assert_equal(unicode_str1[0:1], "H")
     assert_equal(unicode_str1[0:2], "Hi")
-    with assert_raises(
-        contains="String `Slice` end byte 3 must fall on codepoint boundary."
-    ):
-        _ = unicode_str1[0:3]
-    with assert_raises(
-        contains="String `Slice` end byte 4 must fall on codepoint boundary."
-    ):
-        _ = unicode_str1[0:4]
-    with assert_raises(
-        contains="String `Slice` end byte 5 must fall on codepoint boundary."
-    ):
-        _ = unicode_str1[0:5]
     assert_equal(unicode_str1[0:6], "Hi👋")
     assert_equal(unicode_str1[0:7], "Hi👋!")
 
@@ -226,15 +214,7 @@ fn test_string_byte_span() raises:
 
     assert_equal(unicode_str2[0:1], "y")
     assert_equal(unicode_str2[0:2], "yo")
-    with assert_raises(
-        contains="String `Slice` end byte 3 must fall on codepoint boundary."
-    ):
-        _ = unicode_str2[0:3]
     assert_equal(unicode_str2[0:4], unicode_str2)
-    with assert_raises(
-        contains="String `Slice` end byte 3 must fall on codepoint boundary."
-    ):
-        _ = unicode_str2[2:3]
     # NOTE: This renders weirdly, but is a single-codepoint string containing
     #   <https://www.compart.com/en/unicode/U+0308>.
     assert_equal(unicode_str2[2:4], "̈")
@@ -297,13 +277,6 @@ fn test_string_substring() raises:
 
     # Empty slices still have a pointer value
     assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
-
-    # ----------------------------------
-    # Test disallowed stepsize
-    # ----------------------------------
-
-    with assert_raises():
-        var sub6 = str_slice[0:0:2]
 
 
 fn test_slice_len() raises:
@@ -524,11 +497,8 @@ def test_split():
     # test all unicode separators
     # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
-    """TODO: \\x85"""
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-    """TODO: \\u2028"""
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
-    """TODO: \\u2029"""
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape secuences are accepted
     var univ_sep_var = (

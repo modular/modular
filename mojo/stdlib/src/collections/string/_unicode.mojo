@@ -182,11 +182,7 @@ fn to_lowercase(s: StringSlice) -> String:
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
-            # FIXME: slicing a StringSlice is inconsistent with slicing a span,
-            # so we have to use s._slice!
-            result += String(
-                s._slice[input_offset : input_offset + rune_and_size[1]]
-            )
+            result += s[input_offset : input_offset + rune_and_size[1]]
         else:
             result += String(lowercase_char_opt.unsafe_value())
 
@@ -223,11 +219,7 @@ fn to_uppercase(s: StringSlice) -> String:
             for char_idx in range(count):
                 result += String(uppercase_replacement_chars[char_idx])
         else:
-            # FIXME: slicing a StringSlice is inconsistent with slicing a span,
-            # so we have to use s._slice
-            result += String(
-                s._slice[input_offset : input_offset + rune_and_size[1]]
-            )
+            result += s[input_offset : input_offset + rune_and_size[1]]
 
         input_offset += rune_and_size[1]
 
