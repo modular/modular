@@ -207,7 +207,7 @@ ASTType ValueDest::getExpectedTypeIfSpecified() const {
 }
 
 /// Inspect the ValueDest to see if it implies a specific type for the value
-/// being computed, emiting ExprNode targets if present to get their implied
+/// being computed, emitting ExprNode targets if present to get their implied
 /// type if present.  This returns null if there is no implied type.
 ///
 /// This may be used in concrete value context with a known type (in which

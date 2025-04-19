@@ -2352,6 +2352,9 @@ coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
                        CValue &rhs, const ExprNode *rhsExpr,
                        ExprEmitter &emitter,
                        std::function<void(bool isLHS)> configEmitter) {
+  if (!configEmitter)
+    configEmitter = [&](bool isLHS) {};
+
   if (!lhs || !rhs)
     return failure();
 
@@ -2361,74 +2364,60 @@ coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
   auto commonTypeResult =
       emitter.getCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType);
 
-  // If we failed and have no source location, we just return failure without
-  // returning an error.
-  if (commonTypeResult != ExprEmitter::CTR_Success && !loc.isValid())
-    return failure();
-
   ASTType lhsType = lhs.getRValueType(), rhsType = rhs.getRValueType();
   switch (commonTypeResult) {
   case ExprEmitter::CTR_Success:
     if (!lhsType.isEqualCanon(commonType)) {
-      if (configEmitter)
-        configEmitter(/*isLHS*/ true);
+      configEmitter(/*isLHS*/ true);
       lhs = emitter.emitCValue({lhs, lhsExpr}, EC_OperatorOperandValue,
                                commonType);
-      if (!lhs)
-        return failure();
     }
     if (!rhsType.isEqualCanon(commonType)) {
-      if (configEmitter)
-        configEmitter(/*isLHS*/ false);
+      configEmitter(/*isLHS*/ false);
       rhs = emitter.emitCValue({rhs, rhsExpr}, EC_OperatorOperandValue,
                                commonType);
-      if (!rhs)
-        return failure();
     }
-    return success();
+
+    // If we are in a dynamic context and the result is nonmaterializable, then
+    // we need to emit the conversion in the parameter domain before the
+    // conditional and decide what the result type should be based on that.
+    if (emitter.builder) {
+      if (auto mat = commonType.getNonmaterializableTarget(emitter.shared)) {
+        configEmitter(/*isLHS*/ true);
+        lhs = emitter.emitCValue({lhs, lhsExpr}, EC_CondExpr, mat);
+        configEmitter(/*isLHS*/ false);
+        rhs = emitter.emitCValue({rhs, rhsExpr}, EC_CondExpr, mat);
+      }
+    }
+
+    return success(lhs && rhs);
 
   case ExprEmitter::CTR_NoCommonType:
-    emitter.emitError(loc, "value of type ")
-        << lhsType << " is not compatible with value of type " << rhsType
-        << lhsExpr->getRange() << rhsExpr->getRange();
+    // If we failed and have no source location, we just return failure without
+    // returning an error.
+    if (loc.isValid()) {
+      emitter.emitError(loc, "value of type ")
+          << lhsType << " is not compatible with value of type " << rhsType
+          << lhsExpr->getRange() << rhsExpr->getRange();
+    }
     return failure();
   case ExprEmitter::CTR_Ambiguous:
-    auto diag = emitter.emitError(loc, "ambiguous merge: left value has type ")
-                << lhsType << " and right value has type " << rhsType
-                << ", and both convert to each other" << lhsExpr->getRange()
-                << rhsExpr->getRange();
-    diag.attachNote(loc)
-        << "you could disambiguate by casting the left value to " << rhsType
-        << lhsExpr->getRange();
-    diag.attachNote(loc) << "or cast the right value to " << lhsType
-                         << rhsExpr->getRange();
+    // If we failed and have no source location, we just return failure without
+    // returning an error.
+    if (loc.isValid()) {
+      auto diag =
+          emitter.emitError(loc, "ambiguous merge: left value has type ")
+          << lhsType << " and right value has type " << rhsType
+          << ", and both convert to each other" << lhsExpr->getRange()
+          << rhsExpr->getRange();
+      diag.attachNote(loc)
+          << "you could disambiguate by casting the left value to " << rhsType
+          << lhsExpr->getRange();
+      diag.attachNote(loc) << "or cast the right value to " << lhsType
+                           << rhsExpr->getRange();
+    }
     return failure();
   }
-}
-
-/// When emitting an op node that does not invoke a function but generates
-/// conditionals, if the input values are nonmaterializable but the destination
-/// did not explicitly request a value of the nonmaterializable type, then emit
-/// the conversion in the parameter domain before the conditional, which
-/// requires SRValues.
-static LogicalResult materializeTypesInConditional(ExprEmitter &emitter,
-                                                   const ExprNode *node,
-                                                   CValue &lhsV, CValue &rhsV,
-                                                   ExprNode *lhs, ExprNode *rhs,
-                                                   ValueDest &dest) {
-  ASTType lTarget = lhsV.getType().getNonmaterializableTarget(emitter.shared);
-  ASTType rTarget = rhsV.getType().getNonmaterializableTarget(emitter.shared);
-  if (lTarget) {
-    lhsV = emitter.emitCValue({lhsV, lhs}, EC_CondExpr, lTarget);
-    if (!lhsV)
-      return failure();
-  }
-  if (rTarget) {
-    rhsV = emitter.emitCValue({rhsV, rhs}, EC_CondExpr, rTarget);
-    if (!rhsV)
-      return failure();
-  }
-  return success();
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are
@@ -2496,12 +2485,6 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
   if (!rhsV)
     return {};
-
-  if (failed(materializeTypesInConditional(emitter, this, lhsV, rhsV, lhs, rhs,
-                                           dest))) {
-    dest.resetForError();
-    return {};
-  }
 
   /// If the types disagree, then we need to emit a conversion to a common
   /// type. See if one is convertible to the other, and if so, emit a
@@ -2922,12 +2905,6 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   };
   if (coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal, falseExpr,
                              emitter, configEmitter)) {
-    dest.resetForError();
-    return {};
-  }
-
-  if (failed(materializeTypesInConditional(emitter, this, trueVal, falseVal,
-                                           trueExpr, falseExpr, dest))) {
     dest.resetForError();
     return {};
   }
