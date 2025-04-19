@@ -393,6 +393,12 @@ protected:
   SymbolTable &symtab;
 };
 
+/// Return true if target is NVPTX and `arch` is in `allowedGPUs`.
+bool isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs);
+
+// Return true if target is NVPTX and arch is of hopper architecture or above.
+bool isNVPTX_HopperAndAbove(TargetInfoAttr target);
+
 } // namespace M::KGEN
 
 #endif // KGEN_LLVM_LOWERING_UTILS_H

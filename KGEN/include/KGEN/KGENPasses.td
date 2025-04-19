@@ -293,6 +293,37 @@ def LowerSuspensionPoints : Pass<"lower-suspension-points",
 }
 
 //===----------------------------------------------------------------------===//
+// LegalizePOPOperations
+//===----------------------------------------------------------------------===//
+
+def LegalizePOPOperations : Pass<"legalize-pop-operations"> {
+  let summary = "Legalize `pop` operations";
+  let description = [{
+    This pass performs a legalization of `pop` operations that are not supported
+    by the LLVM Dialect. Primarily, it converts operation's operands to the type
+    that can be used to execute the operation and result is converted back to
+    the original type.
+
+    For example:
+
+    ```mlir
+    %res = pop.add %a, %b : !pop.scalar<f8e4m3fn>
+    ```
+
+    will be legalized to:
+
+    ```mlir
+    %a_f32 = pop.cast %a : !pop.scalar<f8e4m3fn> to !pop.scalar<f32>
+    %b_f32 = pop.cast %b : !pop.scalar<f8e4m3fn> to !pop.scalar<f32>
+    %res_f32 = pop.add %a_f32, %b_f32 : !pop.scalar<f32>
+    %res = pop.cast %res_f32 : !pop.scalar<f32> to !pop.scalar<f8e4m3fn>
+    ```
+  }];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerPOPToLLVM
 //===----------------------------------------------------------------------===//
 

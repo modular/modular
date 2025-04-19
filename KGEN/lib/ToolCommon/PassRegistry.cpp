@@ -46,6 +46,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerLoops();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
+  KGEN::registerLegalizePOPOperations();
   KGEN::registerLowerPOPToLLVM();
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();

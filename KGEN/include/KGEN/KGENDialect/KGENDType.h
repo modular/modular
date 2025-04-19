@@ -80,4 +80,24 @@ inline raw_ostream &operator<<(raw_ostream &os, KGENDType value) {
 }
 } // namespace M::KGEN
 
+namespace llvm {
+template <>
+struct DenseMapInfo<M::KGEN::KGENDType> {
+  static M::KGEN::KGENDType getEmptyKey() { return M::KGEN::KGENDType(); }
+
+  static M::KGEN::KGENDType getTombstoneKey() {
+    return M::KGEN::KGENDType(M::KGEN::KGENDType::ExtraCases::index + 1);
+  }
+
+  static unsigned getHashValue(const M::KGEN::KGENDType dtype) {
+    return DenseMapInfo<uint8_t>::getHashValue(dtype.getValue());
+  }
+
+  static bool isEqual(const M::KGEN::KGENDType lhs,
+                      const M::KGEN::KGENDType rhs) {
+    return lhs == rhs;
+  }
+};
+} // namespace llvm
+
 #endif // KGEN_KGENDIALECT_KGENDTYPE_H

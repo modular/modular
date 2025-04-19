@@ -323,19 +323,6 @@ private:
     return dtype.getSizeInBytes();
   }
 
-  /// Return true if target is NVPTX and `arch` is in `allowedGPUs`.
-  bool isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) const {
-    if (!target.getTriple().isNVPTX())
-      return false;
-    return llvm::is_contained(allowedGPUs, target.getArch()) ||
-           llvm::is_contained(allowedGPUs, target.getArch().rtrim("a"));
-  }
-
-  // Return true if target is NVPTX and arch is of hopper architecture or above.
-  bool isNVPTX_HopperAndAbove(TargetInfoAttr target) const {
-    return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_120"});
-  }
-
   LLVM::InlineAsmOp createInlineAsm(ConversionPatternRewriter &rewriter,
                                     Location loc, StringRef asmStr,
                                     StringRef asmConstraints, Type resultType,
@@ -518,7 +505,7 @@ private:
                           "=h,f,f", rewriter.getIntegerType(16),
                           {createConstant(rewriter, loc, APFloat(0.0f)), value})
               .getResult(0);
-      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, converted);
+      rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, f8Type, converted);
     }
     return success();
   }

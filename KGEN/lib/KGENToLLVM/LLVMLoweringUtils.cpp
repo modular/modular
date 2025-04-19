@@ -1076,3 +1076,22 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   return Error("cannot lower unknown attribute to LLVM" +
                getParamAsString(attr));
 }
+
+//===----------------------------------------------------------------------===//
+// isNVPTX
+//===----------------------------------------------------------------------===//
+
+bool KGEN::isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
+  if (!target.getTriple().isNVPTX())
+    return false;
+  return llvm::is_contained(allowedGPUs, target.getArch()) ||
+         llvm::is_contained(allowedGPUs, target.getArch().rtrim("a"));
+}
+
+//===----------------------------------------------------------------------===//
+// isNVPTX_HopperAndAbove
+//===----------------------------------------------------------------------===//
+
+bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
+  return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_120"});
+}
