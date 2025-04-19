@@ -96,7 +96,7 @@ def create_paged_manager(
         host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
     )
 
-    session = InferenceSession()
+    session = InferenceSession(devices=devices)
 
     kv_manager = PagedKVCacheManager(
         params=kv_params,

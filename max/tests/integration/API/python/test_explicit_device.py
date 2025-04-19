@@ -97,31 +97,11 @@ def test_io_device_output_errors() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "Loaded Model output idx=0 uses device=gpu:0 which was not set up"
+            "Loaded Model .* uses device=gpu:0 which was not set up"
             " in InferenceSession"
         ),
     ):
         compiled = session.load(graph)
-        compiled.output_devices
-
-
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="Requires gpu device to test"
-)
-def test_io_device_input_errors() -> None:
-    graph = create_test_graph_io_devices()
-    host = CPU()
-    cuda0 = Accelerator(0)
-    session = InferenceSession(devices=[host])
-    with pytest.raises(
-        ValueError,
-        match=(
-            "Loaded Model input idx=0 uses device=gpu:0 which was not set up"
-            " in InferenceSession"
-        ),
-    ):
-        compiled = session.load(graph)
-        compiled.input_devices
 
 
 @pytest.mark.skipif(
