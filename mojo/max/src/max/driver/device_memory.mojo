@@ -223,7 +223,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         writer.write(
             "DeviceMemory(",
             self.name.value() if self.name else "",
-            "," if self.name else StaticString(""),
+            "," if self.name else "",
             self.get_device(),
             ",Bytecount(",
             self.bytecount(),
@@ -472,7 +472,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         writer.write(
             "DeviceTensor(",
             self._storage.name.value() if self._storage.name else "",
-            "," if self._storage.name else StaticString(""),
+            "," if self._storage.name else "",
             self.device(),
             ",Spec(",
             self.spec,
