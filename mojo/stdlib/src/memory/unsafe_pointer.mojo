@@ -410,6 +410,40 @@ struct UnsafePointer[
         """
         return Int(self) >= Int(rhs)
 
+    @always_inline("builtin")
+    fn __merge_with__[
+        other_mut: Bool,
+        other_origin: Origin[other_mut],
+        other_alignment: Int, //,
+        other_type: __type_of(
+            UnsafePointer[
+                type,
+                address_space=address_space,
+                alignment=other_alignment,
+                mut=other_mut,
+                origin=other_origin,
+            ]
+        ),
+    ](self) -> UnsafePointer[
+        type=type,
+        mut = mut & other_mut,
+        origin = __origin_of(origin, other_origin),
+        address_space=address_space,
+        alignment = min(alignment, other_alignment),
+    ]:
+        """Returns a pointer merged with the specified `other_type`.
+
+        Parameters:
+            other_mut: Whether the other pointer is mutable.
+            other_origin: The origin of the other pointer.
+            other_alignment: The alignment of the other pointer.
+            other_type: The type of the pointer to merge with.
+
+        Returns:
+            A pointer merged with the specified `other_type`.
+        """
+        return self.address  # allow kgen.pointer to convert.
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#

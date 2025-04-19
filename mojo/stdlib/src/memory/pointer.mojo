@@ -354,7 +354,7 @@ struct Pointer[
         Args:
             other: The `Pointer` to cast.
         """
-        self = rebind[__type_of(self)](other)
+        self = __type_of(self)(_mlir_value=other._value)
 
     @doc_private
     @always_inline("nodebug")
@@ -463,3 +463,31 @@ struct Pointer[
             The string representation of the Pointer.
         """
         return String(UnsafePointer(to=self[]))
+
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_mut: Bool,
+        other_origin: Origin[other_mut], //,
+        other_type: __type_of(Pointer[type, other_origin, address_space]),
+    ](
+        self,
+        out result: Pointer[
+            mut = mut & other_mut,
+            type=type,
+            origin = __origin_of(origin, other_origin),
+            address_space=address_space,
+        ],
+    ):
+        """Returns a pointer merged with the specified `other_type`.
+
+        Parameters:
+            other_mut: Whether the other pointer is mutable.
+            other_origin: The origin of the other pointer.
+            other_type: The type of the pointer to merge with.
+
+        Returns:
+            A pointer merged with the specified `other_type`.
+        """
+        return __type_of(result)(
+            _mlir_value=self._value
+        )  # allow lit.ref to convert.

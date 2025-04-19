@@ -359,6 +359,22 @@ def test_volatile_load_and_store_simd():
         assert_equal(ptr2[i], i // 4 * 4)
 
 
+# Test pointer merging with ternary operation.
+def test_merge():
+    var a = List[Int](1, 2, 3)
+    var b = List[Int](4, 5, 6)
+
+    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+        var either = UnsafePointer(to=a) if cond else UnsafePointer(to=b)
+        either[].append(x)
+
+    inner(True, 7, a, b)
+    inner(False, 8, a, b)
+
+    assert_equal(a, List[Int](1, 2, 3, 7))
+    assert_equal(b, List[Int](4, 5, 6, 8))
+
+
 def main():
     test_address_of()
     test_pointer_to()
@@ -386,3 +402,4 @@ def main():
     test_offset()
     test_load_and_store_simd()
     test_volatile_load_and_store_simd()
+    test_merge()

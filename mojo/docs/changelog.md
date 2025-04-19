@@ -48,7 +48,9 @@ what we publish.
 
 - Mojo can now use [user-declared `__merge_with__` dunder
   methods](https://github.com/modular/max/blob/main/mojo/proposals/custom-type-merging.md)
-  to merge values if different types in ternary operations.
+  to merge values if different types in ternary operations.  This has been
+  adopted to allow pointers to work naturally with the ternary operator, for
+  example `var x = one_pointer if cond else other_pointer`.
 
 ### Standard library changes
 

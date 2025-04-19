@@ -46,6 +46,22 @@ def test_pointer_to():
     assert_not_equal(0, Pointer(to=local)[])
 
 
+# Test pointer merging with ternary operation.
+def test_merge():
+    var a = List[Int](1, 2, 3)
+    var b = List[Int](4, 5, 6)
+
+    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+        var either = Pointer(to=a) if cond else Pointer(to=b)
+        either[].append(x)
+
+    inner(True, 7, a, b)
+    inner(False, 8, a, b)
+
+    assert_equal(a, List[Int](1, 2, 3, 7))
+    assert_equal(b, List[Int](4, 5, 6, 8))
+
+
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
 def test_get_immutable() -> Int:
@@ -61,3 +77,4 @@ def main():
     test_equality()
     test_str()
     test_pointer_to()
+    test_merge()
