@@ -137,8 +137,8 @@ from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_causal_mask_paged_ragged,
     generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged,
-    generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged,
+    generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged,
+    generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
@@ -7239,7 +7239,7 @@ struct Struct_mha_ragged_paged_chunked_causal_mask_no_pos:
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged_kernel_api[
+fn generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged_kernel_api[
     type: DType, //,
     local_window_size: Int,
     target: StaticString,
@@ -7252,7 +7252,7 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged_kernel
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged[
+    generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged[
         local_window_size, target
     ](
         managed_tensor_slice_to_ndbuffer(q),
@@ -7266,9 +7266,9 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged_kernel
 
 
 @compiler.register(
-    "mo.mha.ragged.continuous_batching.sliding_window_mask.no_pos"
+    "mo.mha.ragged.continuous_batching.sliding_window_causal_mask.no_pos"
 )
-struct Struct_mha_ragged_continuous_batching_sliding_window_mask_no_pos:
+struct Struct_mha_ragged_continuous_batching_sliding_window_causal_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
@@ -7289,7 +7289,7 @@ struct Struct_mha_ragged_continuous_batching_sliding_window_mask_no_pos:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_sliding_window_mask_cont_batch_ragged_kernel_api[
+        generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged_kernel_api[
             local_window_size, target
         ](
             q,
@@ -7303,7 +7303,7 @@ struct Struct_mha_ragged_continuous_batching_sliding_window_mask_no_pos:
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged_kernel_api[
+fn generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged_kernel_api[
     type: DType, //,
     local_window_size: Int,
     target: StaticString,
@@ -7316,7 +7316,7 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged[
+    generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged[
         local_window_size=local_window_size, target=target
     ](
         managed_tensor_slice_to_ndbuffer(q),
@@ -7329,8 +7329,8 @@ fn generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged_kernel_api[
     )
 
 
-@compiler.register("mo.mha.ragged.paged.sliding_window_mask.no_pos")
-struct Struct_mha_ragged_paged_sliding_window_mask_no_pos:
+@compiler.register("mo.mha.ragged.paged.sliding_window_causal_mask.no_pos")
+struct Struct_mha_ragged_paged_sliding_window_causal_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
@@ -7353,7 +7353,7 @@ struct Struct_mha_ragged_paged_sliding_window_mask_no_pos:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_sliding_window_mask_paged_ragged_kernel_api[
+        generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged_kernel_api[
             local_window_size=local_window_size, target=target
         ](
             q,
