@@ -250,7 +250,7 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
     llvm::LLVMContext llvmCtx;
     ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
         objectCompiler->lowerAllFuncsToLLVM(llvmCtx, *module);
-    if (!llvmModuleOr)
+    if (llvmModuleOr.isError())
       return state.reportError(Twine("could not lower funcs to LLVM: ") +
                                llvmModuleOr.getError());
 
