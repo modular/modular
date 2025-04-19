@@ -115,7 +115,8 @@ struct ClosureLifter {
   struct ClosureInitData {
     ClosureInitData(llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
                     ClosureType closureType, ClosureInitOp closureInit,
-                    GeneratorOp generator);
+                    GeneratorOp generator,
+                    SmallVector<SymbolConstantAttr> &&moveSymbols);
     Type selfType(Type loweredClosureType) const {
       return closureType.getClosureMemoryKind() ==
                      ClosureMemoryKind::REGISTER_PASSABLE
@@ -136,6 +137,9 @@ struct ClosureLifter {
     ArrayRef<ParamDeclAttr> getCapturedParamDecls() const {
       return ArrayRef(capturedParamDecls.begin(), capturedParamDecls.end());
     }
+    ArrayRef<SymbolConstantAttr> getMoveSymbols() const {
+      return ArrayRef(moveSymbols.begin(), moveSymbols.end());
+    }
     ParamDeclAttr getSelfParam() const { return selfParam; }
     ParamClosureType getParamClosureType() const { return paramClosureType; }
 
@@ -144,6 +148,7 @@ struct ClosureLifter {
     ClosureType closureType;
     ClosureInitOp closureInit;
     GeneratorOp generator;
+    SmallVector<SymbolConstantAttr> moveSymbols;
     ParamDeclAttr selfParam;
     ParamClosureType paramClosureType;
   };
@@ -173,6 +178,10 @@ private:
   /// level function.
   void liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
                         TypedAttr capturedInstance);
+  void liftMoveFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+                        Type loweredClosureType,
+                        ArrayRef<Capture> captureMechanisms,
+                        TypedAttr capturedInstance);
   /// Given closure metadata the captures, emit code that results in the storage
   /// of the captures into capture struct.
   void storeCaptures(ImplicitLocOpBuilder &b, Value captureStructArg,
@@ -196,10 +205,12 @@ private:
 
 ClosureLifter::ClosureInitData::ClosureInitData(
     llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
-    ClosureType closureType, ClosureInitOp closureInit, GeneratorOp generator)
+    ClosureType closureType, ClosureInitOp closureInit, GeneratorOp generator,
+    SmallVector<SymbolConstantAttr> &&moveSymbols)
     : capturedParamDecls(std::move(capturedParamDecls)),
-      closureType(closureType), closureInit(closureInit), generator(generator) {
-  // Compute the type of the parameter capture.
+      closureType(closureType), closureInit(closureInit), generator(generator),
+      moveSymbols(std::move(moveSymbols)) {
+  // Create the capture struct.
   SmallVector<Type> paramTypes;
   MLIRContext *cxt = generator->getContext();
   for (ParamDeclAttr paramCaptures : getCapturedParamDecls())
@@ -219,6 +230,7 @@ ClosureLifter::ClosureInitData::ClosureInitData(
     captureName = StringAttr::get(cxt, "CAPTURES");
     closureParamCapture = StructType::get(paramTypes);
   }
+
   selfParam = ParamDeclAttr::get(captureName, closureParamCapture);
   paramClosureType =
       ParamClosureType::get(cxt, SymbolRefAttr::get(generator.getSymNameAttr()),
@@ -305,6 +317,71 @@ static ClosureType getClosureType(ClosureInitOp closureInit) {
     closureType = dyn_cast<ClosureType>(resultType);
   assert(closureType && "closure init must be of closure type");
   return closureType;
+}
+
+void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
+                                     ClosureInitData &closureInitData,
+                                     Type loweredClosureType,
+                                     ArrayRef<Capture> captureMechanisms,
+                                     TypedAttr capturedInstance) {
+  // create signature
+  Type selfType = closureInitData.selfType(loweredClosureType);
+  GeneratorOp generator = closureInitData.getGenerator();
+  SmallVector<Type> argTypes;
+  argTypes.push_back(selfType);
+  argTypes.push_back(selfType);
+  FunctionType funcType = FunctionType::get(b.getContext(), argTypes, {});
+  FuncTypeGeneratorType funcGenType =
+      FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          closureInitData.getSelfParam(), funcType, /*argConv=*/{},
+          /*effects=*/{},
+          /*fnMetadata=*/{}, /*genMetadata=*/{});
+
+  auto uniqueName = b.getStringAttr(getUniqueSymbolName(
+      (generator.getName() + "_move_" + closureInitData.regionName()).str(),
+      symtab, counter));
+  b.setInsertionPoint(generator);
+  auto moveGenerator = b.create<GeneratorOp>(uniqueName, funcGenType, funcType,
+                                             closureInitData.getSelfParam());
+  symtab.insert(moveGenerator);
+
+  // Populate move body.
+  Block &moveBlock = moveGenerator.getBodyRegion().emplaceBlock();
+  for (Type type : argTypes)
+    moveBlock.addArgument(type, moveGenerator.getLoc());
+  b.setInsertionPointToStart(&moveBlock);
+  Value source = moveBlock.getArgument(0);
+  Value target = moveBlock.getArgument(1);
+  unsigned moveIndex = 0;
+  for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
+    Value targetField = b.create<KGEN::StructGEPOp>(target, index);
+    Value sourceField = b.create<KGEN::StructGEPOp>(source, index);
+    if (!capture.moveOrCopySym.has_value()) {
+      b.create<POP::StoreOp>(b.create<POP::LoadOp>(sourceField), targetField);
+    } else {
+      SymbolConstantAttr moveSymbol =
+          closureInitData.getMoveSymbols()[moveIndex++];
+      b.create<KGEN::CallOp>(moveSymbol, ValueRange{sourceField, targetField});
+    }
+  }
+  b.create<KGEN::ReturnOp>(ValueRange{});
+  unpackCapturesInto(b, moveGenerator.getBodyRegion(), closureInitData);
+
+  // Map from synthesized function to abstracted symbols.
+  SmallVector<TypedAttr> boundParams;
+  boundParams.push_back(capturedInstance);
+  auto sym = SymbolConstantAttr::get(
+      moveGenerator,
+      FuncTypeGeneratorType::get({}, funcType, /*argConv=*/{},
+                                 /*effects=*/{},
+                                 /*fnMetadata=*/{}, /*genMetadata=*/{}),
+      boundParams);
+  ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
+      closureInitData.getGenerator(), closureInitData.regionName(),
+      ClosureMethod::MOVE, {PointerType::get(closureInitData.getClosureType())},
+      {}, closureInitData.getClosureType(), {},
+      closureInitData.getParamClosureType());
+  liftedClosureSymbols[closureAttr] = sym;
 }
 
 void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
@@ -444,6 +521,8 @@ Value ClosureLifter::liftNonRegPassableClosure(
   Value captureStruct =
       liftClosure(b, closureInitData, capturedInstance, captureMechanisms,
                   loweredClosureType, replacementFn);
+  liftMoveFunction(b, closureInitData, loweredClosureType, captureMechanisms,
+                   capturedInstance);
   return captureStruct;
 }
 
@@ -574,13 +653,17 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
   llvm::SetVector<ParamDeclAttr> capturedParamDecls =
       collectCapturedParams(captures, generator, region);
 
-  // Create the capture struct type.
+  // Create the capture struct type and collect symbols.
+  // In order to create the move constructor, we need the move constructors of
+  // all capture by copy/move values.
+  SmallVector<SymbolConstantAttr> moveSymbols;
   for (Value capture : closureInit.getCaptures()) {
     auto ptr = captureToSymbol.find(capture);
     assert(ptr != captureToSymbol.end() && "capture must be in capture list");
     if (auto triple = dyn_cast<MemSymbolTripleAttr>(ptr->second)) {
       SymbolConstantAttr symbol = cast<SymbolConstantAttr>(
           triple.getCopy() ? triple.getCopy() : triple.getMove());
+      moveSymbols.push_back(cast<SymbolConstantAttr>(triple.getMove()));
       Type capturingType =
           cast<PointerType>(capture.getType()).getElementType();
       fieldTypes.push_back(capturingType);
@@ -592,7 +675,8 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
   }
   bool isThin = fieldTypes.empty();
   ClosureInitData closureInitData(std::move(capturedParamDecls), closureType,
-                                  closureInit, generator);
+                                  closureInit, generator,
+                                  std::move(moveSymbols));
   // Replace parameter abstractions.
   TypedAttr capturedInstance = createCaptureAttribute(b, closureInitData);
   ClosureAttr captureAttr =
