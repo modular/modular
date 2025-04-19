@@ -88,11 +88,7 @@ fn _print_svg_impl[
             "Layout 0 should have the largest second dimension",
         )
 
-    var colors = List(
-        StaticString("#FFFFFF"),
-        StaticString("#93C572"),
-        StaticString("#ECFFDC"),
-    )
+    var colors = List[StaticString]("#FFFFFF", "#93C572", "#ECFFDC")
 
     var cell_size = 80
     var margin = 40
