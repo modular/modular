@@ -369,51 +369,28 @@ fn use_two_strings():
     var two_strings = TwoStrings("foo")
 ```
 
-## Explicit lifetimes
+## Explicit lifetime extension
 
 So far, we've described how Mojo destroys a value at the point it's last used,
-and this works great in almost all situations. However, there are very rare
-situations in which Mojo simply cannot predict this correctly and will destroy
-a value that is still referenced through some other means.
+and this works great in almost all situations. Mojo
+[origins](/mojo/manual/values/lifetimes) help the compiler track
+values that are allocated in one place and used in another.
 
-For instance, perhaps you're building a type with a field that carries a pointer
-to another field. The Mojo compiler won't be able to reason about the pointer,
-so it might destroy a field (`obj1`) when that field is technically no longer
-used, even though another field (`obj2`) still holds a pointer to part of it.
-So, you might need to keep `obj1` alive until you can execute some special
-logic in the destructor or move initializer.
+However, there are very rare situations in which you may need to explicitly
+extend the lifetime of a value. This can happen:
 
-You can force Mojo to keep a value alive up to a certain point by assigning the
-value to the `_` discard pattern at the point where it's okay to destroy it.
-For example:
+- When you're writing tests that generate values that aren't actually used,
+  to avoid the compiler issuing warnings and/or optimizing away values.
+- You're writing unsafe code (for example, code that explicitly manipulates
+  a value's `origin`).
 
-```mojo
-fn __del__(owned self):
-    self.dump() # Self is still whole here
-
-    consume(self.obj2^)
-    _ = self.obj1
-    # Mojo keeps `obj1` alive until here, after its "last use"
-```
-
-In this case, if `consume()` refers to some value in `obj1` somehow, this
-ensures that Mojo does not destroy `obj1` until after the call to `consume()`,
-because assignment to the discard variable `_` is actually the last use.
-
-For other situations, you can also scope the lifetime of a value using the
-Python-style [`with`
-statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement).
-That is, for any value defined at the entrance to a `with` statement, Mojo will
-keep that value alive until the end of the `with` statement. For example:
+In these cases, you can force Mojo to keep a value alive up to a certain point
+by assigning the value to the `_` discard pattern at the point where it's okay
+to destroy it. For example:
 
 ```mojo
-with open("my_file.txt", "r") as file:
-    print(file.read())
-
-    # Other stuff happens here (whether using `file` or not)...
-    foo()
-    # `file` is alive up to the end of the `with` statement.
-
-# `file` is destroyed when the statement ends.
-bar()
+# Keep foo alive until this point
+_ = foo
 ```
+
+If you don't _know_ you need to do this, you probably don't.
