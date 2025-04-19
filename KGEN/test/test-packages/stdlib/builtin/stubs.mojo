@@ -327,6 +327,16 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
     fn __eq__(self, other: StringLiteral) -> Bool:
         return Bool()
 
+    # TODO(MSTDL-1327): Reduce pain when string literals can't be
+    # non-materializable by making them merge into StaticString.  They should
+    # eventually merge into String through nonmaterialization.
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_value: __mlir_type.`!kgen.string`, //,
+        other_type: __type_of(StringLiteral[other_value]),
+    ](self) -> StaticString:
+        return self
+
 
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]]:

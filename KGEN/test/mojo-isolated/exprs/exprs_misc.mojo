@@ -118,7 +118,9 @@ fn test_string_literal1(cond: Bool):
   # String literals should be fine at start of expression.
   # expected-warning @+1 {{'Bool' value is unused}}
   "a" == "abc" 
-
+ 
+  # String literals should merge.
+  var _ss: StaticString = "T" if cond else "F"
 
 ##===----------------------------------------------------------------------===##
 # MergeWith
