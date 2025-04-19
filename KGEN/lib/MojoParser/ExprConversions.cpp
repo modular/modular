@@ -924,16 +924,6 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // Otherwise, we have no __merge_with__ method, check out implicit
   // conversions.
 
-  // Check reference downcasting.
-  // FIXME: REMOVE THIS, we shouldn't be handling raw !lit.ref types here now
-  // that we can do generalized type merging. yay.
-  if (auto type1Ref = dyn_cast<RefType>(type1))
-    if (auto type2Ref = dyn_cast<RefType>(type2)) {
-      if (auto result = ExprEmitter::getCommonRefType(type1Ref, type2Ref))
-        return succeed(result);
-      return {CTR_NoCommonType, PValue(), PValue()};
-    }
-
   // If one type implicit converts to the other, then the other is a common
   // type.  Don't do this if both convert to each other, this would be
   // ambiguous.

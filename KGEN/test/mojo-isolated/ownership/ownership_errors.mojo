@@ -443,12 +443,12 @@ fn testConditionalImmut(cond: __mlir_type.i1):
     var a = MemExample()
     var b: MemExample  # expected-note {{'b' declared here}}
 
-    var aref = Pointer(to=a)._value
+    var aptr = Pointer(to=a)
     # expected-error @+1 {{use of uninitialized value 'b'}}
-    var bref = Pointer(to=b)._value
-    var cref = aref if cond else bref
+    var bptr = Pointer(to=b)
+    var cptr = aptr if cond else bptr
 
-    Pointer(to=__get_litref_as_mvalue(cref))[].noop()
+    cptr[].noop()
 
 
 fn testConditionalMut(cond: __mlir_type.i1):
@@ -456,9 +456,8 @@ fn testConditionalMut(cond: __mlir_type.i1):
     var b: MemExample  # expected-note {{'b' declared here}}
 
     # expected-error @+1 {{use of uninitialized value 'b'}}
-    var cref = Pointer(to=a)._value if cond else Pointer(to=b)._value
-
-    Pointer(to=__get_litref_as_mvalue(cref))[] = MemExample()
+    var cptr = Pointer(to=a) if cond else Pointer(to=b)
+    cptr[] = MemExample()
 
 
 # CheckLifetimes cannot call MemExample.__del__ because 'self' is in the default

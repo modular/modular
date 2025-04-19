@@ -99,38 +99,32 @@ fn testDefConditional(cond: __mlir_type.i1):
   var a = MemExample()
   var b = MemExample()
 
-  var aptr = Pointer(to=a)
-  var bptr = Pointer(to=b)
+  # CHECK: %cptr = lit.var.decl "cptr"
+  var cptr = Pointer(to=a) if cond else Pointer(to=b)
 
-  # CHECK: %cref = lit.var.decl "cref"
-  var cptr = aptr if cond else bptr
-  var cref = cptr._value
 
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
-  Pointer(to=__get_litref_as_mvalue(cref))[].mutate()
-  # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[CR]])
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
+  cptr[].mutate()
+  # CHECK: [[CP:%.*]] = lit.ref.load %cptr
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
-  Pointer(to=__get_litref_as_mvalue(cref))[] = MemExample()
-  # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[CR]])
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
+  cptr[] = MemExample()
+  # CHECK: [[CP:%.*]] = lit.ref.load %cptr
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
 
   # Overwriting is eligible for copy => move optimization as well.
   var shouldBeMovedFrom = MemExample()
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
-  Pointer(to=__get_litref_as_mvalue(cref))[] = shouldBeMovedFrom
-  # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: lit.var.lifetime.end %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[CR]])
-  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
+  cptr[] = shouldBeMovedFrom
+  # CHECK: [[CP:%.*]] = lit.ref.load %cptr
+  # CHECK-NEXT: lit.var.lifetime.end %cptr
+  # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}(%shouldBeMovedFrom, [[MREF]])
