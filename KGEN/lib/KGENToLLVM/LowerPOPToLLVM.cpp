@@ -325,14 +325,15 @@ private:
 
   /// Return true if target is NVPTX and `arch` is in `allowedGPUs`.
   bool isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) const {
-    return target.getTriple().isNVPTX() &&
-           llvm::is_contained(allowedGPUs, target.getArch());
+    if (!target.getTriple().isNVPTX())
+      return false;
+    return llvm::is_contained(allowedGPUs, target.getArch()) ||
+           llvm::is_contained(allowedGPUs, target.getArch().rtrim("a"));
   }
 
   // Return true if target is NVPTX and arch is of hopper architecture or above.
   bool isNVPTX_HopperAndAbove(TargetInfoAttr target) const {
-    return isNVPTX(
-        target, {"sm_90", "sm_90a", "sm_100", "sm_100a", "sm_120", "sm_120a"});
+    return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_120"});
   }
 
   LLVM::InlineAsmOp createInlineAsm(ConversionPatternRewriter &rewriter,
