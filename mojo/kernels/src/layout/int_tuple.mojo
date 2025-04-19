@@ -1543,9 +1543,9 @@ fn zip[
 
 @always_inline("nodebug")
 fn zip(
-    out result: _zip[__origin_of(a, b), 2],
     a: IntTuple,
     b: IntTuple,
+    out result: _zip[__origin_of(a, b), 2],
 ):
     """Create a zip iterator for two `IntTuple`s.
 
@@ -1570,10 +1570,10 @@ fn zip(
 
 @always_inline("nodebug")
 fn zip(
-    out result: _zip[__origin_of(a, b, c), 3],
     a: IntTuple,
     b: IntTuple,
     c: IntTuple,
+    out result: _zip[__origin_of(a, b, c), 3],
 ):
     """Create a zip iterator for three `IntTuple`s.
 
