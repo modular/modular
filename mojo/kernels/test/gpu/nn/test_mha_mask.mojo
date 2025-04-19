@@ -19,7 +19,7 @@ from nn.mha_mask import (
     AndMask,
     CausalMask,
     NullMask,
-    SlidingWindowMask,
+    SlidingWindowCausalMask,
     TileMaskStatus,
 )
 from testing import assert_equal, assert_true
@@ -138,10 +138,10 @@ def test_and_mask():
     )
 
 
-def test_sliding_window_mask():
-    print("test_sliding_window_mask")
+def test_sliding_window_causal_mask():
+    print("test_sliding_window_causal_mask")
 
-    alias mask = SlidingWindowMask[3]()
+    alias mask = SlidingWindowCausalMask[3]()
 
     @always_inline
     def check_status(
@@ -190,13 +190,13 @@ def test_sliding_window_mask():
     check_status(Index(1, 4), Index(3, 2), TileMaskStatus.FULL_MASK)
 
 
-def test_sliding_window_mask_asm():
+def test_sliding_window_causal_mask_asm():
     """Verify mask comparison is not in 64 bits."""
 
-    print("== test_sliding_window_mask_asm")
+    print("== test_sliding_window_causal_mask_asm")
 
     fn kernel(q_idx: UInt32, k_idx: UInt32) -> Float32:
-        var mask = SlidingWindowMask[8]()
+        var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
             IndexList[4, element_type = DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
@@ -224,5 +224,5 @@ def main():
     test_causal_mask()
     test_causal_mask_asm()
     test_and_mask()
-    test_sliding_window_mask()
-    test_sliding_window_mask_asm()
+    test_sliding_window_causal_mask()
+    test_sliding_window_causal_mask_asm()
