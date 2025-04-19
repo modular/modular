@@ -76,6 +76,7 @@ fn useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "useIfVar" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
     var useIfVar = NmStruct(2) if p else NmStruct(77)
+
     # CHECK: lit.var.decl "useIfVarLopsided" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
     var useIfVarLopsided = NmTarget(False) if not p else NmStruct(77)
