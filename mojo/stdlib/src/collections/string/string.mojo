@@ -561,10 +561,48 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     return result * sign
 
 
-fn _round_capacity(capacity: UInt) -> UInt:
-    """Round the capacity to allocate up to the next multiple of 8.  Most memory
-    allocators work on this granularity anyway, so we might as well use it."""
-    return (capacity + 7) & ~UInt(7)
+# This is a private struct used to store the capacity and bitflags for a String.
+# It is not exported and should not be used directly.
+@register_passable("trivial")
+struct _StringCapacityField:
+    # When not-small, this maintains the capacity of the string shifted right
+    # by 3 bits, with 3 top bits used for flags.
+    var _storage: UInt
+
+    alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
+    # alias FLAG_IS_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
+    # alias FLAG_IS_SMALL = UInt(1) << (UInt.BITWIDTH - 1)
+
+    """Whether the _buffer has a nul terminator at its end of its _len. If true
+    then the capacity is big enough to hold the nul terminator, but it isn't
+    counted in the _len."""
+
+    @always_inline("nodebug")
+    fn __init__(out self, capacity: UInt):
+        debug_assert(capacity & 7 == 0, "Capacity must be a multiple of 8")
+        self._storage = capacity >> 3
+
+    fn get(self) -> UInt:
+        return self._storage << 3
+
+    @always_inline("nodebug")
+    fn has_nul_terminator(self) -> Bool:
+        return self._storage & Self.FLAG_HAS_NUL_TERMINATOR != 0
+
+    @always_inline("nodebug")
+    fn set_has_nul_terminator(mut self):
+        self._storage = self._storage | Self.FLAG_HAS_NUL_TERMINATOR
+
+    @always_inline("nodebug")
+    fn clear_has_nul_terminator(mut self):
+        self._storage = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
+
+    @staticmethod
+    fn round(capacity: UInt) -> UInt:
+        """Round the capacity to allocate up to the next multiple of 8.  Most memory
+        allocators work on this granularity anyway, so we might as well use it.
+        """
+        return (capacity + 7) & ~UInt(7)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -599,13 +637,8 @@ struct String(
     """The underlying storage for the string data."""
     var _len: Int
     """The number of elements in the string data."""
-    var _capacity: Int
-    """The amount of elements that can fit in the string without resizing it."""
-
-    var has_nul_terminator: Bool
-    """Whether the _buffer has a nul terminator at its end of its _len. If true
-    then the capacity is big enough to hold the nul terminator, but it isn't
-    counted in the _len."""
+    var _capacity: _StringCapacityField
+    """The capacity and bitflags for this String."""
 
     # Useful string aliases.
     alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
@@ -626,23 +659,22 @@ struct String(
         """Construct an empty string."""
         self._data = UnsafePointer[UInt8]()
         self._len = 0
-        self._capacity = 0
-        self.has_nul_terminator = False
+        self._capacity = _StringCapacityField(0)
 
     @always_inline
-    fn __init__(out self, *, capacity: Int):
+    fn __init__(out self, *, owned capacity: Int):
         """Construct an empty string with a given capacity.
 
         Args:
             capacity: The capacity of the string to allocate.
         """
-        self._capacity = _round_capacity(capacity)
+        capacity = _StringCapacityField.round(capacity)
+        self._capacity = _StringCapacityField(capacity)
         self._len = 0
-        if self._capacity:
-            self._data = UnsafePointer[UInt8].alloc(self._capacity)
+        if capacity:
+            self._data = UnsafePointer[UInt8].alloc(capacity)
         else:
             self._data = UnsafePointer[UInt8]()
-        self.has_nul_terminator = False
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -781,7 +813,6 @@ struct String(
         Args:
             unsafe_uninit_length: The number of bytes to allocate.
         """
-        self.has_nul_terminator = False
         self = Self(capacity=unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
@@ -801,8 +832,11 @@ struct String(
         self._len = length
         # we don't know the capacity of ptr, but we'll assume it's the same or
         # larger than len.
-        self._capacity = length + 1
-        self.has_nul_terminator = True
+        # NOTE: This is not correct! Don't append onto this string!
+        self._capacity = _StringCapacityField(
+            _StringCapacityField.round(length + 1)
+        )
+        self._capacity.set_has_nul_terminator()
 
     @always_inline
     fn __copyinit__(out self, other: Self):
@@ -812,11 +846,21 @@ struct String(
             other: The string to copy.
         """
         self = Self(unsafe_uninit_length=other._len)
+        self._capacity.clear_has_nul_terminator()
         memcpy(self.unsafe_ptr(), other.unsafe_ptr(), other._len)
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
     # ===------------------------------------------------------------------=== #
+
+    @always_inline("nodebug")
+    fn capacity(self) -> UInt:
+        """Get the capacity of the string.
+
+        Returns:
+            The capacity of the string.
+        """
+        return self._capacity.get()
 
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         """Write a byte span to this String.
@@ -1080,7 +1124,7 @@ struct String(
         Args:
             byte: The byte to append.
         """
-        self.has_nul_terminator = False
+        self._capacity.clear_has_nul_terminator()
         self.reserve(self._len + 1)
         (self._data + self._len).init_pointee_move(byte)
         self._len += 1
@@ -1102,8 +1146,7 @@ struct String(
         if other_len == 0:
             return
         # remove the nul terminator if it exists.
-        self.has_nul_terminator = False
-
+        self._capacity.clear_has_nul_terminator()
         var old_len = self._len
         var new_len = old_len + other_len
         self.reserve(new_len)
@@ -1383,10 +1426,10 @@ struct String(
             The pointer to the underlying memory.
         """
         # The string may be empty, add a nul terminator if so.
-        if not self.has_nul_terminator:
+        if not self._capacity.has_nul_terminator():
             self.append_byte(0)
             self._len -= 1
-            self.has_nul_terminator = True
+            self._capacity.set_has_nul_terminator()
         return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline
@@ -1911,7 +1954,7 @@ struct String(
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
-        self.has_nul_terminator = False
+        self._capacity.clear_has_nul_terminator()
         if length <= self._len:
             self._len = length
             return
@@ -1921,7 +1964,7 @@ struct String(
         self._len = length
 
     @always_inline
-    fn reserve(mut self, new_capacity: Int):
+    fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
 
         Args:
@@ -1931,19 +1974,22 @@ struct String(
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the data is moved.
         """
-        if new_capacity <= self._capacity:
+        if new_capacity <= self._capacity.get():
             return
+        self._reserve_grow(new_capacity)
 
-        self._reserve_impl(new_capacity)
-
-    # This is the out-of-line implementation of reserve.
+    # This is the out-of-line implementation of reserve called when we need
+    # to grow the capacity of the string.
     @no_inline
-    fn _reserve_impl(mut self, new_capacity: Int):
+    fn _reserve_grow(mut self, owned new_capacity: UInt):
         # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
         # make use of extra space if it exists.
-        self._capacity = _round_capacity(max(new_capacity, self._capacity * 2))
+        new_capacity = _StringCapacityField.round(
+            max(new_capacity, self._capacity.get() * 2)
+        )
+        self._capacity = _StringCapacityField(new_capacity)
 
-        var new_data = UnsafePointer[UInt8].alloc(self._capacity)
+        var new_data = UnsafePointer[UInt8].alloc(new_capacity)
         memcpy(new_data, self._data, self._len)
 
         if self._data:

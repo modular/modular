@@ -345,6 +345,9 @@ struct Int(
     var value: __mlir_type.index
     """The underlying storage for the integer value."""
 
+    alias BITWIDTH: Int = bitwidthof[DType.index]()
+    """The bit width of the integer type."""
+
     alias MAX = Int(Scalar[DType.index].MAX)
     """Returns the maximum integer value."""
 

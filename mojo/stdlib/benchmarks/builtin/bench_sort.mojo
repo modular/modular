@@ -17,7 +17,6 @@
 from random import *
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
-from memory import UnsafePointer
 from stdlib.builtin.sort import (
     _heap_sort,
     _insertion_sort,
@@ -92,10 +91,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
         @parameter
         fn bench_sort_list(mut b: Bencher) raises:
             seed(1)
-            var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-            var list = List[Scalar[dtype]](
-                steal_ptr=ptr, length=count, capacity=count
-            )
+            var list = List(length=count, fill=Scalar[dtype]())
 
             @always_inline
             @parameter
@@ -113,10 +109,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
         @parameter
         fn bench_small_sort(mut b: Bencher) raises:
             seed(1)
-            var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-            var list = List[Scalar[dtype]](
-                steal_ptr=ptr, length=count, capacity=count
-            )
+            var list = List(length=count, fill=Scalar[dtype]())
 
             @always_inline
             @parameter
@@ -134,10 +127,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
         @parameter
         fn bench_insertion_sort(mut b: Bencher) raises:
             seed(1)
-            var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-            var list = List[Scalar[dtype]](
-                steal_ptr=ptr, length=count, capacity=count
-            )
+            var list = List(length=count, fill=Scalar[dtype]())
 
             @always_inline
             @parameter
@@ -172,10 +162,7 @@ fn bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
-        var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](
-            steal_ptr=ptr, length=count, capacity=count
-        )
+        var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -193,10 +180,7 @@ fn bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_insertion_sort(mut b: Bencher) raises:
         seed(1)
-        var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](
-            steal_ptr=ptr, length=count, capacity=count
-        )
+        var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -228,10 +212,7 @@ fn bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
-        var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](
-            steal_ptr=ptr, length=count, capacity=count
-        )
+        var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -249,10 +230,7 @@ fn bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_heap_sort(mut b: Bencher) raises:
         seed(1)
-        var ptr = UnsafePointer[Scalar[dtype]].alloc(count)
-        var list = List[Scalar[dtype]](
-            steal_ptr=ptr, length=count, capacity=count
-        )
+        var list = List(length=count, fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -285,8 +263,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
     @parameter
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
-        var ptr = UnsafePointer[UInt8].alloc(count)
-        var list = List[UInt8](steal_ptr=ptr, length=count, capacity=count)
+        var list = List(length=count, fill=UInt8())
 
         @always_inline
         @parameter
@@ -304,8 +281,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
     @parameter
     fn bench_heap_sort(mut b: Bencher) raises:
         seed(1)
-        var ptr = UnsafePointer[UInt8].alloc(count)
-        var list = List[UInt8](steal_ptr=ptr, length=count, capacity=count)
+        var list = List(length=count, fill=UInt8())
 
         @always_inline
         @parameter
@@ -360,14 +336,17 @@ def main():
         for count in small_counts:
             bench_small_list_sort[dtype](m, count[])
 
-    @parameter
-    for i in range(len(dtypes)):
-        alias dtype = dtypes[i]
-        for count in large_counts:
-            bench_large_list_sort[dtype](m, count[])
+    # FIXME(MSTDL-1409): This is triggering misaligned memory accesses that
+    # ubsan is picking up.
 
-    for count in large_counts:
-        for delta in deltas:
-            bench_low_cardinality_list_sort(m, count[], delta[])
+    # @parameter
+    # for i in range(len(dtypes)):
+    #    alias dtype = dtypes[i]
+    #    for count in large_counts:
+    #        bench_large_list_sort[dtype](m, count[])
+
+    # for count in large_counts:
+    #     for delta in deltas:
+    #         bench_low_cardinality_list_sort(m, count[], delta[])
 
     m.dump_report()

@@ -53,7 +53,10 @@ struct UInt(
     `UInt8`, `UInt16`, `UInt32`, or `UInt64`.
     """
 
-    alias MAX: UInt = (1 << bitwidthof[DType.index]()) - 1
+    alias BITWIDTH: Int = bitwidthof[DType.index]()
+    """The bit width of the integer type."""
+
+    alias MAX: UInt = (1 << Self.BITWIDTH) - 1
     """Returns the maximum integer value."""
 
     alias MIN: UInt = 0

@@ -71,11 +71,11 @@ def test_constructors():
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_equal(s4._capacity, 8)
+    assert_equal(s4.capacity(), 8)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_equal(s5._capacity, 8)
+    assert_equal(s5.capacity(), 8)
     assert_equal(s5, "A")
 
 
@@ -1401,9 +1401,9 @@ def test_slice_contains():
 
 def test_reserve():
     var s = String()
-    assert_equal(s._capacity, 0)
+    assert_equal(s.capacity(), 0)
     s.reserve(1)
-    assert_equal(s._capacity, 8)
+    assert_equal(s.capacity(), 8)
 
 
 def test_uninit_ctor():
