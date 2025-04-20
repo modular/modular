@@ -247,17 +247,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A new string.
         """
-        # TODO(MOCO-1224): We should be able to reuse this, but we have to
-        # inline the string slice constructor to work around an elaborator
-        # memory leak.
-        # return self.as_string_slice()
-
-        var len = self.byte_length()
-        var result = String(unsafe_uninit_length=len)
-        # TODO: Use memcpy.
-        for i in range(len):
-            (result.unsafe_ptr() + i).init_pointee_copy(self.unsafe_ptr()[i])
-        return result^
+        return String(self)
 
     @no_inline
     fn __repr__(self) -> String:

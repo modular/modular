@@ -569,18 +569,32 @@ struct _StringCapacityField:
     # by 3 bits, with 3 top bits used for flags.
     var _storage: UInt
 
+    # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
+    # is known to be an accessible 'nul' terminator.
     alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # alias FLAG_IS_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_STATIC_CONSTANT is set, the _data pointer is to static
+    # constant string.  capacity() will always be zero for these strings, so any
+    # attempt to append will reallocate.
+    alias FLAG_IS_STATIC_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_SMALL is set, the string is a small string.
     # alias FLAG_IS_SMALL = UInt(1) << (UInt.BITWIDTH - 1)
 
-    """Whether the _buffer has a nul terminator at its end of its _len. If true
-    then the capacity is big enough to hold the nul terminator, but it isn't
-    counted in the _len."""
-
+    # Initialize with a specified capacity.  Note that the provided value may
+    # be rounded up, so clients should check the capacity() after construction.
     @always_inline("nodebug")
     fn __init__(out self, capacity: UInt):
-        debug_assert(capacity & 7 == 0, "Capacity must be a multiple of 8")
-        self._storage = capacity >> 3
+        # Round the capacity to allocate up to the next multiple of 8.  Most
+        # memory allocators work on this granularity anyway, so we might as well
+        # use it. We store the capacity with the top 3 bits of the storage used
+        # for flags.
+        self._storage = (capacity + 7) >> 3
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn get_static_const() -> Self:
+        var result = Self(capacity=0)
+        result.set_is_static_constant(True)
+        return result
 
     fn get(self) -> UInt:
         return self._storage << 3
@@ -590,19 +604,22 @@ struct _StringCapacityField:
         return self._storage & Self.FLAG_HAS_NUL_TERMINATOR != 0
 
     @always_inline("nodebug")
-    fn set_has_nul_terminator(mut self):
-        self._storage = self._storage | Self.FLAG_HAS_NUL_TERMINATOR
+    fn set_has_nul_terminator(mut self, is_set: Bool):
+        if is_set:
+            self._storage = self._storage | Self.FLAG_HAS_NUL_TERMINATOR
+        else:
+            self._storage = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
 
     @always_inline("nodebug")
-    fn clear_has_nul_terminator(mut self):
-        self._storage = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
+    fn is_static_constant(self) -> Bool:
+        return self._storage & Self.FLAG_IS_STATIC_CONSTANT != 0
 
-    @staticmethod
-    fn round(capacity: UInt) -> UInt:
-        """Round the capacity to allocate up to the next multiple of 8.  Most memory
-        allocators work on this granularity anyway, so we might as well use it.
-        """
-        return (capacity + 7) & ~UInt(7)
+    @always_inline("nodebug")
+    fn set_is_static_constant(mut self, is_set: Bool):
+        if is_set:
+            self._storage = self._storage | Self.FLAG_IS_STATIC_CONSTANT
+        else:
+            self._storage = self._storage & ~Self.FLAG_IS_STATIC_CONSTANT
 
 
 # ===----------------------------------------------------------------------=== #
@@ -656,7 +673,8 @@ struct String(
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destroy the string data."""
-        self._data.free()
+        if not self._capacity.is_static_constant():
+            self._data.free()
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -666,17 +684,16 @@ struct String(
         self._capacity = _StringCapacityField(0)
 
     @always_inline
-    fn __init__(out self, *, owned capacity: Int):
+    fn __init__(out self, *, capacity: Int):
         """Construct an empty string with a given capacity.
 
         Args:
             capacity: The capacity of the string to allocate.
         """
-        capacity = _StringCapacityField.round(capacity)
         self._capacity = _StringCapacityField(capacity)
         self._len = 0
         if capacity:
-            self._data = UnsafePointer[UInt8].alloc(capacity)
+            self._data = UnsafePointer[UInt8].alloc(self._capacity.get())
         else:
             self._data = UnsafePointer[UInt8]()
 
@@ -708,8 +725,33 @@ struct String(
         self = value.__str__()
 
     @always_inline
+    @implicit  # does not allocate.
+    fn __init__(out self, data: StaticString):
+        """Construct a string from a static constant string without allocating.
+
+        Args:
+            data: The static constant string to refer to.
+        """
+        self._capacity = _StringCapacityField.get_static_const()
+        self._data = data.unsafe_ptr()
+        self._len = len(data)
+
+    @always_inline
+    @implicit  # does not allocate.
+    fn __init__(out self, data: StringLiteral):
+        """Construct a string from a string literal without allocating.
+
+        Args:
+            data: The static constant string to refer to.
+        """
+        self = Self(StaticString(data))
+        # String literals are always nul-terminated by the compiler.
+        self._capacity.set_has_nul_terminator(True)
+
+    @always_inline
     fn __init__(out self, bytes: Span[UInt8, *_]):
-        """Construct a string by copying the data.
+        """Construct a string by copying the data. This constructor is explicit
+        because it can involve memory allocation.
 
         Args:
             bytes: The bytes to copy.
@@ -796,18 +838,6 @@ struct String(
         """
         return self  # Just use the implicit copyinit.
 
-    # This constructor is needed so that StringLiteral *implicitly* converts to
-    # String, rather than the Stringable ctor which is explicit.
-    @always_inline
-    @implicit
-    fn __init__(out self, literal: StringLiteral):
-        """Constructs a String value given a constant string.
-
-        Args:
-            literal: The input constant string.
-        """
-        self = literal.__str__()
-
     fn __init__(out self, *, unsafe_uninit_length: UInt):
         """Construct a String with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the
@@ -870,7 +900,7 @@ struct String(
             other: The string to copy.
         """
         self = Self(unsafe_uninit_length=other._len)
-        self._capacity.clear_has_nul_terminator()
+        self._capacity.set_has_nul_terminator(False)
         memcpy(self.unsafe_ptr(), other.unsafe_ptr(), other._len)
 
     # ===------------------------------------------------------------------=== #
@@ -1127,7 +1157,7 @@ struct String(
         Args:
             byte: The byte to append.
         """
-        self._capacity.clear_has_nul_terminator()
+        self._capacity.set_has_nul_terminator(False)
         self.reserve(self._len + 1)
         (self._data + self._len).init_pointee_move(byte)
         self._len += 1
@@ -1149,7 +1179,7 @@ struct String(
         if other_len == 0:
             return
         # remove the nul terminator if it exists.
-        self._capacity.clear_has_nul_terminator()
+        self._capacity.set_has_nul_terminator(False)
         var old_len = self._len
         var new_len = old_len + other_len
         self.reserve(new_len)
@@ -1254,7 +1284,7 @@ struct String(
         Returns:
             A new representation of the string.
         """
-        return repr(StringSlice(self))
+        return StringSlice(self).__repr__()
 
     fn __fspath__(self) -> String:
         """Return the file system path representation (just the string itself).
@@ -1405,12 +1435,8 @@ struct String(
         return self.as_string_slice().codepoint_slices()
 
     fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
-        Byte,
-        mut = Origin(__origin_of(self)).is_mutable,
-        origin = __origin_of(self),
-    ]:
+        self,
+    ) -> UnsafePointer[Byte, mut=False, origin = __origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1418,9 +1444,23 @@ struct String(
         """
         return self._data
 
+    fn unsafe_ptr_mut(
+        mut self,
+    ) -> UnsafePointer[Byte, origin = __origin_of(self)]:
+        """Retrieves a mutable pointer to the underlying memory, copying to a
+        new buffer if this was previously pointing to a static constant.
+
+        Returns:
+            The pointer to the underlying memory.
+        """
+        # If immutable, copy to a new buffer to ensure mutability.
+        if self._capacity.is_static_constant():
+            self.reserve(self.byte_length())
+        return self._data
+
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=True, origin = __origin_of(self)]:
+    ) -> UnsafePointer[c_char, mut=False, origin = __origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1432,11 +1472,11 @@ struct String(
         if not self._capacity.has_nul_terminator():
             self.append_byte(0)
             self._len -= 1
-            self._capacity.set_has_nul_terminator()
+            self._capacity.set_has_nul_terminator(True)
         return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline
-    fn as_bytes(ref self) -> Span[Byte, __origin_of(self)]:
+    fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
 
         Returns:
@@ -1448,7 +1488,20 @@ struct String(
         )
 
     @always_inline
-    fn as_string_slice(ref self) -> StringSlice[__origin_of(self)]:
+    fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
+        """Returns a mutable contiguous slice of the bytes owned by this string.
+        This name has a _mut suffix so the as_bytes() method doesn't have to
+        guarantee mutability.
+
+        Returns:
+            A contiguous slice pointing to the bytes owned by this string.
+        """
+        return Span[Byte, __origin_of(self)](
+            ptr=self.unsafe_ptr_mut(), length=self.byte_length()
+        )
+
+    @always_inline
+    fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
         Returns:
@@ -1458,6 +1511,15 @@ struct String(
         #   Enforce UTF-8 encoding in String so this is actually
         #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
+
+    @always_inline
+    fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
+        """Returns a mutable string slice of the data owned by this string.
+
+        Returns:
+            A string slice pointing to the data owned by this string.
+        """
+        return StringSlice(unsafe_from_utf8=self.as_bytes_mut())
 
     @always_inline
     fn byte_length(self) -> Int:
@@ -1956,7 +2018,7 @@ struct String(
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
-        self._capacity.clear_has_nul_terminator()
+        self._capacity.set_has_nul_terminator(False)
         if length <= self._len:
             self._len = length
             return
@@ -2002,17 +2064,16 @@ struct String(
     # to grow the capacity of the string.
     @no_inline
     fn _reserve_grow(mut self, owned new_capacity: UInt):
+        var should_free = self._data and not self._capacity.is_static_constant()
+
         # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
         # make use of extra space if it exists.
-        new_capacity = _StringCapacityField.round(
-            max(new_capacity, self._capacity.get() * 2)
-        )
+        new_capacity = max(new_capacity, self._capacity.get() * 2)
         self._capacity = _StringCapacityField(new_capacity)
 
-        var new_data = UnsafePointer[UInt8].alloc(new_capacity)
+        var new_data = UnsafePointer[UInt8].alloc(self._capacity.get())
         memcpy(new_data, self._data, self._len)
-
-        if self._data:
+        if should_free:
             self._data.free()
         self._data = new_data
 
@@ -2109,7 +2170,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
     if dtype.is_integral():
         var n = abs(n0)
         var sign = 0 if n0 > 0 else 1
-        alias is_32bit_system = bitwidthof[DType.index]() == 32
+        alias is_32bit_system = Int.BITWIDTH == 32
 
         @parameter
         if is_32bit_system or bitwidthof[dtype]() <= 32:

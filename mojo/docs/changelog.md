@@ -56,6 +56,11 @@ what we publish.
 
 String types in Mojo got several significant improvements:
 
+- The `String` type no longer copies data from `StringLiteral` and
+  `StaticString` since they are known-static-constant values.  This allows us to
+  make construction from these values be implicit, which improves ergonomics and
+  performance together.
+
 - The types `StringSlice` and `StaticString` are now part of the prelude, there
   is no need to import them anymore.  These are useful for code that just needs
   a "view" of string data, not to own and mutate it.

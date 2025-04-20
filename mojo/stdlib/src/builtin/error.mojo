@@ -212,13 +212,7 @@ struct Error(
         """
         return String(
             "Error(",
-            repr(
-                String(
-                    StringSlice[__origin_of(self)](
-                        unsafe_from_utf8_ptr=self.unsafe_cstr_ptr()
-                    )
-                )
-            ),
+            repr(String(unsafe_from_utf8_ptr=self.unsafe_cstr_ptr())),
             ")",
         )
 

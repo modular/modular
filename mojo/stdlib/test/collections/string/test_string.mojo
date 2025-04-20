@@ -74,7 +74,7 @@ def test_constructors():
 def test_copy():
     var s0 = String("find")
     var s1 = String(s0)
-    s1.unsafe_ptr()[3] = ord("e")
+    s1.unsafe_ptr_mut()[3] = ord("e")
     assert_equal("find", s0)
     assert_equal("fine", s1)
 
@@ -1106,14 +1106,11 @@ def test_string_char_slices_iter():
         concat += v
     assert_equal(321, atol(concat))
 
-    for v in vs.codepoint_slices():
-        v.unsafe_ptr().origin_cast[mut=True]()[] = ord("1")
-
     # Borrow immutably
     for v in vs.codepoint_slices():
         concat += v
 
-    assert_equal(321111, atol(concat))
+    assert_equal(321123, atol(concat))
 
     vs = String("mojo🔥")
     var iterator = vs.codepoint_slices()
