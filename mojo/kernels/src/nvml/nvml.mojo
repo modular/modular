@@ -409,7 +409,7 @@ struct Device(Writable):
             ]()(driver_version_buffer, UInt32(max_length))
         )
         var driver_version_list = String(
-            StaticString(unsafe_from_utf8_cstr_ptr=driver_version_buffer)
+            StaticString(unsafe_from_utf8_ptr=driver_version_buffer)
         ).split(".")
         var driver_version = DriverVersion(driver_version_list)
         return driver_version
