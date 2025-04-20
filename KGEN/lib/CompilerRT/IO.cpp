@@ -91,36 +91,6 @@ struct FileHandle {
     return status.getSize();
   }
 
-  llvm::StringRef readToEOF(llvm::StringRef *errMsg) {
-    llvm::SmallVector<char> buf;
-    llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
-        llvm::sys::fs::convertFDToNativeFile(handle), buf);
-    if (err) {
-      *errMsg = copyString(llvm::toString(std::move(err)));
-      return llvm::StringRef(nullptr, 0);
-    }
-
-    return copyString(llvm::StringRef(buf.data(), buf.size()));
-  }
-
-  /// Reads `size` bytes from file or to EOF if less than `size` bytes remain.
-  /// Returns the resulting string null-terminated.
-  llvm::StringRef read(int64_t size, llvm::StringRef *errMsg) {
-    char *ptr = reinterpret_cast<char *>(
-        KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment, size + 1));
-    llvm::MutableArrayRef<char> buf(ptr, size);
-
-    auto numReadOr = llvm::sys::fs::readNativeFile(
-        llvm::sys::fs::convertFDToNativeFile(handle), buf);
-    if (auto err = numReadOr.takeError()) {
-      *errMsg = copyString(llvm::toString(std::move(err)));
-      return {nullptr, 0};
-    }
-
-    ptr[*numReadOr] = '\0';
-    return llvm::StringRef(ptr, *numReadOr);
-  }
-
   llvm::StringRef readBytesToEOF(llvm::StringRef *errMsg) {
     llvm::SmallVector<char> buf;
     llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
@@ -243,16 +213,6 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
 KGEN_CompilerRT_IO_FileSeek(FileHandleWrapper file, uint64_t offset,
                             uint8_t whence, llvm::StringRef *errMsg) {
   return unwrap(file)->seek(offset, whence, errMsg);
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
-KGEN_CompilerRT_IO_FileRead(FileHandleWrapper file, int64_t *size,
-                            llvm::StringRef *errMsg) {
-  FileHandle *handle = unwrap(file);
-  llvm::StringRef str =
-      (*size < 0) ? handle->readToEOF(errMsg) : handle->read(*size, errMsg);
-  *size = str.size();
-  return str.data();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
