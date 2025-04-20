@@ -38,7 +38,11 @@ from utils import Variant
 
 # TODO(27780): NoneType can't currently conform to traits
 @value
-struct _NoneType(CollectionElement, CollectionElementNew):
+struct _NoneType(
+    Copyable,
+    ExplicitlyCopyable,
+    Movable,
+):
     fn __init__(out self, *, other: Self):
         pass
 
@@ -56,7 +60,10 @@ struct _NoneType(CollectionElement, CollectionElementNew):
 
 @value
 struct Optional[T: CollectionElement](
-    CollectionElement, CollectionElementNew, Boolable
+    Copyable,
+    ExplicitlyCopyable,
+    Movable,
+    Boolable,
 ):
     """A type modeling a value which may or may not be present.
 
@@ -180,7 +187,7 @@ struct Optional[T: CollectionElement](
         return self is None
 
     fn __eq__[
-        T: EqualityComparableCollectionElement
+        T: EqualityComparable & CollectionElement
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `True` if this is the same as another optional value, meaning
         both are absent, or both are present and have the same underlying value.
@@ -213,7 +220,7 @@ struct Optional[T: CollectionElement](
         return self is not None
 
     fn __ne__[
-        T: EqualityComparableCollectionElement
+        T: EqualityComparable & CollectionElement, //
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `False` if this is the same as another optional value, meaning
         both are absent, or both are present and have the same underlying value.
@@ -268,7 +275,7 @@ struct Optional[T: CollectionElement](
 
     # TODO: Include the Parameter type in the string as well.
     fn __repr__[
-        U: RepresentableCollectionElement, //
+        U: Representable & CollectionElement, //
     ](self: Optional[U]) -> String:
         """Returns the verbose string representation of the Optional.
 
@@ -286,7 +293,7 @@ struct Optional[T: CollectionElement](
         return output
 
     fn write_to[
-        W: Writer, U: RepresentableCollectionElement, //
+        W: Writer, U: Representable & CollectionElement, //
     ](self: Optional[U], mut writer: W):
         """Write Optional string representation to a `Writer`.
 
