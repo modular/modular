@@ -38,7 +38,7 @@ fn bench_concat[
         NDBuffer[type, rank, MutableAnyOrigin], num_inputs
     ]()
     var out_axis = 0
-    var name = String("")
+    var name = String()
 
     # TODO: Generalize for arbitrary num of inputs.
     var shape = shapes[0]
