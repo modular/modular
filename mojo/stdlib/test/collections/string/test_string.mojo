@@ -598,7 +598,7 @@ def test_rfind():
     assert_equal(String("ababab").rfind("ab"), 4)
 
     # Empty string and substring.
-    assert_equal(String("").rfind("ab"), -1)
+    assert_equal(String().rfind("ab"), -1)
     assert_equal(String("foo").rfind(""), 3)
 
     # Test that rfind(start) returned pos is absolute, not relative to specified
@@ -677,15 +677,15 @@ def test_split():
     assert_true(len(d) == 2)
     assert_true(d[0] == "1" and d[1] == "2,3")
 
-    assert_true(len(String("").split()) == 0)
+    assert_true(len(String().split()) == 0)
     assert_true(len(String(" ").split()) == 0)
-    assert_true(len(String("").split(" ")) == 1)
+    assert_true(len(String().split(" ")) == 1)
     assert_true(len(String(" ").split(" ")) == 2)
     assert_true(len(String("  ").split(" ")) == 3)
     assert_true(len(String("   ").split(" ")) == 4)
 
     with assert_raises():
-        _ = String("").split("")
+        _ = String().split("")
 
     # Split in middle
     var d1 = String("n")
@@ -782,7 +782,7 @@ def test_splitlines():
     )
 
     # Test with an empty string
-    assert_equal(String("").splitlines(), L())
+    assert_equal(String().splitlines(), L())
     # test \v \f \x1c \x1d
     s2 = String("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
@@ -806,7 +806,7 @@ def test_splitlines():
 
     for elt in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = String(elt[])
-        item = String("").join("hello", u, "world", u, "mojo", u, "language", u)
+        item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
             item.splitlines(keepends=True),
@@ -815,7 +815,7 @@ def test_splitlines():
 
 
 def test_isspace():
-    assert_false(String("").isspace())
+    assert_false(String().isspace())
 
     # test all utf8 and unicode separators
     # 0 is to build a String with null terminator
@@ -846,7 +846,7 @@ def test_isspace():
         assert_false(i[].isspace())
 
     for i in range(len(univ_sep_var)):
-        var sep = String("")
+        var sep = String()
         for j in range(len(univ_sep_var)):
             sep += univ_sep_var[i]
             sep += univ_sep_var[j]
@@ -899,7 +899,7 @@ def test_ascii_aliases():
 
 def test_rstrip():
     # with default rstrip chars
-    var empty_string = String("")
+    var empty_string = String()
     assert_true(empty_string.rstrip() == "")
 
     var space_string = String(" \t\n\r\v\f  ")
@@ -925,7 +925,7 @@ def test_rstrip():
 
 def test_lstrip():
     # with default lstrip chars
-    var empty_string = String("")
+    var empty_string = String()
     assert_true(empty_string.lstrip() == "")
 
     var space_string = String(" \t\n\r\v\f  ")
@@ -951,9 +951,9 @@ def test_lstrip():
 
 def test_strip():
     # with default strip chars
-    var empty_string = String("")
+    var empty_string = String()
     assert_true(empty_string.strip() == "")
-    alias comp_empty_string_stripped = String("").strip()
+    alias comp_empty_string_stripped = String().strip()
     assert_true(comp_empty_string_stripped == "")
 
     var space_string = String(" \t\n\r\v\f  ")
@@ -1094,14 +1094,14 @@ def test_string_char_slices_iter():
 
     # Borrow immutably
     fn conc(vs: String) -> String:
-        var c = String("")
+        var c = String()
         for v in vs.codepoint_slices():
             c += v
         return c
 
     assert_equal(123, atol(conc(vs)))
 
-    concat = String("")
+    concat = String()
     for v in vs.__reversed__():
         concat += v
     assert_equal(321, atol(concat))
@@ -1171,7 +1171,7 @@ def test_string_char_slices_iter():
             amnt_characters += 1
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
-        var concat = String("")
+        var concat = String()
         for v in item.__reversed__():
             concat += v
         assert_equal(rev[item_idx], concat)

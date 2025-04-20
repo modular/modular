@@ -419,7 +419,7 @@ def test_find():
     )
 
     assert_equal(
-        String("").as_string_slice().find(String("abc").as_string_slice()), -1
+        String().as_string_slice().find(String("abc").as_string_slice()), -1
     )
 
 
@@ -446,9 +446,7 @@ def test_find_compile_time():
     alias c12 = haystack_repeated_chars.find(String("aaa").as_string_slice())
     alias c13 = haystack_repeated_chars.find(String("AAa").as_string_slice())
     alias c14 = haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice())
-    alias c15 = String("").as_string_slice().find(
-        String("abc").as_string_slice()
-    )
+    alias c15 = String().as_string_slice().find(String("abc").as_string_slice())
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -631,7 +629,7 @@ def test_splitlines():
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = i[]
-        item = String("").join("hello", u, "world", u, "mojo", u, "language", u)
+        item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         s = StringSlice(item)
         assert_equal(s.splitlines(), hello_mojo)
         items = List("hello" + u, "world" + u, "mojo" + u, "language" + u)

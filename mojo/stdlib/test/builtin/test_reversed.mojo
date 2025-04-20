@@ -43,7 +43,7 @@ def test_reversed_dict():
     dict["d"] = 4
     dict["a"] = 1
 
-    var keys = String("")
+    var keys = String()
     for key in reversed(dict):
         keys += key[]
 
@@ -54,7 +54,7 @@ def test_reversed_dict():
         assert_equal(val[], check)
         check -= 1
 
-    keys = String("")
+    keys = String()
     check = 4
     for item in reversed(dict.items()):
         keys += item[].key
@@ -70,13 +70,13 @@ def test_reversed_dict():
 
     # dict: {'b': 2, 'd': 4}
 
-    keys = String("")
+    keys = String()
     for key in dict:
         keys += key[]
 
     assert_equal(keys, "bd")
 
-    keys = String("")
+    keys = String()
     for key in reversed(dict):
         keys += key[]
 
@@ -88,7 +88,7 @@ def test_reversed_dict():
         assert_equal(val[], check)
         check -= 2
 
-    keys = String("")
+    keys = String()
     check = 4
     for item in reversed(dict.items()):
         keys += item[].key
@@ -105,7 +105,7 @@ def test_reversed_dict():
 
     # dict: {'b': 4, 'd': 3, 'c': 2, 'a': 1}
 
-    keys = String("")
+    keys = String()
     check = 1
     for item in reversed(dict.items()):
         keys += item[].key
@@ -118,7 +118,7 @@ def test_reversed_dict():
 
     var empty_dict = Dict[String, Int]()
 
-    keys = String("")
+    keys = String()
     for key in reversed(empty_dict):
         keys += key[]
 
@@ -131,7 +131,7 @@ def test_reversed_dict():
 
     assert_equal(check, 0)
 
-    keys = String("")
+    keys = String()
     check = 0
     for item in reversed(empty_dict.items()):
         keys += item[].key

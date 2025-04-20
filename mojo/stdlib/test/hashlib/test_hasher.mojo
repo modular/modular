@@ -154,7 +154,7 @@ def test_with_ahasher():
 def test_hash_hashable_with_hasher_types():
     assert_equal(_hash_with_hasher(DType.uint64), 6529703120343940753)
     assert_equal(_hash_with_hasher(StaticString("")), 11583516797109448887)
-    assert_equal(_hash_with_hasher(String("")), 11583516797109448887)
+    assert_equal(_hash_with_hasher(String()), 11583516797109448887)
     assert_equal(_hash_with_hasher(StringSlice("")), 11583516797109448887)
     assert_equal(_hash_with_hasher(Int(-123)), 4720193641311814362)
     assert_equal(_hash_with_hasher(UInt(123)), 4498397628805512285)

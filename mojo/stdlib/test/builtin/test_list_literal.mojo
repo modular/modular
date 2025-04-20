@@ -53,7 +53,7 @@ def test_contains():
     assert_false(0 in h)
     assert_true(False in h)
     assert_true(String("Mojo") in h)
-    assert_false(String("") in h)
+    assert_false(String() in h)
 
     # TODO:
     # Reevaluate the strict type checking behaviour in ListLiteral.__contains__.

@@ -98,7 +98,7 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
                 # TODO(#11245):
                 #   When support for "noreturn" functions is added,
                 #   this false initialization of this type should be unnecessary.
-                self._storage = Self.Layout(String(""))
+                self._storage = Self.Layout(String())
         else:
             var heap = String(literal)
             self._storage = Self.Layout(heap^)

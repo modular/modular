@@ -46,7 +46,7 @@ def main():
         os = "windows"
     var cpu = _current_arch()
     var arch = StaticString(_triple_attr())
-    var cpu_features = String("")
+    var cpu_features = String()
     if CompilationTarget.has_sse4():
         cpu_features += " sse4"
     if has_avx():

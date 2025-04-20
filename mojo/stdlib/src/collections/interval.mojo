@@ -893,7 +893,7 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
         var work_list = Deque[
             Tuple[UnsafePointer[_IntervalNode[T, U]], String, Bool]
         ]()
-        work_list.append((self._root, String(""), True))
+        work_list.append((self._root, String(), True))
 
         while work_list:
             node, indent, is_last = work_list.pop()

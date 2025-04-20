@@ -165,8 +165,8 @@ fn write_args[
     mut writer: W,
     args: VariadicPack[_, _, Writable, *Ts],
     *,
-    sep: StaticString = "",
-    end: StaticString = "",
+    sep: StaticString = StaticString(),
+    end: StaticString = StaticString(),
 ):
     """
     Add separators and end characters when writing variadics into a `Writer`.
@@ -227,7 +227,7 @@ struct _WriteBufferHeap(Writer):
 
     fn write_list[
         T: WritableCollectionElement
-    ](mut self, values: List[T, *_], *, sep: StaticString = ""):
+    ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
             return
@@ -267,7 +267,7 @@ struct _TotalWritableBytes(Writer):
 
     fn __init__[
         T: WritableCollectionElement
-    ](out self, values: List[T, *_], sep: StaticString = ""):
+    ](out self, values: List[T, *_], sep: String = String()):
         self.size = 0
         var length = len(values)
         if length == 0:
@@ -303,7 +303,7 @@ struct _WriteBufferStack[
 
     fn write_list[
         T: WritableCollectionElement
-    ](mut self, values: List[T, *_], *, sep: StaticString = ""):
+    ](mut self, values: List[T, *_], *, sep: String = String()):
         var length = len(values)
         if length == 0:
             return
@@ -351,8 +351,8 @@ fn write_buffered[
     mut writer: W,
     args: VariadicPack[_, _, Writable, *Ts],
     *,
-    sep: StaticString = "",
-    end: StaticString = "",
+    sep: StaticString = StaticString(),
+    end: StaticString = StaticString(),
 ):
     """
     Use a buffer on the stack to minimize expensive calls to the writer. When
@@ -426,7 +426,7 @@ fn write_buffered[
     W: Writer,
     T: WritableCollectionElement, //,
     buffer_size: Int = 4096,
-](mut writer: W, values: List[T, *_], *, sep: StaticString = ""):
+](mut writer: W, values: List[T, *_], *, sep: StaticString = StaticString()):
     """
     Use a buffer on the stack to minimize expensive calls to the writer. You
     can also add separators between the values. The default stack space used for

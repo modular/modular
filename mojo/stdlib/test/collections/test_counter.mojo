@@ -134,7 +134,7 @@ def test_iter():
     c["a"] = 1
     c["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     for key in c:
         keys += key[]
 
@@ -146,7 +146,7 @@ def test_iter_keys():
     c["a"] = 1
     c["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     for key in c.keys():
         keys += key[]
 
@@ -183,7 +183,7 @@ def test_iter_items():
     c["a"] = 1
     c["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     var sum = 0
     for entry in c.items():
         keys += entry[].key

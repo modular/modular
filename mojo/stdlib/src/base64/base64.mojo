@@ -33,7 +33,9 @@ from ._b64encode import b64encode_with_buffers as _b64encode_with_buffers
 
 
 @always_inline
-fn _ascii_to_value[validate: Bool = False](char: StringSlice) raises -> Int:
+fn _ascii_to_value[
+    validate: Bool = False
+](char: StringSlice[mut=False]) raises -> Int:
     """Converts an ASCII character to its integer value for base64 decoding.
 
     Args:

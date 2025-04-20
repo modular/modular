@@ -174,7 +174,7 @@ def test_iter():
     dict["a"] = 1
     dict["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     for key in dict:
         keys += key[]
 
@@ -186,7 +186,7 @@ def test_iter_keys():
     dict["a"] = 1
     dict["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     for key in dict.keys():
         keys += key[]
 
@@ -223,7 +223,7 @@ def test_iter_items():
     dict["a"] = 1
     dict["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     var sum = 0
     for entry in dict.items():
         keys += entry[].key
@@ -478,7 +478,7 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
     assert_equal(kwargs["dessert"], 9)
     assert_equal(kwargs["dessert"], 9)
 
-    var keys = String("")
+    var keys = String()
     for key in kwargs.keys():
         keys += key[]
     assert_equal(keys, "fruitdessert")
@@ -500,7 +500,7 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
     with assert_raises(contains="KeyError"):
         _ = kwargs.pop("fruit")
 
-    keys = String("")
+    keys = String()
     sum = 0
     for entry in kwargs.items():
         keys += entry[].key
