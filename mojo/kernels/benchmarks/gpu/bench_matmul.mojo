@@ -45,7 +45,7 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var vendor_str = "vendor_matmul" if use_vendor_blas else String("matmul")
+    var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String("(", type, ") : ")
     # M
     var m_str = String(shape_c_dim[0], "_dynamic")
