@@ -102,7 +102,7 @@ fn _checked(
 fn _raise_checked_impl(
     err_msg: _CharPtr, msg: String, location: _SourceLocation
 ) raises:
-    var err = String(StaticString(unsafe_from_utf8_ptr=err_msg))
+    var err = StaticString(unsafe_from_utf8_ptr=err_msg)
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
     external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
@@ -2466,7 +2466,7 @@ struct DeviceContext(CollectionElement):
         ](
             self._handle,
         )
-        result = String(StaticString(unsafe_from_utf8_ptr=name_ptr))
+        var result = StaticString(unsafe_from_utf8_ptr=name_ptr)
         # void AsyncRT_DeviceContext_strfree(const char* ptr)
         external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](
             name_ptr
