@@ -639,7 +639,7 @@ struct PythonObject(
         Python.throw_python_exception_if_error_state(cpython)
         return _PyIter(PythonObject(iter))
 
-    fn __getattr__(self, name: StringSlice) raises -> PythonObject:
+    fn __getattr__(self, owned name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
 
         Args:
@@ -649,25 +649,25 @@ struct PythonObject(
             The value of the object attribute with the given name.
         """
         var cpython = _get_global_python_itf().cpython()
-        var result = cpython.PyObject_GetAttrString(self.py_object, name)
+        var result = cpython.PyObject_GetAttrString(self.py_object, name^)
         Python.throw_python_exception_if_error_state(cpython)
         if result.is_null():
             raise Error("Attribute is not found.")
         return PythonObject(result)
 
-    fn __setattr__(self, name: StringSlice, new_value: PythonObject) raises:
+    fn __setattr__(self, owned name: String, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
 
         Args:
             name: The name of the object attribute to set.
             new_value: The new value to be set for that attribute.
         """
-        return self._setattr(name, new_value.py_object)
+        return self._setattr(name^, new_value.py_object)
 
-    fn _setattr(self, name: StringSlice, new_value: PyObjectPtr) raises:
+    fn _setattr(self, owned name: String, new_value: PyObjectPtr) raises:
         var cpython = _get_global_python_itf().cpython()
         var result = cpython.PyObject_SetAttrString(
-            self.py_object, name, new_value
+            self.py_object, name^, new_value
         )
         Python.throw_python_exception_if_error_state(cpython)
         if result < 0:
@@ -807,12 +807,12 @@ struct PythonObject(
         cpython.Py_DecRef(value.py_object)
 
     fn _call_zero_arg_method(
-        self, method_name: StringSlice
+        self, owned method_name: String
     ) raises -> PythonObject:
         var cpython = _get_global_python_itf().cpython()
         var tuple_obj = cpython.PyTuple_New(0)
         var callable_obj = cpython.PyObject_GetAttrString(
-            self.py_object, method_name
+            self.py_object, method_name^
         )
         if callable_obj.is_null():
             raise Error("internal error: PyObject_GetAttrString failed")
@@ -822,7 +822,7 @@ struct PythonObject(
         return PythonObject(result)
 
     fn _call_single_arg_method(
-        self, method_name: StringSlice, rhs: PythonObject
+        self, owned method_name: String, rhs: PythonObject
     ) raises -> PythonObject:
         var cpython = _get_global_python_itf().cpython()
         var tuple_obj = cpython.PyTuple_New(1)
@@ -831,7 +831,7 @@ struct PythonObject(
             raise Error("internal error: PyTuple_SetItem failed")
         cpython.Py_IncRef(rhs.py_object)
         var callable_obj = cpython.PyObject_GetAttrString(
-            self.py_object, method_name
+            self.py_object, method_name^
         )
         if callable_obj.is_null():
             raise Error("internal error: PyObject_GetAttrString failed")
@@ -841,7 +841,7 @@ struct PythonObject(
         return PythonObject(result_obj)
 
     fn _call_single_arg_inplace_method(
-        mut self, method_name: StringSlice, rhs: PythonObject
+        mut self, owned method_name: String, rhs: PythonObject
     ) raises:
         var cpython = _get_global_python_itf().cpython()
         var tuple_obj = cpython.PyTuple_New(1)
@@ -851,7 +851,7 @@ struct PythonObject(
 
         cpython.Py_IncRef(rhs.py_object)
         var callable_obj = cpython.PyObject_GetAttrString(
-            self.py_object, method_name
+            self.py_object, method_name^
         )
         if callable_obj.is_null():
             raise Error("internal error: PyObject_GetAttrString failed")

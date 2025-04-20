@@ -267,7 +267,7 @@ struct FileHandle(Writer):
         )
 
         if err_msg:
-            raise (err_msg^).consume_as_error()
+            raise err_msg^.consume_as_error()
 
         return bytes_read
 
@@ -334,7 +334,7 @@ struct FileHandle(Writer):
         )
 
         if err_msg:
-            raise (err_msg^).consume_as_error()
+            raise err_msg^.consume_as_error()
 
         var list = List[UInt8](
             steal_ptr=buf, length=Int(size_copy), capacity=Int(size_copy)
@@ -391,7 +391,7 @@ struct FileHandle(Writer):
         )
 
         if err_msg:
-            raise (err_msg^).consume_as_error()
+            raise err_msg^.consume_as_error()
 
         return pos
 
@@ -452,7 +452,7 @@ struct FileHandle(Writer):
         )
 
         if err_msg:
-            raise (err_msg^).consume_as_error()
+            raise err_msg^.consume_as_error()
 
     fn __enter__(owned self) -> Self:
         """The function to call when entering the context.

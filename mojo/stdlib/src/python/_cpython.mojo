@@ -1355,24 +1355,24 @@ struct CPython:
     fn PyObject_HasAttrString(
         self,
         obj: PyObjectPtr,
-        name: StringSlice,
+        owned name: String,
     ) -> Int:
         var r = self.lib.get_function[
-            fn (PyObjectPtr, UnsafePointer[UInt8]) -> Int
-        ]("PyObject_HasAttrString")(obj, name.unsafe_ptr())
+            fn (PyObjectPtr, UnsafePointer[c_char]) -> Int
+        ]("PyObject_HasAttrString")(obj, name.unsafe_cstr_ptr())
         return r
 
     fn PyObject_GetAttrString(
         self,
         obj: PyObjectPtr,
-        name: StringSlice,
+        owned name: String,
     ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString).
         """
 
         var r = self.lib.call["PyObject_GetAttrString", PyObjectPtr](
-            obj, name.unsafe_ptr()
+            obj, name.unsafe_cstr_ptr()
         )
 
         self.log(
@@ -1389,14 +1389,14 @@ struct CPython:
         return r
 
     fn PyObject_SetAttrString(
-        self, obj: PyObjectPtr, name: StringSlice, new_value: PyObjectPtr
+        self, obj: PyObjectPtr, owned name: String, new_value: PyObjectPtr
     ) -> c_int:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString).
         """
 
         var r = self.lib.call["PyObject_SetAttrString", c_int](
-            obj, name.unsafe_ptr(), new_value
+            obj, name.unsafe_cstr_ptr(), new_value
         )
 
         self.log(

@@ -272,31 +272,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             A handle to the function.
         """
 
-        return self._get_function[result_type](name.unsafe_cstr_ptr())
-
-    @always_inline
-    fn _get_function[
-        result_type: AnyTrivialRegType
-    ](self, name: UnsafePointer[c_char]) -> result_type:
-        """Returns a handle to the function with the given name in the dynamic
-        library.
-
-        Parameters:
-            result_type: The type of the function pointer to return.
-
-        Args:
-            name: The name of the function to get the handle for.
-
-        Returns:
-            A handle to the function.
-        """
-        var opaque_function_ptr = self.get_symbol[NoneType](name)
-
-        var result = UnsafePointer(to=opaque_function_ptr).bitcast[
-            result_type
-        ]()[]
-        _ = opaque_function_ptr
-        return result
+        return self._get_function[result_type](cstr_name=name.unsafe_cstr_ptr())
 
     @always_inline
     fn _get_function[
@@ -315,8 +291,28 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         # Force unique the func_name so we know that it is nul-terminated.
         alias func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            func_name_literal.unsafe_ptr().bitcast[c_char](),
+            cstr_name=func_name_literal.unsafe_ptr().bitcast[c_char](),
         )
+
+    @always_inline
+    fn _get_function[
+        result_type: AnyTrivialRegType
+    ](self, *, cstr_name: UnsafePointer[c_char]) -> result_type:
+        """Returns a handle to the function with the given name in the dynamic
+        library.
+
+        Parameters:
+            result_type: The type of the function pointer to return.
+
+        Args:
+            cstr_name: The name of the function to get the handle for.
+
+        Returns:
+            A handle to the function.
+        """
+        var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
+
+        return UnsafePointer(to=opaque_function_ptr).bitcast[result_type]()[]
 
     fn get_symbol[
         result_type: AnyType,
@@ -334,11 +330,13 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             A pointer to the symbol.
         """
         name_copy = String(name)
-        return self.get_symbol[result_type](name_copy.unsafe_cstr_ptr())
+        return self.get_symbol[result_type](
+            cstr_name=name_copy.unsafe_cstr_ptr()
+        )
 
     fn get_symbol[
         result_type: AnyType
-    ](self, name: UnsafePointer[Int8]) -> UnsafePointer[result_type]:
+    ](self, *, cstr_name: UnsafePointer[Int8]) -> UnsafePointer[result_type]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -346,7 +344,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             result_type: The type of the symbol to return.
 
         Args:
-            name: The name of the symbol to get the handle for.
+            cstr_name: The name of the symbol to get the handle for.
 
         Returns:
             A pointer to the symbol.
@@ -370,7 +368,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         # > again, saving its return value into a variable, and check whether
         # > this saved value is not NULL.
 
-        var res = dlsym[result_type](self.handle, name)
+        var res = dlsym[result_type](self.handle, cstr_name)
 
         if not res:
             # Clear any potential unrelated error that pre-dates the `dlsym`
@@ -378,13 +376,12 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             _ = dlerror()
 
             # Redo the `dlsym` call
-            res = dlsym[result_type](self.handle, name)
+            res = dlsym[result_type](self.handle, cstr_name)
 
             debug_assert(not res, "dlsym unexpectedly returned non-NULL result")
 
             # Check if an error occurred during the 2nd `dlsym` call.
             var err = dlerror()
-
             if err:
                 abort(
                     "dlsym failed: ",

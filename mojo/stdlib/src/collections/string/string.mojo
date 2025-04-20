@@ -1262,12 +1262,12 @@ struct String(
         """
         var result = String()
         if not len(elems):
-            return result
+            return result^
         result.write(elems[0])
         for i in range(1, len(elems)):
             result.write(self)
             result.write(elems[i])
-        return result
+        return result^
 
     @always_inline
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
