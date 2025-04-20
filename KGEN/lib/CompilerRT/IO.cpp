@@ -17,14 +17,6 @@
 
 using namespace M;
 
-static llvm::StringRef copyBytes(llvm::ArrayRef<char> data,
-                                 size_t alignment = kPreferredMemoryAlignment) {
-  char *ptr = reinterpret_cast<char *>(
-      KGEN_CompilerRT_AlignedAlloc(alignment, data.size()));
-  llvm::copy(data, ptr);
-  return llvm::StringRef(ptr, data.size());
-}
-
 static llvm::StringRef
 copyString(llvm::StringRef str, size_t alignment = kPreferredMemoryAlignment) {
   char *ptr = reinterpret_cast<char *>(
@@ -91,32 +83,19 @@ struct FileHandle {
     return status.getSize();
   }
 
-  llvm::StringRef readBytesToEOF(llvm::StringRef *errMsg) {
-    llvm::SmallVector<char> buf;
-    llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
-        llvm::sys::fs::convertFDToNativeFile(handle), buf);
-    if (err) {
-      *errMsg = copyString(llvm::toString(std::move(err)));
-      return {nullptr, 0};
-    }
-
-    return copyBytes(buf);
-  }
-
-  /// Reads `size` bytes from file or to EOF if less than `size` bytes remain.
-  llvm::StringRef readBytes(int64_t size, llvm::StringRef *errMsg) {
-    char *ptr = reinterpret_cast<char *>(
-        KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment, size));
+  /// Reads up to `size` bytes from file or to EOF if less than `size` bytes
+  /// remain.  Return the number of bytes read.
+  size_t readBytes(char *ptr, int64_t size, llvm::StringRef *errMsg) {
     llvm::MutableArrayRef<char> buf(ptr, size);
 
     auto numReadOr = llvm::sys::fs::readNativeFile(
         llvm::sys::fs::convertFDToNativeFile(handle), buf);
     if (auto err = numReadOr.takeError()) {
       *errMsg = copyString(llvm::toString(std::move(err)));
-      return {nullptr, 0};
+      return 0;
     }
 
-    return llvm::StringRef(ptr, *numReadOr);
+    return *numReadOr;
   }
 
   uint64_t seek(uint64_t offset, uint8_t whence, llvm::StringRef *errMsg) {
@@ -215,14 +194,10 @@ KGEN_CompilerRT_IO_FileSeek(FileHandleWrapper file, uint64_t offset,
   return unwrap(file)->seek(offset, whence, errMsg);
 }
 
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
-KGEN_CompilerRT_IO_FileReadBytes(FileHandleWrapper file, int64_t *size,
-                                 llvm::StringRef *errMsg) {
-  FileHandle *handle = unwrap(file);
-  llvm::StringRef str = (*size < 0) ? handle->readBytesToEOF(errMsg)
-                                    : handle->readBytes(*size, errMsg);
-  *size = str.size();
-  return str.data();
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_IO_FileReadBytes(FileHandleWrapper file, char *buf,
+                                 size_t buf_size, llvm::StringRef *errMsg) {
+  return unwrap(file)->readBytes(buf, buf_size, errMsg);
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
