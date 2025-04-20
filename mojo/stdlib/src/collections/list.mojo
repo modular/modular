@@ -130,10 +130,10 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Args:
             capacity: The requested capacity of the list.
         """
-        self.data = (
-            UnsafePointer[T].alloc(capacity) if capacity
-            > 0 else __type_of(UnsafePointer[T].alloc(capacity))()
-        )
+        if capacity:
+            self.data = UnsafePointer[T].alloc(capacity)
+        else:
+            self.data = UnsafePointer[T]()
         self._len = 0
         self.capacity = capacity
 

@@ -69,7 +69,7 @@ fn bench_string_init(mut b: Bencher) raises:
     fn call_fn():
         for _ in range(1000):
             var d = String()
-            keep(d._buffer.data)
+            keep(d.unsafe_ptr())
 
     b.iter[call_fn]()
 
@@ -154,7 +154,7 @@ fn bench_string_lower[
     @parameter
     fn call_fn() raises:
         var res = items.lower()
-        keep(res._buffer.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -173,7 +173,7 @@ fn bench_string_upper[
     @parameter
     fn call_fn() raises:
         var res = items.upper()
-        keep(res._buffer.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -195,7 +195,7 @@ fn bench_string_replace[
     @parameter
     fn call_fn() raises:
         var res = items.replace(old, new)
-        keep(res._buffer.data)
+        keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))

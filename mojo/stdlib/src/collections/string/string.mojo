@@ -79,7 +79,7 @@ from memory import Span, UnsafePointer, memcmp, memcpy
 from python import PythonObject, PythonConvertible
 
 from utils import IndexList, Variant, Writable, Writer, write_args
-from utils.write import _TotalWritableBytes, _WriteBufferHeap, write_buffered
+from utils.write import write_buffered
 
 # ===----------------------------------------------------------------------=== #
 # ord
@@ -1260,21 +1260,14 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
-        var total_bytes = _TotalWritableBytes(elems, sep=sep)
-
-        # Use heap if over the stack buffer size
-        if total_bytes.size + 1 > buffer_size:
-            var buffer = _WriteBufferHeap(total_bytes.size + 1)
-            buffer.write_list(elems, sep=sep)
-            buffer.data[total_bytes.size] = 0
-            # FIXME: This is stealing a pointer from buffer.data - does this work?
-            return String(steal_ptr=buffer.data, length=total_bytes.size + 1)
-        # Use stack otherwise
-        else:
-            var string = String()
-            write_buffered[buffer_size](string, elems, sep=sep)
-            return string
+        var result = String()
+        if not len(elems):
+            return result
+        result.write(elems[0])
+        for i in range(1, len(elems)):
+            result.write(self)
+            result.write(elems[i])
+        return result
 
     @always_inline
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:

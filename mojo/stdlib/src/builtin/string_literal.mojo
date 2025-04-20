@@ -256,9 +256,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         var result = String(unsafe_uninit_length=len)
         # TODO: Use memcpy.
         for i in range(len):
-            UnsafePointer(to=result._buffer[i]).init_pointee_copy(
-                self.unsafe_ptr()[i]
-            )
+            (result.unsafe_ptr() + i).init_pointee_copy(self.unsafe_ptr()[i])
         return result^
 
     @no_inline
