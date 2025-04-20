@@ -46,7 +46,7 @@ fn main():
     stringInputParam[strValue]()
     instantiateElsewhere()
 
-    # ELABORATE-COUNT-2: kgen.param.materialize: struct<(struct<(pointer<
+    # ELABORATE-COUNT-2: kgen.param.materialize: struct<
     stringInputParamInline[strValue]()
     print(strValue)
 
