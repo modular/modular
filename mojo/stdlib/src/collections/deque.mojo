@@ -32,7 +32,10 @@ from memory import UnsafePointer
 
 
 struct Deque[ElementType: CollectionElement](
-    Movable, ExplicitlyCopyable, Sized, Boolable
+    Boolable,
+    ExplicitlyCopyable,
+    Movable,
+    Sized,
 ):
     """Implements a double-ended queue.
 
@@ -270,15 +273,13 @@ struct Deque[ElementType: CollectionElement](
                 self.append(element[])
 
     fn __eq__[
-        EqualityElementType: EqualityComparableCollectionElement, //
-    ](
-        self: Deque[EqualityElementType], other: Deque[EqualityElementType]
-    ) -> Bool:
+        T: EqualityComparable & CollectionElement, //
+    ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
         Parameters:
-            EqualityElementType: The type of the elements in the deque.
-                Must implement the trait `EqualityComparableCollectionElement`.
+            T: The type of the elements in the deque.
+                Must implement the trait `EqualityComparable`.
 
         Args:
             other: The deque to compare with.
@@ -297,15 +298,13 @@ struct Deque[ElementType: CollectionElement](
         return True
 
     fn __ne__[
-        EqualityElementType: EqualityComparableCollectionElement, //
-    ](
-        self: Deque[EqualityElementType], other: Deque[EqualityElementType]
-    ) -> Bool:
+        T: EqualityComparable & CollectionElement, //
+    ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
         Parameters:
-            EqualityElementType: The type of the elements in the deque.
-                Must implement the trait `EqualityComparableCollectionElement`.
+            T: The type of the elements in the deque.
+                Must implement the trait `EqualityComparable`.
 
         Args:
             other: The deque to compare with.
@@ -316,13 +315,13 @@ struct Deque[ElementType: CollectionElement](
         return not (self == other)
 
     fn __contains__[
-        EqualityElementType: EqualityComparableCollectionElement, //
-    ](self: Deque[EqualityElementType], value: EqualityElementType) -> Bool:
+        T: EqualityComparable & CollectionElement, //
+    ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
         Parameters:
-            EqualityElementType: The type of the elements in the deque.
-                Must implement the trait `EqualityComparableCollectionElement`.
+            T: The type of the elements in the deque.
+                Must implement the trait `EqualityComparable`.
 
         Args:
             value: The value to find.
@@ -405,14 +404,14 @@ struct Deque[ElementType: CollectionElement](
 
     @no_inline
     fn write_to[
-        RepresentableElementType: RepresentableCollectionElement,
-        WriterType: Writer, //,
-    ](self: Deque[RepresentableElementType], mut writer: WriterType):
+        T: Representable & CollectionElement,
+        WriterType: Writer,
+    ](self: Deque[T], mut writer: WriterType):
         """Writes `my_deque.__str__()` to a `Writer`.
 
         Parameters:
-            RepresentableElementType: The type of the Deque elements.
-                Must implement the trait `RepresentableCollectionElement`.
+            T: The type of the Deque elements.
+                Must implement the trait `Representable`.
             WriterType: A type conforming to the Writable trait.
 
         Args:
@@ -428,8 +427,8 @@ struct Deque[ElementType: CollectionElement](
 
     @no_inline
     fn __str__[
-        RepresentableElementType: RepresentableCollectionElement, //
-    ](self: Deque[RepresentableElementType]) -> String:
+        T: Representable & CollectionElement, //
+    ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
         Note that since we can't condition methods on a trait yet,
@@ -443,11 +442,9 @@ struct Deque[ElementType: CollectionElement](
         When the compiler supports conditional methods, then a simple `String(my_deque)` will
         be enough.
 
-        The elements' type must implement the `__repr__()` method for this to work.
-
         Parameters:
-            RepresentableElementType: The type of the elements in the deque.
-                Must implement the trait `RepresentableCollectionElement`.
+            T: The type of the elements in the deque.
+                Must implement the trait `Representable`.
 
         Returns:
             A string representation of the deque.
@@ -458,8 +455,8 @@ struct Deque[ElementType: CollectionElement](
 
     @no_inline
     fn __repr__[
-        RepresentableElementType: RepresentableCollectionElement, //
-    ](self: Deque[RepresentableElementType]) -> String:
+        T: Representable & CollectionElement, //
+    ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
         Note that since we can't condition methods on a trait yet,
@@ -473,11 +470,9 @@ struct Deque[ElementType: CollectionElement](
         When the compiler supports conditional methods, then a simple `repr(my_deque)` will
         be enough.
 
-        The elements' type must implement the `__repr__()` for this to work.
-
         Parameters:
-            RepresentableElementType: The type of the elements in the deque.
-                Must implement the trait `RepresentableCollectionElement`.
+            T: The type of the elements in the deque.
+                Must implement the trait `Representable`.
 
         Returns:
             A string representation of the deque.
@@ -537,13 +532,13 @@ struct Deque[ElementType: CollectionElement](
         self._tail = 0
 
     fn count[
-        EqualityElementType: EqualityComparableCollectionElement, //
-    ](self: Deque[EqualityElementType], value: EqualityElementType) -> Int:
+        T: EqualityComparable & CollectionElement, //
+    ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
         Parameters:
-            EqualityElementType: The type of the elements in the deque.
-                Must implement the trait `EqualityComparableCollectionElement`.
+            T: The type of the elements in the deque.
+                Must implement the trait `EqualityComparable`.
 
         Args:
             value: The value to count.
@@ -625,10 +620,10 @@ struct Deque[ElementType: CollectionElement](
             (src + i).move_pointee_into(self._data + self._head)
 
     fn index[
-        EqualityElementType: EqualityComparableCollectionElement, //
+        T: EqualityComparable & CollectionElement, //
     ](
-        self: Deque[EqualityElementType],
-        value: EqualityElementType,
+        self: Deque[T],
+        value: T,
         start: Int = 0,
         stop: Optional[Int] = None,
     ) raises -> Int:
@@ -636,8 +631,8 @@ struct Deque[ElementType: CollectionElement](
         restricted by the range given the `start` and `stop` bounds.
 
         Parameters:
-            EqualityElementType: The type of the elements in the deque.
-                Must implement the `EqualityComparableCollectionElement` trait.
+            T: The type of the elements in the deque.
+                Must implement the `EqualityComparable` trait.
 
         Args:
             value: The value to search for.
@@ -719,13 +714,13 @@ struct Deque[ElementType: CollectionElement](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        EqualityElementType: EqualityComparableCollectionElement, //
-    ](mut self: Deque[EqualityElementType], value: EqualityElementType,) raises:
+        T: EqualityComparable & CollectionElement, //
+    ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
         Parameters:
-            EqualityElementType: The type of the elements in the deque.
-                Must implement the `EqualityComparableCollectionElement` trait.
+            T: The type of the elements in the deque.
+                Must implement the `EqualityComparable` trait.
 
         Args:
             value: The value to remove.
