@@ -259,22 +259,18 @@ struct SIMD[dtype: DType, size: Int](
     Ceilable,
     CeilDivable,
     CollectionElement,
-    # FIXME(MOCO-1291): Can't implement this due to ambiguity.
-    # CollectionElementNew,
     ExplicitlyCopyable,
     Floatable,
     Floorable,
-    Writable,
     Hashable,
     _HashableWithHasher,
-    Intable,
     Indexer,
+    PythonConvertible,
     Representable,
     Roundable,
     Sized,
-    PythonConvertible,
-    RepresentableCollectionElement,
     Stringable,
+    Writable,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 
@@ -330,7 +326,7 @@ struct SIMD[dtype: DType, size: Int](
     @always_inline("nodebug")
     fn __init__[
         other_dtype: DType, //
-    ](out self, value: SIMD[other_dtype, size]):
+    ](out self, value: SIMD[other_dtype, size], /):
         """Initialize from another SIMD of the same size. If the value
         passed is a scalar, you can initialize a SIMD vector with more elements.
 
@@ -390,7 +386,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: UInt):
+    fn __init__(out self, value: UInt, /):
         """Initializes the SIMD vector with an unsigned integer.
 
         The unsigned integer value is splatted across all the elements of the SIMD
@@ -403,7 +399,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: Int):
+    fn __init__(out self, value: Int, /):
         """Initializes the SIMD vector with a signed integer.
 
         The signed integer value is splatted across all the elements of the SIMD
@@ -417,7 +413,7 @@ struct SIMD[dtype: DType, size: Int](
     @doc_private
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: __mlir_type.index):
+    fn __init__(out self, value: __mlir_type.index, /):
         _simd_construction_checks[dtype, size]()
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
@@ -426,7 +422,7 @@ struct SIMD[dtype: DType, size: Int](
         self = Scalar[dtype](casted)
 
     @always_inline
-    fn __init__[T: Floatable](out self: Scalar[DType.float64], value: T):
+    fn __init__[T: Floatable, //](out self: Float64, value: T, /):
         """Initialize a Float64 from a type conforming to Floatable.
 
         Parameters:
@@ -438,9 +434,7 @@ struct SIMD[dtype: DType, size: Int](
         self = value.__float__()
 
     @always_inline
-    fn __init__[
-        T: FloatableRaising
-    ](out self: Scalar[DType.float64], value: T) raises:
+    fn __init__[T: FloatableRaising, //](out self: Float64, value: T, /) raises:
         """Initialize a Float64 from a type conforming to FloatableRaising.
 
         Parameters:
@@ -456,7 +450,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: IntLiteral):
+    fn __init__(out self, value: IntLiteral, /):
         """Initializes the SIMD vector with an integer.
 
         The integer value is splatted across all the elements of the SIMD
@@ -495,10 +489,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(
-        out self,
-        value: Self._mlir_type,
-    ):
+    fn __init__(out self, value: Self._mlir_type, /):
         """Initializes the SIMD vector with the underlying mlir value.
 
         Args:
@@ -557,7 +548,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     @implicit
-    fn __init__(out self, value: FloatLiteral):
+    fn __init__(out self, value: FloatLiteral, /):
         """Initializes the SIMD vector with a float.
 
         The value is splatted across all the elements of the SIMD
