@@ -1809,18 +1809,18 @@ fn wgmma_async[
 
 @always_inline("nodebug")
 fn _str_iota[
-    count: Int, *, prefix: StaticString = "", sep: StaticString = ", "
+    count: Int, *, prefix: String = String(), sep: String = ", "
 ]() -> String:
     return _str_iota_impl[count, prefix=prefix, sep=sep]()
 
 
 @always_inline("nodebug")
 fn _str_iota_impl[
-    count: Int, *, prefix: StaticString = "", sep: StaticString = ", "
+    count: Int, *, prefix: String = String(), sep: String = ", "
 ]() -> String:
-    var s = String("")
+    var s = String()
     for i in range(count):
         s += prefix + String(i)
         if i < count - 1:
-            s += sep
+            s += StringSlice(sep)
     return s
