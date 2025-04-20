@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import KeyElement
+
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof, os_is_windows, sizeof
 
@@ -28,12 +28,13 @@ alias _mIsFloat = UInt8(1 << 6)
 @value
 @register_passable("trivial")
 struct DType(
+    CollectionElement,
+    EqualityComparable,
+    ExplicitlyCopyable,
+    Hashable,
+    Representable,
     Stringable,
     Writable,
-    Representable,
-    KeyElement,
-    CollectionElementNew,
-    EqualityComparableCollectionElement,
     _HashableWithHasher,
 ):
     """Represents DType and provides methods for working with it."""
