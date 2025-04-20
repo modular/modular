@@ -1028,7 +1028,7 @@ function. This is easier to understand with an example:
 
 ```mojo
 fn print_params(vec: SIMD[*_]):
-    print(vec.type)
+    print(vec.dtype)
     print(vec.size)
 
 var v = SIMD[DType.float64, 4](1.0, 2.0, 3.0, 4.0)
