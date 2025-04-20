@@ -822,26 +822,46 @@ struct String(
         self._len = unsafe_uninit_length
 
     @always_inline
-    fn __init__(out self, *, steal_ptr: UnsafePointer[Byte], length: UInt):
-        """Creates a string from the buffer. Note that the string now owns
-        the buffer.
-
-        The buffer must be terminated with a null byte, which is not counted
-        in the string length.
+    fn __init__(
+        out self,
+        *,
+        unsafe_from_utf8_ptr: UnsafePointer[c_char, mut=_, origin=_],
+    ):
+        """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            steal_ptr: The pointer to the buffer.
-            length: The length of the buffer, including the null terminator.
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+
+        Safety:
+            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
+            - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
-        self._data = steal_ptr
-        self._len = length
-        # we don't know the capacity of ptr, but we'll assume it's the same or
-        # larger than len.
-        # NOTE: This is not correct! Don't append onto this string!
-        self._capacity = _StringCapacityField(
-            _StringCapacityField.round(length + 1)
+        # Copy the data.
+        self = String(
+            StringSlice[MutableAnyOrigin](
+                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
+            )
         )
-        self._capacity.set_has_nul_terminator()
+
+    @always_inline
+    fn __init__(
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
+    ):
+        """Creates a string from a UTF-8 encoded nul-terminated pointer.
+
+        Args:
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+
+        Safety:
+            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
+            - `unsafe_from_utf8_ptr` MUST be null terminated.
+        """
+        # Copy the data.
+        self = String(
+            StringSlice[MutableAnyOrigin](
+                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
+            )
+        )
 
     @always_inline
     fn __copyinit__(out self, other: Self):
@@ -934,27 +954,6 @@ struct String(
         var string = String()
         write_buffered(string, args, sep=sep, end=end)
         return string^
-
-    @staticmethod
-    @always_inline
-    fn _from_c_str(*, steal_ptr: UnsafePointer[UInt8]) -> String:
-        """Construct a string from a sequence of bytes.
-
-        This does no validation that the given bytes are valid in any specific
-        String encoding.
-
-        Args:
-            steal_ptr: The pointer to steal. This should have an existing
-                terminator.
-        """
-
-        return String(
-            steal_ptr=steal_ptr,
-            length=len(
-                StringSlice[steal_ptr.origin](unsafe_from_utf8_ptr=steal_ptr)
-            )
-            + 1,
-        )
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

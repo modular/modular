@@ -701,37 +701,6 @@ def test_list_boolable():
     assert_false(List[Int]())
 
 
-def test_constructor_from_pointer():
-    new_pointer = UnsafePointer[Int8].alloc(5)
-    new_pointer[0] = 0
-    new_pointer[1] = 1
-    new_pointer[2] = 2
-    # rest is not initialized
-
-    var some_list = List[Int8](steal_ptr=new_pointer, length=3, capacity=5)
-    assert_equal(some_list[0], 0)
-    assert_equal(some_list[1], 1)
-    assert_equal(some_list[2], 2)
-    assert_equal(len(some_list), 3)
-    assert_equal(some_list.capacity, 5)
-
-
-def test_constructor_from_other_list_through_pointer():
-    initial_list = List[Int8](0, 1, 2)
-    # we do a backup of the size and capacity because
-    # the list attributes will be invalid after the steal_data call
-    var size = len(initial_list)
-    var capacity = initial_list.capacity
-    var some_list = List[Int8](
-        steal_ptr=initial_list.steal_data(), length=size, capacity=capacity
-    )
-    assert_equal(some_list[0], 0)
-    assert_equal(some_list[1], 1)
-    assert_equal(some_list[2], 2)
-    assert_equal(len(some_list), size)
-    assert_equal(some_list.capacity, capacity)
-
-
 def test_converting_list_to_string():
     # This is also testing the method `to_format` because
     # essentially, `List.__str__()` just creates a String and applies `to_format` to it.
@@ -957,8 +926,6 @@ def main():
     test_list_span()
     test_list_realloc_trivial_types()
     test_list_boolable()
-    test_constructor_from_pointer()
-    test_constructor_from_other_list_through_pointer()
     test_converting_list_to_string()
     test_list_count()
     test_list_add()

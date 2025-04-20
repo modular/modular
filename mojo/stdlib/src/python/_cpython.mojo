@@ -288,9 +288,7 @@ struct PythonVersion:
 
 fn _py_get_version(lib: DLHandle) -> StringSlice[StaticConstantOrigin]:
     return StringSlice[StaticConstantOrigin](
-        unsafe_from_utf8_cstr_ptr=lib.call[
-            "Py_GetVersion", UnsafePointer[c_char]
-        ]()
+        unsafe_from_utf8_ptr=lib.call["Py_GetVersion", UnsafePointer[c_char]]()
     )
 
 
@@ -779,7 +777,7 @@ struct CPython:
         # TODO(MOCO-772) Allow raises to propagate through function pointers
         # and make this initialization a raising function.
         self.init_error = StringSlice[StaticConstantOrigin](
-            unsafe_from_utf8_cstr_ptr=external_call[
+            unsafe_from_utf8_ptr=external_call[
                 "KGEN_CompilerRT_Python_SetPythonPath", UnsafePointer[c_char]
             ]()
         )

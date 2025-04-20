@@ -584,20 +584,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, unsafe_from_utf8_cstr_ptr: UnsafePointer[c_char]):
+    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char]):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing to null-terminated UTF-8
         encoded bytes.
 
         Args:
-            unsafe_from_utf8_cstr_ptr: An `UnsafePointer[c_char]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: An `UnsafePointer[c_char]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
-            - `unsafe_from_utf8_ptr` MUST point to data that is valid for
-                `origin`.
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
-        var ptr = unsafe_from_utf8_cstr_ptr.bitcast[Byte]()
+        var ptr = unsafe_from_utf8_ptr.bitcast[Byte]()
         self = Self(unsafe_from_utf8_ptr=ptr)
 
     @always_inline("builtin")

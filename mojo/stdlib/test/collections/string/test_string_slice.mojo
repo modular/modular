@@ -941,7 +941,7 @@ def test_string_slice_from_pointer():
     assert_equal(3, len(b))
     var c = String("ABCD")
     var d = StringSlice[__origin_of(c)](
-        unsafe_from_utf8_cstr_ptr=c.unsafe_cstr_ptr()
+        unsafe_from_utf8_ptr=c.unsafe_cstr_ptr()
     )
     var e = StringSlice[__origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
     assert_equal(4, len(c))

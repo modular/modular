@@ -199,7 +199,7 @@ struct Error(
             return
         writer.write(
             StringSlice[__origin_of(self)](
-                unsafe_from_utf8_cstr_ptr=self.unsafe_cstr_ptr()
+                unsafe_from_utf8_ptr=self.unsafe_cstr_ptr()
             )
         )
 
@@ -215,7 +215,7 @@ struct Error(
             repr(
                 String(
                     StringSlice[__origin_of(self)](
-                        unsafe_from_utf8_cstr_ptr=self.unsafe_cstr_ptr()
+                        unsafe_from_utf8_ptr=self.unsafe_cstr_ptr()
                     )
                 )
             ),

@@ -61,14 +61,6 @@ def test_constructors():
     assert_equal("abc", String(s2))
     assert_equal(3, len(s2))
 
-    # Construction from UnsafePointer
-    var ptr = UnsafePointer[UInt8].alloc(4)
-    ptr[0] = ord("a")
-    ptr[1] = ord("b")
-    ptr[2] = ord("c")
-    var s3 = String(steal_ptr=ptr, length=3)
-    assert_equal(s3, "abc")
-
     # Construction with capacity
     var s4 = String(capacity=1)
     assert_equal(s4.capacity(), 8)

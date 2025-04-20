@@ -36,33 +36,13 @@ struct _C_Passwd:
 fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(
-        pw_name=String(
-            StringSlice[__origin_of(c_pwuid)](
-                unsafe_from_utf8_cstr_ptr=c_pwuid.pw_name
-            )
-        ),
-        pw_passwd=String(
-            StringSlice[__origin_of(c_pwuid)](
-                unsafe_from_utf8_cstr_ptr=c_pwuid.pw_passwd
-            )
-        ),
+        pw_name=String(unsafe_from_utf8_ptr=c_pwuid.pw_name),
+        pw_passwd=String(unsafe_from_utf8_ptr=c_pwuid.pw_passwd),
         pw_uid=Int(c_pwuid.pw_uid),
         pw_gid=Int(c_pwuid.pw_gid),
-        pw_gecos=String(
-            StringSlice[__origin_of(c_pwuid)](
-                unsafe_from_utf8_cstr_ptr=c_pwuid.pw_gecos
-            )
-        ),
-        pw_dir=String(
-            StringSlice[__origin_of(c_pwuid)](
-                unsafe_from_utf8_cstr_ptr=c_pwuid.pw_dir
-            )
-        ),
-        pw_shell=String(
-            StringSlice[__origin_of(c_pwuid)](
-                unsafe_from_utf8_cstr_ptr=c_pwuid.pw_shell
-            )
-        ),
+        pw_gecos=String(unsafe_from_utf8_ptr=c_pwuid.pw_gecos),
+        pw_dir=String(unsafe_from_utf8_ptr=c_pwuid.pw_dir),
+        pw_shell=String(unsafe_from_utf8_ptr=c_pwuid.pw_shell),
     )
 
 

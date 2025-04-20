@@ -44,9 +44,7 @@ fn cwd() raises -> Path:
         raise Error("unable to query the current directory")
 
     return String(
-        StringSlice[__origin_of(buf)](
-            unsafe_from_utf8_cstr_ptr=buf.unsafe_ptr()
-        )
+        StringSlice[__origin_of(buf)](unsafe_from_utf8_ptr=buf.unsafe_ptr())
     )
 
 

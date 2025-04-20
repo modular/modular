@@ -1115,15 +1115,15 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
     ](owned self) -> List[T, hint_trivial_type]:
-        var size = self._len
-        var capacity = self.capacity
+        var result = List[T, hint_trivial_type]()
+        result.data = self.data
+        result._len = self._len
+        result.capacity = self.capacity
 
-        # TODO: Why doesn't `__disable_del self` work here?
-        var data = self.steal_data()
+        # We stole the elements, don't destroy them.
+        __disable_del self
 
-        return List[T, hint_trivial_type](
-            steal_ptr=data, length=size, capacity=capacity
-        )
+        return result^
 
 
 fn _clip(value: Int, start: Int, end: Int) -> Int:

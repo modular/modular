@@ -198,7 +198,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
                     "dlopen failed: ",
                     String(
                         StringSlice[error_message.origin](
-                            unsafe_from_utf8_cstr_ptr=error_message
+                            unsafe_from_utf8_ptr=error_message
                         )
                     ),
                 )
@@ -385,9 +385,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             if err:
                 abort(
                     "dlsym failed: ",
-                    String(
-                        StringSlice[err.origin](unsafe_from_utf8_cstr_ptr=err)
-                    ),
+                    String(StringSlice[err.origin](unsafe_from_utf8_ptr=err)),
                 )
 
         return res
