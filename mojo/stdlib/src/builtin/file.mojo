@@ -40,6 +40,8 @@ from memory import AddressSpace, Span, UnsafePointer
 from utils import write_buffered
 
 
+# This type is used to pass into CompilerRT functions.  It is an owning
+# pointer+length that is tightly coupled to the llvm::StringRef memory layout.
 @register_passable
 struct _OwnedStringRef(Boolable):
     var data: UnsafePointer[UInt8]
@@ -125,7 +127,7 @@ struct FileHandle(Writer):
         self.handle = existing.handle
         existing.handle = OpaquePointer()
 
-    fn read(self, size: Int64 = -1) raises -> String:
+    fn read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
         size is left as the default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will set
@@ -178,7 +180,7 @@ struct FileHandle(Writer):
         var list = self.read_bytes(size)
         return String(list)
 
-    fn read_bytes(self, size: Int64 = -1) raises -> List[UInt8]:
+    fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
         size is left as default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will be handled
@@ -229,23 +231,42 @@ struct FileHandle(Writer):
         if not self.handle:
             raise Error("invalid file handle")
 
-        var size_copy: Int64 = size
+        # Start out with the correct size if we know it, otherwise use 256.
+        var result = List[UInt8](
+            unsafe_uninit_length=size if size >= 0 else 256
+        )
+
         var err_msg = _OwnedStringRef()
+        var num_read = 0
+        while True:
+            # Read bytes into the list buffer and get the number of bytes
+            # successfully read. This may return with a partial read, and
+            # signifies EOF with a result of zero bytes.
+            var chunk_bytes_to_read = len(result) - num_read
+            var chunk_bytes_read = external_call[
+                "KGEN_CompilerRT_IO_FileReadBytes", Int
+            ](
+                self.handle,
+                result.unsafe_ptr() + num_read,
+                chunk_bytes_to_read,
+                Pointer(to=err_msg),
+            )
+            if err_msg:
+                raise err_msg^.consume_as_error()
 
-        var buf = external_call[
-            "KGEN_CompilerRT_IO_FileReadBytes", UnsafePointer[UInt8]
-        ](
-            self.handle,
-            Pointer(to=size_copy),
-            Pointer(to=err_msg),
-        )
+            num_read += chunk_bytes_read
 
-        if err_msg:
-            raise err_msg^.consume_as_error()
+            # If we read all of the 'size' bytes then we're done.
+            if num_read == size or chunk_bytes_read == 0:
+                result.shrink(num_read)  # Trim off any tail.
+                break
 
-        return List[UInt8](
-            steal_ptr=buf, length=Int(size_copy), capacity=Int(size_copy)
-        )
+            # If we are reading to EOF, keep reading the next chunk, taking
+            # bigger bites each time.
+            if size < 0:
+                result.resize(unsafe_uninit_length=num_read * 2)
+
+        return result^
 
     fn seek(self, offset: UInt64, whence: UInt8 = os.SEEK_SET) raises -> UInt64:
         """Seeks to the given offset in the file.

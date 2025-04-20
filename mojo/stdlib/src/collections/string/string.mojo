@@ -1945,7 +1945,6 @@ struct String(
         """
         return self.as_string_slice().center(width, fillchar)
 
-    @always_inline
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length.
 
@@ -1966,6 +1965,24 @@ struct String(
         self.reserve(length)
         memset(self._data + self._len, fill_byte, length - self._len)
         self._len = length
+
+    @always_inline
+    fn resize(mut self, *, unsafe_uninit_length: Int):
+        """Resizes the string to the given new size leaving any new data
+        uninitialized.
+
+        If the new size is smaller than the current one, elements at the end
+        are discarded. If the new size is larger than the current one, the
+        string is extended and the new data is left uninitialized.
+
+        Args:
+            unsafe_uninit_length: The new size.
+        """
+        if unsafe_uninit_length <= self._len:
+            self._len = unsafe_uninit_length
+        else:
+            self.reserve(unsafe_uninit_length)
+            self._len = unsafe_uninit_length
 
     @always_inline
     fn reserve(mut self, new_capacity: UInt):

@@ -67,9 +67,10 @@ String types in Mojo got several significant improvements:
   consequence of this change, many APIs should switch to using `StaticString`
   instead of `StringLiteral`.
 
-- `String` supports a new `String(unsafe_uninit_length=x)` constructor for
-  clients that want to use custom advanced initialization patterns.  The
-  (quite dangerous) `String(ptr=x, length=y)` constructor has been removed.
+- `String` supports a new `String(unsafe_uninit_length=x)` constructor and
+  `str.resize(unsafe_uninit_length=x)` for clients that want to allocate space
+  that they intend to fill in with custom unsafe initialization patterns.  The
+  `String(ptr=x, length=y)` constructor has been removed.
 
 - `String` supports working with legacy C APIs that assume "nul" termination,
   but the details have changed: `String` is now no longer implicitly
@@ -78,6 +79,11 @@ String types in Mojo got several significant improvements:
   `str.unsafe_cstr_ptr()` method. It now requires the string to be mutable in
   order to make nul-termination lazy on demand. This improves performance for
   strings that are not passed to legacy APIs.
+
+- The `List` type has been improved similarly to `String` to reduce
+  inconsistency and enable power-user features, including removing adding
+  `List(unsafe_uninit_length=x)` and `list.resize(unsafe_uninit_size=n)` methods
+  avoid initialized memory that the caller plans to overwrite.
 
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.

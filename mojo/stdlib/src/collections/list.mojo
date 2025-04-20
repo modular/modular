@@ -199,20 +199,6 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self = Self(capacity=unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    fn __init__(
-        out self, *, steal_ptr: UnsafePointer[T], length: Int, capacity: UInt
-    ):
-        """Constructs a list from a pointer, its length, and its capacity.
-
-        Args:
-            steal_ptr: The pointer to the data.
-            length: The number of elements in the list.
-            capacity: The capacity of the list.
-        """
-        self.data = steal_ptr
-        self._len = length
-        self.capacity = capacity
-
     fn __moveinit__(out self, owned existing: Self):
         """Move data of an existing list into a new one.
 
@@ -749,15 +735,32 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             value: The value to use to populate new elements.
         """
         if new_size <= self._len:
-            self.resize(new_size)
+            self.shrink(new_size)
         else:
             self.reserve(new_size)
             for i in range(self._len, new_size):
                 (self.data + i).init_pointee_copy(value)
             self._len = new_size
 
-    fn resize(mut self, new_size: Int):
-        """Resizes the list to the given new size.
+    fn resize(mut self, *, unsafe_uninit_length: Int):
+        """Resizes the list to the given new size leaving any new elements
+        uninitialized.
+
+        If the new size is smaller than the current one, elements at the end
+        are discarded. If the new size is larger than the current one, the
+        list is extended and the new elements are left uninitialized.
+
+        Args:
+            unsafe_uninit_length: The new size.
+        """
+        if unsafe_uninit_length <= self._len:
+            self.shrink(unsafe_uninit_length)
+        else:
+            self.reserve(unsafe_uninit_length)
+            self._len = unsafe_uninit_length
+
+    fn shrink(mut self, new_size: Int):
+        """Resizes to the given new size which must be <= the current size.
 
         With no new value provided, the new size must be smaller than or equal
         to the current one. Elements at the end are discarded.

@@ -362,7 +362,7 @@ struct NamedTemporaryFile:
         self._delete = existing._delete
         self.name = existing.name^
 
-    fn read(self, size: Int64 = -1) raises -> String:
+    fn read(self, size: Int = -1) raises -> String:
         """Reads the data from the file.
 
         Args:
@@ -373,7 +373,7 @@ struct NamedTemporaryFile:
         """
         return self._file_handle.read(size)
 
-    fn read_bytes(self, size: Int64 = -1) raises -> List[UInt8]:
+    fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Read from file buffer until we have `size` characters or we hit EOF.
         If `size` is negative or omitted, read until EOF.
 

@@ -183,7 +183,7 @@ def test_list_resize():
     l.resize(2, 0)
     assert_equal(2, len(l))
     assert_equal(l[1], 0)
-    l.resize(0)
+    l.shrink(0)
     assert_equal(len(l), 0)
 
 
@@ -895,6 +895,14 @@ def test_uninit_ctor():
     UnsafePointer(to=list[1]).init_pointee_move("world")
     assert_equal(list[0], "hello ")
     assert_equal(list[1], "world")
+
+    # Resize with uninitialized memory.
+    var list2 = List[String]()
+    list2.resize(unsafe_uninit_length=2)
+    (list2.unsafe_ptr() + 0).init_pointee_move("hello ")
+    (list2.unsafe_ptr() + 1).init_pointee_move("world")
+    assert_equal(list2[0], "hello ")
+    assert_equal(list2[1], "world")
 
 
 # ===-------------------------------------------------------------------===#

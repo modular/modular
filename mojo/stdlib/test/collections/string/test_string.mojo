@@ -1399,9 +1399,16 @@ def test_reserve():
 
 
 def test_uninit_ctor():
-    var s = String(unsafe_uninit_length=len("hello"))
-    memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), len("hello"))
+    var hello_len = len("hello")
+    var s = String(unsafe_uninit_length=hello_len)
+    memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), hello_len)
     assert_equal(s, "hello")
+
+    # Resize with uninitialized memory.
+    var s2 = String()
+    s2.resize(unsafe_uninit_length=hello_len)
+    memcpy(s2.unsafe_ptr(), StaticString("hello").unsafe_ptr(), hello_len)
+    assert_equal(s2, "hello")
 
 
 def test_unsafe_cstr():
