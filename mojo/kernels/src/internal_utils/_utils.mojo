@@ -498,16 +498,16 @@ fn ndbuffer_to_str[
     """
     var cur = prev
 
-    space = space_in
+    var space = space_in
     for _ in range(axis):
         space += " "
     var s = String()
 
     for i in range(axis):
         s += String(prev[i]) + ","
-    s = space + String("(") + s + String(")")
+    s = space + "(" + s + ")"
 
-    var out_str = s + String(":[\n") + space
+    var out_str = s + ":[\n" + space
     for i in range(x.dynamic_shape[axis]):
         cur[axis] = i
 
@@ -562,13 +562,13 @@ struct Mode:
     fn __str__(self) -> String:
         s = List[String]()
         if Self.RUN == self:
-            s.append(String(Self.RUN.handle))
+            s.append(Self.RUN.handle)
         if Self.BENCHMARK == self:
-            s.append(String(Self.BENCHMARK.handle))
+            s.append(Self.BENCHMARK.handle)
         if Self.VERIFY == self:
-            s.append(String(Self.VERIFY.handle))
+            s.append(Self.VERIFY.handle)
         if Self.NONE == self:
-            s.append(String(Self.NONE.handle))
+            s.append(Self.NONE.handle)
         return StaticString(Self.SEP).join(s)
 
     fn __eq__(self, mode: Self) -> Bool:
