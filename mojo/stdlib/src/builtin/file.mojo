@@ -193,84 +193,6 @@ struct FileHandle(Writer):
 
         return String(steal_ptr=buf, length=Int(size_copy))
 
-    fn read[
-        dtype: DType
-    ](
-        self, ptr: UnsafePointer[Scalar[dtype]], size: Int64 = -1
-    ) raises -> Int64:
-        """Read data from the file into the pointer. Setting size will read up
-        to `sizeof(type) * size`. The default value of `size` is -1 which
-        will read to the end of the file. Starts reading from the file handle
-        seek pointer, and after reading adds `sizeof(type) * size` bytes to the
-        seek pointer.
-
-        Parameters:
-            dtype: The type that will the data will be represented as.
-
-        Args:
-            ptr: The pointer where the data will be read to.
-            size: Requested number of elements to read.
-
-        Returns:
-            The total amount of data that was read in bytes.
-
-        Raises:
-            An error if this file handle is invalid, or if the file read
-            returned a failure.
-
-        Examples:
-
-        ```mojo
-        import os
-
-        alias file_name = "/tmp/example.txt"
-        var file = open(file_name, "r")
-
-        # Allocate and load 8 elements
-        var ptr = UnsafePointer[Float32].alloc(8)
-        var bytes = file.read(ptr, 8)
-        print("bytes read", bytes)
-
-        var first_element = ptr[0]
-        print(first_element)
-
-        # Skip 2 elements
-        _ = file.seek(2 * sizeof[DType.float32](), os.SEEK_CUR)
-
-        # Allocate and load 8 more elements from file handle seek position
-        var ptr2 = UnsafePointer[Float32].alloc(8)
-        var bytes2 = file.read(ptr2, 8)
-
-        var eleventh_element = ptr2[0]
-        var twelvth_element = ptr2[1]
-        print(eleventh_element, twelvth_element)
-
-        # Free the memory
-        ptr.free()
-        ptr2.free()
-        ```
-        .
-        """
-
-        if not self.handle:
-            raise Error("invalid file handle")
-
-        var err_msg = _OwnedStringRef()
-
-        var bytes_read = external_call[
-            "KGEN_CompilerRT_IO_FileReadToAddress", Int64
-        ](
-            self.handle,
-            ptr,
-            size * sizeof[dtype](),
-            Pointer(to=err_msg),
-        )
-
-        if err_msg:
-            raise err_msg^.consume_as_error()
-
-        return bytes_read
-
     fn read_bytes(self, size: Int64 = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
         size is left as default of -1, it will read to the end of the file.
@@ -336,11 +258,9 @@ struct FileHandle(Writer):
         if err_msg:
             raise err_msg^.consume_as_error()
 
-        var list = List[UInt8](
+        return List[UInt8](
             steal_ptr=buf, length=Int(size_copy), capacity=Int(size_copy)
         )
-
-        return list
 
     fn seek(self, offset: UInt64, whence: UInt8 = os.SEEK_SET) raises -> UInt64:
         """Seeks to the given offset in the file.
