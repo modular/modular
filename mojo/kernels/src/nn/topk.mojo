@@ -188,11 +188,7 @@ fn _top_k_cpu[
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
         # Allocate the index list without initializing its elements.
-        var idxs = List(
-            steal_ptr=UnsafePointer[Int64].alloc(shape[axis]),
-            length=shape[axis],
-            capacity=shape[axis],
-        )
+        var idxs = List[Int64](unsafe_uninit_length=shape[axis])
 
         for row_idx in range(start_row, end_row):
             var indices = _get_nd_indices_from_flat_index(row_idx, shape, axis)
