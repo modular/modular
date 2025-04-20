@@ -210,18 +210,6 @@ trait WritableCollectionElement(CollectionElement, Writable):
     pass
 
 
-trait BytesCollectionElement(CollectionElement, AsBytes):
-    """The BytesCollectionElement trait denotes a trait composition
-    of the `CollectionElement` and `AsBytes`.
-
-    This is useful to have as a named entity since Mojo does not
-    currently support anonymous trait compositions to constrain
-    on `CollectionElement & AsBytes` in the parameter.
-    """
-
-    pass
-
-
 trait EqualityComparableCollectionElement(
     CollectionElement, EqualityComparable
 ):

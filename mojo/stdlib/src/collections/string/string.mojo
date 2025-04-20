@@ -614,7 +614,6 @@ struct _StringCapacityField:
 struct String(
     Sized,
     Stringable,
-    AsBytes,
     Representable,
     IntableRaising,
     KeyElement,

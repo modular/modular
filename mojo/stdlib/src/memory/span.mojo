@@ -27,24 +27,6 @@ from memory import Pointer, UnsafePointer
 from memory.unsafe_pointer import _default_alignment
 
 
-trait AsBytes:
-    """
-    The `AsBytes` trait denotes a type that can be returned as a immutable byte
-    span.
-    """
-
-    fn as_bytes(ref self) -> Span[Byte, __origin_of(self)]:
-        """Returns a contiguous slice of the bytes owned by this string.
-
-        Returns:
-            A contiguous slice pointing to the bytes owned by this string.
-
-        Notes:
-            This does not include the trailing null terminator.
-        """
-        ...
-
-
 @value
 struct _SpanIter[
     mut: Bool, //,

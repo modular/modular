@@ -129,7 +129,6 @@ from builtin.uint import UInt
 from builtin.value import (
     BoolableCollectionElement,
     BoolableKeyElement,
-    BytesCollectionElement,
     CollectionElement,
     CollectionElementNew,
     ComparableCollectionElement,
@@ -143,6 +142,5 @@ from builtin.value import (
 )
 from documentation import doc_private
 from memory import AddressSpace, Pointer, Span
-from memory.span import AsBytes
 
 from utils import Writable, Writer
