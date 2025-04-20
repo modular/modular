@@ -174,24 +174,9 @@ struct FileHandle(Writer):
         ```
         .
         """
-        if not self.handle:
-            raise Error("invalid file handle")
 
-        var size_copy: Int64 = size
-        var err_msg = _OwnedStringRef()
-
-        var buf = external_call[
-            "KGEN_CompilerRT_IO_FileRead", UnsafePointer[UInt8]
-        ](
-            self.handle,
-            Pointer(to=size_copy),
-            Pointer(to=err_msg),
-        )
-
-        if err_msg:
-            raise err_msg^.consume_as_error()
-
-        return String(steal_ptr=buf, length=Int(size_copy))
+        var list = self.read_bytes(size)
+        return String(list)
 
     fn read_bytes(self, size: Int64 = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
