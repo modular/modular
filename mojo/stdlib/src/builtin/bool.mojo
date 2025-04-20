@@ -102,17 +102,18 @@ trait ImplicitlyBoolable(Boolable):
 @value
 @register_passable("trivial")
 struct Bool(
-    CollectionElementNew,
-    ComparableCollectionElement,
+    Comparable,
+    CollectionElement,
     Defaultable,
+    ExplicitlyCopyable,
+    Floatable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
-    Representable,
     PythonConvertible,
+    Representable,
     Stringable,
     Writable,
-    Floatable,
 ):
     """The primitive Bool scalar value used in Mojo."""
 
@@ -576,7 +577,7 @@ fn bool[T: Boolable, //](value: T) -> Bool:
 # TODO: Combine these into Iterators over Boolable elements
 
 
-fn any[T: BoolableCollectionElement](list: List[T, *_]) -> Bool:
+fn any[T: Boolable & CollectionElement, //](list: List[T, *_]) -> Bool:
     """Checks if **any** element in the list is truthy.
 
     Parameters:
@@ -594,7 +595,7 @@ fn any[T: BoolableCollectionElement](list: List[T, *_]) -> Bool:
     return False
 
 
-fn any[T: BoolableKeyElement](set: Set[T]) -> Bool:
+fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
     """Checks if **any** element in the set is truthy.
 
     Parameters:
@@ -633,7 +634,7 @@ fn any(value: SIMD) -> Bool:
 # TODO: Combine these into Iterators over Boolable elements
 
 
-fn all[T: BoolableCollectionElement](list: List[T, *_]) -> Bool:
+fn all[T: Boolable & CollectionElement, //](list: List[T, *_]) -> Bool:
     """Checks if **all** elements in the list are truthy.
 
     Parameters:
@@ -651,7 +652,7 @@ fn all[T: BoolableCollectionElement](list: List[T, *_]) -> Bool:
     return True
 
 
-fn all[T: BoolableKeyElement](set: Set[T]) -> Bool:
+fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
     """Checks if **all** elements in the set are truthy.
 
     Parameters:
