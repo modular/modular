@@ -632,18 +632,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return Self(unsafe_from_utf8=self._slice)
 
     @implicit
-    fn __init__[
-        O: ImmutableOrigin, //
-    ](out self: StringSlice[O], ref [O]value: String):
+    fn __init__[  # TODO: no reason for this to force immutability.
+        origin: ImmutableOrigin, //
+    ](out self: StringSlice[origin], ref [origin]value: String):
         """Construct an immutable StringSlice.
 
         Parameters:
-            O: The immutable origin.
+            origin: The immutable origin.
 
         Args:
             value: The string value.
         """
-        self = StringSlice[O](unsafe_from_utf8=value.as_bytes())
+        self = value.as_string_slice()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods

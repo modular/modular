@@ -66,24 +66,23 @@ def test_constructors():
     ptr[0] = ord("a")
     ptr[1] = ord("b")
     ptr[2] = ord("c")
-    ptr[3] = 0
-    var s3 = String(steal_ptr=ptr, length=4)
+    var s3 = String(steal_ptr=ptr, length=3)
     assert_equal(s3, "abc")
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_equal(s4._buffer.capacity, 1)
+    assert_equal(s4._capacity, 8)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_equal(s4._buffer.capacity, 1)
+    assert_equal(s5._capacity, 8)
     assert_equal(s5, "A")
 
 
 def test_copy():
     var s0 = String("find")
     var s1 = String(s0)
-    s1._buffer[3] = ord("e")
+    s1.unsafe_ptr()[3] = ord("e")
     assert_equal("find", s0)
     assert_equal("fine", s1)
 
@@ -1402,9 +1401,9 @@ def test_slice_contains():
 
 def test_reserve():
     var s = String()
-    assert_equal(s._buffer.capacity, 0)
+    assert_equal(s._capacity, 0)
     s.reserve(1)
-    assert_equal(s._buffer.capacity, 1)
+    assert_equal(s._capacity, 8)
 
 
 def test_uninit_ctor():

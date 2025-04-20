@@ -191,7 +191,7 @@ struct FileHandle(Writer):
         if err_msg:
             raise err_msg^.consume_as_error()
 
-        return String(steal_ptr=buf, length=Int(size_copy) + 1)
+        return String(steal_ptr=buf, length=Int(size_copy))
 
     fn read[
         dtype: DType

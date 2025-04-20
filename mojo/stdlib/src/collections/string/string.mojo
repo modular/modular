@@ -75,7 +75,7 @@ from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer, memcmp, memcpy
+from memory import Span, UnsafePointer, memcpy, memset
 from python import PythonObject, PythonConvertible
 
 from utils import IndexList, Variant, Writable, Writer, write_args
@@ -561,6 +561,12 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     return result * sign
 
 
+fn _round_capacity(capacity: UInt) -> UInt:
+    """Round the capacity to allocate up to the next multiple of 8.  Most memory
+    allocators work on this granularity anyway, so we might as well use it."""
+    return (capacity + 7) & ~UInt(7)
+
+
 # ===----------------------------------------------------------------------=== #
 # String
 # ===----------------------------------------------------------------------=== #
@@ -589,12 +595,17 @@ struct String(
     """Represents a mutable string."""
 
     # Fields
-    alias _buffer_type = List[UInt8, hint_trivial_type=True]
-    var _buffer: Self._buffer_type
-    """The underlying storage for the string."""
+    var _data: UnsafePointer[UInt8]
+    """The underlying storage for the string data."""
+    var _len: Int
+    """The number of elements in the string data."""
+    var _capacity: Int
+    """The amount of elements that can fit in the string without resizing it."""
 
     var has_nul_terminator: Bool
-    """Whether the _buffer has a nul terminator at its end."""
+    """Whether the _buffer has a nul terminator at its end of its _len. If true
+    then the capacity is big enough to hold the nul terminator, but it isn't
+    counted in the _len."""
 
     # Useful string aliases.
     alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
@@ -613,7 +624,9 @@ struct String(
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self._buffer = Self._buffer_type()
+        self._data = UnsafePointer[UInt8]()
+        self._len = 0
+        self._capacity = 0
         self.has_nul_terminator = False
 
     @always_inline
@@ -621,9 +634,14 @@ struct String(
         """Construct an empty string with a given capacity.
 
         Args:
-            capacity: The capacity of the string.
+            capacity: The capacity of the string to allocate.
         """
-        self._buffer = Self._buffer_type(capacity=capacity)
+        self._capacity = _round_capacity(capacity)
+        self._len = 0
+        if self._capacity:
+            self._data = UnsafePointer[UInt8].alloc(self._capacity)
+        else:
+            self._data = UnsafePointer[UInt8]()
         self.has_nul_terminator = False
 
     @no_inline
@@ -660,9 +678,9 @@ struct String(
         Args:
             bytes: The bytes to copy.
         """
-        self._buffer = Self._buffer_type(capacity=len(bytes) + 1)
-        self._buffer.append(bytes)
-        self.has_nul_terminator = False
+        var length = len(bytes)
+        self = Self(unsafe_uninit_length=length)
+        memcpy(self._data, bytes.unsafe_ptr(), length)
 
     @no_inline
     fn __init__[
@@ -763,10 +781,9 @@ struct String(
         Args:
             unsafe_uninit_length: The number of bytes to allocate.
         """
-        self._buffer = Self._buffer_type(
-            unsafe_uninit_length=unsafe_uninit_length
-        )
         self.has_nul_terminator = False
+        self = Self(capacity=unsafe_uninit_length)
+        self._len = unsafe_uninit_length
 
     @always_inline
     fn __init__(out self, *, steal_ptr: UnsafePointer[Byte], length: UInt):
@@ -780,12 +797,22 @@ struct String(
             steal_ptr: The pointer to the buffer.
             length: The length of the buffer, including the null terminator.
         """
+        self._data = steal_ptr
+        self._len = length
         # we don't know the capacity of ptr, but we'll assume it's the same or
-        # larger than len
-        self._buffer = Self._buffer_type(
-            steal_ptr=steal_ptr, length=length, capacity=length
-        )
+        # larger than len.
+        self._capacity = length + 1
         self.has_nul_terminator = True
+
+    @always_inline
+    fn __copyinit__(out self, other: Self):
+        """Copy initialize the string from another string.
+
+        Args:
+            other: The string to copy.
+        """
+        self = Self(unsafe_uninit_length=other._len)
+        memcpy(self.unsafe_ptr(), other.unsafe_ptr(), other._len)
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -899,7 +926,7 @@ struct String(
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](idx, len(self))
         var result = String(capacity=1)
-        result.append_byte(self._buffer[normalized_idx])
+        result.append_byte(self._data[normalized_idx])
         return result^
 
     fn __getitem__(self, span: Slice) -> String:
@@ -919,11 +946,7 @@ struct String(
         start, end, step = span.indices(self.byte_length())
         var r = range(start, end, step)
         if step == 1:
-            return String(
-                StringSlice[__origin_of(self._buffer)](
-                    ptr=self._buffer.data + start, length=len(r)
-                )
-            )
+            return String(StringSlice(ptr=self._data + start, length=len(r)))
 
         var result = String(capacity=len(r))
         var ptr = self.unsafe_ptr()
@@ -1032,16 +1055,11 @@ struct String(
     fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
-        alias S = StringSlice[ImmutableAnyOrigin]
-        if lhs_len == 0:
-            return String(S(ptr=rhs.unsafe_ptr(), length=rhs_len))
-        elif rhs_len == 0:
-            return String(S(ptr=lhs.unsafe_ptr(), length=lhs_len))
-        var buffer = Self._buffer_type(capacity=lhs_len + rhs_len + 1)
-        buffer.extend(lhs)
-        buffer.extend(rhs)
-        var result = String()
-        result._buffer = buffer^
+
+        var result = String(unsafe_uninit_length=lhs_len + rhs_len)
+        var result_ptr = result.unsafe_ptr()
+        memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
+        memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
 
     @always_inline
@@ -1062,11 +1080,10 @@ struct String(
         Args:
             byte: The byte to append.
         """
-        if self.has_nul_terminator:
-            _ = self._buffer.pop()
-            self.has_nul_terminator = False
-
-        self._buffer.append(byte)
+        self.has_nul_terminator = False
+        self.reserve(self._len + 1)
+        (self._data + self._len).init_pointee_move(byte)
+        self._len += 1
 
     @always_inline
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
@@ -1081,15 +1098,17 @@ struct String(
         return Self._add(other.as_bytes(), self.as_bytes())
 
     fn _iadd(mut self, other: Span[mut=False, Byte]):
-        var o_len = len(other)
-        if o_len == 0:
+        var other_len = len(other)
+        if other_len == 0:
             return
         # remove the nul terminator if it exists.
-        if self.has_nul_terminator:
-            _ = self._buffer.pop()
-            self.has_nul_terminator = False
-        self._buffer.reserve(self.byte_length() + o_len + 1)
-        self._buffer.extend(other)
+        self.has_nul_terminator = False
+
+        var old_len = self._len
+        var new_len = old_len + other_len
+        self.reserve(new_len)
+        memcpy(self.unsafe_ptr() + old_len, other.unsafe_ptr(), other_len)
+        self._len = new_len
 
     @always_inline
     fn __iadd__(mut self, other: StringSlice[mut=False]):
@@ -1351,7 +1370,7 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        return self._buffer.unsafe_ptr()
+        return self._data
 
     fn unsafe_cstr_ptr(
         mut self,
@@ -1365,7 +1384,8 @@ struct String(
         """
         # The string may be empty, add a nul terminator if so.
         if not self.has_nul_terminator:
-            self._buffer.append(0)
+            self.append_byte(0)
+            self._len -= 1
             self.has_nul_terminator = True
         return self.unsafe_ptr().bitcast[c_char]()
 
@@ -1375,14 +1395,10 @@ struct String(
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
-
-        Notes:
-            This does not include the trailing null terminator.
         """
 
-        # Does NOT include the NUL terminator.
         return Span[Byte, __origin_of(self)](
-            ptr=self._buffer.unsafe_ptr(), length=self.byte_length()
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     @always_inline
@@ -1402,22 +1418,9 @@ struct String(
         """Get the string length in bytes.
 
         Returns:
-            The length of this string in bytes, excluding null terminator.
-
-        Notes:
-            This does not include the trailing null terminator in the count.
+            The length of this string in bytes.
         """
-        var length = len(self._buffer)
-        return length - (1 if self.has_nul_terminator else 0)
-
-    fn _steal_ptr(mut self) -> UnsafePointer[UInt8]:
-        """Transfer ownership of pointer to the underlying memory.
-        The caller is responsible for freeing up the memory.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        return self._buffer.steal_data()
+        return self._len
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
@@ -1895,6 +1898,29 @@ struct String(
         """
         return self.as_string_slice().center(width, fillchar)
 
+    @always_inline
+    fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
+        """Resize the string to a new length.
+
+        Args:
+            length: The new length of the string.
+            fill_byte: The byte to fill any new space with.
+
+        Notes:
+            If the new length is greater than the current length, the string is
+            extended by the difference, and the new bytes are initialized to
+            `fill_byte`.
+        """
+        self.has_nul_terminator = False
+        if length <= self._len:
+            self._len = length
+            return
+
+        self.reserve(length)
+        memset(self._data + self._len, fill_byte, length - self._len)
+        self._len = length
+
+    @always_inline
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
 
@@ -1905,8 +1931,24 @@ struct String(
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the data is moved.
         """
-        # Reserve an extra byte because we always keep a null terminator.
-        self._buffer.reserve(new_capacity + 1)
+        if new_capacity <= self._capacity:
+            return
+
+        self._reserve_impl(new_capacity)
+
+    # This is the out-of-line implementation of reserve.
+    @no_inline
+    fn _reserve_impl(mut self, new_capacity: Int):
+        # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
+        # make use of extra space if it exists.
+        self._capacity = _round_capacity(max(new_capacity, self._capacity * 2))
+
+        var new_data = UnsafePointer[UInt8].alloc(self._capacity)
+        memcpy(new_data, self._data, self._len)
+
+        if self._data:
+            self._data.free()
+        self._data = new_data
 
 
 # ===----------------------------------------------------------------------=== #
