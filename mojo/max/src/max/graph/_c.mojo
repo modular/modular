@@ -27,6 +27,8 @@ alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
 
 fn _init_dylib() -> _OwnedDLHandle:
     alias key = StaticString(".graph_lib")
+
+    # TODO: Move KGEN_CompilerRT_getMAXConfigValue to a helper somewhere.
     var max_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](key.unsafe_ptr(), key.byte_length())
@@ -34,9 +36,8 @@ fn _init_dylib() -> _OwnedDLHandle:
     if not max_lib_path_str_ptr:
         abort("cannot get graph library location from modular.cfg")
 
-    # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var max_lib_path = String._from_c_str(steal_ptr=max_lib_path_str_ptr)
+    var max_lib_path = String(unsafe_from_utf8_ptr=max_lib_path_str_ptr)
+    max_lib_path_str_ptr.free()
 
     if not Path(max_lib_path).exists():
         abort("cannot load graph library from " + max_lib_path)

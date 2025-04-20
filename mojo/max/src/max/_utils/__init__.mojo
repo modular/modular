@@ -34,13 +34,13 @@ struct CString:
         Get the `CString` as `StringRef`. Origin is tied to C API.
         For owning version use `__str__()`.
         """
-        return StaticString(unsafe_from_utf8_cstr_ptr=self.ptr)
+        return StaticString(unsafe_from_utf8_ptr=self.ptr)
 
     fn __str__(self) -> String:
         """
         Get `CString` as a owning `String`.
         """
-        return String(StaticString(unsafe_from_utf8_cstr_ptr=self.ptr))
+        return String(unsafe_from_utf8_ptr=self.ptr)
 
 
 @always_inline("nodebug")
@@ -62,6 +62,7 @@ fn exchange[T: AnyTrivialRegType](mut old_var: T, owned new_value: T) -> T:
 
 
 fn handle_from_config(name: String, param: String) -> DLHandle:
+    # TODO: Move KGEN_CompilerRT_getMAXConfigValue to a helper somewhere.
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](param.unsafe_ptr(), param.byte_length())
@@ -69,9 +70,8 @@ fn handle_from_config(name: String, param: String) -> DLHandle:
     if not lib_path_str_ptr:
         abort("cannot get " + name + " library location from modular.cfg")
 
-    # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var lib_path = String._from_c_str(steal_ptr=lib_path_str_ptr)
+    var lib_path = String(unsafe_from_utf8_ptr=lib_path_str_ptr)
+    lib_path_str_ptr.free()
 
     if not Path(lib_path).exists():
         abort("cannot load " + name + " library from " + lib_path)
@@ -148,6 +148,7 @@ struct OwningVector[T: Movable](Sized):
 fn get_lib_path_from_cfg(
     name: StringSlice, err_name: StaticString
 ) raises -> String:
+    # TODO: Move KGEN_CompilerRT_getMAXConfigValue to a helper somewhere.
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](name.unsafe_ptr(), name.byte_length())
@@ -157,9 +158,8 @@ fn get_lib_path_from_cfg(
             "cannot get the location of ", name, " library from modular.cfg"
         )
 
-    # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var lib_path = String._from_c_str(steal_ptr=lib_path_str_ptr)
+    var lib_path = String(unsafe_from_utf8_ptr=lib_path_str_ptr)
+    lib_path_str_ptr.free()
 
     if not Path(lib_path).exists():
         raise String(err_name) + " not found at " + lib_path

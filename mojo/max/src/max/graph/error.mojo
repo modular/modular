@@ -155,7 +155,7 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     for i in range(frames):
         formatted.write(
             "\t",
-            StaticString(unsafe_from_utf8_cstr_ptr=frame_strs[i]),
+            StaticString(unsafe_from_utf8_ptr=frame_strs[i]),
             "\n",
         )
 

@@ -22,6 +22,8 @@ from memory import UnsafePointer
 # Init fns inspired by gpu.host._utils
 fn _init_dylib() -> _OwnedDLHandle:
     alias mlirc_dylib = env_get_string["MLIRC_DYLIB", ".graph_lib"]()
+
+    # TODO: Move KGEN_CompilerRT_getMAXConfigValue to a helper somewhere.
     var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](mlirc_dylib.unsafe_ptr(), mlirc_dylib.byte_length())
@@ -29,9 +31,10 @@ fn _init_dylib() -> _OwnedDLHandle:
     if not mof_lib_path_str_ptr:
         abort("cannot get graph library location from modular.cfg")
 
-    # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var mof_lib_path = String._from_c_str(steal_ptr=mof_lib_path_str_ptr)
+    var mof_lib_path = String(unsafe_from_utf8_ptr=mof_lib_path_str_ptr)
+
+    # KGEN_CompilerRT_getMAXConfigValue returns an allocated pointer.
+    mof_lib_path_str_ptr.free()
 
     if not Path(mof_lib_path).exists():
         abort("cannot load graph library from " + mof_lib_path)

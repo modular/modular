@@ -247,6 +247,8 @@ struct CompileConfig:
         # Since we only need to open this library for this case we
         # can lazy load it here.
         alias key = StaticString(".torch_ext_lib")
+
+        # TODO: Move KGEN_CompilerRT_getMAXConfigValue to a helper somewhere.
         var torch_ext_lib_path_str_ptr = external_call[
             "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
         ](key.unsafe_ptr(), key.byte_length())
@@ -254,11 +256,10 @@ struct CompileConfig:
         if not torch_ext_lib_path_str_ptr:
             return None
 
-        # This transfers ownership of the underlying data buffer allocated in
-        # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-        var torch_ext_lib_path = String._from_c_str(
-            steal_ptr=torch_ext_lib_path_str_ptr
+        var torch_ext_lib_path = String(
+            unsafe_from_utf8_ptr=torch_ext_lib_path_str_ptr
         )
+        torch_ext_lib_path_str_ptr.free()
 
         if not Path(torch_ext_lib_path).exists():
             return None
