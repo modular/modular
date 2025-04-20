@@ -655,6 +655,11 @@ struct String(
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
+    fn __del__(owned self):
+        """Destroy the string data."""
+        self._data.free()
+
+    @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
         self._data = UnsafePointer[UInt8]()

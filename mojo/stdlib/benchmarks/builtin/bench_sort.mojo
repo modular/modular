@@ -336,17 +336,14 @@ def main():
         for count in small_counts:
             bench_small_list_sort[dtype](m, count[])
 
-    # FIXME(MSTDL-1409): This is triggering misaligned memory accesses that
-    # ubsan is picking up.
+    @parameter
+    for i in range(len(dtypes)):
+        alias dtype = dtypes[i]
+        for count in large_counts:
+            bench_large_list_sort[dtype](m, count[])
 
-    # @parameter
-    # for i in range(len(dtypes)):
-    #    alias dtype = dtypes[i]
-    #    for count in large_counts:
-    #        bench_large_list_sort[dtype](m, count[])
-
-    # for count in large_counts:
-    #     for delta in deltas:
-    #         bench_low_cardinality_list_sort(m, count[], delta[])
+    for count in large_counts:
+        for delta in deltas:
+            bench_low_cardinality_list_sort(m, count[], delta[])
 
     m.dump_report()
