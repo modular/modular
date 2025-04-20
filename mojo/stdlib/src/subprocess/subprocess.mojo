@@ -64,7 +64,7 @@ struct _POpenHandle:
         """
         var len: Int = 0
         var line = UnsafePointer[c_char]()
-        var res = String("")
+        var res = String()
 
         while True:
             var read = external_call["getline", Int](
