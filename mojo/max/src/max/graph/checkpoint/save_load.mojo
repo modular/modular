@@ -142,7 +142,7 @@ fn _read_int[type: DType](f: FileHandle) raises -> Scalar[type]:
 @always_inline
 fn _read_string(f: FileHandle, size: UInt32) raises -> String:
     """Reads string of the specified size from a file."""
-    var string_bytes = f.read_bytes(size.cast[DType.int64]())
+    var string_bytes = f.read_bytes(Int(size))
     return String(string_bytes)
 
 
