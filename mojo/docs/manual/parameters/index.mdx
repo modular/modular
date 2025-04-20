@@ -818,7 +818,7 @@ elements (via the `AnyTrivialRegType` parameter):
 ```mojo
 from memory import UnsafePointer
 
-struct Array[T: AnyTrivialRegType]:
+struct Array[T: Copyable]:
     var data: UnsafePointer[T]
     var size: Int
 
