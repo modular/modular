@@ -6,7 +6,9 @@
 
 
 fn get_string() -> String:
-    return "hello"
+    var s = String("hel")
+    s += "lo"  # defeat the string literal optimization.
+    return s
 
 
 fn main():
