@@ -247,6 +247,22 @@ def test_swap_elements():
         s2.swap_elements(0, 4)
 
 
+def test_merge():
+    var a = List[Int](1, 2, 3)
+    var b = List[Int](4, 5, 6)
+
+    fn inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
+        var either = Span(a) if cond else Span(b)
+        either[0] = 0
+        either[-1] = 10
+
+    inner(True, a, b)
+    inner(False, a, b)
+
+    assert_equal(a, List[Int](0, 2, 10))
+    assert_equal(b, List[Int](0, 5, 10))
+
+
 def main():
     test_span_list_int()
     test_span_list_str()
@@ -261,3 +277,4 @@ def main():
     test_ref()
     test_reversed()
     test_swap_elements()
+    test_merge()
