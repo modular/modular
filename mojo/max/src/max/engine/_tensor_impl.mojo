@@ -133,4 +133,4 @@ struct _Numpy:
         self.np = Python.import_module("numpy")
 
     fn __getattr__(self, attr: StaticString) raises -> PythonObject:
-        return self.np.__getattr__(attr)
+        return self.np.__getattr__(String(attr))
