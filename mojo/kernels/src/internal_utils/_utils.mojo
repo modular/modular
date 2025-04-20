@@ -471,14 +471,15 @@ fn _str_fmt_width[max_width: Int = 256](str: String, str_width: Int) -> String:
     """
     debug_assert(str_width > 0, "Should have str_width>0")
 
-    var x = String._buffer_type()
-    x.reserve(max_width)
-    x._len += _snprintf["%-*s"](x.data, max_width, str_width, str.unsafe_ptr())
-    debug_assert(
-        len(x) < max_width, "Attempted to access outside array bounds!"
+    var result = String(capacity=max_width)
+    var actualLen = _snprintf["%-*s"](
+        result.unsafe_ptr(), max_width, str_width, str.unsafe_ptr()
     )
-    x._len += 1
-    return String(x)
+    debug_assert(
+        actualLen <= max_width, "Attempted to access outside array bounds!"
+    )
+    result.resize(actualLen)
+    return result^
 
 
 fn ndbuffer_to_str[
