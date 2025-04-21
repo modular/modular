@@ -14,7 +14,7 @@ This directory contains tests for calling Mojo from Python.
 The tests can be run using Bazel:
 
 ```shell
-bazel test //open-source/mojo/integration-test:lit
+bazel test //open-source/max/mojo/integration-test:lit
 ```
 
 ### Test #1: [./basic](./basic/)
