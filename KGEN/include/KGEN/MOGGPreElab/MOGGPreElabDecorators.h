@@ -105,6 +105,8 @@ constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";
 static constexpr StringLiteral kMOGGKernelStructName = "mogg.kernel.struct";
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
+static constexpr StringLiteral kMOGGUpdateViewFunctionLabel =
+    "mogg.update_view";
 static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
     "mogg.pytorch_fallback";
 
@@ -186,9 +188,14 @@ inline bool isShapeFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGShapeFunctionLabel);
 }
 
-inline bool isDPSKernel(Operation *gen) {
+inline bool isUpdateViewFunc(Operation *gen) {
+  return gen != nullptr && gen->hasAttr(kMOGGUpdateViewFunctionLabel);
+}
+
+inline bool isExtensibilityFunc(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
                             gen->hasAttr(kMOGGShapeFunctionLabel) ||
+                            gen->hasAttr(kMOGGUpdateViewFunctionLabel) ||
                             gen->hasAttr(kMOGGPyTorchFallbackFunctionLabel));
 }
 
