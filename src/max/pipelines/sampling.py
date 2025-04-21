@@ -14,7 +14,8 @@
 """Token sampling algorithms."""
 
 from max.dtype import DType
-from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, TensorValue, ops
+from max.nn.sampling import RejectionSampler
 from max.pipelines.max_config import SamplingConfig
 
 
@@ -139,7 +140,7 @@ def token_sampler(
         return graph
 
 
-def rejection_sampler(sampling_config: SamplingConfig) -> Graph:
+def rejection_sampler(top_k: int, device: DeviceRef) -> Graph:
     # We have two distributions:
     #   p(x) - The target model distribution
     #   q(x) - The draft model distribution
@@ -153,19 +154,17 @@ def rejection_sampler(sampling_config: SamplingConfig) -> Graph:
 
     graph_inputs = [
         # Sampled Draft Tokens
-        TensorType(DType.int64, ["batch_size", "num_steps"]),
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
         # Logits for Sampled Tokens
-        TensorType(
-            DType.float32,
-            ["batch_size", "num_steps"],
-        ),
+        TensorType(DType.float32, ["batch_size", "num_steps"], device=device),
         # Target Logits
         TensorType(
             DType.float32,
             ["total_output_len", "vocab_size"],
+            device=device,
         ),
         # Target Logit Offsets
-        TensorType(DType.int64, ["logit_offsets_len"]),
+        TensorType(DType.int64, ["logit_offsets_len"], device=device),
     ]
     with Graph("rejection_sampler", input_types=graph_inputs) as graph:
         (
@@ -175,97 +174,13 @@ def rejection_sampler(sampling_config: SamplingConfig) -> Graph:
             target_logit_offsets,
         ) = graph.inputs
 
-        # Just get the tensor
-        draft_tokens = draft_tokens.tensor
-        draft_logits_for_sampled_tokens = draft_logits_for_sampled_tokens.tensor
-        target_logits = target_logits.tensor
-        target_logit_offsets = target_logit_offsets.tensor
-
-        # Get Proper Indices for Tokens
-        broadcasted_range = ops.broadcast_to(
-            ops.range(
-                ops.constant(0, dtype=DType.int64),
-                ops.cast(draft_tokens.shape[1], DType.int64),
-                ops.constant(1, dtype=DType.int64),
-                out_dim=Dim("num_steps"),
-            ),
-            shape=[Dim("batch_size"), Dim("num_steps")],
+        sampler = RejectionSampler(device=device, top_k=top_k)
+        first_rejected_token, sampled_target_tokens = sampler(
+            draft_tokens.tensor,
+            draft_logits_for_sampled_tokens.tensor,
+            target_logits.tensor,
+            target_logit_offsets.tensor,
         )
-        logit_offsets = ops.rebind(
-            ops.unsqueeze(target_logit_offsets[:-1], axis=-1),
-            shape=[Dim("batch_size"), 1],
-        )
-        sampled_token_offsets = ops.reshape(
-            ops.rebind(
-                (broadcasted_range + logit_offsets),
-                shape=[Dim("batch_size"), Dim("num_steps")],
-            ),
-            shape=[Dim("batch_size") * Dim("num_steps"), 1],
-        )
-
-        target_logits_for_sampled_tokens = ops.reshape(
-            ops.gather_nd(
-                target_logits,
-                ops.concat(
-                    [
-                        sampled_token_offsets,
-                        ops.reshape(
-                            draft_tokens,
-                            shape=(Dim("batch_size") * Dim("num_steps"), 1),
-                        ),
-                    ],
-                    axis=1,
-                ),
-            ),
-            shape=[Dim("batch_size"), Dim("num_steps")],
-        )
-
-        # Apply Rejection Function Elementwise
-        # Fill the tensor up to n + 1
-        rejected_tokens = ops.rebind(
-            ops.concat(
-                [
-                    draft_logits_for_sampled_tokens
-                    > target_logits_for_sampled_tokens,
-                    ops.broadcast_to(
-                        ops.constant(True, dtype=DType.bool),
-                        shape=[Dim("batch_size"), 1],
-                    ),
-                ],
-                axis=1,
-            ),
-            shape=[Dim("batch_size"), Dim("total_num_steps")],
-        )
-
-        # Calculate first rejected_token idx
-        first_rejected_token = ops.argmax(
-            ops.broadcast_to(
-                ops.range(
-                    ops.cast(rejected_tokens.shape[1], DType.int32),
-                    ops.constant(0, dtype=DType.int32),
-                    ops.constant(-1, dtype=DType.int32),
-                    out_dim="total_num_steps",
-                ),
-                shape=[rejected_tokens.shape[0], Dim("total_num_steps")],
-            )
-            * rejected_tokens,
-            axis=-1,
-        )
-
-        # Retrieve Appropriate Logits from Target Logits
-        rejected_offsets = ops.rebind(
-            target_logit_offsets[:-1], shape=[Dim("batch_size")]
-        ) + ops.squeeze(first_rejected_token, axis=1)
-
-        sampled_target_tokens = ops.custom(
-            "topk_fused_sampling",
-            [
-                ops.constant(sampling_config.top_k, dtype=DType.int64),
-                ops.gather(target_logits, rejected_offsets, axis=0),
-            ],
-            [TensorType(DType.int64, Shape((Dim("batch_size"), Dim(1))))],
-        )[0]
-
         graph.output(first_rejected_token, sampled_target_tokens)
 
         return graph

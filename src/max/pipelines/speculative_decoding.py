@@ -20,6 +20,7 @@ import numpy as np
 from max.driver import Tensor, load_devices, scan_available_devices
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
     WeightsFormat,
@@ -201,7 +202,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Load rejection sampler
         self._rejection_sampler = target_session.load(
-            rejection_sampler(self.pipeline_config.sampling_config)
+            rejection_sampler(
+                top_k=self.pipeline_config.sampling_config.top_k,
+                device=DeviceRef.from_device(self.target_devices[0]),
+            )
         )
 
         # Check that the max length for both models are the same

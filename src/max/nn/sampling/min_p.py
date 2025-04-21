@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Sampling custom ops."""
+"""MinP Sampler custom ops."""
 
 from max import nn
 from max.dtype import DType
