@@ -198,10 +198,6 @@ def test_execute_device_tensor(
         assert isclose(output_tensor[idx].item(), expected[idx])
 
 
-@pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="TODO(GEX-2098): Slicing Driver Tenssor not supported on gpu and segfaults",
-)
 def test_execute_noncontiguous_tensor(
     session: InferenceSession, mo_model_path: Path
 ) -> None:
@@ -220,7 +216,9 @@ def test_execute_noncontiguous_tensor(
         ),
     ):
         model.execute(subtensor)
-    output = model.execute(subtensor.contiguous())
+
+    device = CPU() if accelerator_count() == 0 else Accelerator()
+    output = model.execute(subtensor.contiguous().to(device))
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
@@ -363,10 +361,6 @@ def test_numpy_aliasing() -> None:
     assert tensor_numpy[0] == 5
 
 
-@pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="TODO(GEX-2098): Slicing Driver Tenssor not supported on gpu and segfaults",
-)
 def test_aliasing_output(
     session: InferenceSession, aliasing_outputs_path: Path
 ) -> None:
@@ -374,7 +368,9 @@ def test_aliasing_output(
     # same tensor outputs more than once.
     model = session.load(aliasing_outputs_path)
     arr = np.arange(0, 5, dtype=np.int32)
-    input_tensor = Tensor.from_numpy(arr).to(model.input_devices[0])
+
+    device = CPU() if accelerator_count() == 0 else Accelerator()
+    input_tensor = Tensor.from_numpy(arr).to(device)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
     x_tensor, y_tensor = outputs
@@ -382,16 +378,18 @@ def test_aliasing_output(
     expected = np.arange(0, 10, 2, dtype=np.int32)
 
     assert isinstance(x_tensor, Tensor)
-    x_numpy = x_tensor.to_numpy()
+    x_numpy = x_tensor.to(CPU()).to_numpy()
     assert np.array_equal(x_numpy, expected)
 
     assert isinstance(y_tensor, Tensor)
-    y_numpy = y_tensor.to_numpy()
+    y_numpy = y_tensor.to(CPU()).to_numpy()
     assert np.array_equal(y_numpy, expected)
 
     # Check if the outputs really alias.
-    x_tensor[0] = 7
-    assert y_tensor[0].item() == 7
+    if accelerator_count() == 0:
+        assert (
+            x_tensor.to_numpy().ctypes.data == y_tensor.to_numpy().ctypes.data
+        )
 
 
 @pytest.mark.skipif(
