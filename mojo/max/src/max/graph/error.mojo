@@ -144,15 +144,17 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     var call_stack = InlineArray[UnsafePointer[NoneType], MAX_STACK_SIZE](
         uninitialized=True
     )
-    var frames = external_call["backtrace", Int](call_stack, MAX_STACK_SIZE)
+    var num_frames = external_call["backtrace", Int32](
+        call_stack.unsafe_ptr(), Int(len(call_stack)), MAX_STACK_SIZE
+    )
     var frame_strs = external_call[
         "backtrace_symbols", UnsafePointer[UnsafePointer[c_char]]
-    ](call_stack.unsafe_ptr(), frames)
+    ](call_stack.unsafe_ptr(), num_frames)
 
     var formatted = String()
     var buffer = _WriteBufferStack(formatted)
     buffer.write("System stack:\n")
-    for i in range(frames):
+    for i in range(num_frames):
         formatted.write(
             "\t",
             StaticString(unsafe_from_utf8_ptr=frame_strs[i]),
@@ -160,4 +162,4 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
         )
 
     buffer.flush()
-    return formatted
+    return formatted^
