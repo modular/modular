@@ -70,7 +70,7 @@ from collections.string.string_slice import (
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
-from sys import bitwidthof, llvm_intrinsic
+from sys import bitwidthof, is_compile_time
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
@@ -565,9 +565,19 @@ fn atof(str_slice: StringSlice) raises -> Float64:
 # It is not exported and should not be used directly.
 @register_passable("trivial")
 struct _StringCapacityField:
-    # When not-small, this maintains the capacity of the string shifted right
-    # by 3 bits, with 3 top bits used for flags.
+    # When not-inline, this maintains the capacity of the string shifted right
+    # by 3 bits, with 3 top bits used for flags. When inline is the length of
+    # the string.
     var _storage: UInt
+
+    # This is the number of bytes that can be stored inline in the string value.
+    # 'String' is 3 words in size and we use the top byte of the capacity field
+    # to store flags.
+    alias NUM_SSO_BYTES = Int.BITWIDTH // 8 * 3 - 1
+    # The start of the length field in the storage: this is the top byte, which
+    # gives us 5 bits for the length.
+    alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
+    alias INLINE_LENGTH_MASK = UInt(0b11111 << Self.INLINE_LENGTH_START)
 
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
@@ -576,8 +586,9 @@ struct _StringCapacityField:
     # constant string.  capacity() will always be zero for these strings, so any
     # attempt to append will reallocate.
     alias FLAG_IS_STATIC_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
-    # When FLAG_IS_SMALL is set, the string is a small string.
-    # alias FLAG_IS_SMALL = UInt(1) << (UInt.BITWIDTH - 1)
+    # When FLAG_IS_INLINE is set, the string data is inline as the first bytes
+    # of the string value (the "Small string optimization").
+    alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
 
     # Initialize with a specified capacity.  Note that the provided value may
     # be rounded up, so clients should check the capacity() after construction.
@@ -587,16 +598,24 @@ struct _StringCapacityField:
         # memory allocators work on this granularity anyway, so we might as well
         # use it. We store the capacity with the top 3 bits of the storage used
         # for flags.
-        self._storage = (capacity + 7) >> 3
+        if capacity > Self.NUM_SSO_BYTES or is_compile_time():
+            self._storage = (capacity + 7) >> 3
+        else:
+            # If the capacity needed fits inline, use the inline form.
+            self._storage = Self.FLAG_IS_INLINE
 
     @always_inline("nodebug")
     @staticmethod
     fn get_static_const() -> Self:
         var result = Self(capacity=0)
-        result.set_is_static_constant(True)
+        result._storage = Self.FLAG_IS_STATIC_CONSTANT
         return result
 
-    fn get(self) -> UInt:
+    @always_inline("nodebug")
+    fn get_capacity(self) -> UInt:
+        # In the inline form, we hold the data inline.
+        if self.is_inline():
+            return Self.NUM_SSO_BYTES
         return self._storage << 3
 
     @always_inline("nodebug")
@@ -620,6 +639,29 @@ struct _StringCapacityField:
             self._storage = self._storage | Self.FLAG_IS_STATIC_CONSTANT
         else:
             self._storage = self._storage & ~Self.FLAG_IS_STATIC_CONSTANT
+
+    @always_inline("nodebug")
+    fn is_inline(self) -> Bool:
+        return self._storage & Self.FLAG_IS_INLINE != 0
+
+    @always_inline("nodebug")
+    fn get_len(self, len_or_data: Int) -> Int:
+        if self.is_inline():
+            return (
+                self._storage & Self.INLINE_LENGTH_MASK
+            ) >> Self.INLINE_LENGTH_START
+        else:
+            return len_or_data
+
+    @always_inline("nodebug")
+    fn set_len(mut self, new_len: Int, mut len_or_data: Int):
+        if self.is_inline():
+            debug_assert(new_len <= Self.NUM_SSO_BYTES)
+            self._storage = (self._storage & ~Self.INLINE_LENGTH_MASK) | (
+                new_len << Self.INLINE_LENGTH_START
+            )
+        else:
+            len_or_data = new_len
 
 
 # ===----------------------------------------------------------------------=== #
@@ -648,13 +690,16 @@ struct String(
 ):
     """Represents a mutable string."""
 
-    # Fields
-    var _data: UnsafePointer[UInt8]
+    # Fields: String has two forms - the declared form here, and the "inline"
+    # form when '_capacity_or_data.is_inline()' is true. The inline form
+    # clobbers these fields (except the top byte of the capacity field) with
+    # the string data.
+    var _ptr_or_data: UnsafePointer[UInt8]
     """The underlying storage for the string data."""
-    var _len: Int
+    var _len_or_data: Int
     """The number of elements in the string data."""
-    var _capacity: _StringCapacityField
-    """The capacity and bitflags for this String."""
+    var _capacity_or_data: _StringCapacityField
+    """The capacity and bit flags for this String."""
 
     # Useful string aliases.
     alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
@@ -673,15 +718,17 @@ struct String(
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destroy the string data."""
-        if not self._capacity.is_static_constant():
-            self._data.free()
+        if (not self._capacity_or_data.is_static_constant()) & (
+            not self._capacity_or_data.is_inline()
+        ):
+            self._ptr_or_data.free()
 
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self._data = UnsafePointer[UInt8]()
-        self._len = 0
-        self._capacity = _StringCapacityField(0)
+        self._ptr_or_data = UnsafePointer[UInt8]()
+        self._len_or_data = 0
+        self._capacity_or_data = _StringCapacityField(0)
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
@@ -690,12 +737,14 @@ struct String(
         Args:
             capacity: The capacity of the string to allocate.
         """
-        self._capacity = _StringCapacityField(capacity)
-        self._len = 0
-        if capacity:
-            self._data = UnsafePointer[UInt8].alloc(self._capacity.get())
+        self._capacity_or_data = _StringCapacityField(capacity)
+        self._len_or_data = 0
+        if self._capacity_or_data.is_inline():
+            self._ptr_or_data = UnsafePointer[UInt8]()
         else:
-            self._data = UnsafePointer[UInt8]()
+            self._ptr_or_data = UnsafePointer[UInt8].alloc(
+                self._capacity_or_data.get_capacity()
+            )
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -732,9 +781,9 @@ struct String(
         Args:
             data: The static constant string to refer to.
         """
-        self._capacity = _StringCapacityField.get_static_const()
-        self._data = data.unsafe_ptr()
-        self._len = len(data)
+        self._capacity_or_data = _StringCapacityField.get_static_const()
+        self._ptr_or_data = data.unsafe_ptr()
+        self._len_or_data = len(data)
 
     @always_inline
     @implicit  # does not allocate.
@@ -744,9 +793,9 @@ struct String(
         Args:
             data: The static constant string to refer to.
         """
-        self = Self(StaticString(data))
+        self = StaticString(data)
         # String literals are always nul-terminated by the compiler.
-        self._capacity.set_has_nul_terminator(True)
+        self._capacity_or_data.set_has_nul_terminator(True)
 
     @always_inline
     fn __init__(out self, bytes: Span[UInt8, *_]):
@@ -758,7 +807,7 @@ struct String(
         """
         var length = len(bytes)
         self = Self(unsafe_uninit_length=length)
-        memcpy(self._data, bytes.unsafe_ptr(), length)
+        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
 
     @no_inline
     fn __init__[
@@ -848,7 +897,7 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self = Self(capacity=unsafe_uninit_length)
-        self._len = unsafe_uninit_length
+        self._capacity_or_data.set_len(unsafe_uninit_length, self._len_or_data)
 
     @always_inline
     fn __init__(
@@ -892,6 +941,17 @@ struct String(
             )
         )
 
+    @always_inline("nodebug")
+    fn __moveinit__(out self, owned other: Self):
+        """Move initialize the string from another string.
+
+        Args:
+            other: The string to move.
+        """
+        self._ptr_or_data = other._ptr_or_data
+        self._len_or_data = other._len_or_data
+        self._capacity_or_data = other._capacity_or_data
+
     @always_inline
     fn __copyinit__(out self, other: Self):
         """Copy initialize the string from another string.
@@ -899,9 +959,19 @@ struct String(
         Args:
             other: The string to copy.
         """
-        self = Self(unsafe_uninit_length=other._len)
-        self._capacity.set_has_nul_terminator(False)
-        memcpy(self.unsafe_ptr(), other.unsafe_ptr(), other._len)
+        # Keep inline strings inline, and static strings static.
+        if (
+            other._capacity_or_data.is_inline()
+            | other._capacity_or_data.is_static_constant()
+        ):
+            self._ptr_or_data = other._ptr_or_data
+            self._len_or_data = other._len_or_data
+            self._capacity_or_data = other._capacity_or_data
+        else:
+            # Otherwise, copy the data for an out-of-line representation.
+            var len = other.byte_length()
+            self = Self(unsafe_uninit_length=len)
+            memcpy(self.unsafe_ptr(), other.unsafe_ptr(), len)
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -914,7 +984,7 @@ struct String(
         Returns:
             The capacity of the string.
         """
-        return self._capacity.get()
+        return self._capacity_or_data.get_capacity()
 
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         """Write a byte span to this String.
@@ -1003,7 +1073,7 @@ struct String(
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](idx, len(self))
         var result = String(capacity=1)
-        result.append_byte(self._data[normalized_idx])
+        result.append_byte(self.unsafe_ptr()[normalized_idx])
         return result^
 
     fn __getitem__(self, span: Slice) -> String:
@@ -1023,7 +1093,9 @@ struct String(
         start, end, step = span.indices(self.byte_length())
         var r = range(start, end, step)
         if step == 1:
-            return String(StringSlice(ptr=self._data + start, length=len(r)))
+            return String(
+                StringSlice(ptr=self.unsafe_ptr() + start, length=len(r))
+            )
 
         var result = String(capacity=len(r))
         var ptr = self.unsafe_ptr()
@@ -1157,10 +1229,11 @@ struct String(
         Args:
             byte: The byte to append.
         """
-        self._capacity.set_has_nul_terminator(False)
-        self.reserve(self._len + 1)
-        (self._data + self._len).init_pointee_move(byte)
-        self._len += 1
+        self._capacity_or_data.set_has_nul_terminator(False)
+        var len = self.byte_length()
+        self.reserve(len + 1)
+        (self.unsafe_ptr_mut() + len).init_pointee_move(byte)
+        self._capacity_or_data.set_len(len + 1, self._len_or_data)
 
     @always_inline
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
@@ -1179,12 +1252,12 @@ struct String(
         if other_len == 0:
             return
         # remove the nul terminator if it exists.
-        self._capacity.set_has_nul_terminator(False)
-        var old_len = self._len
+        self._capacity_or_data.set_has_nul_terminator(False)
+        var old_len = self.byte_length()
         var new_len = old_len + other_len
         self.reserve(new_len)
-        memcpy(self.unsafe_ptr() + old_len, other.unsafe_ptr(), other_len)
-        self._len = new_len
+        memcpy(self.unsafe_ptr_mut() + old_len, other.unsafe_ptr(), other_len)
+        self._capacity_or_data.set_len(new_len, self._len_or_data)
 
     @always_inline
     fn __iadd__(mut self, other: StringSlice[mut=False]):
@@ -1434,6 +1507,7 @@ struct String(
         """
         return self.as_string_slice().codepoint_slices()
 
+    @always_inline("nodebug")
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[Byte, mut=False, origin = __origin_of(self)]:
@@ -1442,7 +1516,11 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        return self._data
+        if self._capacity_or_data.is_inline():
+            # The string itself holds the data.
+            return UnsafePointer(to=self).bitcast[Byte]()
+        else:
+            return self._ptr_or_data
 
     fn unsafe_ptr_mut(
         mut self,
@@ -1454,13 +1532,13 @@ struct String(
             The pointer to the underlying memory.
         """
         # If immutable, copy to a new buffer to ensure mutability.
-        if self._capacity.is_static_constant():
+        if self._capacity_or_data.is_static_constant():
             self.reserve(self.byte_length())
-        return self._data
+        return self.unsafe_ptr().origin_cast[False, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=False, origin = __origin_of(self)]:
+    ) -> UnsafePointer[c_char, mut=True, origin = __origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1469,10 +1547,12 @@ struct String(
             The pointer to the underlying memory.
         """
         # The string may be empty, add a nul terminator if so.
-        if not self._capacity.has_nul_terminator():
-            self.append_byte(0)
-            self._len -= 1
-            self._capacity.set_has_nul_terminator(True)
+        if not self._capacity_or_data.has_nul_terminator():
+            var len = self.byte_length()
+            self.reserve(len + 1)  # This will reallocate if constant.
+            self.unsafe_ptr_mut()[len] = 0
+            self._capacity_or_data.set_has_nul_terminator(True)
+
         return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline
@@ -1528,7 +1608,7 @@ struct String(
         Returns:
             The length of this string in bytes.
         """
-        return self._len
+        return self._capacity_or_data.get_len(self._len_or_data)
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
@@ -2018,14 +2098,12 @@ struct String(
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
-        self._capacity.set_has_nul_terminator(False)
-        if length <= self._len:
-            self._len = length
-            return
-
-        self.reserve(length)
-        memset(self._data + self._len, fill_byte, length - self._len)
-        self._len = length
+        self._capacity_or_data.set_has_nul_terminator(False)
+        var old_len = self.byte_length()
+        if length > old_len:
+            self.reserve(length)
+            memset(self.unsafe_ptr_mut() + old_len, fill_byte, length - old_len)
+        self._capacity_or_data.set_len(length, self._len_or_data)
 
     @always_inline
     fn resize(mut self, *, unsafe_uninit_length: Int):
@@ -2039,11 +2117,10 @@ struct String(
         Args:
             unsafe_uninit_length: The new size.
         """
-        if unsafe_uninit_length <= self._len:
-            self._len = unsafe_uninit_length
-        else:
+        self._capacity_or_data.set_has_nul_terminator(False)
+        if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
-            self._len = unsafe_uninit_length
+        self._capacity_or_data.set_len(unsafe_uninit_length, self._len_or_data)
 
     @always_inline
     fn reserve(mut self, new_capacity: UInt):
@@ -2056,7 +2133,7 @@ struct String(
             If the current capacity is greater or equal, this is a no-op.
             Otherwise, the storage is reallocated and the data is moved.
         """
-        if new_capacity <= self._capacity.get():
+        if new_capacity <= self.capacity():
             return
         self._reserve_grow(new_capacity)
 
@@ -2064,18 +2141,44 @@ struct String(
     # to grow the capacity of the string.
     @no_inline
     fn _reserve_grow(mut self, owned new_capacity: UInt):
-        var should_free = self._data and not self._capacity.is_static_constant()
+        # Get these fields before we change _capacity_or_data, which can modify
+        # where they are stored.
+        var len = self.byte_length()
+        var old_ptr = self.unsafe_ptr()
+        var should_free = (
+            (not self._capacity_or_data.is_static_constant())
+            & (not self._capacity_or_data.is_inline())
+        )
 
         # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
         # make use of extra space if it exists.
-        new_capacity = max(new_capacity, self._capacity.get() * 2)
-        self._capacity = _StringCapacityField(new_capacity)
+        new_capacity = max(new_capacity, self.capacity() * 2)
+        var new_capacity_field = _StringCapacityField(new_capacity)
 
-        var new_data = UnsafePointer[UInt8].alloc(self._capacity.get())
-        memcpy(new_data, self._data, self._len)
-        if should_free:
-            self._data.free()
-        self._data = new_data
+        # We usually grow into the indirect representation, but can grow from
+        # an out-of-line static string to an inline representation as well.
+        if not new_capacity_field.is_inline():
+            var new_data = UnsafePointer[UInt8].alloc(
+                new_capacity_field.get_capacity()
+            )
+            memcpy(new_data, old_ptr, len)
+            self._len_or_data = len  # May have been stored in capacity before.
+            self._ptr_or_data = new_data
+            self._capacity_or_data = new_capacity_field
+            if should_free:
+                old_ptr.free()
+        else:
+            debug_assert(
+                not self._capacity_or_data.is_inline() and not should_free,
+                "shouldn't grow from inline to inline",
+            )
+            self._capacity_or_data = new_capacity_field
+            self._capacity_or_data.set_len(len, self._len_or_data)
+            memcpy(
+                self.unsafe_ptr_mut().origin_cast[True, MutableAnyOrigin](),
+                old_ptr,
+                len,
+            )
 
 
 # ===----------------------------------------------------------------------=== #

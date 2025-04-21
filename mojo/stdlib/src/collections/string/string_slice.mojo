@@ -1923,7 +1923,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         alias `\r` = UInt8(ord("\r"))
         alias `\n` = UInt8(ord("\n"))
 
-        output = List[StringSlice[O]](capacity=128)  # guessing
+        var output = List[StringSlice[O]](capacity=128)  # guessing
         var ptr = self.unsafe_ptr()
         var length = self.byte_length()
         var offset = 0
