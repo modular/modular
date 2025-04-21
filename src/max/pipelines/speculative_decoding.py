@@ -29,6 +29,7 @@ from max.graph.weights import (
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputsSequence
+from max.profiler import traced
 from transformers import AutoConfig
 
 from .core import (
@@ -70,6 +71,9 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         )
         target_config = self.pipeline_config.model_config.huggingface_config
         target_session = InferenceSession(devices=self.target_devices)
+        target_session.gpu_profiling(
+            self.pipeline_config.profiling_config.gpu_profiling
+        )
         target_config = AutoConfig.from_pretrained(
             self.pipeline_config.model_config.model_path,
             trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
@@ -139,6 +143,9 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # For now, we are assuming we are placing the draft model will sit
         self.draft_devices = load_devices(scan_available_devices()[:1])
         draft_session = InferenceSession(devices=self.draft_devices)
+        draft_session.gpu_profiling(
+            self.pipeline_config.profiling_config.gpu_profiling
+        )
 
         draft_config = (
             self.pipeline_config.draft_model_config.huggingface_config
@@ -219,6 +226,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
             raise ValueError(msg)
 
+    @traced
     def calculate_num_steps(
         self,
         model: PipelineModel,
@@ -246,6 +254,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             else num_available_steps
         )
 
+    @traced
     def prepare_batch(
         self,
         model: PipelineModel,
@@ -279,6 +288,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             num_steps,
         )
 
+    @traced
     def sample_draft_logits(
         self,
         model_outputs: ModelOutputs,
@@ -296,6 +306,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         assert isinstance(c, Tensor)
         return (a, b, c)
 
+    @traced
     def generate_draft_tokens(
         self, batch: list[T], num_steps: int
     ) -> tuple[int, np.ndarray, Tensor]:
@@ -390,27 +401,14 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         return num_steps, generated_tokens_host, generated_logits
 
-    def next_token(
-        self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
-        """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
-
-        # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
-
-        # This is a bit of a hack, we should work out a better API for this.
-        # The draft offset tracks how far behind the draft model should be.
-        # We should bump the start_idx back up by this amount, to get back
-        # to where the target model should start.
-        for context in context_batch:
-            context.bump_token_indices(start_idx=+context._draft_offset)  # type: ignore
-
-        # Generate draft tokens.
-        # This updates the context_batch object in place.
-        num_draft_tokens_generated, draft_tokens, draft_logits = (
-            self.generate_draft_tokens(context_batch, num_steps)
-        )
-
+    @traced
+    def verify_draft_tokens_with_target_model(
+        self,
+        context_batch: list[T],
+        num_draft_tokens_generated: int,
+        draft_tokens: np.ndarray,
+        draft_logits: Tensor,
+    ) -> tuple[Tensor, Tensor]:
         for context in context_batch:
             context.bump_token_indices(start_idx=-context._draft_offset)  # type: ignore
 
@@ -440,6 +438,41 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         assert isinstance(first_rejected_tokens, Tensor)
         assert isinstance(sampled_target_tokens, Tensor)
+
+        return first_rejected_tokens, sampled_target_tokens
+
+    @traced
+    def next_token(
+        self, batch: dict[str, T], num_steps: int
+    ) -> dict[str, TextGenerationResponse]:
+        """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
+
+        # Flatten our batch for consistent indexing.
+        context_batch = list(batch.values())
+
+        # This is a bit of a hack, we should work out a better API for this.
+        # The draft offset tracks how far behind the draft model should be.
+        # We should bump the start_idx back up by this amount, to get back
+        # to where the target model should start.
+        for context in context_batch:
+            context.bump_token_indices(start_idx=+context._draft_offset)  # type: ignore
+
+        # Generate draft tokens.
+        # This updates the context_batch object in place.
+        num_draft_tokens_generated, draft_tokens, draft_logits = (
+            self.generate_draft_tokens(context_batch, num_steps)
+        )
+
+        # Verify draft tokens with target model
+        first_rejected_tokens, sampled_target_tokens = (
+            self.verify_draft_tokens_with_target_model(
+                context_batch,
+                num_draft_tokens_generated,
+                draft_tokens,
+                draft_logits,
+            )
+        )
+
         sampled_target_tokens_host = sampled_target_tokens.to_numpy()
         res: dict[str, TextGenerationResponse] = {}
         request_ids = list(batch.keys())
@@ -524,6 +557,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         return res
 
+    @traced
     def release(self, context: T) -> None:
         """Releases resources associated with this context.
 
