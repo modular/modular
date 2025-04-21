@@ -905,6 +905,31 @@ def test_uninit_ctor():
     assert_equal(list2[1], "world")
 
 
+def test_list_capacity_ctor():
+    for i in range(8):
+        assert_equal(List[Byte](capacity=i).capacity, i)
+
+    alias multiples = (2, 4, 8, 16, 32, 64, 128)
+
+    @parameter
+    for i in range(len(multiples)):
+        for j in range(8):
+            # zero is a multiple of everything
+            assert_equal(
+                List[Byte]
+                .__init__[multiple_of = multiples[i]](capacity=0)
+                .capacity,
+                0,
+            )
+            for k in range(j * multiples[i] + 1, (j + 1) * multiples[i] + 1):
+                assert_equal(
+                    List[Byte]
+                    .__init__[multiple_of = multiples[i]](capacity=k)
+                    .capacity,
+                    (j + 1) * multiples[i],
+                )
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -945,3 +970,4 @@ def main():
     test_list_repr()
     test_list_fill_constructor()
     test_uninit_ctor()
+    test_list_capacity_ctor()

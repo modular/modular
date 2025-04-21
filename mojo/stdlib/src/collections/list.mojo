@@ -124,18 +124,38 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             copy.append(e[])
         return copy^
 
-    fn __init__(out self, *, capacity: Int):
+    fn __init__[*, multiple_of: UInt = 1](out self, *, capacity: UInt):
         """Constructs a list with the given capacity.
+
+        Parameters:
+            multiple_of: The power of two multiple to round the capacity up to.
 
         Args:
             capacity: The requested capacity of the list.
+
+        Notes:
+            Zero is a multiple of every number. If capacity is zero, then the
+            rounded number will be zero.
         """
+        constrained[
+            multiple_of.is_power_of_two(),
+            "multiple_of value must be a power of two",
+        ]()
+        var rounded: UInt
+
+        @parameter
+        if multiple_of > 1:
+            alias offset = multiple_of - 1
+            rounded = (capacity + offset) & ~offset
+        else:
+            rounded = capacity
+
         if capacity:
-            self.data = UnsafePointer[T].alloc(capacity)
+            self.data = UnsafePointer[T].alloc(rounded)
         else:
             self.data = UnsafePointer[T]()
         self._len = 0
-        self.capacity = capacity
+        self.capacity = rounded
 
     fn __init__(out self, *, length: UInt, fill: T):
         """Constructs a list with the given capacity.
