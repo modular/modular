@@ -82,7 +82,10 @@ struct _ListIter[
 
 
 struct List[T: CollectionElement, hint_trivial_type: Bool = False](
-    CollectionElement, CollectionElementNew, Sized, Boolable
+    Boolable,
+    CollectionElement,
+    ExplicitlyCopyable,
+    Sized,
 ):
     """The `List` type is a dynamically-allocated list.
 
@@ -234,7 +237,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     @always_inline
     fn __eq__[
-        U: EqualityComparableCollectionElement, //
+        U: EqualityComparable & CollectionElement, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are equal.
 
@@ -247,7 +250,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-               traits `EqualityComparable` and `CollectionElement`.
+               trait `EqualityComparable`.
 
         Args:
             other: The list to compare with.
@@ -266,7 +269,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     @always_inline
     fn __ne__[
-        U: EqualityComparableCollectionElement, //
+        U: EqualityComparable & CollectionElement, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
@@ -280,7 +283,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-               traits `EqualityComparable` and `CollectionElement`.
+               trait `EqualityComparable`.
 
         Args:
             other: The list to compare with.
@@ -291,7 +294,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         return not (self == other)
 
     fn __contains__[
-        U: EqualityComparableCollectionElement, //
+        U: EqualityComparable & CollectionElement, //
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
@@ -301,7 +304,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         ```
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `EqualityComparable` and `CollectionElement`.
+              trait `EqualityComparable`.
 
         Args:
             value: The value to find.
@@ -400,7 +403,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     @no_inline
     fn __str__[
-        U: RepresentableCollectionElement, //
+        U: Representable & CollectionElement, //
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
@@ -419,7 +422,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable` and `CollectionElement`.
+              trait `Representable`.
 
         Returns:
             A string representation of the list.
@@ -432,13 +435,13 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     @no_inline
     fn write_to[
-        W: Writer, U: RepresentableCollectionElement, //
+        W: Writer, U: Representable & CollectionElement, //
     ](self: List[U, *_], mut writer: W):
         """Write `my_list.__str__()` to a `Writer`.
 
         Parameters:
             W: A type conforming to the Writable trait.
-            U: The type of the List elements. Must have the trait `RepresentableCollectionElement`.
+            U: The type of the List elements. Must have the trait `Representable`.
 
         Args:
             writer: The object to write to.
@@ -452,7 +455,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     @no_inline
     fn __repr__[
-        U: RepresentableCollectionElement, //
+        U: Representable & CollectionElement, //
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
@@ -471,7 +474,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable` and `CollectionElement`.
+              trait `Representable`.
 
         Returns:
             A string representation of the list.
@@ -802,7 +805,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
     # TODO: Remove explicit self type when issue 1876 is resolved.
     fn index[
-        C: EqualityComparableCollectionElement, //
+        C: EqualityComparable & CollectionElement, //
     ](
         ref self: List[C, *_],
         value: C,
@@ -827,7 +830,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             C: The type of the elements in the list. Must implement the
-                `EqualityComparableCollectionElement` trait.
+                `EqualityComparable` trait.
 
         Returns:
             The index of the first occurrence of the value in the list.
@@ -1011,7 +1014,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         (self.data + idx).init_pointee_move(value^)
 
     fn count[
-        T: EqualityComparableCollectionElement, //
+        T: EqualityComparable & CollectionElement, //
     ](self: List[T, *_], value: T) -> Int:
         """Counts the number of occurrences of a value in the list.
         Note that since we can't condition methods on a trait yet,
@@ -1027,7 +1030,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-              traits `EqualityComparable` and `CollectionElement`.
+              trait `EqualityComparable`.
 
         Args:
             value: The value to count.
@@ -1047,7 +1050,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         ```mojo
         var my_list = List[Int](1, 2, 3)
         my_list.swap_elements(0, 2)
-        print(my_list) # 3, 2, 1
+        print(my_list.__str__()) # 3, 2, 1
         ```
 
         This is useful because `swap(my_list[i], my_list[j])` cannot be
