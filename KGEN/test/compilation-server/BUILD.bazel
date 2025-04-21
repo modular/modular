@@ -4,7 +4,7 @@ lit_tests(
     name = "compilation-server",
     srcs = glob(["**/*.test"]),
     mojo_deps = [
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/max/mojo/stdlib/stdlib",
     ],
     tools = [
         "//KGEN/tools/compilation-server",

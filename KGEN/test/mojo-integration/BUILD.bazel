@@ -21,7 +21,7 @@ lit_tests(
         "//Kernels/mojo/_mlir",
         "//Kernels/mojo/runtime",
         "//Kernels/mojo/compile",
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/max/mojo/stdlib/stdlib",
     ],
     tags = [
         "A100",
@@ -48,13 +48,13 @@ lit_tests(
     srcs = glob(["*.test"]),
     data = glob(["inputs/**/*.mojo"]) + [
         "//Kernels/mojo/_mlir:_mlir_srcs",
-        "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
+        "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/_mlir:_mlir_srcs) $(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/_mlir:_mlir_srcs) $(locations //open-source/max/mojo/stdlib/stdlib:stdlib_srcs)",
     },
     mojo_deps = [
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/max/mojo/stdlib/stdlib",
     ],
     tools = [
         "//KGEN/tools/hash-mlir",

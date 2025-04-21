@@ -30,7 +30,7 @@ lit_tests(
     },
     mojo_deps = [
         "//Kernels/mojo/layout",
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/max/mojo/stdlib/stdlib",
     ],
     tools = [
         "//KGEN/tools/kgen-opt",
