@@ -15,8 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import KeyElement
-from collections.string.format import _CurlyEntryFormattable
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -30,8 +28,6 @@ from builtin.io import _snprintf
 from builtin.math import (
     Absable,
     Powable,
-    _CopyableGreaterThanComparable,
-    _CopyableLessThanComparable,
 )
 from memory import UnsafePointer
 from python import Python, PythonObject, PythonConvertible
@@ -322,22 +318,21 @@ fn int(value: UInt) -> Int:
 @value
 @register_passable("trivial")
 struct Int(
-    CeilDivable,
-    Indexer,
-    ImplicitlyBoolable,
-    KeyElement,
-    Roundable,
-    _HashableWithHasher,
-    ExplicitlyCopyable,
-    Writable,
-    ComparableCollectionElement,
-    _CopyableGreaterThanComparable,
-    Powable,
     Absable,
-    _CurlyEntryFormattable,
-    _CopyableLessThanComparable,
-    EqualityComparableCollectionElement,
+    CeilDivable,
+    CollectionElement,
+    Comparable,
+    ExplicitlyCopyable,
+    Hashable,
+    ImplicitlyBoolable,
+    Indexer,
+    Powable,
     PythonConvertible,
+    Representable,
+    Roundable,
+    Stringable,
+    Writable,
+    _HashableWithHasher,
 ):
     """This type represents an integer value."""
 

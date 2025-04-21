@@ -447,14 +447,12 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _CurlyEntryFormattable(Stringable, Representable):
-    """This trait is used by the `format()` method to support format specifiers.
-    Currently, it is a composition of both `Stringable` and `Representable`
-    traits i.e. a type to be formatted must implement both. In the future this
-    will be less constrained.
-    """
-
-    ...
+alias _CurlyEntryFormattable = Stringable & Representable
+"""This trait is used by the `format()` method to support format specifiers.
+Currently, it is a composition of both `Stringable` and `Representable`
+traits i.e. a type to be formatted must implement both. In the future this
+will be less constrained.
+"""
 
 
 # TODO: trait _FormattableStr: fn __format__(self, spec: FormatSpec) -> String:
