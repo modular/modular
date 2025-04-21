@@ -270,6 +270,9 @@ struct Python:
         Args:
             module: The PythonModule object.
             functions: List of function data.
+
+        Raises:
+            If we fail to add the functions to the module.
         """
 
         # Write a zeroed entry at the end as a terminator.
@@ -280,14 +283,14 @@ struct Python:
         #   in a global variable (yet).
         var ptr: UnsafePointer[PyMethodDef] = functions.steal_data()
 
-        return Self.unsafe_add_methods(module, ptr)
+        return Self._unsafe_add_functions(module, ptr)
 
     @staticmethod
-    fn unsafe_add_methods(
+    fn _unsafe_add_functions(
         module: PythonModule,
         functions: UnsafePointer[PyMethodDef],
     ) raises:
-        """Adds methods to a PythonModule object.
+        """Adds functions to a PythonModule object.
 
         Safety:
             The provided `functions` pointer must point to data that lives
@@ -296,6 +299,9 @@ struct Python:
         Args:
             module: The PythonModule object.
             functions: A null terminated pointer to function data.
+
+        Raises:
+            If we fail to add the functions to the module.
         """
         var cpython = _get_global_python_itf().cpython()
 
