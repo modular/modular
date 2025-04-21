@@ -1425,10 +1425,9 @@ def test_unsafe_cstr():
     assert_equal(p1[1], ord("b"))
     assert_equal(p1[2], 0)
 
-    # FIXME(MOCO-1861): Compiler bug materializing empty string?
-    # var s2: String = ""
-    # var p2 = s2.unsafe_cstr_ptr()
-    # assert_equal(p2[0], 0)
+    var s2: String = ""
+    var p2 = s2.unsafe_cstr_ptr()
+    assert_equal(p2[0], 0)
 
     var s3 = String()
     var p3 = s3.unsafe_cstr_ptr()
