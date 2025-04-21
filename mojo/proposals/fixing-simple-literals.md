@@ -22,11 +22,11 @@ alias biggg_number = 2 << 255 # Very large value
 fn use_number() -> Int:
   # Ok, not as big at runtime.
   return biggg_number // (2 << 246)
-  
+
 fn fail_to_use_big() -> Int:
   # error: integer value 115792089237316195423570985008687907853269984665640564039457584007913129639936 requires 258 bits to store, but the destination bit width is only 64 bits wide
   return biggg_number
-  
+
 ```
 
 Similarly, floating point literals may be arbitrarily large, and may have
@@ -88,7 +88,7 @@ way):
 fn integers():
    alias a1 = 42 # typeof(a1) is IntLiteral
    var v1 = 42   # typeof(v1) is Int
-   
+
    alias a2 = a1-3 # typeof(a1.__sub__(3)) is still IntLiteral
    var v2 = v1-3   # typeof(v1.__sub__(3)) is still Int
 ```
@@ -103,11 +103,11 @@ implementation of `IntLiteral` , a simplified version of which looks like this:
 @nonmaterializable(Int)
 struct IntLiteral:
     var value: __mlir_type.`!pop.int_literal`
-    
+
     fn __sub__(self, rhs: Self) -> Self:
         return Self(
             __mlir_op.`pop.int_literal.binop<sub>`(self.value, rhs.value)
-        )    
+        )
 ```
 
 This implementation works because the comp-time interpreter knows how to
@@ -132,7 +132,7 @@ fn test(a: IntLiteral) -> IntLiteral: return a-1
 example.mojo:3:4: error: failed to legalize operation 'kgen.func' that was explicitly marked illegal
 fn test(a: IntLiteral) -> IntLiteral: return a-1
    ^
-example.mojo:3:4: note: see current operation: 
+example.mojo:3:4: note: see current operation:
 "kgen.func"() ({
 ^bb0(%arg0: !pop.int_literal):
   %0 = "kgen.param.constant"() {value = #pop.int_literal<1> : !pop.int_literal} : () -> !pop.int_literal
@@ -163,7 +163,7 @@ fn example(a: Int):
     for i in range(a):
         x += "bar"
     print(x)
-    
+
 $ mojo test.mojo
 stdlib/builtin/string_literal.mojo:156:45: error: cannot use StringLiteral append methods at runtime, only in an alias
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
@@ -178,7 +178,7 @@ mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: note: see https://github.
                                             ^
 Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
 Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-/Users/clattner/Projects/modular/open-source/mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
+/Users/clattner/Projects/modular/open-source/max/mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 x.mojo:6:11: note: called from
@@ -371,7 +371,7 @@ and we don’t want to utter that MLIR attribute, so we can write it like this:
 ```mojo
 fn sub_two(a: IntLiteral[_], out result: __typeof(a-2)):
     return __typeof(result)()
-  
+
 ...
     alias four = sub_two(6)  # four has IntLiteral[4] type
     # You can check it with:
@@ -396,7 +396,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
         # It would be much nicer to support initializer lists though, so we could
         # standardize on something like "return {}" someday.
         return 0 - self
-        
+
     fn __invert__(self, out result: __type_of(self ^ -1)):
         result = __type_of(result)()
 ```
@@ -442,7 +442,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     # Create from a float literal parameter expression.
     fn __init__(out self):
         pass
-        
+
     fn __sub__(
         self,
         rhs: FloatLiteral,
