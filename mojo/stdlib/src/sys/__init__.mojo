@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the sys package."""
 
-from ._io import stderr, stdout
+from ._io import stdin, stderr, stdout
 from .arg import argv
 from .compile import is_compile_time
 from .debug import breakpointhook

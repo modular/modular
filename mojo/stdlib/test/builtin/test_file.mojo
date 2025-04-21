@@ -178,7 +178,7 @@ def test_file_get_raw_fd():
 
     print(
         "test from file 1",
-        file=f1._get_raw_fd(),
+        file=FileDescriptor(f1._get_raw_fd()),
         flush=True,
         end="",
     )
@@ -191,8 +191,18 @@ def test_file_get_raw_fd():
     _ = f2.seek(0)
     _ = f3.seek(0)
 
-    print("test from file 2", file=f2._get_raw_fd(), flush=True, end="")
-    print("test from file 3", file=f3._get_raw_fd(), flush=True, end="")
+    print(
+        "test from file 2",
+        file=FileDescriptor(f2._get_raw_fd()),
+        flush=True,
+        end="",
+    )
+    print(
+        "test from file 3",
+        file=FileDescriptor(f3._get_raw_fd()),
+        flush=True,
+        end="",
+    )
 
     _ = f2.seek(0)
     _ = f3.seek(0)

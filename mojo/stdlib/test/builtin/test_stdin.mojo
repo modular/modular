@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: echo "Hello, World" | %mojo %s
 
+import sys
 from builtin.io import _fdopen
 from testing import testing
 
 
 fn test_stdin() raises:
     # "Hello, World" piped from RUN command above
-    var stdin = _fdopen["r"](0)
+    var stdin = _fdopen["r"](sys.stdin)
     testing.assert_equal(stdin.read_until_delimiter(","), "Hello")
     testing.assert_equal(stdin.readline(), " World")
 

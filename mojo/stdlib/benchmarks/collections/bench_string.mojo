@@ -20,6 +20,7 @@ from collections.string._utf8 import _is_valid_utf8
 from os import abort
 from pathlib import _dir_of_current_file
 from random import random_si64, seed
+from sys import stderr
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
 
@@ -55,7 +56,7 @@ fn make_string[
         else:
             return String(f.read_bytes())
     except e:
-        print(e, file=2)
+        print(e, file=stderr)
     return abort[String]()
 
 

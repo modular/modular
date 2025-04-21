@@ -25,6 +25,7 @@ from sys import (
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
+    stdin,
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
@@ -80,8 +81,9 @@ struct _fdopen[mode: StaticString = "a"]:
 
         ```mojo
         from builtin.io import _fdopen
+        from sys import stdin
 
-        var line = _fdopen["r"](0).readline()
+        var line = _fdopen["r"](stdin).readline()
         print(line)
         ```
 
@@ -111,8 +113,9 @@ struct _fdopen[mode: StaticString = "a"]:
 
         ```mojo
         from builtin.io import _fdopen
+        from sys import stdin
 
-        var line = _fdopen["r"](0).read_until_delimiter(",")
+        var line = _fdopen["r"](stdin).read_until_delimiter(",")
         print(line)
         ```
 
@@ -431,7 +434,7 @@ fn input(prompt: String = "") raises -> String:
     """
     if prompt != "":
         print(prompt, end="")
-    return _fdopen["r"](0).readline()
+    return _fdopen["r"](stdin).readline()
 
 
 fn _get_stdout_stream() -> OpaquePointer:

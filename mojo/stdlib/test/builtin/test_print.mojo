@@ -62,7 +62,7 @@ struct PrintChecker:
         self.call_location = existing.call_location
 
     fn stream(self) -> FileDescriptor:
-        return self.tmp._file_handle._get_raw_fd()
+        return FileDescriptor(self.tmp._file_handle._get_raw_fd())
 
     fn check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)
