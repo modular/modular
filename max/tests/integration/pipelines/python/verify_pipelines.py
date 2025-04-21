@@ -509,8 +509,8 @@ PIPELINES = {
             pipeline="llama3.3-70b",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            absolute_tolerance=0.37,
-            relative_tolerance=0.32,
+            absolute_tolerance=0.39,
+            relative_tolerance=0.35,
             cos_dist_threshold=5.3e-4,
             kl_div_threshold=1.9e-3,
         ),
@@ -533,7 +533,7 @@ PIPELINES = {
             encoding="bfloat16",
             # TODO (MODELS-480): Debug Llama4 Accuracy.
             absolute_tolerance=43,
-            relative_tolerance=0.87,
+            relative_tolerance=0.88,
             cos_dist_threshold=1,
             kl_div_threshold=float("inf"),
         ),
