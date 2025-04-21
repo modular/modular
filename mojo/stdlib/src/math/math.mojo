@@ -2745,7 +2745,7 @@ trait CeilDivableRaising:
 
     @value
     struct Foo(CeilDivableRaising):
-        var x: object
+        var x: Float64
 
         fn __ceildiv__(self, denominator: Self) raises -> Self:
             return Self(self.x // denominator.x)
