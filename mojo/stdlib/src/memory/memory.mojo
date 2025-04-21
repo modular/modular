@@ -249,7 +249,7 @@ fn _memcpy_impl(
 fn memcpy[
     T: AnyType
 ](
-    dest: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+    dest: UnsafePointer[T, address_space = AddressSpace.GENERIC, mut=True, **_],
     src: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
     count: Int,
 ):
