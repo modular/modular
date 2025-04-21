@@ -38,8 +38,8 @@ common set of "Flags" bits at the top of the object.
 
 ### Shared Flags
 
-The shared layout looks like this on a 32-bit system, 64-bit systems are the
-same but have more bytes.  This is the machine memory layout, where the first
+The shared layout looks like this on a 64-bit system (32-bit systems are the
+same but have fewer bytes).  This is the machine memory layout, where the first
 `?` is the first byte in the start of the string:
 
 ```text
