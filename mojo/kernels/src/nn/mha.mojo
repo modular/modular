@@ -80,7 +80,7 @@ from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from nn.mha_mask import MaterializedMask, MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from nn.mha_sm90 import mha_sm90_dispatch
+from nn.mha_sm90 import mha_sm90_dispatch, DynamicInt, StaticInt
 from nn.mha_utils import MHAConfig, _copy_frag_to_smem, _kernel_mask
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -415,7 +415,6 @@ fn flash_attention_dispatch[
                     use_score_mod=use_score_mod,
                     ragged=ragged,
                     _is_cache_length_accurate=_is_cache_length_accurate,
-                    decoding=False,
                 ](
                     output,
                     q,
@@ -424,7 +423,7 @@ fn flash_attention_dispatch[
                     mask_functor,
                     score_mod_functor,
                     valid_length,
-                    max_prompt_len,
+                    DynamicInt(max_prompt_len),
                     max_cache_valid_length,
                     scale,
                     is_token_generation,
@@ -510,6 +509,51 @@ fn flash_attention_dispatch[
             )
             alias num_blocks_y = num_heads // group
 
+            var num_partitions_value: Int
+
+            @parameter
+            if has_amd_gpu_accelerator():
+                # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
+                num_partitions_value = 1
+            else:
+                num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
+                    num_heads, group
+                ](
+                    batch_size, max_cache_valid_length, ctx
+                )
+
+            @parameter
+            if (
+                ctx.device_info is H100
+                and q_half_float
+                and (ragged or not _use_valid_length)
+                and mask_t.mask_safe_out_of_bounds
+            ):
+                if num_partitions_value == 1:
+                    mha_sm90_dispatch[
+                        config=config,
+                        group=group,
+                        use_score_mod=use_score_mod,
+                        ragged=ragged,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                    ](
+                        output,
+                        q,
+                        k,
+                        v,
+                        mask_functor,
+                        score_mod_functor,
+                        valid_length,
+                        StaticInt[1](),
+                        max_cache_valid_length,
+                        scale,
+                        is_token_generation,
+                        ctx,
+                        kv_input_row_offsets,
+                        batch_size,
+                    )
+                    return
+
             alias kernel = mha_decoding[
                 q.type,
                 k_t,
@@ -537,18 +581,6 @@ fn flash_attention_dispatch[
 
             alias nullptr = UnsafePointer[Scalar[accum_type]]()
 
-            var num_partitions_value: Int
-
-            @parameter
-            if has_amd_gpu_accelerator():
-                # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
-                num_partitions_value = 1
-            else:
-                num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
-                    num_heads, group
-                ](
-                    batch_size, max_cache_valid_length, ctx
-                )
             if num_partitions_value == 1:
                 ctx.enqueue_function[kernel](
                     q.data,
@@ -4065,7 +4097,7 @@ fn mha_splitk_reduce[
     # TODO: use warp.lane_group_max since partition is going to be much smaller than WARP_SIZE
     var qk_max = warp.shuffle_idx(warp.max(l), 0)
 
-    # since num_partions <= WARP_SIZE, allocate buffer using WARP_SIZE
+    # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = tb[accum_type]().layout[WARP_SIZE]().shared().alloc()
 
     var intermediate_output = tb[output_type]().row_major(

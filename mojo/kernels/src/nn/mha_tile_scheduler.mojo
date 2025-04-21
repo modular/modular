@@ -331,6 +331,7 @@ struct MHATileSummary:
         )
 
 
+@register_passable("trivial")
 trait MHATileScheduler:
     alias may_advance: Bool
     alias mha_schedule: MHASchedule
@@ -565,9 +566,9 @@ struct QueuedTileScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
     /,
+    decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-    decoding: Bool = False,
 ](MHATileScheduler):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
@@ -630,16 +631,21 @@ struct QueuedTileScheduler[
                     var seq_info: SeqInfo = ts.unsafe_seq_info[
                         tile_shape, num_heads, ragged, schedule
                     ](idx)
-                    if seq_info.is_valid():
 
-                        @parameter
-                        if sync == MHASchedulerSynchronization.NONE:
-                            state.idx = idx
-                            state.sidx_ptr.store(offset=pipeline_idx, val=idx)
-                            # tma with producer doesn't need to sync
-                            return seq_info
-                        else:
-                            break
+                    @parameter
+                    if not decoding:
+                        if seq_info.is_valid():
+
+                            @parameter
+                            if sync == MHASchedulerSynchronization.NONE:
+                                state.idx = idx
+                                state.sidx_ptr.store(
+                                    offset=pipeline_idx, val=idx
+                                )
+                                # tma with producer doesn't need to sync
+                                return seq_info
+                            else:
+                                break
 
                 state.sidx_ptr.store(offset=pipeline_idx, val=idx)
 

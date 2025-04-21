@@ -18,7 +18,6 @@ from gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    block_idx,
     global_idx,
     lane_id,
     thread_idx,
@@ -94,6 +93,60 @@ from utils.static_tuple import StaticTuple
 from gpu.id import sm_id
 
 
+# The motivationn here is to be able to pass `StaticInt[1]()`
+# to indicate `decoding=True`, and have this not generate any code
+# when passing as a function argument.
+# That is, we want different specializations of a function to have
+# different numbers of arguments post-compilation.
+trait OptionallyStaticInt(Intable):
+    alias static_value: OptionalReg[Int]
+
+    fn as_uint32(self) -> UInt32:
+        ...
+
+
+@value
+@register_passable("trivial")
+struct StaticInt[value: Int](OptionallyStaticInt):
+    alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        pass
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return Self.value
+
+    @always_inline("nodebug")
+    fn as_uint32(self) -> UInt32:
+        return UInt32(Self.value)
+
+
+@value
+@register_passable("trivial")
+struct DynamicInt(OptionallyStaticInt):
+    var value: UInt32
+    alias static_value: OptionalReg[Int] = None
+
+    @always_inline("nodebug")
+    fn __init__(out self, value: Int):
+        self.value = UInt32(value)
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return Int(self.value)
+
+    @always_inline("nodebug")
+    fn as_uint32(self) -> UInt32:
+        return self.value
+
+
+@always_inline
+fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
+    return int_t.static_value.or_else(0) == 1
+
+
 @always_inline
 fn mha_sm90_dispatch[
     rank: Int,
@@ -102,13 +155,13 @@ fn mha_sm90_dispatch[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     type: DType,
-    q_shape: DimList, //,
+    q_shape: DimList,
+    max_prompt_len_t: OptionallyStaticInt, //,
     config: MHAConfig,
     group: Int,
     use_score_mod: Bool,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
-    decoding: Bool,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
@@ -117,18 +170,27 @@ fn mha_sm90_dispatch[
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: NDBuffer[DType.uint32, 1, *_],
-    max_prompt_len: Int,
-    max_cache_valid_length: Int,
+    max_prompt_len_arg: max_prompt_len_t,
+    max_cache_valid_length_arg: Int,
     scale: Float32,
     is_token_generation: Bool,
     ctx: DeviceContext,
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
-    batch_size: Int,
+    batch_size_arg: Int,
 ) raises:
-    alias BM = config.block_m()
-    alias BK = config.block_k()
+    alias decoding: Bool = max_prompt_len_t.static_value.or_else(0) == 1
+    alias new_config = MHAConfig(
+        config.type,
+        config.num_heads,
+        config.depth,
+        OptionalReg[UInt](64),
+        OptionalReg[UInt](config.num_keys_per_block),
+        OptionalReg[UInt](config.BK),
+    ) if decoding else config
+    alias BM = new_config.block_m()
+    alias BK = new_config.block_k()
     constrained[
         BM % 64 == 0,
         "SM90 requires BM%64==0, but BM==",
@@ -139,153 +201,233 @@ fn mha_sm90_dispatch[
         "H100 requires BK=64 as it uses 128B swizzles, but BK==",
         String(BK),
     ]()
-    alias BN = config.block_n()
+    alias BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
-    alias smem_use = config.shared_mem_bytes[False, sm_90=True]()
+    alias smem_use = new_config.shared_mem_bytes[False, sm_90=True]()
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-    alias num_threads = config.num_threads[True]()
+    alias num_threads = new_config.num_threads[True]()
     constrained[num_threads % 128 == 0]()
 
-    alias num_heads = config.num_heads // group if decoding else config.num_heads
     alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
-    constrained[config.algorithm == FlashAttentionAlgorithm(3)]()
+    constrained[new_config.algorithm == FlashAttentionAlgorithm(3)]()
+
+    var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
+    var batch_size: UInt32 = UInt32(batch_size_arg)
+    var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
+    var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
+
+    alias num_scheduler_heads = config.num_heads // group if decoding else config.num_heads
 
     @parameter
     if persistent == 0:
-        alias scheduler_t = TransientScheduler[BM, num_heads]
+        alias scheduler_t = TransientScheduler[BM, num_scheduler_heads]
         alias kernel_sm90 = _mha_sm90[
-            config.type,
+            new_config.type,
             k_t,
             v_t,
             output.type,
             mask_t,
             score_mod_t,
             scheduler_t,
-            config,
+            new_config,
             group=group,
             use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding=decoding,
+            max_seq_len_t=max_prompt_len_t,
         ]
         var scheduler: scheduler_t = scheduler_t()
-        ctx.enqueue_function[kernel_sm90](
-            q.data,
-            k,
-            v,
-            output.data,
-            scale,
-            batch_size,
-            max_prompt_len,
-            max_cache_valid_length,
-            valid_length,
-            kv_input_row_offsets,
-            mask_functor,
-            score_mod_functor,
-            scheduler,
-            grid_dim=scheduler_t.grid_dim(
-                batch_size, ceildiv(max_prompt_len, BM)
-            ),
-            block_dim=(Int(num_threads), 1, 1),
-            shared_mem_bytes=Int(smem_use),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
-            ),
-        )
+
+        @parameter
+        if max_prompt_len_t.static_value:
+            ctx.enqueue_function[kernel_sm90](
+                q.data,
+                k,
+                v,
+                output.data,
+                scale,
+                batch_size,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                mask_functor,
+                score_mod_functor,
+                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
+                block_dim=(Int(num_threads), 1, 1),
+                shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
+            )
+        else:
+            ctx.enqueue_function[kernel_sm90](
+                q.data,
+                k,
+                v,
+                output.data,
+                scale,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                mask_functor,
+                score_mod_functor,
+                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
+                block_dim=(Int(num_threads), 1, 1),
+                shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
+            )
     elif persistent == 2:
-        alias scheduler_t = TileScheduler[BM, num_heads]
+        alias scheduler_t = TileScheduler[BM, num_scheduler_heads]
         alias kernel_sm90 = _mha_sm90[
-            config.type,
+            new_config.type,
             k_t,
             v_t,
             output.type,
             mask_t,
             score_mod_t,
             scheduler_t,
-            config,
+            new_config,
             group=group,
             use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding=decoding,
+            max_seq_len_t=max_prompt_len_t,
         ]
         var scheduler: scheduler_t = scheduler_t()
-        ctx.enqueue_function[kernel_sm90,](
-            q.data,
-            k,
-            v,
-            output.data,
-            scale,
-            batch_size,
-            max_prompt_len,
-            max_cache_valid_length,
-            valid_length,
-            kv_input_row_offsets,
-            mask_functor,
-            score_mod_functor,
-            scheduler,
-            grid_dim=scheduler_t.grid_dim(
-                batch_size, ceildiv(max_prompt_len, BM)
-            ),
-            block_dim=(Int(num_threads), 1, 1),
-            shared_mem_bytes=Int(smem_use),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
-            ),
-        )
+
+        @parameter
+        if max_prompt_len_t.static_value:
+            ctx.enqueue_function[kernel_sm90](
+                q.data,
+                k,
+                v,
+                output.data,
+                scale,
+                batch_size,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                mask_functor,
+                score_mod_functor,
+                scheduler,
+                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
+                block_dim=(Int(num_threads), 1, 1),
+                shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
+            )
+        else:
+            ctx.enqueue_function[kernel_sm90](
+                q.data,
+                k,
+                v,
+                output.data,
+                scale,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                mask_functor,
+                score_mod_functor,
+                scheduler,
+                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
+                block_dim=(Int(num_threads), 1, 1),
+                shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
+            )
     else:
-        alias scheduler_t = QueuedTileScheduler[BM, num_heads]
+        alias scheduler_t = QueuedTileScheduler[
+            BM, num_scheduler_heads, decoding=decoding
+        ]
         alias kernel_sm90 = _mha_sm90[
-            config.type,
+            new_config.type,
             k_t,
             v_t,
             output.type,
             mask_t,
             score_mod_t,
             scheduler_t,
-            config,
+            new_config,
             group=group,
             use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding=decoding,
+            max_seq_len_t=max_prompt_len_t,
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
             UInt32(H100.sm_count)
         )
         ctx.synchronize()
         var scheduler: scheduler_t = scheduler_t(schedule.unsafe_ptr())
-        ctx.enqueue_function[kernel_sm90](
-            rebind[scheduler_t](scheduler),
-            q.data,
-            k,
-            v,
-            output.data,
-            rebind[Float32](scale),
-            UInt32(batch_size),
-            UInt32(max_prompt_len),
-            UInt32(max_cache_valid_length),
-            rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](valid_length),
-            rebind[OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]](
-                kv_input_row_offsets
-            ),
-            rebind[mask_t](mask_functor),
-            rebind[score_mod_t](score_mod_functor),
-            grid_dim=scheduler_t.grid_dim(
-                batch_size, ceildiv(max_prompt_len, BM)
-            ),
-            block_dim=(Int(num_threads), 1, 1),
-            shared_mem_bytes=Int(smem_use),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_use
-            ),
-        )
+
+        @parameter
+        if max_prompt_len_t.static_value:
+            ctx.enqueue_function[kernel_sm90](
+                rebind[scheduler_t](scheduler),
+                q.data,
+                k,
+                v,
+                output.data,
+                rebind[Float32](scale),
+                batch_size,
+                max_cache_valid_length,
+                rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                    valid_length
+                ),
+                rebind[
+                    OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+                ](kv_input_row_offsets),
+                rebind[mask_t](mask_functor),
+                rebind[score_mod_t](score_mod_functor),
+                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
+                block_dim=(Int(num_threads), 1, 1),
+                shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
+            )
+        else:
+            ctx.enqueue_function[kernel_sm90](
+                rebind[scheduler_t](scheduler),
+                q.data,
+                k,
+                v,
+                output.data,
+                rebind[Float32](scale),
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                    valid_length
+                ),
+                rebind[
+                    OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+                ](kv_input_row_offsets),
+                rebind[mask_t](mask_functor),
+                rebind[score_mod_t](score_mod_functor),
+                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
+                block_dim=(Int(num_threads), 1, 1),
+                shared_mem_bytes=Int(smem_use),
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_use
+                ),
+            )
         _ = schedule
 
 
 @value
 @register_passable("trivial")
-struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
+struct MHAPosition[
+    BM: Int, BN: Int, depth: Int, num_heads: Int, group: Int, decoding: Bool
+]:
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == num_heads`.
@@ -293,16 +435,16 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
     """
 
     var q_out_offset: Int
-    var seq_len: UInt32
     var num_keys: UInt32
     var start_pos: UInt32
-    var prompt_offset: UInt32
+    var seq_len: UInt32
     var head_idx: UInt32
+    var prompt_offset: UInt32
     var prompt_idx: UInt32
 
+    alias q_stride: Int = Self.depth if decoding else Self.depth * Self.num_heads
     alias q_output_gmem_layout = Layout(
-        IntTuple(Int(Self.BM), Int(Self.depth)),
-        IntTuple(Int(Self.q_head_stride * Self.depth), 1),
+        IntTuple(Self.BM, Self.depth), IntTuple(Self.q_stride, 1)
     )
 
     @always_inline
@@ -314,12 +456,28 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
         seq_info: SeqInfo,
     ):
         self.q_out_offset = q_out_offset
-        self.seq_len = seq_info.seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos
-        self.prompt_offset = seq_info.prompt_offset
+        self.seq_len = seq_info.seq_len
         self.head_idx = seq_info.head_idx
+        self.prompt_offset = seq_info.prompt_offset
         self.prompt_idx = seq_info.prompt_idx  # batch idx
+
+    @always_inline
+    fn q_head_idx(self) -> UInt32:
+        @parameter
+        if Self.decoding:
+            return self.head_idx * Self.group
+        else:
+            return self.head_idx
+
+    @always_inline
+    fn kv_head_idx(self) -> UInt32:
+        @parameter
+        if Self.decoding:
+            return self.head_idx
+        else:
+            return self.head_idx // Self.group
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -343,7 +501,11 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
 
     @always_inline
     fn q_tile_num_rows(self) -> UInt32:
-        return min(BM, self.seq_len - self.prompt_offset)
+        @parameter
+        if decoding:
+            return Self.group
+        else:
+            return min(BM, self.seq_len - self.prompt_offset)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -374,9 +536,7 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
                 __type_of(gmem_block.runtime_layout.shape)(
                     Int(self.q_tile_num_rows()), depth
                 ),
-                __type_of(gmem_block.runtime_layout.stride)(
-                    q_head_stride * depth, 1
-                ),
+                __type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
             ),
         )
 
@@ -384,33 +544,45 @@ struct MHAPosition[BM: Int, BN: Int, depth: Int, q_head_stride: Int]:
     fn mask_status[
         mask_t: MHAMask
     ](self, mask: mask_t, kv_tile_start_row: UInt32) -> TileMaskStatus:
-        return mask.status(
-            Index[dtype = DType.int32](
-                Int(self.prompt_offset + self.start_pos),
-                Int(kv_tile_start_row),
-            ),
-            Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
-        )
+        @parameter
+        if decoding:
+            return TileMaskStatus.PARTIAL_MASK
+        else:
+            return mask.status(
+                Index[dtype = DType.int32](
+                    Int(self.prompt_offset + self.start_pos),
+                    Int(kv_tile_start_row),
+                ),
+                Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+            )
 
 
 @always_inline
 fn _get_position[
-    k_t: MHAOperand, //,
+    k_t: MHAOperand,
+    max_seq_len_t: OptionallyStaticInt, //,
     config: MHAConfig,
-    ragged: Bool = False,
-    _is_cache_length_accurate: Bool = False,
+    group: Int,
+    ragged: Bool,
+    _is_cache_length_accurate: Bool,
 ](
+    out ret: MHAPosition[
+        config.block_m(),
+        config.block_n(),
+        config.depth,
+        config.num_heads,
+        group,
+        _is_decoding[max_seq_len_t](),
+    ],
     seq_info: SeqInfo,
     k: k_t,
-    max_seq_len: UInt32,
+    max_seq_len: max_seq_len_t,
     num_keys_arg: UInt32,
     valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
-) -> MHAPosition[
-    config.block_m(), config.block_n(), config.depth, config.num_heads
-]:
+):
     alias depth = config.depth
     alias num_heads = config.num_heads
 
@@ -419,7 +591,7 @@ fn _get_position[
     var seq_len: UInt32 = seq_info.seq_len
     var num_keys: UInt32
     var start_pos: UInt32
-    var q_batch_offset: Int
+    var q_offset: Int
 
     @parameter
     if ragged:
@@ -440,10 +612,8 @@ fn _get_position[
             cur_kv_len = kv_seq_end - kv_seq_start
             num_keys = cur_kv_len + cache_len
         else:
-            num_keys = Int(seq_len) + cache_len
-        q_batch_offset = Int(seq_info.start_of_seq) * Int(
-            config.depth * config.num_heads
-        )
+            num_keys = seq_len + cache_len
+        q_offset = Int(seq_info.start_of_seq) * Int(num_heads)
 
     # NDBuffer inputs, homogeneous batching.
     else:
@@ -452,14 +622,20 @@ fn _get_position[
         # When cache length (num_keys) is greater, we assume it has
         # prefix preceding the input seq_len.
         start_pos = num_keys - seq_len
-        q_batch_offset = Int(depth * num_heads * batch_idx) * Int(max_seq_len)
+        q_offset = Int(num_heads * batch_idx) * Int(max_seq_len)
 
-    q_out_offset = q_batch_offset + Int(depth) * (
-        Int(seq_info.head_idx) + Int(seq_info.prompt_offset) * Int(num_heads)
-    )
-    return MHAPosition[config.block_m(), config.block_n(), depth, num_heads](
-        q_out_offset,
-        Int(num_keys),
+    var kv_head_idx: UInt32
+
+    @parameter
+    if max_seq_len_t.static_value.or_else(0) == 1:
+        q_offset += Int(seq_info.head_idx) * group
+    else:  # head_idx is for q_heads
+        q_offset += Int(seq_info.head_idx) + Int(seq_info.prompt_offset) * Int(
+            num_heads
+        )
+    ret = __type_of(ret)(
+        Int(depth) * q_offset,
+        num_keys,
         start_pos,
         seq_info,
     )
@@ -487,10 +663,11 @@ fn _produce[
     BM: Int,
     BN: Int,
     depth: Int,
-    num_heads: Int, //,
+    num_heads: Int,
+    group: Int,
+    decoding: Bool, //,
     kv_num_heads: Int,
     BK: Int,
-    group: Int,
     kv_gmem_layout: Layout,
     num_k_iters: Int,
     *,
@@ -500,7 +677,7 @@ fn _produce[
     write_idx: UInt32,
     write_phase: UInt32,
     kv_tile_start_row: UInt32,
-    position: MHAPosition[BM, BN, depth, num_heads],
+    position: MHAPosition[BM, BN, depth, num_heads, group, decoding],
     consumed_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -556,7 +733,7 @@ fn _produce[
             kv.block_paged_ptr[BN](
                 position.prompt_idx,
                 Int(kv_tile_start_row),
-                Int(position.head_idx // group),
+                Int(position.kv_head_idx()),
                 0,
             ),
             kv_runtime_layout,
@@ -599,6 +776,12 @@ fn _produce[
 
 @always_inline
 fn _apply_mask[
+    BM: Int,
+    BN: Int,
+    depth: Int,
+    num_heads: Int,
+    group: Int,
+    decoding: Bool,
     accum_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -606,22 +789,18 @@ fn _apply_mask[
     # last_iter: Bool,
     MMA_M: Int,
     MMA_N: Int,
-    BM: Int,
-    BN: Int,
     num_m_mmas: Int,
     num_n_mmas: Int,
     p_frag_simdwidth: Int,
     use_score_mod: Bool,
 ](
-    mask_warp_row: UInt32,
-    mask_warp_col: UInt32,
-    start_pos: UInt32,
+    mask_warp_row_arg: UInt32,
+    mask_warp_col_arg: UInt32,
+    position: MHAPosition[BM, BN, depth, num_heads, group, decoding],
     lane: UInt32,
-    num_keys: UInt32,
-    seq_len: UInt32,
     max_seq_len: UInt32,
-    mask_block_row: UInt32,
     scale_log2e: Scalar[accum_type],
+    kv_tile_start_row: UInt32,
     mask: mask_t,
     mask_status: TileMaskStatus,
     score_mod: score_mod_t,
@@ -632,8 +811,26 @@ fn _apply_mask[
         address_space = AddressSpace.LOCAL,
     ],
 ):
+    alias num_groups_per_thread = min(2, ceildiv(group, 8)) if decoding else 2
+    var batch_cache_valid_length: UInt32
+
+    @parameter
+    if decoding:
+        if warp.broadcast((thread_idx.x - 128) // 32) > ((group - 1) // 16):
+            return
+        if lane >= 4 * group:
+            return
+        batch_cache_valid_length = position.num_keys - 1
+    else:
+        batch_cache_valid_length = 0
+
     # Vectorize by 2.
     p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
+    var fragment_row: UInt32 = lane // 4
+    var fragment_col: UInt32 = (lane * p_frag_simdwidth % MMA_N) % 8
+    # Offset to current thread's fragment
+    var mask_warp_row: UInt32 = mask_warp_row_arg + fragment_row
+    var mask_warp_col: UInt32 = mask_warp_col_arg + kv_tile_start_row + fragment_col
 
     @parameter
     @always_inline
@@ -647,72 +844,114 @@ fn _apply_mask[
                 # Coordinates in mask for current mma tile.
                 mask_frag_row = mask_warp_row + m_mma * MMA_M
                 mask_frag_col = mask_warp_col + n_mma * MMA_N
-                # Offset to current thread's fragment
-                mask_frag_row += lane // 4
-                mask_frag_col += (lane * p_frag_simdwidth % MMA_N) % 8
 
                 @parameter
-                for i in range(2):
+                for i in range(num_groups_per_thread):
+                    var q_head_idx: UInt32 = position.head_idx
+
+                    @parameter
+                    if decoding:
+                        group_idx = i * 8 + fragment_row
+                        q_head_idx = group * q_head_idx + group_idx
                     # The row in score matrix of shape seq_len x num_keys.
                     # Mask col is score col since we don't partition in col.
-                    score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
-                    score_row_with_start_pos = score_row + start_pos
+                    var score_row: UInt32
+                    var score_row_with_start_pos: UInt32
+
+                    @parameter
+                    if decoding:
+                        score_row = batch_cache_valid_length
+                        score_row_with_start_pos = score_row
+                    else:
+                        score_row = (
+                            position.prompt_offset
+                            + mask_frag_row
+                            + i * MMA_M // 2
+                        )
+                        score_row_with_start_pos = (
+                            score_row + position.start_pos
+                        )
 
                     @parameter
                     for j in range(MMA_N // 8):
                         score_col = mask_frag_col + j * 8
+                        alias p_reg_col = i + j * 2
 
                         @parameter
                         if masked:
-                            p_reg_vec2[mma_id, i + j * 2] = mask.mask(
+                            p_reg_vec2[mma_id, p_reg_col] = mask.mask(
                                 IndexList[4, element_type = DType.uint32](
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
+                                    Int(position.prompt_idx),
+                                    Int(q_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
-                                p_reg_vec2[mma_id, i + j * 2] * scale_log2e,
+                                p_reg_vec2[mma_id, p_reg_col] * scale_log2e,
                             )
                         else:
-                            p_reg_vec2[mma_id, i + j * 2] = (
-                                p_reg_vec2[mma_id, i + j * 2] * scale_log2e
+                            p_reg_vec2[mma_id, p_reg_col] = (
+                                p_reg_vec2[mma_id, p_reg_col] * scale_log2e
                             )
 
                         @parameter
                         if use_score_mod:
-                            p_reg_vec2[mma_id, i + j * 2] = (
+                            p_reg_vec2[mma_id, p_reg_col] = (
                                 score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32,](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
+                                    IndexList[4, element_type = DType.uint32](
+                                        Int(position.prompt_idx),
+                                        Int(q_head_idx),
                                         Int(score_row_with_start_pos),
                                         Int(score_col),
                                     ),
-                                    p_reg_vec2[mma_id, i + j * 2],
+                                    p_reg_vec2[mma_id, p_reg_col],
                                     Int(max_seq_len),
                                 )
                                 * log2e
                             )
                         elif mask_t.apply_log2e_after_mask:
-                            p_reg_vec2[mma_id, i + j * 2] = (
-                                p_reg_vec2[mma_id, i + j * 2] * log2e
+                            p_reg_vec2[mma_id, p_reg_col] = (
+                                p_reg_vec2[mma_id, p_reg_col] * log2e
                             )
 
                         @parameter
                         if masked:
-                            # if last_iter:
-                            p_reg_vec2[mma_id, i + j * 2] = _kernel_mask(
+                            var bound: IndexList[2, element_type = DType.uint32]
+
+                            @parameter
+                            if decoding:
+                                bound = IndexList[
+                                    2, element_type = DType.uint32
+                                ](
+                                    Int(position.num_keys),
+                                    Int(
+                                        min(
+                                            BN + kv_tile_start_row,
+                                            position.num_keys,
+                                        )
+                                    ),
+                                )
+                            else:
+                                bound = IndexList[
+                                    2, element_type = DType.uint32
+                                ](
+                                    Int(position.seq_len),
+                                    Int(position.num_keys),
+                                )
+                            p_reg_vec2[mma_id, p_reg_col] = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
-                                IndexList[2, element_type = DType.uint32](
-                                    Int(seq_len),
-                                    Int(num_keys),
-                                ),
-                                p_reg_vec2[mma_id, i + j * 2],
+                                bound,
+                                p_reg_vec2[mma_id, p_reg_col],
                             )
 
-    unswitch[_apply_mask_capture](mask_status == TileMaskStatus.PARTIAL_MASK)
+    @parameter
+    if decoding:
+        _apply_mask_capture[True]()
+    else:
+        unswitch[_apply_mask_capture](
+            mask_status == TileMaskStatus.PARTIAL_MASK
+        )
 
 
 @__llvm_metadata(
@@ -733,7 +972,7 @@ fn _mha_sm90[
     use_score_mod: Bool,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
-    decoding: Bool,
+    max_seq_len_t: OptionallyStaticInt,
 ](
     scheduler: scheduler_t,
     q_ptr_arg: UnsafePointer[Scalar[q_type]],
@@ -742,7 +981,7 @@ fn _mha_sm90[
     output_ptr_arg: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: UInt32,
-    max_seq_len: UInt32,  # sequence length after padding.
+    max_seq_len: max_seq_len_t,  # sequence length after padding.
     num_keys_arg: UInt32,
     valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     kv_input_row_offsets: OptionalReg[
@@ -765,6 +1004,7 @@ fn _mha_sm90[
     alias k_type = k_t.type
     alias v_type = v_t.type
     constrained[q_type == k_type and k_type == v_type]()
+    alias decoding: Bool = _is_decoding[max_seq_len_t]()
 
     alias simd_size = simdwidthof[q_type]()
 
@@ -996,21 +1236,24 @@ fn _mha_sm90[
 
     alias USE_TMA = False
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    # alias num_producer_regs = 56 if num_consumer == 1 else (
-    #     (24 if USE_TMA else 40) if num_consumer == 2 else 32
-    # )
-    # alias num_consumer_regs = 256 if num_consumer == 1 else (
-    #     (240 if USE_TMA else 232) if num_consumer == 2 else 160
-    # )
-    alias num_producer_regs = 56
-    alias num_consumer_regs = 224
+    alias num_producer_regs = 56 if num_consumer == 1 else (
+        (24 if USE_TMA else 56) if num_consumer == 2 else 32
+    )
+    alias num_consumer_regs = 256 if num_consumer == 1 else (
+        (240 if USE_TMA else 224) if num_consumer == 2 else 160
+    )
+    # alias num_producer_regs = 56
+    # alias num_consumer_regs = 224
 
     alias num_k_iters_0 = Int(depth // BK)
     alias num_k_iters_1 = Int(BN // BK)
 
-    # constructing calls barrier()
+    # constructing calls barrier() if static
     var tile_summary = MHATileSummary(
-        batch_size, ceildiv(max_seq_len, BM), valid_length, max_seq_len
+        batch_size,
+        ceildiv(max_seq_len.as_uint32(), BM),
+        valid_length,
+        max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
         block_idx_ptr, tile_summary
@@ -1032,17 +1275,19 @@ fn _mha_sm90[
 
     initial_seq_info = scheduler.unsafe_seq_info[ragged](tile_summary, state)
 
-    if not initial_seq_info.is_valid():
+    @parameter
+    if not decoding:
+        if not initial_seq_info.is_valid():
 
-        @parameter
-        if scheduler_t.may_advance:
-            seq_info = advance[True, MHASchedulerSynchronization.ALL](1)
-            if seq_info:
-                initial_seq_info = seq_info.value()
+            @parameter
+            if scheduler_t.may_advance:
+                seq_info = advance[True, MHASchedulerSynchronization.ALL](1)
+                if seq_info:
+                    initial_seq_info = seq_info.value()
+                else:
+                    return
             else:
                 return
-        else:
-            return
 
     if tid == 0:
 
@@ -1062,12 +1307,12 @@ fn _mha_sm90[
                 produced_mbar_q[i].init(128)
                 consumed_mbar_q[i].init(num_consumer_threads)
 
-    alias position_t = MHAPosition[BM, BN, depth, num_heads]
+    alias position_t = MHAPosition[BM, BN, depth, num_heads, group, decoding]
 
     @parameter
     @always_inline
     fn get_position(seq_info: SeqInfo) -> position_t:
-        return _get_position[config, ragged, _is_cache_length_accurate](
+        return _get_position[config, group, ragged, _is_cache_length_accurate](
             seq_info,
             k,
             max_seq_len,
@@ -1119,8 +1364,6 @@ fn _mha_sm90[
             IntTuple(Int(kv_num_heads * depth), 1),
         )
 
-        alias produce_group = 1 if decoding else group
-
         @parameter
         @always_inline("nodebug")
         fn produce_k[
@@ -1134,7 +1377,6 @@ fn _mha_sm90[
             _produce[
                 kv_num_heads,
                 BK,
-                produce_group,
                 kv_gmem_layout,
                 num_k_iters_0,
                 axis=1,
@@ -1161,7 +1403,6 @@ fn _mha_sm90[
             _produce[
                 kv_num_heads,
                 BK,
-                produce_group,
                 kv_gmem_layout,
                 num_k_iters_1,
                 axis=0,
@@ -1401,12 +1642,12 @@ fn _mha_sm90[
             position: position_t,
             mask_status: TileMaskStatus,
             mask_warp_col: UInt32,
+            kv_tile_start_row: UInt32,
         ):
+            var max_len: UInt32 = num_keys_arg if decoding else max_seq_len.as_uint32()
             _apply_mask[
                 MMA_M,
                 MMA_N,
-                BM,
-                BN,
                 num_m_mmas,
                 num_n_mmas,
                 p_frag_simdwidth,
@@ -1414,13 +1655,11 @@ fn _mha_sm90[
             ](
                 mask_warp_row,
                 mask_warp_col,
-                position.start_pos,
+                position,
                 lane,
-                position.num_keys,
-                position.seq_len,
-                max_seq_len,
-                position.prompt_offset,
+                max_len,
                 scale_log2e,
+                kv_tile_start_row,
                 mask,
                 mask_status,
                 score_mod,
@@ -1544,9 +1783,7 @@ fn _mha_sm90[
         wait_for_q_mul_k[0](pipeline_stages - 1)
         # few_keys = num_keys <= BN
 
-        apply_mask(
-            position, mask_status, mask_warp_col_base + kv_tile_start_row
-        )
+        apply_mask(position, mask_status, mask_warp_col_base, kv_tile_start_row)
         rowmax.copy_from(
             _rowmax_online_softmax[
                 # threads layout by warp
@@ -1602,7 +1839,8 @@ fn _mha_sm90[
                 apply_mask(
                     position,
                     mask_status,
-                    mask_warp_col_base + kv_tile_start_row,
+                    mask_warp_col_base,
+                    kv_tile_start_row,
                 )
                 new_q = (
                     scheduler_t.may_advance

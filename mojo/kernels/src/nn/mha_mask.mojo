@@ -74,7 +74,15 @@ trait MHAMask:
     """
 
     alias apply_log2e_after_mask: Bool
+    """
+    Does the mask require `log2e` to be applied after the mask, or
+    can it be fused with the scaling?
+    """
     alias mask_out_of_bound: Bool
+    alias mask_safe_out_of_bounds: Bool
+    """
+    Is the mask safe to read out of bounds?
+    """
 
     fn mask[
         type: DType, width: Int, //, *, element_type: DType = DType.uint32
@@ -118,6 +126,7 @@ struct CausalMask(MHAMask):
 
     alias apply_log2e_after_mask: Bool = False
     alias mask_out_of_bound: Bool = is_nvidia_gpu()
+    alias mask_safe_out_of_bounds: Bool = True
 
     @always_inline
     fn mask[
@@ -199,6 +208,7 @@ struct NullMask(MHAMask):
 
     alias apply_log2e_after_mask: Bool = False
     alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = True
 
     @always_inline
     fn mask[
@@ -252,6 +262,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
 
     alias apply_log2e_after_mask: Bool = False
     alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = True
 
     @always_inline
     fn mask[
@@ -357,6 +368,7 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask):
 
     alias apply_log2e_after_mask: Bool = False
     alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = True
 
     @always_inline
     fn mask[
@@ -455,6 +467,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
 
     alias apply_log2e_after_mask: Bool = True
     alias mask_out_of_bound: Bool = True
+    alias mask_safe_out_of_bounds: Bool = False
 
     alias MaskType = NDBuffer[type_, rank_, MutableAnyOrigin, shape_]
     var mask_tensor: Self.MaskType
@@ -555,6 +568,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
     alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
+    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
 
     @always_inline
     fn mask[
@@ -602,6 +616,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
     alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
+    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
 
     @always_inline
     fn mask[
