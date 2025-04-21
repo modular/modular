@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-kgen-to-llvm -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
 
@@ -28,6 +28,12 @@ kgen.func @complex_empty_types(
   %a2: !pop.array<0, struct<(index)>>,
   %a3: !kgen.struct<(index)>) {
     kgen.return
+}
+
+// CHECK-LABEL: llvm.func internal @has_ptr
+// CHECK-SAME: (%arg0: !llvm.ptr {llvm.nonnull, llvm.noundef}, %arg1: !llvm.struct<(i64, i64)> {llvm.noundef})
+kgen.func @has_ptr(%arg0: !kgen.none, %arg1: !kgen.pointer<none> read_mem, %arg3: !kgen.struct<(index,index)>) {
+  kgen.return
 }
 
 }
