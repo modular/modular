@@ -1158,253 +1158,51 @@ fn wgmma_async[
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
 
-    @parameter
-    if a_type is DType.tensor_float32:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`tf32`,
-            type_b = __mlir_attr.`tf32`,
-            type_c = __mlir_attr.`f32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = __type_of(c_reg.value),
-        ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.bfloat16:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`bf16`,
-            type_b = __mlir_attr.`bf16`,
-            type_c = __mlir_attr.`f32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = __type_of(c_reg.value),
-        ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float16:
-        if c_dtype is DType.uint32:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f16`,
-                type_b = __mlir_attr.`f16`,
-                type_c = __mlir_attr.`f16`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
+    fn dtype_to_nvvm_type[
+        out_type: DType, in_type: DType = out_type
+    ]() -> __mlir_type.`!kgen.deferred`:
+        @parameter
+        if out_type is DType.tensor_float32:
+            return __mlir_attr.`tf32`
+        elif out_type is DType.float32:
+            return __mlir_attr.`f32`
+        elif out_type is DType.bfloat16:
+            return __mlir_attr.`bf16`
+        elif out_type is DType.float16 or out_type is DType.uint32:
+            # Special case when input types are integers, the result has to be integer too.
+            if in_type != out_type and in_type.is_integral():
+                return __mlir_attr.`si32`
+            return __mlir_attr.`f16`
+        elif out_type is DType.float8_e4m3fn:
+            return __mlir_attr.`f8E4M3`
+        elif out_type is DType.float8_e5m2:
+            return __mlir_attr.`f8E5M2`
+        elif out_type is DType.int8:
+            return __mlir_attr.`si8`
+        elif out_type is DType.uint8:
+            return __mlir_attr.`ui8`
+        elif out_type is DType.uint32:
+            return __mlir_attr.`si32`
         else:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f16`,
-                type_b = __mlir_attr.`f16`,
-                type_c = __mlir_attr.`f32`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e4m3fn:
-        if c_dtype is DType.uint32:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E4M3FN`,
-                type_b = __mlir_attr.`f8E4M3FN`,
-                type_c = __mlir_attr.`f16`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-        else:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E4M3FN`,
-                type_b = __mlir_attr.`f8E4M3FN`,
-                type_c = __mlir_attr.`f32`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e5m2 and b_type is DType.float8_e5m2:
-        if c_dtype is DType.uint32:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E5M2`,
-                type_b = __mlir_attr.`f8E5M2`,
-                type_c = __mlir_attr.`f16`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-        else:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E5M2`,
-                type_b = __mlir_attr.`f8E5M2`,
-                type_c = __mlir_attr.`f32`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e5m2:
-        if c_dtype is DType.uint32:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E4M3FN`,
-                type_b = __mlir_attr.`f8E5M2`,
-                type_c = __mlir_attr.`f16`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-        else:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E4M3FN`,
-                type_b = __mlir_attr.`f8E5M2`,
-                type_c = __mlir_attr.`f32`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.float8_e5m2 and b_type is DType.float8_e4m3fn:
-        if c_dtype is DType.uint32:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E5M2`,
-                type_b = __mlir_attr.`f8E4M3FN`,
-                type_c = __mlir_attr.`f16`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-        else:
-            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-                shape_m = m.value,
-                shape_n = n.value,
-                shape_k = k.value,
-                type_a = __mlir_attr.`f8E5M2`,
-                type_b = __mlir_attr.`f8E4M3FN`,
-                type_c = __mlir_attr.`f32`,
-                layout_a=layout_a_value,
-                layout_b=layout_b_value,
-                scale_d = scale_d.value,
-                scale_a = scale_a.value,
-                scale_b = scale_b.value,
-                _type = __type_of(c_reg.value),
-            ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.int8 and b_type is DType.int8:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`si8`,
-            type_b = __mlir_attr.`si8`,
-            type_c = __mlir_attr.`si32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = __type_of(c_reg.value),
-        ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.uint8 and b_type is DType.uint8:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`ui8`,
-            type_b = __mlir_attr.`ui8`,
-            type_c = __mlir_attr.`si32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = __type_of(c_reg.value),
-        ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.int8 and b_type is DType.uint8:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`si8`,
-            type_b = __mlir_attr.`ui8`,
-            type_c = __mlir_attr.`si32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = __type_of(c_reg.value),
-        ](desc_a_value, desc_b_value, c_reg.value)
-    elif a_type is DType.uint8 and b_type is DType.int8:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`ui8`,
-            type_b = __mlir_attr.`si8`,
-            type_c = __mlir_attr.`si32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = __type_of(c_reg.value),
-        ](desc_a_value, desc_b_value, c_reg.value)
-    return c_reg
+            constrained[
+                False, "Unsupported dtype '" + String(out_type) + "'."
+            ]()
+            return __mlir_attr.`f32`
+
+    return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+        shape_m = m.value,
+        shape_n = n.value,
+        shape_k = k.value,
+        type_a = dtype_to_nvvm_type[a_type](),
+        type_b = dtype_to_nvvm_type[b_type](),
+        type_c = dtype_to_nvvm_type[c_dtype, a_type](),
+        layout_a=layout_a_value,
+        layout_b=layout_b_value,
+        scale_d = scale_d.value,
+        scale_a = scale_a.value,
+        scale_b = scale_b.value,
+        _type = __type_of(c_reg.value),
+    ](desc_a_value, desc_b_value, c_reg.value)
 
 
 @always_inline
