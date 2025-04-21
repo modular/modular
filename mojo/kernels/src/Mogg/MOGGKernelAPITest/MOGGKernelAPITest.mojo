@@ -331,6 +331,10 @@ struct PrintTensor:
 @compiler.view_kernel
 struct PrintTensorSpecViewOp:
     @staticmethod
+    fn update_input_view(input: InputTensor) -> __type_of(input):
+        return input
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -618,6 +622,24 @@ struct Transpose2DOp:
         return DimList(input_strides.at[1](), input_strides.at[0]())
 
     @staticmethod
+    fn update_input_view[
+        type: DType, //, output_static_shape: DimList
+    ](
+        input: InputTensor[type=type, rank=2],
+        out result: InputTensor[
+            static_spec = input.static_spec.with_layout[2](
+                output_static_shape,
+                Self.get_view_strides(input._static_strides),
+            )
+        ],
+    ):
+        var shape_and_strides = Self.build_view(input)
+
+        return __type_of(result)(
+            input.unsafe_ptr(), shape_and_strides[0], shape_and_strides[1]
+        )
+
+    @staticmethod
     fn execute[
         target: StaticString,
         _synchronous: Bool,
@@ -627,13 +649,7 @@ struct Transpose2DOp:
         x: InputTensor[type=type, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        alias view_strides = Self.get_view_strides(x._static_strides)
-        var shape_and_strides = Self.build_view(x)
-
-        var x_view = x.with_layout[
-            new_static_shape = z._static_shape,
-            new_static_strides=view_strides,
-        ](shape_and_strides[0], shape_and_strides[1])
+        var x_view = Self.update_input_view[z._static_shape](x)
 
         view_copy_impl[target=target, _synchronous=_synchronous](z, x_view, ctx)
 
