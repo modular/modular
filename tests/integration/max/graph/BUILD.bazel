@@ -65,6 +65,5 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
-        requirement("pytest-xdist"),
     ],
 )

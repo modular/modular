@@ -15,7 +15,6 @@ modular_py_test(
         requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("pytest-xdist"),
         requirement("safetensors"),
         requirement("torch"),
     ],
