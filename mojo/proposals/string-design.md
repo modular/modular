@@ -133,10 +133,26 @@ copy of string literals.  See below for more details.
 
 TOWRITE.
 
-### Other design topics
+## Other design topics
 
 This section contains implementation details about the `String` type that may be
 non-obvious.
+
+### References to constant strings
+
+As mentioned in the "indirect" representation section, the pointer of an an
+indirect string may refer to static constant data when the
+`FLAG_IS_STATIC_CONSTANT` bit is set.  This optimization is important because
+string literals are very common, and we don't want users to have to worry about
+use of `String` vs `StaticString` for optimization purposes: most APIs should
+just take `String` for consistency and generality.
+
+In addition to setting the bit to know whether the pointer is to a constant
+string, it is important to know that the `String` type also sets its notion of
+"capacity" to zero.  This ensures that any attempt to append or access will
+immediately reallocate without extra checks.  This is a minor optimization and
+simplification of code, but it means that static constant strings will have
+`capacity=0` but have `length=n` where `n > 0`.
 
 ### Mutable String Views
 
