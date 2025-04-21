@@ -132,7 +132,13 @@ def _promote_to_strong(
         )
 
     elif isinstance(value, (np.ndarray)):
-        if DType.from_numpy(value.dtype).is_float():
+        # In numpy 2.0, booleans compare as signed, which causes issues when doing
+        # comparisons such as `np.array(False) < 2**64-1`, it will fail since it
+        # treats the right value as signed, which fails to cast to a C long.
+        # So we just cast to an unsigned type to make sure we can always do a comparison.
+        if value.dtype == np.bool_:
+            value = value.astype(np.uint8)
+        elif DType.from_numpy(value.dtype).is_float():
             if strong_dtype.is_float():
                 return ops.constant(value, strong_dtype, device)
             else:
