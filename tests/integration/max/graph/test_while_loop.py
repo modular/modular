@@ -10,16 +10,18 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, BufferValue, DeviceRef, Graph, TensorType, ops
+
+device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
 def test_while_loop(session: InferenceSession):
     with Graph(
         "while_loop",
-        input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
+        input_types=[TensorType(DType.int32, [], device=device_ref)],
     ) as graph:
         x = graph.inputs[0]
 
@@ -40,7 +42,7 @@ def test_while_loop(session: InferenceSession):
 def test_while_loop_lambda(session: InferenceSession):
     with Graph(
         "while_loop_lambda",
-        input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
+        input_types=[TensorType(DType.int32, [], device=device_ref)],
     ) as graph:
         x = graph.inputs[0]
         results = ops.while_loop(x, lambda x: x < 10, lambda x: x + 1)
@@ -55,8 +57,8 @@ def test_while_loop_body_with_multiple_args(session: InferenceSession):
     with Graph(
         "while_loop_lambda_with_multiple_args",
         input_types=[
-            TensorType(DType.int32, [], device=DeviceRef.CPU()),
-            TensorType(DType.int32, [], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [], device=device_ref),
+            TensorType(DType.int32, [], device=device_ref),
         ],
     ) as graph:
         x, y = graph.inputs

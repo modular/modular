@@ -7,8 +7,11 @@
 import numpy as np
 import pytest
 import torch
+from max.driver import accelerator_count
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
+
+device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
 @pytest.mark.parametrize(
@@ -23,7 +26,7 @@ def test_repeat_interleave(
         "repeat_interleave",
         input_types=[],
     ) as graph:
-        x = ops.constant(np.array(input), DType.int64)
+        x = ops.constant(np.array(input), DType.int64).to(device_ref)
 
         output = ops.repeat_interleave(x, repeats)
         graph.output(output)

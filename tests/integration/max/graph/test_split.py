@@ -6,6 +6,7 @@
 
 import numpy as np
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import Graph, Shape, TensorType, ops
 
@@ -30,7 +31,7 @@ def test_split(session, input_shape: Shape, split_sizes: list[int], axis: int):
         graph.output(*output)
 
     model = session.load(graph)
-    result = model.execute(input)
+    result = model.execute(Tensor.from_numpy(input).to(model.input_devices[0]))
     np_split_indices = []
     end_index = 0
     for n in split_sizes[:-1]:

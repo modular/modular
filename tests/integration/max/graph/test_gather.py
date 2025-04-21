@@ -6,6 +6,7 @@
 
 import numpy as np
 import torch
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType
 from max.graph.ops import gather
@@ -34,7 +35,10 @@ def test_gather(session):
     # Test 1: Valid gather and indices.
     index = torch.Tensor([[0], [1], [2], [1], [1]]).to(torch.int64)
 
-    actual = model(inputs, index)[0].to_numpy()
+    actual = model(
+        Tensor.from_dlpack(inputs).to(model.input_devices[0]),
+        Tensor.from_dlpack(index).to(model.input_devices[1]),
+    )[0].to_numpy()
     expected = torch.take_along_dim(inputs, index, dim=0).numpy()
     np.testing.assert_equal(actual.reshape(5, 2), expected)
 
@@ -45,4 +49,7 @@ def test_gather(session):
     # TODO(GEX-1808): Uncomment the following line when calling the model raises
     # an error.
     # with pytest.raises(RuntimeError):
-    actual = model(inputs, index)[0].to_numpy()
+    actual = model(
+        Tensor.from_dlpack(inputs).to(model.input_devices[0]),
+        Tensor.from_dlpack(index).to(model.input_devices[1]),
+    )[0].to_numpy()

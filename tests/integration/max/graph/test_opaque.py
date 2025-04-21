@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, _OpaqueType, ops
@@ -85,10 +86,10 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
 def test_opaque_simple(
     maker_model: Model, bumper_model: Model, reader_model: Model
 ) -> None:
-    counter = maker_model.execute_legacy()["output0"]
+    counter = maker_model.execute()[0]
     for i in range(5):
-        bumper_model.execute_legacy(input0=counter)
-    result = reader_model.execute_legacy(input0=counter)["output0"]
+        bumper_model.execute(counter)
+    result = reader_model.execute(counter)[0].to_numpy()
 
     assert (result == [5, 15]).all()
 
@@ -107,10 +108,13 @@ class PythonCounter:
         return PythonCounter(self.a, self.b)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2135): test requires execute_legacy, which does not support GPU.",
+)
 def test_pyobject_opaque(
     session: InferenceSession, counter_ops_path: Path
 ) -> None:
-    session = InferenceSession()
     python_type = _OpaqueType("PythonObject")
 
     bumper_graph = Graph(

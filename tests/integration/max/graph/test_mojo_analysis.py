@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from max import mlir
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, Graph, TensorType, _OpaqueType, ops
@@ -341,6 +342,10 @@ def test_tensor_kernel_raises_valid(
     session.load(graph)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
+)
 def test_mutable_input_tensor_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:

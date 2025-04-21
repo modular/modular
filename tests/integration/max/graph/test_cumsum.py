@@ -9,6 +9,7 @@ import platform
 import numpy as np
 import pytest
 import torch
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 
@@ -29,11 +30,13 @@ def test_cumsum(session, dtype):
     torch_dtype = torch.float32 if dtype == DType.float32 else torch.bfloat16
     input_data = torch.full((1024,), 1.1, dtype=torch_dtype)
 
-    max_result = model(input_data)[0]
+    max_result = model(
+        Tensor.from_dlpack(input_data).to(model.input_devices[0])
+    )[0]
     max_result = max_result.to_numpy()
 
     torch_result = (
-        torch.cumsum(input_data, dim=0).to(dtype=torch.float32).numpy()
+        torch.cumsum(input_data, dim=0).to(dtype=torch.float32).cpu().numpy()
     )
 
     np.testing.assert_allclose(

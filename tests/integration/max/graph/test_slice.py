@@ -8,6 +8,7 @@ import operator
 
 import numpy as np
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, StaticDim, TensorType
@@ -81,7 +82,9 @@ def test_slice_numpy(
     )
 
     # Run the slice graph.
-    sliced = model.execute(input_array)[0].to_numpy()
+    sliced = model.execute(
+        Tensor.from_numpy(input_array).to(model.input_devices[0])
+    )[0].to_numpy()
 
     # Verify that the max.graph slicing matches NumPy.
     expected = input_array[indices]

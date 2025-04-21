@@ -6,13 +6,17 @@
 
 import numpy as np
 import pytest
+from max.driver import accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import Graph, SymbolicDim, TensorType, ops
 from max.graph.quantization import QuantizationEncoding
 
 
-def test_qmatmul():
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="Quantization only supported on cpu currently",
+)
+def test_qmatmul(session):
     graph = Graph(
         "qmatmul",
         input_types=[
@@ -27,22 +31,25 @@ def test_qmatmul():
             ops.qmatmul(QuantizationEncoding.Q4_0, None, *graph.inputs)
         )
 
-    session = InferenceSession()
     compiled = session.load(graph)
     # This is a pretty bad test -- the inputs and outputs here are all zeroes.
     # But it's better than nothing -- at least we don't crash.  Also qmatmul
     # does not validate its tensor shapes all (except that the second input's
     # first dimension is a multiple of 32) so even if this were wrong we would
     # not be able to tell.
-    generated = compiled.execute_legacy(
-        input0=np.zeros((5, 32), dtype="float32"),
-        input1=np.zeros((32, 18), dtype="uint8"),
-    )
+    generated = compiled.execute(
+        np.zeros((5, 32), dtype="float32"),
+        np.zeros((32, 18), dtype="uint8"),
+    )[0]
     expected = np.zeros((5, 32))
-    np.testing.assert_equal(generated["output0"], expected)
+    np.testing.assert_equal(generated.to_numpy(), expected)
 
 
-def test_dequantize():
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="Quantization only supported on cpu currently",
+)
+def test_dequantize(session):
     graph = Graph(
         "dequantize",
         input_types=[TensorType(DType.uint8, (1, 18))],
@@ -52,15 +59,18 @@ def test_dequantize():
     with graph:
         graph.output(ops.dequantize(QuantizationEncoding.Q4_0, *graph.inputs))
 
-    session = InferenceSession()
     compiled = session.load(graph)
     # TODO: This is more of a smoke test than anything; we should really add a
     # test that uses some non-zero inputs and outputs (MSDK-820).
-    generated = compiled.execute_legacy(input0=np.zeros((1, 18), dtype="uint8"))
+    generated = compiled.execute(np.zeros((1, 18), dtype="uint8"))[0]
     expected = np.zeros((1, 32))
-    np.testing.assert_equal(generated["output0"], expected)
+    np.testing.assert_equal(generated.to_numpy(), expected)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="Quantization only supported on cpu currently",
+)
 def test_dequantize_nondivisible_error():
     graph = Graph(
         "dequantize",
@@ -78,6 +88,10 @@ def test_dequantize_nondivisible_error():
             ops.dequantize(QuantizationEncoding.Q4_0, *graph.inputs)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="Quantization only supported on cpu currently",
+)
 def test_dequantize_nonstatic_last_dim_error():
     graph = Graph(
         "dequantize",

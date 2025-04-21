@@ -41,6 +41,7 @@ modular_py_test(
     },
     # TODO(MAXPLAT-103): Inherit transitive mojo deps
     mojo_deps = [
+        "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
         "//PyTorch/test/utils/custom_ops",
         "//Kernels/mojo/buffer",
@@ -51,7 +52,10 @@ modular_py_test(
         "//SDK/lib/API/mojo/max/tensor",
         "//open-source/max/mojo/stdlib/stdlib",
     ],
-    tags = ["no-mypy"],  # TODO: fix and remove
+    tags = [
+        "gpu",
+        "no-mypy",  # TODO: fix and remove
+    ],
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max",

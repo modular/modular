@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 
@@ -77,11 +78,14 @@ class StandardInputAndIndexTensors:
         return TensorType(dtype, self.output_tensor_shape())
 
     def input_tensor(self, dtype=torch.float32) -> torch.Tensor:
-        return (
+        x = (
             torch.arange(math.prod(self.input_tensor_shape))
             .reshape(self.input_tensor_shape)
             .type(dtype)
         )
+        if accelerator_count() > 0:
+            return x.cuda()
+        return x
 
     def index_tensors(self, dtype=torch.int32) -> list[torch.Tensor]:
         # Make the indices slightly different for variety
@@ -93,15 +97,20 @@ class StandardInputAndIndexTensors:
         ]
         for i in range(self.num_indexing_tensors):
             result[i] = (result[i] + i) % INPUT_DIM_LENGTH
+        if accelerator_count() > 0:
+            result = [x.cuda() for x in result]
         return result
 
     def update_tensor(self, dtype=torch.float32) -> torch.Tensor:
-        return (
+        x = (
             torch.arange(np.prod(self.output_tensor_shape()))
             .reshape(self.output_tensor_shape())
             .type(dtype)
             * -1000
         )
+        if accelerator_count() > 0:
+            return x.cuda()
+        return x
 
 
 @pytest.mark.parametrize("start_axis", [0, 2])
@@ -152,13 +161,17 @@ def test_advanced_indexing_get_item(
     torch_slice = [slice(None, None, None)] * RANK
     for i in range(num_indexing_tensors):
         torch_slice[i + start_axis] = index_tensors[i]
-    expected = input_tensor[*torch_slice].numpy()
+    expected = input_tensor[*torch_slice].cpu().numpy()
 
     graph_inputs = [input_tensor] + index_tensors
     actual = model(*graph_inputs)[0].to_numpy()
     np.testing.assert_equal(actual, expected)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2132): Some combinations lead to `CUDA call failed: CUDA_ERROR_MISALIGNED_ADDRESS (misaligned address)`",
+)
 @pytest.mark.parametrize("start_axis", [0, 2])
 @pytest.mark.parametrize("num_indexing_tensors", [1, 3])
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
@@ -208,13 +221,17 @@ def test_advanced_indexing_set_item(
     # PT does it in-place unfortunately, so make a copy
     expected = input_tensor.clone()
     expected[*torch_slice] = update_tensor
-    expected = expected.numpy()
+    expected = expected.cpu().numpy()
 
     graph_inputs = [input_tensor, update_tensor] + index_tensors
     actual = model(*graph_inputs)[0].to_numpy()
     np.testing.assert_equal(actual, expected)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2132): Compilation fails in elaboration",
+)
 @pytest.mark.parametrize("start_axis", [0, 2])
 @pytest.mark.parametrize("num_indexing_tensors", [1, 3])
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
@@ -264,9 +281,9 @@ def test_advanced_indexing_set_item_inplace(
     # PT does it in-place unfortunately, so make a copy
     expected = input_tensor.clone()
     expected[*torch_slice] = update_tensor
-    expected = expected.numpy()
+    expected = expected.cpu().numpy()
 
     # This modifies input_tensor in-place
     graph_inputs = [input_tensor, update_tensor] + index_tensors
     model(*graph_inputs)
-    np.testing.assert_equal(input_tensor, expected)
+    np.testing.assert_equal(input_tensor.cpu().numpy(), expected)

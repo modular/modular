@@ -6,6 +6,7 @@
 
 
 import numpy as np
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue
 
@@ -19,7 +20,9 @@ def test_shape_to_tensor_static(session):
     compiled = session.load(graph)
 
     x = np.ones((2, 4)).astype(np.float32)
-    output = compiled.execute(x)
+    output = compiled.execute(
+        Tensor.from_numpy(x).to(compiled.input_devices[0])
+    )
 
     np.testing.assert_equal(output[0].to_numpy(), np.array([2, 4]))
 
@@ -33,7 +36,9 @@ def test_shape_to_tensor_dynamic(session):
     compiled = session.load(graph)
 
     x = np.ones((7, 3)).astype(np.float32)
-    output = compiled.execute(x)
+    output = compiled.execute(
+        Tensor.from_numpy(x).to(compiled.input_devices[0])
+    )
 
     np.testing.assert_equal(output[0].to_numpy(), np.array([7, 3]))
 
@@ -47,7 +52,9 @@ def test_shape_to_tensor_solo_dim(session):
     compiled = session.load(graph)
 
     x = np.ones((7, 3)).astype(np.float32)
-    output = compiled.execute(x)
+    output = compiled.execute(
+        Tensor.from_numpy(x).to(compiled.input_devices[0])
+    )
 
     # Output is only a scalar
     assert output[0].shape == ()

@@ -9,10 +9,12 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
+
+device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
 @pytest.mark.parametrize(
@@ -29,11 +31,15 @@ def test_top_k_execution(
     session: InferenceSession, input_shape: tuple[int, ...], k: int, axis: int
 ) -> None:
     """Tests end-to-end top_k lowering and execution against torch.topk."""
+
+    if accelerator_count() > 0 and axis != -1:
+        pytest.skip("Only -1 axis supported on GPU")
+
     graph = Graph(
         "top_k_test",
         forward=lambda x: ops.top_k(x, k=k, axis=axis),
         input_types=[
-            TensorType(DType.float32, shape=input_shape, device=DeviceRef.CPU())
+            TensorType(DType.float32, shape=input_shape, device=device_ref)
         ],
     )
 
@@ -45,7 +51,9 @@ def test_top_k_execution(
     torch_input = torch.from_numpy(np_input)
 
     # Execute MAX model.
-    max_values, max_indices = model.execute(np_input)
+    max_values, max_indices = model.execute(
+        Tensor.from_numpy(np_input).to(model.input_devices[0])
+    )
 
     # Get torch reference results.
     torch_values, torch_indices = torch.topk(
@@ -85,7 +93,7 @@ def test_top_k_invalid_k(session: InferenceSession) -> None:
         input_types=[
             # Circumvent static checks with a symbolic dim to make sure the
             # runtime checks fire.
-            TensorType(DType.float32, shape=("dim",), device=DeviceRef.CPU())
+            TensorType(DType.float32, shape=("dim",), device=device_ref)
         ],
     )
 
@@ -96,4 +104,8 @@ def test_top_k_invalid_k(session: InferenceSession) -> None:
         ValueError,
         match=r"k value exceeds dimension size along specified axis",
     ):
-        model.execute(np.ones(input_shape, dtype=np.float32))
+        model.execute(
+            Tensor.from_numpy(np.ones(input_shape, dtype=np.float32)).to(
+                model.input_devices[0]
+            )
+        )

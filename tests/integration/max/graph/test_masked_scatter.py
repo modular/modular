@@ -7,6 +7,7 @@
 
 import numpy as np
 import pytest
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
@@ -15,6 +16,9 @@ from max.graph import Graph, ops
 # For masked scatter specifically, I am adding execution tests. Generally, we
 # avoid execution tests in the graph api except for models. masked_scatter is a
 # complex enough aggregate op, that it feels required to actually run.
+@pytest.mark.skipif(
+    accelerator_count() > 0, reason="TODO(GEX-2133): Bad results on gpu"
+)
 @pytest.mark.parametrize(
     "input,mask,updates,expected",
     [

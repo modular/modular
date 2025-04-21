@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -93,6 +93,10 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
     return graph
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2137): Crashing on gpu",
+)
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store(n, buffer_graph: Graph, session: InferenceSession):
     with buffer_graph as graph:
@@ -103,12 +107,18 @@ def test_load_mutate_store(n, buffer_graph: Graph, session: InferenceSession):
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)
-    input = zeros(input_buffer.shape, input_buffer.dtype)
-    expected = torch_add_n(torch.from_numpy(input), n)
+    input = Tensor.from_numpy(zeros(input_buffer.shape, input_buffer.dtype)).to(
+        compiled.input_devices[0]
+    )
+    expected = torch_add_n(torch.from_dlpack(input), n)
     compiled.execute(input)
-    assert np.allclose(input, expected)
+    assert np.allclose(input.to_numpy(), expected.cpu().numpy())
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2137): Crashing on gpu",
+)
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store_ellipsis(
     n, buffer_graph: Graph, session: InferenceSession
@@ -119,12 +129,18 @@ def test_load_mutate_store_ellipsis(
         graph.output()
         graph._mlir_op.verify()
         compiled = session.load(graph)
-    input = zeros(input_buffer.shape, input_buffer.dtype)
-    expected = torch_add_n(torch.from_numpy(input), n)
+    input = Tensor.from_numpy(zeros(input_buffer.shape, input_buffer.dtype)).to(
+        compiled.input_devices[0]
+    )
+    expected = torch_add_n(torch.from_dlpack(input), n)
     compiled.execute(input)
-    assert np.allclose(input, expected)
+    assert np.allclose(input.to_numpy(), expected.cpu().numpy())
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2137): Crashing on gpu",
+)
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_store_slice_load_slice(
     n, buffer_tensor_graph: Graph, session: InferenceSession
@@ -141,18 +157,26 @@ def test_store_slice_load_slice(
         graph.output()
 
         compiled_model = session.load(graph)
-    input_tensor = ones(tensor.shape, tensor.dtype) + n
-    input_buffer = zeros(buffer.shape, buffer.dtype) + n
+    input_tensor = Tensor.from_numpy(ones(tensor.shape, tensor.dtype) + n).to(
+        compiled_model.input_devices[0]
+    )
+    input_buffer = Tensor.from_numpy(zeros(buffer.shape, buffer.dtype) + n).to(
+        compiled_model.input_devices[1]
+    )
     compiled_model.execute(input_tensor, input_buffer)
 
     expected = zeros(buffer.shape, buffer.dtype) + n
     expected[: input_tensor.shape[0], : input_tensor.shape[1]] = (
-        torch_multiply(torch.from_numpy(input_tensor))
+        torch_multiply(torch.from_dlpack(input_tensor).cpu())
         + expected[: input_tensor.shape[0], : input_tensor.shape[1]]
     )
-    assert np.allclose(input_buffer, expected)
+    assert np.allclose(input_buffer.to_numpy(), expected)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
+)
 def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
     bt = BufferType(DType.float32, [2, 2])
 
@@ -168,23 +192,29 @@ def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
 
         graph.output()
 
-    rawbuffer = np.ones((2, 2), dtype=np.float32)
+    rawbuffer = torch.ones((2, 2), dtype=torch.float32)
+    if accelerator_count() > 0:
+        rawbuffer = rawbuffer.cuda()
 
     model = session.load(graph)
     model.execute(Tensor.from_dlpack(rawbuffer))
 
     actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
 
-    np.testing.assert_equal(rawbuffer, actual)
+    np.testing.assert_equal(rawbuffer.cpu().numpy(), actual)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0,
+    reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
+)
 def test_variadic_buffer_handling(
     custom_ops_path: Path, session: InferenceSession
 ) -> None:
     """Test custom op with variadic buffer inputs."""
 
     # Build, compile, and execute.
-    output = session.load(
+    model = session.load(
         Graph(
             "variadic_buffer_test",
             forward=lambda x, y: ops.inplace_custom(
@@ -198,7 +228,14 @@ def test_variadic_buffer_handling(
             ],
             custom_extensions=[custom_ops_path],
         ),
-    ).execute(np.arange(2, dtype=np.float32), np.arange(2, dtype=np.float32))[0]
+    )
+    in1 = Tensor.from_numpy(np.arange(2, dtype=np.float32)).to(
+        model.input_devices[0]
+    )
+    in2 = Tensor.from_numpy(np.arange(2, dtype=np.float32)).to(
+        model.input_devices[1]
+    )
+    output = model.execute(in1, in2)[0]
     assert isinstance(output, Tensor)
 
 

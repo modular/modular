@@ -10,7 +10,7 @@ import platform
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import Tensor, accelerator_count
 from max.driver.tensor import load_max_tensor
 from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType
@@ -57,7 +57,9 @@ def test_debug_print_options(session, tmp_path):
 def test_debug_print_compact(compiled_model, session, capfd):
     session.set_debug_print_options("COMPACT")
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
+        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+            compiled_model.input_devices[0]
+        )
     )
     captured = capfd.readouterr()
     assert (
@@ -69,7 +71,9 @@ def test_debug_print_compact(compiled_model, session, capfd):
 def test_debug_print_buffer(compiled_buffer_model, session, capfd):
     session.set_debug_print_options("COMPACT")
     _ = compiled_buffer_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
+        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+            compiled_buffer_model.input_devices[0]
+        )
     )
     captured = capfd.readouterr()
     assert (
@@ -81,7 +85,9 @@ def test_debug_print_buffer(compiled_buffer_model, session, capfd):
 def test_debug_print_full(compiled_model, session, capfd):
     session.set_debug_print_options("FULL", 2)
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
+        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+            compiled_model.input_devices[0]
+        )
     )
     captured = capfd.readouterr()
     assert (
@@ -93,7 +99,9 @@ def test_debug_print_full(compiled_model, session, capfd):
 
     session.set_debug_print_options("FULL", 6)
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
+        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+            compiled_model.input_devices[0]
+        )
     )
     captured = capfd.readouterr()
     assert (
@@ -108,7 +116,9 @@ def test_debug_print_full(compiled_model, session, capfd):
 def test_debug_print_none(compiled_model, session, capfd):
     session.set_debug_print_options("NONE")
     _ = compiled_model.execute(
-        Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
+        Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
+            compiled_model.input_devices[0]
+        )
     )
     captured = capfd.readouterr()
     assert "test_x_value" not in captured.out
@@ -117,7 +127,9 @@ def test_debug_print_none(compiled_model, session, capfd):
 def test_debug_print_binary(compiled_model, session, capfd, tmp_path):
     session.set_debug_print_options("BINARY", output_directory=tmp_path)
     input = np.full([20], 1.1234567, np.float32)
-    _ = compiled_model.execute(Tensor.from_numpy(input))
+    _ = compiled_model.execute(
+        Tensor.from_numpy(input).to(compiled_model.input_devices[0])
+    )
     captured = capfd.readouterr()
     assert "test_x_value" not in captured.out
     assert (tmp_path / "test_x_value").exists()
@@ -130,7 +142,9 @@ def test_debug_print_binary_max(compiled_model, session, capfd, tmp_path):
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
     )
     input = np.random.uniform(size=[15]).astype(np.float32)
-    _ = compiled_model.execute(Tensor.from_numpy(input))
+    _ = compiled_model.execute(
+        Tensor.from_numpy(input).to(compiled_model.input_devices[0])
+    )
     captured = capfd.readouterr()
     assert "test_x_value" not in captured.out
 
@@ -160,7 +174,7 @@ def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
     for i in range(dim):
         input[i] = np.random.uniform()
 
-    _ = compiled_model.execute(input)
+    _ = compiled_model.execute(input.to(compiled_model.input_devices[0]))
     captured = capfd.readouterr()
     assert "test_x_value" not in captured.out
 
@@ -209,7 +223,7 @@ def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
     session.set_debug_print_options(
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
     )
-    _ = compiled_model.execute(input)
+    _ = compiled_model.execute(input.to(compiled_model.input_devices[0]))
 
     # Verify saved file.
     max_path = tmp_path / "test_x_value.max"
@@ -243,10 +257,11 @@ def test_save_load_all_dtypes(session, tmp_path, dtype):
     if dtype.is_half() and platform.machine() in ["arm64", "aarch64"]:
         pytest.skip("half-precision types not supported on ARM")
 
-    if (
-        dtype.is_float8() or dtype == DType.float16
-    ) and not torch.cuda.is_available():
-        pytest.skip("FP8 requires CUDA support")
+    if dtype == DType.float16 and accelerator_count() == 0:
+        pytest.skip("F16 type is not supported on cpu")
+
+    if dtype.is_float8():
+        pytest.skip("F8 types are not supported by dlpack")
 
     # Create test graph.
     def print_input(x):
@@ -282,7 +297,7 @@ def test_save_load_all_dtypes(session, tmp_path, dtype):
     session.set_debug_print_options(
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
     )
-    _ = compiled_model.execute(input_tensor)
+    _ = compiled_model.execute(input_tensor.to(compiled_model.input_devices[0]))
 
     max_path = tmp_path / "test_x_value.max"
     loaded_tensor = load_max_tensor(max_path)
