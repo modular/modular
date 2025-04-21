@@ -434,6 +434,13 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
     rewriter.applySignatureConversion(&func.getBody().front(), sigConverter);
   }
 
+  // Recreate the args attr
+  auto argsAttr = func.getArgAttrsAttr();
+  SmallVector<Attribute> newEntries;
+  for (auto i : nonEmptyArgIdx)
+    newEntries.push_back(argsAttr[i]);
+  func.setArgAttrsAttr(ArrayAttr::get(func.getContext(), newEntries));
+
   // Update funcOp type.
   rewriter.modifyOpInPlace(func, [&]() {
     func.setType(LLVM::LLVMFunctionType::get(
