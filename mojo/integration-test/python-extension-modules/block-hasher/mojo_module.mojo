@@ -6,64 +6,34 @@
 
 from os import abort
 
-import builtin
 from memory import UnsafePointer
 from python import Python, PythonObject, TypedPythonObject, PythonModule
-from python._bindings import (
-    check_argument_type,
-    check_arguments_arity,
-    py_c_function_wrapper,
-    python_type_object,
-)
-from builtin._pybind import check_and_get_or_convert_arg
-from python._cpython import PyMethodDef, PyObjectPtr
+from python._bindings import py_c_function_wrapper
+from python._cpython import PyObjectPtr
 from sys import sizeof
-import time
 
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
-    # ----------------------------------
-    # Create a Python module
-    # ----------------------------------
-
-    # This will initialize the Python interpreter and create
-    # an extension module with the provided name.
-    var module: PythonModule
-
+    """Create a Python module with function bindings for
+    `mojo_block_hasher_return_list` and `mojo_block_hasher_inplace`.
+    """
     try:
-        module = PythonModule("bindings")
-    except:
-        return abort[PythonObject]("failed to create Python module")
-
-    # ----------------------------------
-    # Populate the Python module
-    # ----------------------------------
-
-    # Create a function for the `mojo_block_hasher_with_list_output` below with the right bound args
-    # set fn ptr + name and attach to the module above
-    var funcs = List[PyMethodDef](
-        PyMethodDef.function[
-            py_c_function_wrapper[mojo_block_hasher_return_list],
-            "mojo_block_hasher_return_list",
-            docstring="Computes block hashes for a numpy array containing tokens",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[mojo_block_hasher_inplace],
-            "mojo_block_hasher_inplace",
-            docstring="Computes block hashes for a numpy array containing tokens",
-        ](),
-    )
-
-    try:
-        Python.add_functions(module, funcs)
+        return (
+            PythonModule("mojo_module")
+            .def_py_c_function[
+                py_c_function_wrapper[mojo_block_hasher_return_list],
+                "mojo_block_hasher_return_list",
+                docstring="Computes block hashes for a numpy array containing tokens",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[mojo_block_hasher_inplace],
+                "mojo_block_hasher_inplace",
+                docstring="Computes block hashes for a numpy array containing tokens",
+            ]()
+        )
     except e:
-        abort("Error adding functions to PyModule: ", e)
-
-    # end up with a PythonModule with list of functions set on the module
-    # (name,args,calling conv,etc.)
-
-    return module
+        return abort[PythonObject]("failed to create Python module: ", e)
 
 
 @value

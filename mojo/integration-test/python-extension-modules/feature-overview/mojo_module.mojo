@@ -5,15 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys import exit
-from sys.ffi import c_int
-from sys.info import sizeof
 
-import builtin
 from builtin._pybind import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
-    check_argument_type,
     check_arguments_arity,
 )
 from memory import UnsafePointer
@@ -23,7 +18,7 @@ from python._bindings import (
     py_c_function_wrapper,
     python_type_object,
 )
-from python._cpython import PyMethodDef, PyObject, PyObjectPtr, PyTypeObject
+from python._cpython import PyMethodDef, PyObjectPtr, PyTypeObject
 
 
 @export
@@ -37,49 +32,39 @@ fn PyInit_mojo_module() -> PythonObject:
     var module: PythonModule
 
     try:
-        module = PythonModule("bindings")
+        module = (
+            PythonModule("mojo_module")
+            .def_py_c_function[
+                py_c_function_wrapper[case_return_arg_tuple],
+                "case_return_arg_tuple",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[case_raise_empty_error],
+                "case_raise_empty_error",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[case_raise_string_error],
+                "case_raise_string_error",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[case_mojo_raise],
+                "case_mojo_raise",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[incr_int__wrapper],
+                "incr_int",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[add_to_int__wrapper],
+                "add_to_int",
+            ]()
+            .def_py_c_function[
+                py_c_function_wrapper[create_string__wrapper],
+                "create_string",
+            ]()
+        )
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
-
-    # ----------------------------------
-    # Populate the Python module
-    # ----------------------------------
-
-    var funcs = List[PyMethodDef](
-        PyMethodDef.function[
-            py_c_function_wrapper[case_return_arg_tuple],
-            "case_return_arg_tuple",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[case_raise_empty_error],
-            "case_raise_empty_error",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[case_raise_string_error],
-            "case_raise_string_error",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[case_mojo_raise],
-            "case_mojo_raise",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[incr_int__wrapper],
-            "incr_int",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[add_to_int__wrapper],
-            "add_to_int",
-        ](),
-        PyMethodDef.function[
-            py_c_function_wrapper[create_string__wrapper],
-            "create_string",
-        ](),
-    )
-
-    try:
-        Python.add_functions(module, funcs)
-    except e:
-        abort("Error adding functions to PyModule: ", e)
 
     add_person_type(module)
     add_int_type(module)
