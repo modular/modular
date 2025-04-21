@@ -49,7 +49,7 @@ fn test_mlir2():
   # expected-note @below {{attempting to parse: '#index<cmp_predicate xeq>'}}
   __mlir_attr.`#index<cmp_predicate xeq>`
 
-  # expected-error @below {{MLIR attribute is not a TypedAttr: #index<cmp_predicate eq>}}
+  # expected-warning @below {{'!kgen.deferred' value is unused}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
   # expected-error @below {{expected name in attribute reference}}

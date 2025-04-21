@@ -1323,4 +1323,35 @@ def KGEN_MemSymbolTripleAttr : KGENAttr<"MemSymbolTriple", "mem_symbol_triple"> 
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// DeferredAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_DeferredAttr : KGENAttr<"Deferred", "deferred", [
+    TypedAttrInterface]> {
+  let summary = "A wrapper for non-typed attribute";
+  let description = [{
+    The `#kgen.deferred` attribute holds a non-typed attribute to allow it
+    to be created later.
+
+    Example:
+
+    ```mlir
+    #kgen.deferred #index<cmp_predicate sle>> : !kgen.deferred
+    ```
+  }];
+
+  let parameters = (ins "Attribute":$attr);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "Attribute":$attr), [{
+      return $_get(attr.getContext(), attr);
+    }]>
+  ];
+  let assemblyFormat = "$attr";
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+  let genVerifyDecl = 1;  // Generate getChecked/verify.
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

@@ -2016,9 +2016,9 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
     kgen.generator @closure_types(%arg0 : index,
        %foo: !kgen.pointer<struct<(index,index)>>) {
       %3 = kgen.closure.init(%foo[@copy, @move, @del])(%arg1: index) -> index {
-	      %0 = kgen.struct.gep %foo[0] : !kgen.pointer<struct<(index,index)>>
-	      %1 = pop.load %0 : !kgen.pointer<index>
-	      kgen.return %1 : index
+      %0 = kgen.struct.gep %foo[0] : !kgen.pointer<struct<(index,index)>>
+      %1 = pop.load %0 : !kgen.pointer<index>
+      kgen.return %1 : index
       } : (!kgen.pointer<struct<(index,index)>>),
           <!kgen.closure<@closure_types, "name" escaping>>
 
@@ -2047,6 +2047,47 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// DeferredOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_DeferredOp: KGENOp<"deferred"> {
+  let summary = "Wraps an operations that will be constructed later";
+  let description = [{
+    The `kgen.deferred` is used to encapsulate operation that does have at least
+    one !kgen.deferred typed attribute. That is, when operation cannot be
+    constructed by the parser as it has non-typed attributes that require
+    elaboration.
+    It's expected that elaborator will replace `kgen.deferred` with the
+    operation and attributes it holds.
+
+    Example:
+
+    ```mlir
+    kgen.deferred "index.cmp"(%a, %b : !Int, !Int) {
+      %pred = #kgen<deferred #index<cmp_predicate sle>> : !kgen.deferred } : i1
+
+    kgen.deferred "index.cmp"(%a, %b : !Int, !Int) {
+      pred = #kgen.param.expr<apply,
+       #kgen.bind_params<:!lit.generator<<"cmp": !Bool>()
+         -> !kgen.deferred> *"select_pred[::Bool]()", cmp> :
+          !kgen.generator<!lit.generator<()
+            -> !kgen.deferred>>> : !kgen.deferred} : i1
+    ```
+  }];
+
+  let arguments = (ins
+    Variadic<AnyType>:$operands,
+    StrAttr:$opName,
+    DictionaryAttr:$opAttrs
+  );
+
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = [{
+    $opName (`(` $operands^ `:` type($operands) `)`)? $opAttrs attr-dict `:` type($results)
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENOPS_TD

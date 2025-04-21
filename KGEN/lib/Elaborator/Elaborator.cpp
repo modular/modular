@@ -30,6 +30,7 @@
 #include "mlir/Dialect/LLVMIR/ROCDLDialect.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/StringExtras.h"
@@ -411,6 +412,8 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
       continue;
     defOps.insert(it->second.defOp);
   }
+
+  scope->walk([&](DeferredOp op) { opsToRewrite.push_back(op); });
   llvm::append_range(opsToRewrite, defOps.getArrayRef());
 }
 
@@ -1350,10 +1353,23 @@ ElaborationState Elaborator::processScope(ImplNode *node,
     return std::to_string(item.ops.size()) + " ops";
   });
 
+  DenseSet<Operation *> visited;
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
   while (!item.ops.empty()) {
     Operation *op = item.ops.back();
+    if (visited.contains(op)) {
+      item.ops.pop_back();
+      continue;
+    }
+    if (isa<DeferredOp>(op)) {
+      // `ParameterUseDefGraph` and `collectOpsToProcess` can add same operation
+      // twice into that working list, which may result deferred operation will
+      // be processed twice.
+      // Since deferred operation cannot be skipped, visiting it second time is
+      // not needed.
+      visited.insert(op);
+    }
     ElaborationState result = processOp(node, op);
     if (result.isError() || result.shouldSkipFrame() || result.shouldSkipNode())
       return result;
@@ -1385,6 +1401,8 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     return processCallOp(node, call);
   if (auto compileOffload = dyn_cast<CompileOffloadOp>(op))
     return bundleOffloadModules(node, compileOffload);
+  if (auto deferred = dyn_cast<DeferredOp>(op))
+    return processDeferredOp(node, deferred);
 
   // Delay elaboration of the DILocalVariableAttr until when locations are
   // elaborated.
@@ -1725,6 +1743,66 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
       walker.walk(attr);
   });
 
+  return ElaborationState::advance();
+}
+
+//===----------------------------------------------------------------------===//
+// processDeferredOp
+//===----------------------------------------------------------------------===//
+
+ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
+  Location loc = op.getLoc();
+  Attribute dict;
+  HANDLE_EVALUATOR_CONC(dict, inode, loc, op.getOpAttrs());
+  assert(isa<DictionaryAttr>(dict) && "expected dictionary attribute");
+
+  OperationState state(loc, op.getOpName(), op.getOperands(),
+                       op.getResultTypes());
+
+  for (auto &attr : cast<DictionaryAttr>(dict))
+    state.addAttribute(attr.getName(), attr.getValue());
+
+  OpBuilder b(op);
+  Operation *resultOp = b.create(state);
+
+  // It's essential to elaborate result types are they're not going to be
+  // elaborated later.
+  for (auto [i, resultType] : llvm::enumerate(op->getResultTypes())) {
+    Type type;
+    HANDLE_EVALUATOR_CONC(type, inode, loc, resultType);
+    resultOp->getResult(i).setType(type);
+  }
+
+  // At this poitn remove all deferred attrbutes by replacing them with their
+  // content.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([](DeferredAttr attr) { return attr.getAttr(); });
+  replacer.replaceElementsIn(resultOp, /*replaceAttrs=*/true,
+                             /*replaceLocs=*/false, /*replaceTypes=*/false);
+
+  std::string errorMessage;
+  mlir::ScopedDiagnosticHandler handler(
+      op.getContext(), [&](Diagnostic &diag) { errorMessage = diag.str(); });
+  // Verify that the resulting op is correctly constructed. If not, we fail.
+  if (failed(mlir::verify(resultOp))) {
+    inode->setToError(
+        ErrorTree(loc, "MLIR verification error: " + errorMessage));
+    return failure();
+  }
+
+  DenseSet<StringAttr> inherentAttrs;
+  inherentAttrs.insert_range(resultOp->getName().getAttributeNames());
+  for (NamedAttribute &attr : state.attributes) {
+    if (!inherentAttrs.contains(attr.getName())) {
+      inode->setToError(ErrorTree(loc, "unexpected attribute '" +
+                                           Twine(attr.getName().getValue()) +
+                                           "' on operation"));
+      return failure();
+    }
+  }
+
+  op.replaceAllUsesWith(resultOp);
+  op->erase();
   return ElaborationState::advance();
 }
 

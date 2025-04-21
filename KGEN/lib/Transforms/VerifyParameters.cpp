@@ -91,7 +91,9 @@ static void propagateTrivialParameters(Region *region,
       // (interpret calls) if its type is not parametric. If the type is
       // parametric, we risk creating unequal types across function calls if
       // there are dependent parameters.
-      TypedAttr value = evaluator.getReboundAttribute(declare.getValue());
+      TypedAttr value = declare.getValue();
+      if (!isa<DeferredAttr>(value))
+        value = evaluator.getReboundAttribute(value);
 
       // The type of the parameter may change. Try to rebind it.
       auto decl = cast<ParamDeclAttr>(
