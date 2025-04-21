@@ -117,8 +117,12 @@ a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
 # CHECK: (String) s1 = "var_string"
 # CHECK: (String) s2 = "012345678910111213141
 # CHECK: (String) s3 = ""
+# CHECK: (String) s4 = "012345678910"
 var s1 = String("var_string")
 var s2 = String()
+var s4 = String()
 for i in range(0, 100):
-    s2 += str(i)
+    s2 += String(i)
+    if i < 11:
+        s4 += String(i)
 var s3 = String()
