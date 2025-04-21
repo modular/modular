@@ -11,7 +11,7 @@ modular_py_test(
         "MODULAR_MOJO_MAX_SHARED_LIBS": "-Xlinker,-rpath,-Xlinker,KGEN",
     },
     mojo_deps = [
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/max/mojo/stdlib/stdlib",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
