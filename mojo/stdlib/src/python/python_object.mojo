@@ -22,14 +22,13 @@ from python import PythonObject
 from collections import Dict
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
-from sys.intrinsics import _type_is_eq
 
 # This apparently redundant import is needed so PythonBindingsGen.cpp can find
 # the StringLiteral declaration.
 from builtin.string_literal import StringLiteral
 from memory import UnsafePointer
 
-from ._cpython import CPython, PyObjectPtr
+from ._cpython import CPython, PyObjectPtr, PyMethodDef, PyCFunction
 from .python import Python, _get_global_python_itf
 
 
@@ -135,6 +134,9 @@ struct _PyIter(Sized):
             return 1
 
 
+alias PythonModule = TypedPythonObject["Module"]
+
+
 @register_passable
 struct TypedPythonObject[type_hint: StaticString](
     PythonConvertible,
@@ -171,9 +173,7 @@ struct TypedPythonObject[type_hint: StaticString](
         """
         self._obj = unsafe_unchecked_from^
 
-    fn __init__(
-        out self: TypedPythonObject["Module"], name: StaticString
-    ) raises:
+    fn __init__(out self: PythonModule, name: StaticString) raises:
         """Construct a Python module with the given name.
 
         Args:
@@ -231,6 +231,37 @@ struct TypedPythonObject[type_hint: StaticString](
         """
         return self._obj.unsafe_as_py_object_ptr()
 
+    fn def_py_c_function[
+        func: PyCFunction,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ](owned self: PythonModule) raises -> PythonModule:
+        """Declare a binding for a function with PyObjectPtr signature in the
+        module.
+
+        Parameters:
+            func: The function to declare a binding for.
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+
+        Returns:
+            The module object with the function added.
+
+        Raises:
+            If we fail to add the function to the module.
+        """
+
+        # NOTE: The current API will make a cpython call for every declaration.
+        # We could optimize this by batching the functions, but there is no need
+        # to do this unless binding creation actually becomes a bottleneck.
+        var funcs = List[PyMethodDef](
+            PyMethodDef.function[func, func_name, docstring]()
+        )
+
+        Python.add_functions(self, funcs)
+        return self^
+
     # ===-------------------------------------------------------------------===#
     # 'Tuple' Operations
     # ===-------------------------------------------------------------------===#
@@ -262,9 +293,6 @@ struct TypedPythonObject[type_hint: StaticString](
         # TODO(MSTDL-911): Avoid unnecessary owned reference counts when
         #   returning read-only PythonObject values.
         return PythonObject.from_borrowed_ptr(item)
-
-
-alias PythonModule = TypedPythonObject["Module"]
 
 
 @register_passable
