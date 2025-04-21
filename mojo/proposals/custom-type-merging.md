@@ -167,6 +167,22 @@ might also want to allow broadcasting. This could be supported in a few ways,
 e.g. do the same thing as “merged_with” to decide the result type using
 dependent types, or by using overloads of `__merge_with__`.
 
+This works great for simple cases, e.g. it allows merging an `Optional[Int]`
+and an `Int` into an `Optional[Int]` and many other cases. However, this isn’t
+enough for numeric conversions, e.g. consider:
+
+```mojo
+fn int_example(a: Int8, b: Int16, cond: Bool):
+  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]' 
+  c = a if cond else b
+  # Desired type: Int16
+```
+
+This really should work, but we don’t want all `Scalar[dt1]` to be implicitly
+convertible to `Scalar[dt2]` for any dt1 and dt2, and we don’t want Mojo to
+have hard coded knowledge of library types like SIMD. Furthermore, the approach
+above only works when one or the other types is the right answer.
+
 ## Type Merging with this proposal
 
 With this proposal, Mojo’s type unification follows the following algorithm in
@@ -209,18 +225,26 @@ fn get_common_type(typea, typeb) raises -> Type:
    throw "no common type found"
 ```
 
-This works great for simple cases, e.g. it allows merging an `Optional[Int]`
-and an `Int` into an `Optional[Int]` and many other cases. However, this isn’t
-enough for numeric conversions, e.g. consider:
+To paraphrase, the overall behavior here has this order of resolution:
 
-```mojo
-fn int_example(a: Int8, b: Int16, cond: Bool):
-  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]' 
-  c = a if cond else b
-  # Desired type: Int16
-```
+1) If either type implements a matching `__merge_with__` function, then that
+   overrides all other behavior.
 
-This really should work, but we don’t want all `Scalar[dt1]` to be implicitly
-convertible to `Scalar[dt2]` for any dt1 and dt2, and we don’t want Mojo to
-have hard coded knowledge of library types like SIMD. Furthermore, the approach
-above only works when one or the other types is the right answer.
+2) If not, the compiler checks for implicit conversions.  This should cover
+   almost all cases, because typically common types are one of the two types.
+
+3) The compiler rejects things that are ambiguous.
+
+Some other notes that may be helpful:
+
+- Any given type is allowed to have multiple `__merge_with__` overloads for
+  different cases.  Each overload can produce different target types if they
+  want to. This allows defining `A.mergewith(B)->C` but `A.mergewith(D)->E`.
+
+- When dealing with a merge two incompatible types `A <-> B`, it is sufficient
+  to implement `A.mergewith(B)` or `B.mergewith(A)` since a type is always
+  considered implicitly convertible to itself.
+
+- When merging two incompatible types to a third type: `merge(A, B) = C`,
+  it is sufficient to define just `A.mergewith(B)->C` if B is already implicitly
+  convertible to `C`.
