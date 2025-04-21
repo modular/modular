@@ -18,7 +18,7 @@
 
 using namespace M;
 
-void M::attachToNewRemoteDebugSession() {
+void M::attachToNewRemoteDebugSession(bool quiet) {
   StringRef initializationError =
       "couldn't initiate the debug session. You might want to attach manually "
       "to this process";
@@ -39,10 +39,19 @@ void M::attachToNewRemoteDebugSession() {
       std::string pidStr = std::to_string(llvm::sys::Process::getProcessId());
       SmallVector<StringRef> args{mojo, "debug", "--vscode", "--pid", pidStr};
 
+      SmallVector<std::optional<StringRef>> redirects;
+      if (quiet) {
+        redirects = {
+            "",
+            "",
+            "",
+        };
+      }
+
       // `mojo debug --vscode` succeeds if lldb-dap was launched, but it might
       // still be possible that the actual attach failed.
       int exitCode = llvm::sys::ExecuteAndWait(mojo, args, /*Env=*/std::nullopt,
-                                               /*Redirects=*/{});
+                                               /*Redirects=*/redirects);
       if (exitCode != 0) {
         llvm::errs()
             << "error: the remote debugger seems to have failed to attach. "
