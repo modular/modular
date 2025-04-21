@@ -835,11 +835,11 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
                                          const POPToLLVMTypeConverter &tc,
                                          InterpreterMemoryConverter &imc) {
   StringRef strAttrRef = strAttr.getValue();
-  // This is safe because StringAttr always stores a null terminator. If the
-  // string is empty, we won't use this anyway.
+  // This is safe because StringAttr always stores a null terminator.
+  // Make sure we have a null terminator, even for empty strings.
   StringRef str(strAttrRef.data(), strAttrRef.size() + 1);
   if (strAttrRef.empty())
-    str = "\0";
+    str = StringRef("\0", 1);
 
   // Add the string to the global string table.
   MemoryHandleAttr hdl = MemoryHandleAttr::get(strAttr.getContext(), str);
