@@ -147,8 +147,10 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
     var num_frames = external_call["backtrace", Int32](
         call_stack.unsafe_ptr(), Int(len(call_stack)), MAX_STACK_SIZE
     )
+    # frame_strs points into call_stack, so keep call_stack alive.
     var frame_strs = external_call[
-        "backtrace_symbols", UnsafePointer[UnsafePointer[c_char]]
+        "backtrace_symbols",
+        UnsafePointer[UnsafePointer[c_char], origin = __origin_of(call_stack)],
     ](call_stack.unsafe_ptr(), num_frames)
 
     var formatted = String()
