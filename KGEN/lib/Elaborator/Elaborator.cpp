@@ -1492,35 +1492,15 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   VerboseCompilerTimeTraceScope traceScope("specializeGenerator: " +
                                            gen.getName().str());
 
-  // Get a partial ordering of parameter definitions and uses that are listed
-  // "top down" in our evaluation order, if we don't have one already. This
-  // should happen exactly once for each  node. This will be tricky to
-  // parallelize as-is - we should change the approach a bit to have a
-  // ParametricNode (or similar) that doesn't store the input parameters, in
-  // which we could store the ParameterUseDefGraph.
-  ParameterUseDefGraph *genNodeGraph =
-      knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
-        if (auto it = map.find(gen); it != map.end())
-          return it->second.get();
-        return nullptr;
-      });
-  if (!genNodeGraph) {
-    // Compute a new graph. The computed graph could end up getting discarded if
-    // two threads end up here at the same time for the same generator.
-    auto newGraph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-    newGraph->calculate(paramCache.getThreadLocalCache());
-    // Make sure to use whichever graph ended up in the map.
-    genNodeGraph = knownGraphs.modify(
-        [gen, newGraph = std::move(newGraph)](auto &map) mutable {
-          return map.try_emplace(gen, std::move(newGraph)).first->second.get();
-        });
-  }
-
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
   OpBuilder b(gen.getContext());
   StringAttr mangledName = genNode->getMangledName();
 
+  // Whether the body of the generator needs to be instantiated too. If false,
+  // regions of the generator will not be carried over to the specialized
+  // instance.
+  bool instantiateBody;
   InstantiatedOpInterface instance;
   if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
     instance = cast<InstantiatedOpInterface>(*b.create<FuncOp>(
@@ -1542,11 +1522,63 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
       newFunc->setAttr(kLLVMArgMetadataArrayAttrName,
                        generatorOp.getLLVMArgMetadataArray());
     }
+    instantiateBody = true;
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(
         gen.getLoc(), mangledName, structGenOp.getValueDomainType(),
         structGenOp.getMetaType()));
+    instantiateBody = false;
+  }
+
+  ParameterUseDefGraph childGraph(instance.getBodyRegion());
+  std::vector<Operation *> opsToRewrite;
+  if (instantiateBody) {
+    // Get a partial ordering of parameter definitions and uses that are listed
+    // "top down" in our evaluation order, if we don't have one already. This
+    // should happen exactly once for each  node. This will be tricky to
+    // parallelize as-is - we should change the approach a bit to have a
+    // ParametricNode (or similar) that doesn't store the input parameters, in
+    // which we could store the ParameterUseDefGraph.
+    ParameterUseDefGraph *genNodeGraph =
+        knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
+          if (auto it = map.find(gen); it != map.end())
+            return it->second.get();
+          return nullptr;
+        });
+    if (!genNodeGraph) {
+      // Compute a new graph. The computed graph could end up getting discarded
+      // if two threads end up here at the same time for the same generator.
+      auto newGraph =
+          std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
+      newGraph->calculate(paramCache.getThreadLocalCache());
+      // Make sure to use whichever graph ended up in the map.
+      genNodeGraph = knownGraphs.modify([gen, newGraph = std::move(newGraph)](
+                                            auto &map) mutable {
+        return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+      });
+    }
+
+    // Clone the body of the generator into the function.
+    // TODO: is there a nice way for us to avoid cloning this?
+    IRMapping map;
+    gen.getBodyRegion().cloneInto(&instance.getBodyRegion(), map);
+
+    // Map from the generator to the new function for the parameter graph copy.
+    map.map(gen.getOperation(), instance.getOperation());
+    // Copy over the parameter use-def graph for this clone.
+    childGraph = genNodeGraph->copy(map);
+
+    // Collect the operations to rewrite from this function.
+    llvm::append_range(opsToRewrite, llvm::reverse(childGraph.paramOps));
+    opsToRewrite.push_back(instance);
+    collectOpsToProcess(&instance.getBodyRegion(), childGraph, opsToRewrite);
+  } else {
+    // If body instantiation is not needed, the childGraph should just contain
+    // the instance op itself as the only op to process.
+    instance.getBodyRegion().push_back(new Block());
+    childGraph.paramOps.push_back(instance);
+    opsToRewrite.push_back(instance);
   }
 
   // Insert the newFunc into the symbol table which will then know about it,
@@ -1555,16 +1587,6 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     map.try_emplace(mangledName, instance);
   });
   addRegion(instance.getBodyRegion());
-
-  // Clone the body of the generator into the function.
-  // TODO: is there a nice way for us to avoid cloning this?
-  IRMapping map;
-  gen.getBodyRegion().cloneInto(&instance.getBodyRegion(), map);
-
-  // Map from the generator to the new function for the parameter graph copy.
-  map.map(gen.getOperation(), instance.getOperation());
-  // Copy over the parameter use-def graph for this clone.
-  ParameterUseDefGraph childGraph = genNodeGraph->copy(map);
 
   // The node for this new func is simply the child of the node for the
   // generator.
@@ -1577,13 +1599,6 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
       });
   ImplNode *newFuncNode = childNode.get();
   genNode->impl = std::move(childNode);
-  ParameterUseDefGraph &uses = newFuncNode->paramGraph;
-
-  // Kick off the expansion for the new function.
-  std::vector<Operation *> opsToRewrite;
-  llvm::append_range(opsToRewrite, llvm::reverse(uses.paramOps));
-  opsToRewrite.push_back(instance);
-  collectOpsToProcess(&instance.getBodyRegion(), uses, opsToRewrite);
 
   // Since the symbol will have a new name, we need to update the linkage name
   // in the subprogram information (if any).
