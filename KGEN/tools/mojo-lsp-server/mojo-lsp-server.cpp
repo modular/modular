@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
-  return failed(runMojoLSPServer(
-      transport, /*singleThreaded=*/mojoTest || KGEN::kIsTracingEnabled,
-      waitOnShutdown, includeDirs, std::move(traceProfiler)));
+  return failed(runMojoLSPServer(transport, /*singleThreaded=*/mojoTest,
+                                 waitOnShutdown, includeDirs,
+                                 std::move(traceProfiler)));
 }
