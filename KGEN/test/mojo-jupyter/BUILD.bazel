@@ -10,11 +10,11 @@ lit_tests(
         "*.ipynb",
         "*.mojo",
     ]) + [
-        "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
+        "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
         "//utils:lit-lldb-init.in",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/mojo/stdlib/stdlib:stdlib_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/stdlib:stdlib_srcs)",
     },
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

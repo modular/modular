@@ -14,16 +14,16 @@ def lsp_test(name, pattern):
             "inputs_with_package/*.mojo",
         ]) + [
             "//KGEN/tools/mojo-lsp-server",
-            "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
+            "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
             "@crashpad//:modular-crashpad-handler",
         ],
         env = {
-            "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib",
+            "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/max/mojo/stdlib",
             "MODULAR_PATH": ".",
             "PRESERVE_LSP_IO_FILES": "1",
         },
         mojo_deps = [
-            "//open-source/mojo/stdlib/stdlib",
+            "//open-source/max/mojo/stdlib/stdlib",
             "//SDK/lib/API/mojo/max/tensor",
             "//Kernels/mojo/extensibility/compiler_internal",
         ],
