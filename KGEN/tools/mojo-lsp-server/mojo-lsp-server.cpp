@@ -91,6 +91,9 @@ int main(int argc, char **argv) {
   auto traceProfiler =
       std::make_unique<KGEN::TraceProfiler>(KGEN::kIsTracingEnabled, 3);
 
+  if (attach)
+    attachToNewRemoteDebugSession(true);
+
   // When testing, updating flags that make the server a bit easier to interact
   // with.
   if (mojoTest) {
@@ -111,9 +114,6 @@ int main(int argc, char **argv) {
 
   // Register the additionally supported URI schemes for the server.
   URIForFile::registerSupportedScheme("vscode-notebook-cell");
-
-  if (attach)
-    attachToNewRemoteDebugSession();
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
