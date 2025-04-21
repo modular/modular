@@ -575,13 +575,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
 
-        var count = _unsafe_strlen(unsafe_from_utf8_ptr)
-
         var byte_slice = Span[Byte, origin](
             ptr=unsafe_from_utf8_ptr,
-            length=count,
+            length=_unsafe_strlen(unsafe_from_utf8_ptr),
         )
-
         self = Self(unsafe_from_utf8=byte_slice)
 
     fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char]):
