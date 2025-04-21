@@ -1190,8 +1190,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (StringAttr resultName = tcSignature.argList.resultArg.name)
     attrs.set(funcOp.getNamedResultAttrName(), resultName);
 
-  // Remove the temporary "sym_namex" attribute set up in FnOp::build, see
-  // that method for an explanation.
+  // Remove the temporary "sym_namex" attribute set up in
+  // StmtParser::parseDefFnStmt, see that method for an explanation.
   attrs.erase("sym_namex");
 
   // Bulk update the attributes.

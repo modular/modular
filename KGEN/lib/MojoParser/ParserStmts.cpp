@@ -2391,18 +2391,50 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   if (parseIdentifier(baseName, "expected function name", &loc))
     return failure();
 
-  auto funcOp = builder.create<FnOp>(translateLocation(loc));
+  // Create a op function with an empty signature so we have an IR construct to
+  // work with.
+
+  // Before resolution, we treat the function as having type ()->Error,
+  // because parse or other errors forming the signature won't update the
+  // representation.  This makes sure that the error case doesn't break
+  // invariants (that functions always have a single result).
+  MLIRContext *ctx = builder.getContext();
+  auto errorType = builder.getType<TypeCheckErrorType>();
+  FnTypeGeneratorType signatureType = LITGeneratorType::get(
+      /*inputParamTypes=*/{},
+      FnType::get(ctx, ArrayRef<Type>(), {errorType},
+                  /*numImplicitOriginDecls=*/0),
+      PogListAttr::get(ctx));
+
+  // Chain to the 'build' method below.
+  auto emptyStr = StringAttr::get(ctx, "");
+  auto fnOp = builder.create<FnOp>(translateLocation(loc), emptyStr, emptyStr,
+                                   signatureType);
+
+  // NOTE: We set an attribute named 'sym_namex' here instead of setting
+  // 'sym_name' because we don't /know/ the symbol name on construction and need
+  // to set it during signature resolution phase of the parser.
+  //
+  // Unfortunately, we cannot set it to null because that causes the SymbolTable
+  // logic to be extremely cranky and breaks other MLIR invariants.
+  //
+  // We also cannot completely omit the symbol, because ODS is doing some clever
+  // stuff to speed up attribute lookup.  That clever stuff requires that a slot
+  // is filled in the attr dict, so we set this thing and remove it when the
+  // real name is set.
+  fnOp->removeAttr("sym_name");
+  fnOp->setAttr("sym_namex", emptyStr /*StringArrayAttr::get(ctx, {})*/);
 
   // If marked as 'def', remember this on the function decl.
   if (isDef)
-    funcOp.setIsDef(true);
+    fnOp.setIsDef(true);
 
   // Skip the body of this definition: go to a token at the start of the next
   // line at the same indent level (or less) as the current definition.
   skipUntilIndentation(curIndent);
   ASTDecl &funcDecl =
-      getDeclResolver().addDecl(funcOp, loc, baseName, curDeclScope,
-                                startCursor, getLexer().getCursor(), curIndent);
+      getDeclResolver().addDecl(fnOp, loc, baseName, curDeclScope, startCursor,
+                                getLexer().getCursor(), curIndent);
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.
   if (curDeclScope->getNearestDeclOfType<FnOp>())
