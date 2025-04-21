@@ -3009,6 +3009,23 @@ static void printMemSymbolTripleAttr(AsmPrinter &p, SymbolConstantAttr copy,
 }
 
 //===----------------------------------------------------------------------===//
+// DeferredAttr
+//===----------------------------------------------------------------------===//
+
+Type DeferredAttr::getType() const {
+  return KGEN::DeferredType::get(getContext());
+}
+
+LogicalResult
+DeferredAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                     Attribute attr) {
+  if (::isa<TypedAttr>(attr))
+    return emitError()
+           << "`#kgen.deferred` can only be used for non-typed attributes";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

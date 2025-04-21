@@ -769,8 +769,8 @@ def KGEN_ParamClosureType : KGENType<"ParamClosure", "param_closure"> {
 
         kgen.generator @foo<C>(%arg0 : index) {
           %1 = kgen.closure.init()(%arg1: index) -> index {
-	          %0 = kgen.param.constant = <add(C, C)>
-	          kgen.return %0 : index
+          %0 = kgen.param.constant = <add(C, C)>
+          kgen.return %0 : index
           } : (), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
           %2 = kgen.call @consume<
             :type #type_value,
@@ -797,6 +797,26 @@ def KGEN_ParamClosureType : KGENType<"ParamClosure", "param_closure"> {
                         "StringAttr":$name
                    );
   let assemblyFormat = "`<` $parentSymbol $name `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DeferredType
+//===----------------------------------------------------------------------===//
+
+def KGEN_DeferredType : KGENType<"Deferred", "deferred"> {
+  let summary = "Represents a deferred type";
+  let description = [{
+    A `!kgen.deferred` type represents a deferred attribute that will be
+    concretized at elaborator
+
+    Example:
+
+    ```mlir
+    #kgen<deferred #index<cmp_predicate sle>> : !kgen.deferred
+    #kgen.param.decl.ref<"(lifted)apply_0"> : !kgen.deferred
+    ```
+  }];
+  let assemblyFormat = "";
 }
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

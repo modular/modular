@@ -691,7 +691,7 @@ fn field_indexes(a: DirectInstanceReference):
   a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
 
 struct MLIRAttrWithinStruct:
-  # expected-error @below {{MLIR attribute is not a TypedAttr}}
+  # expected-warning @below {{'!kgen.deferred' value is unused}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
 

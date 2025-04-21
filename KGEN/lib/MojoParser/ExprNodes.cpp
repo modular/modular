@@ -91,11 +91,8 @@ static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
 
   auto typedAttr = dyn_cast<TypedAttr>(attr);
   if (!typedAttr) {
-    SmallString<128> str;
-    llvm::raw_svector_ostream os(str);
-    attr.print(os);
-    shared.emitError(loc, "MLIR attribute is not a TypedAttr: ") << os.str();
-    return {};
+    // wrap non-typed attribute with #kgen.deferred attribute
+    typedAttr = DeferredAttr::get(attr);
   }
   return PValue(typedAttr);
 }
@@ -1639,8 +1636,20 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     opOperands.push_back(value);
   }
 
+  StringAttr opName = unboundOp.getName();
+  bool isDeferredOp = false;
+  NamedAttrList attrs;
+  if (llvm::any_of(unboundOp.getAttrs(), [](NamedAttribute attr) {
+        if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
+          return isa<DeferredType>(typedAttr.getType());
+        return false;
+      })) {
+    opName = StringAttr::get(context, DeferredOp::getOperationName());
+    isDeferredOp = true;
+  }
+
   // Set up the OperationState for the thing we're building.
-  OperationState state(call.getLocation(emitter), unboundOp.getName());
+  OperationState state(call.getLocation(emitter), opName);
   state.addOperands(opOperands);
 
   // Process the attributes and figure out the result type if specified.
@@ -1731,7 +1740,23 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       propsAttr = attr.getValue();
       continue;
     }
+    if (isDeferredOp) {
+      // For deferred operation, fill the dictionary with all attributes
+      // regardless if attribute itself is deferred or not. That allows to have
+      // any number of any attributes for deferred operation.
+      attrs.set(attr.getName(), attr.getValue());
+      continue;
+    }
     state.addAttributes(attr);
+  }
+
+  if (isDeferredOp) {
+    auto deferredName =
+        mlir::OperationName(DeferredOp::getOperationName(), context);
+    state.addAttribute(DeferredOp::getOpNameAttrName(deferredName),
+                       unboundOp.getName());
+    state.addAttribute(DeferredOp::getOpAttrsAttrName(deferredName),
+                       attrs.getDictionary(context));
   }
 
   // Finally, if we don't already have a type, figure out the return types

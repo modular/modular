@@ -403,6 +403,10 @@ private:
 
   ElaborationState bundleOffloadModules(ImplNode *node, CompileOffloadOp op);
 
+  /// Process a deferred op by replacing it with an operation and attributes it
+  /// stores.
+  ElaborationState processDeferredOp(ImplNode *node, DeferredOp op);
+
   //===--------------------------------------------------------------------===//
   // Specialization
   //===--------------------------------------------------------------------===//
