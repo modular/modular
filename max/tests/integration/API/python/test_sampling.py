@@ -155,16 +155,12 @@ def test_sampling_return_logits(session: InferenceSession):
 
 
 def test_rejection_sampler(session: InferenceSession):
+    device = session.devices[0]
     graph = rejection_sampler(
-        SamplingConfig(
-            top_k=1,
-            enable_structured_output=False,
-            in_dtype=DType.float32,
-            out_dtype=DType.float32,
-        ),
+        top_k=1,
+        device=DeviceRef.from_device(device),
     )
 
-    device = session.devices[0]
     sampler = session.load(graph)
 
     # Variables
