@@ -34,9 +34,7 @@ public:
     bool hasKernels =
         llvm::any_of(mod.getOps<GeneratorOp>(), [](GeneratorOp func) {
           return MOGGPreElab::isKernel(func) ||
-                 MOGGPreElab::isExecuteFunc(func) ||
-                 MOGGPreElab::isShapeFunc(func) ||
-                 MOGGPreElab::isDPSKernel(func);
+                 MOGGPreElab::isExtensibilityFunc(func);
         });
 
     if (hasKernels && !debugBuild) {

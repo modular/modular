@@ -27,6 +27,7 @@ namespace M::KGEN::MOGGPreElab {
 
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
+static constexpr llvm::StringLiteral kUpdateViewFuncName = "update_input_view";
 static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
     "pytorch_fallback";
 
@@ -231,7 +232,7 @@ static LogicalResult checkByRefTensorArgs(LIT::FnOp func) {
   LIT::FnTypeGeneratorType signature = func.getFuncTypeGenerator();
   for (auto [index, litType] : llvm::enumerate(signature.getArguments())) {
     if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
-      if (isDPSKernel(func) && isDPSTensor(asDeclRef) &&
+      if (isExtensibilityFunc(func) && isDPSTensor(asDeclRef) &&
           isa<LIT::RefType>(litType)) {
         return func.emitError()
                << " Only the borrowed argument (read) convention is supported "
@@ -254,7 +255,7 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
     }
   }
 
-  if (!isKernel(func) && !isDPSKernel(func) && !takesTensor)
+  if (!isKernel(func) && !isExtensibilityFunc(func) && !takesTensor)
     return success();
 
   if (failed(checkByRefTensorArgs(func)))
@@ -523,7 +524,7 @@ getUnboundParametersForDeviceContextPtrList(LIT::StructType structType,
 static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
   Builder builder{funcOp.getContext()};
 
-  if (!isDPSKernel(funcOp))
+  if (!isExtensibilityFunc(funcOp))
     return;
 
   // Look through ref types to get underlying decl ref type if needed.
@@ -1040,7 +1041,7 @@ public:
       // Is not extensibility struct, but maybe some regular mojo object
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
-      LIT::FnOp executeOp;
+      LIT::FnOp executeOp, updateViewOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
         auto func = dyn_cast<LIT::FnOp>(curOp);
         if (!func)
@@ -1062,6 +1063,12 @@ public:
                   structDeclOp, registrationInfo, func,
                   kMOGGPyTorchFallbackFunctionLabel, builder)))
             return WalkResult::interrupt();
+        } else if (func.getSourceName() == kUpdateViewFuncName) {
+          if (failed(processStructFuncCommon(structDeclOp, registrationInfo,
+                                             func, kMOGGUpdateViewFunctionLabel,
+                                             builder)))
+            return WalkResult::interrupt();
+          updateViewOp = func;
         }
       }
 
@@ -1069,6 +1076,13 @@ public:
       if (!executeOp) {
         structDeclOp.emitError(llvm::formatv(
             "The kernel must have an entry point named {0}", kExecuteFuncName));
+        return WalkResult::interrupt();
+      }
+
+      if (registrationInfo.isViewKernel && !updateViewOp) {
+        structDeclOp.emitError(llvm::formatv(
+            "View kernels must have a view update function named {0}",
+            kUpdateViewFuncName));
         return WalkResult::interrupt();
       }
 
