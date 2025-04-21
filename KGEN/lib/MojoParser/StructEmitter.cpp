@@ -149,15 +149,13 @@ FnOp StructEmitter::createFunction(
   if (shared.lookupSymbolIn(&parent, mangledName))
     return nullptr;
 
-  auto funcOp =
-      builder.create<FnOp>(mangledName, sourceName, sigGen, specialFnID);
-  funcOp.setIsSynthetic(true);
-
-  if (funcOp.getSpecialFunctionInfo().isImplicitlyStatic())
-    funcOp.setIsStatic(true);
+  FnOp fnOp = builder.create<FnOp>(mangledName, sourceName, sigGen);
 
   // Set the attributes on the FnOp in bulk.
-  NamedAttrList attrs = funcOp->getAttrDictionary();
+  NamedAttrList attrs = fnOp->getAttrDictionary();
+
+  if (SpecialFunctionInfo::get(specialFnID).isImplicitlyStatic())
+    attrs.set(fnOp.getIsStaticAttrName(), UnitAttr::get(ctx)); // True.
 
   // Figure out the full set of parameter declarations, this is the explicit
   // parameter declarations + implicit origins.
@@ -165,23 +163,25 @@ FnOp StructEmitter::createFunction(
   llvm::append_range(fullParams, params);
   llvm::append_range(fullParams, newOriginParamDecls);
   if (!fullParams.empty()) {
-    attrs.set(funcOp.getParamsAttrName(),
+    attrs.set(fnOp.getParamsAttrName(),
               builder.getAttr<ParamDeclArrayAttr>(fullParams));
   }
-  attrs.set(funcOp.getIsSyntheticAttrName(), UnitAttr::get(ctx));
-  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
-  attrs.set(funcOp.getInlineLevelAttrName(),
+
+  attrs.set(fnOp.getSpecialFnKindAttrName(),
+            builder.getI8IntegerAttr(uint8_t(specialFnID)));
+  attrs.set(fnOp.getIsSyntheticAttrName(), UnitAttr::get(ctx)); // True.
+  attrs.set(fnOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
+  attrs.set(fnOp.getInlineLevelAttrName(),
             InlineLevelAttr::get(ctx, inlineLevel));
-  funcOp->setAttrs(attrs.getDictionary(ctx));
+  fnOp->setAttrs(attrs.getDictionary(ctx));
 
   // Generate a debug subprogram for this function.
-  shared.setLocationDebugScope(funcOp);
-  if (!funcOp.getBody())
-    funcOp.getBodyRegion().push_back(new Block());
+  shared.setLocationDebugScope(fnOp);
+  if (!fnOp.getBody())
+    fnOp.getBodyRegion().push_back(new Block());
   for (Type argType : adjustedArgTypes)
-    funcOp.getBody()->addArgument(argType, funcOp.getLoc());
-
-  return funcOp;
+    fnOp.getBody()->addArgument(argType, fnOp.getLoc());
+  return fnOp;
 }
 
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(

@@ -864,84 +864,9 @@ FnTypeGeneratorType FnOp::getFullSignature() {
   return LIT::getFullSignature((*this)->getParentOp(), getFuncTypeGenerator());
 }
 
-void FnOp::build(OpBuilder &builder, OperationState &result) {
-  MLIRContext *ctx = builder.getContext();
-
-  // Before resolution, we treat the function as having type ()->Error,
-  // because parse or other errors forming the signature won't update the
-  // representation.  This makes sure that the error case doesn't break
-  // invariants (that functions always have a single result).
-  auto errorType = builder.getType<TypeCheckErrorType>();
-  FnTypeGeneratorType signatureType = LITGeneratorType::get(
-      /*inputParamTypes=*/{},
-      FnType::get(ctx, ArrayRef<Type>(), {errorType},
-                  /*numImplicitOriginDecls=*/0),
-      PogListAttr::get(ctx));
-
-  // NOTE: We set an attribute named 'sym_namex' here instead of setting
-  // 'sym_name' because we don't /know/ the symbol name on construction and need
-  // to set it during signature resolution phase of the parser.
-  //
-  // Unfortunately, we cannot set it to null because that causes the SymbolTable
-  // logic to be extremely cranky and breaks other MLIR invariants.
-  //
-  // We also cannot completely omit the symbol, because ODS is doing some clever
-  // stuff to speed up attribute lookup.  That clever stuff requires that a slot
-  // is filled in the attr dict, so we set this thing and remove it when the
-  // real name is set.
-  result.addAttribute("sym_namex", StringArrayAttr::get(ctx, {}));
-
-  result.addAttribute(getExportKindAttrName(result.name),
-                      ExportKindAttr::get(ctx, ExportKind::NotExported));
-  result.addAttribute(getFuncTypeGeneratorAttrName(result.name),
-                      TypeAttr::get(signatureType));
-  result.addAttribute(getFunctionTypeAttrName(result.name),
-                      TypeAttr::get(signatureType.getValues()));
-  result.addAttribute(getParamsAttrName(result.name),
-                      ParamDeclArrayAttr::get(ctx, {}));
-  result.addAttribute(getDecoratorsAttrName(result.name),
-                      DecoratorsAttr::get(ctx, {}));
-  result.addAttribute(getSpecialFnKindAttrName(result.name),
-                      builder.getI8IntegerAttr(0));
-  result.addAttribute(getInlineLevelAttrName(result.name),
-                      InlineLevelAttr::get(ctx, InlineLevel::Automatic));
-  result.addAttribute(getLLVMMetadataArrayAttrName(result.name),
-                      ArrayAttr::get(ctx, {}));
-  result.addAttribute(getLLVMArgMetadataArrayAttrName(result.name),
-                      ArrayAttr::get(ctx, {}));
-
-  result.addRegion()->push_back(new Block());
-}
-
-void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
-                 StringRef sourceName, FunctionType funcType,
-                 ArrayRef<ParamDeclAttr> paramDecls, FnEffects effects,
-                 InlineLevel inlineLevel) {
-  MLIRContext *ctx = b.getContext();
-  UnitAttr none;
-  SmallVector<ArgConvention> convs(funcType.getNumInputs());
-  auto fnMetadata =
-      FnMetadataAttr::get(ctx, paramDecls.size(), funcType.getNumInputs());
-  auto sig = FuncTypeGeneratorType::remapToFuncTypeGenerator(
-      paramDecls, funcType, convs, effects, fnMetadata,
-      PogListAttr::get(b.getContext()));
-  build(b, state, StringAttr(), ParamDeclAttr::get(declName, sig),
-        TypeAttr::get(sig), TypeAttr::get(funcType),
-        ParamDeclArrayAttr::get(ctx, paramDecls), DecoratorsAttr::get(ctx, {}),
-        /*isStatic=*/none, /*isDef=*/none, /*isInherited=*/none,
-        /*isSynthetic=*/none, /*isImplicitConversion=*/none,
-        ExportKindAttr::get(ctx, ExportKind::NotExported),
-        InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
-        StringAttr(), b.getStringAttr(sourceName), StringAttr(),
-        DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
-        ArrayAttr::get(ctx, {}), Attribute());
-  state.regions[0]->push_back(new Block());
-}
-
-/// Build a function in a default configuration, used by member synthesization.
+/// Build a function in a default configuration, used by member synthesis.
 void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                 StringAttr sourceName, FuncTypeGeneratorType signature,
-                 SpecialFunctionKind specialFnKind) {
+                 StringAttr sourceName, FuncTypeGeneratorType signature) {
   MLIRContext *ctx = builder.getContext();
   UnitAttr none;
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
@@ -952,8 +877,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         /*isImplicitConversion=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
-        builder.getI8IntegerAttr(uint8_t(specialFnKind)), StringAttr(),
-        sourceName, StringAttr(), DocStringAttr(), StringAttr(),
+        builder.getI8IntegerAttr(uint8_t(SpecialFunctionKind::kNormal)),
+        StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
         ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }

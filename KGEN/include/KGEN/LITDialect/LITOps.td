@@ -125,33 +125,18 @@ def LIT_FnOp : LITOp<"fn", [
     /// Return true if this was defined as a 'def', not a 'fn'.
     bool isDef() { return getIsDef(); }
 
-
-
-
     mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
-
     mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
-
     void setArgAttrsAttr(mlir::ArrayAttr attrs){}
-
     void setResAttrsAttr(mlir::ArrayAttr attrs){}
-
     mlir::Attribute removeArgAttrsAttr() { return nullptr; }
-
     mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let builders = [
-    // Create a func with a region and a body block.
-    OpBuilder<(ins)>,
-    OpBuilder<(ins "StringAttr":$declName, "StringRef":$sourceName,
-                   "FunctionType":$funcType,
-                   "ArrayRef<ParamDeclAttr>":$paramDecls,
-                   CArg<"FnEffects", "{}">:$fnEffects,
-                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel)>,
+    // Create a func with a region and a body block, but no terminator.
     OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName,
-                   "FuncTypeGeneratorType":$funcTypeGenerator,
-                   CArg<"SpecialFunctionKind", "{}">:$specialFnID)>,
+                   "FuncTypeGeneratorType":$funcTypeGenerator)>,
   ];
 
   let hasCustomAssemblyFormat = 1;
