@@ -141,6 +141,20 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._len = 0
         self.capacity = capacity
 
+    fn __init__(
+        out self, *, ptr: UnsafePointer[T], length: UInt, capacity: UInt
+    ):
+        """Constructs a list taking ownership of the pointer.
+
+        Args:
+            ptr: The pointer to the data.
+            length: The length of the list.
+            capacity: The capacity of the list.
+        """
+        self.data = ptr
+        self._len = length
+        self.capacity = capacity
+
     fn __init__(out self, *, length: UInt, fill: T):
         """Constructs a list with the given capacity.
 
