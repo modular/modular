@@ -49,7 +49,7 @@ modular_py_test(
         "//Kernels/mojo/runtime",
         "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/mojo/stdlib/stdlib",
+        "//open-source/max/mojo/stdlib/stdlib",
     ],
     tags = ["no-mypy"],  # TODO: fix and remove
     deps = [
