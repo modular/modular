@@ -309,6 +309,10 @@ struct IndexParam[x: Index]:
 fn autoparam_of_params[a: Index, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
+# CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
+# CHECK-SAME: <[""]*"x`1", +, a: meta<!lit.struct<#IndexParam <*"x`1">>>>
+fn autoparam_of_struct_metatype_params[a: __type_of(IndexParam)]():
+    pass
 
 @value
 @register_passable("trivial")

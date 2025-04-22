@@ -463,8 +463,9 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
     }], "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "ArrayRef<TypedAttr>":$values), [{
-      return get(typeValue.getContext(), typeValue, values,
-                 getBindTypeResultType(typeValue, values));
+      StructMetaType type =
+          ::cast<StructMetaType>(typeValue.getType()).bindUnbound(values);
+      return get(typeValue.getContext(), typeValue, values, type);
     }], "TypedAttr">,
     AttrBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
                      "StructMetaType":$type), "", "TypedAttr">

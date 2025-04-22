@@ -754,16 +754,21 @@ static ASTType addImplicitTypeParams(ASTType type,
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
-  // Check for a struct type.
-  auto metatype = dyn_cast_or_null<StructMetaType>(type.getMetaType());
-  if (!metatype)
-    return type;
+  // Check for a struct type or a struct metatype.
+  auto getBoundStructMetaType = [&](StructMetaType metatype) {
+    // The unbound parameters will be on the struct type's signature.
+    TypeSignatureType sig = metatype.getSignature();
+    for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
+      declareAndAddParam(type, sig.getParamListAttrs().getName(idx));
+    return metatype.bindUnbound(paramValues);
+  };
 
-  // The unbound parameters will be on the struct type's signature.
-  TypeSignatureType sig = metatype.getSignature();
-  for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
-    declareAndAddParam(type, sig.getParamListAttrs().getName(idx));
-  return BindTypeAttr::get(PValue(type), paramValues);
+  if (auto metatype = dyn_cast_or_null<StructMetaType>(type.getMetaType()))
+    return getBoundStructMetaType(metatype).getType();
+  if (auto metatype = dyn_cast_or_null<StructMetaType>(type))
+    return getBoundStructMetaType(metatype);
+
+  return type;
 }
 
 TypeCheckedParamList::TypeCheckedParamList(
