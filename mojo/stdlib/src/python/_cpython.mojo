@@ -352,14 +352,14 @@ struct PyMethodDef(CollectionElement):
         self = other
 
     @staticmethod
-    fn function[
+    fn function(
         func: fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ]() -> Self:
+    ) -> Self:
         """Create a PyMethodDef for a function.
 
-        Parameters:
+        Arguments:
             func: The function to wrap.
             func_name: The name of the function.
             docstring: The docstring for the function.
@@ -370,15 +370,11 @@ struct PyMethodDef(CollectionElement):
 
         # FIXME: PyMethodDef is capturing the pointer without an origin.
 
-        # Immortalize the string so we know it is permanent, and force it to be
-        # nul terminated.
-        alias func_name_str = get_static_string[func_name]()
-        alias docstring_str = get_static_string[docstring]()
         return PyMethodDef(
-            func_name_str.unsafe_ptr().bitcast[c_char](),
+            func_name.unsafe_ptr().bitcast[c_char](),
             func,
             METH_VARARGS,
-            docstring_str.unsafe_ptr().bitcast[c_char](),
+            docstring.unsafe_ptr().bitcast[c_char](),
         )
 
 
