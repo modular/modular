@@ -44,10 +44,11 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     # Wait for the copies to be completed.
     ctx.synchronize()
 
-    for i in range(length):
+    var out_span = out_host.as_span()
+    for i in range(len(out_span)):
         if i < 10:
-            print("at index", i, "the value is", out_host[i])
-        expect_eq(out_host[i], i, "at index ", i, " the value is ", out_host[i])
+            print("at index", i, "the value is", out_span[i])
+        expect_eq(out_span[i], i, "at index ", i, " the value is ", out_span[i])
 
 
 fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
