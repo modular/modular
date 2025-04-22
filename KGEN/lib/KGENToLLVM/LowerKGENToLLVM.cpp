@@ -156,6 +156,25 @@ struct AttributeIdentifiers {
 };
 } // namespace
 
+/// Return true if function requires byval or byref arguments to be set.
+/// For now this is only required for NVPTX and AMDGPU targets
+static bool functionRequiresByVal(LLVM::LLVMFuncOp func,
+                                  TargetInfoAttr target) {
+  if (func.getLinkage() != LLVM::Linkage::External)
+    return false;
+
+  if (target.getTriple().isNVPTX() &&
+      func->hasAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName()))
+    return true;
+
+  if (target.getTriple().isAMDGPU() &&
+      func.getCConv() == mlir::LLVM::cconv::CConv::AMDGPU_KERNEL) {
+    // TODO: Need to check getKernelFuncAttrName() for AMDGPU ?
+    return true;
+  }
+  return false;
+}
+
 /// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
 /// compatible representation. Unsupport metadata values are rejected.
 static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
@@ -263,10 +282,23 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
   }
 
   // Only GPU functions pass borrowed arguments by value.
-  bool needsByVal =
-      target.getTriple().isNVPTX() &&
-      func->hasAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName()) &&
-      func.getLinkage() == LLVM::Linkage::External;
+  bool needsByVal = functionRequiresByVal(func, target);
+
+  // Attach either `byval` or `byref` attribute to the function
+  auto addByValAttribute = [tc](NamedAttrList &attrs, Type type,
+                                LLVM::LLVMFuncOp func, TargetInfoAttr target) {
+    MLIRContext *ctx = func.getContext();
+    llvm::Triple triple = target.getTriple();
+    assert((triple.isNVPTX() || triple.isAMDGPU()) &&
+           "expected either NVPTX or AMDGPU target");
+    StringAttr byValAttr =
+        triple.isNVPTX()
+            ? StringAttr::get(ctx, LLVM::LLVMDialect::getByValAttrName())
+            : StringAttr::get(ctx, LLVM::LLVMDialect::getByRefAttrName());
+
+    attrs.set(byValAttr, TypeAttr::get(tc->convertType(
+                             cast<PointerType>(type).getElementType())));
+  };
 
   // For each argument and result, leverage signature information to generate
   // the corresponding LLVM argument and result attributes.
@@ -311,12 +343,8 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       list.set(ids.noalias, b.getUnitAttr());
       [[fallthrough]];
     case ArgConvention::ReadMem:
-      if (needsByVal) {
-        list.set(StringAttr::get(func.getContext(),
-                                 LLVM::LLVMDialect::getByValAttrName()),
-                 TypeAttr::get(tc->convertType(
-                     cast<PointerType>(type).getElementType())));
-      }
+      if (needsByVal)
+        addByValAttribute(list, type, func, target);
       list.set(ids.nonnull, b.getUnitAttr());
       list.set(ids.noundef, b.getUnitAttr());
       break;

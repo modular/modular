@@ -21,6 +21,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Threading.h"
@@ -62,7 +63,8 @@ static Type lowerPointerType(Type type) {
 namespace {
 struct LoweredSignature {
   FuncType newSig;
-  SmallVector<size_t> changedIndices;
+  enum ArgLoweringStatus { PointerRemoved, PointerAdded };
+  SmallVector<std::pair<size_t, ArgLoweringStatus>> changedIndices;
   SmallVector<Type> newResTypes;
 
   int valIdx = -1, errIdx = -1;
@@ -96,11 +98,30 @@ struct LoweredSignature {
 };
 } // namespace
 
+/// Return the pointer to the given type. For now, only support struct types
+/// with a pointer, but it can be extended if needed.
+static Type lowerTypeForGPU(Type type) {
+  if (!isa<StructType>(type))
+    return nullptr;
+
+  bool hasPointer = false;
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&hasPointer](PointerType ptr) {
+    hasPointer = true;
+    return nullptr;
+  });
+  replacer.replace(type);
+  if (!hasPointer)
+    return nullptr;
+
+  return PointerType::get(type);
+}
+
 /// Lowers the given signature if needed, and returns the non-result argument
 /// indices (on the input signature) that needed to be changed. A flag is also
 /// returned to indicate if the result of a signature with `byref_result` was
 /// changed, in which case the func type will no longer have that argument.
-static LoweredSignature lowerSignature(FuncType sig) {
+static LoweredSignature lowerSignature(FuncType sig, TargetInfoAttr target) {
   ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
   SmallVector<ArgConvention> newConvs(oldConvs);
 
@@ -120,7 +141,8 @@ static LoweredSignature lowerSignature(FuncType sig) {
                             ? ArgConvention::OwnedReg
                             : ArgConvention::ReadReg;
         newInputTypes[idx] = newArgTy;
-        s.changedIndices.push_back(idx);
+        s.changedIndices.push_back(
+            {idx, LoweredSignature::ArgLoweringStatus::PointerRemoved});
       }
       // Don't alter the result convention for async functions. The coroutine
       // lowering expects this ABI.
@@ -133,6 +155,13 @@ static LoweredSignature lowerSignature(FuncType sig) {
           isError ? LoweredSignature::ErrorOnly : LoweredSignature::ValueOnly;
       (isError ? errType : valType) = loweredByrefResTy;
       (isError ? s.errIdx : s.valIdx) = idx;
+    } else if (target && isGPUTriple(target.getTriple())) {
+      if (Type newArgTy = lowerTypeForGPU(argTy)) {
+        newConvs[idx] = ArgConvention::ReadMem;
+        newInputTypes[idx] = newArgTy;
+        s.changedIndices.push_back(
+            {idx, LoweredSignature::ArgLoweringStatus::PointerAdded});
+      }
     }
   }
 
@@ -169,8 +198,9 @@ static LoweredSignature lowerSignature(FuncType sig) {
 /// `kgen.call_indirect` ops.
 static void lowerCallOpImpl(
     Operation *op, Operation::operand_range oldOperands, FuncType oldSig,
-    function_ref<void(Operation *, FuncType, ValueRange)> updateArgs) {
-  LoweredSignature s = lowerSignature(oldSig);
+    function_ref<void(Operation *, FuncType, ValueRange)> updateArgs,
+    TargetInfoAttr target) {
+  LoweredSignature s = lowerSignature(oldSig, target);
   FuncType newSig = s.newSig;
   if (!newSig)
     return;
@@ -179,9 +209,19 @@ static void lowerCallOpImpl(
   ImplicitLocOpBuilder b(op->getLoc(), op);
   SmallVector<Value> newOperands(oldOperands);
   s.dropOperandsFrom(newOperands);
-  for (size_t idx : s.changedIndices) {
-    newOperands[s.mapOperandIndex(idx)] =
-        b.create<POP::LoadOp>(oldOperands[idx]);
+  for (auto [idx, status] : s.changedIndices) {
+    Value operand = oldOperands[idx];
+    switch (status) {
+    case LoweredSignature::ArgLoweringStatus::PointerRemoved:
+      newOperands[s.mapOperandIndex(idx)] = b.create<POP::LoadOp>(operand);
+      break;
+    case LoweredSignature::ArgLoweringStatus::PointerAdded: {
+      auto ptr = b.create<POP::StackAllocationOp>(
+          newSig.getArguments()[s.mapOperandIndex(idx)]);
+      b.create<POP::StoreOp>(operand, ptr);
+      newOperands[s.mapOperandIndex(idx)] = ptr;
+    } break;
+    }
   }
 
   // Now update the result, if needed.
@@ -249,27 +289,27 @@ static void lowerCallOpImpl(
 }
 
 /// Lower the input conventions for a KGEN::CallOp if needed.
-static void lowerCallOp(CallOp callOp) {
+static void lowerCallOp(CallOp callOp, TargetInfoAttr target) {
   lowerCallOpImpl(
       callOp, callOp.getOperands(),
       callOp.getCalleeSignature().getInstantiatedBody(),
       [](Operation *op, FuncType newSig, ValueRange newOperands) {
         auto callOp = cast<CallOp>(op);
         callOp->setOperands(newOperands);
-        callOp.setCalleeAttr(SymbolConstantAttr::get(
-            callOp.getCallee().getSymbol(), GeneratorType::get({}, newSig)));
-      });
+      },
+      target);
 }
 
 /// Lower the input conventions for a KGEN::CallIndirectOp if needed.
-static void lowerCallIndirectOp(CallIndirectOp callOp) {
+static void lowerCallIndirectOp(CallIndirectOp callOp, TargetInfoAttr target) {
   FuncType oldSig = callOp.getCallee().getType().getBody();
   lowerCallOpImpl(
       callOp, callOp.getArguments(), oldSig,
       [&oldSig](Operation *op, FuncType newSig, ValueRange newOperands) {
         auto callOp = cast<CallIndirectOp>(op);
         callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
-      });
+      },
+      target);
 }
 
 /// Emit IR for repacking the returned variant in the body of a throwing
@@ -319,9 +359,9 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
 }
 
 /// Lower the input conventions for a KGEN::FuncOp if needed.
-static void lowerFuncOp(FuncOp funcOp) {
+static void lowerFuncOp(FuncOp funcOp, TargetInfoAttr target) {
   FuncType oldSig = funcOp.getFuncTypeGenerator().getBody();
-  LoweredSignature s = lowerSignature(oldSig);
+  LoweredSignature s = lowerSignature(oldSig, target);
   FuncType newSig = s.newSig;
   if (!newSig)
     return;
@@ -337,13 +377,22 @@ static void lowerFuncOp(FuncOp funcOp) {
 
   Region &body = funcOp.getBodyRegion();
   auto b = OpBuilder::atBlockBegin(&body.front());
-  for (size_t idx : s.changedIndices) {
+  for (auto [idx, status] : s.changedIndices) {
     BlockArgument arg = body.getArgument(idx);
     Location loc = addDI(arg.getLoc());
-    auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType());
-    auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
-    arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
-    arg.replaceAllUsesExcept(ptr, storeOp);
+    switch (status) {
+    case LoweredSignature::ArgLoweringStatus::PointerRemoved: {
+      auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType());
+      auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
+      arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
+      arg.replaceAllUsesExcept(ptr, storeOp);
+    } break;
+    case LoweredSignature::ArgLoweringStatus::PointerAdded: {
+      arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
+      auto load = b.create<POP::LoadOp>(loc, arg);
+      arg.replaceAllUsesExcept(load, load);
+    } break;
+    }
   }
 
   Value newResPtr, newErrPtr;
@@ -395,28 +444,27 @@ static void lowerFuncOp(FuncOp funcOp) {
       returnOp->insertOperands(1, newRes);
     });
   }
-  funcOp.setFuncTypeGenerator(GeneratorType::get(
-      /*inputParamTypes=*/{}, newSig));
 }
 
 void LowerArgConventionsPass::runOnOperation() {
   FuncOp func = getOperation();
-  lowerFuncOp(func);
+  TargetInfoAttr target = lookupTargetInfo(func);
+  lowerFuncOp(func, target);
 
   // Lower the ops in the function body.
-  func.walk([](Operation *op) {
+  func.walk([target](Operation *op) {
     if (auto callOp = dyn_cast<CallOp>(op))
-      return lowerCallOp(callOp);
+      return lowerCallOp(callOp, target);
     if (auto callOp = dyn_cast<CallIndirectOp>(op))
-      return lowerCallIndirectOp(callOp);
+      return lowerCallIndirectOp(callOp, target);
   });
 
   // We must do this in a second pass, otherwise ops like kgen.call_indirect
   // would be difficult to identify for lowering (since their argument types
   // would be lowered already).
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](FuncType sig) {
-    FuncType newSig = lowerSignature(sig).newSig;
+  replacer.addReplacement([target](FuncType sig) {
+    FuncType newSig = lowerSignature(sig, target).newSig;
     return newSig ? newSig : sig;
   });
   auto metatype = TypeType::get(&getContext());
