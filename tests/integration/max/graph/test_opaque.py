@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 import pytest
-from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, _OpaqueType, ops
@@ -108,10 +107,6 @@ class PythonCounter:
         return PythonCounter(self.a, self.b)
 
 
-@pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="TODO(GEX-2135): test requires execute_legacy, which does not support GPU.",
-)
 def test_pyobject_opaque(
     session: InferenceSession, counter_ops_path: Path
 ) -> None:
