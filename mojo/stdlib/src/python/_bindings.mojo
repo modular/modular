@@ -80,14 +80,19 @@ struct PyMojoObject[T: AnyType]:
 
 
 fn python_type_object[
-    T: Pythonable,
+    T: Pythonable
+](
     type_name: StaticString,
-](owned methods: List[PyMethodDef]) raises -> TypedPythonObject["Type"]:
+    owned methods: List[PyMethodDef] = List[PyMethodDef](),
+) raises -> TypedPythonObject["Type"]:
     """Construct a Python 'type' describing PyMojoObject[T].
 
     Parameters:
         T: The mojo type to wrap.
+
+    Args:
         type_name: The name of the Mojo type.
+        methods: The methods to add to the type.
     """
 
     var cpython = _get_global_python_itf().cpython()
@@ -109,11 +114,9 @@ fn python_type_object[
     # Zeroed item terminator
     slots.append(PyType_Slot.null())
 
-    # Get this as a static string to force it to be nul terminated.
-    alias type_name_static = get_static_string[type_name]()
     var type_spec = PyType_Spec(
         # FIXME(MOCO-1306): This should be `T.__name__`.
-        type_name_static.unsafe_ptr().bitcast[sys.ffi.c_char](),
+        type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
         sizeof[PyMojoObject[T]](),
         0,
         Py_TPFLAGS_DEFAULT,
