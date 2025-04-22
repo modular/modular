@@ -93,15 +93,24 @@ void LegalizePOPOperations::initializeTargetLegalConversions(MLIRContext *ctx) {
       KGENDType(KGENDType::f16));
   targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e5m2)].push_back(
       KGENDType(KGENDType::f32));
+  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e5m2)].push_back(
+      KGENDType(KGENDType::bf16));
 
   targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e4m3fn)]
       .push_back(KGENDType(KGENDType::f16));
   targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e4m3fn)]
       .push_back(KGENDType(KGENDType::f32));
+  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e4m3fn)]
+      .push_back(KGENDType(KGENDType::bf16));
 
   targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f32)].push_back(
       KGENDType(KGENDType::f8e5m2));
   targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f32)].push_back(
+      KGENDType(KGENDType::f8e4m3fn));
+
+  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::bf16)].push_back(
+      KGENDType(KGENDType::f8e5m2));
+  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::bf16)].push_back(
       KGENDType(KGENDType::f8e4m3fn));
 }
 
