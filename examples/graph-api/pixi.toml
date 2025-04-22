@@ -11,5 +11,5 @@ basic = "mojo basics/basic.🔥"
 test = { depends-on = ["basic"] }
 
 [dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 max = "*"

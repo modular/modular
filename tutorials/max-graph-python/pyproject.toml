@@ -3,7 +3,7 @@ authors = [{name = "Modular", email = "hello@modular.com"}]
 dependencies = []
 description = "Add two numbers"
 name = "max_ops"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 version = "0.1.0"
 
 [build-system]
@@ -27,7 +27,7 @@ test = { depends-on = ["addition"] }
 
 [tool.pixi.dependencies]
 max = "~=24.6"
-numpy = "<2.0"
+numpy = "*"
 pytest = ">=8.3.3,<9"
 black = ">=24.10.0,<25"
 mypy = ">=1.13.0,<2"

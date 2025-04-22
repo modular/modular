@@ -14,7 +14,7 @@ dependencies = [
 ]
 description = "MAX Serve benchmarking tools"
 name = "benchmarking"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.9,<3.14"
 version = "0.1.0"
 
 [build-system]

@@ -10,5 +10,5 @@ version = "0.1.0"
 basic = "python basic.py"
 
 [dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 max-pipelines = "*"

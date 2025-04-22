@@ -16,4 +16,4 @@ test = { depends-on = ["add", "matmul", "mnist"] }
 max = "~=24.6"
 pytorch = { version = ">=2.5.0,<=2.6.0", channel = "pytorch" }
 torchvision = { version = ">=0.19.0,<0.22", channel = "pytorch" }
-numpy = "<2.0"
+numpy = "*"

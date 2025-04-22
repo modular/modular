@@ -8,4 +8,4 @@ platforms = ["osx-arm64","linux-64","linux-aarch64"]
 
 [dependencies]
 max = "*"
-python = ">=3.11,<3.12"
+python = ">=3.11,<3.14"

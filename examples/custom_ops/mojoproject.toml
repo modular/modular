@@ -28,7 +28,7 @@ test = { depends-on = [
 ] }
 
 [dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 max = ">=24.6.0.dev2024090821"
 
 # Dependencies needed for the `whisper` example

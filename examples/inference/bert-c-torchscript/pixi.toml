@@ -7,10 +7,10 @@ channels = ["conda-forge", "https://conda.modular.com/max-nightly/", "pytorch"]
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 
 [dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 max = "*"
 transformers = ">=4.44.0"
-numpy = "<2.0"
+numpy = "*"
 cmake = ">=3.24"
 
 # For performance, prefer pytorch over anything else.
