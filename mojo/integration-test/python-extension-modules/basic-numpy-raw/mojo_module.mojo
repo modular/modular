@@ -15,7 +15,6 @@ from os import abort
 
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject, PythonModule
-from python._bindings import py_c_function_wrapper
 from python._cpython import PyObjectPtr
 
 
@@ -25,8 +24,8 @@ fn PyInit_mojo_module() -> PythonObject:
     """
 
     try:
-        return PythonModule("mojo_module").def_py_c_function[
-            py_c_function_wrapper[mojo_incr_np_array],
+        return PythonModule("mojo_module").def_py_function[
+            mojo_incr_np_array,
             "mojo_incr_np_array",
             docstring="Increment the contents of a numpy array by one",
         ]()
