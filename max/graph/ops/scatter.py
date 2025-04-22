@@ -5,9 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for scatter."""
 
-from functools import reduce
-from operator import mul
-
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
@@ -16,6 +13,29 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .nonzero import nonzero
+
+
+def scatter(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+    axis: TensorValueLike,
+) -> TensorValue:
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+    axis = dtype_promotion._promote_to_strong(
+        axis, DType.int64, DeviceRef.CPU()
+    )
+
+    return Graph.current._add_op(
+        rmo.mo_scatter,
+        TensorType(input.dtype, input.shape, input.device).to_mlir(),
+        input,
+        updates,
+        indices,
+        axis,
+    )[0].tensor
 
 
 def masked_scatter(
@@ -43,8 +63,8 @@ def masked_scatter(
             f" ({updates.dtype}) must match"
         )
 
-    input_size = reduce(mul, input.shape, 1)
-    updates_size = reduce(mul, updates.shape, 1)
+    # input_size = reduce(mul, input.shape, 1)
+    # updates_size = reduce(mul, updates.shape, 1)
     # TODO: This is a bug. They don't have to match.
     # Assuming it will throw a run-time error if updates_size != non-zeros in mask
     # if input_size != updates_size and updates_size != 1:
