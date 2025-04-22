@@ -9,6 +9,7 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 
