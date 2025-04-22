@@ -1370,45 +1370,43 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 
 ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
+  Block &body = *funcOp.getBody();
+  assert(isa<EndFnOp>(body.front()) && "expected empty body here");
+
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (shared.diBuilder)
+  if (shared.diBuilder) {
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
-  // If the function is a trait function or something else unreachable, we don't
-  // need to process it.
-  Block &body = *funcOp.getBody();
+    // Reset the location on the endfn to correct debug scope.
+    body.front().setLoc(shared.translateLocation(decl.getLoc()));
+  }
 
   // If this is a method in a trait, we only allow a "..."
   if (isa<TraitDeclOp>(*decl.getParentDecl())) {
-    ParserBase p(shared, lexer);
-    assert(body.empty() && "expected empty body for trait method");
-
     // Skip any docstring's that might be present.
+    ParserBase p(shared, lexer);
     p.parseDocString(decl);
 
     // If we see an ellipsis, the function member is well formed: don't emit
     // arguments or any other setup logic.
-    auto cursor = lexer.getCursor();
     if (p.consumeIf(Token::dot_dot_dot) || p.consumeIf(Token::kw_pass)) {
-      auto b = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), &body);
-      b.create<UnreachableOp>();
+      body.front().erase(); // Remove the lit.endfn op to replace it.
+      OpBuilder::atBlockEnd(&body).create<UnreachableOp>(funcOp.getLoc());
       return success();
     }
 
     // Otherwise, must be a default implementation.  Parse it and then emit an
     // error later.
-    cursor.restore(lexer);
   }
 
-  // Set up information about value arguments.
-  ExprEmitter emitter(decl, OpBuilder::atBlockEnd(&body));
-
-  FnTypeGeneratorType funcSignature = funcOp.getFuncTypeGenerator();
+  // Set up information about value arguments, emitting before the lit.endfn.
+  ExprEmitter emitter(decl, OpBuilder(&body.front()));
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
+  FnTypeGeneratorType funcSignature = funcOp.getFuncTypeGenerator();
   for (auto [argIdxX, bbArg, convention] :
        llvm::enumerate(funcOp.getBody()->getArguments(),
                        funcSignature.getArgConventions())) {
@@ -1512,27 +1510,25 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (decl.isErroneous() || decl.getParentDecl()->isErroneous())
     return success();
 
-  // Emit a default "return None" if the function returns nothing, and add an
-  // endop terminator.
-  if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
-    // If the function had an explicit return, just append the default end
-    // terminator.
-    emitter.builder->create<EndFnOp>(funcOp.getLoc());
-  } else {
-    // Determine if this is falling off the bottom of the function is an
-    // implicit return or if it should "fall off" in the case of a missing
-    // return.
-    bool needDefaultReturn = false;
-    if (ASTType(funcOp.getUserResultType()).isNoneType() ||
-        funcOp.getNamedResultAttr())
-      needDefaultReturn = true;
+  // Determine whether we need an implicit return at the end of the function.
+  // An implicit return is generated for functions that return None.
+  bool needDefaultReturn = false;
+  if (ASTType(funcOp.getUserResultType()).isNoneType() ||
+      funcOp.getNamedResultAttr())
+    needDefaultReturn = true;
 
-    // Emit a none if needed and emit an EndFunc.
-    if (needDefaultReturn)
-      emitter.emitNormalReturn(funcOp.getLoc());
-    else
-      emitter.builder->create<EndFnOp>(funcOp.getLoc());
+  // We can elide the boilerplate if we can trivially the user already has a
+  // return. This won't catch cases where an 'if' has two returns in the bodies
+  // etc but is enough to avoid generating IR noise.
+  if (emitter.builder->getInsertionPoint() != body.begin()) {
+    if (isa<LIT::ReturnOp, LIT::RaiseOp>(
+            std::prev(emitter.builder->getInsertionPoint())))
+      needDefaultReturn = false;
   }
+
+  // Emit a default "return None" if the function returns nothing.
+  if (needDefaultReturn)
+    emitter.emitNormalReturn(funcOp.getLoc(), Value(), /*emitEndFunc=*/false);
 
   // Now that the body of the function is parsed, run any body decorators.
   Decorators(decl).applyBodyDecorators([&](ExprNode *decorator) {

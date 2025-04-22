@@ -96,10 +96,10 @@ public:
 
   /// Return the builder at the end of the region that the decl contains.
   OpBuilder getDeclEndBuilder() {
-    if (Operation *op = getIfOperation())
-      if (op->getNumRegions() != 0)
-        return OpBuilder::atBlockEnd(&op->getRegion(0).front());
-    return OpBuilder(getContext());
+    Operation *op = getIfOperation();
+    assert(op && op->getNumRegions() == 1 &&
+           "can't get builder for this ASTDecl");
+    return OpBuilder::atBlockEnd(&op->getRegion(0).front());
   }
 
   /// This return the 'Self' type for a struct or trait, which includes

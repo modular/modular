@@ -157,11 +157,16 @@ struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
         curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
+    // Special logic for functions.
+    if (auto funcOp = dyn_cast<FnOp>(curDeclScope)) {
+      // The default of inserting at the end of the function isn't right,
+      // because it will have an lit.endfn: insert before that instead.
+      assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
+             "expected lit.endfn at the end of a function body");
+      builder.setInsertionPoint(&funcOp.getBody()->back());
 
-    // If we are parsing into a function, then we need a position to synthesize
-    // variable definitions at the top of the function.
-    // TODO: If we're parsing into top level code, we don't know how to do this.
-    if (auto funcOp = dyn_cast<FnOp>(getParentDecl())) {
+      // If we are parsing into a function, then we need a position to
+      // synthesize variable definitions at the top of the function.
       // The operation builder inserts before its insertion point, but for a
       // stable insertion point, keep the previous iterator position.
       varDeclCursor = OpBuilder(builder.getInsertionBlock(),
@@ -2435,6 +2440,12 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   ASTDecl &funcDecl =
       getDeclResolver().addDecl(fnOp, loc, baseName, curDeclScope, startCursor,
                                 getLexer().getCursor(), curIndent);
+
+  // Add an EndFnOp to the end of the body. This makes the function able to
+  // verify clean, even if we don't body or signature resolve it.  We may end up
+  // removing this when resolving the body.
+  OpBuilder::atBlockEnd(fnOp.getBody()).create<EndFnOp>(fnOp.getLoc());
+
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.
   if (curDeclScope->getNearestDeclOfType<FnOp>())
