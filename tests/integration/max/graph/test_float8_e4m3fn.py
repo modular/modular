@@ -1,0 +1,281 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Test float8_e4m3fn dtype support."""
+
+import numpy as np
+import pytest
+import torch
+from max.driver import Tensor, accelerator_count
+from max.dtype import DType, max_to_torch_type
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="float8 requires accelerator"
+)
+@pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
+def test_f8_upcast(session, cast_dtype):
+    with Graph(
+        "f8",
+        input_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=["x", 2],
+                device=DeviceRef.GPU(),
+            ),
+        ],
+    ) as graph:
+        x = graph.inputs[0]
+        out = x.cast(cast_dtype)
+        graph.output(out)
+
+    model = session.load(graph)
+
+    x_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
+    )
+    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
+    out = model.execute(x)[0]
+    out_torch = torch.from_dlpack(out)
+
+    expected = x_torch.to(torch.float32).cpu()
+    np.testing.assert_allclose(
+        out_torch.to(torch.float32).cpu(), expected, rtol=0.06
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="float8 requires accelerator"
+)
+@pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
+def test_f8_downcast(session, cast_dtype):
+    with Graph(
+        "f8",
+        input_types=[
+            TensorType(
+                dtype=cast_dtype, shape=["x", 2], device=DeviceRef.GPU()
+            ),
+        ],
+    ) as graph:
+        x = graph.inputs[0]
+        out = x.cast(DType.float8_e4m3fn)
+        graph.output(out)
+
+    model = session.load(graph)
+
+    x_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        .to(max_to_torch_type(cast_dtype))
+        .cuda()
+    )
+    x = Tensor.from_dlpack(x_torch)
+    out = model.execute(x)[0]
+    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+        torch.float8_e4m3fn
+    )
+
+    expected = x_torch.to(torch.float32).cpu()
+    np.testing.assert_allclose(
+        out_torch.to(torch.float32).cpu(), expected, rtol=0.06
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="float8 requires accelerator"
+)
+def test_f8_matmul(session):
+    with Graph(
+        "f8",
+        input_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=["x", 2],
+                device=DeviceRef.GPU(),
+            ),
+            TensorType(
+                dtype=DType.float8_e4m3fn, shape=[2], device=DeviceRef.GPU()
+            ),
+        ],
+    ) as graph:
+        x = graph.inputs[0]
+        y = graph.inputs[1]
+        out = x @ y
+        graph.output(out)
+
+    model = session.load(graph)
+
+    x_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
+    )
+    y_torch = torch.tensor([5.0, 6.0]).to(torch.float8_e4m3fn).cuda()
+    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
+    y = Tensor.from_dlpack(y_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
+    out = model.execute(x, y)[0]
+    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+        torch.float8_e4m3fn
+    )
+
+    # Torch does not support matmul of float8_e4m3fn.
+    # Instead, run in bfloat16 and increase the tolerances.
+    expected = (
+        (x_torch.to(torch.bfloat16) @ y_torch.to(torch.bfloat16))
+        .to(torch.float32)
+        .cpu()
+    )
+    np.testing.assert_allclose(
+        out_torch.to(torch.float32).cpu(), expected, rtol=0.06
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="float8 requires accelerator"
+)
+def test_f8_constant(session):
+    y_data = np.array([5.0, 6.0])
+    with Graph(
+        "f8",
+        input_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=["x", 2],
+                device=DeviceRef.GPU(),
+            ),
+        ],
+    ) as graph:
+        x = graph.inputs[0]
+        y = ops.constant(
+            y_data, dtype=DType.float8_e4m3fn, device=DeviceRef.GPU()
+        )
+        out = x @ y
+        graph.output(out)
+    print(graph)
+
+    model = session.load(graph)
+
+    x_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
+    )
+    y_torch = torch.tensor(y_data).to(torch.float8_e4m3fn).cuda()
+    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
+    out = model.execute(x)[0]
+    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+        torch.float8_e4m3fn
+    )
+
+    # Torch does not support matmul of float8_e4m3fn.
+    # Instead, run in bfloat16 and increase the tolerances.
+    expected = (
+        (x_torch.to(torch.bfloat16) @ y_torch.to(torch.bfloat16))
+        .to(torch.float32)
+        .cpu()
+    )
+    np.testing.assert_allclose(
+        out_torch.to(torch.float32).cpu(), expected, rtol=0.06
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="float8 requires accelerator"
+)
+def test_f8_weight_cpu(session):
+    y_data = np.array([5.0, 6.0])
+    with Graph(
+        "f8",
+        input_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=["x", 2],
+                device=DeviceRef.GPU(),
+            ),
+        ],
+    ) as graph:
+        x = graph.inputs[0]
+        y = Weight(
+            "y",
+            dtype=DType.float8_e4m3fn,
+            shape=[2],
+            device=DeviceRef.CPU(),
+        )
+        out = x @ y.to(DeviceRef.GPU())
+        graph.output(out)
+
+    y_torch = torch.tensor(y_data).to(torch.float8_e4m3fn).cuda()
+    y_weight = Tensor.from_dlpack(y_torch.cpu().view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    model = session.load(graph, weights_registry={"y": y_weight})
+
+    x_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
+    )
+    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
+    out = model.execute(x)[0]
+    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+        torch.float8_e4m3fn
+    )
+
+    # Torch does not support matmul of float8_e4m3fn.
+    # Instead, run in bfloat16 and increase the tolerances.
+    expected = (
+        (x_torch.to(torch.bfloat16) @ y_torch.to(torch.bfloat16))
+        .to(torch.float32)
+        .cpu()
+    )
+    np.testing.assert_allclose(
+        out_torch.to(torch.float32).cpu(), expected, rtol=0.06
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="float8 requires accelerator"
+)
+def test_f8_weight_gpu(session):
+    y_data = np.array([5.0, 6.0])
+    with Graph(
+        "f8",
+        input_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=["x", 2],
+                device=DeviceRef.GPU(),
+            ),
+        ],
+    ) as graph:
+        x = graph.inputs[0]
+        y = Weight(
+            "y",
+            dtype=DType.float8_e4m3fn,
+            shape=[2],
+            device=DeviceRef.GPU(),
+        )
+        out = x @ y
+        graph.output(out)
+
+    y_torch = torch.tensor(y_data).to(torch.float8_e4m3fn).cuda()
+    y_weight = Tensor.from_dlpack(y_torch.cpu().view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    model = session.load(graph, weights_registry={"y": y_weight})
+
+    x_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
+    )
+    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
+    out = model.execute(x)[0]
+    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+        torch.float8_e4m3fn
+    )
+
+    # Torch does not support matmul of float8_e4m3fn.
+    # Instead, run in bfloat16 and increase the tolerances.
+    expected = (
+        (x_torch.to(torch.bfloat16) @ y_torch.to(torch.bfloat16))
+        .to(torch.float32)
+        .cpu()
+    )
+    np.testing.assert_allclose(
+        out_torch.to(torch.float32).cpu(), expected, rtol=0.06
+    )
