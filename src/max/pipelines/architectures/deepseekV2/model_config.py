@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.max_config import KVCacheConfig
 from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
@@ -120,16 +120,16 @@ class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        page_size: int = 128,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
+            # n_kv_heads should always be 1 because we only cache a single latent vector
+            # in LatentAttention
+            n_kv_heads=1,
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
-            cache_strategy=kv_cache_config.cache_strategy,
-            page_size=kv_cache_config.kv_cache_page_size,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
+            cache_strategy=KVCacheStrategy.PAGED,
             n_devices=n_devices,
+            page_size=page_size,
         )

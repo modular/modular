@@ -19,13 +19,16 @@ from max.nn import (
     EmbeddingV2,
     LinearV2,
     Module,
-    OptimizedRotaryEmbedding,
     RMSNormV2,
     Transformer,
     TransformerBlock,
 )
 from max.nn.attention.attention_with_rope import LatentAttentionWithRope
-from max.nn.kv_cache import FetchContinuousBatchingKVCacheCollection
+from max.nn.kv_cache import FetchPagedKVCacheCollection
+from max.nn.rotary_embedding import (
+    DeepseekYarnRopeScalingParams,
+    DeepseekYarnRotaryEmbedding,
+)
 from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import MoE
 
 from .model_config import DeepseekV2Config
@@ -36,12 +39,23 @@ class DeepseekV2(Transformer):
 
     def __init__(self, config: DeepseekV2Config):
         assert len(config.devices) == 1
-        # TODO: Replace with YarnRope when integrated with LatentAttention
-        rope = OptimizedRotaryEmbedding(
-            dim=config.qk_rope_head_dim,
+        assert config.rope_scaling is not None
+        scaling_params = DeepseekYarnRopeScalingParams(
+            scaling_factor=config.rope_scaling["factor"],
+            original_max_position_embeddings=config.rope_scaling[
+                "original_max_position_embeddings"
+            ],
+            beta_fast=config.rope_scaling["beta_fast"],
+            beta_slow=config.rope_scaling["beta_slow"],
+            mscale=config.rope_scaling["mscale"],
+            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+        )
+        rope = DeepseekYarnRotaryEmbedding(
+            config.qk_rope_head_dim,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_position_embeddings,
+            scaling_params=scaling_params,
             device=config.devices[0],
         )
 
@@ -101,7 +115,7 @@ class DeepseekV2(Transformer):
             output=lm_head,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=FetchContinuousBatchingKVCacheCollection(
+            kv_collection_constructor=FetchPagedKVCacheCollection(
                 config.kv_params
             ),
         )
@@ -128,7 +142,7 @@ class DeepseekV2(Transformer):
                 ep_size=config.ep_size,
                 experts_per_rank=config.n_routed_experts // config.ep_size,
                 moe_intermediate_size=config.moe_intermediate_size,
-                max_position_embeddings=config.max_position_embeddings,
+                hidden_size=config.hidden_size,
                 n_shared_experts=config.n_shared_experts,
                 dtype=config.dtype,
                 device=config.devices[0],
