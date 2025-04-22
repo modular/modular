@@ -292,13 +292,6 @@ lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
 
 // -----
 
-lit.fn @f() -> !kgen.none {
-  // expected-error @below {{'lit.trait_fn' op expected a parent function in a trait}}
-  lit.trait_fn
-}
-
-// -----
-
 // expected-error @below {{argument #0 with convention 'read_mem' in signature type should be a `!lit.ref` but got: 'index'}}
 !type = !lit.generator<(index read_mem) -> ()>
 

@@ -26,7 +26,7 @@ kgen.generator @declref_metatype(%arg0: !lit.struct<@MyStruct>) {
 lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>> {
   // CHECK-NEXT: lit.fn @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none
   lit.fn @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none {
-    lit.trait_fn
+    kgen.unreachable
   }
 }
 

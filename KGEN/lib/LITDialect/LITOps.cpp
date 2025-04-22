@@ -1663,17 +1663,6 @@ void ErrorReturnOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// TraitFnOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult LIT::TraitFnOp::verify() {
-  if (llvm::isa_and_present<TraitDeclOp>(getParentOp()->getParentOp()))
-    return success();
-
-  return emitOpError("expected a parent function in a trait");
-}
-
-//===----------------------------------------------------------------------===//
 // UnresolvedImportOp
 //===----------------------------------------------------------------------===//
 

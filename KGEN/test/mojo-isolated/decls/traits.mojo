@@ -11,27 +11,27 @@
 # CHECK-SAME: <?, [[T:.*]]: !Trait>
 trait Trait:
     # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!Trait [[T]], imm {{.*}}> read_mem) -> !kgen.none
-    # CHECK-NEXT: lit.trait_fn
+    # CHECK-NEXT: kgen.unreachable
     fn f0(self):
         ...
 
     # CHECK: lit.fn @"f1{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none
-    # CHECK-NEXT: lit.trait_fn
+    # CHECK-NEXT: kgen.unreachable
     fn f1(mut self):
         ...
 
     # CHECK: lit.fn @"f2{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none attributes
-    # CHECK-NEXT: lit.trait_fn
+    # CHECK-NEXT: kgen.unreachable
     fn f2(mut self):
         pass
 
     # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> i1
-    # CHECK-NEXT: lit.trait_fn
+    # CHECK-NEXT: kgen.unreachable
     def f3(self):
         pass
 
     # CHECK: lit.fn @"f4{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> i1
-    # CHECK-NEXT: lit.trait_fn
+    # CHECK-NEXT: kgen.unreachable
     def f4(mut self):
         pass
 
@@ -549,7 +549,7 @@ trait ParentTraitSameSig:
 # CHECK-LABEL: lit.trait.decl @ChildTraitSameSig
 trait ChildTraitSameSig(ParentTraitSameSig):
     # CHECK-NEXT: lit.fn @"foo
-    # CHECK-NEXT: lit.trait_fn
+    # CHECK-NEXT: kgen.unreachable
     fn foo(self):
         ...
 

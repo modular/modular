@@ -2756,7 +2756,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
                          "declaration, use `...` or `pass`");
       }
       auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
-      b.create<TraitFnOp>();
+      b.create<UnreachableOp>();
     }
   }
 

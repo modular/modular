@@ -550,7 +550,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     ```mlir
     lit.trait.decl @Trait<T: !Trait> {
       lit.fn @f() -> !kgen.none {
-        lit.trait_fn
+        kgen.unreachable
       }
     }
     ```
@@ -964,33 +964,6 @@ def LIT_EndFnOp : LITOp<"end_fn", [Terminator]> {
   let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
 }
-
-//===----------------------------------------------------------------------===//
-// TraitFnOp
-//===----------------------------------------------------------------------===//
-
-def LIT_TraitFnOp : LITOp<"trait_fn", [Terminator,
-    HasParent<"LIT::FnOp">]> {
-  let summary = "Denotes a trait function.";
-  let description = [{
-    The `lit.trait_fn` operation denotes the end of a `lit.fn` body,
-    indicating that the function is a trait function whose body is empty.
-
-    Example:
-
-    ```mlir
-    lit.trait.decl @Trait {
-      lit.fn @f() -> !kgen.none {
-        lit.trait_fn
-      }
-    }
-    ```
-  }];
-
-  let assemblyFormat = "attr-dict";
-  let hasVerifier = 1;
-}
-
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
