@@ -33,8 +33,8 @@ class MoE(Module):
     moe_intermediate_size: int
     """Hidden dimension size for MoE intermediate layer."""
 
-    max_position_embeddings: int
-    """Maximum sequence length."""
+    hidden_size: int
+    """Hidden dimension size for MoE layer."""
 
     n_shared_experts: int
     """Number of shared experts."""
@@ -46,7 +46,7 @@ class MoE(Module):
         ep_size: int = 1,
         experts_per_rank: int = 64,
         moe_intermediate_size: int = 1408,
-        max_position_embeddings: int = 2048,
+        hidden_size: int = 2048,
         n_shared_experts: int = 2,
         dtype: DType = DType.bfloat16,
     ):
@@ -64,66 +64,59 @@ class MoE(Module):
         self.ep_size = ep_size
         self.experts_per_rank = experts_per_rank
         self.moe_intermediate_size = moe_intermediate_size
-        self.max_position_embeddings = max_position_embeddings
+        self.hidden_size = hidden_size
         self.n_shared_experts = n_shared_experts
         self.gate = MaxMoEGate(device)
 
-        # Initialize the weights for the MoE layer
-        self.gate_proj, self.down_proj, self.up_proj = [], [], []
-
         # Routed experts weights
-        for i in range(self.experts_per_rank):
-            d = Weight(
-                name=f"experts.{i}.down_proj.weight",
-                shape=(
-                    self.max_position_embeddings,
-                    self.moe_intermediate_size,
-                ),
-                dtype=dtype,
-                device=device,
-            )
-            setattr(self, f"experts.{i}.down_proj", d)
-            self.down_proj.append(d)
+        self.down_proj = Weight(
+            name="experts.down_proj.weight",
+            shape=(
+                self.experts_per_rank,
+                self.hidden_size,
+                self.moe_intermediate_size,
+            ),
+            dtype=dtype,
+            device=device,
+        )
 
-            g = Weight(
-                name=f"experts.{i}.gate_proj.weight",
-                shape=(
-                    self.moe_intermediate_size,
-                    self.max_position_embeddings,
-                ),
-                dtype=dtype,
-                device=device,
-            )
-            setattr(self, f"experts.{i}.gate_proj", g)
-            self.gate_proj.append(g)
+        self.gate_proj = Weight(
+            name="experts.gate_proj.weight",
+            shape=(
+                self.experts_per_rank,
+                self.moe_intermediate_size,
+                self.hidden_size,
+            ),
+            dtype=dtype,
+            device=device,
+        )
 
-            u = Weight(
-                name=f"experts.{i}.up_proj.weight",
-                shape=(
-                    self.moe_intermediate_size,
-                    self.max_position_embeddings,
-                ),
-                dtype=dtype,
-                device=device,
-            )
-            setattr(self, f"experts.{i}.up_proj", u)
-            self.up_proj.append(u)
+        self.up_proj = Weight(
+            name="experts.up_proj.weight",
+            shape=(
+                self.experts_per_rank,
+                self.moe_intermediate_size,
+                self.hidden_size,
+            ),
+            dtype=dtype,
+            device=device,
+        )
 
         # Shared experts weights
         self.shared_expert_up_proj = LinearV2(
-            in_dim=self.max_position_embeddings,
+            in_dim=self.hidden_size,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
             dtype=dtype,
             device=device,
         )
         self.shared_expert_down_proj = LinearV2(
             in_dim=self.moe_intermediate_size * self.n_shared_experts,
-            out_dim=self.max_position_embeddings,
+            out_dim=self.hidden_size,
             dtype=dtype,
             device=device,
         )
         self.shared_expert_gate_proj = LinearV2(
-            in_dim=self.max_position_embeddings,
+            in_dim=self.hidden_size,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
             dtype=dtype,
             device=device,
@@ -133,31 +126,26 @@ class MoE(Module):
         """Mixture of Experts Layer.
 
         Args:
-            hidden_states: Input tensor of shape (batch_size, seq_length, hidden_size)
+            hidden_states: Input tensor of shape (seq_length, hidden_size)
 
         Returns:
-            Output tensor of shape (batch_size, seq_length, hidden_size)
+            Output tensor of shape (seq_length, hidden_size)
         """
+
         identity = hidden_states
         # Get the topk experts per token and their weights
         topk_idx, topk_weight = self.gate(hidden_states)
 
-        # Returns a list of weights for each expert
-        # (n_routed_experts, h, w)
-        down_proj = ops.stack(self.down_proj, axis=0)
-        gate_proj = ops.stack(self.gate_proj, axis=0)
-        up_proj = ops.stack(self.up_proj, axis=0)
-
         # Gather the weights for the topk experts for each token
         # (seq_len, k, h, w)
-        topk_down_proj = ops.gather(down_proj, topk_idx, axis=0)
-        topk_gate_proj = ops.gather(gate_proj, topk_idx, axis=0)
-        topk_up_proj = ops.gather(up_proj, topk_idx, axis=0)
+        topk_down_proj = ops.gather(self.down_proj, topk_idx, axis=0)
+        topk_gate_proj = ops.gather(self.gate_proj, topk_idx, axis=0)
+        topk_up_proj = ops.gather(self.up_proj, topk_idx, axis=0)
 
         # Unsqueeze the hidden states to match the shape of the topk weights
-        # (seq_len, w) -> (seq_len, 1, w, 1)
+        # (seq_len, w) -> (seq_len, w, 1)
         hidden_states = ops.unsqueeze(
-            ops.unsqueeze(hidden_states[0], axis=1), axis=-1
+            ops.unsqueeze(hidden_states, axis=1), axis=-1
         )
 
         # (seq_len, k, h, w) @ (seq_len, 1, w, 1) -> (seq_len, k, h, 1)

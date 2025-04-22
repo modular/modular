@@ -23,6 +23,7 @@ def register_all_models():
     if _MODELS_ALREADY_REGISTERED:
         return
 
+    from .deepseekV2 import deepseekV2_arch
     from .exaone import exaone_arch
     from .gemma3 import gemma3_arch
     from .granite import granite_arch
@@ -40,6 +41,7 @@ def register_all_models():
 
     architectures = [
         exaone_arch,
+        deepseekV2_arch,
         gemma3_arch,
         llama_arch,
         llama4_arch,
