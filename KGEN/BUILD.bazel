@@ -1098,7 +1098,6 @@ modular_cc_library(
         "lib/Compiler/ObjectCompiler/*.cpp",
         "lib/Compiler/ObjectCompiler/*.h",
     ]),
-    data = [":ptxas"],
     deps = [
         ":Compiler",
         ":KGENToLLVM",
@@ -1337,19 +1336,4 @@ modular_shared_library(
         "@llvm-project//lldb:liblldb.wrapper",
         "@llvm-project//lldb:lldb21.0.0git",
     ],
-)
-
-copy_files(
-    name = "copy_ptxas",
-    # Don't handle mac because there is no binary to use
-    # But do populate a default file to simplify other refs
-    srcs = select({
-        "//:linux_aarch64": ["@ptxas-aarch64//:ptxas"],
-        "//conditions:default": ["@ptxas-x86_64//:ptxas"],
-    }),
-    outs = [
-        "ptxas",
-    ],
-    tags = [ALLOW_UNUSED_TAG],
-    visibility = ["//visibility:public"],
 )

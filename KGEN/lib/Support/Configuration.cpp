@@ -133,7 +133,3 @@ void MojoConfig::getSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args) {
 StringRef MojoConfig::getMojoConfigSection() {
   return _X_STRINGIFY(MOJO_CONFIG_SECTION);
 }
-
-StringRef MojoConfig::getPTXASPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".ptxas_path"));
-}
