@@ -38,6 +38,7 @@ def generate_max_outputs(
     dummy_moe_weight: torch.Tensor,
     device: Device,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    input_tensor = input_tensor.squeeze()  # remove batch dimension
     is_gpu = isinstance(device, Accelerator)
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
@@ -53,7 +54,6 @@ def generate_max_outputs(
                 DType.bfloat16,
                 (
                     input_tensor.shape[0],
-                    input_tensor.shape[1],
                     config.hidden_size,
                 ),
                 device=DeviceRef.GPU() if is_gpu else DeviceRef.CPU(),

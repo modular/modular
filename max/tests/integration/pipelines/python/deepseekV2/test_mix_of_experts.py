@@ -57,16 +57,15 @@ def generate_max_outputs(
 
     state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
+    down_proj, gate_proj, up_proj = [], [], []
     for i in range(len(expert_weights)):
-        state_dict[f"experts.{i}.gate_proj.weight"] = expert_weights[i][
-            "gate_proj.weight"
-        ].cpu()
-        state_dict[f"experts.{i}.down_proj.weight"] = expert_weights[i][
-            "down_proj.weight"
-        ].cpu()
-        state_dict[f"experts.{i}.up_proj.weight"] = expert_weights[i][
-            "up_proj.weight"
-        ].cpu()
+        down_proj.append(expert_weights[i]["down_proj.weight"])
+        gate_proj.append(expert_weights[i]["gate_proj.weight"])
+        up_proj.append(expert_weights[i]["up_proj.weight"])
+
+    state_dict["experts.gate_proj.weight"] = torch.stack(gate_proj).cpu()
+    state_dict["experts.down_proj.weight"] = torch.stack(down_proj).cpu()
+    state_dict["experts.up_proj.weight"] = torch.stack(up_proj).cpu()
 
     state_dict["shared_expert_gate_proj.weight"] = shared_expert_weights[
         "gate_proj.weight"
@@ -93,14 +92,12 @@ def generate_max_outputs(
                 dtype,
                 (
                     input_tensor.shape[0],
-                    input_tensor.shape[1],
                     config.hidden_size,
                 ),
                 device=DeviceRef.GPU() if is_gpu else DeviceRef.CPU(),
             ),
         ),
     )
-
     compiled = session.load(graph, weights_registry=moe.state_dict())
     return compiled.execute(input_tensor)
 
@@ -126,7 +123,7 @@ def test_mix_of_experts(
 
     max_output = generate_max_outputs(
         config,
-        input_tensor,
+        input_tensor.squeeze(),  # remove batch dimension
         dummy_moe_weight,
         expert_weights,
         shared_expert_weights,
