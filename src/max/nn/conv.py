@@ -253,7 +253,7 @@ class Conv3DV2(Module):
     """The optional bias vector stored on CPU with shape (out_channels,).
     Model init moves the bias to :obj:`device` if present."""
 
-    permute: bool
+    permute: bool = False
     """bool controls whether self.filter is permuted from PyTorch order to max order.
     PyTorch order is: (out_channels, in_channels / num_groups, depth, height, width)
     Max API order: (depth, height, width, in_channels / num_groups, out_channels). """
