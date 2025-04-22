@@ -18,7 +18,7 @@ from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 
-from utils.index import Index, IndexList
+from utils import Index, IndexList
 
 
 # CHECK-LABEL: test_batched_matmul
@@ -94,7 +94,9 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
         *,
         alignment: Int = 1,
     ](idx: IndexList[rank], val: SIMD[c_type, width],) -> None:
-        dst_buffer[idx[0], idx[1], idx[2]] = rebind[Float32](val) + 2.0
+        dst_buffer.store(
+            Index(idx[0], idx[1], idx[2]), val.cast[dst_buffer.type]() + 2
+        )
 
     _batched_matmul_gpu[
         transpose_b=False,
