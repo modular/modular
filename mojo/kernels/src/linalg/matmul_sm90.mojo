@@ -746,6 +746,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     partitioned_multicast: Bool = False,
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
+    pdl_level: PDLLevel = PDLLevel(),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
@@ -875,7 +876,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     var rank_n = block_id_in_cluster.x
 
     @parameter
-    if PDLLevel() > PDLLevel.OFF:
+    if (
+        pdl_level > PDLLevel.OFF
+        and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ):
         wait_on_dependent_grids()
 
     var lane_predicate = elect_one_sync()
@@ -1003,7 +1007,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         )
 
     @parameter
-    if PDLLevel() >= PDLLevel.OVERLAP_AT_END:
+    if pdl_level >= PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
     # TO ensure SEMEM destruction doesn't happen
@@ -1046,6 +1050,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     partitioned_multicast: Bool = False,
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
+    pdl_level: PDLLevel = PDLLevel(),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
@@ -1168,7 +1173,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     var rank_n = block_id_in_cluster.x
 
     @parameter
-    if PDLLevel() > PDLLevel.OFF:
+    if (
+        pdl_level > PDLLevel.OFF
+        and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ):
         wait_on_dependent_grids()
 
     var lane_predicate = elect_one_sync()
@@ -1308,7 +1316,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
             work_info = scheduler.fetch_next_work()
 
     @parameter
-    if PDLLevel() >= PDLLevel.OVERLAP_AT_END:
+    if pdl_level >= PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
     # TO ensure SEMEM destruction doesn't happen
@@ -1833,6 +1841,7 @@ fn warp_specialize_gemm_with_multicasting[
             pipeline_stages = config.num_pipeline_stages,
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
+            pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
@@ -1874,6 +1883,7 @@ fn warp_specialize_gemm_with_multicasting[
             pipeline_stages = config.num_pipeline_stages,
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
+            pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 

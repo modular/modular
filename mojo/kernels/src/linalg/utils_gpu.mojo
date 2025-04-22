@@ -24,6 +24,7 @@ from sys import (
 )
 
 from gpu import WARP_SIZE
+from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
@@ -113,6 +114,8 @@ struct MatmulConfig[
 
     var scheduler_hint: IndexList[3]
 
+    var _pdl_level: PDLLevel
+
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
@@ -142,6 +145,7 @@ struct MatmulConfig[
         num_consumer: UInt = 1,
         partitioned_multicast: Bool = False,
         scheduler_hint: IndexList[3] = Index(2, 2, 2),
+        pdl_level: PDLLevel = PDLLevel(),
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
@@ -153,6 +157,7 @@ struct MatmulConfig[
         self.num_consumer = num_consumer
         self.partitioned_multicast = partitioned_multicast
         self.scheduler_hint = scheduler_hint
+        self._pdl_level = pdl_level
 
     fn num_warps_m(self) -> UInt:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -187,6 +192,9 @@ struct MatmulConfig[
 
     fn work_space_size(self, M: UInt, N: UInt) -> UInt:
         return M * N * (self.num_k_partitions - 1)
+
+    fn pdl_level(self) -> PDLLevel:
+        return self._pdl_level
 
     fn __eq__(self, rhs: MatmulConfig) -> Bool:
         alias static_info_match = a_type == rhs.a_type and b_type == rhs.b_type and c_type == rhs.c_type and transpose_b == rhs.transpose_b
