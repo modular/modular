@@ -684,22 +684,6 @@ LogicalResult BindTypeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-/// Infer the result type for `BindTypeAttr`.
-static StructMetaType getBindTypeResultType(TypedAttr typeValue,
-                                            ArrayRef<TypedAttr> values) {
-  auto metatype = cast<StructMetaType>(typeValue.getType());
-  SmallVector<TypedAttr> bindings;
-  auto it = values.begin();
-  for (TypedAttr value : metatype.getParamValues()) {
-    if (isa<UnboundAttr>(value))
-      bindings.push_back(*it++);
-    else
-      bindings.push_back(value);
-  }
-  assert(it == values.end() && "expected all bindings to be consumed");
-  return metatype.bind(bindings);
-}
-
 /// Entry point for the constructor for `BindTypeAttr`, which folds on
 /// construction.
 static TypedAttr getOrFoldBindType(TypedAttr typeValue,

@@ -333,7 +333,14 @@ public:
   ArrayRef<TypedAttr> getParamValues() const;
 
   /// Bind parameter values to the metatype, returning a new metatype.
-  StructMetaType bind(ArrayRef<TypedAttr> values) const;
+  /// Expects the number of values to match the number of param values. Only
+  /// positions that are currently unbound can be updated.
+  StructMetaType bindAll(ArrayRef<TypedAttr> values) const;
+
+  /// Bind parameter values to the metatype, returning a new metatype.
+  /// Expects the number of values to match the number of unbound parameters
+  /// in the current param values list.
+  StructMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
 //===----------------------------------------------------------------------===//

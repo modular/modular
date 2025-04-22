@@ -1424,7 +1424,7 @@ ArrayRef<TypedAttr> StructMetaType::getParamValues() const {
   return getType().getParamValues();
 }
 
-StructMetaType StructMetaType::bind(ArrayRef<TypedAttr> values) const {
+StructMetaType StructMetaType::bindAll(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
   // The AnyStruct will have all of the parameters specified, e.g. something
@@ -1454,6 +1454,19 @@ StructMetaType StructMetaType::bind(ArrayRef<TypedAttr> values) const {
 
   auto newSig = getSignature().bind(newSignatureBindings);
   return StructMetaType::get(LIT::StructType::get(getSymbol(), values, newSig));
+}
+
+StructMetaType StructMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
+  SmallVector<TypedAttr> bindings;
+  auto it = values.begin();
+  for (TypedAttr value : getParamValues()) {
+    if (::isa<UnboundAttr>(value))
+      bindings.push_back(*it++);
+    else
+      bindings.push_back(value);
+  }
+  assert(it == values.end() && "expected all bindings to be consumed");
+  return bindAll(bindings);
 }
 
 //===----------------------------------------------------------------------===//
