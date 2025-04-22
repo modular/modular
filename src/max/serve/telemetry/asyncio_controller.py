@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 if sys.version_info >= (3, 13):
-    QueueShutdown = asyncio.QueueShutdown
+    QueueShutDown = asyncio.QueueShutDown
 else:
 
     class QueueShutDown(Exception):
