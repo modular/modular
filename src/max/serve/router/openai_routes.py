@@ -15,13 +15,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from time import perf_counter_ns
-from typing import (
-    Any,
-    Literal,
-    Optional,
-    Union,
-    cast,
-)
+from typing import Any, Literal, Optional, Union, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -34,6 +28,7 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionMessageToolCall,
@@ -80,6 +75,7 @@ def record_request_start():
     METRICS.reqs_running(1)
 
 
+@traced
 def record_request_end(
     status_code: int, request_path: str, elapsed_ms: float, n_tokens: int
 ) -> None:
@@ -115,8 +111,7 @@ def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
     pipeline: TokenGeneratorPipeline = app_state.pipeline
     if pipeline.model_name != model_name:
         raise ValueError(
-            f"Unknown model '{model_name}', currently serving"
-            f" '{pipeline.model_name}'."
+            f"Unknown model '{model_name}', currently serving '{pipeline.model_name}'."
         )
     if not isinstance(pipeline.tokenizer, PipelineTokenizer):
         raise ValueError(
@@ -737,7 +732,11 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     token.decoded_token,
                 )
 
+                tracer = Tracer("process_log_probabilities")
                 log_probs = _process_log_probabilities([token])
+                del tracer  # process_log_probabilities
+
+                tracer = Tracer("create_completion_stream_response")
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
@@ -758,7 +757,12 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     object="text_completion",
                 )
                 n_tokens += 1
+                del tracer  # create_completion_stream_response
+
+                tracer = Tracer("response.model_dump_json")
                 payload = response.model_dump_json()
+                del tracer  # response.model_dump_json
+
                 yield payload
 
             logger.debug(

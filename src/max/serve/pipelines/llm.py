@@ -23,6 +23,7 @@ from max.pipelines.core import (
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
+from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.scheduler.queues import (
     BatchingStrategy,
@@ -252,15 +253,23 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                     request.id, context
                 ):
                     n_tokens += 1
+
+                    # We intentionally do not use `with Trace(...)` to minimize
+                    # nesting in code.
+                    # Additionally, using a parent span and pushing/popping causes
+                    # the nsys trace to be overly noisy since this is an async loop.
+                    tracer = Tracer("tokenizer.decode")
                     decoded_token = await self.tokenizer.decode(
                         context,
                         response.next_token,
                         skip_special_tokens=skip_special_tokens,
                     )
+                    del tracer  # tokenizer.decode
 
                     # Detect custom stop phrases
                     stop_sequence_match = None
                     if len(stop_detector.stop) > 0:
+                        tracer = Tracer("stop_detector.step")
                         if stop_sequence_match := stop_detector.step(
                             decoded_token
                         ):
@@ -270,10 +279,12 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             logger.debug(
                                 f"Cancelling {request.id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"
                             )
+                        del tracer  # stop_detector.step
 
                     token_log_probabilities = None
                     top_log_probabilities = None
                     if log_prob := response.log_probabilities:
+                        tracer = Tracer("collect_log_probs")
                         (
                             token_log_probabilities,
                             top_log_probabilities,
@@ -282,6 +293,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             context,
                             skip_special_tokens,
                         )
+                        del tracer  # collect_log_probs
 
                     output = TokenGeneratorOutput(
                         decoded_token=decoded_token,
@@ -291,11 +303,13 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                         stop_sequence=stop_sequence_match,
                     )
 
+                    tracer = Tracer("metrics_report_ttft_or_itl")
                     if n_tokens == 1:
                         METRICS.ttft(itl.elapsed_ms)
                     else:
                         METRICS.itl(itl.elapsed_ms)
                     itl.reset()
+                    del tracer  # metrics_report_ttft_or_itl
 
                     yield output
         finally:
