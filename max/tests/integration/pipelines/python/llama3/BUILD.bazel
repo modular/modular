@@ -58,6 +58,7 @@ modular_py_binary(
         },
         imports = ["."],
         tags = [
+            "AITLIB-293",
             "manual",  # TODO(AITLIB-293)
             "no-sandbox",
             "requires-network",
@@ -121,6 +122,7 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "A100",
+        "AITLIB-293",
         "gpu",
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",

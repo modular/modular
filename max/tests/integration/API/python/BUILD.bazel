@@ -67,6 +67,7 @@ modular_py_test(
     env_inherit = ["HF_TOKEN"],
     gpu_constraints = ["//:has_gpu"],
     tags = [
+        "AITLIB-293",
         "gpu",
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",

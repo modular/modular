@@ -15,6 +15,7 @@ modular_py_test(
     data = ["//ModularFramework/tools/max"],
     ignore_collisions = True,
     tags = [
+        "AITLIB-293",
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",

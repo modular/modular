@@ -12,6 +12,7 @@ import xgrammar as xgr
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.pipelines import SamplingConfig
 from max.pipelines.sampling import rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer

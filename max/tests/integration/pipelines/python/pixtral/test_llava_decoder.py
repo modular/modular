@@ -178,6 +178,7 @@ def mistral_given_pytorch_mistral(
         head_dim=config.head_dim,
         theta=config.rope_theta,
         max_seq_len=config.max_length,
+        device=DeviceRef.CPU(),
     )
 
     transformer_layers = []
