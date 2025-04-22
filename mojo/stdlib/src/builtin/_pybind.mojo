@@ -82,8 +82,8 @@ fn add_wrapper_to_module[
     wrapper_func: PyFunctionRaising, func_name: StaticString
 ](mut module_obj: PythonObject) raises:
     _ = PythonModule(unsafe_unchecked_from=module_obj).def_py_function[
-        wrapper_func, func_name
-    ]()
+        wrapper_func
+    ](func_name)
 
 
 fn check_and_get_arg[

@@ -236,15 +236,16 @@ struct TypedPythonObject[type_hint: StaticString](
         """
         return self._obj.unsafe_as_py_object_ptr()
 
-    fn def_py_c_function[
+    fn def_py_c_function(
+        owned self: PythonModule,
         func: PyCFunction,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ](owned self: PythonModule) raises -> PythonModule:
+    ) raises -> PythonModule:
         """Declare a binding for a function with PyObjectPtr signature in the
         module.
 
-        Parameters:
+        Args:
             func: The function to declare a binding for.
             func_name: The name with which the function will be exposed in the
                 module.
@@ -261,22 +262,26 @@ struct TypedPythonObject[type_hint: StaticString](
         # We could optimize this by batching the functions, but there is no need
         # to do this unless binding creation actually becomes a bottleneck.
         var funcs = List[PyMethodDef](
-            PyMethodDef.function[func, func_name, docstring]()
+            PyMethodDef.function(func, func_name, docstring)
         )
 
         Python.add_functions(self, funcs)
         return self^
 
     fn def_py_function[
-        func: PyFunction,
+        func: PyFunction
+    ](
+        owned self: PythonModule,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ](owned self: PythonModule) raises -> PythonModule:
+    ) raises -> PythonModule:
         """Declare a binding for a function with PyObject signature in the
         module.
 
         Parameters:
             func: The function to declare a binding for.
+
+        Args:
             func_name: The name with which the function will be exposed in the
                 module.
             docstring: The docstring for the function in the module.
@@ -288,20 +293,24 @@ struct TypedPythonObject[type_hint: StaticString](
             If we fail to add the function to the module.
         """
 
-        return self.def_py_c_function[
+        return self.def_py_c_function(
             py_c_function_wrapper[func], func_name, docstring
-        ]()
+        )
 
     fn def_py_function[
-        func: PyFunctionRaising,
+        func: PyFunctionRaising
+    ](
+        owned self: PythonModule,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ](owned self: PythonModule) raises -> PythonModule:
+    ) raises -> PythonModule:
         """Declare a binding for a function with PyObject signature in the
         module.
 
         Parameters:
             func: The function to declare a binding for.
+
+        Args:
             func_name: The name with which the function will be exposed in the
                 module.
             docstring: The docstring for the function in the module.
@@ -313,9 +322,9 @@ struct TypedPythonObject[type_hint: StaticString](
             If we fail to add the function to the module.
         """
 
-        return self.def_py_c_function[
+        return self.def_py_c_function(
             py_c_function_wrapper[func], func_name, docstring
-        ]()
+        )
 
     # ===-------------------------------------------------------------------===#
     # 'Tuple' Operations
