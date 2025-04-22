@@ -10,7 +10,7 @@ from typing import Optional
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
-from ..graph import Graph, TensorType
+from ..graph import Graph
 from ..type import Shape
 from ..value import TensorValue, TensorValueLike
 
@@ -109,31 +109,14 @@ def conv2d_transpose(
             f"output padding must be smaller than either stride or dilation, but got output_padding = {output_paddings}"
         )
 
-    output_height = (
-        stride[0] * (x.shape[1] - 1)
-        + output_paddings[0]
-        + ((filter.shape[0] - 1) * dilation[0] + 1)
-        - padding[0]
-        - padding[1]
-    )
-    output_width = (
-        stride[1] * (x.shape[2] - 1)
-        + output_paddings[1]
-        + ((filter.shape[1] - 1) * dilation[1] + 1)
-        - padding[2]
-        - padding[3]
-    )
-    output_shape = [x.shape[0], output_height, output_width, filter.shape[2]]
-
     out = Graph.current._add_op(
-        rmo.mo_conv_transpose,
-        result=TensorType(x.dtype, output_shape, x.device).to_mlir(),
+        rmo.conv_transpose,
         input=x,
         filter=filter,
-        strides=TensorValue(Shape(stride)),
-        dilations=TensorValue(Shape(dilation)),
-        paddings=TensorValue(Shape(padding)),
-        output_paddings=TensorValue(Shape(output_paddings)),
+        strides=Shape(stride).to_mlir(),
+        dilations=Shape(dilation).to_mlir(),
+        paddings=Shape(padding).to_mlir(),
+        output_paddings=Shape(output_paddings).to_mlir(),
     )[0].tensor
 
     if bias is not None:

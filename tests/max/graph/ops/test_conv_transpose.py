@@ -101,7 +101,7 @@ def test_conv_dtype_promote_np():
     )
     filter_shape = [3, 3, 5, 4]
     filter = np.ones(filter_shape, dtype=np.float32)
-    with Graph("conv", input_types=[x_type]) as graph:
+    with Graph("conv_transpose", input_types=[x_type]) as graph:
         out = ops.conv2d_transpose(
             graph.inputs[0].tensor,
             filter,
@@ -149,7 +149,7 @@ def test_conv_dtype_promote_weight_success():
             graph.inputs[0].tensor,
             filter,
         )
-        assert out.dtype == x_type.dtype
+        assert out.dtype == DType.float32
 
 
 def test_conv_dtype_promote_weight_failed():
