@@ -31,6 +31,7 @@ export class MojoLSPManager extends DisposableContext {
   private reporter: TelemetryReporter;
   private recorder: Optional<LSPRecorder>;
   private statusBarItem: Optional<vscode.StatusBarItem>;
+  private attachDebugger: boolean = false;
 
   constructor(
     sdkManager: MAXSDKManager,
@@ -54,9 +55,28 @@ export class MojoLSPManager extends DisposableContext {
         }
 
         this.dispose();
+        this.lspClient = undefined;
         await this.activate();
       }),
     );
+
+    if (
+      this.extensionContext.extensionMode == vscode.ExtensionMode.Development
+    ) {
+      this.pushSubscription(
+        vscode.commands.registerCommand('mojo.lsp.debug', async () => {
+          if (this.lspClient) {
+            await this.lspClient.stop();
+          }
+
+          this.attachDebugger = true;
+
+          this.dispose();
+          this.lspClient = undefined;
+          await this.activate();
+        }),
+      );
+    }
 
     this.statusBarItem = vscode.window.createStatusBarItem(
       'lsp-recording-state',
@@ -186,6 +206,10 @@ export class MojoLSPManager extends DisposableContext {
 
     for (const includeDir of includeDirs) {
       serverArgs.push('-I', includeDir);
+    }
+
+    if (this.attachDebugger) {
+      serverArgs.push('--attach-debugger-on-startup');
     }
 
     const initializationOptions: InitializationOptions = {

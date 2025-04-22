@@ -187,6 +187,11 @@
         "title": "Stop recording requests and notifications sent to the Mojo language server."
       },
       {
+        "category": "Developer",
+        "command": "mojo.lsp.debug",
+        "title": "Debug the Mojo LSP server"
+      },
+      {
         "category": "Mojo",
         "command": "mojo.extension.restart",
         "title": "Restart the Extension"
