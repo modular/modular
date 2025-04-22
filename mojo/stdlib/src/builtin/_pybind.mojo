@@ -66,9 +66,7 @@ fn gen_pytype_wrapper[
     # TODO(MOCO-1302): Add support for generating member field as computed properties.
     # TODO(MOCO-1307): Add support for constructor generation.
 
-    var type_obj = python_type_object[T, name](
-        methods=List[PyMethodDef](),
-    )
+    var type_obj = python_type_object[T](name)
 
     # FIXME(MSTDL-957): We should have APIs that explicitly take a `CPython`
     # instance so that callers can pass it around instead of performing a lookup
