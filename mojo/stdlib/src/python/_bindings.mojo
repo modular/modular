@@ -19,6 +19,7 @@ from sys.info import sizeof
 
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
+from python.python_object import PyFunctionRaising, PyFunction
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
@@ -216,8 +217,8 @@ fn tp_repr_wrapper[T: Pythonable](py_self: PyObjectPtr) -> PyObjectPtr:
 
 
 fn py_c_function_wrapper[
-    user_func: fn (PythonObject, TypedPythonObject["Tuple"]) -> PythonObject
-](py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr,) -> PyObjectPtr:
+    user_func: PyFunction
+](py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr) -> PyObjectPtr:
     """The instantiated type of this generic function is a `PyCFunction`,
     suitable for being called from Python.
     """
@@ -265,9 +266,7 @@ fn py_c_function_wrapper[
 
 # Wrap a `raises` function
 fn py_c_function_wrapper[
-    user_func: fn (
-        PythonObject, TypedPythonObject["Tuple"]
-    ) raises -> PythonObject
+    user_func: PyFunctionRaising
 ](py_self_ptr: PyObjectPtr, py_args_ptr: PyObjectPtr) -> PyObjectPtr:
     fn wrapper(
         py_self: PythonObject, args: TypedPythonObject["Tuple"]

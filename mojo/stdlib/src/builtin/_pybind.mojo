@@ -17,13 +17,13 @@ from sys import alignof, sizeof
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
 from python import Python, PythonObject, PythonModule, TypedPythonObject
+from python.python_object import PyFunctionRaising
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
     Pythonable,
     check_argument_type,
     check_arguments_arity,
-    py_c_function_wrapper,
     python_type_object,
 )
 from python._cpython import (
@@ -79,20 +79,11 @@ fn gen_pytype_wrapper[
 
 
 fn add_wrapper_to_module[
-    wrapper_func: fn (
-        PythonObject, TypedPythonObject["Tuple"]
-    ) raises -> PythonObject,
-    func_name: StaticString,
+    wrapper_func: PyFunctionRaising, func_name: StaticString
 ](mut module_obj: PythonObject) raises:
-    var module = PythonModule(unsafe_unchecked_from=module_obj)
-    Python.add_functions(
-        module,
-        List[PyMethodDef](
-            PyMethodDef.function[
-                py_c_function_wrapper[wrapper_func], func_name
-            ]()
-        ),
-    )
+    _ = PythonModule(unsafe_unchecked_from=module_obj).def_py_function[
+        wrapper_func, func_name
+    ]()
 
 
 fn check_and_get_arg[

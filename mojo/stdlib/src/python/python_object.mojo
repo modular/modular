@@ -29,6 +29,7 @@ from builtin.string_literal import StringLiteral
 from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr, PyMethodDef, PyCFunction
+from ._bindings import py_c_function_wrapper
 from .python import Python, _get_global_python_itf
 
 
@@ -135,6 +136,10 @@ struct _PyIter(Sized):
 
 
 alias PythonModule = TypedPythonObject["Module"]
+alias PyFunction = fn (PythonObject, TypedPythonObject["Tuple"]) -> PythonObject
+alias PyFunctionRaising = fn (
+    PythonObject, TypedPythonObject["Tuple"]
+) raises -> PythonObject
 
 
 @register_passable
@@ -261,6 +266,56 @@ struct TypedPythonObject[type_hint: StaticString](
 
         Python.add_functions(self, funcs)
         return self^
+
+    fn def_py_function[
+        func: PyFunction,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ](owned self: PythonModule) raises -> PythonModule:
+        """Declare a binding for a function with PyObject signature in the
+        module.
+
+        Parameters:
+            func: The function to declare a binding for.
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+
+        Returns:
+            The module object with the function added.
+
+        Raises:
+            If we fail to add the function to the module.
+        """
+
+        return self.def_py_c_function[
+            py_c_function_wrapper[func], func_name, docstring
+        ]()
+
+    fn def_py_function[
+        func: PyFunctionRaising,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ](owned self: PythonModule) raises -> PythonModule:
+        """Declare a binding for a function with PyObject signature in the
+        module.
+
+        Parameters:
+            func: The function to declare a binding for.
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+
+        Returns:
+            The module object with the function added.
+
+        Raises:
+            If we fail to add the function to the module.
+        """
+
+        return self.def_py_c_function[
+            py_c_function_wrapper[func], func_name, docstring
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # 'Tuple' Operations
