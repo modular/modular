@@ -264,6 +264,10 @@ struct MojoKernelFunctionAdaptor {
     return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGElementwiseLambda);
   }
 
+  bool isViewKernel() {
+    return mojoCode->hasAttr(KGEN::MOGGPreElab::kMOGGViewKernel);
+  }
+
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
     StringRef sourceName;
