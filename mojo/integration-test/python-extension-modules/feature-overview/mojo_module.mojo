@@ -160,7 +160,7 @@ fn add_person_type(mut module: PythonModule):
     # ----------------------------------
 
     try:
-        var type_obj = python_type_object[Person, "Person"](methods)
+        var type_obj = python_type_object[Person]("Person", methods)
 
         Python.add_object(module, "Person", type_obj)
     except e:
@@ -178,9 +178,7 @@ fn add_person_type(mut module: PythonModule):
 
 fn add_int_type(mut module: PythonModule):
     try:
-        var type_obj = python_type_object[Int, "Int"](
-            methods=List[PyMethodDef]()
-        )
+        var type_obj = python_type_object[Int]("Int")
 
         Python.add_object(module, "Int", type_obj)
     except e:
@@ -246,9 +244,7 @@ fn add_to_int__wrapper(
 
 fn add_string_type(mut module: PythonModule):
     try:
-        var type_obj = python_type_object[String, "String"](
-            methods=List[PyMethodDef]()
-        )
+        var type_obj = python_type_object[String]("String")
 
         Python.add_object(module, "String", type_obj)
     except e:
