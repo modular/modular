@@ -2582,20 +2582,20 @@ struct StaticBroadcastTo:
         type: DType,
         in_rank: Int,
         out_rank: Int, //,
+        output_static_shape: DimList,
     ](
-        z: OutputTensor[type=type, rank=out_rank],
         x: InputTensor[type=type, rank=in_rank],
         output_shape: IndexList[out_rank],
         out result: InputTensor[
             static_spec = x.static_spec.with_layout[out_rank](
-                z._static_shape,
-                Self.get_view_strides[z.rank, x.rank](
+                output_static_shape,
+                Self.get_view_strides[out_rank, x.rank](
                     x._static_shape, x._static_strides
                 ),
             )
         ],
     ):
-        var x_runtime_strides = Self.build_view[z.rank](x)
+        var x_runtime_strides = Self.build_view[out_rank](x)
         return __type_of(result)(
             x.unsafe_ptr(), output_shape, x_runtime_strides
         )
@@ -2617,7 +2617,7 @@ struct StaticBroadcastTo:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
-        var x_view = Self.update_input_view(z, x, output_shape)
+        var x_view = Self.update_input_view[z._static_shape](x, output_shape)
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -2651,14 +2651,14 @@ struct StaticReshape:
     fn update_input_view[
         type: DType,
         output_rank: Int, //,
+        output_static_shape: DimList,
     ](
-        output: OutputTensor[type=type, rank=output_rank],
         input: InputTensor[type=type],
         shape: IndexList[output_rank],
         out result: InputTensor[
             static_spec = input.static_spec.with_layout[output_rank](
-                output._static_shape,
-                Self.get_view_strides[output.rank](output._static_shape),
+                output_static_shape,
+                Self.get_view_strides[output_rank](output_static_shape),
             )
         ],
     ):
@@ -2686,7 +2686,9 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContextPtr,
     ) raises:
-        var view_tensor = Self.update_input_view(output, input, shape)
+        var view_tensor = Self.update_input_view[output._static_shape](
+            input, shape
+        )
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -2762,14 +2764,14 @@ struct Transpose:
     fn update_input_view[
         type: DType,
         rank: Int, //,
+        output_static_shape: DimList,
         static_permutations: DimList,
     ](
-        output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         permutations: InputTensor[rank=1],
         out result: InputTensor[
             static_spec = input.static_spec.with_layout[rank](
-                output._static_shape,
+                output_static_shape,
                 Self.get_view_strides[static_permutations, rank](
                     input._static_strides
                 ),
@@ -2793,9 +2795,9 @@ struct Transpose:
         permutations: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        var view = Self.update_input_view[static_permutations](
-            output, input, permutations
-        )
+        var view = Self.update_input_view[
+            output._static_shape, static_permutations
+        ](input, permutations)
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -2858,16 +2860,16 @@ struct Slice:
     fn update_input_view[
         type: DType,
         rank: Int, //,
+        output_static_shape: DimList,
         static_steps: DimList,
     ](
-        output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         starts: InputTensor[rank=1],
         stops: InputTensor[rank=1],
         steps: InputTensor[rank=1],
         out result: InputTensor[
             static_spec = input.static_spec.with_layout[rank](
-                output._static_shape,
+                output_static_shape,
                 Self.get_view_strides[rank](
                     input._static_strides, static_steps
                 ),
@@ -2903,9 +2905,9 @@ struct Slice:
         steps: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        var view_tensor = Self.update_input_view[static_steps](
-            output, input, starts, stops, steps
-        )
+        var view_tensor = Self.update_input_view[
+            output._static_shape, static_steps
+        ](input, starts, stops, steps)
 
         view_copy_impl[
             trace_name=_trace_name,
@@ -3016,17 +3018,17 @@ struct SliceDim:
     fn update_input_view[
         type: DType,
         rank: Int, //,
+        output_static_shape: DimList,
         axis: Int,
         static_step: DimList,
     ](
-        output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         starts: Scalar,
         stops: Scalar,
         steps: Scalar,
         out result: InputTensor[
             static_spec = input.static_spec.with_layout[rank](
-                output._static_shape,
+                output_static_shape,
                 Self.get_view_strides[rank, axis](
                     input._static_strides, static_step.at[0]()
                 ),
@@ -3063,9 +3065,9 @@ struct SliceDim:
         steps: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
-        var view_tensor = Self.update_input_view[axis, static_step](
-            output, input, starts, stops, steps
-        )
+        var view_tensor = Self.update_input_view[
+            output._static_shape, axis, static_step
+        ](input, starts, stops, steps)
 
         view_copy_impl[
             trace_name=_trace_name,
