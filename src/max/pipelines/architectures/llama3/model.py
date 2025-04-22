@@ -49,6 +49,7 @@ from max.pipelines import (
 from max.pipelines.core import LogProbabilities, TextContext
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
 from max.pipelines.log_probabilities import compute_log_probabilities
+from max.profiler import traced
 from transformers import AutoConfig
 
 from .distributed_llama import DistributedLlama3
@@ -394,6 +395,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             devices=devices,
         )
 
+    @traced
     def load_model(
         self,
         session: InferenceSession,
@@ -572,6 +574,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.output(*outputs)
                 return graph
 
+    @traced
     def _build_graph(
         self, weights: Weights, adapter: Optional[WeightsAdapter] = None
     ) -> Graph:

@@ -22,6 +22,7 @@ import uvloop
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import PipelineTask
+from max.profiler import Tracer
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,
@@ -119,4 +120,5 @@ def serve_pipeline(
     config = fastapi_config(app=app, server_settings=settings)
 
     server = Server(config)
-    uvloop.run(server.serve())
+    with Tracer("openai_compatible_frontend_server"):
+        uvloop.run(server.serve())
