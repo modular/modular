@@ -27,16 +27,18 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         return (
             PythonModule("mojo_module")
-            .def_py_function[
-                mojo_block_hasher_return_list,
+            .def_py_function[mojo_block_hasher_return_list](
                 "mojo_block_hasher_return_list",
-                docstring="Computes block hashes for a numpy array containing tokens",
-            ]()
-            .def_py_function[
-                mojo_block_hasher_inplace,
+                docstring=(
+                    "Computes block hashes for a numpy array containing tokens"
+                ),
+            )
+            .def_py_function[mojo_block_hasher_inplace](
                 "mojo_block_hasher_inplace",
-                docstring="Computes block hashes for a numpy array containing tokens",
-            ]()
+                docstring=(
+                    "Computes block hashes for a numpy array containing tokens"
+                ),
+            )
         )
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)

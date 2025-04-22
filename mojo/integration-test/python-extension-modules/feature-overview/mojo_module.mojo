@@ -41,15 +41,13 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         module = (
             PythonModule("mojo_module")
-            .def_py_function[case_return_arg_tuple, "case_return_arg_tuple"]()
-            .def_py_function[case_raise_empty_error, "case_raise_empty_error"]()
-            .def_py_function[
-                case_raise_string_error, "case_raise_string_error"
-            ]()
-            .def_py_function[case_mojo_raise, "case_mojo_raise"]()
-            .def_py_function[incr_int__wrapper, "incr_int"]()
-            .def_py_function[add_to_int__wrapper, "add_to_int"]()
-            .def_py_function[create_string__wrapper, "create_string"]()
+            .def_py_function[case_return_arg_tuple]("case_return_arg_tuple")
+            .def_py_function[case_raise_empty_error]("case_raise_empty_error")
+            .def_py_function[case_raise_string_error]("case_raise_string_error")
+            .def_py_function[case_mojo_raise]("case_mojo_raise")
+            .def_py_function[incr_int__wrapper]("incr_int")
+            .def_py_function[add_to_int__wrapper]("add_to_int")
+            .def_py_function[create_string__wrapper]("create_string")
         )
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
@@ -152,10 +150,7 @@ fn add_person_type(mut module: PythonModule):
     # ----------------------------------------------
 
     var methods = List[PyMethodDef](
-        PyMethodDef.function[
-            py_c_function_wrapper[Person.obj_name],
-            "name",
-        ](),
+        PyMethodDef.function(py_c_function_wrapper[Person.obj_name], "name"),
         # Zeroed item as terminator
         PyMethodDef(),
     )

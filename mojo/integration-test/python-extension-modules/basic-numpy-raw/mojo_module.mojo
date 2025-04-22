@@ -24,11 +24,10 @@ fn PyInit_mojo_module() -> PythonObject:
     """
 
     try:
-        return PythonModule("mojo_module").def_py_function[
-            mojo_incr_np_array,
+        return PythonModule("mojo_module").def_py_function[mojo_incr_np_array](
             "mojo_incr_np_array",
             docstring="Increment the contents of a numpy array by one",
-        ]()
+        )
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
 

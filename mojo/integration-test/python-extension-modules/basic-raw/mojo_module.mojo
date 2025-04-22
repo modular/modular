@@ -22,11 +22,11 @@ fn PyInit_mojo_module() -> PythonObject:
     """Create a Python module with a function binding for `mojo_count_args`."""
 
     try:
-        return PythonModule("mojo_module").def_py_c_function[
+        return PythonModule("mojo_module").def_py_c_function(
             mojo_count_args,
             "mojo_count_args",
             docstring="Count the provided arguments",
-        ]()
+        )
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
 
