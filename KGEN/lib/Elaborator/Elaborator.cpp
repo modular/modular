@@ -667,9 +667,28 @@ Elaborator::instantiateGeneratorReference(
   if (!calleeOp || !isa<GeneratorOpInterface>(calleeOp)) {
     InstantiatedOpInterface inst =
         concreteInsts.read([name](auto &map) { return map.at(name); });
-    ImplNode *node =
-        g.concreteNodes.read([inst](auto &map) { return map.at(inst); });
-    return {ElaborationState::advance(), node};
+    bool found = true;
+    ImplNode *node = g.concreteNodes.read([inst, &found, &parent,
+                                           name](auto &map) -> ImplNode * {
+      // FIXME (moco-1867) add error logic for flake test failures
+      // where the inst exists in concreteInsts, but not in concreteNodes.
+      // See if CI can catch the flake and print more info, will remove
+      // this once the issue is fixed.
+      auto iter = map.find(inst);
+      if (iter == map.end()) {
+        found = false;
+        parent->setToError(ErrorTree(parent->parent->gen.getLoc(),
+                                     "concreteNode is missing " + Twine(name)));
+        return nullptr;
+      } else {
+        return map.at(inst);
+      }
+    });
+
+    if (found)
+      return {ElaborationState::advance(), node};
+    else
+      return {ElaborationState::error(), node};
   }
 
   // Add in the mapping for parameters in the calls.
