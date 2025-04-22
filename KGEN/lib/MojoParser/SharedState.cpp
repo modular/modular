@@ -393,10 +393,6 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   if (options.getDebugInfoLevelForInput() > CompilationOptions::kSynthetic) {
     diBuilder = std::make_unique<DebugInfo::DIBuilder>(config.context);
 
-    // TODO: Dwarf technically has a language for python, but it's not really
-    // what we want here AFAICT (our compilation model isn't the same as
-    // python's). Figure out what we actually want here (though C works well
-    // enough for now).
     diBuilder->initializeCompileUnit(
         options.debugInfoLanguage,
         diBuilder->createFile(diags.getBufferNameIdentifier()), "Mojo",
