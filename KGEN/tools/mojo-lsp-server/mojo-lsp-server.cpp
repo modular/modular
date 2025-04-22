@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
   llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
   llvm::PrettyStackTraceProgram x(argc, argv);
   llvm::setBugReportMsg(
-      "Please submit a bug report to https://github.com/modular/mojo/issues "
+      "Please submit a bug report to https://github.com/modular/max/issues "
       "and include the crash backtrace along with all the relevant source "
       "codes with the contents they had at crash time.\n");
 
