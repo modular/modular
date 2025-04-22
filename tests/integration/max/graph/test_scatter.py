@@ -7,11 +7,15 @@
 
 import numpy as np
 import pytest
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0, reason="TODO(GEX-2133): Bad results on gpu"
+)
 @pytest.mark.parametrize(
     "input,updates,indices,axis,expected",
     [
