@@ -305,13 +305,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
-        other_value: __mlir_type.`!kgen.string`, //,
-        other_type: __type_of(StringLiteral[other_value]),
+        other_type: __type_of(StringLiteral[_]),
     ](self) -> StaticString:
         """Returns a StaticString after merging with another string literal.
 
         Parameters:
-            other_value: The value of the other string literal.
             other_type: The type of the string literal to merge with.
 
         Returns:
