@@ -1208,7 +1208,7 @@ fn test_origin_ctor_folding[orig1: Origin[_]](abcdef: A):
     alias y = Origin(orig1._mlir_origin)
 
     # Check that __origin_of works on origins as well as MValues.
-    # CHECK-NEXT: lit.alias.decl *"o2{{.*}} = <{({{.*}}orig1{{.*}}abcdef
+    # CHECK-NEXT: lit.alias.decl *"o2{{.*}} = <{{{.*}}abcdef{{.*}}orig1
     alias o2 = __origin_of(orig1, abcdef)
 
 fn useMemory(a: MemExample): pass

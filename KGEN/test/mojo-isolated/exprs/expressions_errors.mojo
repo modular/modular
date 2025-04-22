@@ -754,7 +754,7 @@ fn test_signature():
 
 fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String
-    # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao._mlir_origin, b}'}}
+    # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{b, ao._mlir_origin}'}}
     return c
 
 # https://github.com/modular/mojo/issues/3829
@@ -815,4 +815,3 @@ fn test_mergewith(cond: Bool, a: TypeA, b: TypeB, c: TypeC):
   # expected-error @+2 {{value of types 'TypeA' and 'TypeC' cannot be merged to type 'Int'}}
   # expected-note @+1 {{'TypeC' does not implicitly convert to 'Int'}}
   _ = a if cond else c
-  

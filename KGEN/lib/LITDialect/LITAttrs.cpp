@@ -848,11 +848,10 @@ bool OriginUnionAttr::isConstant() const {
 // OriginMutCastAttr
 //===----------------------------------------------------------------------===//
 
-std::optional<bool> OriginMutCastAttr::isLessThan(Attribute rhs) const {
+bool OriginMutCastAttr::isLessThan(Attribute rhs) const {
   // Compare the underlying references.
-  if (auto cast = ::dyn_cast<OriginMutCastAttr>(rhs))
-    rhs = cast;
-  return ParameterAttr::compare(getOperand(), rhs);
+  auto cast = ::cast<OriginMutCastAttr>(rhs);
+  return ParameterAttr::compare(getOperand(), cast.getOperand());
 }
 
 OriginMutCastAttr OriginMutCastAttr::getFromBytecode(TypedAttr operand,
@@ -954,13 +953,11 @@ bool OriginFieldAttr::isConstant() const {
   return ParameterAttr::isSimpleConstant(getBase());
 }
 
-std::optional<bool> OriginFieldAttr::isLessThan(Attribute rhs) const {
-  if (auto rhsField = ::dyn_cast<OriginFieldAttr>(rhs)) {
-    if (getBase() == rhsField.getBase())
-      return getField().getValue() < rhsField.getField().getValue();
-    return ParameterAttr::compare(getBase(), rhsField.getBase());
-  }
-  return ParameterAttr::compare(getBase(), rhs);
+bool OriginFieldAttr::isLessThan(Attribute rhs) const {
+  auto rhsField = ::cast<OriginFieldAttr>(rhs);
+  if (getBase() == rhsField.getBase())
+    return getField().getValue() < rhsField.getField().getValue();
+  return ParameterAttr::compare(getBase(), rhsField.getBase());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1013,10 +1010,8 @@ bool ImplicitOriginRefAttr::isConstant() const { return true; }
 
 // Make sure that these are implicitly sorted w.r.t. each other when KGEN
 // canonicalizes them.
-std::optional<bool> ImplicitOriginRefAttr::isLessThan(Attribute rhs) const {
-  auto ref = ::dyn_cast<ImplicitOriginRefAttr>(rhs);
-  if (!ref)
-    return false;
+bool ImplicitOriginRefAttr::isLessThan(Attribute rhs) const {
+  auto ref = ::cast<ImplicitOriginRefAttr>(rhs);
   return std::make_tuple(getDepth(), getIndex()) <
          std::make_tuple(ref.getDepth(), ref.getIndex());
 }
@@ -1217,13 +1212,13 @@ bool LITStructAttr::isConstant() const {
 
 bool LIT::StructExtractAttr::isConstant() const { return false; }
 
-std::optional<bool> LIT::StructExtractAttr::isLessThan(Attribute rhs) const {
+bool LIT::StructExtractAttr::isLessThan(Attribute rhs) const {
   // Compare the underlying references if the fields are the same.
-  if (auto rhsExtract = ::dyn_cast<LIT::StructExtractAttr>(rhs))
-    if (getField() == rhsExtract.getField())
-      return ParameterAttr::compare(getStructValue(),
-                                    rhsExtract.getStructValue());
-  return false;
+  auto rhsExtract = ::cast<LIT::StructExtractAttr>(rhs);
+  if (getField() == rhsExtract.getField())
+    return ParameterAttr::compare(getStructValue(),
+                                  rhsExtract.getStructValue());
+  return getField().getValue() < rhsExtract.getField().getValue();
 }
 
 LIT::StructExtractAttr
