@@ -16,6 +16,8 @@ from os import abort
 from complex import ComplexFloat32, ComplexFloat64
 from memory import UnsafePointer
 
+from gpu.host._amdgpu_hip import hipStream_t
+
 from .types import (
     Algorithm,
     DataType,
@@ -46214,3 +46216,9 @@ fn rocblas_gemm_ex(
         solution_index,
         flags,
     )
+
+
+fn rocblas_set_stream(handle: Handle, stream: hipStream_t) -> Status:
+    return _get_dylib_function[
+        "rocblas_set_stream", fn (Handle, hipStream_t) -> Status
+    ]()(handle, stream)

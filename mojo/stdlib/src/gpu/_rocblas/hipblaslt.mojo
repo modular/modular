@@ -16,7 +16,7 @@ from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
-from gpu.host._amdgpu_hip import _ihipStream_t
+from gpu.host._amdgpu_hip import hipStream_t
 
 alias hipblasLtHandle_t = UnsafePointer[NoneType]
 alias hipblasLtMatmulDesc_t = UnsafePointer[NoneType]
@@ -184,8 +184,8 @@ struct hipblasLtMatmulHeuristicResult_t:
     fn __init__(out self):
         self.algo = hipblasLtMatmulAlgo_t()
         self.workspaceSize = 0
-        self.state = Status.NOT_INITIALIZED
-        self.wavesCount = 0.0
+        self.state = Status.SUCCESS
+        self.wavesCount = 1.0
         self.reserved = StaticTuple[Int32, 4](0)
 
 
@@ -379,7 +379,7 @@ fn hipblasLtMatmul(
     algo: UnsafePointer[hipblasLtMatmulAlgo_t],
     workspace: UnsafePointer[NoneType],
     workspace_size_in_bytes: Int,
-    stream: _ihipStream_t,
+    stream: hipStream_t,
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmul",
@@ -399,7 +399,7 @@ fn hipblasLtMatmul(
             UnsafePointer[hipblasLtMatmulAlgo_t],
             UnsafePointer[NoneType],
             Int,
-            _ihipStream_t,
+            hipStream_t,
         ) -> Status,
     ]()(
         light_handle,
