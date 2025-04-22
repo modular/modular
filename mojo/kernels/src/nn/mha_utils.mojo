@@ -29,6 +29,7 @@ from gpu.memory import AddressSpace
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
+from math import ceildiv, align_up
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
 
@@ -470,3 +471,38 @@ fn _copy_frag_to_smem[
         _copy_frag_to_smem_amd[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+
+
+@always_inline
+fn get_start_and_end_for_partitions[
+    tile_size: Int
+](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
+    """Calculate start and end indices for a partition.
+
+    Args:
+        num_keys: Total number of keys (sequence length).
+        num_partitions: Number of partitions to split keys into.
+        partition_idx: Index of current partition (0 to num_partitions-1).
+
+    Returns:
+        Tuple of (start_idx, end_idx) for the partition, aligned to tile_size.
+    """
+    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
+
+    # Align start to tile_size
+    var start = align_up(num_keys_per_partition * partition_idx, tile_size)
+    # If start is already beyond num_keys, return empty range
+    if start >= num_keys:
+        return (num_keys, num_keys)
+    var next_start = align_up(
+        num_keys_per_partition * (partition_idx + 1), tile_size
+    )
+    var end = min(num_keys, next_start)
+    return (start, end)
+
+    # ^ may lead to non-uniform distribution of keys across partitions because of alignment requirement,
+    # we may want to use the following instead for non-paged kvcache but then we will have to know which cache is being used.
+    # Keep this here for now, can remove it later if we are only using paged kvcache.
+    # var start = num_keys_per_partition * partition_idx
+    # var end = min(num_keys, start + num_keys_per_partition)
+    # return (start, end)

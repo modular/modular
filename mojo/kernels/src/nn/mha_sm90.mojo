@@ -73,6 +73,7 @@ from nn.mha_utils import (
     MHAConfig,
     _copy_frag_to_smem,
     _kernel_mask,
+    get_start_and_end_for_partitions,
 )
 from nn.softmax import (
     _online_softmax_correction,
@@ -112,6 +113,8 @@ trait OptionallyStaticInt(Intable):
         ...
 
 
+# These are used to avoid generating code for passing unused values to kernels.
+# That is, if we have a static int, no argument should be passed.
 @value
 @register_passable("trivial")
 struct StaticInt[value: Int](OptionallyStaticInt):
@@ -154,24 +157,90 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
+@register_passable("trivial")
+trait MHAPartitionScheme:
+    alias do_partition: Bool
+    alias accum_dtype: DType
+
+    @always_inline
+    fn num_partitions(self) -> UInt32:
+        ...
+
+    @always_inline
+    fn get_exp_sum_qk_max_pointer(
+        self,
+    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+        ...
+
+
+@value
+@register_passable("trivial")
+struct NoPartition[dtype: DType](MHAPartitionScheme):
+    alias do_partition: Bool = False
+    alias accum_dtype: DType = dtype
+
+    @always_inline
+    fn __init__(out self):
+        pass
+
+    @always_inline
+    fn num_partitions(self) -> UInt32:
+        return 1
+
+    @always_inline
+    fn get_exp_sum_qk_max_pointer(
+        self,
+    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+        return UnsafePointer[Scalar[Self.accum_dtype]]()
+
+
+@value
+@register_passable("trivial")
+struct SplitKPartition[dtype: DType](MHAPartitionScheme):
+    alias do_partition: Bool = True
+    alias accum_dtype: DType = Self.dtype
+    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
+    var num_partitions_value: UInt32
+
+    @always_inline
+    fn __init__(
+        out self,
+        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
+        num_partitions_value: UInt32,
+    ):
+        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
+        self.ptr = ptr
+        self.num_partitions_value = num_partitions_value
+
+    @always_inline
+    fn num_partitions(self) -> UInt32:
+        return self.num_partitions_value
+
+    @always_inline
+    fn get_exp_sum_qk_max_pointer(
+        self,
+    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+        return self.ptr
+
+
 @always_inline
 fn mha_sm90_dispatch[
-    rank: Int,
     k_t: MHAOperand,
     v_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     type: DType,
-    q_shape: DimList,
-    max_prompt_len_t: OptionallyStaticInt, //,
+    output_type: DType,
+    max_prompt_len_t: OptionallyStaticInt,
+    partition_t: MHAPartitionScheme, //,
     config: MHAConfig,
     group: Int,
     use_score_mod: Bool,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
 ](
-    output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    output: UnsafePointer[Scalar[output_type]],
+    q: UnsafePointer[Scalar[type]],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -180,12 +249,12 @@ fn mha_sm90_dispatch[
     max_prompt_len_arg: max_prompt_len_t,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    is_token_generation: Bool,
-    ctx: DeviceContext,
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
     batch_size_arg: Int,
+    partition: partition_t,
+    ctx: DeviceContext,
 ) raises:
     alias decoding: Bool = max_prompt_len_t.static_value.or_else(0) == 1
     alias new_config = MHAConfig(
@@ -222,17 +291,22 @@ fn mha_sm90_dispatch[
     var batch_size: UInt32 = UInt32(batch_size_arg)
     var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
     var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
+    var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
     alias num_scheduler_heads = config.num_heads // group if decoding else config.num_heads
+    # if decoding,
+    alias scheduler_tile_shape = 1 if decoding else BM
 
     @parameter
     if persistent == 0:
-        alias scheduler_t = TransientScheduler[BM, num_scheduler_heads]
+        alias scheduler_t = TransientScheduler[
+            scheduler_tile_shape, num_scheduler_heads
+        ]
         alias kernel_sm90 = _mha_sm90[
             new_config.type,
             k_t,
             v_t,
-            output.type,
+            output_type,
             mask_t,
             score_mod_t,
             scheduler_t,
@@ -242,58 +316,112 @@ fn mha_sm90_dispatch[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             max_seq_len_t=max_prompt_len_t,
+            partition_t=partition_t,
         ]
         var scheduler: scheduler_t = scheduler_t()
+        gd = scheduler_t.grid_dim(batch_size, block_x)
 
         @parameter
         if max_prompt_len_t.static_value:
-            ctx.enqueue_function[kernel_sm90](
-                q.data,
-                k,
-                v,
-                output.data,
-                scale,
-                batch_size,
-                max_cache_valid_length,
-                valid_length,
-                kv_input_row_offsets,
-                mask_functor,
-                score_mod_functor,
-                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+
+            @parameter
+            if partition_t.do_partition:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    partition,
+                    mask_functor,
+                    score_mod_functor,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+            else:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    mask_functor,
+                    score_mod_functor,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+
         else:
-            ctx.enqueue_function[kernel_sm90](
-                q.data,
-                k,
-                v,
-                output.data,
-                scale,
-                batch_size,
-                max_prompt_len,
-                max_cache_valid_length,
-                valid_length,
-                kv_input_row_offsets,
-                mask_functor,
-                score_mod_functor,
-                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+
+            @parameter
+            if partition_t.do_partition:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    partition,
+                    mask_functor,
+                    score_mod_functor,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+            else:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    mask_functor,
+                    score_mod_functor,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
     elif persistent == 2:
-        alias scheduler_t = TileScheduler[BM, num_scheduler_heads]
+        alias scheduler_t = TileScheduler[
+            scheduler_tile_shape, num_scheduler_heads
+        ]
         alias kernel_sm90 = _mha_sm90[
             new_config.type,
             k_t,
             v_t,
-            output.type,
+            output_type,
             mask_t,
             score_mod_t,
             scheduler_t,
@@ -303,62 +431,114 @@ fn mha_sm90_dispatch[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             max_seq_len_t=max_prompt_len_t,
+            partition_t=partition_t,
         ]
         var scheduler: scheduler_t = scheduler_t()
 
         @parameter
         if max_prompt_len_t.static_value:
-            ctx.enqueue_function[kernel_sm90](
-                q.data,
-                k,
-                v,
-                output.data,
-                scale,
-                batch_size,
-                max_cache_valid_length,
-                valid_length,
-                kv_input_row_offsets,
-                mask_functor,
-                score_mod_functor,
-                scheduler,
-                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+
+            @parameter
+            if partition_t.do_partition:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    partition,
+                    mask_functor,
+                    score_mod_functor,
+                    scheduler,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+            else:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    mask_functor,
+                    score_mod_functor,
+                    scheduler,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
         else:
-            ctx.enqueue_function[kernel_sm90](
-                q.data,
-                k,
-                v,
-                output.data,
-                scale,
-                batch_size,
-                max_prompt_len,
-                max_cache_valid_length,
-                valid_length,
-                kv_input_row_offsets,
-                mask_functor,
-                score_mod_functor,
-                scheduler,
-                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+
+            @parameter
+            if partition_t.do_partition:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    partition,
+                    mask_functor,
+                    score_mod_functor,
+                    scheduler,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+            else:
+                ctx.enqueue_function[kernel_sm90](
+                    q,
+                    k,
+                    v,
+                    output,
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    valid_length,
+                    kv_input_row_offsets,
+                    mask_functor,
+                    score_mod_functor,
+                    scheduler,
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
     else:
         alias scheduler_t = QueuedTileScheduler[
-            BM, num_scheduler_heads, decoding=decoding
+            scheduler_tile_shape, num_scheduler_heads, decoding=decoding
         ]
         alias kernel_sm90 = _mha_sm90[
             new_config.type,
             k_t,
             v_t,
-            output.type,
+            output_type,
             mask_t,
             score_mod_t,
             scheduler_t,
@@ -368,6 +548,7 @@ fn mha_sm90_dispatch[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             max_seq_len_t=max_prompt_len_t,
+            partition_t=partition_t,
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
             UInt32(H100.sm_count)
@@ -375,58 +556,121 @@ fn mha_sm90_dispatch[
         ctx.synchronize()
         var scheduler: scheduler_t = scheduler_t(schedule.unsafe_ptr())
 
+        # these nested branches are to reduce risk of memory corruption
+        # when passing 0-sized arguments, which is currently not handled
+        # correctly in Mojo
+        # TODO: Remove and simplify when KERN-1753 is fixed
         @parameter
         if max_prompt_len_t.static_value:
-            ctx.enqueue_function[kernel_sm90](
-                rebind[scheduler_t](scheduler),
-                q.data,
-                k,
-                v,
-                output.data,
-                rebind[Float32](scale),
-                batch_size,
-                max_cache_valid_length,
-                rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                    valid_length
-                ),
-                rebind[
-                    OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
-                ](kv_input_row_offsets),
-                rebind[mask_t](mask_functor),
-                rebind[score_mod_t](score_mod_functor),
-                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+
+            @parameter
+            if partition_t.do_partition:
+                ctx.enqueue_function[kernel_sm90](
+                    rebind[scheduler_t](scheduler),
+                    q,
+                    k,
+                    v,
+                    output,
+                    rebind[Float32](scale),
+                    batch_size,
+                    max_cache_valid_length,
+                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                        valid_length
+                    ),
+                    rebind[
+                        OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+                    ](kv_input_row_offsets),
+                    partition,
+                    rebind[mask_t](mask_functor),
+                    rebind[score_mod_t](score_mod_functor),
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+            else:
+                ctx.enqueue_function[kernel_sm90](
+                    rebind[scheduler_t](scheduler),
+                    q,
+                    k,
+                    v,
+                    output,
+                    rebind[Float32](scale),
+                    batch_size,
+                    max_cache_valid_length,
+                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                        valid_length
+                    ),
+                    rebind[
+                        OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+                    ](kv_input_row_offsets),
+                    rebind[mask_t](mask_functor),
+                    rebind[score_mod_t](score_mod_functor),
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
         else:
-            ctx.enqueue_function[kernel_sm90](
-                rebind[scheduler_t](scheduler),
-                q.data,
-                k,
-                v,
-                output.data,
-                rebind[Float32](scale),
-                batch_size,
-                max_prompt_len,
-                max_cache_valid_length,
-                rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                    valid_length
-                ),
-                rebind[
-                    OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
-                ](kv_input_row_offsets),
-                rebind[mask_t](mask_functor),
-                rebind[score_mod_t](score_mod_functor),
-                grid_dim=scheduler_t.grid_dim(batch_size, max_num_prompt_tiles),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+
+            @parameter
+            if partition_t.do_partition:
+                ctx.enqueue_function[kernel_sm90](
+                    rebind[scheduler_t](scheduler),
+                    q,
+                    k,
+                    v,
+                    output,
+                    rebind[Float32](scale),
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                        valid_length
+                    ),
+                    rebind[
+                        OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+                    ](kv_input_row_offsets),
+                    partition,
+                    rebind[mask_t](mask_functor),
+                    rebind[score_mod_t](score_mod_functor),
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
+            else:
+                ctx.enqueue_function[kernel_sm90](
+                    rebind[scheduler_t](scheduler),
+                    q,
+                    k,
+                    v,
+                    output,
+                    rebind[Float32](scale),
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                        valid_length
+                    ),
+                    rebind[
+                        OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+                    ](kv_input_row_offsets),
+                    rebind[mask_t](mask_functor),
+                    rebind[score_mod_t](score_mod_functor),
+                    grid_dim=scheduler_t.grid_dim(batch_size, block_x),
+                    block_dim=(Int(num_threads), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        smem_use
+                    ),
+                )
         _ = schedule
 
 
@@ -445,8 +689,8 @@ struct MHAPosition[
     var num_keys: UInt32
     var start_pos: UInt32
     var seq_len: UInt32
-    var head_idx: UInt32
-    var prompt_offset: UInt32
+    var head_idx: UInt32  # when decoding, kv_head_idx
+    var prompt_offset: UInt32  # when decoding, this is the position_idx
     var prompt_idx: UInt32
 
     alias q_stride: Int = Self.depth if decoding else Self.depth * Self.num_heads
@@ -563,6 +807,43 @@ struct MHAPosition[
                 Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
             )
 
+    @always_inline
+    fn exp_sum_qk_max_ptr[
+        partition_t: MHAPartitionScheme
+    ](
+        self,
+        partition: partition_t,
+        batch_size: UInt32,
+    ) -> Tuple[
+        UnsafePointer[Scalar[partition_t.accum_dtype]],
+        UnsafePointer[Scalar[partition_t.accum_dtype]],
+    ]:
+        exp_sum_offset = Self.num_heads * (
+            self.prompt_idx + batch_size * self.prompt_offset
+        )
+        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer().offset(
+            exp_sum_offset
+        )
+        qk_max_ptr = exp_sum_ptr.offset(
+            Self.num_heads * batch_size * partition.num_partitions()
+        )
+        return (exp_sum_ptr, qk_max_ptr)
+
+    @always_inline
+    fn get_start_and_end_for_partitions[
+        partition_t: MHAPartitionScheme, //, BN: Int
+    ](self, partition: partition_t) -> Tuple[UInt32, UInt32]:
+        @parameter
+        if partition_t.do_partition:
+            start, end = get_start_and_end_for_partitions[BN](
+                Int(self.num_keys),
+                Int(partition.num_partitions()),
+                Int(self.prompt_offset),
+            )
+            return (UInt32(start), UInt32(end))
+        else:
+            return (UInt32(0), self.num_keys)
+
 
 @always_inline
 fn _get_position[
@@ -634,7 +915,7 @@ fn _get_position[
     var kv_head_idx: UInt32
 
     @parameter
-    if max_seq_len_t.static_value.or_else(0) == 1:
+    if _is_decoding[max_seq_len_t]():
         q_offset += Int(seq_info.head_idx) * group
     else:  # head_idx is for q_heads
         q_offset += Int(seq_info.head_idx) + Int(seq_info.prompt_offset) * Int(
@@ -980,6 +1261,7 @@ fn _mha_sm90[
     ragged: Bool,
     _is_cache_length_accurate: Bool,
     max_seq_len_t: OptionallyStaticInt,
+    partition_t: MHAPartitionScheme,
 ](
     scheduler: scheduler_t,
     q_ptr_arg: UnsafePointer[Scalar[q_type]],
@@ -994,6 +1276,7 @@ fn _mha_sm90[
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
+    partition: partition_t,
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -1258,7 +1541,7 @@ fn _mha_sm90[
     # constructing calls barrier() if static
     var tile_summary = MHATileSummary(
         batch_size,
-        ceildiv(max_seq_len.as_uint32(), BM),
+        ceildiv(max_seq_len.as_uint32(), BM) * partition.num_partitions(),
         valid_length,
         max_seq_len.as_uint32(),
     )
@@ -1427,7 +1710,8 @@ fn _mha_sm90[
 
         produce_q(position, q_pipeline_state.index())
 
-        var kv_tile_start_row: UInt32 = 0
+        start, end = position.get_start_and_end_for_partitions[BN=BN](partition)
+        var kv_tile_start_row: UInt32 = start
 
         while (
             position.mask_status(mask, kv_tile_start_row)
@@ -1462,7 +1746,7 @@ fn _mha_sm90[
         while True:
             # this loops over num_keys
             kv_tile_start_row += BN
-            if kv_tile_start_row >= position.num_keys:
+            if kv_tile_start_row >= end:
 
                 @parameter
                 if scheduler_t.may_advance:
@@ -1483,6 +1767,11 @@ fn _mha_sm90[
                     position = get_position(docontinue.value())
                     # merge with following produce_k
                     produce_q(position, q_idx)
+                    start, new_end = position.get_start_and_end_for_partitions[
+                        BN=BN
+                    ](partition)
+                    kv_tile_start_row = start
+                    end = new_end
                 else:
                     break
 
@@ -1723,7 +2012,14 @@ fn _mha_sm90[
                 for col in range(num_cols_per_warp):
                     vout._set[row, col](vout._get[row, col]() * rs_inv)
 
-            output_gmem_tile = position.q_out_gmem_tensor(output_ptr_arg)
+            var output_ptr: UnsafePointer[Scalar[output_type]] = output_ptr_arg
+
+            @parameter
+            if decoding and partition_t.do_partition:
+                output_ptr = output_ptr.offset(
+                    depth * num_heads * batch_size * position.prompt_offset
+                )
+            output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
             # Write to global memory.
             constrained[
@@ -1744,14 +2040,6 @@ fn _mha_sm90[
                 Int(warp_y), Int(warp_x)
             )
 
-            # @parameter
-            # if num_heads_per_block > 1:
-
-            #     @parameter
-            #     for i in range(reg_tile_layout.size()):
-            #         output_reg_tile.ptr.store(
-            #             i, output_reg_tile.ptr.load(i) * 1024
-            #         )
             # ensure all threads have finished reading `q_smem`
             named_barrier[num_consumer_threads]()
             copy[thread_layout=mma_thread_layout, swizzle=swizzle](
@@ -1776,7 +2064,8 @@ fn _mha_sm90[
 
         var read_idx: UInt32 = read_pipeline_states.index()
         var read_phase: UInt32 = read_pipeline_states.phase()
-        var kv_tile_start_row: UInt32 = 0
+        start, end = position.get_start_and_end_for_partitions[BN=BN](partition)
+        var kv_tile_start_row: UInt32 = start
         var mask_status: TileMaskStatus
         while True:
             mask_status = position.mask_status(mask, kv_tile_start_row)
@@ -1788,7 +2077,6 @@ fn _mha_sm90[
         # therefore, we find `kv_tile_start_row` first.
         q_mul_k(read_idx, read_phase, q_pipeline_state.index())
         wait_for_q_mul_k[0](pipeline_stages - 1)
-        # few_keys = num_keys <= BN
 
         apply_mask(position, mask_status, mask_warp_col_base, kv_tile_start_row)
         rowmax.copy_from(
@@ -1814,7 +2102,7 @@ fn _mha_sm90[
         # Exit: V{-1}
         kv_tile_start_row += BN
         while True:
-            while kv_tile_start_row < position.num_keys:
+            while kv_tile_start_row < end:
                 # this loops over num_keys
                 mask_status = position.mask_status(mask, kv_tile_start_row)
                 if mask_status == TileMaskStatus.FULL_MASK:
@@ -1861,9 +2149,29 @@ fn _mha_sm90[
                 ](
                     vectorize_output(p_reg_tile),
                     rowmax,
-                    new_q,
+                    new_q,  # if `new_q`, ignore `rowmax`
                 )
                 if new_q:
+
+                    @parameter
+                    if decoding and partition_t.do_partition:
+                        if (
+                            thread_idx.x % 4 == 0
+                            and thread_idx.x < 4 * group + 128
+                        ):
+                            exp_sum_ptr, qk_max_ptr = (
+                                position_prev.exp_sum_qk_max_ptr(
+                                    partition, batch_size
+                                )
+                            )
+                            constrained[group <= 8]()
+                            var q_head_idx = position_prev.head_idx * group + lane // 4
+                            exp_sum_ptr[q_head_idx] = rebind[
+                                Scalar[partition_t.accum_dtype]
+                            ](rowsum[0])
+                            qk_max_ptr[q_head_idx] = rebind[
+                                Scalar[partition_t.accum_dtype]
+                            ](rowmax[0])
                     score_frag_rowsum = rebind[__type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
                     )
@@ -1934,7 +2242,6 @@ fn _mha_sm90[
 
             @parameter
             if scheduler_t.may_advance:
-                kv_tile_start_row = 0
                 var q_idx_old: UInt32 = q_pipeline_state.index()
                 var q_phase_old: UInt32 = q_pipeline_state.phase()
                 q_pipeline_state.step()
@@ -1943,6 +2250,11 @@ fn _mha_sm90[
                 if not docontinue:
                     break
                 position = get_position(docontinue.value())
+                start, new_end = position.get_start_and_end_for_partitions[
+                    BN=BN
+                ](partition)
+                kv_tile_start_row = start
+                end = new_end
             else:
                 break
 
@@ -1954,6 +2266,21 @@ fn _mha_sm90[
             ]().vectorize[1, a_frag_size](),
         )
         p_mul_v(read_idx_prev, read_phase_prev)
+
+        @parameter
+        if decoding and partition_t.do_partition:
+            if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group + 128:
+                exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
+                    partition, batch_size
+                )
+                constrained[group <= 8]()
+                var q_head_idx = position.head_idx * group + lane // 4
+                exp_sum_ptr[q_head_idx] = rebind[
+                    Scalar[partition_t.accum_dtype]
+                ](rowsum[0])
+                qk_max_ptr[q_head_idx] = rebind[
+                    Scalar[partition_t.accum_dtype]
+                ](rowmax[0])
 
         @parameter
         for row in range(num_rows_per_warp):
