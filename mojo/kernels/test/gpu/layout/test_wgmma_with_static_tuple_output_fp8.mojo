@@ -286,13 +286,6 @@ fn main() raises:
                     64,
                     n,
                     32,
-                    DType.float32,
-                    True,
-                ](ctx, handle)
-                wgmma_e4m3_e4m3_f32[
-                    64,
-                    n,
-                    32,
                     DType.bfloat16,
                     True,
                 ](ctx, handle)
