@@ -212,7 +212,7 @@ kgen.generator @lifetime_union<x: !lit.origin<0>, y: !lit.origin<0>>() {
   kgen.param.constant: origin.set = <{imm b, mut a, (is_mut) c, mut a}>
   // CHECK-NEXT: <{mut a}>
   kgen.param.constant: origin.set = <{imm (mutcast mut a)}>
-  // CHECK-NEXT: <{mut #lit.any.origin, mut a, imm b}>
+  // CHECK-NEXT: <{mut a, mut #lit.any.origin, imm b}>
   kgen.param.constant: origin.set = <{mut #lit.any.origin, mut a, imm b}>
   // CHECK-NEXT: <{mut a, imm b}>
   kgen.param.constant: origin.set = <{mut {(mutcast imm b), a}}>

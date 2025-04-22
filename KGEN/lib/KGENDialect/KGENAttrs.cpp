@@ -175,11 +175,9 @@ bool NoneAttr::isConstant() const { return true; }
 bool ParamDeclRefAttr::isConstant() const { return false; }
 
 /// Sort the parameter references by name.
-std::optional<bool> ParamDeclRefAttr::isLessThan(Attribute rhs) const {
-  if (auto ref = llvm::dyn_cast<ParamDeclRefAttr>(rhs))
-    return getName().getValue() < ref.getName().getValue();
-  // Otherwise, named parameters are always to the right.
-  return false;
+bool ParamDeclRefAttr::isLessThan(Attribute rhs) const {
+  auto ref = ::cast<ParamDeclRefAttr>(rhs);
+  return getName().getValue() < ref.getName().getValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -190,10 +188,8 @@ std::optional<bool> ParamDeclRefAttr::isLessThan(Attribute rhs) const {
 bool ParamIndexRefAttr::isConstant() const { return false; }
 
 /// Sort index references by index then kind.
-std::optional<bool> ParamIndexRefAttr::isLessThan(Attribute rhs) const {
-  auto ref = ::dyn_cast<ParamIndexRefAttr>(rhs);
-  if (!ref)
-    return false;
+bool ParamIndexRefAttr::isLessThan(Attribute rhs) const {
+  auto ref = ::cast<ParamIndexRefAttr>(rhs);
   return std::make_tuple(getDepth(), getIndex()) <
          std::make_tuple(ref.getDepth(), ref.getIndex());
 }
@@ -539,10 +535,9 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
 bool DTypeConstantAttr::isConstant() const { return true; }
 
 /// Sort by dtype value.
-std::optional<bool> DTypeConstantAttr::isLessThan(Attribute rhs) const {
-  if (auto dtype = llvm::dyn_cast<DTypeConstantAttr>(rhs))
-    return getDType().getValue() < dtype.getDType().getValue();
-  return true;
+bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
+  auto dtype = ::cast<DTypeConstantAttr>(rhs);
+  return getDType().getValue() < dtype.getDType().getValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2854,11 +2849,8 @@ bool ParamOperatorAttr::isConstant() const { return false; }
 
 /// Sort operators by opcode, then number of operands, then recursively sort by
 /// operand values.
-std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
-  auto op = llvm::dyn_cast<ParamOperatorAttr>(rhs);
-  // Expressions are always to the left of non-expressions.
-  if (!op)
-    return true;
+bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
+  auto op = ::cast<ParamOperatorAttr>(rhs);
 
   // Sort by string value of the opcode.
   if (getOpcode() != op.getOpcode())
@@ -2878,7 +2870,7 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
       return false;
   }
 
-  return std::nullopt;
+  return false;
 }
 
 ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {

@@ -20,30 +20,27 @@ namespace {
 struct IntegerParameterAttr
     : public ParameterAttr::ExternalModel<IntegerParameterAttr, IntegerAttr> {
   bool isConstant(Attribute attr) const { return true; }
-  std::optional<bool> isLessThan(Attribute attr, Attribute rhs) const {
-    if (auto intAttr = dyn_cast<IntegerAttr>(rhs))
-      return cast<IntegerAttr>(attr).getValue().slt(intAttr.getValue());
-    return std::nullopt;
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto intAttr = cast<IntegerAttr>(rhs);
+    return cast<IntegerAttr>(attr).getValue().slt(intAttr.getValue());
   }
 };
 
 struct FloatParameterAttr
     : public ParameterAttr::ExternalModel<FloatParameterAttr, FloatAttr> {
   bool isConstant(Attribute attr) const { return true; }
-  std::optional<bool> isLessThan(Attribute attr, Attribute rhs) const {
-    if (auto fpAttr = dyn_cast<FloatAttr>(rhs))
-      return cast<FloatAttr>(attr).getValue() < fpAttr.getValue();
-    return std::nullopt;
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto fpAttr = cast<FloatAttr>(rhs);
+    return cast<FloatAttr>(attr).getValue() < fpAttr.getValue();
   }
 };
 
 struct StringParameterAttr
     : public ParameterAttr::ExternalModel<StringParameterAttr, StringAttr> {
   bool isConstant(Attribute attr) const { return true; }
-  std::optional<bool> isLessThan(Attribute attr, Attribute rhs) const {
-    if (auto strAttr = dyn_cast<StringAttr>(rhs))
-      return cast<StringAttr>(attr).getValue() < strAttr.getValue();
-    return std::nullopt;
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto strAttr = cast<StringAttr>(rhs);
+    return cast<StringAttr>(attr).getValue() < strAttr.getValue();
   }
 };
 
@@ -75,6 +72,11 @@ struct StoreToMemParameterAttr
     // If the value is concrete, then the type must be too.
     return ParameterAttr::isSimpleConstant(
         cast<StoreToMemAttr>(attr).getValue());
+  }
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto storeToMem = cast<StoreToMemAttr>(rhs);
+    return ParameterAttr::compare(cast<StoreToMemAttr>(attr).getValue(),
+                                  storeToMem.getValue());
   }
 };
 } // namespace
@@ -114,27 +116,27 @@ bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
   if (isSimpleConstant(rhs)) {
     if (!isSimpleConstant(lhs))
       return true;
-
-    // Otherwise, we must have an interface. Any attribute that doesn't
-    // implement one wouldn't be considered a simple constant.
-    if (auto result = llvm::cast<ParameterAttr>(lhs).isLessThan(rhs))
-      return *result;
-    if (auto result = llvm::cast<ParameterAttr>(rhs).isLessThan(lhs))
-      return !*result;
+  } else if (isSimpleConstant(lhs)) {
     return false;
   }
-  if (isSimpleConstant(lhs))
+
+  // Parameter operator expressions are always on the left.
+  if (::isa<ParamOperatorAttr>(lhs)) {
+    if (!::isa<ParamOperatorAttr>(rhs))
+      return true;
+  } else if (::isa<ParamOperatorAttr>(rhs)) {
     return false;
+  }
+
+  // If the attributes are not even the same kind, order by kind name first.
+  const mlir::AbstractAttribute &lhsAbs = lhs.getAbstractAttribute();
+  const mlir::AbstractAttribute &rhsAbs = rhs.getAbstractAttribute();
+  if (&lhsAbs != &rhsAbs)
+    return lhsAbs.getName() < rhsAbs.getName();
 
   // Check for an interface.
-  if (auto itf = llvm::dyn_cast<ParameterAttr>(lhs)) {
-    if (auto result = itf.isLessThan(rhs))
-      return *result;
-  }
-  if (auto itf = llvm::dyn_cast<ParameterAttr>(rhs)) {
-    if (auto result = itf.isLessThan(lhs))
-      return !(*result);
-  }
+  if (auto itf = ::dyn_cast<ParameterAttr>(lhs))
+    return itf.isLessThan(rhs);
 
   // Otherwise, we don't know how to compare these attributes.
   return false;

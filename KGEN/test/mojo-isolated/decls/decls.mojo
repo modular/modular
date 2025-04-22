@@ -1434,7 +1434,7 @@ fn inferCaptureOrigins[
     alias memberFunction = CapturingStruct.takeClosure
 
     # CHECK: lit.fn *"captureWithClosure
-    # CHECK-SAME: :{mut |*(0,0)|, mut *"y`{{.*}}"}:
+    # CHECK-SAME: :{mut *"y`{{.*}}", mut |*(0,0)|}:
     @parameter
     fn captureWithClosure[
         lts: OriginSet, //, f: fn () capturing [lts] -> None
