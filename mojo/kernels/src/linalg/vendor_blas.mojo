@@ -166,7 +166,10 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
     alias _rocblas_type = _rocblas.Handle
     alias _hipblaslt_type = hipblasLtHandle_t
     alias type = Variant[
-        Self._cublas_type, Self._cublaslt_type, Self._rocblas_type
+        Self._cublas_type,
+        Self._cublaslt_type,
+        Self._rocblas_type,
+        Self._hipblaslt_type,
     ]
     var _handle: Self.type
 
@@ -295,6 +298,13 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
         @parameter
         if _DEBUG_VENDOR_BLAS:
             check_cublas_error(cublasLtLoggerSetLevel(5))
+
+    elif handle.resolved_backend is Backend.ROCBLAS:
+        _rocblas.check_error(
+            _rocblas.rocblas.rocblas_set_stream(
+                handle._get_rocblas(), HIP(ctx.stream())
+            )
+        )
 
 
 fn _get_global_handle[
@@ -1092,22 +1102,22 @@ fn _hipblasLt_matmul(
 
     _check_hipblas_error(
         hipblasLtMatmul(
-            handle,  # light_handle
-            operationDesc,  # compute_desc
-            UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-            _adata,  # _a
-            _adesc,  # _adesc
-            _bdata,  # _b
-            _bdesc,  # _bdesc
-            UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-            _ddata,  # _c
-            _ddesc,  # _cdesc
-            _ddata,  # _d
-            _ddesc,  # _ddesc
-            UnsafePointer(to=heuristicResult.algo),  # algo
-            UnsafePointer[NoneType](),  # workspace
-            0,  # workspace_size_in_bytes
-            HIP(ctx.stream())[],  # stream
+            handle,
+            operationDesc,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            _adata,
+            _adesc,
+            _bdata,
+            _bdesc,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            _ddata,
+            _ddesc,
+            _ddata,
+            _ddesc,
+            UnsafePointer(to=heuristicResult.algo),
+            UnsafePointer[NoneType](),
+            0,
+            HIP(ctx.stream()),
         )
     )
 
