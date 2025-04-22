@@ -103,6 +103,19 @@ kgen.func @constant_str_2() -> !kgen.string {
   kgen.return %0 : !kgen.string
 }
 
+// CHECK-LABEL: @empty_str
+kgen.func @empty_str() -> !kgen.string {
+  // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(0 : i64) : i64
+  // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, i64)>
+  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @[[STATIC_EMPTY_STRING:.*]] : !llvm.ptr
+  // CHECK: %[[GEP:.*]] = llvm.bitcast %[[GLOBAL_STR]] : !llvm.ptr to !llvm.ptr
+  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr, i64)>
+  // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr, i64)>
+  %0 = kgen.param.constant: string = <"">
+  // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr, i64)>
+  kgen.return %0 : !kgen.string
+}
+
 // CHECK-LABEL: @test_unreachable
 kgen.func @test_unreachable() -> !pop.simd<1, f32> {
   // CHECK-NEXT: llvm.trap
@@ -137,6 +150,7 @@ kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{
 }
 
 // CHECK: llvm.mlir.global internal constant @[[STATIC_STRING]]("AB\00") {addr_space = 0 : i32, alignment = 16 : i64}
+// CHECK: llvm.mlir.global internal constant @[[STATIC_EMPTY_STRING]]("\00") {addr_space = 0 : i32, alignment = 16 : i64}
 
 }
 
