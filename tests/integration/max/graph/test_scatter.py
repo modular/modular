@@ -7,15 +7,14 @@
 
 import numpy as np
 import pytest
-from max.driver import accelerator_count
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
+
+device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
-@pytest.mark.skipif(
-    accelerator_count() > 0, reason="TODO(GEX-2133): Bad results on gpu"
-)
 @pytest.mark.parametrize(
     "input,updates,indices,axis,expected",
     [
@@ -38,14 +37,24 @@ from max.graph import Graph, ops
 def test_scatter(
     session: InferenceSession, input, updates, indices, axis, expected
 ):
-    with Graph("scatter", input_types=[]) as graph:
-        input = ops.constant(np.array(input), DType.float32)
-        updates = ops.constant(np.array(updates), DType.float32)
-        indices = ops.constant(np.array(indices), DType.int32)
+    input = np.array(input, dtype=np.float32)
+    input_type = TensorType(DType.float32, input.shape, device_ref)
+    with Graph("scatter", input_types=[input_type]) as graph:
+        input_val = graph.inputs[0].tensor
+        updates = ops.constant(
+            np.array(updates), DType.float32, device=device_ref
+        )
+        indices = ops.constant(
+            np.array(indices), DType.int32, device=device_ref
+        )
         axis = ops.constant(axis, DType.int32)
-        out = ops.scatter(input, updates, indices, axis)
+        out = ops.scatter(input_val, updates, indices, axis)
         graph.output(out)
 
     model = session.load(graph)
-    result = model.execute()[0]
+    input_tensor = Tensor.from_numpy(input).to(model.input_devices[0])
+
+    result = model.execute(input_tensor)[0]
+    assert isinstance(result, Tensor)
+
     np.testing.assert_equal(result.to_numpy(), np.float32(expected))
