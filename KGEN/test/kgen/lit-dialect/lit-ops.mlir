@@ -91,9 +91,9 @@ lit.struct.decl @struct_param_passing_kinds<
 // CHECK-LABEL: lit.trait.decl @T {
 lit.trait.decl @T {
   // CHECK: lit.fn @f{{.*}}
-  // CHECK-NEXT:  lit.trait_fn
+  // CHECK-NEXT:  kgen.unreachable
   lit.fn @f() -> !kgen.none {
-    lit.trait_fn
+    kgen.unreachable
   }
 }
 
@@ -519,7 +519,7 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 
 lit.trait.decl @Closure<?, SELF: !Closure> {
   lit.fn @"__call__"[imm O](%self: !lit.ref<:!Closure SELF, imm O> read_mem, %y: index) -> index {
-    lit.trait_fn
+    kgen.unreachable
   }
 }
 

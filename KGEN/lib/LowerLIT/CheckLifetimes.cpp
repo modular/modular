@@ -3726,6 +3726,12 @@ LogicalResult
 CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedOriginFinder &originFinder) {
 
+  // If the function is a trait function or something else unreachable, we don't
+  // need to process it.
+  Block &funcBody = func.getFunctionBody().front();
+  if (isa<UnreachableOp>(funcBody.front()))
+    return success();
+
   // Walk #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func, originFinder);

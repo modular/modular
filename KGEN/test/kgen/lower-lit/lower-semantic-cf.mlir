@@ -640,9 +640,8 @@ lit.fn @loop_with_else(%arg0: i1) {
 
 // CHECK-LABEL: lit.trait.decl @Trait
 lit.trait.decl @Trait {
-  // CHECK-NOT: @trait_fn
   lit.fn @trait_fn() {
-    lit.trait_fn
+    kgen.unreachable
   }
 }
 
