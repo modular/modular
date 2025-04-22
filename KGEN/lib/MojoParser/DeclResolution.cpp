@@ -1376,8 +1376,33 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
-  // Set up information about value arguments.
+  // If the function is a trait function or something else unreachable, we don't
+  // need to process it.
   Block &body = *funcOp.getBody();
+
+  // If this is a method in a trait, we only allow a "..."
+  if (isa<TraitDeclOp>(*decl.getParentDecl())) {
+    ParserBase p(shared, lexer);
+    assert(body.empty() && "expected empty body for trait method");
+
+    // Skip any docstring's that might be present.
+    p.parseDocString(decl);
+
+    // If we see an ellipsis, the function member is well formed: don't emit
+    // arguments or any other setup logic.
+    auto cursor = lexer.getCursor();
+    if (p.consumeIf(Token::dot_dot_dot) || p.consumeIf(Token::kw_pass)) {
+      auto b = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), &body);
+      b.create<UnreachableOp>();
+      return success();
+    }
+
+    // Otherwise, must be a default implementation.  Parse it and then emit an
+    // error later.
+    cursor.restore(lexer);
+  }
+
+  // Set up information about value arguments.
   ExprEmitter emitter(decl, OpBuilder::atBlockEnd(&body));
 
   FnTypeGeneratorType funcSignature = funcOp.getFuncTypeGenerator();
@@ -1476,9 +1501,6 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     shared.notifyListenerOnArgumentDecl(argDecl, resultName, argDecl.getLoc());
   }
 
-  Operation *lastOpIterBefore =
-      body.empty() ? nullptr : &body.getOperations().back();
-
   // With all the argument declarations set up, we can resolve the body of the
   // function.
   if (ParserBase(shared, lexer).parseSuite(decl))
@@ -1490,39 +1512,9 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (decl.isErroneous() || decl.getParentDecl()->isErroneous())
     return success();
 
-  // Function body is empty if the body block is empty or the last operation in
-  // the block is still the same as it was before parseSuite.
-  bool emptyBody =
-      body.empty() || (lastOpIterBefore == &body.getOperations().back());
-
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
-  if (emptyBody && isa<TraitDeclOp>(*decl.getParentDecl())) {
-    // Wipe out the body which may already contain some compiler generated
-    // operations for handling argLValueVarSlot.
-    if (decl.declsInScope) {
-      body.walk([&](LIT::VarDeclOp op) {
-        // Remove the value from parent's declsInScope first before destroying
-        // the value.
-        auto iter = decl.declsInScope->find(op.getNameAttr());
-        if (iter != decl.declsInScope->end())
-          iter->second.clear();
-      });
-    }
-
-    // Clear out any decls in the scope that reference IR in the body.
-    for (auto &[name, decls] : decl.getDeclsInScope()) {
-      for (ASTDecl *decl : decls) {
-        if (Value value = decl->getIfIRValue().getMlirValue()) {
-          if (!isa<mlir::BlockArgument>(value))
-            decl->setIRValue(nullptr);
-        }
-      }
-    }
-
-    body.clear();
-    // Don't append anything to an empty function if this is a trait function.
-  } else if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
+  if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
     // If the function had an explicit return, just append the default end
     // terminator.
     emitter.builder->create<EndFnOp>(funcOp.getLoc());
@@ -1553,6 +1545,15 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (funcOp.getInlineLevel() == InlineLevel::AlwaysBuiltin) {
     if (failed(FnSigDecorators::checkAlwaysInlineBuiltin(funcOp, shared)))
       funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  }
+
+  // We don't support default implementations for trait methods yet. Reject and
+  // recover cleanly.
+  if (isa<TraitDeclOp>(*decl.getParentDecl())) {
+    shared.emitError(decl.getLoc(),
+                     "unexpected function body in trait function "
+                     "declaration, use `...`");
+    return success();
   }
 
   auto declOp = dyn_cast<LIT::StructDeclOp>(funcOp->getParentOp());
@@ -2750,13 +2751,6 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
         return failure();
 
       existingFns.insert({name, func.getSymNameAttr()});
-      if (!func.getBody()->empty()) {
-        shared.emitError(decl->getLoc(),
-                         "unexpected function body in trait function "
-                         "declaration, use `...` or `pass`");
-      }
-      auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
-      b.create<UnreachableOp>();
     }
   }
 
