@@ -440,7 +440,7 @@ struct Pointer[
         Returns:
             True if the two pointers are equal and False otherwise.
         """
-        return UnsafePointer(to=self[]) == UnsafePointer(to=rhs[])
+        return Int(UnsafePointer(to=self[])) == Int(UnsafePointer(to=rhs[]))
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")

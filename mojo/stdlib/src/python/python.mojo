@@ -58,7 +58,9 @@ struct _PythonGlobal(Movable):
 @always_inline
 fn _get_global_python_itf() -> _PythonInterfaceImpl:
     var ptr = _PYTHON_GLOBAL.get_or_create_ptr()
-    return _PythonInterfaceImpl(ptr.bitcast[CPython]())
+    return _PythonInterfaceImpl(
+        rebind[UnsafePointer[CPython]](ptr.bitcast[CPython]())
+    )
 
 
 struct _PythonInterfaceImpl:

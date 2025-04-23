@@ -316,7 +316,9 @@ struct Codepoint(
         """
         var char_len = self.utf8_byte_length()
         var result = String(unsafe_uninit_length=char_len)
-        _ = self.unsafe_write_utf8(result.unsafe_ptr())
+        _ = self.unsafe_write_utf8(
+            result.unsafe_ptr().origin_cast[mut=True, origin=MutableAnyOrigin]()
+        )
         return result
 
     # ===-------------------------------------------------------------------===#
@@ -483,7 +485,7 @@ struct Codepoint(
     @always_inline
     fn unsafe_write_utf8[
         optimize_ascii: Bool = True
-    ](self, ptr: UnsafePointer[Byte]) -> UInt:
+    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
         """Shift unicode to utf8 representation.
 
         Parameters:

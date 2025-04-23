@@ -28,7 +28,7 @@ from memory import UnsafePointer
 
 
 @always_inline
-fn free(ptr: OpaquePointer):
+fn free(ptr: UnsafePointer[NoneType, **_]):
     external_call["free", NoneType](ptr)
 
 
@@ -45,7 +45,7 @@ alias FILE_ptr = OpaquePointer
 
 
 @always_inline
-fn fdopen(fd: c_int, mode: UnsafePointer[c_char]) -> FILE_ptr:
+fn fdopen(fd: c_int, mode: UnsafePointer[c_char, **_]) -> FILE_ptr:
     alias name = "_fdopen" if os_is_windows() else "fdopen"
 
     return external_call[name, FILE_ptr](fd, mode)
@@ -200,7 +200,7 @@ fn dlerror() -> UnsafePointer[c_char]:
 
 
 @always_inline
-fn dlopen(filename: UnsafePointer[c_char], flags: c_int) -> OpaquePointer:
+fn dlopen(filename: UnsafePointer[c_char, **_], flags: c_int) -> OpaquePointer:
     return external_call["dlopen", OpaquePointer](filename, flags)
 
 
@@ -215,7 +215,7 @@ fn dlsym[
     result_type: AnyType = NoneType
 ](
     handle: OpaquePointer,
-    name: UnsafePointer[c_char],
+    name: UnsafePointer[c_char, **_],
 ) -> UnsafePointer[
     result_type
 ]:

@@ -613,12 +613,14 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         other._len = 0
 
         var dest_ptr = self.data + len(self)
-        var src_ptr: UnsafePointer[
-            other.T,
-            address_space = __type_of(other.data).address_space,
-            origin = __origin_of(other),  # (to prevent other^.__del__())
-            alignment = __type_of(other.data).alignment,
-        ] = other.data
+        var src_ptr = rebind[
+            UnsafePointer[
+                other.T,
+                address_space = __type_of(other.data).address_space,
+                origin = __origin_of(other),  # (to prevent other^.__del__())
+                alignment = __type_of(other.data).alignment,
+            ]
+        ](other.data)
 
         for _ in range(other_original_size):
             # This (TODO: optimistically) moves an element directly from the
@@ -1082,7 +1084,10 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Returns:
             The pointer to the underlying memory.
         """
-        return self.data
+        return self.data.origin_cast[
+            mut = Origin(__origin_of(self)).is_mutable,
+            origin = __origin_of(self),
+        ]()
 
     @always_inline
     fn _unsafe_next_uninit_ptr(
@@ -1116,7 +1121,10 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             ),
         )
 
-        return self.data + self._len
+        return (self.data + self._len).origin_cast[
+            mut = Origin(__origin_of(self)).is_mutable,
+            origin = __origin_of(self),
+        ]()
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool

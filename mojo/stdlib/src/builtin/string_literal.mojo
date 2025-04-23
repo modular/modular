@@ -349,7 +349,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return ptr.bitcast[Byte]().origin_cast[False, StaticConstantOrigin]()
+        return rebind[
+            UnsafePointer[Byte, mut=False, origin=StaticConstantOrigin]
+        ](ptr.bitcast[Byte]())
 
     @always_inline
     fn unsafe_cstr_ptr(
@@ -362,7 +364,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             The pointer to the underlying memory.
         """
-        return self.unsafe_ptr().bitcast[c_char]()
+        return rebind[
+            UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]
+        ](self.unsafe_ptr().bitcast[c_char]())
 
     @always_inline("nodebug")
     fn as_string_slice(self) -> StaticString:

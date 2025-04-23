@@ -286,9 +286,12 @@ struct PythonVersion:
         self = PythonVersion(components[0], components[1], components[2])
 
 
-fn _py_get_version(lib: DLHandle) -> StringSlice[StaticConstantOrigin]:
-    return StringSlice[StaticConstantOrigin](
-        unsafe_from_utf8_ptr=lib.call["Py_GetVersion", UnsafePointer[c_char]]()
+fn _py_get_version(lib: DLHandle) -> StaticString:
+    return StaticString(
+        unsafe_from_utf8_ptr=lib.call[
+            "Py_GetVersion",
+            UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
+        ]()
     )
 
 
@@ -297,7 +300,10 @@ fn _py_finalize(lib: DLHandle):
 
 
 @value
-struct PyMethodDef(CollectionElement):
+struct PyMethodDef[
+    O1: ImmutableOrigin = StaticConstantOrigin,
+    O2: ImmutableOrigin = StaticConstantOrigin,
+](CollectionElement):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -311,7 +317,7 @@ struct PyMethodDef(CollectionElement):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var method_name: UnsafePointer[c_char]
+    var method_name: UnsafePointer[c_char, mut=False, origin=O1]
     """A pointer to the name of the method as a C string.
 
     Notes:
@@ -326,7 +332,7 @@ struct PyMethodDef(CollectionElement):
     """Flags indicating how the method should be called. [Reference](
     https://docs.python.org/3/c-api/structures.html#c.PyMethodDef)."""
 
-    var method_docstring: UnsafePointer[c_char]
+    var method_docstring: UnsafePointer[c_char, mut=False, origin=O2]
     """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
@@ -338,10 +344,10 @@ struct PyMethodDef(CollectionElement):
 
         This is suitable for use terminating an array of PyMethodDef values.
         """
-        self.method_name = UnsafePointer[c_char]()
+        self.method_name = UnsafePointer[c_char, mut=False, origin=O1]()
         self.method_impl = _null_fn_ptr[PyCFunction]()
         self.method_flags = 0
-        self.method_docstring = UnsafePointer[c_char]()
+        self.method_docstring = UnsafePointer[c_char, mut=False, origin=O2]()
 
     fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
@@ -356,7 +362,7 @@ struct PyMethodDef(CollectionElement):
         func: fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
-    ]() -> Self:
+    ]() -> PyMethodDef[StaticConstantOrigin, StaticConstantOrigin]:
         """Create a PyMethodDef for a function.
 
         Parameters:
@@ -375,10 +381,14 @@ struct PyMethodDef(CollectionElement):
         alias func_name_str = get_static_string[func_name]()
         alias docstring_str = get_static_string[docstring]()
         return PyMethodDef(
-            func_name_str.unsafe_ptr().bitcast[c_char](),
+            rebind[
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]
+            ](func_name_str.unsafe_ptr().bitcast[c_char]()),
             func,
             METH_VARARGS,
-            docstring_str.unsafe_ptr().bitcast[c_char](),
+            rebind[
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]
+            ](docstring_str.unsafe_ptr().bitcast[c_char]()),
         )
 
 
@@ -656,7 +666,9 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
     @implicit
     fn __init__(out self, name: StaticString):
         self.base = PyModuleDef_Base()
-        self.name = name.unsafe_ptr().bitcast[c_char]()
+        self.name = rebind[__type_of(self.name)](
+            name.unsafe_ptr().bitcast[c_char]()
+        )
         self.docstring = UnsafePointer[c_char]()
         # means that the module does not support sub-interpreters
         self.size = -1
@@ -776,9 +788,10 @@ struct CPython:
 
         # TODO(MOCO-772) Allow raises to propagate through function pointers
         # and make this initialization a raising function.
-        self.init_error = StringSlice[StaticConstantOrigin](
+        self.init_error = StaticString(
             unsafe_from_utf8_ptr=external_call[
-                "KGEN_CompilerRT_Python_SetPythonPath", UnsafePointer[c_char]
+                "KGEN_CompilerRT_Python_SetPythonPath",
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
             ]()
         )
 
@@ -1134,7 +1147,7 @@ struct CPython:
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, **_],
         value: PyObjectPtr,
     ) -> c_int:
         """[Reference](
@@ -1356,7 +1369,7 @@ struct CPython:
         owned name: String,
     ) -> Int:
         var r = self.lib.get_function[
-            fn (PyObjectPtr, UnsafePointer[c_char]) -> Int
+            fn (PyObjectPtr, __type_of(name.unsafe_cstr_ptr())) -> Int
         ]("PyObject_HasAttrString")(obj, name.unsafe_cstr_ptr())
         return r
 

@@ -240,9 +240,13 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         """
 
         if self._is_small():
-            return self._storage[_FixedString[Self.SMALL_CAP]].unsafe_ptr()
+            return rebind[UnsafePointer[UInt8]](
+                self._storage[_FixedString[Self.SMALL_CAP]].unsafe_ptr()
+            )
         else:
-            return self._storage[String].unsafe_ptr()
+            return rebind[UnsafePointer[UInt8]](
+                self._storage[String].unsafe_ptr()
+            )
 
     @always_inline
     fn as_string_slice(ref self) -> StringSlice[__origin_of(self)]:
@@ -269,7 +273,11 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         """
 
         return Span[Byte, __origin_of(self)](
-            ptr=self.unsafe_ptr(), length=len(self)
+            ptr=self.unsafe_ptr().origin_cast[
+                mut = Origin(__origin_of(self)).is_mutable,
+                origin = __origin_of(self),
+            ](),
+            length=len(self),
         )
 
 
@@ -471,7 +479,7 @@ struct _FixedString[CAP: Int](
         Returns:
             The pointer to the underlying memory.
         """
-        return self.buffer.unsafe_ptr()
+        return rebind[UnsafePointer[UInt8]](self.buffer.unsafe_ptr())
 
     @always_inline
     fn as_string_slice(ref self) -> StringSlice[__origin_of(self)]:
@@ -498,5 +506,9 @@ struct _FixedString[CAP: Int](
         """
 
         return Span[Byte, __origin_of(self)](
-            ptr=self.unsafe_ptr(), length=self.size
+            ptr=self.unsafe_ptr().origin_cast[
+                mut = Origin(__origin_of(self)).is_mutable,
+                origin = __origin_of(self),
+            ](),
+            length=self.size,
         )

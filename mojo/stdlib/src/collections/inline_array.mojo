@@ -499,7 +499,20 @@ struct InlineArray[
         print(ptr[0])  # Prints 1
         ```
         """
-        return UnsafePointer(to=self._array).bitcast[Self.ElementType]()
+        return rebind[
+            UnsafePointer[
+                Self.ElementType,
+                mut = Origin(__origin_of(self)).is_mutable,
+                origin = __origin_of(self),
+            ]
+        ](
+            UnsafePointer(to=self._array)
+            .bitcast[Self.ElementType]()
+            .origin_cast[
+                mut = Origin(__origin_of(self)).is_mutable,
+                origin = __origin_of(self),
+            ]()
+        )
 
     @always_inline
     fn __contains__[

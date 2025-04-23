@@ -75,7 +75,7 @@ struct Error(
         Args:
             value: The error message.
         """
-        self.data = value.unsafe_ptr()
+        self.data = rebind[UnsafePointer[Byte]](value.unsafe_ptr())
         self.loaded_length = len(value)
 
     @implicit
@@ -93,7 +93,7 @@ struct Error(
             count=length,
         )
         dest[length] = 0
-        self.data = dest
+        self.data = rebind[UnsafePointer[Byte]](dest)
         self.loaded_length = -length
 
     @implicit
@@ -111,7 +111,7 @@ struct Error(
             count=length,
         )
         dest[length] = 0
-        self.data = dest
+        self.data = rebind[UnsafePointer[Byte]](dest)
         self.loaded_length = -length
 
     @no_inline
@@ -158,7 +158,7 @@ struct Error(
             var dest = UnsafePointer[UInt8].alloc(length + 1)
             memcpy(dest, existing.data, length)
             dest[length] = 0
-            self.data = dest
+            self.data = rebind[UnsafePointer[Byte]](dest)
         else:
             self.data = existing.data
         self.loaded_length = existing.loaded_length
@@ -198,8 +198,10 @@ struct Error(
         if not self:
             return
         writer.write(
-            StringSlice[__origin_of(self)](
-                unsafe_from_utf8_ptr=self.unsafe_cstr_ptr()
+            StringSlice(
+                unsafe_from_utf8_ptr=self.unsafe_cstr_ptr().origin_cast[
+                    mut=False, origin = __origin_of(self)
+                ]()
             )
         )
 
@@ -228,7 +230,7 @@ struct Error(
         Returns:
             The pointer to the underlying memory.
         """
-        return self.data.bitcast[c_char]()
+        return rebind[UnsafePointer[c_char]](self.data.bitcast[c_char]())
 
 
 @doc_private
