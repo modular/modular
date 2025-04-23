@@ -726,6 +726,42 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
         writer.write(")")
 
 
+# ===-------------------------------------------------------------------===#
+# CPython C API Functions
+# ===-------------------------------------------------------------------===#
+
+
+struct ExternalFunction[
+    name: StaticString,
+    type: AnyTrivialRegType,
+]:
+    @staticmethod
+    fn load(lib: DLHandle) -> type:
+        """Loads this external function from an opened dynamic library."""
+        return lib._get_function[name, type]()
+
+
+alias PyList_SetItem = ExternalFunction[
+    "PyList_SetItem",
+    fn (PyObjectPtr, Int, PyObjectPtr) -> PyObjectPtr,
+]
+
+alias Py_IncRef = ExternalFunction[
+    "Py_IncRef",
+    fn (PyObjectPtr) -> None,
+]
+
+alias Py_DecRef = ExternalFunction[
+    "Py_DecRef",
+    fn (PyObjectPtr) -> None,
+]
+
+alias PyLong_FromSsize_t = ExternalFunction[
+    "PyLong_FromSsize_t",
+    fn (c_ssize_t) -> PyObjectPtr,
+]
+
+
 @value
 struct CPython:
     """Handle to the CPython interpreter present in the current process."""
@@ -744,6 +780,11 @@ struct CPython:
     """The total reference count of all Python objects."""
     var init_error: StringSlice[StaticConstantOrigin]
     """An error message if initialization failed."""
+
+    var Py_IncRef_func: Py_IncRef.type
+    var Py_DecRef_func: Py_DecRef.type
+    var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
+    var PyList_SetItem_func: PyList_SetItem.type
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -794,6 +835,11 @@ struct CPython:
             self.version = PythonVersion(_py_get_version(self.lib))
         else:
             self.version = PythonVersion(0, 0, 0)
+
+        self.Py_IncRef_func = Py_IncRef.load(self.lib)
+        self.Py_DecRef_func = Py_DecRef.load(self.lib)
+        self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
+        self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
 
     fn __del__(owned self):
         pass
@@ -878,7 +924,7 @@ struct CPython:
 
         self.log(ptr._get_ptr_as_int(), " INCREF refcnt:", self._Py_REFCNT(ptr))
 
-        self.lib.call["Py_IncRef"](ptr)
+        self.Py_IncRef_func(ptr)
         self._inc_total_rc()
 
     fn Py_DecRef(self, ptr: PyObjectPtr):
@@ -887,7 +933,7 @@ struct CPython:
         """
 
         self.log(ptr._get_ptr_as_int(), " DECREF refcnt:", self._Py_REFCNT(ptr))
-        self.lib.call["Py_DecRef"](ptr)
+        self.Py_DecRef_func(ptr)
         self._dec_total_rc()
 
     # This function assumes a specific way PyObjectPtr is implemented, namely
@@ -1572,9 +1618,7 @@ struct CPython:
         # PyList_SetItem steals the reference - the element object will be
         # destroyed along with the list
         self._dec_total_rc()
-        return self.lib.call["PyList_SetItem", PyObjectPtr](
-            list_obj, index, value
-        )
+        return self.PyList_SetItem_func(list_obj, index, value)
 
     fn PyList_GetItem(self, list_obj: PyObjectPtr, index: Int) -> PyObjectPtr:
         """[Reference](
@@ -1636,7 +1680,7 @@ struct CPython:
         https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t).
         """
 
-        var r = self.lib.call["PyLong_FromSsize_t", PyObjectPtr](value)
+        var r = self.PyLong_FromSsize_t_func(value)
 
         self.log(
             r._get_ptr_as_int(),
