@@ -39,6 +39,7 @@ from .pipeline import (
     upper_bounded_default,
 )
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .sampling import rejection_sampler, token_sampler
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
@@ -54,22 +55,23 @@ __all__ = [
     "EmbeddingsPipeline",
     "HuggingFaceFile",
     "HuggingFaceRepo",
-    "log_softmax",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
+    "log_softmax",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",
     "ModelInputs",
     "ModelOutputs",
-    "PIPELINE_REGISTRY",
     "PipelineConfig",
     "PipelineEngine",
     "PipelineModel",
+    "PIPELINE_REGISTRY",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
+    "rejection_sampler",
     "repo_exists_with_retry",
     "RepoType",
     "RopeType",
@@ -80,5 +82,6 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
+    "token_sampler",
     "upper_bounded_default",
 ]
