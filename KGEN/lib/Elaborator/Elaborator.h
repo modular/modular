@@ -118,9 +118,6 @@ struct ExpansionGraph {
                       std::unique_ptr<ParamNode>>>
       nodes;
 
-  /// Map from concrete function to implementation node.
-  Shared<DenseMap<InstantiatedOpInterface, ImplNode *>> concreteNodes;
-
   /// The current number of tasks scheduled anywhere in the elaborator on the
   /// worklist.
   std::atomic<size_t> numWorkItems = 1;
@@ -229,7 +226,7 @@ public:
     InstantiatedOpInterface &localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
-          concreteInsts.read([name](auto &map) { return map.at(name); });
+          concreteNodes.read([name](auto &map) { return map.at(name)->inst; });
     }
     return cast<FuncOp>(*localResult);
   }
@@ -312,18 +309,15 @@ private:
   //===--------------------------------------------------------------------===//
   // Utility Functions
   //===--------------------------------------------------------------------===//
-
-  /// Insert an ImplNode for a function that is already concrete.
-  void addConcreteFunc(FuncOp func) {
+  bool addConcreteFunc(FuncOp func, StringAttr name,
+                       DenseMap<StringAttr, ImplNode *> &map) {
     auto inst = cast<InstantiatedOpInterface>(*func);
     auto node = std::make_unique<ImplNode>(inst, /*parent=*/nullptr,
                                            func.getBodyRegion(),
                                            func.getSymName().str());
-    g.concreteNodes.modify(
-        [this, inst, node = std::move(node)](auto &map) mutable {
-          map.try_emplace(inst, node.get());
-          g.elaboratedNodes.push_back(std::move(node));
-        });
+    bool result = map.try_emplace(name, node.get()).second;
+    g.elaboratedNodes.push_back(std::move(node));
+    return result;
   }
 
   /// Once a concrete instance has finished specializing, finish processing the
@@ -455,7 +449,9 @@ private:
   ElaborateGeneratorsOptions config;
 
   /// This is the symbol table of the new module.
-  Shared<DenseMap<StringAttr, InstantiatedOpInterface>> concreteInsts;
+  /// Map from name to op + concrete function to implementation node.
+  Shared<DenseMap<StringAttr, ImplNode *>> concreteNodes;
+
   mlir::ThreadLocalCache<DenseMap<StringAttr, InstantiatedOpInterface>> tlInsts;
 
   /// This is used to cache interpreter invocations across the elaborator.
