@@ -13,7 +13,6 @@
 
 from math import ceil, iota
 
-from buffer import NDBuffer
 from register import *
 
 from utils.index import IndexList

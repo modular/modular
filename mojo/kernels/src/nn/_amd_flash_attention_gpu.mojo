@@ -20,7 +20,6 @@ from sys.intrinsics import readfirstlane, _type_is_eq
 
 import gpu.warp as warp
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
