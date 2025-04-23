@@ -23,7 +23,7 @@ from python import Python, PythonObject, TypedPythonObject, PythonModule
 from python._bindings import (
     PyMojoObject,
     py_c_function_wrapper,
-    python_type_object,
+    PythonTypeBuilder,
 )
 from python._cpython import PyMethodDef, PyObjectPtr, PyTypeObject
 
@@ -49,12 +49,13 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_py_function[add_to_int__wrapper]("add_to_int")
             .def_py_function[create_string__wrapper]("create_string")
         )
+        PythonTypeBuilder[Person]("Person").def_py_c_method(
+            py_c_function_wrapper[Person.obj_name], "name"
+        ).finalize(module)
+        PythonTypeBuilder[Int]("Int").finalize(module)
+        PythonTypeBuilder[String]("String").finalize(module)
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
-
-    add_person_type(module)
-    add_int_type(module)
-    add_string_type(module)
 
     return module
 
@@ -144,29 +145,6 @@ struct Person:
         return PythonObject(self0[].name).steal_data()
 
 
-fn add_person_type(mut module: PythonModule):
-    # ----------------------------------------------
-    # Construct a 'type' object describing `Person`
-    # ----------------------------------------------
-
-    var methods = List[PyMethodDef](
-        PyMethodDef.function(py_c_function_wrapper[Person.obj_name], "name"),
-        # Zeroed item as terminator
-        PyMethodDef(),
-    )
-
-    # ----------------------------------
-    # Register the type in the module
-    # ----------------------------------
-
-    try:
-        var type_obj = python_type_object[Person]("Person", methods)
-
-        Python.add_object(module, "Person", type_obj)
-    except e:
-        abort("error adding object: ", e)
-
-
 # ===----------------------------------------------------------------------=== #
 # Recipe Book
 # ===----------------------------------------------------------------------=== #
@@ -174,15 +152,6 @@ fn add_person_type(mut module: PythonModule):
 # ====================================
 # Recipe: Argument: Arity and argument type checking
 # ====================================
-
-
-fn add_int_type(mut module: PythonModule):
-    try:
-        var type_obj = python_type_object[Int]("Int")
-
-        Python.add_object(module, "Int", type_obj)
-    except e:
-        abort("error adding object: ", e)
 
 
 fn incr_int(mut arg: Int):
@@ -240,15 +209,6 @@ fn add_to_int__wrapper(
 # ====================================
 # Recipe: Function: Returning New Mojo Values
 # ====================================
-
-
-fn add_string_type(mut module: PythonModule):
-    try:
-        var type_obj = python_type_object[String]("String")
-
-        Python.add_object(module, "String", type_obj)
-    except e:
-        abort("error adding object: ", e)
 
 
 fn create_string() raises -> String:
