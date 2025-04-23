@@ -1412,21 +1412,6 @@ static LogicalResult linkBitcodeLibraries(Location loc,
   return success();
 }
 
-namespace {
-using TmpFile = std::pair<llvm::SmallString<128>, llvm::FileRemover>;
-}
-
-static ErrorOr<TmpFile> createTemp(StringRef name, StringRef suffix) {
-  llvm::SmallString<128> filename;
-  std::error_code ec =
-      llvm::sys::fs::createTemporaryFile(name, suffix, filename);
-  if (ec)
-    return Error::fromErrorCode(ec, "could not create the temporary file: '%s'",
-                                filename.c_str());
-
-  return TmpFile(filename, llvm::FileRemover(filename.c_str()));
-}
-
 static std::string getNVGPUName(StringRef targetAccelerator) {
   std::pair<StringRef, StringRef> s = targetAccelerator.rsplit(":");
   if (s.second.starts_with("sm_"))
