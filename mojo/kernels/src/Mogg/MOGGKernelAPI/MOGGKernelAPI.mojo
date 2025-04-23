@@ -72,7 +72,6 @@ from linalg.dual_gemm import swishGLU
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
-from linalg.matrix_solve import matrix_solve, matrix_solve_shape
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
@@ -4376,37 +4375,6 @@ struct BatchMatmul:
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
         return batched_matmul_shape[single_thread_blocking_override=True](
             a_buffer, b_buffer
-        )
-
-
-@compiler.register("mo.linalg.solve")
-struct LinalgSolve:
-    @staticmethod
-    fn execute[
-        _synchronous: Bool,
-        type: DType,
-    ](
-        x: OutputTensor[type=type],
-        a: InputTensor[type=type],
-        b: InputTensor[type=type],
-    ) raises:
-        matrix_solve[single_thread_blocking_override=_synchronous](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(x),
-        )
-
-    @staticmethod
-    fn shape[
-        type: DType,
-        rank: Int,
-    ](
-        a: InputTensor[type=type, rank=rank],
-        b: InputTensor[type=type, rank=rank],
-    ) raises -> IndexList[a.rank]:
-        return matrix_solve_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
         )
 
 
