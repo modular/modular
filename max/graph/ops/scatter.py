@@ -19,8 +19,21 @@ def scatter(
     input: TensorValueLike,
     updates: TensorValueLike,
     indices: TensorValueLike,
-    axis: TensorValueLike,
+    axis: TensorValueLike = -1,
 ) -> TensorValue:
+    """
+    Creates a new symbolic tensor where the updates are written to input according to indices.
+
+    Args:
+        input: The input symbolic tensor to write elements to.
+        updates: A symbolic tensor of elements to write to input.
+        indices: The positions in input to update.
+        axis: The axis along which indices indexes into.
+
+    Returns:
+        A new symbolic tensor representing the result of the scatter operation.
+    """
+
     input = TensorValue(input)
     updates = TensorValue(updates)
     indices = TensorValue(indices)
@@ -30,7 +43,7 @@ def scatter(
 
     return Graph.current._add_op(
         rmo.mo_scatter,
-        TensorType(input.dtype, input.shape, input.device).to_mlir(),
+        input.type.to_mlir(),
         input,
         updates,
         indices,
