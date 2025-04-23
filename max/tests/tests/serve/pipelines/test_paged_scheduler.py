@@ -21,13 +21,13 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
-from max.pipelines import TokenGenerator
 from max.pipelines.core import (
     InputContext,
     TextContext,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
+    TokenGenerator,
 )
 from max.serve.pipelines.model_worker import ProcessControl
 from max.serve.pipelines.scheduler import (
