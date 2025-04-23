@@ -46,8 +46,8 @@ from memory.pointer import AddressSpace, _GPUAddressSpace
 fn _memcmp_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[Scalar[dtype], **_],
-    s2: UnsafePointer[Scalar[dtype], **_],
+    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
     count: Int,
 ) -> Int:
     for i in range(count):
@@ -62,8 +62,8 @@ fn _memcmp_impl_unconstrained[
 fn _memcmp_opt_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[Scalar[dtype], **_],
-    s2: UnsafePointer[Scalar[dtype], **_],
+    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
     count: Int,
 ) -> Int:
     alias simd_width = simdwidthof[dtype]()
@@ -123,8 +123,8 @@ fn _memcmp_impl[
 fn memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[type, address_space=address_space],
-    s2: UnsafePointer[type, address_space=address_space],
+    s1: UnsafePointer[type, address_space=address_space, mut=False, **_],
+    s2: UnsafePointer[type, address_space=address_space, mut=False, **_],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -164,7 +164,7 @@ fn memcmp[
 @always_inline
 fn _memcpy_impl(
     dest_data: UnsafePointer[Byte, mut=True, **_],
-    src_data: __type_of(dest_data),
+    src_data: UnsafePointer[Byte, mut=False, **_],
     n: Int,
 ):
     """Copies a memory area.
@@ -249,8 +249,8 @@ fn _memcpy_impl(
 fn memcpy[
     T: AnyType
 ](
-    dest: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-    src: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+    dest: UnsafePointer[T, address_space = AddressSpace.GENERIC, mut=True, **_],
+    src: UnsafePointer[T, address_space = AddressSpace.GENERIC, mut=False, **_],
     count: Int,
 ):
     """Copies a memory area.
@@ -269,16 +269,10 @@ fn memcpy[
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            n,
+            dest.bitcast[Byte](), src.bitcast[Byte](), n
         )
     else:
-        _memcpy_impl(
-            dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            n,
-        )
+        _memcpy_impl(dest.bitcast[Byte](), src.bitcast[Byte](), n)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -290,7 +284,7 @@ fn memcpy[
 fn _memset_impl[
     address_space: AddressSpace
 ](
-    ptr: UnsafePointer[Byte, address_space=address_space],
+    ptr: UnsafePointer[Byte, address_space=address_space, mut=True, **_],
     value: Byte,
     count: Int,
 ):
@@ -308,7 +302,7 @@ fn _memset_impl[
 fn memset[
     type: AnyType, address_space: AddressSpace
 ](
-    ptr: UnsafePointer[type, address_space=address_space],
+    ptr: UnsafePointer[type, address_space=address_space, mut=True, **_],
     value: Byte,
     count: Int,
 ):
@@ -334,7 +328,10 @@ fn memset[
 @always_inline
 fn memset_zero[
     type: AnyType, address_space: AddressSpace, //
-](ptr: UnsafePointer[type, address_space=address_space], count: Int):
+](
+    ptr: UnsafePointer[type, address_space=address_space, mut=True, **_],
+    count: Int,
+):
     """Fills memory with zeros.
 
     Parameters:
@@ -351,7 +348,11 @@ fn memset_zero[
 @always_inline
 fn memset_zero[
     dtype: DType, address_space: AddressSpace, //, *, count: Int
-](ptr: UnsafePointer[Scalar[dtype], address_space=address_space]):
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=True, **_
+    ]
+):
     """Fills memory with zeros.
 
     Parameters:
@@ -499,13 +500,17 @@ fn _malloc[
     *,
     alignment: Int = alignof[type]() if is_gpu() else 1,
 ](size: Int, /) -> UnsafePointer[
-    type, address_space = AddressSpace.GENERIC, alignment=alignment
+    type, address_space = AddressSpace.GENERIC, alignment=alignment, **_
 ]:
     @parameter
     if is_gpu():
         return external_call[
             "malloc",
-            UnsafePointer[NoneType, address_space = AddressSpace.GENERIC],
+            UnsafePointer[
+                NoneType,
+                address_space = AddressSpace.GENERIC,
+                alignment=alignment,
+            ],
         ](size).bitcast[type]()
     else:
         return __mlir_op.`pop.aligned_alloc`[
@@ -521,7 +526,9 @@ fn _malloc[
 
 
 @always_inline
-fn _free(ptr: UnsafePointer[_, address_space = AddressSpace.GENERIC, *_, **_]):
+fn _free(
+    ptr: UnsafePointer[_, address_space = AddressSpace.GENERIC, mut=True, **_]
+):
     @parameter
     if is_gpu():
         libc.free(ptr.bitcast[NoneType]())

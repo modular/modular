@@ -522,7 +522,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
             Byte
         ]()
-        self._slice = Span[Byte, StaticConstantOrigin](ptr=ptr, length=length)
+        self._slice = __type_of(self._slice)(
+            ptr=rebind[
+                UnsafePointer[Byte, mut=False, origin=StaticConstantOrigin]
+            ](ptr),
+            length=length,
+        )
 
     @always_inline
     @implicit
@@ -561,7 +566,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # )
         self._slice = unsafe_from_utf8
 
-    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte]):
+    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte, **_]):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to null-terminated UTF-8
         encoded bytes.
 
@@ -581,7 +586,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char]):
+    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char, **_]):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing to null-terminated UTF-8
         encoded bytes.
 
@@ -599,7 +604,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        ptr: UnsafePointer[Byte, mut=mut, origin=origin],
+        ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
         length: UInt,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
@@ -684,7 +689,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len = self.byte_length()
         var result = String(unsafe_uninit_length=len)
-        memcpy(result.unsafe_ptr(), self.unsafe_ptr(), len)
+        memcpy(result.unsafe_ptr_mut(), self.unsafe_ptr(), len)
         return result^
 
     fn __repr__(self) -> String:
@@ -2282,7 +2287,7 @@ fn _to_string_list[
 
 
 @always_inline
-fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
+fn _unsafe_strlen(owned ptr: UnsafePointer[Byte, mut=False, **_]) -> Int:
     """
     Get the length of a null-terminated string from a pointer.
     Note: the length does NOT include the null terminator.

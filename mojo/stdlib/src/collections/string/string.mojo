@@ -782,7 +782,9 @@ struct String(
             data: The static constant string to refer to.
         """
         self._capacity_or_data = _StringCapacityField.get_static_const()
-        self._ptr_or_data = data.unsafe_ptr()
+        self._ptr_or_data = rebind[__type_of(self._ptr_or_data)](
+            data.unsafe_ptr()
+        )
         self._len_or_data = len(data)
 
     @always_inline
@@ -971,7 +973,7 @@ struct String(
             # Otherwise, copy the data for an out-of-line representation.
             var len = other.byte_length()
             self = Self(unsafe_uninit_length=len)
-            memcpy(self.unsafe_ptr(), other.unsafe_ptr(), len)
+            memcpy(self.unsafe_ptr_mut(), other.unsafe_ptr(), len)
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -1206,7 +1208,7 @@ struct String(
         var rhs_len = len(rhs)
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
-        var result_ptr = result.unsafe_ptr()
+        var result_ptr = result.unsafe_ptr_mut()
         memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
@@ -1404,7 +1406,10 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        # FIXME: implement logic here manually instead of going through string.write
+        var sep = rebind[StaticString](
+            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+        )
         return String(elems, sep=sep)
 
     fn join[
@@ -1520,7 +1525,9 @@ struct String(
             # The string itself holds the data.
             return UnsafePointer(to=self).bitcast[Byte]()
         else:
-            return self._ptr_or_data
+            return rebind[
+                UnsafePointer[Byte, mut=False, origin = __origin_of(self)]
+            ](self._ptr_or_data)
 
     fn unsafe_ptr_mut(
         mut self,
@@ -1534,7 +1541,7 @@ struct String(
         # If immutable, copy to a new buffer to ensure mutability.
         if self._capacity_or_data.is_static_constant():
             self.reserve(self.byte_length())
-        return self.unsafe_ptr().origin_cast[False, __origin_of(self)]()
+        return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
         mut self,
@@ -1553,7 +1560,7 @@ struct String(
             self.unsafe_ptr_mut()[len] = 0
             self._capacity_or_data.set_has_nul_terminator(True)
 
-        return self.unsafe_ptr().bitcast[c_char]()
+        return self.unsafe_ptr_mut().bitcast[c_char]()
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
@@ -2144,7 +2151,7 @@ struct String(
         # Get these fields before we change _capacity_or_data, which can modify
         # where they are stored.
         var len = self.byte_length()
-        var old_ptr = self.unsafe_ptr()
+        var old_ptr = self.unsafe_ptr_mut()
         var should_free = (
             (not self._capacity_or_data.is_static_constant())
             & (not self._capacity_or_data.is_inline())

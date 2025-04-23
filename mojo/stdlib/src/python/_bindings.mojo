@@ -113,16 +113,20 @@ fn python_type_object[
     alias type_name_static = get_static_string[type_name]()
     var type_spec = PyType_Spec(
         # FIXME(MOCO-1306): This should be `T.__name__`.
-        type_name_static.unsafe_ptr().bitcast[sys.ffi.c_char](),
+        rebind[UnsafePointer[sys.ffi.c_char]](
+            type_name_static.unsafe_ptr().bitcast[sys.ffi.c_char]()
+        ),
         sizeof[PyMojoObject[T]](),
         0,
         Py_TPFLAGS_DEFAULT,
         # Note: This pointer is only "read-only" by PyType_FromSpec.
-        slots.unsafe_ptr(),
+        rebind[UnsafePointer[PyType_Slot]](slots.unsafe_ptr()),
     )
 
     # Construct a Python 'type' object from our type spec.
-    var type_obj = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
+    var type_obj = cpython.PyType_FromSpec(
+        rebind[UnsafePointer[PyType_Spec]](UnsafePointer(to=type_spec))
+    )
 
     if type_obj.is_null():
         Python.throw_python_exception_if_error_state(cpython)
