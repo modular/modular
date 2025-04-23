@@ -19,10 +19,8 @@ from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, assert_almost_equal
 from kv_cache.types import (
-    ContiguousKVCache,
-    ContiguousKVCacheCollection,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    KVCacheT,
 )
 from memory import UnsafePointer, memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
@@ -44,6 +42,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     # Set up test hyperparameters.
     alias batch_size = 2
     alias start_positions = List[UInt32](0, 5)
+    alias lookup_table = List[UInt32](0, 1)
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1
@@ -69,25 +68,26 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     alias kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[5](
-        num_layers, batch_size, max_seq_len, num_heads, head_dim
+    alias block_shape = IndexList[6](
+        batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
 
     # Construct backing buffer and the KV cache itself.
-    k_cache_block_buffer = List[Scalar[type]]()
-    k_cache_block_buffer.resize(
-        new_size=batch_size * max_seq_len * dim, value=0
+    kv_cache_block_buffer = List[Scalar[type]]()
+    kv_cache_block_buffer.resize(
+        new_size=block_shape.flattened_length(), value=0
     )
+    kv_cache_block = NDBuffer(kv_cache_block_buffer.data, block_shape)
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[type]()
     max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
-            dest=(
-                k_cache_block_buffer.data
-                + (batch_idx * max_seq_len * dim)
-                + Int(start_positions[batch_idx] * dim)
+            dest=kv_cache_block._offset(
+                IndexList[6](
+                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                )
             ),
             src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
             count=seq_len * dim,
@@ -97,23 +97,22 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
         )
 
     # Create the actual KV cache type.
-    k_cache_block = NDBuffer[type, 5](k_cache_block_buffer.data, block_shape)
-    kv_collection = ContiguousKVCacheCollection[type, kv_params](
-        key_cache=k_cache_block,
-        value_cache=NDBuffer[type, 5](
-            UnsafePointer[Scalar[type]](), block_shape
-        ),  # passing as a dummy val, this isn't used.
+    kv_collection = ContinuousBatchingKVCacheCollection[type, kv_params](
+        blocks=kv_cache_block,
         cache_lengths=NDBuffer[DType.uint32, 1](
             start_positions.data,
             DimList(
                 len(start_positions),
             ),
         ),
-        is_context_encoding=False,
-        num_layers=num_layers,
-        batch_size=batch_size,
-        max_seq_len_in_batch=seq_len,
-        max_cache_len_in_batch=max_cache_len_in_batch,
+        lookup_table=NDBuffer[DType.uint32, 1](
+            lookup_table.data,
+            DimList(
+                len(lookup_table),
+            ),
+        ),
+        max_seq_length=seq_len,
+        max_cache_length=max_cache_len_in_batch,
     )
 
     # Create and initialize query buffer.
@@ -209,19 +208,22 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
         for seq_idx in range(seq_len):
             for head_idx in range(num_heads):
                 # Calculate offsets for current position
-                seq_offset = seq_idx * dim + head_idx * head_dim
-                cache_offset = (
-                    batch_idx * max_seq_len * dim  # batch offset in cache
-                    + Int(
-                        start_positions[batch_idx] * dim
-                    )  # start position offset
-                    + seq_offset  # sequence and head offset
+                cache_block_ptr = kv_cache_block._offset(
+                    IndexList[6](
+                        batch_idx,
+                        0,
+                        0,
+                        Int(start_positions[batch_idx]) + seq_idx,
+                        head_idx,
+                        0,
+                    )
                 )
+                seq_offset = seq_idx * dim + head_idx * head_dim
                 input_offset = batch_idx * seq_len * dim + seq_offset
 
                 # Verify unroped region: Should match original input
                 assert_almost_equal(
-                    k_cache_block_buffer.data + cache_offset,
+                    cache_block_ptr,
                     k_cache_input_buffer.data + input_offset,
                     head_dim - rope_dim,
                 )
@@ -229,7 +231,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
                 # Verify roped region: Should match expected output
                 roped_offset = head_dim - rope_dim
                 assert_almost_equal(
-                    k_cache_block_buffer.data + cache_offset + roped_offset,
+                    cache_block_ptr + roped_offset,
                     expected_k_out_buffer.data + input_offset + roped_offset,
                     rope_dim,
                 )
@@ -239,7 +241,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     _ = freqs_cis_table_buffer^
     _ = q_buffer^
     _ = k_cache_input_buffer^
-    _ = k_cache_block_buffer^
+    _ = kv_cache_block_buffer^
 
 
 def main() -> None:

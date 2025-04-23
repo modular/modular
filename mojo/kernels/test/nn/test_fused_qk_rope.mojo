@@ -19,10 +19,8 @@ from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
-    ContiguousKVCache,
-    ContiguousKVCacheCollection,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    KVCacheT,
 )
 from memory import UnsafePointer, memcpy
 from nn.fused_qk_rope import fused_qk_rope
@@ -44,6 +42,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     # Set up test hyperparameters.
     alias batch_size = 2
     alias start_positions = List[UInt32](0, 5)
+    alias lookup_table = List[UInt32](0, 1)
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1
@@ -69,25 +68,26 @@ def test_fused_qk_rope[type: DType]() -> None:
     alias kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[5](
-        num_layers, batch_size, max_seq_len, num_heads, head_dim
+    alias block_shape = IndexList[6](
+        batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
 
     # Construct backing buffer and the KV cache itself.
-    k_cache_block_buffer = List[Scalar[type]]()
-    k_cache_block_buffer.resize(
-        new_size=batch_size * max_seq_len * dim, value=0
+    kv_cache_block_buffer = List[Scalar[type]]()
+    kv_cache_block_buffer.resize(
+        new_size=block_shape.flattened_length(), value=0
     )
+    kv_cache_block = NDBuffer(kv_cache_block_buffer.data, block_shape)
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[type]()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
-            dest=(
-                k_cache_block_buffer.data
-                + (batch_idx * max_seq_len * dim)
-                + Int(start_positions[batch_idx] * dim)
+            dest=kv_cache_block._offset(
+                IndexList[6](
+                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                )
             ),
             src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
             count=seq_len * dim,
@@ -97,23 +97,22 @@ def test_fused_qk_rope[type: DType]() -> None:
         )
 
     # Create the actual KV cache type.
-    k_cache_block = NDBuffer[type, 5](k_cache_block_buffer.data, block_shape)
-    kv_collection = ContiguousKVCacheCollection[type, kv_params](
-        key_cache=k_cache_block,
-        value_cache=NDBuffer[type, 5](
-            UnsafePointer[Scalar[type]](), block_shape
-        ),  # passing as a dummy val, this isn't used.
+    kv_collection = ContinuousBatchingKVCacheCollection[type, kv_params](
+        blocks=kv_cache_block,
         cache_lengths=NDBuffer[DType.uint32, 1](
             start_positions.data,
             DimList(
                 len(start_positions),
             ),
         ),
-        is_context_encoding=False,
-        num_layers=num_layers,
-        batch_size=batch_size,
-        max_seq_len_in_batch=seq_len,
-        max_cache_len_in_batch=max_cache_len_in_batch,
+        lookup_table=NDBuffer[DType.uint32, 1](
+            lookup_table.data,
+            DimList(
+                len(lookup_table),
+            ),
+        ),
+        max_seq_length=seq_len,
+        max_cache_length=max_cache_len_in_batch,
     )
 
     # Create and initialize query buffer.
@@ -175,11 +174,10 @@ def test_fused_qk_rope[type: DType]() -> None:
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):
         assert_almost_equal(
-            (
-                k_cache_block_buffer.data
-                + (batch_idx * max_seq_len * dim)
-                # Account for the start_pos (cache_length) for this batch item.
-                + Int(start_positions[batch_idx] * dim)
+            kv_cache_block._offset(
+                IndexList[6](
+                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                )
             ),
             expected_k_out_buffer.data + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.
@@ -191,7 +189,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     _ = freqs_cis_table_buffer^
     _ = q_buffer^
     _ = k_cache_input_buffer^
-    _ = k_cache_block_buffer^
+    _ = kv_cache_block_buffer^
 
 
 def main() -> None:
