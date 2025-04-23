@@ -53,22 +53,21 @@ class Device:
         """
         Checks if this device can directly access memory of another device.
 
+        .. code-block:: python
+
+             from max import driver
+
+             gpu0 = driver.Accelerator(id=0)
+             gpu1 = driver.Accelerator(id=1)
+
+             if gpu0.can_access(gpu1):
+                 print("GPU0 can directly access GPU1 memory.")
+
         Args:
             other (Device): The other device to check peer access against.
 
         Returns:
             bool: True if peer access is possible, False otherwise.
-
-        Example:
-            .. code-block:: python
-
-                from max import driver
-
-                gpu0 = driver.Accelerator(id=0)
-                gpu1 = driver.Accelerator(id=1)
-
-                if gpu0.can_access(gpu1):
-                    print("GPU0 can directly access GPU1 memory.")
         """
 
     def synchronize(self) -> None:
@@ -111,8 +110,9 @@ class Device:
         Returns device label.
 
         Possible values are:
-        - "cpu" for host devices
-        - "gpu" for accelerators
+
+        - ``cpu`` for host devices.
+        - ``gpu`` for accelerators.
 
         .. code-block:: python
 
@@ -128,9 +128,10 @@ class Device:
         Returns the API used to program the device.
 
         Possible values are:
-        - "cpu" for host devices
-        - "cuda" for NVIDIA GPUs
-        - "hip" for AMD GPUs
+
+        - ``cpu`` for host devices.
+        - ``cuda`` for NVIDIA GPUs.
+        - ``hip`` for AMD GPUs.
 
         .. code-block:: python
 
@@ -145,8 +146,8 @@ class Device:
         """
         Returns a zero-based device id. For a CPU device this is always 0.
         For GPU accelerators this is the id of the device relative to this host.
-        Along with the `label`, an id can uniquely identify a device,
-        e.g. "gpu:0", "gpu:1".
+        Along with the ``label``, an id can uniquely identify a device,
+        e.g. ``gpu:0``, ``gpu:1``.
 
         .. code-block:: python
 
@@ -338,6 +339,7 @@ class Tensor:
         Create a deep copy on an optionally given device.
 
         If a device is None (default), a copy is created on the same device.
+
         .. code-block:: python
 
             from max import driver
