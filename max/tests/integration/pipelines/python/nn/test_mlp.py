@@ -114,6 +114,7 @@ def mlp_output(
         None,
         gate_proj.shape[1],
         gate_proj.shape[0],
+        devices=[DeviceRef.GPU() if is_gpu else DeviceRef.CPU()],
         activation_function=activation_function,
         has_bias=has_bias,
     )
