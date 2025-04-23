@@ -309,7 +309,9 @@ struct PyMethodDef(CollectionElement):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var method_name: UnsafePointer[c_char]
+    var method_name: UnsafePointer[
+        c_char, mut=False, origin=StaticConstantOrigin
+    ]
     """A pointer to the name of the method as a C string.
 
     Notes:
@@ -324,7 +326,9 @@ struct PyMethodDef(CollectionElement):
     """Flags indicating how the method should be called. [Reference](
     https://docs.python.org/3/c-api/structures.html#c.PyMethodDef)."""
 
-    var method_docstring: UnsafePointer[c_char]
+    var method_docstring: UnsafePointer[
+        c_char, mut=False, origin=StaticConstantOrigin
+    ]
     """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
