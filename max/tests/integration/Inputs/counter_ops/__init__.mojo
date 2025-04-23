@@ -9,7 +9,6 @@ from os import abort
 import compiler_internal as compiler
 from buffer.dimlist import DimList
 from python import Python, PythonObject
-from python.python import _get_global_python_itf
 from register import register_internal
 from tensor import ManagedTensorSlice, InputTensor, OutputTensor
 
@@ -85,7 +84,7 @@ struct ReadCounter:
 struct BumpPythonCounter:
     @staticmethod
     fn execute[stride: Int](counter: PythonObject) -> PythonObject:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var state = cpython.PyGILState_Ensure()
         try:
             cpython.check_init_error()
