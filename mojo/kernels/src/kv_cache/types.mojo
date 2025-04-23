@@ -567,6 +567,7 @@ struct PagedKVCache[
             head_dim_idx,
         )
 
+    @always_inline
     fn load[
         width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
@@ -576,6 +577,7 @@ struct PagedKVCache[
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
         return self.blocks.load[width=width](idx)
 
+    @always_inline
     fn store(
         self,
         bs: Int,
