@@ -13,8 +13,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.pipelines import SamplingConfig
-from max.pipelines.sampling import rejection_sampler, token_sampler
+from max.pipelines.lib import SamplingConfig, rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
 
@@ -53,8 +52,8 @@ def test_bitmask_sampling_vs_xgrammar(session: InferenceSession):
             enable_structured_output=True,
             in_dtype=DType.float32,
             out_dtype=DType.float32,
-            device=DeviceRef.CPU(),
         ),
+        device=DeviceRef.CPU(),
     )
 
     device = session.devices[0]
@@ -113,9 +112,9 @@ def test_sampling_return_logits(session: InferenceSession):
             enable_structured_output=False,
             in_dtype=DType.float32,
             out_dtype=DType.float32,
-            device=DeviceRef.CPU(),
         ),
         return_logits=True,
+        device=DeviceRef.CPU(),
     )
 
     device = session.devices[0]
