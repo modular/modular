@@ -122,11 +122,6 @@ def execute_ragged_flash_attention():
             mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
         )
 
-    # initialize scale tensor
-    scale = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
-
-    scale.tensor[0] = isqrt(Float32(kv_params.head_size))
-
     # initialize reference output
     mixed_ce_output = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
@@ -228,7 +223,6 @@ def execute_ragged_flash_attention():
         mixed_ce_k_cache,
         mixed_ce_v_cache,
         CausalMask(),
-        # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         mixed_ce_output.tensor,
     )
@@ -268,7 +262,6 @@ def execute_ragged_flash_attention():
     _ = mixed_ce_q_ragged^
     _ = true_ce_row_offsets^
     _ = mixed_ce_row_offsets^
-    _ = scale^
     _ = kv_block_paged^
     _ = paged_lut^
     _ = true_ce_output^
