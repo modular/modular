@@ -413,7 +413,6 @@ static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
     defOps.insert(it->second.defOp);
   }
 
-  scope->walk([&](DeferredOp op) { opsToRewrite.push_back(op); });
   llvm::append_range(opsToRewrite, defOps.getArrayRef());
 }
 
@@ -1372,23 +1371,10 @@ ElaborationState Elaborator::processScope(ImplNode *node,
     return std::to_string(item.ops.size()) + " ops";
   });
 
-  DenseSet<Operation *> visited;
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
   while (!item.ops.empty()) {
     Operation *op = item.ops.back();
-    if (visited.contains(op)) {
-      item.ops.pop_back();
-      continue;
-    }
-    if (isa<DeferredOp>(op)) {
-      // `ParameterUseDefGraph` and `collectOpsToProcess` can add same operation
-      // twice into that working list, which may result deferred operation will
-      // be processed twice.
-      // Since deferred operation cannot be skipped, visiting it second time is
-      // not needed.
-      visited.insert(op);
-    }
     ElaborationState result = processOp(node, op);
     if (result.isError() || result.shouldSkipFrame() || result.shouldSkipNode())
       return result;

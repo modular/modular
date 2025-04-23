@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -551,7 +552,7 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   // be parametric.
   auto isImplicitlyParametric = [&] {
     return (itf && itf.isImplicitlyParametric()) ||
-           isa<GeneratorUserOpInterface>(op);
+           isa<GeneratorUserOpInterface, DeferredOp>(op);
   };
 
   // If the operation is parametric, add it to the list.
