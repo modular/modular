@@ -44,20 +44,20 @@ alias OriginSet = __mlir_type.`!lit.origin.set`
 
 @value
 @register_passable("trivial")
-struct Origin[is_mutable: Bool]:
+struct Origin[mut: Bool]:
     """This represents a origin reference for a memory value.
 
     Parameters:
-        is_mutable: Whether the origin is mutable.
+        mut: Whether the origin is mutable.
     """
 
     alias _mlir_type = __mlir_type[
         `!lit.origin<`,
-        is_mutable.value,
+        mut.value,
         `>`,
     ]
 
-    alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
+    alias cast_from = _lit_mut_cast[result_mutable=mut]
     """Cast an existing Origin to be of the specified mutability.
 
     This is a low-level way to coerce Origin mutability. This should be used
@@ -108,9 +108,9 @@ struct Origin[is_mutable: Bool]:
 
 
 struct _lit_mut_cast[
-    is_mutable: Bool, //,
+    mut: Bool, //,
     result_mutable: Bool,
-    operand: Origin[is_mutable],
+    operand: Origin[mut],
 ]:
     alias result = __mlir_attr[
         `#lit.origin.mutcast<`,

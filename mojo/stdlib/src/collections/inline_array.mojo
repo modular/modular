@@ -500,7 +500,7 @@ struct InlineArray[
         ref self,
     ) -> UnsafePointer[
         Self.ElementType,
-        mut = Origin(__origin_of(self)).is_mutable,
+        mut = Origin(__origin_of(self)).mut,
         origin = __origin_of(self),
     ]:
         """Gets an unsafe pointer to the underlying array storage.

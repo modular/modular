@@ -178,7 +178,7 @@ struct UnsafePointer[
             type,
             address_space=address_space,
             alignment=1,
-            mut = Origin(__origin_of(arg)).is_mutable,
+            mut = Origin(__origin_of(arg)).mut,
             origin = __origin_of(arg),
         ],
     ):
