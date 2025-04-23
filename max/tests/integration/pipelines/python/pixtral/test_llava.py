@@ -520,7 +520,7 @@ def test_connector(
     graph = Graph(
         "Llava_MLP",
         connector,
-        input_types=(TensorType(DType.float32, size),),
+        input_types=(TensorType(DType.float32, size, DeviceRef.CPU()),),
     )
 
     compiled = session.load(graph, weights_registry=weights_registry)
@@ -599,7 +599,7 @@ def test_pixtral(
     #     "Llava",
     #     pixtral,
     #     input_types=(
-    #         TensorType(DType.int64, pytorch_input_ids.shape),
+    #         TensorType(DType.int64, pytorch_input_ids.shape, DeviceRef.CPU()),
     #         TensorType(DType.float32, graph_api_pixel_values[0].shape),
     #     ),
     # )

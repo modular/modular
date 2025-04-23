@@ -266,7 +266,9 @@ def test_patch_conv(imgs, img_sizes) -> None:
         Conv2D(filters.numpy(), stride=(patch_size, patch_size)),
         input_types=(
             TensorType(
-                DType.float32, (1, "img_height", "img_width", num_channels)
+                DType.float32,
+                (1, "img_height", "img_width", num_channels),
+                device=DeviceRef.CPU(),
             ),
         ),
     )

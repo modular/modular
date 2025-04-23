@@ -297,11 +297,13 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
     embeds_type = TensorType(
         DType.float32,
         shape=embeds.shape,  # [batch_size, n_tokens_and_patches, hidden_dim]
+        device=DeviceRef.CPU(),
     )
 
     input_row_offsets_type = TensorType(
         DType.uint32,
         [batch_size + 1],
+        device=DeviceRef.CPU(),
     )
 
     input_types = [
