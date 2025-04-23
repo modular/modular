@@ -286,9 +286,12 @@ struct PythonVersion:
         self = PythonVersion(components[0], components[1], components[2])
 
 
-fn _py_get_version(lib: DLHandle) -> StringSlice[StaticConstantOrigin]:
-    return StringSlice[StaticConstantOrigin](
-        unsafe_from_utf8_ptr=lib.call["Py_GetVersion", UnsafePointer[c_char]]()
+fn _py_get_version(lib: DLHandle) -> StaticString:
+    return StaticString(
+        unsafe_from_utf8_ptr=lib.call[
+            "Py_GetVersion",
+            UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
+        ]()
     )
 
 
@@ -378,10 +381,14 @@ struct PyMethodDef[
         alias func_name_str = get_static_string[func_name]()
         alias docstring_str = get_static_string[docstring]()
         return PyMethodDef(
-            func_name_str.unsafe_ptr().bitcast[c_char](),
+            rebind[
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]
+            ](func_name_str.unsafe_ptr().bitcast[c_char]()),
             func,
             METH_VARARGS,
-            docstring_str.unsafe_ptr().bitcast[c_char](),
+            rebind[
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]
+            ](docstring_str.unsafe_ptr().bitcast[c_char]()),
         )
 
 
@@ -781,9 +788,10 @@ struct CPython:
 
         # TODO(MOCO-772) Allow raises to propagate through function pointers
         # and make this initialization a raising function.
-        self.init_error = StringSlice[StaticConstantOrigin](
+        self.init_error = StaticString(
             unsafe_from_utf8_ptr=external_call[
-                "KGEN_CompilerRT_Python_SetPythonPath", UnsafePointer[c_char]
+                "KGEN_CompilerRT_Python_SetPythonPath",
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
             ]()
         )
 

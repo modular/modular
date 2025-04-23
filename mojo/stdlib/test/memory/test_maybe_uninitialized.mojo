@@ -25,7 +25,14 @@ def test_maybe_uninitialized():
     var destructor_counter = List[Int]()
 
     var a = UnsafeMaybeUninitialized[DelRecorder]()
-    a.write(DelRecorder(42, UnsafePointer(to=destructor_counter)))
+    a.write(
+        DelRecorder(
+            42,
+            UnsafePointer(to=destructor_counter).origin_cast[
+                mut=True, origin=MutableAnyOrigin
+            ](),
+        )
+    )
 
     assert_equal(a.assume_initialized().value, 42)
     assert_equal(len(destructor_counter), 0)
@@ -72,7 +79,9 @@ def test_maybe_uninitialized_move_from_pointer():
 
     var b = UnsafeMaybeUninitialized[MoveCounter[Int]]()
     # b is uninitialized here.
-    b.move_from(UnsafePointer(to=a))
+    b.move_from(
+        UnsafePointer(to=a).origin_cast[mut=True, origin=MutableAnyOrigin]()
+    )
     _ = a^
 
     # a is uninitialized now. Thankfully, we're working with trivial types

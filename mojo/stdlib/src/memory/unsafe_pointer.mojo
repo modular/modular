@@ -166,7 +166,7 @@ struct UnsafePointer[
     @implicit
     fn __init__(
         out self,
-        other: UnsafePointer[type, mut=mut, origin=origin, **_],
+        other: UnsafePointer[type, mut=mut, origin = origin.empty, **_],
     ):
         """Exclusivity parameter cast a pointer.
 
@@ -180,8 +180,12 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        out self,
-        other: UnsafePointer[type, mut=mut, origin = origin.empty, **_],
+        out self: UnsafePointer[
+            type,
+            mut=mut,
+            origin = Origin[mut].cast_from[MutableAnyOrigin].result, **_,
+        ],
+        other: UnsafePointer[type, mut=mut, origin=origin, **_],
     ):
         """Exclusivity parameter cast a pointer.
 

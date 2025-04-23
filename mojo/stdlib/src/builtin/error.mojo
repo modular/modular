@@ -198,8 +198,10 @@ struct Error(
         if not self:
             return
         writer.write(
-            StringSlice[__origin_of(self)](
-                unsafe_from_utf8_ptr=self.unsafe_cstr_ptr()
+            StringSlice(
+                unsafe_from_utf8_ptr=self.unsafe_cstr_ptr().origin_cast[
+                    mut=False, origin = __origin_of(self)
+                ]()
             )
         )
 

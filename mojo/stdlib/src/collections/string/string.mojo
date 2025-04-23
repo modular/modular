@@ -917,11 +917,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline
     fn __init__(
@@ -937,11 +933,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, owned other: Self):
@@ -1523,7 +1515,9 @@ struct String(
         """
         if self._capacity_or_data.is_inline():
             # The string itself holds the data.
-            return UnsafePointer(to=self).bitcast[Byte]()
+            return rebind[
+                UnsafePointer[Byte, mut=False, origin = __origin_of(self)]
+            ](UnsafePointer(to=self).bitcast[Byte]())
         else:
             return rebind[
                 UnsafePointer[Byte, mut=False, origin = __origin_of(self)]
@@ -1560,7 +1554,9 @@ struct String(
             self.unsafe_ptr_mut()[len] = 0
             self._capacity_or_data.set_has_nul_terminator(True)
 
-        return self.unsafe_ptr_mut().bitcast[c_char]()
+        return rebind[
+            UnsafePointer[c_char, mut=True, origin = __origin_of(self)]
+        ](self.unsafe_ptr_mut().bitcast[c_char]())
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:

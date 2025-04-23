@@ -141,18 +141,14 @@ struct Span[
 
     @always_inline("builtin")
     fn __init__(
-        out self: Span[
-            mut = ptr.mut,
-            origin = ptr.origin,
-            T=T,
-            address_space=address_space,
-            alignment=alignment,
-        ],
+        out self,
         *,
         ptr: UnsafePointer[
             T,
             address_space=address_space,
-            alignment=alignment, **_,
+            alignment=alignment,
+            mut=mut,
+            origin=origin, **_,
         ],
         length: UInt,
     ):
