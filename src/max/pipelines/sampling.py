@@ -97,7 +97,9 @@ def token_sampler(
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
             logits = ops.select(
-                bitmask, logits, ops.constant(-10000, dtype=DType.float32)
+                bitmask,
+                logits,
+                ops.constant(-10000, dtype=DType.float32, device=device),
             )
 
         # Apply top_k sampling
