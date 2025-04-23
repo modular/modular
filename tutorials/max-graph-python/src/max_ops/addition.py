@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 from max import engine
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, Any]:
