@@ -45,5 +45,5 @@ class MinPSampler(nn.Module):
                 input,
                 ops.constant(self.temperature, dtype=self.dtype),
             ],
-            [TensorType(self.dtype, self.shape)],
+            [TensorType(self.dtype, self.shape, device=input.device)],
         )[0].tensor

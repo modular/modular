@@ -17,12 +17,15 @@ import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 if __name__ == "__main__":
     mojo_kernels = Path(__file__).parent / "kernels"
 
     n = 2**20
+
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Configure our simple one-operation graph.
     graph = Graph(
@@ -32,16 +35,21 @@ if __name__ == "__main__":
         forward=lambda x: ops.custom(
             name="histogram",
             values=[x],
-            out_types=[TensorType(dtype=DType.int64, shape=[256])],
+            out_types=[
+                TensorType(
+                    dtype=DType.int64,
+                    shape=[256],
+                    device=DeviceRef.from_device(device),
+                )
+            ],
         )[0].tensor,
         input_types=[
-            TensorType(DType.uint8, shape=[n]),
+            TensorType(
+                DType.uint8, shape=[n], device=DeviceRef.from_device(device)
+            ),
         ],
         custom_extensions=[mojo_kernels],
     )
-
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
     session = InferenceSession(devices=[device])

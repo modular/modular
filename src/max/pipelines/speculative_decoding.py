@@ -204,7 +204,11 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         draft_sampling_config = self.pipeline_config.sampling_config
         draft_sampling_config.enable_variable_logits = False
         self._draft_sampler = draft_session.load(
-            token_sampler(draft_sampling_config, return_logits=True)
+            token_sampler(
+                draft_sampling_config,
+                DeviceRef.from_device(self.draft_devices[0]),
+                return_logits=True,
+            )
         )
 
         # Load rejection sampler

@@ -581,9 +581,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
         if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._build_opaque_graph(weights, adapter)
 
-        tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
+        tokens_type = TensorType(
+            DType.int64, shape=["batch_size", "seq_len"], device=DeviceRef.CPU()
+        )
         attn_mask_type = TensorType(
-            DType.float32, shape=["batch_size", "seq_len", "post_seq_len"]
+            DType.float32,
+            shape=["batch_size", "seq_len", "post_seq_len"],
+            device=DeviceRef.CPU(),
         )
 
         return_n_logits_type = TensorType(

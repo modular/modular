@@ -32,6 +32,7 @@ import torch
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.graph.weights import (
     Weights,
     WeightsAdapter,
@@ -538,7 +539,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Load sampler.
         self._sampler = session.load(
-            token_sampler(self._pipeline_config.sampling_config),
+            token_sampler(
+                self._pipeline_config.sampling_config,
+                DeviceRef.from_device(self._devices[0]),
+            ),
         )
 
     def calculate_num_steps(

@@ -18,7 +18,7 @@ import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from numpy.typing import NDArray
 
 INPUT_TEXT = """
@@ -123,11 +123,20 @@ def main():
     batch_size = len(probabilities)
     K = frequencies.max_next_words
 
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
+
     # Configure our simple one-operation graph.
     with Graph(
         "top_k_sampler",
         # The dtype and shape of the probabilities being passed in
-        input_types=[TensorType(DType.float32, shape=[batch_size, K])],
+        input_types=[
+            TensorType(
+                DType.float32,
+                shape=[batch_size, K],
+                device=DeviceRef.from_device(device),
+            )
+        ],
         custom_extensions=[mojo_kernels],
     ) as graph:
         # Take the probabilities as a single input to the graph.
@@ -142,15 +151,20 @@ def main():
             values=[probs],
             out_types=[
                 # The output values dtype and shape
-                TensorType(probs.tensor.dtype, probs.tensor.shape),
+                TensorType(
+                    probs.tensor.dtype,
+                    probs.tensor.shape,
+                    device=DeviceRef.from_device(device),
+                ),
                 # The output indices dtype and shape
-                TensorType(DType.int32, probs.tensor.shape),
+                TensorType(
+                    DType.int32,
+                    probs.tensor.shape,
+                    device=DeviceRef.from_device(device),
+                ),
             ],
         )
         graph.output(*results)
-
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
     session = InferenceSession(devices=[device])

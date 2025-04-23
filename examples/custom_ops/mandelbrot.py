@@ -16,7 +16,7 @@ from pathlib import Path
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
@@ -42,6 +42,7 @@ def create_mandelbrot_graph(
     scale_x: float,
     scale_y: float,
     max_iterations: int,
+    device: DeviceRef,
 ) -> Graph:
     """Configure a graph to run a Mandelbrot kernel."""
     output_dtype = DType.int32
@@ -56,13 +57,27 @@ def create_mandelbrot_graph(
         result = ops.custom(
             name="mandelbrot",
             values=[
-                ops.constant(min_x, dtype=DType.float32),
-                ops.constant(min_y, dtype=DType.float32),
-                ops.constant(scale_x, dtype=DType.float32),
-                ops.constant(scale_y, dtype=DType.float32),
-                ops.constant(max_iterations, dtype=DType.int32),
+                ops.constant(
+                    min_x, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    min_y, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    scale_x, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    scale_y, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    max_iterations, dtype=DType.int32, device=DeviceRef.CPU()
+                ),
             ],
-            out_types=[TensorType(dtype=output_dtype, shape=[height, width])],
+            out_types=[
+                TensorType(
+                    dtype=output_dtype, shape=[height, width], device=device
+                )
+            ],
         )[0].tensor
 
         # Return the result of the custom operation as the output of the graph.
@@ -80,15 +95,22 @@ if __name__ == "__main__":
     MIN_Y = -1.12
     MAX_Y = 1.12
 
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if accelerator_count() == 0 else Accelerator()
+
     # Configure our simple graph.
     scale_x = (MAX_X - MIN_X) / WIDTH
     scale_y = (MAX_Y - MIN_Y) / HEIGHT
     graph = create_mandelbrot_graph(
-        WIDTH, HEIGHT, MIN_X, MIN_Y, scale_x, scale_y, MAX_ITERATIONS
+        WIDTH,
+        HEIGHT,
+        MIN_X,
+        MIN_Y,
+        scale_x,
+        scale_y,
+        MAX_ITERATIONS,
+        DeviceRef.from_device(device),
     )
-
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session that runs the graph on a GPU, if available.
     session = InferenceSession(

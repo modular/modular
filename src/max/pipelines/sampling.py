@@ -20,54 +20,63 @@ from max.pipelines.max_config import SamplingConfig
 
 
 def _sampling_input_types(
-    sampling_config: SamplingConfig, return_logits: bool
+    sampling_config: SamplingConfig, device: DeviceRef, return_logits: bool
 ) -> dict[str, TensorType]:
     inputs = {}
 
     # Logits are always provided
     if sampling_config.enable_variable_logits:
         logits_in_type = TensorType(
-            sampling_config.in_dtype, ["total_output_len", "vocab_size"]
+            sampling_config.in_dtype, ["total_output_len", "vocab_size"], device
         )
         inputs["logits"] = logits_in_type
     else:
         logits_in_type = TensorType(
-            sampling_config.in_dtype, ["batch", "vocab_size"]
+            sampling_config.in_dtype, ["batch", "vocab_size"], device
         )
         inputs["logits"] = logits_in_type
 
     # We are currently, always passing tokens through
-    prev_tokens_type = TensorType(DType.int64, ["batch", "num_prev_steps"])
+    prev_tokens_type = TensorType(
+        DType.int64, ["batch", "num_prev_steps"], device
+    )
     inputs["prev_tokens"] = prev_tokens_type
 
     # If we need to return logits, introduce tensor to append to.
     if return_logits:
-        logits_type = TensorType(DType.float32, ["batch", "num_prev_steps"])
+        logits_type = TensorType(
+            DType.float32, ["batch", "num_prev_steps"], device
+        )
         inputs["existing_logits"] = logits_type
 
     # If we have variable token logits enabled
     if sampling_config.enable_variable_logits:
-        logit_offset_type = TensorType(DType.uint32, ["logit_offsets_len"])
+        logit_offset_type = TensorType(
+            DType.uint32, ["logit_offsets_len"], device
+        )
         inputs["logit_offsets"] = logit_offset_type
 
     # If we have structured_outputs enabled
     if sampling_config.enable_structured_output:
-        bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"])
+        bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"], device)
         inputs["bitmask"] = bitmask_type
 
     return inputs
 
 
 def token_sampler(
-    sampling_config: SamplingConfig, return_logits: bool = False
+    sampling_config: SamplingConfig,
+    device: DeviceRef,
+    return_logits: bool = False,
 ) -> Graph:
-    _input_dict = _sampling_input_types(sampling_config, return_logits)
+    _input_dict = _sampling_input_types(sampling_config, device, return_logits)
     with Graph("top_k_sampler", input_types=_input_dict.values()) as graph:
         # Deconstruct inputs
         # TODO: Explore better ways of indexing into these input values
         # tightly coupling the input order with element indices feels
         # quite brittle.
         logits = graph.inputs[list(_input_dict).index("logits")].tensor
+
         logits = ops.cast(logits, sampling_config.out_dtype)
         prev_tokens = graph.inputs[
             list(_input_dict).index("prev_tokens")
@@ -97,10 +106,14 @@ def token_sampler(
         tokens = ops.custom(
             "topk_fused_sampling",
             [
-                ops.constant(sampling_config.top_k, dtype=DType.int64),
+                ops.constant(
+                    sampling_config.top_k,
+                    dtype=DType.int64,
+                    device=DeviceRef.CPU(),
+                ),
                 logits,
             ],
-            [TensorType(DType.int64, shape)],
+            [TensorType(DType.int64, shape, device=device)],
         )[0]
         assert isinstance(tokens, TensorValue)
 
@@ -111,10 +124,11 @@ def token_sampler(
         if "existing_logits" in _input_dict:
             token_range = ops.reshape(
                 ops.range(
-                    ops.constant(0, dtype=DType.int64),
+                    ops.constant(0, dtype=DType.int64, device=DeviceRef.CPU()),
                     tokens.shape[0],
-                    ops.constant(1, dtype=DType.int64),
+                    ops.constant(1, dtype=DType.int64, device=DeviceRef.CPU()),
                     out_dim=Dim(tokens.shape[0]),
+                    device=device,
                 ),
                 shape=tokens.shape,
             )

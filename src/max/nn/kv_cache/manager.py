@@ -413,8 +413,12 @@ class KVCacheManager(ABC, Generic[T]):
         return self._create_padded_increment_cache_lengths_graph()
 
     def _create_padded_increment_cache_lengths_graph(self) -> Graph:
-        start_pos_type = TensorType(DType.int64, shape=[])
-        tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
+        start_pos_type = TensorType(
+            DType.int64, shape=[], device=DeviceRef.CPU()
+        )
+        tokens_type = TensorType(
+            DType.int64, shape=["batch_size", "seq_len"], device=DeviceRef.CPU()
+        )
         with Graph(
             "update_start_pos", input_types=[start_pos_type, tokens_type]
         ) as graph:

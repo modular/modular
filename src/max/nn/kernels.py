@@ -301,6 +301,7 @@ def fused_qkv_ragged_matmul_quantized(
                 TensorType(
                     DType.uint8,
                     ((wqkv.shape[1], wqkv.shape[0])),
+                    device=input.type.device or DeviceRef.CPU(),
                 )
             ],
         )[0].tensor
@@ -312,6 +313,7 @@ def fused_qkv_ragged_matmul_quantized(
                 TensorType(
                     DType.uint8,
                     ((wqkv.shape[1], wqkv.shape[0])),
+                    device=input.type.device or DeviceRef.CPU(),
                 )
             ],
         )[0].tensor

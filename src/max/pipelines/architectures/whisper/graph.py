@@ -14,7 +14,7 @@
 
 import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
 from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from max.pipelines import PipelineConfig
@@ -280,6 +280,7 @@ def build_graph(
     input_features_type = TensorType(
         DType.float32,
         shape=["batch_size", "num_mel_bins", "sequence_length"],
+        device=DeviceRef.CPU(),
     )
 
     # Initialize Graph.

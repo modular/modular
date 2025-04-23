@@ -22,7 +22,7 @@ from typing import Any, TypeVar, cast
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 
 from .cache_params import KVCacheParams
 from .context import KVCacheAwareContext
@@ -203,6 +203,7 @@ class NaiveKVCacheManager(KVCacheManager):
                         self.params.n_kv_heads,
                         self.params.head_dim,
                     ],
+                    device=DeviceRef.from_device(self.devices[0]),
                 ),
                 v_cache=BufferType(
                     self.params.dtype,
@@ -213,9 +214,14 @@ class NaiveKVCacheManager(KVCacheManager):
                         self.params.n_kv_heads,
                         self.params.head_dim,
                     ],
+                    device=DeviceRef.from_device(self.devices[0]),
                 ),
-                start_pos=TensorType(DType.int64, shape=[]),
+                start_pos=TensorType(
+                    DType.int64, shape=[], device=DeviceRef.CPU()
+                ),
                 # null_op - this isnt used for the naive cache
-                null_op=TensorType(DType.int64, shape=[]),
+                null_op=TensorType(
+                    DType.int64, shape=[], device=DeviceRef.CPU()
+                ),
             )
         ]

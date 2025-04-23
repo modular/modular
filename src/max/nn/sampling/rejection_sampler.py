@@ -34,12 +34,12 @@ class RejectionSampler(nn.Module):
         # Get Proper Indices for Tokens
         broadcasted_range = ops.broadcast_to(
             ops.range(
-                ops.constant(0, dtype=DType.int64, device=self.device),
+                ops.constant(0, dtype=DType.int64, device=DeviceRef.CPU()),
                 ops.cast(
                     draft_tokens.shape[1],
                     dtype=DType.int64,
                 ),
-                ops.constant(1, dtype=DType.int64, device=self.device),
+                ops.constant(1, dtype=DType.int64, device=DeviceRef.CPU()),
                 out_dim=Dim("num_steps"),
             ),
             shape=[Dim("batch_size"), Dim("num_steps")],
@@ -97,8 +97,8 @@ class RejectionSampler(nn.Module):
             ops.broadcast_to(
                 ops.range(
                     ops.cast(rejected_tokens.shape[1], DType.int32),
-                    ops.constant(0, dtype=DType.int32, device=self.device),
-                    ops.constant(-1, dtype=DType.int32, device=self.device),
+                    ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU()),
+                    ops.constant(-1, dtype=DType.int32, device=DeviceRef.CPU()),
                     out_dim="total_num_steps",
                 ),
                 shape=[rejected_tokens.shape[0], Dim("total_num_steps")],
@@ -118,7 +118,13 @@ class RejectionSampler(nn.Module):
                 ops.constant(self.top_k, dtype=DType.int64, device=self.device),
                 ops.gather(target_logits, rejected_offsets, axis=0),
             ],
-            [TensorType(DType.int64, Shape((Dim("batch_size"), Dim(1))))],
+            [
+                TensorType(
+                    DType.int64,
+                    Shape((Dim("batch_size"), Dim(1))),
+                    device=self.device,
+                )
+            ],
         )[0]
 
         return first_rejected_token, sampled_target_tokens.tensor

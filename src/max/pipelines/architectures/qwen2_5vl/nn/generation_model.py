@@ -149,7 +149,13 @@ class GenerationModel(Module):
 
         inputs_embeds = ops.cond(
             TensorValue(image_pixel_values.shape[0]) > 0,
-            [TensorType(inputs_embeds.dtype, inputs_embeds.shape)],
+            [
+                TensorType(
+                    inputs_embeds.dtype,
+                    inputs_embeds.shape,
+                    device=inputs_embeds.device,
+                )
+            ],
             img_then_fn,
             else_fn,
         )[0]
@@ -173,7 +179,13 @@ class GenerationModel(Module):
 
         inputs_embeds = ops.cond(
             TensorValue(video_pixel_values.shape[0]) > 0,
-            [TensorType(inputs_embeds.dtype, inputs_embeds.shape)],
+            [
+                TensorType(
+                    inputs_embeds.dtype,
+                    inputs_embeds.shape,
+                    device=inputs_embeds.device,
+                )
+            ],
             video_then_fn,
             else_fn,
         )[0]

@@ -17,7 +17,7 @@ import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 if __name__ == "__main__":
     mojo_kernels = Path(__file__).parent / "kernels"
@@ -25,12 +25,23 @@ if __name__ == "__main__":
     vector_width = 10
     dtype = DType.float32
 
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if accelerator_count() == 0 else Accelerator()
+
     # Configure our simple one-operation graph.
     with Graph(
         "vector_addition",
         input_types=[
-            TensorType(dtype, shape=[vector_width]),
-            TensorType(dtype, shape=[vector_width]),
+            TensorType(
+                dtype,
+                shape=[vector_width],
+                device=DeviceRef.from_device(device),
+            ),
+            TensorType(
+                dtype,
+                shape=[vector_width],
+                device=DeviceRef.from_device(device),
+            ),
         ],
         custom_extensions=[mojo_kernels],
     ) as graph:
@@ -40,13 +51,14 @@ if __name__ == "__main__":
             name="vector_addition",
             values=[lhs, rhs],
             out_types=[
-                TensorType(dtype=lhs.tensor.dtype, shape=lhs.tensor.shape)
+                TensorType(
+                    dtype=lhs.tensor.dtype,
+                    shape=lhs.tensor.shape,
+                    device=DeviceRef.from_device(device),
+                )
             ],
         )[0].tensor
         graph.output(output)
-
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
     session = InferenceSession(
