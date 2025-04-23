@@ -97,7 +97,9 @@ def shapes(
 
 def arrays(tensor_type: TensorType, static_dims={}, **kwargs):
     if tensor_type.dtype == DType.bfloat16:
-        tensor_type = TensorType(DType.float32, tensor_type.shape)
+        tensor_type = TensorType(
+            DType.float32, tensor_type.shape, device=tensor_type.device
+        )
         return arrays(tensor_type, static_dims=static_dims, **kwargs).map(
             lambda t: Tensor.from_dlpack(
                 torch.from_dlpack(t).to(torch.bfloat16)

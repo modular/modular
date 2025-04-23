@@ -13,7 +13,7 @@ import pytest
 from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, LogLevel
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.fixture
@@ -24,7 +24,9 @@ def compile_config_ops_path() -> Path:
 def test_compile_config_split_k_reduction_scheme(
     session: InferenceSession, compile_config_ops_path: Path
 ):
-    tensor_type = TensorType(dtype=DType.int32, shape=[1])
+    tensor_type = TensorType(
+        dtype=DType.int32, shape=[1], device=DeviceRef.CPU()
+    )
     with Graph(
         "graph", input_types=[], custom_extensions=[compile_config_ops_path]
     ) as graph:
@@ -46,7 +48,9 @@ def test_compile_config_split_k_reduction_scheme(
 def test_compile_config_use_logger(
     capfd, session: InferenceSession, compile_config_ops_path: Path
 ):
-    tensor_type = TensorType(dtype=DType.int32, shape=[1])
+    tensor_type = TensorType(
+        dtype=DType.int32, shape=[1], device=DeviceRef.CPU()
+    )
     with Graph(
         "graph", input_types=[], custom_extensions=[compile_config_ops_path]
     ) as graph:
@@ -86,10 +90,14 @@ def test_compile_config_dump_asm(
         forward=lambda x: ops.custom(
             name="add_one_custom",
             values=[x],
-            out_types=[TensorType(dtype=x.dtype, shape=x.tensor.shape)],
+            out_types=[
+                TensorType(
+                    dtype=x.dtype, shape=x.tensor.shape, device=DeviceRef.CPU()
+                )
+            ],
         )[0].tensor,
         input_types=[
-            TensorType(dtype, shape=[rows, columns]),
+            TensorType(dtype, shape=[rows, columns], device=DeviceRef.CPU()),
         ],
     )
 

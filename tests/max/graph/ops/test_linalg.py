@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from conftest import graph_result_type
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 if sys.version_info[:2] >= (3, 10):
     from typing import TypeAlias
@@ -31,7 +31,7 @@ def matmul_graph(
     """Creates a graph op containing a matmul."""
 
     def tensor_type(dims: Shape) -> TensorType:
-        return TensorType(dtype, list(dims))
+        return TensorType(dtype, list(dims), device=DeviceRef.CPU())
 
     return Graph(
         name,
@@ -233,9 +233,9 @@ def test_matmul_chaining() -> None:
         "symbolic_chained_matmul",
         lambda x, y, z: (x @ y) @ z,
         (
-            TensorType(DType.float32, ["A", "B"]),
-            TensorType(DType.float32, ["B", "C"]),
-            TensorType(DType.float32, ["C", "D"]),
+            TensorType(DType.float32, ["A", "B"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["B", "C"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["C", "D"], device=DeviceRef.CPU()),
         ),
     )
     assert str(graph._mlir_op).count("rmo.matmul") == 2
@@ -246,10 +246,10 @@ def test_matmul_chaining() -> None:
         "symbolic_triple_chained_matmul",
         lambda w, x, y, z: ((w @ x) @ y) @ z,
         (
-            TensorType(DType.float32, ["A", "B"]),
-            TensorType(DType.float32, ["B", "C"]),
-            TensorType(DType.float32, ["C", "D"]),
-            TensorType(DType.float32, ["D", "E"]),
+            TensorType(DType.float32, ["A", "B"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["B", "C"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["C", "D"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["D", "E"], device=DeviceRef.CPU()),
         ),
     )
     assert str(graph._mlir_op).count("rmo.matmul") == 3
@@ -260,9 +260,9 @@ def test_matmul_chaining() -> None:
         "symbolic_chained_matmul_different_ranks",
         lambda x, y, z: (x @ y) @ z,
         (
-            TensorType(DType.float32, ["A", "B", "C"]),
-            TensorType(DType.float32, ["C", "D"]),
-            TensorType(DType.float32, ["D", "E"]),
+            TensorType(DType.float32, ["A", "B", "C"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["C", "D"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, ["D", "E"], device=DeviceRef.CPU()),
         ),
     )
     assert str(graph._mlir_op).count("rmo.matmul") == 2
@@ -290,7 +290,9 @@ def test_layer_norm() -> None:
     graph = Graph(
         "layer_norm",
         _layer_norm,
-        input_types=(TensorType(DType.float32, [2, 2]),),
+        input_types=(
+            TensorType(DType.float32, [2, 2], device=DeviceRef.CPU()),
+        ),
     )
 
     assert "mo.layer_norm" in str(graph._mlir_op)
@@ -302,8 +304,8 @@ def test_matmul_dtype_promotion() -> None:
         "matmul_dtype_promotion",
         lambda x, y: x @ y,
         (
-            TensorType(DType.float32, (4, 2, 3)),
-            TensorType(DType.float64, (3, 2)),
+            TensorType(DType.float32, (4, 2, 3), device=DeviceRef.CPU()),
+            TensorType(DType.float64, (3, 2), device=DeviceRef.CPU()),
         ),
     )
     assert_matmul_properties(graph, (4, 2, 2), DType.float64)
@@ -316,7 +318,9 @@ def test_band_part() -> None:
     graph = Graph(
         "band_part",
         _band_part,
-        input_types=(TensorType(DType.float32, [2, 2]),),
+        input_types=(
+            TensorType(DType.float32, [2, 2], device=DeviceRef.CPU()),
+        ),
     )
 
     assert "rmo.mo.linalg.band_part" in str(graph._mlir_op)

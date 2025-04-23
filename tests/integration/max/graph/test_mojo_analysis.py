@@ -13,7 +13,7 @@ from max import mlir
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, Graph, TensorType, _OpaqueType, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, _OpaqueType, ops
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def test_kernel_library(counter_mojopkg, kernel_verification_ops_path):
 
 
 def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_undefined_kernel",
         input_types=[tensor_type],
@@ -65,7 +65,7 @@ def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
 def test_my_add_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_my_add_valid",
         input_types=[tensor_type, tensor_type],
@@ -88,7 +88,7 @@ def test_my_add_valid(
 def test_my_add_invalid_inputs_count(
     kernel_verification_ops_path: Path,
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_my_add_invalid_inputs_count",
         input_types=[tensor_type],
@@ -112,7 +112,7 @@ def test_my_add_invalid_inputs_count(
 def test_my_add_invalid_outputs_count(
     kernel_verification_ops_path: Path,
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_my_add_invalid_outputs_count",
         input_types=[tensor_type, tensor_type],
@@ -136,7 +136,7 @@ def test_my_add_invalid_outputs_count(
 def test_op_with_device_context_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_op_with_device_context_valid",
         input_types=[tensor_type],
@@ -159,7 +159,7 @@ def test_op_with_device_context_valid(
 def test_op_multiple_outputs_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_op_multiple_outputs_valid",
         input_types=[tensor_type],
@@ -182,7 +182,7 @@ def test_op_multiple_outputs_valid(
 def test_op_multiple_outputs_invalid_outputs_count(
     kernel_verification_ops_path: Path,
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_op_multiple_outputs_invalid_outputs_count",
         input_types=[tensor_type],
@@ -206,7 +206,7 @@ def test_op_multiple_outputs_invalid_outputs_count(
 def test_op_without_outputs_invalid_outputs_count(
     kernel_verification_ops_path: Path,
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_op_without_outputs_invalid_outputs_count",
         input_types=[tensor_type],
@@ -230,7 +230,7 @@ def test_op_without_outputs_invalid_outputs_count(
 def test_return_opaque_mem_type(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.int32, [1])
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
     opaque_type = _OpaqueType("MyIntMemory")
     graph = Graph(
         "test_return_opaque_mem_type",
@@ -254,7 +254,7 @@ def test_return_opaque_mem_type(
 def test_return_opaque_reg_type(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.int32, [1])
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
     opaque_type = _OpaqueType("MyIntReg")
     graph = Graph(
         "test_return_opaque_reg_type",
@@ -278,7 +278,7 @@ def test_return_opaque_reg_type(
 def test_variadic_ins_outs_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_variadic_ins_outs_valid",
         input_types=[tensor_type, tensor_type, tensor_type],
@@ -299,7 +299,7 @@ def test_variadic_ins_outs_valid(
 
 
 def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_variadic_size_0_invalid",
         input_types=[tensor_type],
@@ -322,7 +322,7 @@ def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
 def test_tensor_kernel_raises_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    tensor_type = TensorType(DType.float32, [64])
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
         "test_tensor_kernel_raises_valid",
         input_types=[tensor_type, tensor_type],
@@ -349,7 +349,7 @@ def test_tensor_kernel_raises_valid(
 def test_mutable_input_tensor_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
-    buffer_type = BufferType(DType.float32, [64])
+    buffer_type = BufferType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph("test_mutable_input_tensor_valid", input_types=[buffer_type])
     with graph:
         graph._import_kernels(kernel_verification_ops_path)

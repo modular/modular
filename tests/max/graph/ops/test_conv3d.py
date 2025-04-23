@@ -8,7 +8,7 @@
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 # TODO: Fails if we use 2**63 - 1 as max value
 positive_dims = st.integers(min_value=1, max_value=2**32)
@@ -61,10 +61,14 @@ def test_conv3d(
 
     # Create input and filter tensor types
     input_type = TensorType(
-        dtype=DType.float32, shape=[batch_size, d, h, w, in_c]
+        dtype=DType.float32,
+        shape=[batch_size, d, h, w, in_c],
+        device=DeviceRef.CPU(),
     )
     filter_type = TensorType(
-        dtype=DType.float32, shape=[k_d, k_h, k_w, in_c, out_c]
+        dtype=DType.float32,
+        shape=[k_d, k_h, k_w, in_c, out_c],
+        device=DeviceRef.CPU(),
     )
 
     # Set up graph with input and filter tensors

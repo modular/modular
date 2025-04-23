@@ -10,7 +10,7 @@ from conftest import broadcast_shapes, broadcastable_shapes, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, Shape, TensorType
+from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.ops import logical_xor
 
 
@@ -37,7 +37,10 @@ def test_logical_xor__broadcast(shapes: list[Shape]):
     broadcast_shape = broadcast_shapes(s1, s2)
     with Graph(
         "logical_xor",
-        input_types=[TensorType(DType.bool, s1), TensorType(DType.bool, s2)],
+        input_types=[
+            TensorType(DType.bool, s1, DeviceRef.CPU()),
+            TensorType(DType.bool, s2, DeviceRef.CPU()),
+        ],
     ) as graph:
         x, y = graph.inputs
         assert logical_xor(x, y).shape == broadcast_shape
@@ -56,7 +59,10 @@ def test_logical_xor__invalid_broadcast(s1: Shape, s2: Shape):
 
     with Graph(
         "logical_xor",
-        input_types=[TensorType(DType.bool, s1), TensorType(DType.bool, s2)],
+        input_types=[
+            TensorType(DType.bool, s1, DeviceRef.CPU()),
+            TensorType(DType.bool, s2, DeviceRef.CPU()),
+        ],
     ) as graph:
         x, y = graph.inputs
         with pytest.raises(Exception):

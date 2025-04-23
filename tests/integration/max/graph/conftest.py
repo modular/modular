@@ -27,8 +27,7 @@ def session() -> InferenceSession:
     for i in range(md.accelerator_count()):
         devices.append(md.Accelerator(i))
 
-    if len(devices) == 0:
-        devices.append(md.CPU())
+    devices.append(md.CPU())
 
     return InferenceSession(devices=devices)
 

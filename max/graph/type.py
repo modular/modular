@@ -14,7 +14,7 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -45,9 +45,9 @@ class Dim:
 
     .. code-block:: python
 
-        from max.graph import Dim, TensorType
+        from max.graph import Dim, TensorType, DeviceRef
 
-        tensor_type = TensorType(DType.int64, ("batch", 10))
+        tensor_type = TensorType(DType.int64, ("batch", 10), device=DeviceRef.CPU())
 
     This creates a tensor type with three dimensions:
 
@@ -707,14 +707,14 @@ class TensorType(Type):
     """The element type of the tensor value."""
     shape: Shape
     """The dimensions of the tensor value."""
-    device: Optional[DeviceRef]
+    device: DeviceRef
     """The device of the tensor value."""
 
     def __init__(
         self,
         dtype: DType,
         shape: ShapeLike,
-        device: Optional[DeviceRef] = None,
+        device: DeviceRef,
     ) -> None:
         """Constructs a tensor type.
 
@@ -722,6 +722,7 @@ class TensorType(Type):
             dtype: The element type of the tensor data.
             dims: The shape dimensions of the tensor. The number of dims
                   is the rank of the tensor.
+            device: The device the tensor data lives on.
         """
         self.dtype = dtype
         self.shape = Shape(shape)
@@ -740,19 +741,13 @@ class TensorType(Type):
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
-        if self.device:
-            return _graph.tensor_type_with_device(
-                mlir.Context.current,
-                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-                [dim.to_mlir() for dim in self.shape],
-                self.device.to_mlir(),
-            )
-        else:
-            return _graph.tensor_type(
-                mlir.Context.current,
-                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-                [dim.to_mlir() for dim in self.shape],
-            )
+
+        return _graph.tensor_type_with_device(
+            mlir.Context.current,
+            _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
+            [dim.to_mlir() for dim in self.shape],
+            self.device.to_mlir(),
+        )
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> TensorType:
@@ -774,7 +769,7 @@ class TensorType(Type):
         ]
         mlir_device = _graph.tensor_type_get_device(t)
         device = DeviceRef.from_mlir(mlir_device) if mlir_device else None
-        return TensorType(DType(dtype), shape, device)
+        return TensorType(DType(dtype), shape, device or DeviceRef.CPU())
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -874,14 +869,14 @@ class BufferType(Type):
     """The element type of the buffer value."""
     shape: Shape
     """The dimensions of the buffer value."""
-    device: Optional[DeviceRef]
+    device: DeviceRef
     """The device of the tensor value."""
 
     def __init__(
         self,
         dtype: DType,
         shape: ShapeLike,
-        device: Optional[DeviceRef] = None,
+        device: DeviceRef,
     ) -> None:
         """Constructs a buffer type.
 
@@ -936,8 +931,7 @@ class BufferType(Type):
         ]
         mlir_device = _graph.buffer_type_get_device(t)
         device = DeviceRef.from_mlir(mlir_device) if mlir_device else None
-
-        return BufferType(DType(dtype), shape, device)
+        return BufferType(DType(dtype), shape, device or DeviceRef.CPU())
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -1023,7 +1017,7 @@ class BufferType(Type):
         Returns:
             A new buffer type with the same shape, and the new element type.
         """
-        return BufferType(dtype, self.shape)
+        return BufferType(dtype, self.shape, self.device)
 
 
 @dataclass(frozen=True)

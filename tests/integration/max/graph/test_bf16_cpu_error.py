@@ -9,7 +9,7 @@ import platform
 import pytest
 from max.driver import accelerator_api
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 
 
 @pytest.mark.skipif(
@@ -17,7 +17,9 @@ from max.graph import Graph, TensorType
     reason="BF16 is only unsupported on ARM CPU architecture",
 )
 def test_bf16_cpu_input_error(session):
-    input_type = TensorType(dtype=DType.bfloat16, shape=["dim"])
+    input_type = TensorType(
+        dtype=DType.bfloat16, shape=["dim"], device=DeviceRef.CPU()
+    )
     output_type = DType.float32
     with Graph("cast", input_types=[input_type]) as graph:
         graph.output(graph.inputs[0].cast(output_type))
@@ -39,7 +41,9 @@ def test_bf16_cpu_input_error(session):
     reason="BF16 is only unsupported on ARM CPU architecture",
 )
 def test_bf16_cpu_output_error(session):
-    input_type = TensorType(dtype=DType.float32, shape=["dim"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["dim"], device=DeviceRef.CPU()
+    )
     output_type = DType.bfloat16
     with Graph("cast", input_types=[input_type]) as graph:
         graph.output(graph.inputs[0].cast(output_type))

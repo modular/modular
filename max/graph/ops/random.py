@@ -19,7 +19,7 @@ from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 
 SEED = ContextVar[TensorValue]("Seed")
-SeedType = TensorType(DType.int64, [])
+SeedType = TensorType(DType.int64, [], device=DeviceRef.CPU())
 
 
 def _rotate_seed(seed: TensorValue):

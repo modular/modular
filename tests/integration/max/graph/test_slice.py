@@ -11,39 +11,69 @@ import pytest
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, StaticDim, TensorType
+from max.graph import DeviceRef, Graph, StaticDim, TensorType
 
 
 @pytest.mark.parametrize(
     ("tensor_type", "indices"),
     [
         # x[1:]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(1, None),)),
-        (TensorType(DType.float32, shape=["dim0", "dim1"]), (slice(1, None),)),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(1, None),),
+        ),
+        (
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
+            (slice(1, None),),
+        ),
         # x[:-1]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(None, -1))),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(None, -1)),
+        ),
         # x[-1:]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(-1, None))),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(-1, None)),
+        ),
         # x[::2]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, 2),)),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(None, None, 2),),
+        ),
         # x[::-1]
         # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
         # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
         # x[:, None, :]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (slice(None), None, slice(None)),
         ),
         # x[..., None]
-        (TensorType(DType.float32, shape=["dim0", "dim1"]), (Ellipsis, None)),
+        (
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
+            (Ellipsis, None),
+        ),
         # x[..., 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (Ellipsis, 1),
         ),
         # x[Ellipsis, 1:]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (Ellipsis, slice(1, None)),
         ),
         # x[1, ..., ::-1]
@@ -54,7 +84,11 @@ from max.graph import Graph, StaticDim, TensorType
         # ),
         # x[:, -1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (slice(None), -1),
         ),
     ],

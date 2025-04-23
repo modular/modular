@@ -285,7 +285,9 @@ def test_chain_type(mlir_context):
 
 def test_invalid_dimension(mlir_context):
     with pytest.raises(TypeError):
-        _ = TensorType(DType.bfloat16, [-7095393036038990704])
+        _ = TensorType(
+            DType.bfloat16, [-7095393036038990704], device=DeviceRef.CPU()
+        )
 
 
 @pytest.mark.skip("GEX-1918")
@@ -299,7 +301,10 @@ def test_GEX_1918(mlir_context) -> None:
 def test_MAXPLAT_148(mlir_context):
     with pytest.raises(TypeError):
         graph = Graph(
-            "MAXPLAT-148", input_types=[TensorType(DType.float32, [-1, 2])]
+            "MAXPLAT-148",
+            input_types=[
+                TensorType(DType.float32, [-1, 2], device=DeviceRef.CPU())
+            ],
         )
 
 

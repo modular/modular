@@ -49,7 +49,7 @@ def pad(
     input = TensorValue(input)
 
     result_type = TensorType(
-        input.dtype, _compute_result_shape(input.shape, paddings)
+        input.dtype, _compute_result_shape(input.shape, paddings), input.device
     )
 
     device = input.device or DeviceRef.CPU()

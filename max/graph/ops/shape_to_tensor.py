@@ -32,6 +32,9 @@ def shape_to_tensor(shape: ShapeLike) -> TensorValue:
         ... ])
         TensorValue(dtype=int64, shape=[StaticDim(dim=2), StaticDim(dim=1)])
     """
-    return Graph.current._add_op(
-        rmo.shape_to_tensor, shape=Shape(shape).to_mlir()
-    )[0].tensor
+    shape = Shape(shape)
+    result = Graph.current._add_op(rmo.shape_to_tensor, shape.to_mlir())[
+        0
+    ].tensor
+
+    return result

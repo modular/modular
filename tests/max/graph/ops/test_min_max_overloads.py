@@ -6,16 +6,11 @@
 """ops.reduction tests."""
 
 import pytest
-from conftest import (
-    axes,
-    broadcastable_tensor_types,
-    shapes,
-    tensor_types,
-)
+from conftest import axes, broadcastable_tensor_types, shapes, tensor_types
 from hypothesis import example, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 shared_shapes = st.shared(shapes(min_rank=1))
 
@@ -81,7 +76,10 @@ def test_max__reduction__no_axis(input_type):
 
 
 @example(
-    input_types=[TensorType(DType.int8, [1]), TensorType(DType.int8, [1])],
+    input_types=[
+        TensorType(DType.int8, [1], DeviceRef.CPU()),
+        TensorType(DType.int8, [1], DeviceRef.CPU()),
+    ],
     axis=-1,
 ).via("ci flake")
 @given(input_types=broadcastable_tensor_types(2), axis=st.integers())
@@ -93,7 +91,10 @@ def test_min_fail__y_and_axis_provided(input_types, axis):
 
 
 @example(
-    input_types=[TensorType(DType.int8, [1]), TensorType(DType.int8, [1])],
+    input_types=[
+        TensorType(DType.int8, [1], DeviceRef.CPU()),
+        TensorType(DType.int8, [1], DeviceRef.CPU()),
+    ],
     axis=-1,
 ).via("ci flake")
 @given(input_types=broadcastable_tensor_types(2), axis=st.integers())

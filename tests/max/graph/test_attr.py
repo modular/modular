@@ -14,7 +14,7 @@ import pytest
 from max import mlir
 from max._core import graph as _graph
 from max.dtype import DType
-from max.graph import TensorType
+from max.graph import DeviceRef, TensorType
 
 
 def test_array_attr(mlir_context) -> None:
@@ -22,7 +22,9 @@ def test_array_attr(mlir_context) -> None:
     buffer = array.array("f", [42, 3.14])
 
     array_attr = _graph.array_attr(
-        "foo", buffer, TensorType(DType.float32, (2,)).to_mlir()
+        "foo",
+        buffer,
+        TensorType(DType.float32, (2,), device=DeviceRef.CPU()).to_mlir(),
     )
     assert "dense_array" in str(array_attr)
 
@@ -35,7 +37,7 @@ def test_weights_attr(mlir_context) -> None:
         weights_attr = _graph.weights_attr(
             Path(weights_file.name),
             0,
-            TensorType(DType.uint8, (2, 2)).to_mlir(),
+            TensorType(DType.uint8, (2, 2), device=DeviceRef.CPU()).to_mlir(),
             "bar",
         )
         assert "dense_resource" in str(weights_attr)
@@ -53,7 +55,9 @@ def test_weights_attr_invalid_path(mlir_context) -> None:
             _graph.weights_attr(
                 Path(weights_file.name),
                 0,
-                TensorType(DType.uint8, ((1,))).to_mlir(),
+                TensorType(
+                    DType.uint8, ((1,)), device=DeviceRef.CPU()
+                ).to_mlir(),
                 "bar",
             )
 
@@ -100,4 +104,5 @@ def test_device_attr_accessors(mlir_context: mlir.Context) -> None:
     assert "cuda" in str(_graph.device_attr_get_label(device2))
     assert "0" in str(_graph.device_attr_get_id(device0))
     assert "0" in str(_graph.device_attr_get_id(device1))
+    assert "1" in str(_graph.device_attr_get_id(device2))
     assert "1" in str(_graph.device_attr_get_id(device2))

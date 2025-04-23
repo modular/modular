@@ -8,16 +8,11 @@
 from collections.abc import Collection
 
 import pytest
-from conftest import (
-    shapes,
-    static_dims,
-    symbolic_dims,
-    tensor_types,
-)
+from conftest import shapes, static_dims, symbolic_dims, tensor_types
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Dim, Graph, Shape, StaticDim, TensorType
+from max.graph import DeviceRef, Dim, Graph, Shape, StaticDim, TensorType
 
 
 def test_reshape() -> None:
@@ -25,8 +20,14 @@ def test_reshape() -> None:
     with Graph(
         "reshape",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[6, 5]),
-            TensorType(dtype=DType.float32, shape=["batch", "channels"]),
+            TensorType(
+                dtype=DType.float32, shape=[6, 5], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=DeviceRef.CPU(),
+            ),
         ],
     ) as graph:
         static_reshape = graph.inputs[0].reshape((3, 10))
@@ -175,8 +176,7 @@ def test_reshape__fails_with_different_symbolic_dim(
     # Specifically test an example whose dim product can be represented by an
     # int64, but not by an int32.
     input_type=TensorType(
-        DType.int8,
-        Shape([268435456, 17]),
+        DType.int8, Shape([268435456, 17]), device=DeviceRef.CPU()
     ),
     output_shape=Shape([268435456]),
 )

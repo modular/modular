@@ -13,7 +13,7 @@ import pytest
 import torch
 from max.driver import accelerator_count
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 # Test component functions for numpy-like advanced indexing
 
@@ -43,10 +43,14 @@ class StandardInputAndIndexTensors:
     num_indexing_tensors: int
 
     def max_input_tensor_type(self, dtype=DType.float32) -> TensorType:
-        return TensorType(dtype, self.input_tensor_shape)
+        return TensorType(
+            dtype, self.input_tensor_shape, device=DeviceRef.CPU()
+        )
 
     def max_index_tensor_type(self, dtype=DType.int32) -> TensorType:
-        return TensorType(dtype, self.index_tensor_shape)
+        return TensorType(
+            dtype, self.index_tensor_shape, device=DeviceRef.CPU()
+        )
 
     def output_tensor_shape(self) -> list[int]:
         return (
@@ -58,7 +62,9 @@ class StandardInputAndIndexTensors:
         )
 
     def max_output_tensor_type(self, dtype=DType.float32) -> TensorType:
-        return TensorType(dtype, self.output_tensor_shape())
+        return TensorType(
+            dtype, self.output_tensor_shape(), device=DeviceRef.CPU()
+        )
 
     def max_output_tensor_type_unknown_shape(
         self, dtype=DType.float32
@@ -72,10 +78,12 @@ class StandardInputAndIndexTensors:
             "expect weird dimension names otherwise."
         )
         erased_shape = [chr(ord("a") + i) for i in range(len(shape))]
-        return TensorType(dtype, erased_shape)
+        return TensorType(dtype, erased_shape, device=DeviceRef.CPU())
 
     def max_update_tensor_type(self, dtype=DType.float32) -> TensorType:
-        return TensorType(dtype, self.output_tensor_shape())
+        return TensorType(
+            dtype, self.output_tensor_shape(), device=DeviceRef.CPU()
+        )
 
     def input_tensor(self, dtype=torch.float32) -> torch.Tensor:
         x = (
@@ -83,8 +91,6 @@ class StandardInputAndIndexTensors:
             .reshape(self.input_tensor_shape)
             .type(dtype)
         )
-        if accelerator_count() > 0:
-            return x.cuda()
         return x
 
     def index_tensors(self, dtype=torch.int32) -> list[torch.Tensor]:
@@ -97,8 +103,6 @@ class StandardInputAndIndexTensors:
         ]
         for i in range(self.num_indexing_tensors):
             result[i] = (result[i] + i) % INPUT_DIM_LENGTH
-        if accelerator_count() > 0:
-            result = [x.cuda() for x in result]
         return result
 
     def update_tensor(self, dtype=torch.float32) -> torch.Tensor:

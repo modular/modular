@@ -15,7 +15,7 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import TensorType
+from ..type import DeviceRef, TensorType
 from ..value import BufferValue, TensorValue, Value
 
 
@@ -204,7 +204,7 @@ def while_loop(
             pred_wrapped_fn,
             while_condition_op,
             "pred_block",
-            [TensorType(DType.bool, [])] + out_types[:-1],
+            [TensorType(DType.bool, [], DeviceRef.CPU())] + out_types[:-1],
         )
 
         body_block = while_op.bodyRegion.blocks[0]

@@ -10,7 +10,7 @@ from conftest import tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, Shape, TensorType, ops
+from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 
 
 @given(input_type=...)
@@ -50,7 +50,9 @@ def test_special_methods_error() -> None:
     """Test that we disallow special methods that would hang."""
     with Graph(
         "special_methods",
-        input_types=[TensorType(DType.float32, shape=["a", "b"])],
+        input_types=[
+            TensorType(DType.float32, shape=["a", "b"], device=DeviceRef.CPU())
+        ],
     ) as graph:
         (x,) = graph.inputs
         with pytest.raises(TypeError, match="is not a container"):

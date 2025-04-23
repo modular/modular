@@ -54,9 +54,9 @@ def ones(shape, dtype):
 
 @pytest.fixture(
     params=[
-        BufferType(DType.float32, [100, 100]),
-        BufferType(DType.float32, [10, 10]),
-        BufferType(DType.float32, [100, 40]),
+        BufferType(DType.float32, [100, 100], device=DeviceRef.CPU()),
+        BufferType(DType.float32, [10, 10], device=DeviceRef.CPU()),
+        BufferType(DType.float32, [100, 40], device=DeviceRef.CPU()),
     ]
 )
 def buffer_type(request):
@@ -65,10 +65,10 @@ def buffer_type(request):
 
 @pytest.fixture(
     params=[
-        TensorType(DType.float32, [10, 10]),
-        TensorType(DType.float32, [1, 1]),
-        TensorType(DType.float32, [10, 2]),
-        TensorType(DType.float32, [5, 5]),
+        TensorType(DType.float32, [10, 10], device=DeviceRef.CPU()),
+        TensorType(DType.float32, [1, 1], device=DeviceRef.CPU()),
+        TensorType(DType.float32, [10, 2], device=DeviceRef.CPU()),
+        TensorType(DType.float32, [5, 5], device=DeviceRef.CPU()),
     ]
 )
 def tensor_type(request):
@@ -178,7 +178,7 @@ def test_store_slice_load_slice(
     reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
 )
 def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
-    bt = BufferType(DType.float32, [2, 2])
+    bt = BufferType(DType.float32, [2, 2], device=DeviceRef.CPU())
 
     with Graph(
         "basic", input_types=[bt], custom_extensions=[custom_ops_path]
@@ -220,11 +220,13 @@ def test_variadic_buffer_handling(
             forward=lambda x, y: ops.inplace_custom(
                 "reduce_buffers",
                 values=[x, y],
-                out_types=[TensorType(DType.float32, [1])],
+                out_types=[
+                    TensorType(DType.float32, [1], device=DeviceRef.CPU())
+                ],
             ),
             input_types=[
-                BufferType(DType.float32, [2]),
-                BufferType(DType.float32, [2]),
+                BufferType(DType.float32, [2], device=DeviceRef.CPU()),
+                BufferType(DType.float32, [2], device=DeviceRef.CPU()),
             ],
             custom_extensions=[custom_ops_path],
         ),
@@ -240,8 +242,8 @@ def test_variadic_buffer_handling(
 
 
 def test_inplace_custom(custom_ops_path: Path) -> None:
-    tensor_type = TensorType(DType.float32, shape=[4])
-    buffer_type = BufferType(DType.float32, shape=[4])
+    tensor_type = TensorType(DType.float32, shape=[4], device=DeviceRef.CPU())
+    buffer_type = BufferType(DType.float32, shape=[4], device=DeviceRef.CPU())
     with Graph(
         "buffer_load",
         input_types=[buffer_type, tensor_type],
@@ -294,7 +296,9 @@ def test_custom_buffer_error(custom_ops_path: Path) -> None:
     """Test that we get an error for passing unchained buffers to custom ops."""
     with Graph(
         "custom_buffer_error",
-        input_types=[BufferType(DType.float32, shape=[42])],
+        input_types=[
+            BufferType(DType.float32, shape=[42], device=DeviceRef.CPU())
+        ],
         custom_extensions=[custom_ops_path],
     ) as graph:
         buffer = graph.inputs[0]
@@ -309,7 +313,9 @@ def test_custom_buffer_error(custom_ops_path: Path) -> None:
             _ = ops.custom(
                 "bar",
                 values=[buffer],
-                out_types=[TensorType(DType.uint32, shape=[])],
+                out_types=[
+                    TensorType(DType.uint32, shape=[], device=DeviceRef.CPU())
+                ],
             )[0]
 
         graph.output()

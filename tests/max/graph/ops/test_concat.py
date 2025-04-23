@@ -42,7 +42,11 @@ def test_concat__static_dim(
     assume(merged_size < 2**63)
 
     input_types = [
-        TensorType(base_type.dtype, with_dim(base_type.shape, axis, dim))
+        TensorType(
+            base_type.dtype,
+            with_dim(base_type.shape, axis, dim),
+            DeviceRef.CPU(),
+        )
         for dim in axis_sizes
     ]
 
@@ -160,7 +164,11 @@ def test_concat__symbolic__algebraic_result(
     assume(merged_static_size < 2**63)
 
     input_types = [
-        TensorType(base_type.dtype, with_dim(base_type.shape, axis, dim))
+        TensorType(
+            base_type.dtype,
+            with_dim(base_type.shape, axis, dim),
+            DeviceRef.CPU(),
+        )
         for dim in axis_dims
     ]
 

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.ops import gather
 
 
@@ -19,8 +19,8 @@ def test_gather(session):
     with Graph(
         "conv2d",
         input_types=[
-            TensorType(DType.int64, input_shape),
-            TensorType(DType.int64, index_shape),
+            TensorType(DType.int64, input_shape, device=DeviceRef.CPU()),
+            TensorType(DType.int64, index_shape, device=DeviceRef.CPU()),
         ],
     ) as graph:
         input, index = graph.inputs

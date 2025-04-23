@@ -15,51 +15,6 @@ from max.nn import Signals
 shared_types = st.shared(tensor_types())
 
 
-def test_allreduce_no_device() -> None:
-    """Test no device error for allreduce."""
-    devices = [
-        DeviceRef.GPU(id=0),
-        DeviceRef.GPU(id=1),
-        DeviceRef.GPU(id=2),
-        DeviceRef.GPU(id=3),
-    ]
-    signals = Signals(devices)
-
-    with pytest.raises(
-        ValueError,
-        match="needs to have an explicit device.",
-    ):
-        with Graph(
-            "allreduce",
-            input_types=[
-                TensorType(
-                    dtype=DType.float32, shape=[6, 5], device=devices[0]
-                ),
-                TensorType(
-                    dtype=DType.float32,
-                    shape=[6, 5],
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[6, 5], device=devices[2]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[6, 5], device=devices[3]
-                ),
-                *signals.input_types(),
-            ],
-        ) as graph:
-            allreduce_outputs = ops.allreduce.sum(
-                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
-                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
-            )
-            graph.output(
-                allreduce_outputs[0],
-                allreduce_outputs[1],
-                allreduce_outputs[2],
-                allreduce_outputs[3],
-            )
-
-
 def test_allreduce_rep_device() -> None:
     """Test unique device error for allreduce."""
     devices = [

@@ -17,12 +17,15 @@ from conftest import tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Dim, Graph, StaticDim, TensorType, ops
+from max.graph import DeviceRef, Dim, Graph, StaticDim, TensorType, ops
 
 
 def test_slice_basic():
     with Graph(
-        "slice", input_types=[TensorType(DType.int32, [1, 2, 3, 4, 5])]
+        "slice",
+        input_types=[
+            TensorType(DType.int32, [1, 2, 3, 4, 5], device=DeviceRef.CPU())
+        ],
     ) as graph:
         out = graph.inputs[0][:, 1, ..., 3]
 
@@ -32,7 +35,10 @@ def test_slice_basic():
 
 def test_slice_with_tensor_value():
     with Graph(
-        "slice", input_types=[TensorType(DType.int32, [5, "in_dim"])]
+        "slice",
+        input_types=[
+            TensorType(DType.int32, [5, "in_dim"], device=DeviceRef.CPU())
+        ],
     ) as graph:
         start = ops.constant(2, DType.int64)
         out = graph.inputs[0][
@@ -202,32 +208,64 @@ def test_slice_static_dims(tensor_type: TensorType, rand: random.Random):
     ("tensor_type", "indices"),
     [
         # x[1:]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(1, None),)),
-        (TensorType(DType.float32, shape=["dim0", "dim1"]), (slice(1, None),)),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(1, None),),
+        ),
+        (
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
+            (slice(1, None),),
+        ),
         # x[:-1]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(None, -1),)),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(None, -1),),
+        ),
         # x[::2]
-        (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, 2),)),
+        (
+            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            (slice(None, None, 2),),
+        ),
         # x[::-1]
         # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
         # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
         # x[:, None, :]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (slice(None), None, slice(None)),
         ),
         # x[None, ...]
-        (TensorType(DType.float32, shape=["dim0", "dim1"]), (None, Ellipsis)),
+        (
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
+            (None, Ellipsis),
+        ),
         # x[..., None]
-        (TensorType(DType.float32, shape=["dim0", "dim1"]), (Ellipsis, None)),
+        (
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
+            (Ellipsis, None),
+        ),
         # x[..., 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (Ellipsis, 1),
         ),
         # x[Ellipsis, 1:]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (Ellipsis, slice(1, None)),
         ),
         # x[1, ..., ::-1]
@@ -254,7 +292,7 @@ def test_slice_symbolic_tensor(
     ("tensor_type", "indices"),
     [
         (
-            TensorType(DType.int32, shape=[1]),
+            TensorType(DType.int32, shape=[1], device=DeviceRef.CPU()),
             (slice(-6618538577426847335, None, 3019951631318595876)),
         ),
     ],
@@ -278,21 +316,27 @@ def test_slice_dim_overflow(
     [
         # x[:, None, :]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (slice(None), None, slice(None)),
             3,
             (1,),
         ),
         # x[None, ..., None]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (None, Ellipsis, None),
             4,
             (0, 3),
         ),
         # x[..., None]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            TensorType(
+                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+            ),
             (Ellipsis, None),
             3,
             (2,),
@@ -328,55 +372,91 @@ def test_slice_none_dims(
     [
         # x[1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (1,),
             ["dim1", "dim2"],
         ),
         # x[:, 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (slice(None), 1),
             ["dim0", "dim2"],
         ),
         # x[:, :, 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (slice(None), slice(None), 1),
             ["dim0", "dim1"],
         ),
         # x[1, 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (1, 1),
             ["dim2"],
         ),
         # x[1, :, 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (1, slice(None), 1),
             ["dim1"],
         ),
         # x[1, 1, 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (1, 1, 1),
             [],
         ),
         # x[..., 1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (Ellipsis, 1),
             ["dim0", "dim1"],
         ),
         # x[1, ...]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (1, Ellipsis),
             ["dim1", "dim2"],
         ),
         # x[:, -1]
         (
-            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            TensorType(
+                DType.float32,
+                shape=["dim0", "dim1", "dim2"],
+                device=DeviceRef.CPU(),
+            ),
             (slice(None), -1),
             ["dim0", "dim2"],
         ),
@@ -421,5 +501,9 @@ def test_slice_invalid_start_stop() -> None:
         Graph(
             "slice_invalid",
             forward=operator.itemgetter((slice(2, 1),)),
-            input_types=[TensorType(DType.float32, shape=["dim0"])],
+            input_types=[
+                TensorType(
+                    DType.float32, shape=["dim0"], device=DeviceRef.CPU()
+                )
+            ],
         )

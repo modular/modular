@@ -9,7 +9,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.ops import conv2d
 from modular_graph_test import modular_graph_test
 
@@ -41,8 +41,8 @@ def torch_conv2d(
     "input_type, filter_type",
     [
         (
-            TensorType(DType.float32, [1, 16, 16, 4]),
-            TensorType(DType.float32, [16, 16, 4, 5]),
+            TensorType(DType.float32, [1, 16, 16, 4], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [16, 16, 4, 5], device=DeviceRef.CPU()),
         ),
     ],
 )

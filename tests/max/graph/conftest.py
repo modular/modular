@@ -25,6 +25,7 @@ from max import mlir
 from max.dtype import DType
 from max.graph import (
     BufferType,
+    DeviceRef,
     Dim,
     DimLike,
     Graph,
@@ -171,12 +172,12 @@ def valid_broadcast_rank(shape_st, max_size: int | None = None):
     return shape_st.flatmap(lambda shape: st.integers(len(shape), max_size))
 
 
-def tensor_types(dtypes=dtypes, shapes=shapes()):
-    return st.builds(TensorType, dtypes, shapes)
+def tensor_types(dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()):
+    return st.builds(TensorType, dtypes, shapes, st.just(device))
 
 
-def buffer_types(dtypes=dtypes, shapes=shapes()):
-    return st.builds(BufferType, dtypes, shapes)
+def buffer_types(dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()):
+    return st.builds(BufferType, dtypes, shapes, st.just(device))
 
 
 def axes(shapes):
@@ -277,7 +278,10 @@ def broadcastable_static_positive_shapes(n: int):
 def broadcastable_tensor_types(n: int):
     return dtypes.flatmap(
         lambda dtype: broadcastable_shapes(n).map(
-            lambda shapes: [TensorType(dtype, shape) for shape in shapes]
+            lambda shapes: [
+                TensorType(dtype, shape, device=DeviceRef.CPU())
+                for shape in shapes
+            ]
         )
     )
 

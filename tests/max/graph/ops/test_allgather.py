@@ -14,47 +14,6 @@ from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 shared_types = st.shared(tensor_types())
 
 
-# TODO(kathywu): Use hypothesis to generate the input types.
-def test_allgather_no_device() -> None:
-    """Test no device error for allgather."""
-    devices = [
-        DeviceRef.GPU(id=0),
-        DeviceRef.GPU(id=1),
-        DeviceRef.GPU(id=2),
-        DeviceRef.GPU(id=3),
-    ]
-
-    with pytest.raises(
-        ValueError,
-        match="must have an explicit device.",
-    ):
-        with Graph(
-            "allgather",
-            input_types=[
-                TensorType(
-                    dtype=DType.float32, shape=[6, 5], device=devices[0]
-                ),
-                TensorType(
-                    dtype=DType.float32,
-                    shape=[6, 5],
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[6, 5], device=devices[2]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[6, 5], device=devices[3]
-                ),
-            ],
-        ) as graph:
-            allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
-            graph.output(
-                allgather_outputs[0],
-                allgather_outputs[1],
-                allgather_outputs[2],
-                allgather_outputs[3],
-            )
-
-
 def test_allgather_rep_device() -> None:
     """Test unique device error for allgather."""
     devices = [

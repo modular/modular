@@ -10,7 +10,7 @@ from conftest import tensor_types
 from hypothesis import assume, event, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 big_ints = st.one_of(
     st.integers(max_value=-(2**63) - 1),
@@ -60,12 +60,14 @@ def test_random__dynamic_seed(like: TensorType):
 
 def test_random__dynamic_seed__bad_seed_type():
     with Graph(
-        "bad_seed", input_types=[TensorType(DType.float32, [])]
+        "bad_seed", input_types=[TensorType(DType.float32, [], DeviceRef.CPU())]
     ) as graph:
         with pytest.raises(TypeError):
             ops.random.set_seed(graph.inputs[0])
 
-    with Graph("bad_seed", input_types=[TensorType(DType.int64, [2])]) as graph:
+    with Graph(
+        "bad_seed", input_types=[TensorType(DType.int64, [2], DeviceRef.CPU())]
+    ) as graph:
         with pytest.raises(Exception):
             ops.random.set_seed(graph.inputs[0])
 

@@ -8,7 +8,7 @@
 from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import assume, event, given
 from max.dtype import DType
-from max.graph import Dim, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.graph.ops import sub
 
 
@@ -29,8 +29,8 @@ def test_sub__same_type__operator(tensor_type: TensorType):
 @given(d1=..., d2=..., shape=...)
 def test_sub__promoted_dtype__operator(d1: DType, d2: DType, shape: list[Dim]):
     assume(d1 != d2)
-    t1 = TensorType(d1, shape)
-    t2 = TensorType(d2, shape)
+    t1 = TensorType(d1, shape, device=DeviceRef.CPU())
+    t2 = TensorType(d2, shape, device=DeviceRef.CPU())
     with Graph("sub", input_types=[t1, t2]) as graph:
         i0, i1 = graph.inputs
         try:

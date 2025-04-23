@@ -8,11 +8,13 @@
 import numpy as np
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 
 
 def test_shape_to_tensor_static(session):
-    input_type = TensorType(dtype=DType.float32, shape=[2, 4])
+    input_type = TensorType(
+        dtype=DType.float32, shape=[2, 4], device=DeviceRef.CPU()
+    )
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape
         graph.output(TensorValue(shape))
@@ -28,7 +30,9 @@ def test_shape_to_tensor_static(session):
 
 
 def test_shape_to_tensor_dynamic(session):
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
+    )
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape
         graph.output(TensorValue(shape))
@@ -44,7 +48,9 @@ def test_shape_to_tensor_dynamic(session):
 
 
 def test_shape_to_tensor_solo_dim(session):
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
+    )
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].shape
         graph.output(TensorValue(shape[1]))

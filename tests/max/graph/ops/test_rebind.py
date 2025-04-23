@@ -8,7 +8,7 @@
 import pytest
 from hypothesis import assume, given
 from max.dtype import DType
-from max.graph import Graph, Shape, TensorType
+from max.graph import DeviceRef, Graph, Shape, TensorType
 
 
 def test_rebind() -> None:
@@ -16,10 +16,18 @@ def test_rebind() -> None:
     with Graph(
         "rebind",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[6, 5]),
-            TensorType(dtype=DType.float32, shape=["batch", "channels"]),
             TensorType(
-                dtype=DType.float32, shape=["batch", "channels", "other"]
+                dtype=DType.float32, shape=[6, 5], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=DeviceRef.CPU(),
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels", "other"],
+                device=DeviceRef.CPU(),
             ),
         ],
     ) as graph:

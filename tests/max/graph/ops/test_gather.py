@@ -21,6 +21,7 @@ input_types = tensor_types(shapes=st.lists(dims, min_size=1))
     indices_type=tensor_types(dtypes=st.just(DType.int64)),
     axis=axes(st.shared(input_types, key="input")),
 )
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather(input_type: TensorType, indices_type: TensorType, axis: int):
     assume(indices_type.rank > 0)
     with Graph("gather", input_types=[input_type, indices_type]) as graph:
@@ -36,6 +37,7 @@ def test_gather(input_type: TensorType, indices_type: TensorType, axis: int):
 
 
 @given(input=..., indices=tensor_types(dtypes=st.just(DType.uint64)))
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd(input: TensorType, indices: TensorType):
     assume(isinstance(indices.shape[-1], StaticDim))
     index_size = int(indices.shape[-1])

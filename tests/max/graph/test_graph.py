@@ -44,7 +44,11 @@ def test_elementwise_add_graph() -> None:
     with Graph(
         "elementwise_add",
         input_types=[
-            TensorType(dtype=DType.float32, shape=["batch", "channels"])
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=DeviceRef.CPU(),
+            )
         ],
     ) as graph:
         graph.output(graph.inputs[0] + 1)
@@ -147,7 +151,9 @@ def test_location_no_stack() -> None:
 
 def test_add_op() -> None:
     """Builds a simple graph with an elementwise addition and checks the IR."""
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
+    )
     with Graph("add", input_types=(input_type, input_type)) as graph:
         lhs, rhs = graph.inputs
         elemwise_sum = ops.add(lhs, rhs)
@@ -166,7 +172,9 @@ def test_add_op_closure() -> None:
     def elementwise_add(lhs: TensorValue, rhs: TensorValue) -> TensorValue:
         return ops.add(lhs, rhs)
 
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
+    )
     add_graph = Graph("add", elementwise_add, (input_type, input_type))
 
     assert "rmo.add" in str(add_graph._mlir_op)
@@ -175,7 +183,10 @@ def test_add_op_closure() -> None:
 
 def test_unique_symbolic_dim() -> None:
     """Test that unique_symbolic_dim works, even if the counter is reset."""
-    graph = Graph("dim_tester", input_types=[TensorType(DType.float32, (50,))])
+    graph = Graph(
+        "dim_tester",
+        input_types=[TensorType(DType.float32, (50,), device=DeviceRef.CPU())],
+    )
 
     def use_dim(dim: Dim) -> None:
         with graph:
@@ -202,7 +213,7 @@ def test_invalid_operand() -> None:
     with Graph(
         "invalid_operand",
         input_types=[
-            TensorType(DType.int64, [2]),
+            TensorType(DType.int64, [2], device=DeviceRef.CPU()),
         ],
     ) as graph:
         input_tensor = graph.inputs[0]
@@ -216,7 +227,7 @@ def test_load_from_file() -> None:
     graph = Graph(
         "identity",
         forward=lambda x: x,
-        input_types=[TensorType(DType.int64, [1])],
+        input_types=[TensorType(DType.int64, [1], device=DeviceRef.CPU())],
     )
     with NamedTemporaryFile("w") as mlir_text_file:
         # Flush so that the subsequent read works.

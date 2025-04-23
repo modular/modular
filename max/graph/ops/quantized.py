@@ -44,6 +44,7 @@ def _repack_quantized_weights(
                     if mode == "gptq"
                     else (rhs_type.shape[0], rhs_type.shape[1])
                 ),
+                device=rhs[0].device,
             )
         ],
     )[0].tensor
@@ -63,7 +64,9 @@ def _packed_qmatmul(
         [lhs_matrix, rhs_repack],
         out_types=[
             TensorType(
-                MODE_TO_DTYPE[mode], (lhs_matrix.shape[0], rhs_repack.shape[0])
+                MODE_TO_DTYPE[mode],
+                (lhs_matrix.shape[0], rhs_repack.shape[0]),
+                device=lhs_matrix.device,
             ),
         ],
     )[0].tensor
@@ -248,6 +251,12 @@ def dequantize(
     flat_dequantized = custom(
         name=op_name,
         values=[flat_quantized],
-        out_types=[TensorType(DType.float32, [flat_quantized.shape[0], odim])],
+        out_types=[
+            TensorType(
+                DType.float32,
+                [flat_quantized.shape[0], odim],
+                flat_quantized.device,
+            )
+        ],
     )[0].tensor
     return flat_dequantized.reshape([*dims, odim])

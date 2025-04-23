@@ -9,7 +9,7 @@ import platform
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize(
@@ -19,7 +19,7 @@ def test_random_uniform(session: InferenceSession, dtype: DType):
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:
         pytest.skip("BF16 is not supported on ARM CPU architecture")
 
-    tensor_type = TensorType(dtype, [10, 10])
+    tensor_type = TensorType(dtype, [10, 10], device=DeviceRef.CPU())
 
     with Graph(
         "random_uniform",

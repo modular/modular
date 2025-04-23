@@ -18,7 +18,7 @@ from conftest import (
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, ShapeLike, TensorType, ops
+from max.graph import DeviceRef, Graph, ShapeLike, TensorType, ops
 
 
 def _sorted_by_rank(x: ShapeLike, y: ShapeLike) -> tuple[ShapeLike, ShapeLike]:
@@ -38,8 +38,8 @@ def test_broadcast_to_shape_attr(input_shapes: list[ShapeLike]) -> None:
             from_tensor, shape=to_tensor.shape
         ),
         input_types=[
-            TensorType(DType.int64, from_shape),
-            TensorType(DType.int64, to_shape),
+            TensorType(DType.int64, from_shape, device=DeviceRef.CPU()),
+            TensorType(DType.int64, to_shape, device=DeviceRef.CPU()),
         ],
     )
     assert "rmo.broadcast_to" in str(graph)
@@ -65,13 +65,13 @@ def test_broadcast_to_tensor_value(
         "broadcast_to_tensor_value",
         forward=lambda x, y: ops.broadcast_to(x, y, out_dims=out_dims),
         input_types=[
-            TensorType(DType.bfloat16, input_shape),
-            TensorType(DType.int64, (to_rank,)),
+            TensorType(DType.bfloat16, input_shape, device=DeviceRef.CPU()),
+            TensorType(DType.int64, (to_rank,), device=DeviceRef.CPU()),
         ],
     )
     assert "rmo.mo.broadcast_to" in str(graph)
     assert TensorType.from_mlir(graph_result_type(graph)) == TensorType(
-        graph.inputs[0].dtype, shape=out_dims
+        DType.bfloat16, out_dims, device=DeviceRef.CPU()
     )
 
 
@@ -81,7 +81,11 @@ def test_broadcast_to__error_message():
 
     with Graph(
         "broadcast_to_error_message",
-        input_types=[TensorType(dtype=DType.float32, shape=input_shape)],
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=input_shape, device=DeviceRef.CPU()
+            )
+        ],
     ) as graph:
         with pytest.raises(
             ValueError,
@@ -98,7 +102,11 @@ def test_broadcast_to__error_message_symbolic_shapes():
 
     with Graph(
         "broadcast_to_error_message",
-        input_types=[TensorType(dtype=DType.float32, shape=input_shape)],
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=input_shape, device=DeviceRef.CPU()
+            )
+        ],
     ) as graph:
         with pytest.raises(
             ValueError,

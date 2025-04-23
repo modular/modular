@@ -7,7 +7,7 @@
 
 import pytest
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights
 
 
@@ -21,15 +21,27 @@ def test_load_safetensors_one(testdata_directory) -> None:
             for key, weight in weights.items()
         }
         assert len(data) == 7
-        assert data["1.a"].type == TensorType(DType.int32, [5, 2])
-        assert data["1.b"].type == TensorType(DType.float64, [1, 2, 3])
-        assert data["1.c"].type == TensorType(DType.float32, [])
-        assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
-        assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
-        assert data["1.float8_e4m3fn"].type == TensorType(
-            DType.float8_e4m3fn, [2]
+        assert data["1.a"].type == TensorType(
+            DType.int32, [5, 2], device=DeviceRef.CPU()
         )
-        assert data["1.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
+        assert data["1.b"].type == TensorType(
+            DType.float64, [1, 2, 3], device=DeviceRef.CPU()
+        )
+        assert data["1.c"].type == TensorType(
+            DType.float32, [], device=DeviceRef.CPU()
+        )
+        assert data["1.fancy/name"].type == TensorType(
+            DType.int64, [3], device=DeviceRef.CPU()
+        )
+        assert data["1.bf16"].type == TensorType(
+            DType.bfloat16, [2], device=DeviceRef.CPU()
+        )
+        assert data["1.float8_e4m3fn"].type == TensorType(
+            DType.float8_e4m3fn, [2], device=DeviceRef.CPU()
+        )
+        assert data["1.float8_e5m2"].type == TensorType(
+            DType.float8_e5m2, [2], device=DeviceRef.CPU()
+        )
 
 
 def test_load_safetensors_multi(testdata_directory) -> None:
@@ -45,24 +57,48 @@ def test_load_safetensors_multi(testdata_directory) -> None:
             for key, weight in weights.items()
         }
         assert len(data) == 14
-        assert data["1.a"].type == TensorType(DType.int32, [5, 2])
-        assert data["1.b"].type == TensorType(DType.float64, [1, 2, 3])
-        assert data["1.c"].type == TensorType(DType.float32, [])
-        assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
-        assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
+        assert data["1.a"].type == TensorType(
+            DType.int32, [5, 2], device=DeviceRef.CPU()
+        )
+        assert data["1.b"].type == TensorType(
+            DType.float64, [1, 2, 3], device=DeviceRef.CPU()
+        )
+        assert data["1.c"].type == TensorType(
+            DType.float32, [], device=DeviceRef.CPU()
+        )
+        assert data["1.fancy/name"].type == TensorType(
+            DType.int64, [3], device=DeviceRef.CPU()
+        )
+        assert data["1.bf16"].type == TensorType(
+            DType.bfloat16, [2], device=DeviceRef.CPU()
+        )
         assert data["1.float8_e4m3fn"].type == TensorType(
-            DType.float8_e4m3fn, [2]
+            DType.float8_e4m3fn, [2], device=DeviceRef.CPU()
         )
-        assert data["1.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
-        assert data["2.a"].type == TensorType(DType.int32, [5, 2])
-        assert data["2.b"].type == TensorType(DType.float64, [1, 2, 3])
-        assert data["2.c"].type == TensorType(DType.float32, [])
-        assert data["2.fancy/name"].type == TensorType(DType.int64, [3])
-        assert data["2.bf16"].type == TensorType(DType.bfloat16, [2])
+        assert data["1.float8_e5m2"].type == TensorType(
+            DType.float8_e5m2, [2], device=DeviceRef.CPU()
+        )
+        assert data["2.a"].type == TensorType(
+            DType.int32, [5, 2], device=DeviceRef.CPU()
+        )
+        assert data["2.b"].type == TensorType(
+            DType.float64, [1, 2, 3], device=DeviceRef.CPU()
+        )
+        assert data["2.c"].type == TensorType(
+            DType.float32, [], device=DeviceRef.CPU()
+        )
+        assert data["2.fancy/name"].type == TensorType(
+            DType.int64, [3], device=DeviceRef.CPU()
+        )
+        assert data["2.bf16"].type == TensorType(
+            DType.bfloat16, [2], device=DeviceRef.CPU()
+        )
         assert data["2.float8_e4m3fn"].type == TensorType(
-            DType.float8_e4m3fn, [2]
+            DType.float8_e4m3fn, [2], device=DeviceRef.CPU()
         )
-        assert data["2.float8_e5m2"].type == TensorType(DType.float8_e5m2, [2])
+        assert data["2.float8_e5m2"].type == TensorType(
+            DType.float8_e5m2, [2], device=DeviceRef.CPU()
+        )
 
 
 def test_load_using_prefix(testdata_directory) -> None:
@@ -74,9 +110,11 @@ def test_load_using_prefix(testdata_directory) -> None:
     )
     with Graph("test_load_safetensors_by_prefix") as graph:
         a = graph.add_weight(weights[1].a.allocate())
-        assert a.type == TensorType(DType.int32, [5, 2])
+        assert a.type == TensorType(DType.int32, [5, 2], device=DeviceRef.CPU())
         b = graph.add_weight(weights["1.b"].allocate())
-        assert b.type == TensorType(DType.float64, [1, 2, 3])
+        assert b.type == TensorType(
+            DType.float64, [1, 2, 3], device=DeviceRef.CPU()
+        )
 
 
 def test_load_same_weight(testdata_directory) -> None:
@@ -103,25 +141,25 @@ def test_load_allocate_as_bytes(testdata_directory) -> None:
         }
         assert len(data) == 7
         assert data["1.a"].type == TensorType(
-            DType.uint8, [5, 8]
+            DType.uint8, [5, 8], device=DeviceRef.CPU()
         )  # originally int32
         assert data["1.b"].type == TensorType(
-            DType.uint8, [1, 2, 24]
+            DType.uint8, [1, 2, 24], device=DeviceRef.CPU()
         )  # originally float64
         assert data["1.c"].type == TensorType(
-            DType.uint8, [4]
+            DType.uint8, [4], device=DeviceRef.CPU()
         )  # originally float32
         assert data["1.fancy/name"].type == TensorType(
-            DType.uint8, [24]
+            DType.uint8, [24], device=DeviceRef.CPU()
         )  # originally int64
         assert data["1.bf16"].type == TensorType(
-            DType.uint8, [4]
+            DType.uint8, [4], device=DeviceRef.CPU()
         )  # originally bfloat16
         assert data["1.float8_e4m3fn"].type == TensorType(
-            DType.uint8, [2]
+            DType.uint8, [2], device=DeviceRef.CPU()
         )  # originally float8_e4m3fn
         assert data["1.float8_e5m2"].type == TensorType(
-            DType.uint8, [2]
+            DType.uint8, [2], device=DeviceRef.CPU()
         )  # originally float8_e5m2
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
@@ -23,7 +23,11 @@ def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
                 forward=lambda: ops.custom(
                     "fails_to_elaborate",
                     values=[],
-                    out_types=[TensorType(DType.int32, shape=[42])],
+                    out_types=[
+                        TensorType(
+                            DType.int32, shape=[42], device=DeviceRef.CPU()
+                        )
+                    ],
                 ),
                 custom_extensions=[custom_ops_mojopkg],
             ),

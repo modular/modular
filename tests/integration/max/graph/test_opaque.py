@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorType, _OpaqueType, ops
+from max.graph import DeviceRef, Graph, TensorType, _OpaqueType, ops
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
         c = ops.inplace_custom(
             "read_counter",
             values=[reader_graph.inputs[0]],
-            out_types=[TensorType(DType.int32, [2])],
+            out_types=[TensorType(DType.int32, [2], device=DeviceRef.CPU())],
             parameters={"stride": 1},
         )
         reader_graph.output(c[0])

@@ -13,11 +13,13 @@ import numpy as np
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def create_test_graph():
-    input_type = TensorType(dtype=DType.float32, shape=["batch", "channels"])
+    input_type = TensorType(
+        dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
+    )
     with Graph("add", input_types=(input_type, input_type)) as graph:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
     return graph
@@ -80,7 +82,7 @@ def test_identity(session):
     graph = Graph(
         "identity",
         lambda x: x,
-        input_types=[TensorType(DType.int32, (1,))],
+        input_types=[TensorType(DType.int32, (1,), device=DeviceRef.CPU())],
     )
 
     # Compile and execute identity.

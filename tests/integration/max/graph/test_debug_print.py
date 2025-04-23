@@ -13,7 +13,7 @@ import torch
 from max.driver import Tensor, accelerator_count
 from max.driver.tensor import load_max_tensor
 from max.dtype import DType
-from max.graph import BufferType, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +22,11 @@ def compiled_model(session):
         x.print("test_x_value")
         return x
 
-    g = Graph("test_print", print_input, [TensorType(DType.float32, ["dim1"])])
+    g = Graph(
+        "test_print",
+        print_input,
+        [TensorType(DType.float32, ["dim1"], device=DeviceRef.CPU())],
+    )
     return session.load(g)
 
 
@@ -32,7 +36,11 @@ def compiled_buffer_model(session):
         x.print("test_x_value")
         return x
 
-    g = Graph("test_print", print_input, [BufferType(DType.float32, ["dim1"])])
+    g = Graph(
+        "test_print",
+        print_input,
+        [BufferType(DType.float32, ["dim1"], device=DeviceRef.CPU())],
+    )
     return session.load(g)
 
 
@@ -163,7 +171,11 @@ def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
         x.print("test_x_value")
         return x
 
-    g = Graph("test_print", print_input, [TensorType(DType.bfloat16, ["dim1"])])
+    g = Graph(
+        "test_print",
+        print_input,
+        [TensorType(DType.bfloat16, ["dim1"], device=DeviceRef.CPU())],
+    )
     compiled_model = session.load(g)
 
     session.set_debug_print_options(
@@ -202,7 +214,7 @@ def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
     g = Graph(
         f"test_print_bf16_{len(shape)}d",
         print_input,
-        [TensorType(DType.bfloat16, shape)],
+        [TensorType(DType.bfloat16, shape, device=DeviceRef.CPU())],
     )
     compiled_model = session.load(g)
 
@@ -270,7 +282,11 @@ def test_save_load_all_dtypes(session, tmp_path, dtype):
 
     shape = (2,)
     compiled_model = session.load(
-        Graph(f"test_{dtype.name}", print_input, [TensorType(dtype, shape)])
+        Graph(
+            f"test_{dtype.name}",
+            print_input,
+            [TensorType(dtype, shape, device=DeviceRef.CPU())],
+        )
     )
 
     # Generate test data based on dtype using PyTorch.

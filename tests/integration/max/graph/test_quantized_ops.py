@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from max.driver import accelerator_count
 from max.dtype import DType
-from max.graph import Graph, SymbolicDim, TensorType, ops
+from max.graph import DeviceRef, Graph, SymbolicDim, TensorType, ops
 from max.graph.quantization import QuantizationEncoding
 
 
@@ -20,10 +20,12 @@ def test_qmatmul(session):
     graph = Graph(
         "qmatmul",
         input_types=[
-            TensorType(DType.float32, (5, 32)),
-            TensorType(DType.uint8, (32, 18)),
+            TensorType(DType.float32, (5, 32), device=DeviceRef.CPU()),
+            TensorType(DType.uint8, (32, 18), device=DeviceRef.CPU()),
         ],
-        output_types=[TensorType(DType.float32, (5, 32))],
+        output_types=[
+            TensorType(DType.float32, (5, 32), device=DeviceRef.CPU())
+        ],
     )
 
     with graph:
@@ -52,8 +54,10 @@ def test_qmatmul(session):
 def test_dequantize(session):
     graph = Graph(
         "dequantize",
-        input_types=[TensorType(DType.uint8, (1, 18))],
-        output_types=[TensorType(DType.float32, (1, 32))],
+        input_types=[TensorType(DType.uint8, (1, 18), device=DeviceRef.CPU())],
+        output_types=[
+            TensorType(DType.float32, (1, 32), device=DeviceRef.CPU())
+        ],
     )
 
     with graph:
@@ -74,8 +78,10 @@ def test_dequantize(session):
 def test_dequantize_nondivisible_error():
     graph = Graph(
         "dequantize",
-        input_types=[TensorType(DType.uint8, (1, 19))],
-        output_types=[TensorType(DType.float32, (1, 32))],
+        input_types=[TensorType(DType.uint8, (1, 19), device=DeviceRef.CPU())],
+        output_types=[
+            TensorType(DType.float32, (1, 32), device=DeviceRef.CPU())
+        ],
     )
 
     with graph:
@@ -95,8 +101,14 @@ def test_dequantize_nondivisible_error():
 def test_dequantize_nonstatic_last_dim_error():
     graph = Graph(
         "dequantize",
-        input_types=[TensorType(DType.uint8, (1, SymbolicDim("x")))],
-        output_types=[TensorType(DType.float32, (1, 32))],
+        input_types=[
+            TensorType(
+                DType.uint8, (1, SymbolicDim("x")), device=DeviceRef.CPU()
+            )
+        ],
+        output_types=[
+            TensorType(DType.float32, (1, 32), device=DeviceRef.CPU())
+        ],
     )
 
     with graph:

@@ -86,7 +86,7 @@ def custom_ops_path() -> Path:
 def test_while_loop_inplace_user_supplied(
     custom_ops_path, session: InferenceSession
 ):
-    bt = BufferType(DType.float32, [2, 2])
+    bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 
     with Graph("basic", input_types=[bt]) as graph:
         buffer: BufferValue = graph.inputs[0]

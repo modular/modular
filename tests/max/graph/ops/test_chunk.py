@@ -13,7 +13,7 @@ from conftest import non_static_axes, shapes, static_axes, tensor_types
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Dim, Graph, Shape, StaticDim, TensorType, ops
+from max.graph import DeviceRef, Dim, Graph, Shape, StaticDim, TensorType, ops
 
 shared_types = st.shared(tensor_types())
 chunks = st.integers(min_value=1, max_value=20)
@@ -31,7 +31,9 @@ def test_chunk(input_type: TensorType, chunks: int, axis: int):
     assume(product * chunks < 2**63)
 
     expected_shape = Shape(input_type.shape)
-    expected_type = TensorType(input_type.dtype, expected_shape)
+    expected_type = TensorType(
+        input_type.dtype, expected_shape, device=DeviceRef.CPU()
+    )
     input_type.shape[axis] = Dim(chunk_size * chunks)
 
     with Graph("chunk", input_types=[input_type]) as graph:
@@ -46,7 +48,9 @@ def test_chunk(input_type: TensorType, chunks: int, axis: int):
     axis=static_axes(shared_types),
 )
 @example(
-    input_type=TensorType(DType.float32, [9223372036854775806]),
+    input_type=TensorType(
+        DType.float32, [9223372036854775806], device=DeviceRef.CPU()
+    ),
     chunks=2,
     axis=-1,
 ).via("MAXPLAT-183")

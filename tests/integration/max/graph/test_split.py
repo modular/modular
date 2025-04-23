@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import Graph, Shape, TensorType, ops
+from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 
 
 @pytest.mark.parametrize(
@@ -25,7 +25,9 @@ def test_split(session, input_shape: Shape, split_sizes: list[int], axis: int):
 
     with Graph(
         "split",
-        input_types=[TensorType(DType.float32, input_shape)],
+        input_types=[
+            TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
+        ],
     ) as graph:
         output = ops.split(graph.inputs[0], split_sizes, axis)
         graph.output(*output)
@@ -50,7 +52,9 @@ def test_invalid_split():
     axis = 0
     with Graph(
         "split",
-        input_types=[TensorType(DType.float32, input_shape)],
+        input_types=[
+            TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
+        ],
     ) as graph:
         with pytest.raises(
             ValueError,
@@ -65,7 +69,9 @@ def test_invalid_axis():
     axis = 2
     with Graph(
         "split",
-        input_types=[TensorType(DType.float32, input_shape)],
+        input_types=[
+            TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
+        ],
     ) as graph:
         with pytest.raises(
             ValueError,

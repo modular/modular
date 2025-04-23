@@ -12,7 +12,7 @@ import pytest
 import torch
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
 @dataclass
@@ -26,7 +26,9 @@ def test_load_rejects_non_contiguous_weights():
     graph = Graph(
         "unity",
         forward=Unity(),
-        input_types=[TensorType(DType.float32, ["batch", "dim"])],
+        input_types=[
+            TensorType(DType.float32, ["batch", "dim"], device=DeviceRef.CPU())
+        ],
     )
 
     session = InferenceSession()
@@ -45,7 +47,9 @@ def test_execute_rejects_non_contiguous_input():
     graph = Graph(
         "unity",
         forward=Unity(),
-        input_types=[TensorType(DType.float32, ["batch", "dim"])],
+        input_types=[
+            TensorType(DType.float32, ["batch", "dim"], device=DeviceRef.CPU())
+        ],
     )
 
     # Create the model (without any weights)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -228,7 +228,7 @@ class BufferValue(Value):
         return self.type.shape
 
     @property
-    def device(self) -> Optional[DeviceRef]:
+    def device(self) -> DeviceRef:
         """Returns the device of the BufferValue."""
         return self.type.device
 
@@ -358,7 +358,9 @@ class TensorValue(Value):
         Returns:
             A new :obj:`TensorValue`.
         """
-        return ops.shape_to_tensor([dim]).reshape(())
+        ans = ops.shape_to_tensor([dim])
+        ans.type.device = DeviceRef.CPU()
+        return ans.reshape(())
 
     @staticmethod
     def _from_shape(shape: ShapeLike) -> TensorValue:
@@ -370,7 +372,9 @@ class TensorValue(Value):
         Returns:
             A new :obj:`TensorValue`.
         """
-        return ops.shape_to_tensor(shape)
+        ans = ops.shape_to_tensor(shape)
+        ans.type.device = DeviceRef.CPU()
+        return ans
 
     def __repr__(self):
         dtype = self.dtype
@@ -409,7 +413,7 @@ class TensorValue(Value):
         return self.type.shape
 
     @property
-    def device(self) -> Optional[DeviceRef]:
+    def device(self) -> DeviceRef:
         """Returns the device of the TensorValue."""
         return self.type.device
 

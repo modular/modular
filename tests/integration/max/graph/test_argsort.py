@@ -12,7 +12,7 @@ import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize(
@@ -34,7 +34,13 @@ def test_argsort_execution(
     graph = Graph(
         "argsort_test",
         forward=lambda x: ops.argsort(x, ascending=ascending),
-        input_types=[TensorType(DType.float32, shape=input_shape)],
+        input_types=[
+            TensorType(
+                DType.float32,
+                shape=input_shape,
+                device=DeviceRef.from_device(session.devices[0]),
+            )
+        ],
     )
 
     # Compile and execute the graph.
