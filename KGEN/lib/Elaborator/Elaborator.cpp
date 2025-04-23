@@ -479,11 +479,11 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
   if (!gen) {
-    return concreteInsts.read([name](auto &insts) {
+    return concreteNodes.read([name](auto &insts) {
       auto iter = insts.find(name);
       if (iter == insts.end())
         return FuncOp();
-      return cast<FuncOp>(iter->second);
+      return cast<FuncOp>(iter->second->inst);
     });
   }
 
@@ -609,18 +609,16 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
 
 void Elaborator::addDeferredFunction(OwningOpRef<FuncOp> func) {
   FuncOp op = func.release();
-  auto tryAdd = [this, op, name = op.getSymNameAttr()](auto &funcs) mutable {
-    if (funcs.try_emplace(name, op).second) {
+  StringAttr name = op.getSymNameAttr();
+
+  concreteNodes.modify([&op, name, this](auto &map) {
+    if (addConcreteFunc(op, name, map)) {
       deferredSymbols.push_back(op);
-      return true;
+      addRegion(op.getBodyRegion());
+    } else {
+      op.erase();
     }
-    op.erase();
-    return false;
-  };
-  if (concreteInsts.modify(tryAdd)) {
-    addRegion(op.getBodyRegion());
-    addConcreteFunc(op);
-  }
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -664,30 +662,10 @@ Elaborator::instantiateGeneratorReference(
   Operation *calleeOp = oldSymTab.lookup(name);
 
   if (!calleeOp || !isa<GeneratorOpInterface>(calleeOp)) {
-    InstantiatedOpInterface inst =
-        concreteInsts.read([name](auto &map) { return map.at(name); });
-    bool found = true;
-    ImplNode *node = g.concreteNodes.read([inst, &found, &parent,
-                                           name](auto &map) -> ImplNode * {
-      // FIXME (moco-1867) add error logic for flake test failures
-      // where the inst exists in concreteInsts, but not in concreteNodes.
-      // See if CI can catch the flake and print more info, will remove
-      // this once the issue is fixed.
-      auto iter = map.find(inst);
-      if (iter == map.end()) {
-        found = false;
-        parent->setToError(ErrorTree(parent->parent->gen.getLoc(),
-                                     "concreteNode is missing " + Twine(name)));
-        return nullptr;
-      } else {
-        return map.at(inst);
-      }
-    });
+    ImplNode *node =
+        concreteNodes.read([name](auto &map) { return map.at(name); });
 
-    if (found)
-      return {ElaborationState::advance(), node};
-    else
-      return {ElaborationState::error(), node};
+    return {ElaborationState::advance(), node};
   }
 
   // Add in the mapping for parameters in the calls.
@@ -1586,22 +1564,18 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     opsToRewrite.push_back(instance);
   }
 
-  // Insert the newFunc into the symbol table which will then know about it,
-  // but it will also auto-rename the symbol for us in the case of conflicts.
-  concreteInsts.modify([instance, mangledName](auto &map) {
-    map.try_emplace(mangledName, instance);
-  });
   addRegion(instance.getBodyRegion());
-
   // The node for this new func is simply the child of the node for the
   // generator.
   auto childNode = std::make_unique<ImplNode>(
       instance, genNode, std::move(childGraph), mangledName.str());
-  g.concreteNodes.modify(
-      [instance, node = childNode.get()](
-          DenseMap<InstantiatedOpInterface, ImplNode *> &map) {
-        map.try_emplace(instance, node);
-      });
+
+  // Insert the newFunc into the symbol table which will then know about it,
+  // but it will also auto-rename the symbol for us in the case of conflicts.
+  concreteNodes.modify([mangledName, node = childNode.get()](auto &map) {
+    map.try_emplace(mangledName, node);
+  });
+
   ImplNode *newFuncNode = childNode.get();
   genNode->impl = std::move(childNode);
 
@@ -2152,8 +2126,7 @@ Elaborator::run(ModuleOp theModule,
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
   for (FuncOp func : theModule.getOps<FuncOp>()) {
-    addConcreteFunc(func);
-    concreteInsts.get().try_emplace(func.getSymNameAttr(), func);
+    (void)addConcreteFunc(func, func.getSymNameAttr(), concreteNodes.get());
     addRegion(func.getBodyRegion());
   }
 
@@ -2216,9 +2189,8 @@ Elaborator::run(ModuleOp theModule,
   }
 
   if (failed) {
-    for (InstantiatedOpInterface inst :
-         llvm::make_second_range(concreteInsts.get()))
-      inst.erase();
+    for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
+      node->inst.erase();
 
     return failure();
   }
@@ -2235,9 +2207,8 @@ Elaborator::run(ModuleOp theModule,
     std::move(compileOffloadError)
         .emit([](Location loc) { return mlir::emitError(loc); },
               "Compile offload failed.");
-    for (InstantiatedOpInterface inst :
-         llvm::make_second_range(concreteInsts.get()))
-      inst.erase();
+    for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
+      node->inst.erase();
     handler.release();
     return failure();
   }
