@@ -162,7 +162,7 @@ def init_and_process(
         app = prometheus_client.make_asgi_app()
         config = Config(
             app=app,
-            host="0.0.0.0",
+            host=settings.host,
             port=settings.metrics_port,
             access_log=False,
             log_level="warning",
