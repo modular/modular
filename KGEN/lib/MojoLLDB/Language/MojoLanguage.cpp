@@ -253,6 +253,29 @@ vectorLikeSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
+/// Format SIMD boolean vectors nicely, handling bit-packed values
+static bool
+simdBoolVectorSummaryProvider(ValueObject &valobj, Stream &stream,
+                              const TypeSummaryOptions &summaryOptions) {
+  ValueObjectSP dataVal = valobj.GetChildAtIndex(0);
+  bool success = false;
+  uint64_t packedData = dataVal ? dataVal->GetValueAsUnsigned(0, &success) : 0;
+
+  if (!dataVal || !success) {
+    stream.PutCString("<error>");
+    return true;
+  }
+
+  stream.PutCString("{\n");
+  auto numChildren = getExpectedValueOr(valobj.GetNumChildren(), 0u);
+  for (size_t i = 0; i < numChildren; ++i) {
+    const bool bit = (packedData >> i) & 1;
+    stream.Printf("  (bool) [%zu] = %s\n", i, bit ? "True" : "False");
+  }
+  stream.PutCString("}");
+  return true;
+}
+
 static void
 LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   if (!mojoCategorySP)
@@ -298,8 +321,14 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
                 "!kgen.none summary provider", "!kgen.none", summaryFlags,
                 /*regex=*/false);
+
+  AddCXXSummary(mojoCategorySP, simdBoolVectorSummaryProvider,
+                "SIMD bool vector summary provider", "!pop.simd<[0-9]+, bool>",
+                summaryFlags, /*regex=*/true);
+
   AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",
                 "i1", summaryFlags, /*regex=*/false);
+
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,
       "collections::string::string::String summary provider",
