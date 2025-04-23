@@ -142,12 +142,6 @@ def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"StructMetaType">:$type
 )>;
 
-def WrappedBindTypeAttr : DialectAttribute<(attr
-  TypedAttr:$typeValue,
-  TypedAttrArray:$values,
-  ConcreteType<"StructMetaType">:$type
-)>;
-
 def AnyOriginAttr : DialectAttribute<(attr
   ConcreteType<"OriginType">:$type
 )>;
@@ -233,7 +227,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnboundMLIROperationAttr,
     UnpackedAttr,
     ModuleAttr,
-    WrappedBindTypeAttr,
     AnyOriginAttr,
     WrappedOriginUnionAttr,
     WrappedOriginMutCastAttr,

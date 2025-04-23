@@ -582,8 +582,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     ASTType clType = shared.getBuiltinCaptureListType(nestedFnDecl.getLoc());
     TypedAttr bound = callFunc.getBoundReference(ParameterExprArrayAttr::get(
         getContext(), cast<StructType>(structSelfType).getParamValues()));
-    clType = BindTypeAttr::get(
-        PValue(clType),
+    clType = cast<LIT::StructType>(clType).bindAll(
         {TypeParamAttr::get(bound.getType(), TypeType::get(getContext())),
          bound});
     auto b = OpBuilder::atBlockBegin(declOp.getBody());

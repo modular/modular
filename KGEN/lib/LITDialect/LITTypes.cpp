@@ -339,6 +339,51 @@ StringAttr LIT::StructType::getName() {
   return symbol.getNestedReferences().back().getAttr();
 }
 
+LIT::StructType LIT::StructType::bindAll(ArrayRef<TypedAttr> values) const {
+  assert(getParamValues().size() == values.size() && "expected full value set");
+
+  // The AnyStruct will have all of the parameters specified, e.g. something
+  // like:
+  // StructMetaType[Int : AnyType, UnboundAttr : I8, 42 : Int, UnboundAttr: F32]
+  // but the TypeSignatureType will just have [I8, F32].  The input value
+  // bindings must line up where they are already specified, but can further
+  // refine the SignatureType.  See what to pass down to it.
+
+  SmallVector<TypedAttr> newSignatureBindings;
+  bool hadNewBinding = false;
+  for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
+    // If the current value is bound, maintain it.
+    if (!::isa<UnboundAttr>(cur)) {
+      assert(cur == val && "cannot change bound parameter value");
+    } else {
+      hadNewBinding |= !::isa<UnboundAttr>(val);
+      // Otherwise, propagate it into the TypeSignatureType.
+      newSignatureBindings.push_back(val);
+    }
+  }
+
+  // If we're refining our signature because we have new bindings, return an
+  // AnyStruct with the updated signature and values.
+  if (!hadNewBinding)
+    return *this;
+
+  auto newSig = getSignature().bind(newSignatureBindings);
+  return LIT::StructType::get(getSymbol(), values, newSig);
+}
+
+LIT::StructType LIT::StructType::bindUnbound(ArrayRef<TypedAttr> values) const {
+  SmallVector<TypedAttr> bindings;
+  auto it = values.begin();
+  for (TypedAttr value : getParamValues()) {
+    if (::isa<UnboundAttr>(value))
+      bindings.push_back(*it++);
+    else
+      bindings.push_back(value);
+  }
+  assert(it == values.end() && "expected all bindings to be consumed");
+  return bindAll(bindings);
+}
+
 //===----------------------------------------------------------------------===//
 // StructMetaType
 //===----------------------------------------------------------------------===//
@@ -1425,48 +1470,11 @@ ArrayRef<TypedAttr> StructMetaType::getParamValues() const {
 }
 
 StructMetaType StructMetaType::bindAll(ArrayRef<TypedAttr> values) const {
-  assert(getParamValues().size() == values.size() && "expected full value set");
-
-  // The AnyStruct will have all of the parameters specified, e.g. something
-  // like:
-  // StructMetaType[Int : AnyType, UnboundAttr : I8, 42 : Int, UnboundAttr: F32]
-  // but the TypeSignatureType will just have [I8, F32].  The input value
-  // bindings must line up where they are already specified, but can further
-  // refine the SignatureType.  See what to pass down to it.
-
-  SmallVector<TypedAttr> newSignatureBindings;
-  bool hadNewBinding = false;
-  for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
-    // If the current value is bound, maintain it.
-    if (!::isa<UnboundAttr>(cur)) {
-      assert(cur == val && "cannot change bound parameter value");
-    } else {
-      hadNewBinding |= !::isa<UnboundAttr>(val);
-      // Otherwise, propagate it into the TypeSignatureType.
-      newSignatureBindings.push_back(val);
-    }
-  }
-
-  // If we're refining our signature because we have new bindings, return an
-  // AnyStruct with the updated signature and values.
-  if (!hadNewBinding)
-    return *this;
-
-  auto newSig = getSignature().bind(newSignatureBindings);
-  return StructMetaType::get(LIT::StructType::get(getSymbol(), values, newSig));
+  return StructMetaType::get(getType().bindAll(values));
 }
 
 StructMetaType StructMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
-  SmallVector<TypedAttr> bindings;
-  auto it = values.begin();
-  for (TypedAttr value : getParamValues()) {
-    if (::isa<UnboundAttr>(value))
-      bindings.push_back(*it++);
-    else
-      bindings.push_back(value);
-  }
-  assert(it == values.end() && "expected all bindings to be consumed");
-  return bindAll(bindings);
+  return StructMetaType::get(getType().bindUnbound(values));
 }
 
 //===----------------------------------------------------------------------===//
