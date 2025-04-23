@@ -1038,6 +1038,33 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             result += self
         return result
 
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_mut: Bool,
+        other_origin: Origin[other_mut], //,
+        other_type: __type_of(StringSlice[other_origin]),
+    ](
+        self,
+        out result: StringSlice[
+            mut = mut & other_mut,
+            __origin_of(origin, other_origin),
+        ],
+    ):
+        """Returns a string slice with merged origins.
+
+        Parameters:
+            other_mut: Whether the other pointer is mutable.
+            other_origin: The origin of the other pointer.
+            other_type: The type of the origin to merge with.
+
+        Returns:
+            A StringSlice merged with the other origin.
+        """
+        return __type_of(result)(
+            ptr=self.unsafe_ptr().origin_cast[result.mut, result.origin](),
+            length=len(self),
+        )
+
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#

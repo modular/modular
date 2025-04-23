@@ -1004,6 +1004,20 @@ def test_string_slice_intern():
     assert_equal(get_static_string["a", "b", "c"](), "abc")
 
 
+# This is just a compile test
+# it does not need to be run
+def test_merge():
+    var a = ""
+    var b = String("hi")
+
+    fn cond(
+        pred: Bool, a: StringSlice, b: StringSlice
+    ) -> StringSlice[__origin_of(a.origin, b.origin)]:
+        return a if pred else b
+
+    _ = cond(True, a, b)
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
