@@ -522,7 +522,9 @@ class MPNetModel(Layer):
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
         extended_attention_mask = (1 - extended_attention_mask) * ops.constant(
-            np.finfo(np.float32).min, DType.float32
+            np.finfo(np.float32).min,
+            DType.float32,
+            device=attention_mask.device,
         )
         encoded_results = self.encoder(
             embedding_output,

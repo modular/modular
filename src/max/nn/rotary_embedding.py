@@ -407,12 +407,12 @@ class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
             ops.constant(
                 self.scaling_params.beta_fast,
                 dtype=DType.float32,
-                device=DeviceRef.CPU(),
+                device=self.device,
             ),
             ops.constant(
                 self.scaling_params.beta_slow,
                 dtype=DType.float32,
-                device=DeviceRef.CPU(),
+                device=self.device,
             ),
             self.dim,
             int(self.theta),  # Explicitly convert base to int
