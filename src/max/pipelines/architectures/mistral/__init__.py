@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.pipelines import PIPELINE_REGISTRY
-
 from .arch import mistral_arch
 from .model import MistralModel
 
