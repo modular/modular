@@ -173,9 +173,13 @@ def test_vision_precomputed_position_embedding(
     dtype = DType.float32
 
     hidden_state_type = TensorType(
-        dtype, [1, max_num_tiles, num_patches, hidden_size]
+        dtype,
+        [1, max_num_tiles, num_patches, hidden_size],
+        device=DeviceRef.CPU(),
     )
-    aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
+    aspect_ratio_ids_type = TensorType(
+        DType.int64, [1, 1], device=DeviceRef.CPU()
+    )
 
     # Phase 1: op staging.
     graph = Graph(
@@ -267,9 +271,13 @@ def test_vision_precomputed_aspect_ratio_embedding(
     dtype = DType.float32
 
     hidden_state_type = TensorType(
-        dtype, [1, max_num_tiles, patch_size, hidden_size]
+        dtype,
+        [1, max_num_tiles, patch_size, hidden_size],
+        device=DeviceRef.CPU(),
     )
-    aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
+    aspect_ratio_ids_type = TensorType(
+        DType.int64, [1, 1], device=DeviceRef.CPU()
+    )
 
     # Phase 1: op staging.
     graph = Graph(

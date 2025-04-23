@@ -13,7 +13,7 @@ from context_utils import create_text_context
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import Linear
 from max.nn.attention import Attention
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
@@ -53,16 +53,30 @@ def _attention_layer(
     KVCacheManager,
 ]:
     # Initialize input types
-    input_type = TensorType(dtype, ["batch_size", "seq_len", HIDDEN_DIM])
+    input_type = TensorType(
+        dtype, ["batch_size", "seq_len", HIDDEN_DIM], device=DeviceRef.CPU()
+    )
     attn_mask_type = TensorType(
-        mask_dtype, ["batch_size", "n_kv_heads", "seq_len", "post_seq_len"]
+        mask_dtype,
+        ["batch_size", "n_kv_heads", "seq_len", "post_seq_len"],
+        device=DeviceRef.CPU(),
     )
 
-    wq_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
-    wk_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
-    wv_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
-    wo_type = TensorType(dtype, [N_KV_HEADS * HEAD_DIM, HIDDEN_DIM])
-    valid_lengths_type = TensorType(DType.uint32, ["batch_size"])
+    wq_type = TensorType(
+        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=DeviceRef.CPU()
+    )
+    wk_type = TensorType(
+        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=DeviceRef.CPU()
+    )
+    wv_type = TensorType(
+        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=DeviceRef.CPU()
+    )
+    wo_type = TensorType(
+        dtype, [N_KV_HEADS * HEAD_DIM, HIDDEN_DIM], device=DeviceRef.CPU()
+    )
+    valid_lengths_type = TensorType(
+        DType.uint32, ["batch_size"], device=DeviceRef.CPU()
+    )
 
     # Initialize kv cache params and manager
     kv_params = KVCacheParams(
@@ -264,9 +278,13 @@ def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
     input_type = TensorType(
-        DType.float32, ["total_seq_len", num_q_heads, kv_params.head_dim]
+        DType.float32,
+        ["total_seq_len", num_q_heads, kv_params.head_dim],
+        DeviceRef.CPU(),
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], DeviceRef.CPU()
+    )
 
     manager_kwargs = {
         "max_batch_size": 2,

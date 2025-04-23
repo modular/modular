@@ -6,7 +6,7 @@
 
 import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import Linear
 from max.nn.sequential import Sequential
 from modular_graph_test import are_all_tensor_values, modular_graph_test
@@ -18,8 +18,10 @@ def test_sequential__one_linear_layer(session):
     with Graph(
         "sequential_two_linear_layers",
         input_types=[
-            TensorType(dtype, ["batch", "input_dim"]),
-            TensorType(dtype, ["hidden_dim", "input_dim"]),
+            TensorType(dtype, ["batch", "input_dim"], device=DeviceRef.CPU()),
+            TensorType(
+                dtype, ["hidden_dim", "input_dim"], device=DeviceRef.CPU()
+            ),
         ],
     ) as graph:
         assert are_all_tensor_values(graph.inputs)
@@ -50,9 +52,13 @@ def test_sequential__two_linear_layers(session):
     with Graph(
         "sequential_two_linear_layers",
         input_types=[
-            TensorType(dtype, ["batch", "input_dim"]),
-            TensorType(dtype, ["hidden_dim", "input_dim"]),
-            TensorType(dtype, ["input_dim", "hidden_dim"]),
+            TensorType(dtype, ["batch", "input_dim"], device=DeviceRef.CPU()),
+            TensorType(
+                dtype, ["hidden_dim", "input_dim"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                dtype, ["input_dim", "hidden_dim"], device=DeviceRef.CPU()
+            ),
         ],
     ) as graph:
         assert are_all_tensor_values(graph.inputs)
@@ -84,9 +90,13 @@ def test_sequential__two_linear_layers_with_activation(session):
     with Graph(
         "sequential_two_linear_layers",
         input_types=[
-            TensorType(dtype, ["batch", "input_dim"]),
-            TensorType(dtype, ["hidden_dim", "input_dim"]),
-            TensorType(dtype, ["input_dim", "hidden_dim"]),
+            TensorType(dtype, ["batch", "input_dim"], device=DeviceRef.CPU()),
+            TensorType(
+                dtype, ["hidden_dim", "input_dim"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                dtype, ["input_dim", "hidden_dim"], device=DeviceRef.CPU()
+            ),
         ],
     ) as graph:
         assert are_all_tensor_values(graph.inputs)

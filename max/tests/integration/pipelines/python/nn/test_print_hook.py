@@ -7,7 +7,7 @@
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn.hooks.print_hook import PrintHook
 from max.nn.layer import Layer
 
@@ -34,7 +34,11 @@ def test_unnamed_print_hook(session: InferenceSession, capfd) -> None:
     layer = OuterLayer()
 
     g = Graph(
-        "nested", layer, input_types=[TensorType(DType.float32, (2, 4, 6))]
+        "nested",
+        layer,
+        input_types=[
+            TensorType(DType.float32, (2, 4, 6), device=DeviceRef.CPU())
+        ],
     )
 
     model = session.load(g)
@@ -61,7 +65,11 @@ def test_named_print_hook(session: InferenceSession, capfd) -> None:
     print_hook.name_layers(layer)  # Creates names for each layer.
 
     g = Graph(
-        "nested", layer, input_types=[TensorType(DType.float32, (2, 4, 6))]
+        "nested",
+        layer,
+        input_types=[
+            TensorType(DType.float32, (2, 4, 6), device=DeviceRef.CPU())
+        ],
     )
 
     model = session.load(g)

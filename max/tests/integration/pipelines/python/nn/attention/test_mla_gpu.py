@@ -142,10 +142,13 @@ def test_mla_decompress_k_cache() -> None:
     batch_size = len(prompt_lens)
 
     # Set MLIR types for the graph.
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], device=DeviceRef.GPU()
+    )
     weight_type = TensorType(
         DType.float32,
         [4096, 512],
+        device=DeviceRef.GPU(),
     )
 
     kv_manager = PagedKVCacheManager(

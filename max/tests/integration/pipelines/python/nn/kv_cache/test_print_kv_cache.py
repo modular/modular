@@ -10,7 +10,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -102,7 +102,9 @@ def test_print_kv_cache(dtype: DType) -> None:
         "print_kv_cache",
         forward=PrintKVCacheModel(fetch_layer, kv_params, layer_idx=0),
         input_types=[
-            TensorType(dtype=DType.uint32, shape=[batch_size]),
+            TensorType(
+                dtype=DType.uint32, shape=[batch_size], device=DeviceRef.CPU()
+            ),
             *kv_manager.input_symbols()[0],
         ],
     )

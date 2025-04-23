@@ -11,7 +11,7 @@ from typing import Any, cast
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -243,7 +243,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         with Graph(
             "dummy",
             input_types=[
-                TensorType(DType.int64, shape=["batch_size"]),
+                TensorType(
+                    DType.int64, shape=["batch_size"], device=DeviceRef.CPU()
+                ),
                 *kv_inputs,
             ],
         ) as graph:

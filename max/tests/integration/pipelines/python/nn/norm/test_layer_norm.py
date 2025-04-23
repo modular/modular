@@ -73,8 +73,10 @@ def _test_layer_norm(
 @pytest.mark.parametrize(
     "input_type",
     [
-        TensorType(DType.float32, ["batch", "dim"]),
-        TensorType(DType.float32, ["x", "y", "z", "dim"]),
+        TensorType(DType.float32, ["batch", "dim"], device=DeviceRef.CPU()),
+        TensorType(
+            DType.float32, ["x", "y", "z", "dim"], device=DeviceRef.CPU()
+        ),
     ],
 )
 def test_layer_norm_random(
@@ -82,7 +84,9 @@ def test_layer_norm_random(
 ) -> None:
     """Compares the output of a single layer norm op against torch."""
     # Generate random inputs with the given tensor types.
-    weight_bias_shape = TensorType(input_type.dtype, [input_type.shape[-1]])
+    weight_bias_shape = TensorType(
+        input_type.dtype, [input_type.shape[-1]], device=DeviceRef.CPU()
+    )
     inputs, weight, bias = ndarray_from_tensor_type(
         input_type, weight_bias_shape, weight_bias_shape
     )
@@ -94,7 +98,7 @@ def test_layer_norm_random(
     "input_type,inputs,weight,bias",
     [
         (
-            TensorType(DType.float32, ["dim"]),
+            TensorType(DType.float32, ["dim"], device=DeviceRef.CPU()),
             np.array([1.0, 0.0], dtype=np.float32),
             np.array([0.0, 1.0], dtype=np.float32),
             np.array([0.0, 0.0], dtype=np.float32),

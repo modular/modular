@@ -10,7 +10,7 @@ import torch
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn import RMSNorm
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
@@ -28,7 +28,7 @@ def run_test_norm(
 ):
     # Initialize Graph
     dim = input_type.shape[-1]
-    weight_type = TensorType(input_type.dtype, [dim])
+    weight_type = TensorType(input_type.dtype, [dim], device=input_type.device)
     with Graph("norm", input_types=[input_type, weight_type]) as graph:
         assert are_all_tensor_values(graph.inputs)
         x, weight = graph.inputs
@@ -66,7 +66,12 @@ CPU_DTYPES = (DType.float32, DType.float64)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("dtype", CPU_DTYPES)
 def test_norm(session, shape, dtype):
-    run_test_norm(session, TensorType(dtype, shape), rtol=1e-2, atol=1e-8)
+    run_test_norm(
+        session,
+        TensorType(dtype, shape, device=DeviceRef.CPU()),
+        rtol=1e-2,
+        atol=1e-8,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -83,4 +88,9 @@ GPU_DTYPES = (DType.float32, DType.bfloat16)
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("dtype", GPU_DTYPES)
 def test_norm_gpu(gpu_session, shape, dtype):
-    run_test_norm(gpu_session, TensorType(dtype, shape), rtol=1e-1, atol=1e-8)
+    run_test_norm(
+        gpu_session,
+        TensorType(dtype, shape, device=DeviceRef.GPU()),
+        rtol=1e-1,
+        atol=1e-8,
+    )

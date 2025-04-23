@@ -402,6 +402,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             TensorType(
                 DType.from_numpy(graph_api_inputs.numpy().dtype),
                 graph_api_inputs.shape,
+                device=DeviceRef.CPU(),
             ),
         ),
     ) as graph:
@@ -518,6 +519,7 @@ def test_whisper_encoder(torch_inputs, graph_api_inputs, model_id):
             TensorType(
                 DType.from_numpy(graph_api_inputs.numpy().dtype),
                 graph_api_inputs.shape,
+                device=DeviceRef.CPU(),
             ),
         ),
     ) as graph:

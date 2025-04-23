@@ -13,7 +13,7 @@ from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Dim, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -91,8 +91,12 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
-    gamma_type = TensorType(dtype, shape=[kv_params.head_dim])
-    input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
+    gamma_type = TensorType(
+        dtype, shape=[kv_params.head_dim], device=DeviceRef.CPU()
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["batch_size_plus_1"], device=DeviceRef.CPU()
+    )
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=RMSNormKeyCacheModel(
@@ -163,8 +167,10 @@ def test_partial_rms_norm_key_cache(
     fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
-    gamma_type = TensorType(dtype, shape=[gamma_size])
-    input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
+    gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["batch_size_plus_1"], device=DeviceRef.CPU()
+    )
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=RMSNormKeyCacheModel(
@@ -252,8 +258,10 @@ def test_rms_norm_new_key_cache(
     fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
-    gamma_type = TensorType(dtype, shape=[gamma_size])
-    input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
+    gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["batch_size_plus_1"], device=DeviceRef.CPU()
+    )
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=RMSNormKeyCacheModel(
@@ -354,8 +362,12 @@ def test_rms_norm_key_cache_dtype_mismatch(
     fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
-    gamma_type = TensorType(gamma_dtype, shape=[kv_params.head_dim])
-    input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
+    gamma_type = TensorType(
+        gamma_dtype, shape=[kv_params.head_dim], device=DeviceRef.CPU()
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["batch_size_plus_1"], device=DeviceRef.CPU()
+    )
     expected_msg = (
         f"expected gamma dtype {gamma_dtype} to match KV dtype {kv_dtype}"
     )

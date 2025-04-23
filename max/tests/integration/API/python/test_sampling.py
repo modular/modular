@@ -53,6 +53,7 @@ def test_bitmask_sampling_vs_xgrammar(session: InferenceSession):
             enable_structured_output=True,
             in_dtype=DType.float32,
             out_dtype=DType.float32,
+            device=DeviceRef.CPU(),
         ),
     )
 
@@ -112,6 +113,7 @@ def test_sampling_return_logits(session: InferenceSession):
             enable_structured_output=False,
             in_dtype=DType.float32,
             out_dtype=DType.float32,
+            device=DeviceRef.CPU(),
         ),
         return_logits=True,
     )

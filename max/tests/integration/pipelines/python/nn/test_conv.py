@@ -80,7 +80,11 @@ def test_conv1d() -> None:
             padding=padding,
         ),
         input_types=(
-            TensorType(DType.float32, (batch_size, length, in_channels)),
+            TensorType(
+                DType.float32,
+                (batch_size, length, in_channels),
+                device=DeviceRef.CPU(),
+            ),
         ),
     )
 
@@ -156,7 +160,9 @@ def test_conv3d() -> None:
         ),
         input_types=(
             TensorType(
-                DType.float32, (batch_size, depth, height, width, in_channels)
+                DType.float32,
+                (batch_size, depth, height, width, in_channels),
+                device=DeviceRef.CPU(),
             ),
         ),
     )
@@ -235,7 +241,9 @@ def test_conv3dv2() -> None:
     graph = Graph(
         "conv3d",
         max_conv,
-        input_types=(TensorType(max_dtype, input_sequence.shape),),
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=DeviceRef.CPU()),
+        ),
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())

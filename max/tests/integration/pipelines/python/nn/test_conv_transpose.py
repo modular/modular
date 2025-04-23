@@ -9,7 +9,7 @@ import torch.nn as nn
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn import ConvTranspose1d
 
 ACCURACY_RTOL = 1e-4
@@ -78,7 +78,9 @@ def test_conv_transpose1d() -> None:
     graph = Graph(
         "conv_transpose1d",
         max_conv,
-        input_types=(TensorType(max_dtype, input_sequence.shape),),
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, DeviceRef.CPU()),
+        ),
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
@@ -160,7 +162,9 @@ def test_conv_transpose1d_bias() -> None:
     graph = Graph(
         "conv_transpose1d",
         max_conv,
-        input_types=(TensorType(max_dtype, input_sequence.shape),),
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, DeviceRef.CPU()),
+        ),
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())

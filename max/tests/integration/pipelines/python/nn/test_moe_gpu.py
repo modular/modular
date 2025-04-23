@@ -10,7 +10,7 @@ import torch
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import moe_create_indices
 from torch.utils.dlpack import from_dlpack
 
@@ -24,7 +24,9 @@ def test_moe_create_indices() -> None:
     NUM_EXPERTS = 16
 
     # set MLIR type for the graph.
-    topk_ids_type = TensorType(DType.uint32, ["num_tokens"])
+    topk_ids_type = TensorType(
+        DType.uint32, ["num_tokens"], device=DeviceRef.GPU()
+    )
 
     def construct() -> Graph:
         with Graph(

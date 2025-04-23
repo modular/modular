@@ -13,7 +13,7 @@ from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.mlir import StringAttr
 from max.nn.kernels import (
     fused_qkv_ragged_matmul,
@@ -43,7 +43,9 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
     input_type = TensorType(
-        DType.float32, ["total_seq_len", num_q_heads * kv_params.head_dim]
+        DType.float32,
+        ["total_seq_len", num_q_heads * kv_params.head_dim],
+        device=DeviceRef.CPU(),
     )
     wqkv_type = TensorType(
         DType.float32,
@@ -51,12 +53,14 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             num_q_heads * kv_params.head_dim,
             (num_q_heads + 2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
         ],
+        device=DeviceRef.CPU(),
     )
     input_row_offsets_type = TensorType(
         DType.uint32,
         [
             "input_row_offsets_len",
         ],
+        device=DeviceRef.CPU(),
     )
 
     kv_manager = ContinuousBatchingKVCacheManager(
@@ -224,7 +228,9 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
 
     # Set MLIR types for the graph.
     hidden_state_type = TensorType(
-        dtype, ["total_seq_len", num_q_heads * kv_params.head_dim]
+        dtype,
+        ["total_seq_len", num_q_heads * kv_params.head_dim],
+        device=DeviceRef.CPU(),
     )
     wkv_type = TensorType(
         dtype,
@@ -232,8 +238,13 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
             num_q_heads * kv_params.head_dim,
         ],
+        device=DeviceRef.CPU(),
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32,
+        ["input_row_offsets_len"],
+        device=DeviceRef.CPU(),
+    )
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
@@ -357,7 +368,9 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
 
     # Set MLIR types for the graph.
     hidden_state_type = TensorType(
-        dtype, ["total_seq_len", num_q_heads * kv_params.head_dim]
+        dtype,
+        ["total_seq_len", num_q_heads * kv_params.head_dim],
+        device=DeviceRef.CPU(),
     )
     wk_type = TensorType(
         dtype,
@@ -365,8 +378,13 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
             kv_params.n_kv_heads * kv_params.head_dim,
             num_q_heads * kv_params.head_dim,
         ],
+        device=DeviceRef.CPU(),
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32,
+        ["input_row_offsets_len"],
+        device=DeviceRef.CPU(),
+    )
 
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -480,7 +498,9 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
 
     # Set MLIR types for the graph.
     hidden_state_type = TensorType(
-        dtype, ["total_seq_len", num_q_heads * kv_params.head_dim]
+        dtype,
+        ["total_seq_len", num_q_heads * kv_params.head_dim],
+        device=DeviceRef.CPU(),
     )
     wkv_type = TensorType(
         dtype,
@@ -488,8 +508,13 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
             (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
             num_q_heads * kv_params.head_dim,
         ],
+        device=DeviceRef.CPU(),
     )
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32,
+        ["input_row_offsets_len"],
+        device=DeviceRef.CPU(),
+    )
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,

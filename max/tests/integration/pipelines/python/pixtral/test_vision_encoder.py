@@ -309,7 +309,9 @@ def test_vision_encoder(
         with Graph(
             "conv",
             input_types=[
-                TensorType(DType.float32, (h, w, num_channels))
+                TensorType(
+                    DType.float32, (h, w, num_channels), device=DeviceRef.CPU()
+                )
                 for h, w in img_sizes
             ],
         ) as graph:

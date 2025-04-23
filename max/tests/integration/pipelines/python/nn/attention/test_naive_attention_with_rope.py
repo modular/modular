@@ -124,6 +124,7 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
             n_kv_heads,
             head_dim,
         ],
+        device=DeviceRef.CPU(),
     )
     attn_input_types = [input_type, attn_mask_type, cache_type, cache_type]
 

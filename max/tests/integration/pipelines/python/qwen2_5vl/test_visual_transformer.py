@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     generate_attention_mask,
     get_rope_index,
@@ -512,10 +512,12 @@ def test_scaled_dot_product_attention_vision_mask():
     with Graph(
         "visual",
         input_types=[
-            TensorType(DType.float32, (q.shape)),
-            TensorType(DType.float32, (k.shape)),
-            TensorType(DType.float32, (v.shape)),
-            TensorType(DType.float32, (attention_mask.shape)),
+            TensorType(DType.float32, (q.shape), device=DeviceRef.CPU()),
+            TensorType(DType.float32, (k.shape), device=DeviceRef.CPU()),
+            TensorType(DType.float32, (v.shape), device=DeviceRef.CPU()),
+            TensorType(
+                DType.float32, (attention_mask.shape), device=DeviceRef.CPU()
+            ),
         ],
     ) as graph:
         attn_output = VisionWindowSdpaAttention.scaled_dot_product_attention(

@@ -6,7 +6,7 @@
 
 import pytest
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.layer import Layer, add_layer_hook, clear_hooks
 
 
@@ -41,7 +41,11 @@ def test_hook_nested_layers(mocker):
     g = Graph(
         "test_hook",
         outer_layer,
-        input_types=[TensorType(DType.int64, shape=[5, "dim1", "dim2"])],
+        input_types=[
+            TensorType(
+                DType.int64, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+            )
+        ],
     )
     assert hook.call_count == 3
 
@@ -50,9 +54,13 @@ def test_hook_nested_layers(mocker):
     layer1, args1, kwargs1, outputs1 = hook.call_args_list[0][0]
     assert layer1 is outer_layer.inner_layer_1
     assert len(args1) == 1
-    assert args1[0].type == TensorType(DType.int32, shape=[5, "dim1", "dim2"])
+    assert args1[0].type == TensorType(
+        DType.int32, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+    )
     assert len(kwargs1) == 0
-    assert outputs1.type == TensorType(DType.int32, shape=["dim1", 5, "dim2"])
+    assert outputs1.type == TensorType(
+        DType.int32, shape=["dim1", 5, "dim2"], device=DeviceRef.CPU()
+    )
 
     # Second call should be to outer_layer.inner_layer_2.
     layer2, args2, kwargs2, outputs2 = hook.call_args_list[1][0]
@@ -60,7 +68,9 @@ def test_hook_nested_layers(mocker):
     assert len(args2) == 1
     assert args2[0] is outputs1
     assert len(kwargs2) == 0
-    assert outputs2.type == TensorType(DType.int32, shape=[5, "dim1", "dim2"])
+    assert outputs2.type == TensorType(
+        DType.int32, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+    )
 
     # Third call should be to outer_layer.
     layer3, args3, kwargs3, outputs3 = hook.call_args_list[2][0]
@@ -82,13 +92,19 @@ def test_hook_nested_hooks_returns(mocker):
     add_layer_hook(hook2)
     with Graph(
         "test_hook",
-        input_types=[TensorType(DType.int64, shape=[5, "dim1", "dim2"])],
+        input_types=[
+            TensorType(
+                DType.int64, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+            )
+        ],
     ) as g:
         output = inner_layer(g.inputs[0])
         g.output(output)
 
     # The final output of inner_layer should be the return value of `hook2`.
-    assert output.type == TensorType(DType.float32, shape=["dim1", 10, "dim2"])
+    assert output.type == TensorType(
+        DType.float32, shape=["dim1", 10, "dim2"], device=DeviceRef.CPU()
+    )
 
     # Check that both hooks have been called.
     assert hook.call_count == 1
@@ -100,7 +116,9 @@ def test_hook_nested_hooks_returns(mocker):
     assert len(args1) == 1
     assert args1[0] is g.inputs[0]
     assert len(kwargs1) == 0
-    assert outputs1.type == TensorType(DType.int64, shape=["dim1", 5, "dim2"])
+    assert outputs1.type == TensorType(
+        DType.int64, shape=["dim1", 5, "dim2"], device=DeviceRef.CPU()
+    )
 
     # Check the args passed to `hook2`
     layer2, args2, kwargs2, outputs2 = hook2.call_args_list[0][0]
@@ -109,7 +127,9 @@ def test_hook_nested_hooks_returns(mocker):
     assert args2[0] is g.inputs[0]
     assert len(kwargs2) == 0
     # The outputs passed to hook2 should be the return value of `hook`.
-    assert outputs2.type == TensorType(DType.int64, shape=["dim1", 10, "dim2"])
+    assert outputs2.type == TensorType(
+        DType.int64, shape=["dim1", 10, "dim2"], device=DeviceRef.CPU()
+    )
 
 
 def test_clear_hooks(mocker):
@@ -123,7 +143,11 @@ def test_clear_hooks(mocker):
     _ = Graph(
         "test_hook",
         outer_layer,
-        input_types=[TensorType(DType.int64, shape=[5, "dim1", "dim2"])],
+        input_types=[
+            TensorType(
+                DType.int64, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+            )
+        ],
     )
 
     assert hook.call_count == 0
@@ -143,7 +167,11 @@ def test_hook_args_kwargs(mocker):
     g = Graph(
         "test_hook",
         layer,
-        [TensorType(DType.int64, shape=[5, "dim1", "dim2"])],
+        [
+            TensorType(
+                DType.int64, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+            )
+        ],
         kwarg2="kwarg2 value",
         arg2="arg2 value",
     )
@@ -165,7 +193,11 @@ def test_hook_many_args_kwargs(mocker):
     g = Graph(
         "test_hook",
         layer,
-        [TensorType(DType.int64, shape=[5, "dim1", "dim2"])],
+        [
+            TensorType(
+                DType.int64, shape=[5, "dim1", "dim2"], device=DeviceRef.CPU()
+            )
+        ],
         None,  # Path - if loading mef from file
         "arg2 value",
         "arg3 value",
