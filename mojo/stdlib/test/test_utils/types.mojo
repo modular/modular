@@ -24,6 +24,7 @@
 * `ObservableDel`
 * `DelRecorder`
 * `AbortOnDel`
+* `AbortOnCopy`
 """
 
 from os import abort
@@ -332,3 +333,18 @@ struct CopyCountedStruct(CollectionElement):
     fn __init__(out self, value: String):
         self.counter = CopyCounter()
         self.value = value
+
+
+# ===----------------------------------------------------------------------=== #
+# AbortOnCopy
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+struct AbortOnCopy(Copyable, ExplicitlyCopyable):
+    fn __copyinit__(out self, other: Self):
+        abort("We should never implicitly copy AbortOnCopy")
+
+    fn copy(self) -> Self:
+        abort("We should never explicitly copy AbortOnCopy")
+        return self

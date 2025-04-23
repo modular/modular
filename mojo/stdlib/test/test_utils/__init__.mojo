@@ -13,6 +13,7 @@
 
 from .test_utils import libm_call
 from .types import (
+    AbortOnCopy,
     AbortOnDel,
     CopyCountedStruct,
     CopyCounter,
