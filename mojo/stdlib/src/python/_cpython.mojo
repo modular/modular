@@ -1175,7 +1175,7 @@ struct CPython:
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, **_],
         value: PyObjectPtr,
     ) -> c_int:
         """[Reference](
@@ -1400,7 +1400,7 @@ struct CPython:
         owned name: String,
     ) -> Int:
         var r = self.lib.get_function[
-            fn (PyObjectPtr, UnsafePointer[c_char]) -> Int
+            fn (PyObjectPtr, __type_of(name.unsafe_cstr_ptr())) -> Int
         ]("PyObject_HasAttrString")(obj, name.unsafe_cstr_ptr())
         return r
 
