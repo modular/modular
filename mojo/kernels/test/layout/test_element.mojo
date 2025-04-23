@@ -161,10 +161,10 @@ fn test_element_dynamic_layout() raises:
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.uint32, linear_idx_type = DType.uint32
+        layout, element_type = DType.int32, linear_idx_type = DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.uint32](8, 8),
-        RuntimeTuple[layout.stride, element_type = DType.uint32](8, 1),
+        RuntimeTuple[layout.shape, element_type = DType.int32](8, 8),
+        RuntimeTuple[layout.stride, element_type = DType.int32](8, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -172,8 +172,8 @@ fn test_element_dynamic_layout() raises:
     var tensor_8x8 = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.uint32,
-        linear_idx_type = DType.uint32,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
     ](storage, dynamic_layout)
 
     arange(tensor_8x8)
@@ -294,7 +294,7 @@ fn test_element_masked_load():
         ].masked_load(
             tensor_1x3_v4.ptr,
             __type_of(tensor_1x3_v4.runtime_element_layout).row_major(
-                IndexList[2, element_type = DType.uint32](1, 3)
+                IndexList[2, element_type = DType.int32](1, 3)
             ),
         )
     )
@@ -310,7 +310,7 @@ fn test_element_masked_load():
         Element[index_type = tensor_3x1_v4.linear_idx_type].masked_load(
             tensor_3x1_v4.ptr,
             __type_of(tensor_3x1_v4.runtime_element_layout).row_major(
-                IndexList[2, element_type = DType.uint32](3, 1)
+                IndexList[2, element_type = DType.int32](3, 1)
             ),
         )
     )
@@ -322,7 +322,7 @@ fn test_element_masked_load():
         Element[index_type = tensor_3x4_v4x4.linear_idx_type].masked_load(
             tensor_3x4_v4x4.ptr,
             __type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
-                IndexList[2, element_type = DType.uint32](3, 4)
+                IndexList[2, element_type = DType.int32](3, 4)
             ),
         )
     )
@@ -344,7 +344,7 @@ fn test_element_masked_store():
             tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
         ](1),
         __type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
-            IndexList[2, element_type = DType.uint32](1, 3)
+            IndexList[2, element_type = DType.int32](1, 3)
         ),
     )
     element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr)
@@ -365,7 +365,7 @@ fn test_element_masked_store():
             tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
         ](1),
         __type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
-            IndexList[2, element_type = DType.uint32](2, 1)
+            IndexList[2, element_type = DType.int32](2, 1)
         ),
     )
     element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr)
@@ -384,7 +384,7 @@ fn test_element_masked_store():
             tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
         ](1),
         __type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
-            IndexList[2, element_type = DType.uint32](3, 2)
+            IndexList[2, element_type = DType.int32](3, 2)
         ),
     )
     element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr)

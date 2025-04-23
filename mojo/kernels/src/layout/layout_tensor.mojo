@@ -45,6 +45,7 @@ from ._utils import get_amd_buffer_descriptor
 from .int_tuple import (
     _get_index_type,
     _get_unsigned_type,
+    _get_layout_type,
     depth,
     fill_like,
     flatten,
@@ -274,8 +275,7 @@ struct LayoutTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
-    # TODO: do a traverse of layout shape to decide on dimension type.
-    layout_int_type: DType = _get_index_type(layout, address_space),
+    layout_int_type: DType = _get_layout_type(layout, address_space),
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
@@ -340,7 +340,7 @@ struct LayoutTensor[
 
     var runtime_element_layout: RuntimeLayout[
         element_layout,
-        element_type = DType.uint32,
+        element_type = DType.int32,
         linear_idx_type=linear_idx_type,
     ]
     """Runtime representation of each element's internal layout.
@@ -377,6 +377,12 @@ struct LayoutTensor[
         """
 
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
+
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
+
         self.ptr = span.unsafe_ptr()
         self.runtime_layout = __type_of(self.runtime_layout)()
         self.runtime_element_layout = __type_of(self.runtime_element_layout)()
@@ -412,6 +418,11 @@ struct LayoutTensor[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
 
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
+
         self.ptr = span.unsafe_ptr()
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = __type_of(self.runtime_element_layout)()
@@ -431,7 +442,7 @@ struct LayoutTensor[
         ],
         element_runtime_layout: RuntimeLayout[
             element_layout,
-            element_type = DType.uint32,
+            element_type = DType.int32,
             linear_idx_type=linear_idx_type,
         ],
     ):
@@ -447,6 +458,11 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
+
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
 
         self.ptr = span.unsafe_ptr()
         self.runtime_layout = runtime_layout
@@ -473,6 +489,12 @@ struct LayoutTensor[
         """
 
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
+
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
+
         self.ptr = ptr
         self.runtime_layout = __type_of(self.runtime_layout)()
         self.runtime_element_layout = __type_of(self.runtime_element_layout)()
@@ -507,6 +529,11 @@ struct LayoutTensor[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
 
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
+
         self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = __type_of(self.runtime_element_layout)()
@@ -527,7 +554,7 @@ struct LayoutTensor[
         ],
         element_runtime_layout: RuntimeLayout[
             element_layout,
-            element_type = DType.uint32,
+            element_type = DType.int32,
             linear_idx_type=linear_idx_type,
         ],
     ):
@@ -543,6 +570,11 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
+
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
 
         self.ptr = ptr
         self.runtime_layout = runtime_layout
@@ -715,7 +747,7 @@ struct LayoutTensor[
         ],
         element_runtime_layout: RuntimeLayout[
             element_layout,
-            element_type = DType.uint32,
+            element_type = DType.int32,
             linear_idx_type=linear_idx_type,
         ],
     ):
@@ -756,7 +788,7 @@ struct LayoutTensor[
         ],
         element_runtime_layout: RuntimeLayout[
             element_layout,
-            element_type = DType.uint32,
+            element_type = DType.int32,
             linear_idx_type=linear_idx_type,
         ],
     ):
@@ -4884,6 +4916,8 @@ fn copy_dram_to_sram[
             stride = src.runtime_layout.stride.value[0]
         var src_frag_offset = src_fragments.distance(src.ptr)
 
+        # NOTE: This can be a negative number, so we cannot use unsigned type
+        # in layout tensor.
         var src_idx_bound = (src.dim(0) * stride - src_frag_offset).cast[
             src_fragments.linear_idx_type
         ]()
@@ -6745,6 +6779,11 @@ struct LayoutTensorIter[
             "Cannot construct LayoutTensorIter with unknown layout.",
         ]()
 
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
+        ]()
+
         self.ptr = ptr
         self.bound = bound
         self.stride = stride
@@ -6802,6 +6841,11 @@ struct LayoutTensorIter[
                 "Mismatch of dimension type for RuntimeLayout and"
                 " LayoutTensorIter."
             ),
+        ]()
+
+        constrained[
+            layout_int_type.is_signed() and linear_idx_type.is_signed(),
+            "Layout integer type and linear index type must be signed.",
         ]()
 
         @parameter

@@ -25,7 +25,7 @@ from memory import UnsafePointer
 from utils import IndexList
 from utils.index import Index
 
-from .int_tuple import _get_index_type, product
+from .int_tuple import _get_index_type, _get_layout_type, product
 
 
 struct ManagedLayoutTensor[
@@ -34,7 +34,15 @@ struct ManagedLayoutTensor[
     *,
 ]:
     alias index_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
-    alias element_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
+    alias element_type: DType = _get_layout_type(layout, AddressSpace.GENERIC)
+    alias layout_tensor_type = LayoutTensor[
+        dtype,
+        layout,
+        MutableAnyOrigin,
+        layout_int_type = Self.element_type,
+        linear_idx_type = Self.index_type,
+    ]
+
     var device_data: Optional[DeviceBuffer[dtype]]
     var host_data: HostBuffer[dtype]
     var runtime_layout: RuntimeLayout[
@@ -127,7 +135,7 @@ struct ManagedLayoutTensor[
 
     fn device_tensor[
         update: Bool = True
-    ](self) raises -> LayoutTensor[dtype, layout, MutableAnyOrigin]:
+    ](self) raises -> Self.layout_tensor_type:
         debug_assert(
             Bool(self.ctx.api() != "cpu"),
             "device_tensor cannot be constructed for host only tensor.",
@@ -139,11 +147,11 @@ struct ManagedLayoutTensor[
 
         @parameter
         if layout.all_dims_known():
-            return LayoutTensor[dtype, layout, MutableAnyOrigin](
+            return Self.layout_tensor_type(
                 self.device_data.value()._unsafe_ptr(),
             )
         else:
-            return LayoutTensor[dtype, layout](
+            return Self.layout_tensor_type(
                 self.device_data.value()._unsafe_ptr(),
                 self.runtime_layout,
             )
@@ -164,20 +172,18 @@ struct ManagedLayoutTensor[
             self.device_data.value()._unsafe_ptr(), (M, N)
         )
 
-    fn tensor[
-        update: Bool = True
-    ](self) raises -> LayoutTensor[dtype, layout, MutableAnyOrigin]:
+    fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
         @parameter
         if update:
             self._update_host()
 
         @parameter
         if layout.all_dims_known():
-            return LayoutTensor[dtype, layout](
+            return Self.layout_tensor_type(
                 self.host_data.unsafe_ptr(),
             )
         else:
-            return LayoutTensor[dtype, layout](
+            return Self.layout_tensor_type(
                 self.host_data.unsafe_ptr(),
                 self.runtime_layout,
             )

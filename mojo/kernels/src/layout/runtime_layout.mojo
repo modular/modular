@@ -55,8 +55,8 @@ struct RuntimeLayout[
 
     Parameters:
         layout: The static `Layout` type to base this runtime layout on.
-        element_type: The integer type of the each dimension element.
-        linear_idx_type: The integer type of the linear index into memory returned by `crd2idx`.
+        element_type: The integer type of the each dimension element. Must be signed.
+        linear_idx_type: The integer type of the linear index into memory returned by `crd2idx`. Must be signed.
 
     The layout must have statically known dimensions at compile time, but the
     actual shape and stride values can be modified during execution.
@@ -93,6 +93,7 @@ struct RuntimeLayout[
         constrained[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()
+
         self.shape = __type_of(self.shape)()
         self.stride = __type_of(self.stride)()
 
