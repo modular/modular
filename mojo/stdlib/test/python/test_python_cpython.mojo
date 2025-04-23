@@ -41,7 +41,7 @@ fn destructor(capsule: PyObjectPtr) -> None:
 
 
 def test_PyCapsule(mut python: Python):
-    var Cpython_env = python.impl._cpython
+    var cpython_env = python.impl.cpython()
 
     # Not a PyCapsule, a NULL pointer is expected.
     var the_object = PythonObject(0)
