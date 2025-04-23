@@ -375,6 +375,20 @@ fn DimTypeDef(ty: Dim) -> Dim:
     return ty
 
 
+@register_internal("managed_tensor_slice")
+fn ManagedTensorSliceDef[
+    mut: Bool,
+    input: IO,
+    type: DType,
+    rank: Int, //,
+    io_spec: IOSpec[mut, input],
+    static_spec: StaticTensorSpec[type, rank],
+](
+    ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
+) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
+    return ty
+
+
 # ===-----------------------------------------------------------------------===#
 # Hooks to help build static shapes.
 # ===-----------------------------------------------------------------------===#
