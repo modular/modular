@@ -12,28 +12,31 @@
 # ===----------------------------------------------------------------------=== #
 """Provides a fixed-size array implementation with compile-time size checking.
 
-The `InlineArray` type represents a fixed-size sequence of homogeneous elements where the size
-is determined at compile time. It provides efficient memory layout and bounds checking while
-maintaining type safety.  The `InlineArray` type is part of the `prelude` module and therefore
-does not need to be imported in order to use it.
+The `InlineArray` type represents a fixed-size sequence of homogeneous elements
+where the size is determined at compile time. It provides efficient memory
+layout and bounds checking while maintaining type safety.  The `InlineArray`
+type is part of the `prelude` module and therefore does not need to be imported
+in order to use it.
 
-Example:
+Examples:
+
 ```mojo
-    # Create an array of 3 integers
-    var arr = InlineArray[Int, 3](1, 2, 3)
+# Create an array of 3 integers
+var arr = InlineArray[Int, 3](1, 2, 3)
 
-    # Access elements
-    print(arr[0])  # Prints 1
+# Access elements
+print(arr[0])  # Prints 1
 
-    # Fill with a value
-    var filled = InlineArray[Int, 5](fill=42)
+# Fill with a value
+var filled = InlineArray[Int, 5](fill=42)
 ```
 
 Notes:
 
-- For historical reasons, destructors are not run by default on the elements of an `InlineArray`.
-  This can be controlled with the `run_destructors` parameter. In the future, this will
-  default to `True` and the `run_destructors` parameter will be removed.
+- For historical reasons, destructors are not run by default on the elements of
+an `InlineArray`. This can be controlled with the `run_destructors` parameter.
+In the future, this will default to `True` and the `run_destructors` parameter
+will be removed.
 """
 
 import math
@@ -66,28 +69,32 @@ struct InlineArray[
     *,
     run_destructors: Bool = False,
 ](Sized, Movable, Copyable, ExplicitlyCopyable, CollectionElement):
-    """A fixed-size sequence of homogeneous elements where size is a constant expression.
+    """A fixed-size sequence of homogeneous elements where size is a constant
+    expression.
 
-    InlineArray provides a fixed-size array implementation with compile-time size checking.
-    The array size is determined at compile time and cannot be changed. Elements must
-    implement the CollectionElement trait.
+    InlineArray provides a fixed-size array implementation with compile-time
+    size checking. The array size is determined at compile time and cannot be
+    changed. Elements must implement the CollectionElement trait.
 
     Parameters:
-        ElementType: The type of the elements in the array. Must implement `CollectionElement`.
+        ElementType: The type of the elements in the array. Must implement
+            `CollectionElement`.
         size: The size of the array. Must be a positive integer constant.
-        run_destructors: Whether to run destructors on the elements. Defaults to `False` for
-            backwards compatibility. Will default to `True` in the future.
+        run_destructors: Whether to run destructors on the elements. Defaults to
+            `False` for backwards compatibility. Will default to `True` in the
+            future.
 
-    Example:
+    Examples:
+
     ```mojo
-        # Create array of 3 integers
-        var arr = InlineArray[Int, 3](1, 2, 3)
+    # Create array of 3 integers
+    var arr = InlineArray[Int, 3](1, 2, 3)
 
-        # Create array filled with value
-        var filled = InlineArray[Int, 5](fill=42)
+    # Create array filled with value
+    var filled = InlineArray[Int, 5](fill=42)
 
-        # Access elements
-        print(arr[0])  # Prints 1
+    # Access elements
+    print(arr[0])  # Prints 1
     ```
     """
 
@@ -121,17 +128,21 @@ struct InlineArray[
     fn __init__(out self, *, uninitialized: Bool):
         """Create an InlineArray with uninitialized memory.
 
-        This constructor is unsafe and should be used with caution. The array elements
-        will be uninitialized and accessing them before initialization is undefined behavior.
-
         Args:
-            uninitialized: A boolean to indicate if the array should be initialized.
-                Always set to `True` (it's not actually used inside the constructor).
+            uninitialized: A boolean to indicate if the array should be
+                initialized. Always set to `True` (it's not actually used inside
+                the constructor).
 
-        Example:
-            ```mojo
-                var uninitialized_array = InlineArray[Int, 10](uninitialized=True)
-            ```
+        Examples:
+
+        ```mojo
+        var uninitialized_array = InlineArray[Int, 10](uninitialized=True)
+        ```
+
+        Notes:
+            This constructor is unsafe and should be used with caution. The
+            array elements will be uninitialized and accessing them before
+            initialization is undefined behavior.
         """
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -143,20 +154,22 @@ struct InlineArray[
             UnsafeMaybeUninitialized[Self.ElementType], Self.size
         ],
     ):
-        """Constructs an `InlineArray` from an `InlineArray` of `UnsafeMaybeUninitialized`.
-
-        This constructor assumes all elements in the input array are initialized. Using
-        uninitialized elements results in undefined behavior, even for types that are
-        valid for any bit pattern (e.g. Int or Float).
+        """Constructs an `InlineArray` from an `InlineArray` of
+        `UnsafeMaybeUninitialized`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized` elements.
-                All elements must be initialized.
+            unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized`
+                elements. All elements must be initialized.
 
         Warning:
+            This is an unsafe constructor. Only use it if you are certain all
+            elements are properly initialized.
 
-        This is an unsafe constructor. Only use it if you are certain all elements
-        are properly initialized.
+        Notes:
+            This constructor assumes all elements in the input array are
+            initialized. Using uninitialized elements results in undefined
+            behavior, even for types that are valid for any bit pattern
+            (e.g. `Int` or `Float`).
         """
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -168,19 +181,20 @@ struct InlineArray[
     @always_inline
     @implicit
     fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
-        """Constructs an array where each element is initialized to the supplied value.
+        """Constructs an array where each element is initialized to the supplied
+        value.
 
         Parameters:
             batch_size: The number of elements to unroll for filling the array.
-                Default is 64, which optimizes for AVX512 operations on modern CPUs.
-                For large arrays (>2k elements), this batched approach significantly
-                improves compile times compared to full unrolling while maintaining
-                good runtime performance.
+                Default is 64, which optimizes for AVX512 operations on modern
+                CPUs. For large arrays (>2k elements), this batched approach
+                significantly improves compile times compared to full unrolling
+                while maintaining good runtime performance.
 
         Args:
             fill: The element value to fill each index with.
 
-        Example:
+        Examples:
 
         ```mojo
         var filled = InlineArray[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
@@ -194,10 +208,11 @@ struct InlineArray[
 
         - Full unrolling with large arrays (>2k elements) can cause significant
             compiler slowdowns.
-        - Using batch_size=64 balances AVX512 efficiency and instruction cache usage.
+        - Using batch_size=64 balances AVX512 efficiency and instruction cache
+            usage.
         - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
-            further improve compilation speed while still maintaining good runtime
-            performance.
+            further improve compilation speed while still maintaining good
+            runtime performance.
         """
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -220,10 +235,8 @@ struct InlineArray[
             ptr += 1
         debug_assert(
             ptr == self.unsafe_ptr().offset(size),
-            (
-                "error during `InlineArray` initialization, please file a bug"
-                " report."
-            ),
+            "error during `InlineArray` initialization , please file a bug",
+            " report.",
         )
 
     @always_inline
@@ -232,9 +245,10 @@ struct InlineArray[
         """Constructs an array from a variadic list of elements.
 
         Args:
-            elems: The elements to initialize the array with. Must match the array size.
+            elems: The elements to initialize the array with. Must match the
+                array size.
 
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
@@ -252,7 +266,8 @@ struct InlineArray[
         """Construct an array from a low-level internal representation.
 
         Args:
-            storage: The variadic list storage to construct from. Must match array size.
+            storage: The variadic list storage to construct from. Must match
+                array size.
         """
 
         debug_assert(
@@ -282,7 +297,7 @@ struct InlineArray[
         Returns:
             A new array containing copies of all elements.
 
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
@@ -301,10 +316,11 @@ struct InlineArray[
     fn __copyinit__(out self, other: Self):
         """Copy constructs the array from another array.
 
-        Creates a deep copy by copying each element individually.
-
         Args:
             other: The array to copy from.
+
+        Notes:
+            Creates a deep copy by copying each element individually.
         """
 
         self = other.copy()
@@ -312,16 +328,18 @@ struct InlineArray[
     fn __del__(owned self):
         """Deallocates the array and destroys its elements.
 
-        This destructor is called automatically when the array goes out of scope.
-        If the array's `run_destructors` parameter is `True`, it will call the destructor
-        on each element in the array before deallocating the array's memory.
-
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
         # arr's destructor is called automatically when it goes out of scope
         ```
+
+        Notes:
+            This destructor is called automatically when the array goes out of
+            scope. If the array's `run_destructors` parameter is `True`, it will
+            call the destructor on each element in the array before deallocating
+            the array's memory.
         """
 
         @parameter
@@ -340,20 +358,18 @@ struct InlineArray[
     fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
         """Gets a reference to the element at the given index.
 
-        This method provides array-style indexing access to elements in the InlineArray.
-        It supports both positive indices starting from 0 and negative indices counting
-        backwards from the end of the array. The index is bounds-checked at runtime.
-
         Parameters:
-            I: The type parameter representing the index type, must implement Indexer trait.
+            I: The type parameter representing the index type, must implement
+                Indexer trait.
 
         Args:
-            idx: The index to access. Can be positive (0 to len-1) or negative (-len to -1).
+            idx: The index to access. Can be positive (0 to len-1) or negative
+                (-len to -1).
 
         Returns:
             A reference to the element at the specified index.
 
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
@@ -362,6 +378,12 @@ struct InlineArray[
         print(arr[-1])  # Prints 3 - last element
         print(arr[-2])  # Prints 2 - second to last element
         ```
+
+        Notes:
+            This method provides array-style indexing access to elements in the
+            InlineArray. It supports both positive indices starting from 0 and
+            negative indices counting backwards from the end of the array. The
+            index is bounds-checked at runtime.
         """
         var normalized_index = normalize_index["InlineArray"](idx, len(self))
         return self.unsafe_get(normalized_index)
@@ -370,27 +392,31 @@ struct InlineArray[
     fn __getitem__[
         I: Indexer, //, idx: I
     ](ref self) -> ref [self] Self.ElementType:
-        """Gets a reference to the element at the given index with compile-time bounds checking.
-
-        This overload provides array-style indexing with compile-time bounds checking. The index
-        must be a compile-time constant value. It supports both positive indices starting from 0
-        and negative indices counting backwards from the end of the array.
+        """Gets a reference to the element at the given index with compile-time
+        bounds checking.
 
         Parameters:
-            I: The type parameter representing the index type, must implement Indexer trait.
-            idx: The compile-time constant index to access. Can be positive (0 to len-1)
-                or negative (-len to -1).
+            I: The type parameter representing the index type, must implement
+                Indexer trait.
+            idx: The compile-time constant index to access. Can be positive
+                (0 to len-1) or negative (-len to -1).
 
         Returns:
             A reference to the element at the specified index.
 
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
         print(arr[0])   # Prints 1 - first element
         print(arr[-1])  # Prints 3 - last element
         ```
+
+        Notes:
+            This overload provides array-style indexing with compile-time bounds
+            checking. The index must be a compile-time constant value. It
+            supports both positive indices starting from 0 and negative indices
+            counting backwards from the end of the array.
         """
         constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
@@ -404,18 +430,19 @@ struct InlineArray[
     fn __len__(self) -> Int:
         """Returns the length of the array.
 
-        The length is a compile-time constant value determined by the size parameter
-        used when creating the array.
-
         Returns:
             The size of the array as an Int.
 
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
         print(len(arr))  # Prints 3
         ```
+
+        Notes:
+            The length is a compile-time constant value determined by the
+            size parameter used when creating the array.
         """
         return size
 
@@ -427,31 +454,32 @@ struct InlineArray[
     fn unsafe_get[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
 
-        This is an unsafe method that skips bounds checking for performance.
-        Users should prefer `__getitem__` instead for safety.
-
         Parameters:
-            I: A type parameter representing the index type, must implement Indexer trait.
+            I: A type parameter representing the index type, must implement
+                Indexer trait.
 
         Args:
-            idx: The index of the element to get. Must be non-negative and in bounds.
-                Using an invalid index will cause undefined behavior.
+            idx: The index of the element to get. Must be non-negative and in
+                bounds. Using an invalid index will cause undefined behavior.
 
         Returns:
             A reference to the element at the given index.
 
-        Warning:
-
-        This is an unsafe method. No bounds checking is performed.
-        Using an invalid index will cause undefined behavior.
-        Negative indices are not supported.
-
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
         print(arr.unsafe_get(0))  # Prints 1
         ```
+
+        Warning:
+            This is an unsafe method. No bounds checking is performed.
+            Using an invalid index will cause undefined behavior.
+            Negative indices are not supported.
+
+        Notes:
+            This is an unsafe method that skips bounds checking for performance.
+            Users should prefer `__getitem__` instead for safety.
         """
         var i = index(idx)
         debug_assert(
@@ -477,27 +505,28 @@ struct InlineArray[
     ]:
         """Gets an unsafe pointer to the underlying array storage.
 
-        Returns a raw pointer to the array's memory that can be used for direct
-        memory access. The pointer inherits mutability from the array reference.
-
         Returns:
-            An `UnsafePointer` to the underlying array storage. The pointer's mutability
-            matches that of the array reference.
+            An `UnsafePointer` to the underlying array storage. The pointer's
+            mutability matches that of the array reference.
 
-        Warning:
-
-        This is an unsafe method. The returned pointer:
-        - Becomes invalid if the array is moved
-        - Must not be used to access memory outside array bounds
-        - Must be refreshed after any operation that could move the array
-
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
         var ptr = arr.unsafe_ptr()
         print(ptr[0])  # Prints 1
         ```
+
+        Warning:
+            This is an unsafe method. The returned pointer:
+            - Becomes invalid if the array is moved
+            - Must not be used to access memory outside array bounds
+            - Must be refreshed after any operation that could move the array
+
+        Notes:
+            Returns a raw pointer to the array's memory that can be used for
+            direct memory access. The pointer inherits mutability from the array
+            reference.
         """
         return UnsafePointer(to=self._array).bitcast[Self.ElementType]()
 
@@ -507,27 +536,31 @@ struct InlineArray[
     ](self: InlineArray[T, size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
-        This method enables using the `in` operator to check if a value exists in the array.
-        It performs a linear search comparing each element for equality with the given value.
-        The element type must implement both `EqualityComparable` and `CollectionElement` traits
-        to support equality comparison.
-
         Parameters:
-            T: The element type, must implement both `EqualityComparable` and `CollectionElement`.
+            T: The element type, must implement both `EqualityComparable` and
+                `CollectionElement`.
 
         Args:
             value: The value to search for.
 
         Returns:
-            True if the value is found in any position in the array, False otherwise.
+            True if the value is found in any position in the array, False
+            otherwise.
 
-        Example:
+        Examples:
 
         ```mojo
         var arr = InlineArray[Int, 3](1, 2, 3)
         print(3 in arr)  # Prints True - value exists
         print(4 in arr)  # Prints False - value not found
         ```
+
+        Notes:
+            This method enables using the `in` operator to check if a value
+            exists in the array. It performs a linear search comparing each
+            element for equality with the given value. The element type must
+            implement both `EqualityComparable` and `CollectionElement` traits
+            to support equality comparison.
         """
 
         @parameter
