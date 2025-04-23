@@ -56,6 +56,10 @@ what we publish.
   adopted to allow pointers to work naturally with the ternary operator, for
   example `var x = one_pointer if cond else other_pointer`.
 
+- Auto-parameterization now extends to struct metatypes. For example, this
+  declaration `fn foo[M: __type_of(StringLiteral[_])]` will auto-parameterize
+  on the unbound parameter of `StringLiteral`.
+
 ### Standard library changes
 
 String types in Mojo got several significant improvements:
