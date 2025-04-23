@@ -600,35 +600,26 @@ class PagedKVCacheManager(KVCacheManager):
         ]
 
     @traced
-    def reuse_blocks_from_prefix_cache(self, data: T) -> None:
-        """Reuse blocks from the prefix cache for a given sequence.
+    def prefetch(self, data: T, num_steps: int = 1) -> bool:
+        """Prepares blocks for a request prior to a subsequent fetch call.
 
-        This must be followed by a call to `allocate_new_blocks`. Doing so will
-        prefetch the blocks used by a request during a later call to `fetch`.
-        """
-        seq_id = data.cache_seq_id
-        assert seq_id not in self.prefetched_seq_ids
-        self.block_manager.reuse_blocks_from_prefix_cache(data)
+        This will reuse blocks from prefix cache and allocate new blocks for the
+        request. If a request is prefetched, it is guaranteed to not OOM in a
+        subsequent call to `fetch`. It is incorrect to `prefetch` a request more
+        than once prior to a call to `fetch`.
 
-    @traced
-    def allocate_new_blocks(self, data: T, num_steps: int = 1) -> bool:
-        """Allocate new blocks for a given sequence.
-
-        This must be preceded by a call to `reuse_blocks_from_prefix_cache`.
-
-        This call can fail if there are insufficient blocks to satisfy the request.
-        In this case, the request reset to original state and the method returns `False`.
+        Returns `True` if the request was prefetched, `False` otherwise.
         """
         seq_id = data.cache_seq_id
         assert seq_id not in self.prefetched_seq_ids
 
-        try:
-            self.block_manager.allocate_new_blocks(data, num_steps)
-        except RuntimeError:
+        scheduled = self.block_manager.prefetch(data, num_steps)
+
+        if not scheduled:
             return False
+
         self.prefetched_seq_ids.add(seq_id)
 
-        self.block_manager.assert_runtime_invariants(data)
         return True
 
     @traced
