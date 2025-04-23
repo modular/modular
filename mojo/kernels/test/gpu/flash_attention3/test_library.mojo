@@ -107,12 +107,6 @@ def test_flash_attention[
     # q_host.tensor.fill(BFloat16(0.5))
     q_device = q_host.copy_to_device(ctx)
 
-    # initialize mask tensor
-    # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[type, 4](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
-
     # initialize reference output
     test_output_host = HostNDBuffer[
         type,

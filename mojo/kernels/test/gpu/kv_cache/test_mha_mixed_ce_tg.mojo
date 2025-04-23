@@ -136,17 +136,6 @@ def execute_ragged_flash_attention(
 
     mixed_ce_q_ragged_device = mixed_ce_q_ragged_host.copy_to_device(ctx)
 
-    # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[type, 4](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
-
-    # initialize scale tensor
-    scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
-
-    scale_host.tensor[0] = isqrt(Float32(kv_params.head_size))
-    scale_device = scale_host.copy_to_device(ctx)
-
     # initialize reference output
     mixed_ce_output_host = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
@@ -241,7 +230,6 @@ def execute_ragged_flash_attention(
         CausalMask(),
         IdentityScoreMod(),
         true_ce_row_offsets_device.tensor,
-        # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -257,7 +245,6 @@ def execute_ragged_flash_attention(
         CausalMask(),
         IdentityScoreMod(),
         mixed_ce_row_offsets_device.tensor,
-        # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -306,8 +293,6 @@ def execute_ragged_flash_attention(
     _ = true_ce_q_ragged_device^
     _ = mixed_ce_q_ragged_host^
     _ = mixed_ce_q_ragged_device^
-    _ = scale_host^
-    _ = scale_device^
     _ = kv_block_paged_host^
     _ = kv_block_paged_device^
     _ = paged_lut_host^

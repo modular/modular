@@ -135,16 +135,6 @@ def execute_flash_attention[
     )
     ctx.enqueue_copy(mask_device.buffer, mask_host.tensor.data)
 
-    # initialize scale tensor
-    scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
-
-    scale_host.tensor[0] = isqrt(Float32(kv_params.head_size))
-    scale_device = DeviceNDBuffer[DType.float32, 1, DimList(1)](
-        IndexList[1](1),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy(scale_device.buffer, scale_host.tensor.data)
-
     # initialize reference output
     ref_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -280,7 +270,6 @@ def execute_flash_attention[
         CausalMask(),
         IdentityScoreMod(),
         valid_length_device.tensor,
-        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -293,7 +282,6 @@ def execute_flash_attention[
         MaterializedMask(mask_device.tensor, start_pos=cache_lengths),
         IdentityScoreMod(),
         valid_length_device.tensor,
-        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -330,8 +318,6 @@ def execute_flash_attention[
     _ = v_block_host^
     _ = k_block_device^
     _ = k_block_host^
-    _ = scale_device^
-    _ = scale_host^
     _ = mask_host^
     _ = mask_device^
     _ = cache_lengths_dev^

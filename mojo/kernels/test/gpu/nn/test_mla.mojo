@@ -631,13 +631,6 @@ fn test_prefill[
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    # create dummy mask3d
-    var dummy_mask = NDBuffer[
-        qkv_type,
-        4,
-        MutableAnyOrigin,
-        DimList.create_unknown[4](),
-    ]()
     var null_valid_length = NDBuffer[DType.uint32, 1](
         UnsafePointer[UInt32](), Index(0)
     )

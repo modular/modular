@@ -123,18 +123,6 @@ def execute_ragged_flash_attention[
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
     q_padded_device = q_padded_host.copy_to_device(ctx)
 
-    # initialize mask tensor
-    # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[type, 4](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
-
-    # initialize scale tensor
-    scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
-
-    scale_host.tensor[0] = isqrt(Float32(kv_params.head_size))
-    scale_device = scale_host.copy_to_device(ctx)
-
     # initialize reference output
     ref_output_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -228,7 +216,6 @@ def execute_ragged_flash_attention[
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_device.tensor,
-        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -241,7 +228,6 @@ def execute_ragged_flash_attention[
         CausalMask(),
         IdentityScoreMod(),
         valid_lengths_device.tensor,
-        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -282,8 +268,6 @@ def execute_ragged_flash_attention[
     _ = q_ragged_device^
     _ = q_padded_host^
     _ = q_padded_device^
-    _ = scale_host^
-    _ = scale_device^
     _ = kv_block_host^
     _ = kv_block_device^
     _ = lookup_table_host^
