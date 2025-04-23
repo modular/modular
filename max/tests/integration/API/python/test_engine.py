@@ -394,7 +394,7 @@ def test_aliasing_output(
 
 @pytest.mark.skipif(
     accelerator_count() > 0,
-    reason="TODO(GEX-2099): Crashing on gpu with an llvm cast failure",
+    reason="List is a CPU concept. Validating input and output lists is not supported on GPU.",
 )
 def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
     model_with_list_io = session.load(mo_listio_model_path)
