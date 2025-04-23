@@ -17,7 +17,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
 from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
-from max.pipelines import PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
 from .encoder import WhisperEncoder, WhisperEncoderLayer, WhisperSdpaAttention

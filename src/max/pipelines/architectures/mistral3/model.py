@@ -23,7 +23,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheParams,
 )
-from max.pipelines import (
+from max.pipelines.lib import (
     KVCacheConfig,
     PipelineConfig,
     SupportedEncoding,

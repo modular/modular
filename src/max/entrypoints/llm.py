@@ -24,8 +24,7 @@ from threading import Thread
 from typing import Optional
 
 import tqdm
-from max.pipelines.config import PipelineConfig
-from max.pipelines.registry import PIPELINE_REGISTRY
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,

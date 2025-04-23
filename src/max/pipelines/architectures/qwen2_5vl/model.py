@@ -23,14 +23,6 @@ from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
-from max.pipelines import (
-    KVCacheConfig,
-    ModelInputs,
-    ModelOutputs,
-    PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     generate_attention_mask,
     get_rope_index,
@@ -38,6 +30,14 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
 from max.pipelines.core import TextAndVisionContext
+from max.pipelines.lib import (
+    KVCacheConfig,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+    PipelineModel,
+    SupportedEncoding,
+)
 from transformers import AutoConfig
 
 

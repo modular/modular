@@ -26,13 +26,13 @@ from typing import Any, Optional, Union, get_args, get_origin, get_type_hints
 
 import click
 from max.driver import DeviceSpec
-from max.pipelines.config import PipelineConfig
-from max.pipelines.max_config import (
+from max.pipelines.lib import (
     KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
 )
-from max.pipelines.model_config import MAXModelConfig
 
 from .device_options import DevicesOptionType
 

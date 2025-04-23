@@ -29,15 +29,16 @@ from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.config_enums import (
+from transformers import AutoConfig
+
+from .config_enums import (
     _ALTERNATE_ENCODINGS,
     RepoType,
     SupportedEncoding,
 )
-from max.pipelines.hf_utils import HuggingFaceRepo, repo_exists_with_retry
-from max.pipelines.max_config import KVCacheConfig, MAXConfig
-from max.pipelines.registry import PIPELINE_REGISTRY
-from transformers import AutoConfig
+from .hf_utils import HuggingFaceRepo, repo_exists_with_retry
+from .max_config import KVCacheConfig, MAXConfig
+from .registry import PIPELINE_REGISTRY
 
 logger = logging.getLogger("max.pipelines")
 

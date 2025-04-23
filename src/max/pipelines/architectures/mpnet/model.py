@@ -30,7 +30,9 @@ from max.graph import DeviceRef, _reconcile_weights
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
-from max.pipelines import (
+from max.pipelines.core import TextContext
+from max.pipelines.dataprocessing import collate_batch
+from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -39,8 +41,6 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
 from transformers import AutoConfig
 
 from .graph import build_graph

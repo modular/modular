@@ -13,58 +13,34 @@
 
 """Types to interface with ML pipelines such as text/token generation."""
 
-from .architectures import register_all_models
-from .core import (
-    EmbeddingsGenerator,
-    EmbeddingsResponse,
-    InputContext,
-    LogProbabilities,
-    PipelinesFactory,
-    PipelineTask,
-    TextAndVisionContext,
-    TextContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
-)
-from .lib.config import PipelineConfig
-from .lib.config_enums import (
-    PipelineEngine,
-    RepoType,
-    RopeType,
-    SupportedEncoding,
-)
-from .lib.embeddings_pipeline import EmbeddingsPipeline
-from .lib.hf_utils import (
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
+from .embeddings_pipeline import EmbeddingsPipeline
+from .hf_utils import (
     HuggingFaceFile,
+    HuggingFaceRepo,
     download_weight_files,
     repo_exists_with_retry,
 )
-from .lib.log_probabilities import compute_log_probabilities
-from .lib.max_config import (
+from .log_probabilities import compute_log_probabilities, log_softmax
+from .max_config import (
     KVCacheConfig,
     ProfilingConfig,
     SamplingConfig,
 )
-from .lib.memory_estimation import MEMORY_ESTIMATOR
-from .lib.model_config import MAXModelConfig
-from .lib.pipeline import (
+from .memory_estimation import MEMORY_ESTIMATOR
+from .model_config import MAXModelConfig, MAXModelConfigBase
+from .pipeline import (
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
     upper_bounded_default,
 )
-from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
-from .lib.tokenizer import (
+from .registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .tokenizer import (
     IdentityPipelineTokenizer,
     PipelineTokenizer,
     PreTrainedPipelineTokenizer,
@@ -72,21 +48,18 @@ from .lib.tokenizer import (
     TextTokenizer,
 )
 
-# Hydrate the registry.
-register_all_models()
-
 __all__ = [
     "compute_log_probabilities",
     "download_weight_files",
-    "EmbeddingsGenerator",
     "EmbeddingsPipeline",
-    "EmbeddingsResponse",
     "HuggingFaceFile",
+    "HuggingFaceRepo",
+    "log_softmax",
     "IdentityPipelineTokenizer",
-    "InputContext",
     "KVCacheConfig",
-    "LogProbabilities",
+    "KVCacheMixin",
     "MAXModelConfig",
+    "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",
     "ModelInputs",
     "ModelOutputs",
@@ -94,8 +67,6 @@ __all__ = [
     "PipelineConfig",
     "PipelineEngine",
     "PipelineModel",
-    "PipelinesFactory",
-    "PipelineTask",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
@@ -106,20 +77,8 @@ __all__ = [
     "SpeculativeDecodingTextGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
-    "TextAndVisionContext",
     "TextAndVisionTokenizer",
-    "TextContext",
     "TextGenerationPipeline",
-    "TextGenerationResponse",
-    "TextGenerationStatus",
-    "TextResponse",
     "TextTokenizer",
-    "TokenGenerator",
-    "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
     "upper_bounded_default",
 ]

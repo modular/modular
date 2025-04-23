@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 from max.graph.weights import WeightData, Weights
-from max.pipelines import PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from transformers import LlamaConfig
 
 # Maps from Safetensor to MAX weight names.

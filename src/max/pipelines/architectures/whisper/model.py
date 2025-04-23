@@ -22,7 +22,7 @@ from max.engine import InferenceSession, Model
 from max.graph import _reconcile_weights
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.pipelines import (
+from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,

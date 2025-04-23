@@ -16,7 +16,8 @@
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.nn.sampling import RejectionSampler
-from max.pipelines.max_config import SamplingConfig
+
+from .max_config import SamplingConfig
 
 
 def _sampling_input_types(

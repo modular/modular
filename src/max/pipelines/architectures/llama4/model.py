@@ -40,16 +40,16 @@ from max.nn.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines import (
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.pipeline import KVCacheMixin
 from transformers import AutoConfig
 
 from .llama4 import Llama4

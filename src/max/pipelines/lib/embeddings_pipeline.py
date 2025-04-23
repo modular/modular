@@ -22,11 +22,15 @@ from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import load_weights
 from max.nn import ReturnLogits
+from max.pipelines.core import (
+    EmbeddingsGenerator,
+    EmbeddingsResponse,
+    InputContext,
+)
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from .core import EmbeddingsGenerator, EmbeddingsResponse, InputContext
 from .hf_utils import download_weight_files
 from .pipeline import PipelineModel
 

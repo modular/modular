@@ -21,10 +21,13 @@ from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import LinearScalingParams, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.config import PipelineConfig
-from max.pipelines.config_enums import RopeType
-from max.pipelines.max_config import KVCacheConfig
-from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
+    RopeType,
+)
 from transformers import AutoConfig
 
 

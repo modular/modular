@@ -13,12 +13,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import (
+from max.pipelines.core import PipelineTask
+from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
     TextAndVisionTokenizer,
 )
-from max.pipelines.core import PipelineTask
 
 from .pixtral import PixtralModel
 

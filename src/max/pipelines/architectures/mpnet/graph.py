@@ -21,7 +21,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
 from max.nn import Embedding, LayerNorm, Linear, Sequential
 from max.nn.layer import Layer
-from max.pipelines import PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
 

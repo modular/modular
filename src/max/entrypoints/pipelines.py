@@ -90,14 +90,12 @@ class ModelGroup(click.Group):
 
 @click.command(cls=ModelGroup)
 def main():
-    from max.pipelines.architectures import register_all_models
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
     settings = Settings()
     configure_logging(settings)
     configure_metrics(settings)
-    register_all_models()
 
 
 def common_server_options(func):

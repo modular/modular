@@ -38,17 +38,17 @@ from max.nn.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines import (
+from max.pipelines.core import LogProbabilities, TextContext
+from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
+from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
+    compute_log_probabilities,
 )
-from max.pipelines.core import LogProbabilities, TextContext
-from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
-from max.pipelines.log_probabilities import compute_log_probabilities
 from max.profiler import traced
 from transformers import AutoConfig
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.lib.registry import PIPELINE_REGISTRY
 
 _MODELS_ALREADY_REGISTERED = False
 

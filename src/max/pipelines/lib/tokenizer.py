@@ -25,6 +25,15 @@ from typing import Optional, Union, cast
 
 import numpy as np
 import torch
+from max.pipelines.core import (
+    PipelineTokenizer,
+    TextAndVisionContext,
+    TextContext,
+    TokenGeneratorContext,
+    TokenGeneratorRequest,
+    TokenGeneratorRequestMessage,
+    TokenGeneratorRequestTool,
+)
 from PIL import Image
 from transformers import (
     AutoProcessor,
@@ -35,16 +44,6 @@ from transformers import (
     LlamaTokenizerFast,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
-)
-
-from .core import (
-    PipelineTokenizer,
-    TextAndVisionContext,
-    TextContext,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
 )
 
 logger = logging.getLogger("max.pipelines")

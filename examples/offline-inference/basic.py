@@ -17,13 +17,10 @@ import os
 
 from max.entrypoints.llm import LLM
 from max.pipelines import PipelineConfig
-from max.pipelines.architectures import register_all_models
 from max.serve.config import Settings
 
 
 def main():
-    register_all_models()
-
     model_path = "modularai/Llama-3.1-8B-Instruct-GGUF"
     print(f"Loading model: {model_path}")
     pipeline_config = PipelineConfig(model_path=model_path)

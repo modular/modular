@@ -33,7 +33,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
-from max.pipelines import PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
 from ..llava.llava_decoder import Transformer

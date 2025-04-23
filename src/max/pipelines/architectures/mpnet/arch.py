@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines import (
+from max.pipelines.core import PipelineTask
+from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
 )
-from max.pipelines.core import PipelineTask
 
 from .model import MPNetPipelineModel
 

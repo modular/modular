@@ -48,14 +48,7 @@ from max.nn.kv_cache import (
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
-from max.profiler import Tracer, traced
-from transformers import AutoConfig, AutoTokenizer
-
-if TYPE_CHECKING:
-    from .config import PipelineConfig
-
-from .config_enums import SupportedEncoding
-from .core import (
+from max.pipelines.core import (
     InputContext,
     LogProbabilities,
     TextGenerationResponse,
@@ -63,6 +56,13 @@ from .core import (
     TextResponse,
     TokenGenerator,
 )
+from max.profiler import Tracer, traced
+from transformers import AutoConfig, AutoTokenizer
+
+if TYPE_CHECKING:
+    from .config import PipelineConfig
+
+from .config_enums import SupportedEncoding
 from .hf_utils import download_weight_files
 from .max_config import KVCacheConfig
 from .sampling import token_sampler

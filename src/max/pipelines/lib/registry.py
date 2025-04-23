@@ -22,6 +22,13 @@ from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 import torch
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import (
+    EmbeddingsGenerator,
+    PipelineTask,
+    PipelineTokenizer,
+    TokenGenerator,
+)
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -31,18 +38,10 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from max.nn.kv_cache import KVCacheStrategy
-
 from .config_enums import (
     PipelineEngine,
     RopeType,
     SupportedEncoding,
-)
-from .core import (
-    EmbeddingsGenerator,
-    PipelineTask,
-    PipelineTokenizer,
-    TokenGenerator,
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline

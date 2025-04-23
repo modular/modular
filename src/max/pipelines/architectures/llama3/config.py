@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.pipelines import HuggingFaceFile, SupportedEncoding
+from max.pipelines.lib import HuggingFaceFile, SupportedEncoding
 
 
 def get_llama_huggingface_file(

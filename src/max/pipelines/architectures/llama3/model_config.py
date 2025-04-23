@@ -24,11 +24,14 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import Llama3RopeScalingParams, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines import upper_bounded_default
-from max.pipelines.config import PipelineConfig
-from max.pipelines.config_enums import RopeType
-from max.pipelines.max_config import KVCacheConfig
-from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
+    RopeType,
+    upper_bounded_default,
+)
 from transformers import AutoConfig
 
 

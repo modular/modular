@@ -51,7 +51,8 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from max.nn.layer import Layer
-from max.pipelines import (
+from max.pipelines.core import InputContext, TextAndVisionContext
+from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -60,7 +61,6 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.core import InputContext, TextAndVisionContext
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model

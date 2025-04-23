@@ -40,14 +40,15 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.graph.weights import WeightsFormat
-from max.pipelines.config_enums import (
-    RepoType,
-    SupportedEncoding,
-)
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
 from transformers import AutoConfig
+
+from .config_enums import (
+    RepoType,
+    SupportedEncoding,
+)
 
 logger = logging.getLogger("max.pipelines")
 

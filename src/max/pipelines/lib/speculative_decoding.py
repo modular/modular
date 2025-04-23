@@ -29,16 +29,16 @@ from max.graph.weights import (
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputsSequence
-from max.profiler import traced
-from transformers import AutoConfig
-
-from .core import (
+from max.pipelines.core import (
     InputContext,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
+from max.profiler import traced
+from transformers import AutoConfig
+
 from .hf_utils import download_weight_files
 from .pipeline import (
     ModelInputs,

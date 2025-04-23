@@ -22,8 +22,6 @@ from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
-from max.pipelines.registry import PIPELINE_REGISTRY
 
 from .config_enums import PipelineEngine, RopeType
 from .max_config import (
@@ -32,7 +30,9 @@ from .max_config import (
     ProfilingConfig,
     SamplingConfig,
 )
+from .memory_estimation import MEMORY_ESTIMATOR
 from .model_config import MAXModelConfig
+from .registry import PIPELINE_REGISTRY
 
 logger = logging.getLogger("max.pipelines")
 
