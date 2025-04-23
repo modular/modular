@@ -233,7 +233,7 @@ struct SharedMemBarrier(CollectionElement):
             Int64,
             address_space = AddressSpace.SHARED,
             alignment=8,
-            mut = Origin(__origin_of(self)).is_mutable,
+            mut = Origin(__origin_of(self)).mut,
             origin = __origin_of(self),
         ],
     ):
