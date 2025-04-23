@@ -33,11 +33,10 @@ from python._cpython import (
     PyType_Slot,
     PyType_Spec,
 )
-from python.python import _get_global_python_itf
 
 
 fn get_cpython() -> CPython:
-    return _get_global_python_itf().cpython()
+    return Python().cpython()
 
 
 # This function is used by the compiler to create a new module.

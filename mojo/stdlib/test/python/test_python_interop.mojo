@@ -13,7 +13,7 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from python.python import Python, PythonObject, _get_global_python_itf
+from python.python import Python, PythonObject
 from testing import assert_equal
 
 

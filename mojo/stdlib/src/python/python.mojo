@@ -78,7 +78,7 @@ struct _PythonInterfaceImpl:
 struct Python:
     """Provides methods that help you use Python code in Mojo."""
 
-    var impl: _PythonInterfaceImpl
+    var _impl: _PythonInterfaceImpl
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -87,7 +87,7 @@ struct Python:
 
     fn __init__(out self):
         """Default constructor."""
-        self.impl = _get_global_python_itf()
+        self._impl = _get_global_python_itf()
 
     fn __copyinit__(out self, existing: Self):
         """Copy constructor.
@@ -95,7 +95,21 @@ struct Python:
         Args:
             existing: The existing instance to copy from.
         """
-        self.impl = existing.impl
+        self._impl = existing._impl
+
+    @always_inline
+    fn cpython(self) -> ref [StaticConstantOrigin] CPython:
+        """Handle to the low-level C API of the CPython interpreter present in
+        the current process.
+
+        Returns:
+            Handle to the CPython interpreter instance in the current process.
+        """
+        return self._cpython_ptr()[]
+
+    @always_inline
+    fn _cpython_ptr(self) -> Pointer[CPython, StaticConstantOrigin]:
+        return Pointer[CPython, StaticConstantOrigin](to=self._impl._cpython[])
 
     fn eval(self, code: StringSlice) -> Bool:
         """Executes the given Python code.
@@ -107,7 +121,7 @@ struct Python:
             `True` if the code executed successfully or `False` if the code
             raised an exception.
         """
-        var cpython = self.impl.cpython()
+        var cpython = self.cpython()
         return cpython.PyRun_SimpleString(code)
 
     @staticmethod
@@ -126,7 +140,7 @@ struct Python:
         Returns:
             `PythonObject` containing the result of the evaluation.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Self().cpython()
         # PyImport_AddModule returns a read-only reference.
         var module = PythonObject.from_borrowed_ptr(
             cpython.PyImport_AddModule(name)
@@ -223,7 +237,7 @@ struct Python:
         Returns:
             The Python module.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         # Throw error if it occurred during initialization
         cpython.check_init_error()
         var module_maybe = cpython.PyImport_ImportModule(module)
@@ -247,7 +261,7 @@ struct Python:
         # Initialize the global instance to the Python interpreter
         # in case this is our first time.
 
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         # This will throw an error if there are any errors during initialization.
         cpython.check_init_error()
@@ -303,7 +317,7 @@ struct Python:
         Raises:
             If we fail to add the functions to the module.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         var result = cpython.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
@@ -335,7 +349,7 @@ struct Python:
             value: The python object value.
         """
 
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         var result = cpython.PyModule_AddObjectRef(
             module.unsafe_as_py_object_ptr(),
@@ -401,7 +415,7 @@ struct Python:
         Returns:
             Mojo string representing the given Python object.
         """
-        var cpython = self.impl.cpython()
+        var cpython = self.cpython()
         return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
 
     @staticmethod
@@ -452,7 +466,7 @@ struct Python:
         Returns:
             True if `x` and `y` are the same object and False otherwise.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         return cpython.Py_Is(x.py_object, y.py_object)
 
     @staticmethod
@@ -465,7 +479,7 @@ struct Python:
         Returns:
             A PythonObject that holds the type object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         return cpython.PyObject_Type(obj.py_object)
 
     @staticmethod
@@ -495,7 +509,7 @@ struct Python:
         Returns:
             The value of the `long` object as a `Py_ssize_t`.
         """
-        var cpython = Python().impl.cpython()
+        var cpython = Python().cpython()
 
         var long: Py_ssize_t = cpython.PyLong_AsSsize_t(
             obj.unsafe_as_py_object_ptr()

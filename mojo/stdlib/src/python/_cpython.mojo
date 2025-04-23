@@ -37,7 +37,6 @@ from sys.ffi import (
 
 from memory import UnsafePointer
 from python._bindings import PyMojoObject, Pythonable, Typed_initproc
-from python.python import _get_global_python_itf
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
@@ -198,7 +197,7 @@ struct PyObjectPtr(CollectionElement):
         # TODO: Make this part of the trait bound
         expected_type_name: StringSlice,
     ) -> Optional[UnsafePointer[T]]:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var type = cpython.Py_TYPE(self)
         var type_name = PythonObject(cpython.PyType_GetName(type))
 

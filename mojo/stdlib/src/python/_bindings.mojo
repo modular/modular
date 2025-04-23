@@ -31,7 +31,6 @@ from python._cpython import (
     destructor,
     newfunc,
 )
-from python.python import _get_global_python_itf
 
 
 trait ConvertibleFromPython(CollectionElement):
@@ -95,7 +94,7 @@ fn python_type_object[
         methods: The methods to add to the type.
     """
 
-    var cpython = _get_global_python_itf().cpython()
+    var cpython = Python().cpython()
 
     var slots = List[PyType_Slot](
         # All wrapped Mojo types are allocated generically.
@@ -166,7 +165,7 @@ fn empty_tp_init_wrapper[
         T: The wrapped Mojo type.
     """
 
-    var cpython = _get_global_python_itf().cpython()
+    var cpython = Python().cpython()
 
     try:
         if len(args) != 0 or keyword_args != PyObjectPtr():
@@ -354,7 +353,7 @@ fn py_c_function_wrapper[
     fn wrapper(
         py_self: PythonObject, args: TypedPythonObject["Tuple"]
     ) -> PythonObject:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         var state = cpython.PyGILState_Ensure()
 

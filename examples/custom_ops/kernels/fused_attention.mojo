@@ -68,7 +68,6 @@ from math import exp
 from utils import Index
 from utils.index import IndexList
 from python import Python, PythonObject
-from python.python import _get_global_python_itf
 from os import abort
 from sys import argv
 from tensor import OutputTensor, InputTensor
@@ -122,7 +121,7 @@ struct FusedAttention:
         key: PythonObject,
         value: PythonObject,
     ) -> PythonObject:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var state = cpython.PyGILState_Ensure()
         try:
             cpython.check_init_error()

@@ -18,7 +18,7 @@ from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_PyObject_HasAttrString(mut python: Python):
-    var Cpython_env = python.impl._cpython
+    var Cpython_env = python._cpython_ptr()
 
     var the_object = PythonObject(0)
     var result = Cpython_env[].PyObject_HasAttrString(

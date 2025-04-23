@@ -30,7 +30,7 @@ from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr, PyMethodDef, PyCFunction
 from ._bindings import py_c_function_wrapper
-from .python import Python, _get_global_python_itf
+from .python import Python
 
 
 trait PythonConvertible:
@@ -81,7 +81,7 @@ struct _PyIter(Sized):
         Args:
             iter: A Python iterator instance.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         self.iterator = iter
         var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
         if maybe_next_item.is_null():
@@ -110,7 +110,7 @@ struct _PyIter(Sized):
         """
         if not self.iterator:
             return self.iterator
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var current = self.prepared_next_item
         var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
         if maybe_next_item.is_null():
@@ -344,7 +344,7 @@ struct TypedPythonObject[type_hint: StaticString](
         Returns:
             The value of the tuple element at the specified position.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         var item: PyObjectPtr = cpython.PyTuple_GetItem(
             self.unsafe_as_py_object_ptr(),
@@ -434,7 +434,7 @@ struct PythonObject(
         Returns:
             An owned PythonObject pointer.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         # SAFETY:
         #   We were passed a Python 'read-only reference', so for it to be
@@ -480,7 +480,7 @@ struct PythonObject(
         Args:
             none: None.
         """
-        cpython = _get_global_python_itf().cpython()
+        cpython = Python().cpython()
         self.py_object = cpython.Py_None()
         cpython.Py_IncRef(self.py_object)
 
@@ -491,7 +491,7 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
-        cpython = _get_global_python_itf().cpython()
+        cpython = Python().cpython()
         self.py_object = cpython.PyBool_FromLong(Int(value))
 
     @implicit
@@ -501,7 +501,7 @@ struct PythonObject(
         Args:
             integer: The integer value.
         """
-        cpython = _get_global_python_itf().cpython()
+        cpython = Python().cpython()
         self.py_object = cpython.PyLong_FromSsize_t(integer)
 
     @implicit
@@ -516,7 +516,7 @@ struct PythonObject(
         Args:
             value: The scalar value.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         @parameter
         if dtype is DType.bool:
@@ -556,7 +556,7 @@ struct PythonObject(
         Args:
             string: The string value.
         """
-        cpython = _get_global_python_itf().cpython()
+        cpython = Python().cpython()
         self.py_object = cpython.PyUnicode_DecodeUTF8(string)
 
     @always_inline
@@ -573,7 +573,7 @@ struct PythonObject(
         Returns:
             A PythonObject representing the list.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var py_object = cpython.PyList_New(len(values))
 
         for i in range(len(values)):
@@ -613,7 +613,7 @@ struct PythonObject(
         Returns:
             A PythonObject representing the list.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var py_object = cpython.PyList_New(len(values))
 
         @parameter
@@ -654,7 +654,7 @@ struct PythonObject(
         Returns:
             A PythonObject representing the tuple.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var py_object = cpython.PyTuple_New(len(values))
 
         @parameter
@@ -680,7 +680,7 @@ struct PythonObject(
         Args:
             value: The dictionary value.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         self.py_object = cpython.PyDict_New()
         for entry in value.items():
             _ = cpython.PyDict_SetItem(
@@ -696,7 +696,7 @@ struct PythonObject(
             existing: The value to copy.
         """
         self.py_object = existing.py_object
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         cpython.Py_IncRef(self.py_object)
 
     fn __del__(owned self):
@@ -704,7 +704,7 @@ struct PythonObject(
 
         This decrements the underlying refcount of the pointed-to object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
         var state = cpython.PyGILState_Ensure()
@@ -726,7 +726,7 @@ struct PythonObject(
         Raises:
             If the object is not iterable.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var iter = cpython.PyObject_GetIter(self.py_object)
         Python.throw_python_exception_if_error_state(cpython)
         return _PyIter(PythonObject(iter))
@@ -740,7 +740,7 @@ struct PythonObject(
         Returns:
             The value of the object attribute with the given name.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var result = cpython.PyObject_GetAttrString(self.py_object, name^)
         Python.throw_python_exception_if_error_state(cpython)
         if result.is_null():
@@ -757,7 +757,7 @@ struct PythonObject(
         return self._setattr(name^, new_value.py_object)
 
     fn _setattr(self, owned name: String, new_value: PyObjectPtr) raises:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var result = cpython.PyObject_SetAttrString(
             self.py_object, name^, new_value
         )
@@ -771,7 +771,7 @@ struct PythonObject(
         Returns:
             Whether the object evaluates as true.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         return cpython.PyObject_IsTrue(self.py_object) == 1
 
     @always_inline
@@ -793,7 +793,7 @@ struct PythonObject(
         Returns:
             True if they are the same object and False otherwise.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         return cpython.Py_Is(self.py_object, other.py_object)
 
     fn __isnot__(self, other: PythonObject) -> Bool:
@@ -817,7 +817,7 @@ struct PythonObject(
         Returns:
             The value corresponding to the given key for this object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var size = len(args)
         var key_obj: PyObjectPtr
         if size == 1:
@@ -846,7 +846,7 @@ struct PythonObject(
         Returns:
             The sliced value corresponding to the given Slice(s) for this object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var size = len(args)
         var key_obj: PyObjectPtr
 
@@ -873,7 +873,7 @@ struct PythonObject(
             args: The key or keys to set on this object.
             value: The value to set.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var size = len(args)
         var key_obj: PyObjectPtr
 
@@ -901,7 +901,7 @@ struct PythonObject(
     fn _call_zero_arg_method(
         self, owned method_name: String
     ) raises -> PythonObject:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var tuple_obj = cpython.PyTuple_New(0)
         var callable_obj = cpython.PyObject_GetAttrString(
             self.py_object, method_name^
@@ -916,7 +916,7 @@ struct PythonObject(
     fn _call_single_arg_method(
         self, owned method_name: String, rhs: PythonObject
     ) raises -> PythonObject:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var tuple_obj = cpython.PyTuple_New(1)
         var result = cpython.PyTuple_SetItem(tuple_obj, 0, rhs.py_object)
         if result != 0:
@@ -935,7 +935,7 @@ struct PythonObject(
     fn _call_single_arg_inplace_method(
         mut self, owned method_name: String, rhs: PythonObject
     ) raises:
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var tuple_obj = cpython.PyTuple_New(1)
         var result = cpython.PyTuple_SetItem(tuple_obj, 0, rhs.py_object)
         if result != 0:
@@ -1489,7 +1489,7 @@ struct PythonObject(
         """
         # TODO: replace/optimize with c-python function.
         # TODO: implement __getitem__ step for cpython membership test operator.
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         if cpython.PyObject_HasAttrString(self.py_object, "__contains__"):
             return self._call_single_arg_method("__contains__", rhs).__bool__()
         for v in self:
@@ -1514,7 +1514,7 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
 
         var num_pos_args = len(args)
         var tuple_obj = cpython.PyTuple_New(num_pos_args)
@@ -1564,7 +1564,7 @@ struct PythonObject(
         Returns:
             The length of the object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var result = cpython.PyObject_Length(self.py_object)
         if result == -1:
             # TODO: Improve error message so we say
@@ -1578,7 +1578,7 @@ struct PythonObject(
         Returns:
             The length of the object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var result = cpython.PyObject_Length(self.py_object)
         # TODO: make this function raise when we can raise parametrically.
         debug_assert(result != -1, "object is not hashable")
@@ -1593,7 +1593,7 @@ struct PythonObject(
         Args:
             hasher: The hasher instance.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var result = cpython.PyObject_Hash(self.py_object)
         # TODO: make this function raise when we can raise parametrically.
         debug_assert(result != -1, "object is not hashable")
@@ -1613,7 +1613,7 @@ struct PythonObject(
         Returns:
             An integral value that represents this object.
         """
-        cpython = _get_global_python_itf().cpython()
+        cpython = Python().cpython()
         var py_long = cpython.PyNumber_Long(self.py_object)
         return cpython.PyLong_AsSsize_t(py_long)
 
@@ -1631,7 +1631,7 @@ struct PythonObject(
         Returns:
             A floating point value that represents this object.
         """
-        cpython = _get_global_python_itf().cpython()
+        cpython = Python().cpython()
         return cpython.PyFloat_AsDouble(self.py_object)
 
     @deprecated("Use `Float64(obj)` instead.")
@@ -1651,7 +1651,7 @@ struct PythonObject(
         Returns:
             A string that represents this object.
         """
-        var cpython = _get_global_python_itf().cpython()
+        var cpython = Python().cpython()
         var python_str: PythonObject = cpython.PyObject_Str(self.py_object)
         # copy the string
         var mojo_str = String(
@@ -1736,7 +1736,7 @@ struct PythonObject(
         return self.py_object._get_ptr_as_int()
 
     fn _get_type_name(self) -> String:
-        var cpython = Python().impl.cpython()
+        var cpython = Python().cpython()
 
         var actual_type = cpython.Py_TYPE(self.unsafe_as_py_object_ptr())
         var actual_type_name = PythonObject(cpython.PyType_GetName(actual_type))
@@ -1765,7 +1765,7 @@ fn _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
         PyObjectPtr: The pointer to the Python slice.
 
     """
-    cpython = _get_global_python_itf().cpython()
+    var cpython = Python().cpython()
     var py_start = cpython.Py_None()
     var py_stop = cpython.Py_None()
     var py_step = cpython.Py_None()
