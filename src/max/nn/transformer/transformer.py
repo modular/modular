@@ -62,7 +62,9 @@ class TransformerBlock(Module):
         | PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue:
-        residual_multiplier = ops.constant(self.residual_multiplier, x.dtype)
+        residual_multiplier = ops.constant(
+            self.residual_multiplier, x.dtype, device=x.device
+        )
         attn_out = self.self_attn(
             self.input_layernorm(x),
             kv_collection,
@@ -138,7 +140,9 @@ class Transformer(Module):
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(self.embedding_multiplier, h.dtype)
+            h = h * ops.constant(
+                self.embedding_multiplier, h.dtype, device=h.device
+            )
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
         cache_lengths = kv_cache_inputs[1]
