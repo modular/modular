@@ -214,6 +214,86 @@ fn tp_repr_wrapper[T: Pythonable](py_self: PyObjectPtr) -> PyObjectPtr:
     return PythonObject(string=repr_str).steal_data()
 
 
+struct PythonTypeBuilder[T: Pythonable]:
+    """A builder for a Python type binding.
+
+    This builder is used to declare method bindings for a Python type, and then
+    create the type binding.
+    """
+
+    var type_name: StaticString
+    var methods: List[PyMethodDef]
+
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
+
+    fn __init__(out self, type_name: StaticString):
+        """Construct a new builder for a Python type binding.
+
+        Args:
+            type_name: The name the type will be exposed as in the module.
+        """
+        self.type_name = type_name
+        self.methods = List[PyMethodDef]()
+
+    fn __copyinit__(out self, other: Self):
+        """Copy an instance of this builder.
+
+        Args:
+            other: The builder to copy from.
+        """
+        self.type_name = other.type_name
+        self.methods = other.methods
+
+    fn __moveinit__(out self, owned other: Self):
+        """Move an instance of this builder.
+
+        Args:
+            other: The builder to move from.
+        """
+        self.type_name = other.type_name
+        self.methods = other.methods^
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    fn def_py_c_method(
+        owned self,
+        method: PyCFunction,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> Self:
+        """Declare a binding for a method with PyObjectPtr signature for the
+        type.
+
+        Args:
+            method: The method to declare a binding for.
+            method_name: The name with which the method will be exposed on the
+                type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+        self.methods.append(
+            PyMethodDef.function(method, method_name, docstring)
+        )
+        return self^
+
+    fn finalize(owned self, module: PythonModule) raises:
+        """Finalize the builder, creating the type binding with the registered
+        methods.
+
+        Raises:
+            If we fail to add the type to the module.
+        """
+        self.methods.append(PyMethodDef())  # Zeroed item as terminator
+        var type_obj = python_type_object[T](self.type_name, self.methods)
+        Python.add_object(module, self.type_name, type_obj)
+
+
 # ===-----------------------------------------------------------------------===#
 # PyCFunction Wrappers
 # ===-----------------------------------------------------------------------===#
