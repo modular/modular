@@ -378,25 +378,19 @@ class TokenGenerationScheduler(Scheduler):
                 )
                 num_steps = min(num_steps, num_available_steps)
 
-                # Lookup blocks to reuse from prefix cache
-                self.paged_manager.reuse_blocks_from_prefix_cache(data)
+                # Attempt to schedule the request.
+                scheduled = self.paged_manager.prefetch(data, num_steps)
+
+                # We were able to schedule this request
+                if not scheduled:
+                    self._return_to_request_queue(req_id, data)
+                    break
 
             # Chunk the request if it exceeds the token budget
             tokens_trimmed = self._maybe_chunk_prefill_request(
                 data, tot_tokens_to_encode
             )
             orig_prompt_length -= tokens_trimmed
-
-            if self.paged_manager is not None:
-                # Allocate new blocks for shortened prompt
-                scheduled = self.paged_manager.allocate_new_blocks(
-                    data, num_steps=num_steps
-                )
-
-                # We were able to schedule this request
-                if not scheduled:
-                    self._return_to_request_queue(req_id, data)
-                    break
 
             # Schedule the requests as it fits in KVCache and token limit
             tot_tokens_to_encode += data.active_length
@@ -480,11 +474,8 @@ class TokenGenerationScheduler(Scheduler):
                     )
                     num_steps = min(num_steps, num_available_steps)
 
-                # Attempt to schedule this request
-                self.paged_manager.reuse_blocks_from_prefix_cache(data)
-                scheduled = self.paged_manager.allocate_new_blocks(
-                    data, num_steps=num_steps
-                )
+                # Attempt to schedule the request.
+                scheduled = self.paged_manager.prefetch(data, num_steps)
 
                 # We were able to schedule this request
                 if scheduled:
