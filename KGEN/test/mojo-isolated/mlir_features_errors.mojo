@@ -41,7 +41,8 @@ fn test_mlir2():
   # expected-error @+1 {{'index.castu' op result #0 must be integer or index, but got 'f32'}}
   __mlir_op.`index.castu`[_type=__mlir_type.f32](x)
 
-  # expected-error @+1 {{MLIR verification error: 'index.constant' op requires attribute 'value'}}
+  # expected-error @below {{failed properties conversion while building index.constant with `{value = 4.200000e+01 : f32}`: Invalid attribute `value` in property conversion: 4.200000e+01 : f32}}
+  # expected-error @below {{unable to infer result type from MLIR operation 'index.constant'}}
   var c42e = __mlir_op.`index.constant`[value=__mlir_attr.`42.0 : f32`]()
   var c42 = __mlir_op.`index.constant`[value=`42`]() # Good
 

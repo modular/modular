@@ -1179,7 +1179,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 //===----------------------------------------------------------------------===//
 
 def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+    InferTypeOpAdaptor,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
@@ -1486,7 +1486,7 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_PackExtractOp : KGENOp<"pack.extract",
-                     [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+                     [Pure, InferTypeOpAdaptor]> {
   let summary = "pack get element";
   let description = [{
     The `kgen.pack.extract` operation returns the element of a pack at the
@@ -1531,7 +1531,7 @@ def KGEN_PackExtractOp : KGENOp<"pack.extract",
 
 def KGEN_PackGEPOp : KGENOp<"pack.gep",
                      [Pure,
-                      DeclareOpInterfaceMethods<InferTypeOpInterface>,
+                      InferTypeOpAdaptor,
                       DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pack get element pointer";
   let description = [{
@@ -1581,7 +1581,7 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
 
 def KGEN_PackLoadOp : KGENOp<"pack.load",
                       [Pure,
-                       DeclareOpInterfaceMethods<InferTypeOpInterface>,
+                       InferTypeOpAdaptor,
                        DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "load all pack elements";
   let description = [{
@@ -1634,7 +1634,7 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    InferTypeOpAdaptor]> {
   let summary = "struct extract value";
   let description = [{
     The `kgen.struct.extract` operation gets the struct element at the given
@@ -1705,7 +1705,7 @@ def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+    InferTypeOpAdaptor,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "struct get element pointer";
   let description = [{
@@ -1807,7 +1807,7 @@ def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_VariantGetOp : KGENOp<"variant.get", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    InferTypeOpAdaptor]> {
   let summary = "Take a register value out of a variant.";
   let description = [{
     The `kgen.variant.get` operation interprets the given variant as one of its

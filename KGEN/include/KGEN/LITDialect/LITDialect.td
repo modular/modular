@@ -32,7 +32,6 @@ def LITDialect : Dialect {
   ];
 
   let useDefaultAttributePrinterParser = 1;
-  let usePropertiesForAttributes = 0;
   let hasConstantMaterializer = 1;
 
   let extraClassDeclaration = [{

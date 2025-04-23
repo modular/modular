@@ -1776,10 +1776,26 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     auto inferTypesItf = opNameInfo->getInterface<mlir::InferTypeOpInterface>();
     if (!inferTypesItf)
       return failure();
+
+    SmallVector<char> propStorage(opNameInfo->getOpPropertyByteSize());
+    auto properties = mlir::OpaqueProperties(propStorage.data());
+    auto attributes = state.attributes.getDictionary(context);
+
+    // Initialize the properties storage
+    if (!propStorage.empty() && !state.attributes.empty()) {
+      auto emitError = [&]() {
+        return mlir::emitError(state.location)
+               << " failed properties conversion while building "
+               << state.name.getStringRef() << " with `" << attributes << "`: ";
+      };
+      if (failed(opNameInfo->setOpPropertiesFromAttribute(
+              state.name, properties, attributes, emitError)))
+        return failure();
+    }
+
     if (failed(inferTypesItf->inferReturnTypes(
-            context, state.location, state.operands,
-            DictionaryAttr::get(context, state.attributes),
-            state.getRawProperties(), state.regions, state.types)))
+            context, state.location, state.operands, attributes, properties,
+            state.regions, state.types)))
       return failure();
     return success(
         llvm::all_of(state.types, [](Type t) { return t != Type(); }));
