@@ -33,6 +33,6 @@ fn PyInit_mojo_module() -> PythonObject:
 
 @export
 fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
-    var cpython = Python().impl.cpython()
+    var cpython = Python().cpython()
 
     return PythonObject(cpython.PyObject_Length(args)).py_object

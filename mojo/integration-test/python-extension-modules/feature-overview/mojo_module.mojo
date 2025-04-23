@@ -78,7 +78,7 @@ fn case_raise_empty_error(
     py_self: PythonObject,
     args: TypedPythonObject["Tuple"],
 ) -> PythonObject:
-    var cpython = Python().impl.cpython()
+    var cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
@@ -92,7 +92,7 @@ fn case_raise_string_error(
     py_self: PythonObject,
     args: TypedPythonObject["Tuple"],
 ) -> PythonObject:
-    var cpython = Python().impl.cpython()
+    var cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
@@ -224,7 +224,7 @@ fn create_string__wrapper(
 
     check_arguments_arity(func_name.value, func_arity, py_args)
 
-    var cpython = Python().impl.cpython()
+    var cpython = Python().cpython()
 
     var result = create_string()
 

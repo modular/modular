@@ -20,7 +20,6 @@ from python import (
     TypedPythonObject,
     PythonModule,
 )
-from python.python import _get_global_python_itf
 from python._cpython import PyObjectPtr
 from sys import sizeof
 
@@ -91,7 +90,7 @@ fn _mojo_block_hasher[
         print("num_elts:", num_elts)
         print("num_hashes:", num_hashes)
 
-    var cpython = _get_global_python_itf().cpython()
+    var cpython = Python().cpython()
 
     # Create a list of NULL elements with the size needed to store the hash
     # results.
