@@ -1284,8 +1284,8 @@ fn infer_through_alias():
 
 # CHECK-LABEL: lit.fn @"infer_address_space
 fn infer_address_space[
-    is_mutable: __mlir_type.i1,
-    origin: Origin[is_mutable]._mlir_type
+    mut: __mlir_type.i1,
+    origin: Origin[mut]._mlir_type
 ](a: Pointer[Int, origin, AddressSpace(4)]._mlir_type):
   # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.

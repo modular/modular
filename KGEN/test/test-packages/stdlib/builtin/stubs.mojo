@@ -35,16 +35,16 @@ alias `False` = __mlir_attr.`0 : i1`
 
 @value
 @register_passable("trivial")
-struct Origin[is_mutable: Bool]:
+struct Origin[mut: Bool]:
     alias _mlir_type = __mlir_type[
         `!lit.origin<`,
-        is_mutable.value,
+        mut.value,
         `>`,
     ]
 
     var _mlir_origin: Self._mlir_type
 
-    alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
+    alias cast_from = _lit_mut_cast[result_mutable=mut]
 
     @always_inline("builtin")
     @implicit
@@ -57,9 +57,9 @@ struct Origin[is_mutable: Bool]:
 
 
 struct _lit_mut_cast[
-    is_mutable: Bool, //,
+    mut: Bool, //,
     result_mutable: Bool,
-    operand: Origin[is_mutable],
+    operand: Origin[mut],
 ]:
     alias result = __mlir_attr[
         `#lit.origin.mutcast<`,
@@ -78,9 +78,7 @@ alias StaticConstantOrigin = __mlir_attr[
 ]
 
 
-struct _lit_indirect_origin[
-    is_mutable: Bool, //, base: Origin[is_mutable]._mlir_type
-]:
+struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
     alias result = __mlir_attr[
         `#lit.indirect.origin<`,
         Self.base,
@@ -541,9 +539,9 @@ struct VariadicList[type: AnyTrivialRegType]:
 # Helper to compute the union of two origins:
 # TODO: parametric aliases would be nice.
 struct _lit_origin_union[
-    is_mutable: Bool, //,
-    a: Origin[is_mutable].type,
-    b: Origin[is_mutable].type,
+    mut: Bool, //,
+    a: Origin[mut].type,
+    b: Origin[mut].type,
 ]:
     alias result = __mlir_attr[
         `#lit.origin.union<`,
@@ -551,7 +549,7 @@ struct _lit_origin_union[
         `,`,
         b,
         `> : !lit.origin<`,
-        is_mutable.value,
+        mut.value,
         `>`,
     ]
 
@@ -733,9 +731,9 @@ struct AddressSpace:
 @value
 @register_passable("trivial")
 struct Pointer[
-    is_mutable: Bool, //,
+    mut: Bool, //,
     type: AnyType,
-    origin: Origin[is_mutable],
+    origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     alias _mlir_type = __mlir_type[
@@ -783,7 +781,7 @@ struct Pointer[
         other_origin: Origin[other_is_mut], //,
         other_type: __type_of(Pointer[type, other_origin, address_space]),
     ](self) -> Pointer[
-        is_mutable = is_mutable & other_is_mut,
+        mut = mut & other_is_mut,
         type=type,
         origin = __origin_of(origin, other_origin),
         address_space=address_space,
