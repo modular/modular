@@ -330,8 +330,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
-        other_value: __mlir_type.`!kgen.string`, //,
-        other_type: __type_of(StringLiteral[other_value]),
+        other_type: __type_of(StringLiteral[_]),
     ](self) -> StaticString:
         return self
 
@@ -777,13 +776,11 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_is_mut: Bool,
-        other_origin: Origin[other_is_mut], //,
-        other_type: __type_of(Pointer[type, other_origin, address_space]),
+        other_type: __type_of(Pointer[type, _, address_space]),
     ](self) -> Pointer[
-        mut = mut & other_is_mut,
+        mut = mut & other_type.origin.mut,
         type=type,
-        origin = __origin_of(origin, other_origin),
+        origin = __origin_of(origin, other_type.origin),
         address_space=address_space,
     ]:
         return self._value  # allow lit.ref to convert.
