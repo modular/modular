@@ -599,17 +599,26 @@ struct _StringCapacityField:
         # use it. We store the capacity with the top 3 bits of the storage used
         # for flags.
         if capacity > Self.NUM_SSO_BYTES or is_compile_time():
-            self._storage = (capacity + 7) >> 3
+            self = Self(out_of_line_capacity=capacity)
         else:
             # If the capacity needed fits inline, use the inline form.
             self._storage = Self.FLAG_IS_INLINE
 
     @always_inline("nodebug")
     @staticmethod
-    fn get_static_const() -> Self:
-        var result = Self(capacity=0)
-        result._storage = Self.FLAG_IS_STATIC_CONSTANT
-        return result
+    fn __init__(out self, *, out_of_line_capacity: UInt):
+        self._storage = (out_of_line_capacity + 7) >> 3
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn __init__(out self, *, static_const_length: Int):
+        # Short constant strings that can fit inline *with a nul terminator*
+        # added are stored inline.
+        if static_const_length < Self.NUM_SSO_BYTES and not is_compile_time():
+            self._storage = Self.FLAG_IS_INLINE
+        else:
+            self = Self(capacity=0)
+            self._storage = Self.FLAG_IS_STATIC_CONSTANT
 
     @always_inline("nodebug")
     fn get_capacity(self) -> UInt:
@@ -718,9 +727,7 @@ struct String(
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destroy the string data."""
-        if (not self._capacity_or_data.is_static_constant()) & (
-            not self._capacity_or_data.is_inline()
-        ):
+        if self._should_free():
             self._ptr_or_data.free()
 
     @always_inline("nodebug")
@@ -737,14 +744,71 @@ struct String(
         Args:
             capacity: The capacity of the string to allocate.
         """
-        self._capacity_or_data = _StringCapacityField(capacity)
-        self._len_or_data = 0
-        if self._capacity_or_data.is_inline():
-            self._ptr_or_data = UnsafePointer[UInt8]()
-        else:
-            self._ptr_or_data = UnsafePointer[UInt8].alloc(
-                self._capacity_or_data.get_capacity()
+        var cap_field = _StringCapacityField(capacity)
+        if cap_field.is_inline():
+            # Tell mojo it is ok for this to be uninitialized.
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self)
             )
+            self._capacity_or_data = cap_field
+        else:
+            self._len_or_data = 0
+            self._ptr_or_data = UnsafePointer[UInt8].alloc(
+                cap_field.get_capacity()
+            )
+            self._capacity_or_data = cap_field
+
+    @always_inline
+    @implicit  # does not allocate.
+    fn __init__(out self, data: StaticString):
+        """Construct a string from a static constant string without allocating.
+
+        Args:
+            data: The static constant string to refer to.
+        """
+        var length = len(data)
+        var cap_field = _StringCapacityField(static_const_length=length)
+        if cap_field.is_inline():
+            # Tell mojo it is ok for this to be uninitialized.
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self)
+            )
+            cap_field.set_len(length, self._len_or_data)
+            self._capacity_or_data = cap_field
+            memcpy(
+                UnsafePointer(to=self).bitcast[Byte](),
+                data.unsafe_ptr(),
+                length,
+            )
+        else:
+            self._ptr_or_data = data.unsafe_ptr()
+            self._len_or_data = length
+            self._capacity_or_data = cap_field
+
+    @always_inline
+    @implicit  # does not allocate.
+    fn __init__(out self, data: StringLiteral):
+        """Construct a string from a string literal without allocating.
+
+        Args:
+            data: The static constant string to refer to.
+        """
+        self = StaticString(data)
+        # Indirect string literals are always nul-terminated by the compiler.
+        if not self._capacity_or_data.is_inline():
+            self._capacity_or_data.set_has_nul_terminator(True)
+
+    @always_inline
+    fn __init__(out self, bytes: Span[UInt8, *_]):
+        """Construct a string by copying the data. This constructor is explicit
+        because it can involve memory allocation.
+
+        Args:
+            bytes: The bytes to copy.
+        """
+        var length = len(bytes)
+        self = Self(unsafe_uninit_length=length)
+        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -772,42 +836,6 @@ struct String(
             If there is an error when computing the string representation of the type.
         """
         self = value.__str__()
-
-    @always_inline
-    @implicit  # does not allocate.
-    fn __init__(out self, data: StaticString):
-        """Construct a string from a static constant string without allocating.
-
-        Args:
-            data: The static constant string to refer to.
-        """
-        self._capacity_or_data = _StringCapacityField.get_static_const()
-        self._ptr_or_data = data.unsafe_ptr()
-        self._len_or_data = len(data)
-
-    @always_inline
-    @implicit  # does not allocate.
-    fn __init__(out self, data: StringLiteral):
-        """Construct a string from a string literal without allocating.
-
-        Args:
-            data: The static constant string to refer to.
-        """
-        self = StaticString(data)
-        # String literals are always nul-terminated by the compiler.
-        self._capacity_or_data.set_has_nul_terminator(True)
-
-    @always_inline
-    fn __init__(out self, bytes: Span[UInt8, *_]):
-        """Construct a string by copying the data. This constructor is explicit
-        because it can involve memory allocation.
-
-        Args:
-            bytes: The bytes to copy.
-        """
-        var length = len(bytes)
-        self = Self(unsafe_uninit_length=length)
-        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
 
     @no_inline
     fn __init__[
@@ -1524,7 +1552,7 @@ struct String(
 
     fn unsafe_ptr_mut(
         mut self,
-    ) -> UnsafePointer[Byte, origin = __origin_of(self)]:
+    ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
         """Retrieves a mutable pointer to the underlying memory, copying to a
         new buffer if this was previously pointing to a static constant.
 
@@ -1534,7 +1562,7 @@ struct String(
         # If immutable, copy to a new buffer to ensure mutability.
         if self._capacity_or_data.is_static_constant():
             self.reserve(self.byte_length())
-        return self.unsafe_ptr().origin_cast[False, __origin_of(self)]()
+        return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
         mut self,
@@ -2145,40 +2173,32 @@ struct String(
         # where they are stored.
         var len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
-        var should_free = (
-            (not self._capacity_or_data.is_static_constant())
-            & (not self._capacity_or_data.is_inline())
-        )
+        var should_free = self._should_free()
 
         # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
         # make use of extra space if it exists.
-        new_capacity = max(new_capacity, self.capacity() * 2)
-        var new_capacity_field = _StringCapacityField(new_capacity)
 
-        # We usually grow into the indirect representation, but can grow from
-        # an out-of-line static string to an inline representation as well.
-        if not new_capacity_field.is_inline():
-            var new_data = UnsafePointer[UInt8].alloc(
-                new_capacity_field.get_capacity()
-            )
-            memcpy(new_data, old_ptr, len)
-            self._len_or_data = len  # May have been stored in capacity before.
-            self._ptr_or_data = new_data
-            self._capacity_or_data = new_capacity_field
-            if should_free:
-                old_ptr.free()
-        else:
-            debug_assert(
-                not self._capacity_or_data.is_inline() and not should_free,
-                "shouldn't grow from inline to inline",
-            )
-            self._capacity_or_data = new_capacity_field
-            self._capacity_or_data.set_len(len, self._len_or_data)
-            memcpy(
-                self.unsafe_ptr_mut().origin_cast[True, MutableAnyOrigin](),
-                old_ptr,
-                len,
-            )
+        # We always use the inline representation for short strings (even when
+        # they are constant) so any need to grow will use an indirect represent.
+        new_capacity = max(new_capacity, self.capacity() * 2)
+        var new_capacity_field = _StringCapacityField(
+            out_of_line_capacity=new_capacity
+        )
+        var new_data = UnsafePointer[UInt8].alloc(
+            new_capacity_field.get_capacity()
+        )
+        memcpy(new_data, old_ptr, len)
+        self._len_or_data = len  # May have been stored in capacity before.
+        self._ptr_or_data = new_data
+        self._capacity_or_data = new_capacity_field
+        if should_free:
+            old_ptr.free()
+
+    @always_inline("nodebug")
+    fn _should_free(self) -> Bool:
+        return (not self._capacity_or_data.is_static_constant()) & (
+            not self._capacity_or_data.is_inline()
+        )
 
 
 # ===----------------------------------------------------------------------=== #

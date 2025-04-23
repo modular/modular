@@ -1433,6 +1433,15 @@ def test_unsafe_cstr():
     var p3 = s3.unsafe_cstr_ptr()
     assert_equal(p3[0], 0)
 
+    # 24 bytes is out of line.
+    var s4: String = "abcdefghabcdefghabcdefgh"
+    var p4 = s4.unsafe_cstr_ptr()
+    assert_equal(p4[0], ord("a"))
+    assert_equal(p4[1], ord("b"))
+    assert_equal(p4[2], ord("c"))
+    assert_equal(p4[23], ord("h"))
+    assert_equal(p4[24], 0)
+
 
 def test_variadic_ctors():
     var s = String("message", 42, 42.2, True, sep=", ")
@@ -1451,17 +1460,24 @@ def test_variadic_ctors():
 
 
 def test_sso():
-    # String literals are stored out of line.
+    # String literals are stored inline when short.
     var s: String = String("hello")
+    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s._capacity_or_data.is_inline(), True)
+
+    # String literals are stored out-of-line when longer than SSO and
+    # nul-terminated.
+    s = String("hellohellohellohellohellohellohellohellohellohellohello")
     assert_equal(s.capacity(), 0)
     assert_equal(s._capacity_or_data.is_inline(), False)
+    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
 
     # Empty strings are stored inline.
     s = String()
     assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s._capacity_or_data.is_inline(), True)
 
-    s += "f" * (_StringCapacityField.NUM_SSO_BYTES)
+    s += "f" * _StringCapacityField.NUM_SSO_BYTES
     assert_equal(len(s), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s._capacity_or_data.is_inline(), True)

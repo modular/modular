@@ -154,6 +154,10 @@ immediately reallocate without extra checks.  This is a minor optimization and
 simplification of code, but it means that static constant strings will have
 `capacity=0` but have `length=n` where `n > 0`.
 
+Construction from short constant strings (like "foo") loads the string data at
+`String` construction time, which keeps usage of the string direct where
+possible.
+
 ### Mutable String Views
 
 The `String` type may contain pointers to static-constant memory, but
