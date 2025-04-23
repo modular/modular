@@ -93,17 +93,6 @@ def execute_ragged_flash_attention[
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     random(q_ragged.tensor)
 
-    # initialize mask tensor
-    # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[type, 4](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
-
-    # initialize scale tensor
-    scale = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
-
-    scale.tensor[0] = isqrt(Float32(kv_params.head_size))
-
     # initialize reference output
     test_output = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
@@ -235,7 +224,6 @@ def execute_ragged_flash_attention[
         k_cache_continuous,
         v_cache_continuous,
         CausalMask(),
-        # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ref_output.tensor,
     )
@@ -249,7 +237,6 @@ def execute_ragged_flash_attention[
         k_cache_paged,
         v_cache_paged,
         CausalMask(),
-        # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         test_output.tensor,
     )
@@ -281,7 +268,6 @@ def execute_ragged_flash_attention[
                         raise e
 
     _ = q_ragged^
-    _ = scale^
     _ = kv_block_continuous^
     _ = kv_block_paged^
     _ = lookup_table_continuous^

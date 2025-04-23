@@ -109,16 +109,6 @@ def execute_ragged_flash_attention[
             unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
-    # create a dummy mask, we rely on the CasualMask functor object for masking.
-    dummy_mask = NDBuffer[type, 4](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
-
-    # initialize scale tensor
-    scale = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
-
-    scale.tensor[0] = isqrt(Float32(kv_params.head_size))
-
     # initialize reference output
     ref_output = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -190,7 +180,6 @@ def execute_ragged_flash_attention[
         k_cache,
         v_cache,
         CausalMask(),
-        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         test_output.tensor,
     )
@@ -231,7 +220,6 @@ def execute_ragged_flash_attention[
 
     _ = q_ragged^
     _ = q_padded^
-    _ = scale^
     _ = kv_block^
     _ = lookup_table^
     _ = ref_output^
