@@ -82,7 +82,7 @@ class LinearV2(Module):
         in_dim: int,
         out_dim: int,
         dtype: DType,
-        device: DeviceRef | None = None,
+        device: DeviceRef,
         has_bias: bool = False,
         quantization_encoding: QuantizationEncoding | None = None,
         name: str | None = None,
@@ -103,14 +103,14 @@ class LinearV2(Module):
         """
         super().__init__()
 
-        self.device = device or DeviceRef.CPU()
+        self.device = device
         self.clip_weight = clip_weight
 
         self.weight = Weight(
             name=f"{name}.weight" if name else "weight",
             dtype=dtype,
             shape=(out_dim, in_dim),
-            device=self.device,
+            device=device,
             quantization_encoding=quantization_encoding,
         )
 
@@ -119,9 +119,14 @@ class LinearV2(Module):
                 name=f"{name}.bias" if name else "bias",
                 dtype=dtype,
                 shape=(out_dim,),
-                device=self.device,
+                device=device,
                 quantization_encoding=quantization_encoding,
             )
+
+            if self.bias.device != self.weight.device:
+                raise ValueError(
+                    f"Bias is on device {self.bias.device} while weight is on {self.weight.device}."
+                )
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
@@ -139,9 +144,6 @@ class LinearV2(Module):
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
         weight: TensorValue = self.weight
-        if self.device:
-            weight = weight.to(self.device)
-
         if self.clip_weight:
             weight = clamp(weight, -self.clip_weight, self.clip_weight)
 
@@ -155,8 +157,7 @@ class LinearV2(Module):
         else:
             res = x @ weight.T
         if self.bias is not None:
-            bias = self.bias.to(self.device) if self.device else self.bias
-            res += bias
+            res += self.bias
         return res
 
 
@@ -217,7 +218,10 @@ class ColumnParallelLinear(LinearV2):
         devices: Sequence[DeviceRef],
         **kwargs,
     ) -> None:
-        super().__init__(*args, **kwargs)
+        assert len(devices) != 0, "Need devices"
+        new_args = list(args)
+        new_args.append(devices[0])
+        super().__init__(*new_args, **kwargs)
 
         self.devices = devices
         self.num_devices = len(self.devices)
@@ -235,7 +239,9 @@ class ColumnParallelLinear(LinearV2):
         # are not recorded by the nn.Module and do not appear in the state dict.
         self.distributed_linear_layers = []
         for n, device in enumerate(self.devices):
-            layer = LinearV2(*args, **kwargs)
+            arguments = list(args)
+            arguments.append(device)
+            layer = LinearV2(*arguments, **kwargs)
             layer.device = device
             layer.weight = self.weight.shard(n, device)
             if self.bias is not None:
@@ -284,12 +290,12 @@ class Linear(Layer):
     def __call__(self, x: TensorValue) -> TensorValue:
         weight = TensorValue(self.weight)
         if weight.type.device != x.type.device:
-            weight = weight.to(x.type.device or DeviceRef.CPU())
+            weight = weight.to(x.type.device)
         res = x @ weight.T
         if self.bias is not None:
             bias = TensorValue(self.bias)
             if bias.type.device != x.type.device:
-                bias = bias.to(x.type.device or DeviceRef.CPU())
+                bias = bias.to(x.type.device)
             res += bias
         return res
 
@@ -374,7 +380,7 @@ class QLinear(Linear):
     def __call__(self, x: TensorValue) -> TensorValue:
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
-        weight = weight.to(x.type.device or DeviceRef.CPU())
+        weight = weight.to(x.type.device)
         res = ops.qmatmul(
             self.quantization_encoding,
             None,
@@ -500,7 +506,7 @@ class GPTQLinearV2(LinearV2):
         in_dim: int,
         out_dim: int,
         dtype: DType,
-        device: DeviceRef | None = None,
+        device: DeviceRef,
         has_bias: bool = False,
         quantization_encoding: QuantizationEncoding | None = None,
         quantization_config: QuantizationConfig | None = None,
@@ -525,19 +531,19 @@ class GPTQLinearV2(LinearV2):
 
         # Skip LinearV2 initialization.
         Module.__init__(self)
-        self.device = device or DeviceRef.CPU()
+        self.device = device
         self.qweight = Weight(
             name="qweight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            device=self.device,
+            device=device,
             quantization_encoding=quantization_encoding,
         )
         self.scales = Weight(
             name="scales",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
-            device=self.device,
+            device=device,
             quantization_encoding=quantization_encoding,
         )
 
@@ -555,7 +561,7 @@ class GPTQLinearV2(LinearV2):
                 "perm_idx",
                 DType.int32,
                 [in_dim],
-                device=self.device,
+                device=device,
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -650,9 +656,9 @@ class MLPV2(Module):
         quantization_encoding: QuantizationEncoding | None,
         hidden_dim: int,
         feed_forward_length: int,
+        devices: Sequence[DeviceRef],
         linear_cls: Callable[..., LinearV2] = LinearV2,
         has_bias: bool = False,
-        devices: Sequence[DeviceRef] = (),
         activation_function: str = "silu",
     ):
         """
@@ -680,7 +686,7 @@ class MLPV2(Module):
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=devices[0],
             quantization_encoding=quantization_encoding,
             has_bias=has_bias,
         )
@@ -688,7 +694,7 @@ class MLPV2(Module):
             in_dim=feed_forward_length,
             out_dim=hidden_dim,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=devices[0],
             quantization_encoding=quantization_encoding,
             has_bias=has_bias,
         )
@@ -696,7 +702,7 @@ class MLPV2(Module):
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=devices[0],
             quantization_encoding=quantization_encoding,
             has_bias=has_bias,
         )

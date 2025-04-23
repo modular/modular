@@ -133,8 +133,8 @@ class NaiveLlama3(NaiveTransformer):
                     config.model_quantization_encoding,
                     config.hidden_size,
                     config.intermediate_size,
+                    config.devices,
                     linear_cls,
-                    devices=config.devices,
                 ),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
@@ -241,22 +241,22 @@ class StackedMLP(Module):
         quantization_encoding: Optional[QuantizationEncoding],
         hidden_dim: int,
         feed_forward_length: int,
+        devices: Sequence[DeviceRef],
         linear_cls: Callable[..., LinearV2],
-        devices: Sequence[DeviceRef] = (),
     ):
         super().__init__()
         self.gate_up_proj = linear_cls(
             in_dim=hidden_dim,
             out_dim=feed_forward_length * 2,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=devices[0],
             quantization_encoding=quantization_encoding,
         )
         self.down_proj = linear_cls(
             in_dim=feed_forward_length,
             out_dim=hidden_dim,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=devices[0],
             quantization_encoding=quantization_encoding,
         )
 
