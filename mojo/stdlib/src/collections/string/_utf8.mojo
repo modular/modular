@@ -260,7 +260,12 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
 @always_inline
 fn _is_newline_char_utf8[
     include_r_n: Bool = False
-](p: UnsafePointer[Byte], eol_start: Int, b0: Byte, char_len: Int) -> Bool:
+](
+    p: UnsafePointer[Byte, mut=False, **_],
+    eol_start: Int,
+    b0: Byte,
+    char_len: Int,
+) -> Bool:
     """Returns whether the char is a newline char.
 
     Safety:
