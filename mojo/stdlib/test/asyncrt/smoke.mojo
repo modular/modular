@@ -34,6 +34,25 @@ fn _ownership_helper_buf[
     return buf_copy
 
 
+fn _run_name(ctx: DeviceContext) raises:
+    print("-")
+    print("_run_name()")
+
+    var ctx_name = ctx.name()
+    print("ctx_name = ", ctx_name)
+
+    var api = ctx.api()
+
+    if api == "cpu" and "cpu" in ctx_name:
+        return
+    if api == "cuda" and "NVIDIA" in ctx_name:
+        return
+    if api == "hip" and "AMD" in ctx_name:
+        return
+
+    raise "ctx_name malformed"
+
+
 fn _run_ownership_transfer(ctx: DeviceContext) raises:
     print("-")
     print("_run_ownership_transfer()")
@@ -121,6 +140,7 @@ fn main() raises:
     print("-------")
     print("Running test_smoke(" + ctx.name() + "):")
 
+    _run_name(ctx)
     _run_ownership_transfer(ctx)
     _run_device_info(ctx)
     _run_compute_capability(ctx)
