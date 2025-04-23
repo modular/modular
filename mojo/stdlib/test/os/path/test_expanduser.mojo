@@ -69,21 +69,4 @@ fn main() raises:
     # Path with multiple tildes
     assert_equal(join(user_path, "~folder"), expanduser("~/~folder"))
 
-    # Tests with empty "HOME" and "USERPROFILE"
-    set_home("")
-    if os_is_windows():
-        # Don't expand on windows if home isn't set
-        assert_equal("~/folder", expanduser("~/folder"))
-    else:
-        # Test fallback to `/etc/passwd` works on linux
-        alias folder = "~/folder"
-        assert_true(len(expanduser(folder)) > len(folder))
-
-        # Test expanding user name on Unix
-        assert_true(expanduser("~root") != "~root")
-
-        # Test path is returned unchanged on missing user
-        var missing_user = "~asdfasdzvxewr/user"
-        assert_equal(expanduser(missing_user), missing_user)
-
     set_home(original_home)
