@@ -26,6 +26,136 @@ from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from memory import UnsafePointer, bitcast
 
 
+# ===-----------------------------------------------------------------------===#
+# Consistency
+# ===-----------------------------------------------------------------------===#
+
+
+struct Consistency:
+    """Represents the consistency model for atomic operations.
+
+    The class provides a set of constants that represent different consistency
+    models for atomic operations.
+
+    Attributes:
+        NOT_ATOMIC: Not atomic.
+        UNORDERED: Unordered.
+        MONOTONIC: Monotonic.
+        ACQUIRE: Acquire.
+        RELEASE: Release.
+        ACQUIRE_RELEASE: Acquire-release.
+        SEQUENTIAL: Sequentially consistent.
+    """
+
+    var _value: UInt8
+    """The value of the consistency model.
+    This is the underlying value of the consistency model.
+    """
+
+    alias NOT_ATOMIC = Self(0)
+    """Not atomic."""
+    alias UNORDERED = Self(1)
+    """Unordered."""
+    alias MONOTONIC = Self(2)
+    """Monotonic."""
+    alias ACQUIRE = Self(3)
+    """Acquire."""
+    alias RELEASE = Self(4)
+    """Release."""
+    alias ACQUIRE_RELEASE = Self(5)
+    """Acquire-release."""
+    alias SEQUENTIAL = Self(6)
+    """Sequentially consistent."""
+
+    @always_inline
+    fn __init__(out self, value: UInt8):
+        """Constructs a new Consistency object.
+
+        Args:
+            value: The value of the consistency model.
+        """
+        self._value = value
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Compares two Consistency objects for equality.
+
+        Args:
+            other: The other Consistency object to compare with.
+
+        Returns:
+            True if the objects are equal, False otherwise.
+        """
+        return self._value == other._value
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Compares two Consistency objects for inequality.
+
+        Args:
+            other: The other Consistency object to compare with.
+
+        Returns:
+            True if the objects are not equal, False otherwise.
+        """
+        return self._value != other._value
+
+    @always_inline
+    fn __is__(self, other: Self) -> Bool:
+        """Checks if the Consistency object is the same as another.
+
+        Args:
+            other: The other Consistency object to compare with.
+
+        Returns:
+            True if the objects are the same, False otherwise.
+        """
+        return self == other
+
+    @always_inline
+    fn __isnot__(self, other: Self) -> Bool:
+        """Checks if the Consistency object is not the same as another.
+
+        Args:
+            other: The other Consistency object to compare with.
+
+        Returns:
+            True if the objects are not the same, False otherwise.
+        """
+        return self != other
+
+    @always_inline("nodebug")
+    fn __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
+        """Returns the MLIR attribute representation of the Consistency object.
+
+        Returns:
+            The MLIR attribute representation of the Consistency object.
+        """
+        if self is Self.NOT_ATOMIC:
+            return __mlir_attr.`#pop<atomic_ordering not_atomic>`
+        if self is Self.UNORDERED:
+            return __mlir_attr.`#pop<atomic_ordering unordered>`
+        if self is Self.MONOTONIC:
+            return __mlir_attr.`#pop<atomic_ordering monotonic>`
+        if self is Self.ACQUIRE:
+            return __mlir_attr.`#pop<atomic_ordering acquire>`
+        if self is Self.RELEASE:
+            return __mlir_attr.`#pop<atomic_ordering release>`
+        if self is Self.ACQUIRE_RELEASE:
+            return __mlir_attr.`#pop<atomic_ordering acq_rel>`
+        if self is Self.SEQUENTIAL:
+            return __mlir_attr.`#pop<atomic_ordering seq_cst>`
+
+        abort("Invalid atomic ordering")
+
+        return __mlir_attr.`#pop<atomic_ordering not_atomic>`
+
+
+# ===-----------------------------------------------------------------------===#
+# Atomic
+# ===-----------------------------------------------------------------------===#
+
+
 struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """Represents a value with atomic operations.
 
@@ -64,9 +194,11 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline("nodebug")
-    fn _fetch_add(
-        ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]
-    ) -> Scalar[dtype]:
+    fn _fetch_add[
+        *, ordering: Consistency = Consistency.SEQUENTIAL
+    ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]) -> Scalar[
+        dtype
+    ]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -74,6 +206,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         post-increment. The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
         consistent.
+
+        Parameters:
+            ordering: The memory ordering.
 
         Args:
             ptr: The source pointer.
@@ -84,7 +219,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
-            ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+            ordering = ordering.__mlir_attr(),
             syncscope = _get_kgen_string[scope](),
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](
@@ -96,13 +231,18 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline
-    fn _xchg(
-        ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]
-    ) -> Scalar[dtype]:
+    fn _xchg[
+        *, ordering: Consistency = Consistency.SEQUENTIAL
+    ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]) -> Scalar[
+        dtype
+    ]:
         """Performs an atomic exchange.
         The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
         consistent.
+
+        Parameters:
+            ordering: The memory ordering.
 
         Args:
             ptr: The source pointer.
@@ -113,7 +253,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
-            ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+            ordering = ordering.__mlir_attr(),
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](
             ptr.bitcast[
@@ -124,11 +264,16 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline
-    fn store(ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+    fn store[
+        *, ordering: Consistency = Consistency.SEQUENTIAL
+    ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
         """Performs atomic store.
         The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
         consistent.
+
+        Parameters:
+            ordering: The memory ordering.
 
         Args:
             ptr: The source pointer.
@@ -136,7 +281,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         _ = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
-            ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+            ordering = ordering.__mlir_attr(),
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](
             ptr.bitcast[
@@ -345,7 +490,11 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
 @always_inline
 fn _compare_exchange_weak_integral_impl[
-    dtype: DType, //, *, scope: StaticString
+    dtype: DType, //,
+    *,
+    scope: StaticString,
+    failure_ordering: Consistency = Consistency.SEQUENTIAL,
+    success_ordering: Consistency = Consistency.SEQUENTIAL,
 ](
     value_addr: UnsafePointer[Scalar[dtype], **_],
     mut expected: Scalar[dtype],
@@ -353,8 +502,8 @@ fn _compare_exchange_weak_integral_impl[
 ) -> Bool:
     constrained[dtype.is_integral(), "the input type must be integral"]()
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
-        failure_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        success_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+        failure_ordering = failure_ordering.__mlir_attr(),
+        success_ordering = success_ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
     ](
         value_addr.bitcast[
@@ -375,14 +524,14 @@ fn _compare_exchange_weak_integral_impl[
 
 @always_inline
 fn _max_impl_base[
-    dtype: DType, //, *, scope: StaticString
+    dtype: DType, //, *, scope: StaticString, ordering: Consistency
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[
         __mlir_type[`!pop.scalar<`, dtype.value, `>`]
     ]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op max>`,
-        ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+        ordering = ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
     ](value_addr.address, rhs.value)
@@ -390,14 +539,14 @@ fn _max_impl_base[
 
 @always_inline
 fn _min_impl_base[
-    dtype: DType, //, *, scope: StaticString
+    dtype: DType, //, *, scope: StaticString, ordering: Consistency
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[
         __mlir_type[`!pop.scalar<`, dtype.value, `>`]
     ]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op min>`,
-        ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
+        ordering = ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
     ](value_addr.address, rhs.value)
@@ -405,45 +554,51 @@ fn _min_impl_base[
 
 @always_inline
 fn _max_impl[
-    dtype: DType, //, *, scope: StaticString
+    dtype: DType, //,
+    *,
+    scope: StaticString,
+    ordering: Consistency = Consistency.SEQUENTIAL,
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
         alias integral_type = _integral_type_of[dtype]()
         alias unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
-            _max_impl_base[scope=scope](
+            _max_impl_base[scope=scope, ordering=ordering](
                 ptr.bitcast[Scalar[integral_type]](),
                 bitcast[integral_type](rhs),
             )
             return
-        _min_impl_base[scope=scope](
+        _min_impl_base[scope=scope, ordering=ordering](
             ptr.bitcast[Scalar[unsigned_integral_type]](),
             bitcast[unsigned_integral_type](rhs),
         )
         return
 
-    _max_impl_base[scope=scope](ptr, rhs)
+    _max_impl_base[scope=scope, ordering=ordering](ptr, rhs)
 
 
 @always_inline
 fn _min_impl[
-    dtype: DType, //, *, scope: StaticString
+    dtype: DType, //,
+    *,
+    scope: StaticString,
+    ordering: Consistency = Consistency.SEQUENTIAL,
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
         alias integral_type = _integral_type_of[dtype]()
         alias unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
-            _min_impl_base[scope=scope](
+            _min_impl_base[scope=scope, ordering=ordering](
                 ptr.bitcast[Scalar[integral_type]](),
                 bitcast[integral_type](rhs),
             )
             return
-        _max_impl_base[scope=scope](
+        _max_impl_base[scope=scope, ordering=ordering](
             ptr.bitcast[Scalar[unsigned_integral_type]](),
             bitcast[unsigned_integral_type](rhs),
         )
         return
 
-    _min_impl_base[scope=scope](ptr, rhs)
+    _min_impl_base[scope=scope, ordering=ordering](ptr, rhs)
