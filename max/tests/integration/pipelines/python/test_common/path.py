@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
-from max.pipelines import SupportedEncoding
+from max.pipelines.lib import SupportedEncoding
 
 
 def find_runtime_path(

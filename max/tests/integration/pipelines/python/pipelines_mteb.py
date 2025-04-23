@@ -40,7 +40,6 @@ from max.pipelines import (
     PipelineConfig,
     PipelineEngine,
 )
-from max.pipelines.architectures import register_all_models
 from max.pipelines.core import (
     PipelineTask,
     PipelineTokenizer,
@@ -215,7 +214,6 @@ def main(
     if model_library == "mteb":
         model = mteb.get_model(pipeline_config.model_config.model_path)
     else:
-        register_all_models()
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
             pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
         )

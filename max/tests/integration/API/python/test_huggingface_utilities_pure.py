@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from max.pipelines.hf_utils import HuggingFaceRepo
+from max.pipelines.lib import HuggingFaceRepo
 
 
 def test_huggingface_repo__local_path():

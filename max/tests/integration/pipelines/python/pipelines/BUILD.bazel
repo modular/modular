@@ -48,7 +48,7 @@ modular_py_test(
     deps = [
         "//SDK/integration-test/pipelines/python:hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/lib",
         requirement("transformers"),
         requirement("xgrammar"),
     ],

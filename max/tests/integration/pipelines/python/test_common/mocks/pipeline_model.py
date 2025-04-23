@@ -16,7 +16,8 @@ from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
-from max.pipelines import (
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -24,7 +25,6 @@ from max.pipelines import (
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.core import TextContext
 from transformers import AutoConfig
 
 

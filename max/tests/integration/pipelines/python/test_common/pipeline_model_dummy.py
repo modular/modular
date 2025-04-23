@@ -34,7 +34,7 @@ from max.pipelines import (
     upper_bounded_default,
 )
 from max.pipelines.core import InputContext
-from max.pipelines.pipeline import KVCacheMixin
+from max.pipelines.lib import KVCacheMixin
 from transformers import AutoConfig
 
 

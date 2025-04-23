@@ -12,8 +12,8 @@ from typing import Optional, Union
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import SupportedEncoding, TextGenerationPipeline
 from max.pipelines.core import TextContext
+from max.pipelines.lib import SupportedEncoding, TextGenerationPipeline
 
 from .pipeline_config import (
     DummyMAXModelConfig,

@@ -8,9 +8,7 @@ from __future__ import annotations
 from functools import wraps
 from unittest.mock import patch
 
-from max.pipelines import (
-    MEMORY_ESTIMATOR,
-)
+from max.pipelines.lib import MEMORY_ESTIMATOR
 
 
 def mock_estimate_memory_footprint(func):

@@ -98,7 +98,7 @@ modular_py_library(
     srcs = ["path.py"],
     imports = [".."],
     deps = [
-        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/lib",
         "@rules_python//python/runfiles",
     ],
 )
@@ -169,7 +169,7 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/lib",
         requirement("transformers"),
         requirement("setuptools"),
     ],

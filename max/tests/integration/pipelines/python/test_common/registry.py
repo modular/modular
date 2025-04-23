@@ -9,7 +9,6 @@ from functools import wraps
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY
-from max.pipelines.architectures import register_all_models
 
 
 @pytest.fixture(scope="session")
@@ -29,10 +28,6 @@ def pipeline_registry():
     - It ensures that all production models are registered before the test runs, providing a consistent testing environment.
     - The registry state is maintained across tests, allowing for potential cumulative effects or shared state between tests.
     """
-
-    if not PIPELINE_REGISTRY.architectures:
-        register_all_models()
-
     yield PIPELINE_REGISTRY
 
 

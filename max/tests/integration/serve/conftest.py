@@ -9,7 +9,6 @@ import time
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY, PipelineTask
-from max.pipelines.architectures import register_all_models
 from max.pipelines.core import TextGenerationResponse
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
@@ -71,9 +70,6 @@ def settings_config(request):
 @pytest.fixture(scope="session")
 def app(pipeline_config, settings_config):
     """The FastAPI app used to serve the model."""
-
-    if not PIPELINE_REGISTRY.architectures:
-        register_all_models()
 
     pipeline_task = PipelineTask.TEXT_GENERATION
     if (

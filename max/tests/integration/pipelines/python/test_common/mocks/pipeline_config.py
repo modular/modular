@@ -14,7 +14,7 @@ from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import (
     KVCacheStrategy,
 )
-from max.pipelines import (
+from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,

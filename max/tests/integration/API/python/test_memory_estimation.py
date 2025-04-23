@@ -11,7 +11,7 @@ from unittest.mock import PropertyMock, patch
 
 import pytest
 from max.driver import load_devices
-from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
+from max.pipelines.lib import MEMORY_ESTIMATOR
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import DUMMY_ARCH, DummyLlamaPipelineModel
 

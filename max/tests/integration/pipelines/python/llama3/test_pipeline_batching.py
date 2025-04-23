@@ -15,16 +15,12 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.architectures import register_all_models
 from max.pipelines.core import TokenGeneratorRequest
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
 @pytest.fixture(scope="session")
 def pipeline_config() -> PipelineConfig:
-    if not PIPELINE_REGISTRY.architectures:
-        register_all_models()
-
     return PipelineConfig(
         model_path="HuggingFaceTB/SmolLM-135M",
         quantization_encoding=SupportedEncoding.float32,
@@ -51,9 +47,6 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
 def pipeline(
     pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
 ) -> TextGenerationPipeline:
-    if not PIPELINE_REGISTRY.architectures:
-        register_all_models()
-
     _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, TextGenerationPipeline)
     return pipeline

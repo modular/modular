@@ -33,9 +33,8 @@ import transformers
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.architectures import register_all_models
-from max.pipelines.config_enums import PipelineEngine
 from max.pipelines.core import interfaces
+from max.pipelines.lib import PipelineEngine
 from test_common import (
     evaluate,
     evaluate_embeddings,
@@ -773,10 +772,6 @@ def generate_llm_logits(
     similarity.
 
     """
-
-    # Register all models.
-    register_all_models()
-
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
 

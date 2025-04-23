@@ -13,7 +13,7 @@ from max.pipelines import (
     PIPELINE_REGISTRY,
     SupportedEncoding,
 )
-from max.pipelines.config import PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_model_dummy import DUMMY_ARCH
 from test_common.registry import prepare_registry
