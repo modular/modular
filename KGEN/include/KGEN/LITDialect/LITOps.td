@@ -1668,7 +1668,7 @@ def LIT_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
-                      [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+                      [Pure, InferTypeOpAdaptor]> {
   let summary = "reference pack get element";
   let description = [{
     The `lit.ref.pack.extract` operation returns the reference in the pack at the

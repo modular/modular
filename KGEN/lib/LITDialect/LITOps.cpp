@@ -1794,21 +1794,22 @@ Value RefPackCreateOp::findRefPackCreate(Value val) {
 // RefPackExtractOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult RefPackExtractOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
-    DictionaryAttr attrs, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+LogicalResult
+RefPackExtractOp::inferReturnTypes(MLIRContext *context,
+                                   std::optional<Location> loc, Adaptor adaptor,
+                                   SmallVectorImpl<Type> &inferredReturnTypes) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
   };
-  if (operands.size() != 1 || !isa<RefPackType>(operands[0].getType()))
+  if (adaptor.getOperands().size() != 1 ||
+      !isa<RefPackType>(adaptor.getPack().getType()))
     return emitError("expected 1 operand");
 
-  auto indexAttr = dyn_cast_if_present<TypedAttr>(attrs.get("index"));
+  auto indexAttr = dyn_cast_if_present<TypedAttr>(adaptor.getIndexAttr());
   if (!indexAttr || !indexAttr.getType().isIndex())
     return emitError("expected an index attribute");
 
-  auto refPackTy = cast<RefPackType>(operands[0].getType());
+  auto refPackTy = cast<RefPackType>(adaptor.getPack().getType());
 
   // The result type is a !lit.ref wrapping the type extracted from the
   // type list.  Extract the element from the type list.

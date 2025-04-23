@@ -972,11 +972,11 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult CreateClosureOp::inferReturnTypes(
-    MLIRContext *ctx, std::optional<Location> loc, ValueRange captures,
-    DictionaryAttr attributes, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &results) {
-  auto callee = dyn_cast_or_null<TypedAttr>(attributes.get("callee"));
+LogicalResult
+CreateClosureOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
+                                  Adaptor adaptor,
+                                  SmallVectorImpl<Type> &results) {
+  auto callee = dyn_cast_or_null<TypedAttr>(adaptor.getCalleeAttr());
   if (!callee) {
     return mlir::emitOptionalError(
         loc, "'create_closure' expected TypedAttr 'callee'");
@@ -988,6 +988,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
         "'create_closure' attribute 'callee' must have FuncTypeGeneratorType");
   }
 
+  ValueRange captures = adaptor.getOperands();
   FuncType sig = sigGen.getBody();
   unsigned numCaptures = captures.size();
   if (numCaptures > sig.getNumArguments()) {
@@ -1341,21 +1342,23 @@ static Type getPackFieldAtIndex(PackType packType, TypedAttr index) {
   return ParamType::get(typeAttr);
 }
 
-LogicalResult PackExtractOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
-    DictionaryAttr attrs, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+LogicalResult
+PackExtractOp::inferReturnTypes(MLIRContext *context,
+                                std::optional<Location> loc, Adaptor adaptor,
+                                SmallVectorImpl<Type> &inferredReturnTypes) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
   };
-  if (operands.size() != 1 || !isa<PackType>(operands[0].getType()))
+
+  ValueRange operands = adaptor.getOperands();
+  if (operands.size() != 1 || !isa<PackType>(adaptor.getPack().getType()))
     return emitError("expected 1 operand");
 
-  auto indexAttr = dyn_cast_if_present<TypedAttr>(attrs.get("index"));
+  auto indexAttr = dyn_cast_if_present<TypedAttr>(adaptor.getIndexAttr());
   if (!indexAttr || !indexAttr.getType().isIndex())
     return emitError("expected an index attribute");
 
-  auto packType = cast<PackType>(operands[0].getType());
+  auto packType = cast<PackType>(adaptor.getPack().getType());
   inferredReturnTypes.push_back(getPackFieldAtIndex(packType, indexAttr));
   return success();
 }
@@ -1364,21 +1367,23 @@ LogicalResult PackExtractOp::inferReturnTypes(
 // PackGEPOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult PackGEPOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
-    DictionaryAttr attrs, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+LogicalResult
+PackGEPOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
+                            Adaptor adaptor,
+                            SmallVectorImpl<Type> &inferredReturnTypes) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
   };
-  if (operands.size() != 1 || !isa<PointerType>(operands[0].getType()))
+
+  ValueRange operands = adaptor.getOperands();
+  if (operands.size() != 1 || !isa<PointerType>(adaptor.getPack().getType()))
     return emitError("expected 1 operand");
   auto packType = dyn_cast<PackType>(
-      cast<PointerType>(operands[0].getType()).getElementType());
+      cast<PointerType>(adaptor.getPack().getType()).getElementType());
   if (!packType)
     return emitError("expected pointer to pack type");
 
-  auto indexAttr = dyn_cast_if_present<TypedAttr>(attrs.get("index"));
+  auto indexAttr = dyn_cast_if_present<TypedAttr>(adaptor.getIndexAttr());
   if (!indexAttr || !indexAttr.getType().isIndex())
     return emitError("expected an index attribute");
 
@@ -1391,15 +1396,15 @@ LogicalResult PackGEPOp::inferReturnTypes(
 // PackLoadOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult PackLoadOp::inferReturnTypes(
-    MLIRContext *ctx, std::optional<Location> loc, ValueRange operands,
-    DictionaryAttr attrs, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &types) {
-  if (!isa<PackType>(operands[0].getType()))
-    return mlir::emitError(loc.value_or(operands[0].getLoc()),
+LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
+                                           std::optional<Location> loc,
+                                           Adaptor adaptor,
+                                           SmallVectorImpl<Type> &types) {
+  if (!isa<PackType>(adaptor.getPack().getType()))
+    return mlir::emitError(loc.value_or(adaptor.getPack().getLoc()),
                            "expected one !kgen.pack operand, not ")
-           << operands[0].getType();
-  auto packType = cast<PackType>(operands[0].getType());
+           << adaptor.getPack().getType();
+  auto packType = cast<PackType>(adaptor.getPack().getType());
   // The result type is the same as the input type, but with a layer of pointers
   // stripped off.
   auto mappedTypes =
@@ -1439,12 +1444,12 @@ LogicalResult StructExtractOp::verify() {
 template <typename OpT>
 static FailureOr<Type>
 inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
-                       StructType structType, DictionaryAttr attrs) {
+                       StructType structType, typename OpT::Adaptor adaptor) {
   if (!structType)
     return emitError("expected struct operand");
-  mlir::OperationName name(OpT::getOperationName(), attrs.getContext());
-  auto indexAttr =
-      dyn_cast_if_present<IntegerAttr>(attrs.get(OpT::getIndexAttrName(name)));
+  mlir::OperationName name(OpT::getOperationName(), structType.getContext());
+
+  IntegerAttr indexAttr = adaptor.getIndexAttr();
   if (!indexAttr)
     return emitError("expected an integer index attribute");
   size_t index = indexAttr.getInt();
@@ -1454,17 +1459,18 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
 }
 
 LogicalResult StructExtractOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> location, ValueRange operands,
-    DictionaryAttr attributes, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+    MLIRContext *context, std::optional<Location> location, Adaptor adaptor,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(location, msg);
   };
+
+  ValueRange operands = adaptor.getOperands();
   if (operands.size() != 1)
     return emitError("expected 1 operand");
   auto structType = dyn_cast<StructType>(operands.front().getType());
-  FailureOr<Type> type = inferStructElementType<StructExtractOp>(
-      emitError, structType, attributes);
+  FailureOr<Type> type =
+      inferStructElementType<StructExtractOp>(emitError, structType, adaptor);
   if (succeeded(type))
     inferredReturnTypes.push_back(*type);
   return type;
@@ -1504,21 +1510,23 @@ LogicalResult StructGEPOp::verify() {
       getIndexAttr(), getType().getElementType(), "result");
 }
 
-LogicalResult StructGEPOp::inferReturnTypes(
-    MLIRContext *context, std::optional<Location> location, ValueRange operands,
-    DictionaryAttr attributes, mlir::OpaqueProperties properties,
-    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+LogicalResult
+StructGEPOp::inferReturnTypes(MLIRContext *context,
+                              std::optional<Location> location, Adaptor adaptor,
+                              SmallVectorImpl<Type> &inferredReturnTypes) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(location, msg);
   };
+
+  ValueRange operands = adaptor.getOperands();
   if (operands.size() != 1)
     return emitError("expected 1 operand");
-  auto pointerType = dyn_cast<PointerType>(operands.front().getType());
+  auto pointerType = dyn_cast<PointerType>(adaptor.getContainer().getType());
   if (!pointerType)
     return emitError("expected pointer operand");
   auto structType = dyn_cast<StructType>(pointerType.getElementType());
-  FailureOr<Type> type = inferStructElementType<StructExtractOp>(
-      emitError, structType, attributes);
+  FailureOr<Type> type =
+      inferStructElementType<StructGEPOp>(emitError, structType, adaptor);
   if (succeeded(type))
     inferredReturnTypes.push_back(PointerType::get(*type));
   return type;
@@ -1588,12 +1596,10 @@ LogicalResult VariantGetOp::verify() {
          << " but operand has type " << getType();
 }
 
-LogicalResult
-VariantGetOp::inferReturnTypes(MLIRContext *, std::optional<Location> loc,
-                               ValueRange operands, DictionaryAttr attrs,
-                               mlir::OpaqueProperties, RegionRange,
-                               SmallVectorImpl<Type> &types) {
-  VariantGetOpAdaptor adaptor(operands, attrs);
+LogicalResult VariantGetOp::inferReturnTypes(MLIRContext *,
+                                             std::optional<Location> loc,
+                                             Adaptor adaptor,
+                                             SmallVectorImpl<Type> &types) {
   unsigned index = adaptor.getIndex();
   auto variant = cast<VariantType>(adaptor.getVariant().getType());
   if (index >= variant.getNumTypes())
