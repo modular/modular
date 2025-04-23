@@ -25,6 +25,7 @@ thread blocks and warps, and manage memory consistency across different memory s
 
 from sys.info import _is_sm_9x
 from sys.param_env import env_get_bool
+from os.atomic import Consistency
 
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
@@ -93,13 +94,13 @@ fn barrier():
         __mlir_op.`pop.fence`[
             _type=None,
             syncscope = "workgroup".value,
-            ordering = __mlir_attr.`#pop<atomic_ordering release>`,
+            ordering = Consistency.RELEASE.__mlir_attr(),
         ]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
         __mlir_op.`pop.fence`[
             _type=None,
             syncscope = "workgroup".value,
-            ordering = __mlir_attr.`#pop<atomic_ordering acquire>`,
+            ordering = Consistency.ACQUIRE.__mlir_attr(),
         ]()
 
 

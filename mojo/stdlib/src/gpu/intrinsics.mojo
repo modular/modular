@@ -29,6 +29,7 @@ from collections.string.string_slice import get_static_string
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x, alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic, readfirstlane
+from os.atomic import Consistency
 
 from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer
@@ -698,7 +699,7 @@ fn store_release[
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
             alignment = ptr.alignment.value,
-            ordering = __mlir_attr.`#pop<atomic_ordering release>`,
+            ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     else:
         abort("unsupported device type")
@@ -752,7 +753,7 @@ fn load_acquire[
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
             alignment = ptr.alignment.value,
-            ordering = __mlir_attr.`#pop<atomic_ordering acquire>`,
+            ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     else:
         return abort[Scalar[type]]("unsupported device type")
