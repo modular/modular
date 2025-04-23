@@ -412,31 +412,25 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn __merge_with__[
-        other_mut: Bool,
-        other_origin: Origin[other_mut],
-        other_alignment: Int, //,
         other_type: __type_of(
             UnsafePointer[
                 type,
                 address_space=address_space,
-                alignment=other_alignment,
-                mut=other_mut,
-                origin=other_origin,
+                alignment=_,
+                mut=_,
+                origin=_,
             ]
         ),
     ](self) -> UnsafePointer[
         type=type,
-        mut = mut & other_mut,
-        origin = __origin_of(origin, other_origin),
+        mut = mut & other_type.origin.mut,
+        origin = __origin_of(origin, other_type.origin),
         address_space=address_space,
-        alignment = min(alignment, other_alignment),
+        alignment = min(alignment, other_type.alignment),
     ]:
         """Returns a pointer merged with the specified `other_type`.
 
         Parameters:
-            other_mut: Whether the other pointer is mutable.
-            other_origin: The origin of the other pointer.
-            other_alignment: The alignment of the other pointer.
             other_type: The type of the pointer to merge with.
 
         Returns:

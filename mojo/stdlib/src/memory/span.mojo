@@ -519,22 +519,15 @@ struct Span[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_mut: Bool,
-        other_origin: Origin[other_mut], //,
         other_type: __type_of(
-            Span[
-                T,
-                other_origin,
-                address_space=address_space,
-                alignment=alignment,
-            ]
+            Span[T, _, address_space=address_space, alignment=alignment]
         ),
     ](
         self,
         out result: Span[
-            mut = mut & other_mut,
+            mut = mut & other_type.origin.mut,
             T,
-            __origin_of(origin, other_origin),
+            __origin_of(origin, other_type.origin),
             address_space=address_space,
             alignment=alignment,
         ],
@@ -542,8 +535,6 @@ struct Span[
         """Returns a pointer merged with the specified `other_type`.
 
         Parameters:
-            other_mut: Whether the other pointer is mutable.
-            other_origin: The origin of the other pointer.
             other_type: The type of the pointer to merge with.
 
         Returns:
