@@ -21,7 +21,7 @@ from max.pipelines.core import (
     PipelinesFactory,
     TokenGenerator,
 )
-from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
+from max.pipelines.lib.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig

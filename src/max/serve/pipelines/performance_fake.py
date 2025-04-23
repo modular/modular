@@ -22,7 +22,7 @@ from max.pipelines.core import (
     TokenGenerator,
     TokenGeneratorRequest,
 )
-from max.pipelines.tokenizer import PreTrainedPipelineTokenizer
+from max.pipelines.lib.tokenizer import PreTrainedPipelineTokenizer
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 

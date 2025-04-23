@@ -17,12 +17,12 @@ from typing import Callable, Generic, Optional, TypeVar
 
 import numpy as np
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PipelineConfig
 from max.pipelines.core import (
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
+from max.pipelines.lib.config import PipelineConfig
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.scheduler.queues import (
