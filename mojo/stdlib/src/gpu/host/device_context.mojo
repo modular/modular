@@ -87,6 +87,17 @@ alias _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
 # Define helper methods to call AsyncRT bindings.
 
 
+fn _string_from_charptr(owned c_str: _CharPtr) -> String:
+    var str_len = 0
+    while c_str.load(str_len):
+        str_len += 1
+
+    result = String(Span[Byte, ImmutableAnyOrigin](ptr=c_str, length=str_len))
+    # void AsyncRT_DeviceContext_strfree(const char* ptr)
+    external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](c_str)
+    return result
+
+
 @always_inline
 fn _checked(
     err: _CharPtr,
@@ -102,9 +113,7 @@ fn _checked(
 fn _raise_checked_impl(
     err_msg: _CharPtr, msg: String, location: _SourceLocation
 ) raises:
-    var err = StaticString(unsafe_from_utf8_ptr=err_msg)
-    # void AsyncRT_DeviceContext_strfree(const char* ptr)
-    external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](err_msg)
+    var err = _string_from_charptr(err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
 
 
@@ -2457,11 +2466,7 @@ struct DeviceContext(CollectionElement):
         ](
             self._handle,
         )
-        var result = StaticString(unsafe_from_utf8_ptr=name_ptr)
-        # void AsyncRT_DeviceContext_strfree(const char* ptr)
-        external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](
-            name_ptr
-        )
+        var result = _string_from_charptr(name_ptr)
         return result
 
     fn api(self) -> String:
