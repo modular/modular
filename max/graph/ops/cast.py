@@ -17,7 +17,7 @@ def cast(x: TensorValueLike, dtype: DType) -> TensorValue:
     """Casts a symbolic tensor to a different data type.
 
     Args:
-        v: The input tensor to cast.
+        x: The input tensor to cast.
         dtype: The target dtype to which the tensor is cast.
 
     Returns:
