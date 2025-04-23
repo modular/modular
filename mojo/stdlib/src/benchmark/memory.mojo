@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os.atomic as atomic
+
 # ===-----------------------------------------------------------------------===#
 # clobber_memory
 # ===-----------------------------------------------------------------------===#
@@ -21,7 +23,7 @@ fn clobber_memory():
     """Forces all pending memory writes to be flushed to memory.
 
     This ensures that the compiler does not optimize away memory writes if it
-    deems them to be not neccessary. In effect, this operation acts a barrier
+    deems them to be not necessary. In effect, this operation acts as a barrier
     to memory reads and writes.
     """
 
@@ -30,5 +32,5 @@ fn clobber_memory():
     __mlir_op.`pop.fence`[
         _type=None,
         syncscope = "singlethread".value,
-        ordering = __mlir_attr.`#pop<atomic_ordering acq_rel>`,
+        ordering = atomic.Consistency.ACQUIRE_RELEASE.__mlir_attr(),
     ]()
