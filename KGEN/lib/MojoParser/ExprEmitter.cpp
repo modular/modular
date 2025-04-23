@@ -1602,7 +1602,7 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return ASTType(BindTypeAttr::get(PValue(tupleType), bindingsAttr));
+  return metaType.getType().bindAll(bindingsAttr.getValue());
 }
 
 //===----------------------------------------------------------------------===//
