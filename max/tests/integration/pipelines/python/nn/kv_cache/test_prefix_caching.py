@@ -660,8 +660,7 @@ def run_forward(
     orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
     new_toks = {seq_id: np.array([next_tok])}
     if run_fetch:
-        kv_manager.reuse_blocks_from_prefix_cache(ctx)
-        scheduled = kv_manager.allocate_new_blocks(ctx, num_steps=1)
+        scheduled = kv_manager.prefetch(ctx, num_steps=1)
         assert scheduled
 
         fetch_kv_tuple = kv_manager.fetch(batch, num_steps=1)
