@@ -16,10 +16,8 @@ from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, assert_almost_equal
 from kv_cache.types import (
-    ContiguousKVCache,
-    ContiguousKVCacheCollection,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    KVCacheT,
 )
 from memory import UnsafePointer, memcpy
 from nn.fused_qk_rope import fused_qk_rope
@@ -60,7 +58,7 @@ def _fused_qk_rope[
     type: DType, q_shape: DimList, freqs_shape: DimList, //
 ](
     q_proj: DeviceNDBuffer[type, shape=q_shape],
-    kv_collection: ContiguousKVCacheCollection,
+    kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: DeviceNDBuffer[type, shape=freqs_shape],
     layer_idx: UInt32,
     output: DeviceNDBuffer[type, shape=q_shape],
@@ -93,6 +91,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     # Set up test hyperparameters.
     alias batch_size = 2
     alias start_positions = List[UInt32](0, 5)
+    alias lookup_table = List[UInt32](0, 1)
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1
@@ -118,33 +117,30 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     alias kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[5](
-        num_layers, batch_size, max_seq_len, num_heads, head_dim
+    alias block_shape = DimList(
+        batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
 
     # Construct backing buffer and the KV cache itself.
-    k_cache_block_host = HostNDBuffer[
-        type,
-        shape = DimList(
-            num_layers, batch_size, max_seq_len, num_heads, head_dim
-        ),
-    ](block_shape)
+    kv_cache_block_host = HostNDBuffer[type, shape=block_shape](
+        block_shape.into_index_list[6]()
+    )
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[type]()
     for batch_idx in range(batch_size):
         memcpy(
-            dest=(
-                k_cache_block_host.tensor.data
-                + (batch_idx * max_seq_len * dim)
-                + Int(start_positions[batch_idx] * dim)
+            dest=kv_cache_block_host.tensor._offset(
+                IndexList[6](
+                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                )
             ),
             src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
 
     # Copy KV cache block to device.
-    k_cache_block_dev = k_cache_block_host.copy_to_device(ctx)
+    kv_cache_block_dev = kv_cache_block_host.copy_to_device(ctx)
 
     # Create the actual KV cache type.
     var max_cache_len_in_batch = 0
@@ -156,24 +152,22 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         DType.uint32, 1, shape = DimList(batch_size)
     ](ctx=ctx)
     ctx.enqueue_copy(cache_lengths.buffer, start_positions.data)
-    ctx.synchronize()
 
-    k_cache_block = NDBuffer[type, 5](
-        k_cache_block_dev.buffer.unsafe_ptr(), block_shape
-    )
-    kv_collection = ContiguousKVCacheCollection[type, kv_params](
-        key_cache=k_cache_block,
-        value_cache=NDBuffer[type, 5](
-            UnsafePointer[Scalar[type]](), block_shape
-        ),  # passing as a dummy val, this isn't used.
+    lookup_table_dev = DeviceNDBuffer[
+        DType.uint32, 1, shape = DimList(batch_size)
+    ](ctx=ctx)
+    ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.data)
+
+    kv_collection = ContinuousBatchingKVCacheCollection[type, kv_params](
+        blocks=kv_cache_block_dev.tensor,
         cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
             cache_lengths.tensor
         ),
-        is_context_encoding=False,
-        num_layers=num_layers,
-        batch_size=batch_size,
-        max_seq_len_in_batch=seq_len,
-        max_cache_len_in_batch=max_cache_len_in_batch,
+        lookup_table=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+            lookup_table_dev.tensor
+        ),
+        max_seq_length=seq_len,
+        max_cache_length=max_cache_len_in_batch,
     )
 
     # Create and initialize query buffer.
@@ -215,6 +209,9 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         context=ctx,
     )
 
+    # Copy KV cache block from device.
+    kv_cache_block_out_host = kv_cache_block_dev.copy_from_device(ctx)
+
     # Compare output and expected query tensors.
     q_out_host = HostNDBuffer[q_dev.type, q_dev.rank, shape = q_dev.shape]()
     ctx.enqueue_copy(q_out_host.tensor.data, q_out_dev.buffer)
@@ -225,26 +222,15 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         expected_q_out.data,
         expected_q_out.num_elements(),
     )
-    _ = q_out_host^
 
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):
-        k_cache_offset = (
-            (batch_idx * max_seq_len * dim)
-            # Account for the start_pos (cache_length) for this batch item.
-            + Int(start_positions[batch_idx] * dim)
-        )
-        k_cache_host_batch_item = (
-            k_cache_block_host.tensor.data + k_cache_offset
-        )
-        k_cache_dev_batch_item = k_cache_block_dev.buffer.create_sub_buffer[
-            type
-        ](k_cache_offset, seq_len * dim)
-        ctx.enqueue_copy(k_cache_host_batch_item, k_cache_dev_batch_item)
-        ctx.synchronize()
-
         assert_almost_equal(
-            k_cache_host_batch_item,
+            kv_cache_block_out_host.tensor._offset(
+                IndexList[6](
+                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                )
+            ),
             expected_k_out_buffer.data + (batch_idx * seq_len * dim),
             # Number of elements in one batch item.
             len(expected_k_out_buffer) // batch_size,
@@ -252,8 +238,10 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
 
     # Ensure the lifetimes of the KV cache and output, since their data is
     # accessed through NDBuffers, which isn't parametrized on lifetime.
-    _ = k_cache_block_dev^
+    _ = kv_cache_block_dev^
     _ = q_out_dev^
+    _ = cache_lengths^
+    _ = lookup_table_dev^
 
 
 def main() -> None:
