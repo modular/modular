@@ -168,6 +168,9 @@ for i in range(iteration_range):
   `var x = Python.list(1, 2, "foo")`.  We hope to re-enable the syntax in
   the future as the standard library matures.
 
+- One can now specify the consistency used in atomic operations with the default
+  being sequential consistency.
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
