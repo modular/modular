@@ -654,7 +654,7 @@ fn test_subscript_conflict(a: Int):
 struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
-    # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
+    # FIXME: This shouldn't mention mut since it is an implicit parameter.
     # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, origin]' to 'Addable'}}
     _ = b+a
 

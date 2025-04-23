@@ -775,8 +775,8 @@ struct MyList[T: Copyable]:
     fn __init__(out self, *values: T): pass
 
 # Infer-only parameters should be bindable with keywords
-alias ImmMyStringSlice = MyStringSlice[is_mutable=False]
-struct MyStringSlice[is_mutable: Bool, //, origin: Origin[is_mutable]]:  pass
+alias ImmMyStringSlice = MyStringSlice[mut=False]
+struct MyStringSlice[mut: Bool, //, origin: Origin[mut]]:  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
@@ -1087,11 +1087,11 @@ fn infer_box_type[T: AnyType, //, box: Box[T]]():
 # MOCO-1457: Support struct param inference for origins
 struct OriginStructInferenceImm[origin: Origin[False]]:
     fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
-struct OriginStructInferencePar[is_mutable: Bool, //, origin: Origin[is_mutable]]:
+struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut]]:
     fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
-struct OriginStructInferenceParWrapped[is_mutable: Bool, //, origin: Origin[is_mutable]]:
+struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut]]:
     fn __init__(out self, ref [origin]data: Int):  pass
-struct OriginStructInferenceParSpecialized[is_mutable: Bool, //, origin: Origin[is_mutable]]:
+struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut]]:
     fn __init__[O: Origin[False]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
 # CHECK-LABEL: lit.fn @"test_origin_struct_inf
@@ -1535,7 +1535,7 @@ fn implicit_conversion_overload(x: AutoParamDefault[`1`], ptr: ParamType[`1`]):
 # https://linear.app/modularml/issue/MOCO-1144/[mojo-lang]-crash-on-partially-bound-parameter-list
 fn takeAnyTypeReturnInt[t: AnyType]() -> Int: pass
 struct MOCO1144[
-    is_mutable: Bool,
+    mut: Bool,
     type: AnyType,
     alignment: Int = takeAnyTypeReturnInt[type]()
 ]: pass
@@ -1579,9 +1579,9 @@ fn call_variadic_pack_with_function():
 # MOCO-1065: Crash handling self conditional conformance inference.
 @value
 struct MOCO1065[
-    is_mutable: Bool, //,
+    mut: Bool, //,
     T: CollectionElement,
-    o: Origin[is_mutable]._mlir_type,
+    o: Origin[mut]._mlir_type,
 ]:
     fn __init__(out self: MOCO1065[UInt8, o], ref [o] string: Empty):
         pass

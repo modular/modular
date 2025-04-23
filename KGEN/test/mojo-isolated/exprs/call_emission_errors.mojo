@@ -179,7 +179,7 @@ struct ParametricMutability:
 
 
 fn test_ref[
-    is_mutable: Bool, origin: Origin[is_mutable]._mlir_type
+    mut: Bool, origin: Origin[mut]._mlir_type
 ](ref [origin]arg: String):
     pass
 

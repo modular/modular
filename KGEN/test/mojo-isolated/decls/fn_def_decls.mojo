@@ -171,7 +171,7 @@ def test_def_arg_box_mbvalue(
     # CHECK-NEXT: lit.ref.store [[TMP]], %xyz
     var xyz = a.method()
 
-    # MOCO-715: failed to infer implicit parameter 'is_mutable' of argument 'self' type 'Pointer
+    # MOCO-715: failed to infer implicit parameter 'mut' of argument 'self' type 'Pointer
     # CHECK-NEXT: [[MEMBERREF:%.*]] = lit.ref.struct.ger %b[member]
     _ = b.member.method()
 

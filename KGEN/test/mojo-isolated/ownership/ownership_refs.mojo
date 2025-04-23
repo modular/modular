@@ -291,7 +291,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool *"is_mutable`"> *"origin`1", "_mlir_origin">>
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "value">, #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool *"mut`"> *"origin`1", "_mlir_origin">>
   # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin](to=UnsafePointer.address_of(arg[])[])
@@ -320,8 +320,8 @@ struct ThingWithFields:
 
 # CHECK-LABEL: lit.fn @"parametric_mut_mbvalue
 fn parametric_mut_mbvalue[
-    is_mutable: __mlir_type.i1,
-    origin: Origin[is_mutable]._mlir_type,
+    mut: __mlir_type.i1,
+    origin: Origin[mut]._mlir_type,
  ](a: Pointer[ThingWithFields, origin])
    -> Pointer[Int, __origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
@@ -482,7 +482,7 @@ fn test_origin_ref_spec[our_origin: Origin[True]](ref[our_origin] a: Int):
     pass
 
 # CHECK-LABEL: lit.fn @"another_min
-fn another_min[is_mutable: Bool, //, ao: Origin[is_mutable], bo: Origin[is_mutable]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
+fn another_min[mut: Bool, //, ao: Origin[mut], bo: Origin[mut]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
     if a < b:
         return a
     else: # This failed due to union canonicalization problems.
