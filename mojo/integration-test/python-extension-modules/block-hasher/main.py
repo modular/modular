@@ -15,6 +15,7 @@
 
 import sys
 import time
+import timeit
 
 import numpy as np
 
@@ -43,6 +44,26 @@ def naive_python_hashing(tokens: np.ndarray, block_size: int) -> list[int]:
     return results
 
 
+def print_bench_run(
+    name: str,
+    callable,
+    *,
+    iter_count: int = 1000,
+):
+    total_time = timeit.timeit(callable, number=iter_count)
+
+    print(
+        "=== Bench:",
+        name,
+        "was",
+        f"{s2us(total_time / iter_count):.2f}",
+        "µs per iteration",
+    )
+
+    # Call it once more so the user can compare the results.
+    print("\tresult = ", repr(callable()))
+
+
 if __name__ == "__main__":
     print("-" * 80)
     print("Hello from Block Hasher Example!")
@@ -54,42 +75,41 @@ if __name__ == "__main__":
 
     elapsed = []
 
-    for i in range(10):
-        enable_dbg_prints = int(i == 0)
+    enable_dbg_prints = False
 
-        t0 = time.time()
-        hashes_mojo_return_list = mojo_module.mojo_block_hasher_return_list(
+    time.sleep(1)
+
+    print_bench_run(
+        "Mojo Return List    ",
+        lambda: mojo_module.mojo_block_hasher_return_list(
             tokens, block_size, enable_dbg_prints
-        )
-        t1 = time.time()
-        dt_mojo_return_list = s2us(t1 - t0)
+        ),
+        iter_count=10_000,
+    )
 
-        t0 = time.time()
-        # Use uint64 for hashes
-        hashes_mojo_np_array_inout = np.empty(
-            len(tokens) // block_size, dtype=np.uint64
-        )
-        mojo_module.mojo_block_hasher_inplace(
-            tokens, hashes_mojo_np_array_inout, block_size, enable_dbg_prints
-        )
-        t1 = time.time()
-        dt_mojo_np_array_inout = s2us(t1 - t0)
+    time.sleep(0.1)
 
-        t0 = time.time()
-        hashes_naive = naive_python_hashing(tokens, block_size)
-        t1 = time.time()
-        dt_naive = s2us(t1 - t0)
+    print_bench_run(
+        "Mojo In-Place       ",
+        lambda: (
+            hashes_mojo_np_array_inout := np.empty(
+                len(tokens) // block_size, dtype=np.uint64
+            ),
+            mojo_module.mojo_block_hasher_inplace(
+                tokens,
+                hashes_mojo_np_array_inout,
+                block_size,
+                enable_dbg_prints,
+            ),
+            hashes_mojo_np_array_inout,
+        )[-1],
+        iter_count=10_000,
+    )
 
-        if i == 0:
-            print(f"Mojo hashes_mojo_return_list: {hashes_mojo_return_list}")
-            print(
-                f"Mojo hashes_mojo_np_array_inout: {hashes_mojo_np_array_inout}"
-            )
-            print(f"Python hashes: {hashes_naive}")
+    time.sleep(0.1)
 
-        print(
-            f"Time taken: "
-            f"{dt_mojo_return_list:.2f} us (Mojo Return List) vs "
-            f"{dt_mojo_np_array_inout:.2f} us (Mojo Inplace) vs "
-            f"{dt_naive:.2f} us (Python)"
-        )
+    print_bench_run(
+        "Python Naive Hashing",
+        lambda: naive_python_hashing(tokens, block_size),
+        iter_count=10_000,
+    )

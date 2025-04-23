@@ -14,7 +14,13 @@
 from os import abort
 
 from memory import UnsafePointer
-from python import Python, PythonObject, TypedPythonObject, PythonModule
+from python import (
+    Python,
+    PythonObject,
+    TypedPythonObject,
+    PythonModule,
+)
+from python.python import _get_global_python_itf
 from python._cpython import PyObjectPtr
 from sys import sizeof
 
@@ -77,7 +83,7 @@ fn _mojo_block_hasher[
     py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
     block_size: Int,
     enable_dbg_prints: Bool,
-) -> List[Scalar[DType.uint64]]:
+) -> PythonObject:
     # Compute number of hashes
     var num_elts: Int = py_array_object_ptr[].num_elts()
     var num_hashes: Int = num_elts // block_size
@@ -85,17 +91,24 @@ fn _mojo_block_hasher[
         print("num_elts:", num_elts)
         print("num_hashes:", num_hashes)
 
+    var cpython = _get_global_python_itf().cpython()
+
+    # Create a list of NULL elements with the size needed to store the hash
+    # results.
+    var result_py_list = cpython.PyList_New(num_hashes)
+
     # Perfoming hashing
-    var results: List[Scalar[DType.uint64]] = List[Scalar[DType.uint64]](
-        capacity=num_hashes
-    )
     var num_bytes = block_size * sizeof[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
         var hash_val = hash(hash_ptr_bytes, num_bytes)
-        results.append(Scalar[DType.uint64](hash_val))
+
+        # Convert the hash result to a Python object and store it in our
+        # uninitialized list.
+        var hash_val_obj = cpython.PyLong_FromSsize_t(hash_val)
+        _ = cpython.PyList_SetItem(result_py_list, block_idx, hash_val_obj)
 
         if enable_dbg_prints:
             print("  hash([", end="")
@@ -103,7 +116,7 @@ fn _mojo_block_hasher[
                 print(hash_ptr_ints[i], end=" ")
             print("...]) => ", hash_val)
 
-    return results
+    return result_py_list
 
 
 @export
@@ -134,7 +147,7 @@ fn mojo_block_hasher_return_list(
     )
 
     # ~7.5us
-    return PythonObject.list(results)
+    return results^
 
 
 @export
@@ -167,14 +180,18 @@ fn mojo_block_hasher_inplace(
 
     # Perform hashing
     # ~120ns
-    var results = _mojo_block_hasher(
-        np_array_tokens, block_size, enable_dbg_prints
-    )
+    var num_elts: Int = np_array_tokens[].num_elts()
+    var num_hashes: Int = num_elts // block_size
 
-    # Copy results to np_array_hashes
-    # ~2us
-    for i in range(len(results)):
-        np_array_hashes[].data[i] = Scalar[DType.uint64](results[i])
+    # Perfoming hashing and store result in np_array_hashes
+    var num_bytes = block_size * sizeof[DType.int32]()
+    var hash_ptr_base = np_array_tokens[].data
+    for block_idx in range(num_hashes):
+        var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
+        var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
+        var hash_val = hash(hash_ptr_bytes, num_bytes)
+
+        np_array_hashes[].data[block_idx] = UInt64(hash_val)
 
     # ~400ns
     return PythonObject(None)
