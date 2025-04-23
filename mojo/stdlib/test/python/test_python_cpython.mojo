@@ -45,7 +45,7 @@ def test_PyCapsule(mut python: Python):
 
     # Not a PyCapsule, a NULL pointer is expected.
     var the_object = PythonObject(0)
-    var result = Cpython_env[].PyCapsule_GetPointer(
+    var result = cpython_env.PyCapsule_GetPointer(
         the_object.py_object, "some_name"
     )
     var expected = UnsafePointer[NoneType]()
