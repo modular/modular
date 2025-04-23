@@ -281,7 +281,7 @@ fn main() raises:
         with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
 
             @parameter
-            for n in range(8, 264, 8):
+            for n in range(8, 32, 8):
                 wgmma_e4m3_e4m3_f32[
                     64,
                     n,
