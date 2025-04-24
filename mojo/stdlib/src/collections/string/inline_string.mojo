@@ -232,7 +232,14 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
 
         return res
 
-    fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
+    fn unsafe_ptr(
+        ref self,
+        out result: UnsafePointer[
+            UInt8,
+            mut = Origin(__origin_of(self)).mut,
+            origin = __origin_of(self),
+        ],
+    ):
         """Returns a pointer to the bytes of string data.
 
         Returns:
@@ -240,9 +247,11 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         """
 
         if self._is_small():
-            return self._storage[_FixedString[Self.SMALL_CAP]].unsafe_ptr()
+            return rebind[__type_of(result)](
+                self._storage[_FixedString[Self.SMALL_CAP]].unsafe_ptr()
+            )
         else:
-            return self._storage[String].unsafe_ptr()
+            return rebind[__type_of(result)](self._storage[String].unsafe_ptr())
 
     @always_inline
     fn as_string_slice(ref self) -> StringSlice[__origin_of(self)]:
