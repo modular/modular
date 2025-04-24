@@ -7,7 +7,6 @@ modular_cc_library(
     hdrs = ["Support.h"],
     deps = [
         "//KGEN/tools/mojo-lsp-test-client",
-        "//KGEN/unittests:include_shim",
         "@llvm-project//lldb:liblldb.wrapper",
         "@llvm-project//lldb:lldb21.0.0git",
         "@llvm-project//third-party/unittest:gtest",

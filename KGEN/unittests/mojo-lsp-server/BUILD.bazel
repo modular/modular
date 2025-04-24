@@ -8,7 +8,6 @@ modular_cc_library(
     deps = [
         "//KGEN/tools/mojo-lsp-server",
         "//KGEN/tools/mojo-lsp-test-client",
-        "//KGEN/unittests:include_shim",
         "@llvm-project//third-party/unittest:gtest",
     ],
 )
