@@ -121,6 +121,7 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 // LITDialectBytecodeInterface
 //===----------------------------------------------------------------------===//
 
+using WrappedBindTypeAttr = WrappedAttrType<BindTypeAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
 using WrappedOriginUnionAttr = WrappedAttrType<OriginUnionAttr>;
 using WrappedOriginMutCastAttr = WrappedAttrType<OriginMutCastAttr>;
