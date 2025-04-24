@@ -6,11 +6,12 @@
 
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Device
+from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.llama4.layers.moe import MoE
+from max.nn import Signals
+from max.pipelines.architectures.llama4.layers.moe import DistributedMoE
 from transformers.models.llama4.configuration_llama4 import (
     Llama4Config,
     Llama4TextConfig,
@@ -50,11 +51,16 @@ def generate_max_outputs(
     expert_weights: dict[str, torch.Tensor],
     shared_expert_weights: dict[str, torch.Tensor],
     dtype: DType,
-    device: Device,
+    n_devices: int,
 ) -> torch.Tensor:
-    is_gpu = isinstance(device, Accelerator)
-    device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
+    # Initialize the device-contexts
+    host = CPU(0)
+    # Check we are parallelizing over legal amounts of devices and create contexts.
+    assert n_devices <= accelerator_count()
+    devices = [Accelerator(id) for id in range(n_devices)]
+    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
+
+    input_tensor = input_tensor.cuda()
 
     state_dict = {"router.weight": dummy_router_weight.cpu()}
 
@@ -71,15 +77,25 @@ def generate_max_outputs(
         "up_proj.weight"
     ].cpu()
 
-    moe = MoE(dtype=dtype, devices=[device_ref])
+    moe = DistributedMoE(dtype=dtype, devices=devices_ref)
     moe.load_state_dict(state_dict)
 
-    session = InferenceSession(devices=[Accelerator(0)])
+    session = InferenceSession(devices=devices)
     session.set_debug_print_options(style=PrintStyle.COMPACT)
-    graph = Graph(
-        "MoE",
-        moe,
-        input_types=(
+
+    signals = Signals(devices=(DeviceRef(d.label, d.id) for d in devices))
+    signal_buffers = [
+        Tensor.zeros(
+            shape=(Signals.NUM_BYTES,),
+            dtype=DType.uint8,
+            device=dev,
+        )
+        for dev in devices
+    ]
+
+    with Graph(
+        "DistributedMoE",
+        input_types=[
             TensorType(
                 dtype,
                 (
@@ -87,13 +103,25 @@ def generate_max_outputs(
                     input_tensor.shape[1],
                     text_config.hidden_size,
                 ),
-                device=device_ref,
+                device=DeviceRef.GPU(0),
             ),
-        ),
-    )
+            *signals.input_types(),
+        ],
+    ) as graph:
+        inputs_tensor = graph.inputs[0].tensor
+        graph_signal_buffers = [v.buffer for v in graph.inputs[1:]]
+
+        inputs_per_device = [inputs_tensor.to(device) for device in devices_ref]
+
+        outputs = moe(
+            inputs_per_device,
+            graph_signal_buffers,
+        )
+
+        graph.output(outputs[0])
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
-    return compiled.execute(input_tensor)
+    return compiled.execute(input_tensor, *signal_buffers)
 
 
 def test_mix_of_experts(
@@ -123,7 +151,7 @@ def test_mix_of_experts(
         expert_weights,
         shared_expert_weights,
         max_dtype,
-        Accelerator(),
+        2,
     )
 
     torch.testing.assert_close(
