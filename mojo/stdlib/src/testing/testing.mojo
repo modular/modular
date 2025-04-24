@@ -106,7 +106,8 @@ trait Testable(EqualityComparable, Stringable):
 
 
 trait TestableCollectionElement(
-    EqualityComparableCollectionElement,
+    CollectionElement,
+    EqualityComparable,
     RepresentableCollectionElement,
 ):
     """A trait for elements that can be tested in a collection."""

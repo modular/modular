@@ -134,7 +134,6 @@ from builtin.value import (
     ComparableCollectionElement,
     Copyable,
     Defaultable,
-    EqualityComparableCollectionElement,
     ExplicitlyCopyable,
     Movable,
     RepresentableCollectionElement,

@@ -111,7 +111,7 @@ struct ListLiteral[*Ts: CollectionElement](Sized, CollectionElement):
 
     @always_inline
     fn __contains__[
-        T: EqualityComparableCollectionElement
+        T: EqualityComparable & CollectionElement
     ](self, value: T) -> Bool:
         """Determines if a given value exists in the ListLiteral.
 

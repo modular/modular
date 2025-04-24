@@ -67,7 +67,6 @@ struct Codepoint(
     EqualityComparable,
     Intable,
     Stringable,
-    EqualityComparableCollectionElement,
 ):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.

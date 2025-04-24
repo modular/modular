@@ -210,20 +210,6 @@ trait WritableCollectionElement(CollectionElement, Writable):
     pass
 
 
-trait EqualityComparableCollectionElement(
-    CollectionElement, EqualityComparable
-):
-    """
-    This trait denotes a trait composition of the `CollectionElement` and `EqualityComparable` traits.
-
-    This is useful to have as a named entity since Mojo does not
-    currently support anonymous trait compositions to constrain
-    on `CollectionElement & EqualityComparable` in the parameter.
-    """
-
-    pass
-
-
 trait ComparableCollectionElement(CollectionElement, Comparable):
     """
     This trait denotes a trait composition of the `CollectionElement` and `Comparable` traits.

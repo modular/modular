@@ -422,7 +422,7 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparableCollectionElement, rhs_alignment: Int, //
+        T: EqualityComparable & CollectionElement, rhs_alignment: Int, //
     ](
         self: Span[T, origin, alignment=alignment],
         rhs: Span[T, _, alignment=rhs_alignment],
@@ -455,7 +455,7 @@ struct Span[
 
     @always_inline
     fn __ne__[
-        T: EqualityComparableCollectionElement, //
+        T: EqualityComparable & CollectionElement, //
     ](self: Span[T, origin, alignment=alignment], rhs: Span[T]) -> Bool:
         """Verify if span is not equal to another span.
 

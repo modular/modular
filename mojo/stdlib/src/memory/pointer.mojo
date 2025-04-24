@@ -164,7 +164,6 @@ struct AddressSpace(
     Stringable,
     Writable,
     CollectionElement,
-    EqualityComparableCollectionElement,
 ):
     """Address space of the pointer."""
 

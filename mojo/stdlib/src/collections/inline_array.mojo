@@ -532,7 +532,7 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparableCollectionElement, //
+        T: EqualityComparable & CollectionElement, //
     ](self: InlineArray[T, size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 

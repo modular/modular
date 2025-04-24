@@ -558,7 +558,7 @@ struct LinkedList[
         other._tail = Self._NodePointer()
 
     fn count[
-        ElementType: EqualityComparableCollectionElement
+        ElementType: EqualityComparable & CollectionElement, //
     ](self: LinkedList[ElementType], read elem: ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
 
@@ -586,7 +586,7 @@ struct LinkedList[
         return count
 
     fn __contains__[
-        ElementType: EqualityComparableCollectionElement, //
+        ElementType: EqualityComparable & CollectionElement, //
     ](self: LinkedList[ElementType], value: ElementType) -> Bool:
         """Checks if the list contains `value`.
 
@@ -612,7 +612,7 @@ struct LinkedList[
         return False
 
     fn __eq__[
-        ElementType: EqualityComparableCollectionElement, //
+        ElementType: EqualityComparable & CollectionElement, //
     ](
         read self: LinkedList[ElementType], read other: LinkedList[ElementType]
     ) -> Bool:
@@ -647,7 +647,7 @@ struct LinkedList[
         return True
 
     fn __ne__[
-        ElementType: EqualityComparableCollectionElement, //
+        ElementType: EqualityComparable & CollectionElement, //
     ](self: LinkedList[ElementType], other: LinkedList[ElementType]) -> Bool:
         """Checks if the two lists are not equal.
 

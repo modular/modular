@@ -100,6 +100,9 @@ String types in Mojo got several significant improvements:
   `List(unsafe_uninit_length=x)` and `list.resize(unsafe_uninit_size=n)` methods
   avoid initialized memory that the caller plans to overwrite.
 
+The following traits have been removed in favor of trait composition:
+`EqualityComparableCollectionElement`.
+
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
 
