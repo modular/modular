@@ -21,7 +21,9 @@ from .dict import (
 )
 
 
-struct Set[T: KeyElement](Sized, Comparable, Hashable, Boolable):
+struct Set[T: KeyElement](
+    Sized, Comparable, Hashable, Boolable, Copyable, Movable
+):
     """A set data type.
 
     O(1) average-case amortized add, remove, and membership check.
@@ -94,6 +96,14 @@ struct Set[T: KeyElement](Sized, Comparable, Hashable, Boolable):
             other: The existing Set instance to move from.
         """
         self._data = other._data^
+
+    fn __copyinit__(out self, other: Self):
+        """Copy constructor.
+
+        Args:
+            other: The existing Set instance to copy from.
+        """
+        self._data = other._data.copy()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

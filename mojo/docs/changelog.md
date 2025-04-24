@@ -71,6 +71,8 @@ String types in Mojo got several significant improvements:
   which avoids heap allocation for common short strings.  On a 64-bit system,
   `String` can hold up to 23 bytes inline.
 
+- `Set` now conforms to `Copyable` so it can be used in other collection elements.
+
 - The types `StringSlice` and `StaticString` are now part of the prelude, there
   is no need to import them anymore.  These are useful for code that just needs
   a "view" of string data, not to own and mutate it.
