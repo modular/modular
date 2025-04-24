@@ -740,9 +740,10 @@ struct ExternalFunction[
         return lib._get_function[name, type]()
 
 
+# int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
 alias PyList_SetItem = ExternalFunction[
     "PyList_SetItem",
-    fn (PyObjectPtr, Int, PyObjectPtr) -> PyObjectPtr,
+    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
 alias Py_IncRef = ExternalFunction[
@@ -1586,14 +1587,17 @@ struct CPython:
         )
 
     # ===-------------------------------------------------------------------===#
-    # Python List operations
+    # List Objects
+    # ref: https://docs.python.org/3/c-api/list.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyList_New(self, length: Int) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/list.html#c.PyList_New).
+    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new list of length `length` on success, or `NULL` on failure.
+
+        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_New).
         """
 
+        # PyObject *PyList_New(Py_ssize_t len)
         var r = self.lib.call["PyList_New", PyObjectPtr](length)
 
         self.log(
@@ -1607,23 +1611,36 @@ struct CPython:
         self._inc_total_rc()
         return r
 
-    fn PyList_SetItem(
-        self, list_obj: PyObjectPtr, index: Int, value: PyObjectPtr
+    fn PyList_GetItem(
+        self,
+        list_obj: PyObjectPtr,
+        index: Py_ssize_t,
     ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/list.html#c.PyList_SetItem).
+        """Return the object at position `index` in the list pointed to by `list_obj`.
+
+        Returns a borrowed reference instead of a strong reference.
+
+        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_GetItem).
+        """
+
+        # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
+        return self.lib.call["PyList_GetItem", PyObjectPtr](list_obj, index)
+
+    fn PyList_SetItem(
+        self,
+        list_obj: PyObjectPtr,
+        index: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Set the item at index `index` in list to `value`.
+
+        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_SetItem).
         """
 
         # PyList_SetItem steals the reference - the element object will be
         # destroyed along with the list
         self._dec_total_rc()
         return self.PyList_SetItem_func(list_obj, index, value)
-
-    fn PyList_GetItem(self, list_obj: PyObjectPtr, index: Int) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/list.html#c.PyList_GetItem).
-        """
-        return self.lib.call["PyList_GetItem", PyObjectPtr](list_obj, index)
 
     # ===-------------------------------------------------------------------===#
     # Concrete Objects
