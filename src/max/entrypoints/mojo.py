@@ -55,7 +55,6 @@ sdk_default_env: dict[str, str] = {
         + ext
         + ",-Xlinker,-rpath,-Xlinker,"
         + str(lib)
-        + ";"
     ),
     "MODULAR_MOJO_MAX_DRIVER_PATH": str(bin / "mojo"),
     "MODULAR_MOJO_MAX_IMPORT_PATH": str(lib / "mojo"),
@@ -109,7 +108,7 @@ def subprocess_run_mojo(
 
     env = _mojo_env()
 
-    subprocess.run(
+    return subprocess.run(
         # Combine the `mojo` executable path with the provided argument list.
         [env["MODULAR_MOJO_MAX_DRIVER_PATH"]] + mojo_args,
         env=env,
