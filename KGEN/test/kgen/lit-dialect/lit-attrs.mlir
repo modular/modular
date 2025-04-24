@@ -117,6 +117,59 @@ kgen.generator @anystruct() {
   kgen.return
 }
 
+lit.struct.decl @Bar<a, b: dtype> {}
+lit.struct.decl @BarDefaults<a, b: dtype = f32> {}
+
+// CHECK-LABEL: kgen.generator @bind_type
+kgen.generator @bind_type<T: meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>>>() {
+  // CHECK: FullyBound: meta<!lit.struct<@Bar<16, :dtype f32>>> =
+  // CHECK-SAME: #lit.bind_type<:meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>> T, [16, f32]>
+  kgen.param.declare FullyBound: meta<!lit.struct<@Bar<16, :dtype f32>>> = <
+    #lit.bind_type<
+      :meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>> T,
+      [16, f32]
+    >
+  >
+
+  // CHECK: PartiallyBound: meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> =
+  // CHECK-SAME: #lit.bind_type<:meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>> T, [?, f32]>
+  kgen.param.declare PartiallyBound: meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> = <
+    #lit.bind_type<
+      :meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>> T,
+      [?, f32]
+    >
+  >
+
+  // CHECK: PartiallyBoundDefaults: meta<!lit.struct<@BarDefaults<16, :dtype ?>, <dtype = f32>>> =
+  // CHECK-SAME: #lit.bind_type<:meta<!lit.struct<@BarDefaults<?, :dtype ?>, <index, dtype = f32>>> ?, [16, ?]>
+  kgen.param.declare PartiallyBoundDefaults: meta<!lit.struct<@BarDefaults<16, :dtype ?>, <dtype = f32>>> = <
+    #lit.bind_type<
+      :meta<!lit.struct<@BarDefaults<?, :dtype ?>, <index, dtype = f32>>> ?,
+      [16, ?]
+    >
+  >
+
+  // CHECK: BoundDeclRef: meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> =
+  // CHECK-SAME: <@Bar<?, :dtype f32>>
+  kgen.param.declare BoundDeclRef: meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> = <
+    #lit.bind_type<
+      :meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>> @Bar<?, :dtype ?>,
+      [?, f32]
+    >
+  >
+
+  // CHECK: BoundFromPartial: meta<!lit.struct<@Bar<16, :dtype f32>>> =
+  // CHECK-SAME: #lit.bind_type<:meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> ?, [16]>
+  kgen.param.declare BoundFromPartial: meta<!lit.struct<@Bar<16, :dtype f32>>> = <
+    #lit.bind_type<
+      :meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> ?,
+      [16]
+    >
+  >
+
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @unpacked
 kgen.generator @unpacked<a: variadic<index>>() {
   // CHECK-NEXT: constant = <#lit.unpacked<:variadic<index> a, kw>>

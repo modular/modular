@@ -186,16 +186,6 @@ def LIT_StructType : LITType<"Struct", "struct", [
     /// Return an alias name if the StructType should be printed with an alias.
     std::optional<StringRef> getAliasName();
     static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
-
-    /// Bind parameter values to the struct type, returning a new struct type.
-    /// Expects the number of values to match the number of param values. Only
-    /// positions that are currently unbound can be updated.
-    StructType bindAll(ArrayRef<TypedAttr> values) const;
-
-    /// Bind parameter values to the struct type, returning a new struct type.
-    /// Expects the number of values to match the number of unbound parameters
-    /// in the current param values list.
-    StructType bindUnbound(ArrayRef<TypedAttr> values) const;
   }];
 }
 

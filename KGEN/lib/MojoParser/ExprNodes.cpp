@@ -1093,9 +1093,7 @@ static PValue substituteParametersIntoUserDefinedType(
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  LIT::StructType boundType =
-      metaType.getType().bindUnbound(bindingValuesAttr.getValue());
-  return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
+  return PValue(BindTypeAttr::get(typeValue, bindingValuesAttr));
 }
 
 /// Bind parameter operands to a callable parameter.

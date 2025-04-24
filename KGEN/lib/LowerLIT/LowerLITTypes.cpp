@@ -157,6 +157,20 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         domain);
   }
 
+  // Partially bound types never have any uses in KGEN. This attribute is
+  // terminal.
+  // TODO: Need to codegen here when Mojo has parametric traits.
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [&replacer, typeType](BindTypeAttr bind) {
+        StructMetaType metatype = bind.getType();
+        auto ref = LIT::StructType::get(metatype.getSymbol(),
+                                        metatype.getParamValues(),
+                                        metatype.getSignature());
+        return TypeParamAttr::get(replacer.replace(ref, TypeDomain::AsValue),
+                                  replacer.replace(ref, TypeDomain::AsType),
+                                  typeType);
+      });
+
   // All metatypes lower to `!kgen.type`.
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](StructMetaType) { return typeType; });

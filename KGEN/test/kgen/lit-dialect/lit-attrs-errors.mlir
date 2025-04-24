@@ -72,6 +72,41 @@
 
 // -----
 
+// expected-error @below {{'bind_type' expected a metatyped type value}}
+#bind = #lit.bind_type<:type index, []> : !lit.meta<!lit.struct<@Foo>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype parameter #0 does not match corresponding input parameter}}
+#bind = #lit.bind_type<:meta<!lit.struct<@Foo<?>, <index>>> T, [?]> : !lit.meta<!lit.struct<@Foo<1>>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype should have 1 parameter values, but got 0}}
+#bind = #lit.bind_type<:meta<!lit.struct<@Foo, <index>>> T, [?]> : !lit.meta<!lit.struct<@Foo<1>>>
+
+// -----
+
+// expected-error @below {{'bind_type' cannot change the value of parameter #0}}
+#bind = #lit.bind_type<:meta<!lit.struct<@Foo<2>>> T, []> : !lit.meta<!lit.struct<@Foo<1>>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype parameter #0 does not match corresponding input parameter}}
+#bind = #lit.bind_type<:meta<!lit.struct<@Foo<?>, <index>>> T, [2]> : !lit.meta<!lit.struct<@Foo<3>>>
+
+// -----
+
+// expected-error @below {{'bind_type' result metatype signature should have 0 input parameters}}
+#bind = #lit.bind_type<:meta<!lit.struct<@Foo<?>, <index>>> T, [1]> : !lit.meta<!lit.struct<@Foo<1>, <index>>>
+
+// -----
+
+// expected-error @below {{result signature parameter #0 expected to be 'index' but got '!kgen.dtype'}}
+#bind = #lit.bind_type<:meta<!lit.struct<@Foo<?>, <index>>> T, [?]> : !lit.meta<!lit.struct<@Foo<?>, <dtype>>>
+
+// -----
+
 // expected-error @below {{pack not supported in parameter list}}
 lit.fn @foo() -> !lit<type_signature<"j": variadic<index> pack>> {
   kgen.return
