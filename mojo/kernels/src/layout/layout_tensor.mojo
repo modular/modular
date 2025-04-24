@@ -6346,6 +6346,90 @@ fn copy_dram_to_local[
 
 
 @always_inline("nodebug")
+fn copy_dram_to_local[
+    src_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor):
+    """Efficiently copy data from global memory (DRAM) to registers.
+
+    This function implements an optimized memory transfer operation from
+    global memory to register memory. It distributes the copy operation across
+    multiple threads for maximum throughput while handling bounds checking for
+    safety.
+
+    Constraints:
+        - The source tensor must be in GLOBAL address space (DRAM).
+        - The destination tensor must be in LOCAL address space (registers).
+        - Both tensors must have compatible data types.
+
+    Parameters:
+        src_thread_layout: The layout used to distribute the source tensor
+            across threads. This determines how the workload is divided among
+            participating threads.
+        thread_scope: Defines whether operations are performed at `BLOCK` or
+            `WARP` level. `BLOCK` scope involves all threads in a thread block,
+            while `WARP` scope restricts operations to threads within the same
+            warp. Defaults to `ThreadScope.BLOCK`.
+
+    Args:
+        dst: The destination tensor in register memory (LOCAL address space).
+        src:  The source tensor in global memory (DRAM).
+    """
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+
+    @parameter
+    if not src_fragments.masked:
+        dst.copy_from(src_fragments)
+    else:
+        var src_frag_offset = src_fragments.distance(src.ptr)
+        alias static_stride = src.layout.stride[0].value()
+
+        @parameter
+        if src.layout.all_dims_known():
+            stride = static_stride
+        else:
+            stride = src.runtime_layout.stride.value[0]
+        var src_idx_bound = (src.dim(0) * stride - src_frag_offset).cast[
+            src_fragments.linear_idx_type
+        ]()
+
+        alias num_stores_per_thread = src_fragments.layout.size()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            alias dst_idx = dst.layout(i)
+            alias src_uint_dtype = _get_unsigned_type(
+                src_fragments.layout, src_fragments.address_space
+            )
+            alias src_static_idx = src_fragments.layout(i)
+
+            var src_idx: Scalar[src_fragments.linear_idx_type]
+
+            @parameter
+            if src_fragments.layout.all_dims_known():
+                src_idx = src_static_idx
+            else:
+                src_idx = src_fragments.runtime_layout(i)
+
+            if src_idx < src_idx_bound:
+                var src_element = Element[
+                    index_type = src.linear_idx_type
+                ].load(
+                    src_fragments.ptr.offset(src_idx),
+                    src_fragments.runtime_element_layout,
+                )
+                alias dst_element_type = Element[
+                    dst.dtype, dst.element_layout, dst.linear_idx_type
+                ]
+                dst_element_type(
+                    rebind[dst_element_type.element_data_type](
+                        src_element.element_data.cast[dst.dtype]()
+                    )
+                ).store(dst.ptr.offset(dst_idx))
+
+
+@always_inline("nodebug")
 fn copy[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
