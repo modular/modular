@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -allow-unregistered-dialect -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
@@ -109,5 +109,28 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %0 = pop.stack_allocation 1 x i64
     pop.store %arg0, %0 : !kgen.pointer<i64>
     kgen.return
+  }
+}
+
+// -----
+
+// COM: Ensure the single store load optimization is only applied if the store dominates the load.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  kgen.func @TEST(%arg0: i32) -> i32 {
+    %0 = pop.stack_allocation 1 x struct<(pointer<none>, index)>
+    lit.try {
+      %1 = "somehow.produce_something"() : () -> !kgen.struct<(pointer<none>, index)>
+      pop.store %1, %0 : !kgen.pointer<struct<(pointer<none>, index)>>
+      lit.try.yield
+    } except {
+      // CHECK: llvm.load
+      %1 = pop.load %0 : !kgen.pointer<struct<(pointer<none>, index)>>
+      %2 = builtin.unrealized_conversion_cast %1 : !kgen.struct<(pointer<none>, index)> to !llvm.struct<(ptr, i64)>
+      kgen.return %arg0 : i32
+    } else {
+      lit.try.yield
+    }
+    kgen.return %arg0 : i32
   }
 }
