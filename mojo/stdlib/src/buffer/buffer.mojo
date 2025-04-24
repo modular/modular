@@ -374,7 +374,7 @@ struct NDBuffer[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            __mlir_type[`!pop.scalar<`, type.value, `>`],
+            Scalar[type]._mlir_type,
             address_space=address_space,
             mut=mut,
             origin=origin,
