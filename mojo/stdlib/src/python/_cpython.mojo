@@ -1981,3 +1981,39 @@ struct CPython:
 
         self._inc_total_rc()
         return r
+
+    # ===-------------------------------------------------------------------===#
+    # Capsules
+    # ref: https://docs.python.org/3/c-api/capsule.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyCapsule_New(
+        mut self,
+        pointer: OpaquePointer,
+        name: StringSlice,
+        destructor: destructor,
+    ) -> PyObjectPtr:
+        """Create a PyCapsule to communicate to another C extension the C API in `pointer`, identified by `name` and with the custom destructor in `destructor`.
+
+        [Reference](https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New).
+        """
+        # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
+        var new_capsule = self.lib.call["PyCapsule_New", PyObjectPtr](
+            pointer, name.unsafe_ptr().bitcast[c_char](), destructor
+        )
+        self._inc_total_rc()
+        return new_capsule
+
+    fn PyCapsule_GetPointer(
+        mut self,
+        capsule: PyObjectPtr,
+        name: StringSlice,
+    ) -> OpaquePointer:
+        """Extract the pointer to another C extension from a PyCapsule `capsule` with the given `name`.
+
+        [Reference](https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer).
+        """
+        # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
+        return self.lib.call["PyCapsule_GetPointer", OpaquePointer](
+            capsule, name.unsafe_ptr().bitcast[c_char]()
+        )
