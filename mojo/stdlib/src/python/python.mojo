@@ -55,30 +55,23 @@ struct _PythonGlobal(Movable):
         CPython.destroy(self.cpython)
 
 
-@always_inline
-fn _get_global_python_itf() -> _PythonInterfaceImpl:
-    var ptr = _PYTHON_GLOBAL.get_or_create_ptr()
-    return _PythonInterfaceImpl(ptr.bitcast[CPython]())
+fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
+    """Returns an immutable static pointer to the CPython global.
 
+    The returned pointer is immutable to prevent invalid shared mutation of
+    this global variable. Once it is initialized, it may not be mutated.
+    """
+    var global_ptr: UnsafePointer[
+        _PythonGlobal
+    ] = _PYTHON_GLOBAL.get_or_create_ptr()
 
-struct _PythonInterfaceImpl:
-    var _cpython: UnsafePointer[CPython]
-
-    @implicit
-    fn __init__(out self, cpython: UnsafePointer[CPython]):
-        self._cpython = cpython
-
-    fn __copyinit__(out self, existing: Self):
-        self._cpython = existing._cpython
-
-    fn cpython(self) -> CPython:
-        return self._cpython[]
+    return Pointer[CPython, StaticConstantOrigin](to=global_ptr[].cpython)
 
 
 struct Python:
     """Provides methods that help you use Python code in Mojo."""
 
-    var _impl: _PythonInterfaceImpl
+    var _impl: Pointer[CPython, StaticConstantOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -87,7 +80,8 @@ struct Python:
 
     fn __init__(out self):
         """Default constructor."""
-        self._impl = _get_global_python_itf()
+
+        self._impl = _get_python_interface()
 
     fn __copyinit__(out self, existing: Self):
         """Copy constructor.
@@ -109,7 +103,7 @@ struct Python:
 
     @always_inline
     fn _cpython_ptr(self) -> Pointer[CPython, StaticConstantOrigin]:
-        return Pointer[CPython, StaticConstantOrigin](to=self._impl._cpython[])
+        return self._impl
 
     fn eval(self, code: StringSlice) -> Bool:
         """Executes the given Python code.
