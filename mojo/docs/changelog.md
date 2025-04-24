@@ -21,6 +21,7 @@ what we publish.
 - Parts of the Mojo standard library continue to be progressively open sourced!
   Packages that are open sourced now include:
   - `subprocess`
+  - `complex`
 
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
