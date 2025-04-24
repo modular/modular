@@ -58,6 +58,12 @@ modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
+    data = [
+        "//SDK/integration-test/pipelines/python/test_common",
+    ],
+    env = {
+        "PIPELINES_CUSTOM_MODEL": "SDK/integration-test/pipelines/python/test_common:pipeline_model_dummy",
+    },
     tags = [
         "AITLIB-293",
         "manual",  # TODO(AITLIB-293)

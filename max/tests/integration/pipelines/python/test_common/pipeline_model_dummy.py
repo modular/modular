@@ -185,7 +185,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     ) -> KVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
-        num_layers = self.get_num_layers(self.pipeline_config)
+        num_layers = self.get_num_layers(self.huggingface_config)
         devices = load_devices(self.pipeline_config.model_config.device_specs)
 
         return load_kv_manager(
@@ -344,3 +344,5 @@ DUMMY_GPTQ_ARCH = SupportedArchitecture(
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
 )
+
+ARCHITECTURES = [DUMMY_ARCH]
