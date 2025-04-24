@@ -57,7 +57,10 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
     var block_dim = 32
 
-    ctx.enqueue_function[vec_func[add_with_captured]](
+    alias kernel = vec_func[add_with_captured]
+    var kernel_func = ctx.compile_function_checked[kernel, kernel]()
+    ctx.enqueue_function_checked(
+        kernel_func,
         in0,
         in1,
         out,

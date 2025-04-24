@@ -29,7 +29,7 @@ fn vec_func(
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid]  # breakpoint1
+    out[tid] = in0[tid] + in1[tid]
 
 
 fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
