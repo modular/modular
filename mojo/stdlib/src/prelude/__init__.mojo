@@ -58,7 +58,6 @@ from builtin.int import (
     Intable,
     IntableRaising,
     index,
-    int,
 )
 from builtin.int_literal import IntLiteral
 from builtin.io import input, print

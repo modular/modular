@@ -15,8 +15,6 @@
 
 fn main():
     # FIXME(25.2): Move deprecation warnings to compiler errors
-    # CHECK-STDERR: warning: the `int` function is deprecated, use the `Int` constructor instead
-    _ = int(42)
     # CHECK-STDERR: warning: the `str` function is deprecated, use the `String` constructor instead
     _ = str(0)
     # CHECK-STDERR: warning: the `bool` function is deprecated, use the `Bool` constructor instead
