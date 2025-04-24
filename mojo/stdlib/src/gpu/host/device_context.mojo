@@ -2952,6 +2952,78 @@ struct DeviceContext(CollectionElement):
             _dump_sass=_dump_sass,
         ]()
 
+    @always_inline
+    fn compile_function_checked[
+        func_type: AnyTrivialRegType,
+        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        func: func_type,
+        signature_func: fn (* args: * declared_arg_types) capturing -> None,
+        *,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            declared_arg_types,
+            target=_target,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
+        """Compiles the provided function for execution on this device.
+
+        Parameters:
+            func_type: Type of the function.
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile.
+            signature_func: The function to compile, passed in again. Used for
+                checking argument types later.
+                Note: This will disappear in future versions.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+            _target: Change the target to different device type than the
+                one associated with this `DeviceContext`.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
+
+        Returns:
+            The compiled function.
+        """
+        debug_assert(
+            not func_attribute
+            or func_attribute.value().attribute
+            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            or func_attribute.value().value
+            <= self.device_info.shared_memory_per_multiprocessor,
+            "Requested more than available shared memory.",
+        )
+        alias result_type = __type_of(result)
+        result = result_type(
+            self,
+            func_attribute=func_attribute,
+        )
+
+        result.dump_rep[
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+        ]()
+
     fn load_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -2991,14 +3063,21 @@ struct DeviceContext(CollectionElement):
         from gpu.host import DeviceContext
         from gpu.host.device_context import DeviceExternalFunction
 
+        fn func_signature(
+            # Arguments being passed to the assembly code
+            # e.g. two pointers and a length
+            input: UnsafePointer[Float32],
+            output: UnsafePointer[Float32],
+            len: Int,
+        ):
+            # No body because that is passed as assembly code below.
+            pass
+
         var ctx = DeviceContext()
         var ptx_code = "..."  # PTX assembly code
-        var ext_func = DeviceExternalFunction(function_name="my_kernel", asm=ptx_code)
-
-        ctx.load_function(
+        var ext_func = ctx.load_function[func_signature](
             function_name="my_kernel",
             asm=ptx_code,
-            result=ext_func
         )
         ```
         """
