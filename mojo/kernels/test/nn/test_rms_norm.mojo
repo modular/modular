@@ -20,7 +20,6 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
-
 from utils.index import Index, IndexList
 
 
@@ -44,8 +43,7 @@ fn run_rms_norm_cpu[
     var gamma_ptr = UnsafePointer[Scalar[type]].alloc(cols)
 
     for i in range(rows * cols):
-        var val = Scalar[type](i)
-        input_ptr[i] = val
+        input_ptr[i] = Scalar[type](i)
 
     for i in range(cols):
         gamma_ptr[i] = ((i + cols) / cols).cast[type]()
@@ -56,6 +54,7 @@ fn run_rms_norm_cpu[
     var output_buf = NDBuffer[type, rank](output_ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_ptr, param_shape)
     var epsilon = Scalar[type](0.0001)
+    var weight_offset = Scalar[type](0.0)
 
     @__copy_capture(input_buf)
     @always_inline
@@ -73,14 +72,18 @@ fn run_rms_norm_cpu[
     ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
         output_buf.store(idx, val)
 
-    rms_norm_cpu[input_fn, identity_output_fn](shape, gamma, epsilon)
+    rms_norm_cpu[input_fn, identity_output_fn](
+        shape, gamma, epsilon, weight_offset
+    )
 
     for r in range(rows):
         var vec = NDBuffer[type, 1](input_ptr + r * cols, cols)
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c
-            var val = (input_ptr[idx] / rms_ref) * gamma_ptr[c]
+            var val = (input_ptr[idx] / rms_ref) * (
+                gamma_ptr[c] + weight_offset
+            )
             assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
     input_ptr.free()

@@ -884,6 +884,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     ],
     gamma: NDBuffer[type, 1, *_],
     epsilon: Scalar[type],
+    weight_offset: Scalar[type],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -904,6 +905,9 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     ragged tensor view of the key cache with shape (total_seq_len, num_heads,
     rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
     head_size.
+
+    `weight_offset` is a constant offset added to the learned weights at
+    runtime. Here, we don't use any offset, so we pass in a zero scalar.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
@@ -979,7 +983,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     ):
         _rms_norm_impl[
             type, rank, key_cache_input_fn, key_cache_output_fn, target=target
-        ](shape, gamma, epsilon, context)
+        ](shape, gamma, epsilon, weight_offset, context)
 
 
 def rms_norm_kv_cache_ragged_paged[
@@ -991,6 +995,7 @@ def rms_norm_kv_cache_ragged_paged[
     ],
     gamma: NDBuffer[type, 1, *_],
     epsilon: Scalar[type],
+    weight_offset: Scalar[type],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1011,6 +1016,9 @@ def rms_norm_kv_cache_ragged_paged[
     ragged tensor view of the key cache with shape (total_seq_len, num_heads,
     rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
     head_size.
+
+    `weight_offset` is a constant offset added to the learned weights at
+    runtime. Here, we don't use any offset, so we pass in a zero scalar.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
@@ -1086,7 +1094,7 @@ def rms_norm_kv_cache_ragged_paged[
     ):
         _rms_norm_impl[
             type, rank, key_cache_input_fn, key_cache_output_fn, target=target
-        ](shape, gamma, epsilon, context)
+        ](shape, gamma, epsilon, weight_offset, context)
 
 
 # ===-----------------------------------------------------------------------===#
