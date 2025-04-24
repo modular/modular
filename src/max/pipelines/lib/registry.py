@@ -157,11 +157,20 @@ class PipelineRegistry:
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
 
-    def register(self, architecture: SupportedArchitecture):
+    def register(
+        self,
+        architecture: SupportedArchitecture,
+        *,
+        allow_override: bool = False,
+    ) -> None:
         """Add new architecture to registry."""
         if architecture.name in self.architectures:
-            msg = f"Refusing to override existing architecture for '{architecture.name}'"
-            raise ValueError(msg)
+            if not allow_override:
+                msg = f"Refusing to override existing architecture for '{architecture.name}'"
+                raise ValueError(msg)
+            logger.warning(
+                f"Overriding existing architecture for '{architecture.name}'"
+            )
 
         self.architectures[architecture.name] = architecture
 

@@ -15,8 +15,10 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
+import sys
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Optional, get_type_hints
 
@@ -106,6 +108,16 @@ class PipelineConfig(MAXConfig):
     ignore_eos: bool = False
     """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 
+    custom_models: list[str] = field(default_factory=list)
+    """A list of custom model implementations to register.
+    Each input can either be a raw module name or a import path followed by a colon and the module name.
+    Ex:
+    - `my_module`
+    - `folder/path/to/import:my_module`
+    
+    Each module must expose an `ARCHITECTURES` list of architectures to register.
+    """
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -116,7 +128,6 @@ class PipelineConfig(MAXConfig):
     """The sampling config."""
 
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
-
     """The profiling config."""
 
     def __init__(self, **kwargs: Any) -> None:
@@ -225,6 +236,34 @@ class PipelineConfig(MAXConfig):
         This method is called after the config is initialized, to ensure that all
         config fields have been initialized to a valid state.
         """
+        # Before anything else, import custom model modules to add them to the registry.
+        for module_spec in self.custom_models:
+            module_parts = module_spec.split(":")
+            if len(module_parts) > 2:
+                msg = (
+                    "Custom module spec contains too many colons: {module_spec}"
+                )
+                raise ValueError(msg)
+            elif len(module_parts) == 2:
+                module_path, module_name = module_parts
+                sys.path.append(module_path)
+            else:
+                module_name = module_parts[0]
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as e:
+                msg = f"Failed to import custom model from: {module_spec}"
+                raise ValueError(msg) from e
+
+            if not module.ARCHITECTURES or not isinstance(
+                module.ARCHITECTURES, list
+            ):
+                msg = f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
+                raise ValueError(msg)
+
+            for arch in module.ARCHITECTURES:
+                PIPELINE_REGISTRY.register(arch, allow_override=True)
+
         self.model_config.resolve()
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
