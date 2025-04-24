@@ -17,7 +17,7 @@ from random import randn_float64, seed
 from sys import has_neon
 
 from test_utils import libm_call
-from testing import assert_almost_equal, assert_equal, Testable
+from testing import assert_almost_equal, assert_equal
 
 
 def test_exp_bfloat16():
@@ -71,7 +71,7 @@ def test_exp_libm[type: DType]():
 
 
 @value
-struct Float32Expable(Testable):
+struct Float32Expable(EqualityComparable, Stringable):
     """This is a test struct that implements the Expable trait for Float32."""
 
     var x: Float32
@@ -90,7 +90,7 @@ struct Float32Expable(Testable):
 
 
 @value
-struct FakeExpable(Testable):
+struct FakeExpable(EqualityComparable, Stringable):
     """This is a test struct that has a dummy definition of exp function."""
 
     var x: Int
