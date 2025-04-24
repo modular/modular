@@ -140,6 +140,7 @@ fn bench_rms_norm_gpu[
     var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[type](0.001)
+    var weight_offset = Scalar[type](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -161,14 +162,14 @@ fn bench_rms_norm_gpu[
         data_buf.store(idx, val)
 
     @always_inline
-    @__copy_capture(shape, gamma, epsilon)
+    @__copy_capture(shape, gamma, epsilon, weight_offset)
     @parameter
     fn bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             rms_norm_gpu[input_fn, identity_output_fn](
-                shape, gamma, epsilon, ctx
+                shape, gamma, epsilon, weight_offset, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
