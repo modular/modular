@@ -32,11 +32,17 @@ from ..layer import Layer, Module
 class RMSNorm(Layer):
     weight: TensorValueLike
     eps: float = 1e-6
+    weight_offset: float = 0.0
 
     def __call__(self, x: TensorValue) -> TensorValue:
         return ops.custom(
             "rms_norm",
-            [x, ops.cast(self.weight, x.dtype), ops.cast(self.eps, x.dtype)],
+            [
+                x,
+                ops.cast(self.weight, x.dtype),
+                ops.cast(self.eps, x.dtype),
+                ops.constant(self.weight_offset, dtype=x.dtype),
+            ],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor
 
@@ -47,26 +53,36 @@ class RMSNormV2(Module):
     Args:
         dim: Size of last dimension of the expected input.
         eps: Value added to denominator for numerical stability.
+        weight_offset: Constant offset added to the learned weights at runtime.
+            For Gemma-style RMSNorm, this should be set to 1.0.
     """
 
     def __init__(
         self,
         dim: int,
         eps: float = 1e-6,
+        weight_offset: float = 0.0,
     ):
         super().__init__()
         self.weight = Weight(
             "weight", DType.float32, [dim], device=DeviceRef.CPU()
         )
         self.eps = eps
+        self.weight_offset = weight_offset
 
     def __call__(self, x: TensorValue) -> TensorValue:
         weight: TensorValue = ops.cast(self.weight, x.dtype)
         if x.device:
             weight = weight.to(x.device)
+
         return ops.custom(
             "rms_norm",
-            [x, weight, ops.cast(self.eps, x.dtype)],
+            [
+                x,
+                weight,
+                ops.constant(self.eps, dtype=x.dtype),
+                ops.constant(self.weight_offset, dtype=x.dtype),
+            ],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor
 
