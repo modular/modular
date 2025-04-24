@@ -192,6 +192,10 @@ inline bool isUpdateViewFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGUpdateViewFunctionLabel);
 }
 
+inline bool isElemwiseForeachFunc(Operation *gen) {
+  return gen != nullptr && gen->hasAttr(MOGG_INTRINSIC_ELEMWISE_FOR_EACH);
+}
+
 inline bool isExtensibilityFunc(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
                             gen->hasAttr(kMOGGShapeFunctionLabel) ||
