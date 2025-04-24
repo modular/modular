@@ -1058,6 +1058,25 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
+atanh = _elementwise_unary(rmo.mo_atanh)
+"""
+Computes the elementwise atanh of a symbolic tensor.
+
+Creates a new op node to compute the elementwise tanh of a
+symbolic tensor and adds it to the graph, returning the symbolic result.
+
+Args:
+    value: The symbolic tensor to use as the input to the tanh
+        computation. If it's not a floating-point DType, an exception will be raised.
+
+Returns:
+    A new symbolic tensor value representing the output of the tanh
+        value computation.
+
+Raises:
+    Error: If the symbol doesn't represent a tensor value.
+"""
+
 trunc = _elementwise_unary(rmo.mo_trunc)
 """
 Computes the elementwise truncation of a symbolic tensor.
