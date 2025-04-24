@@ -8489,6 +8489,7 @@ struct Struct_topk_fused_sampling:
     ](
         out_idxs: OutputTensor[type=out_idx_type, rank=rank],
         K: Scalar,
+        temperature: Float32,
         input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
