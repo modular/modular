@@ -44,7 +44,11 @@ fn accelerator(gpu_id: Int = 0) raises -> Device:
 # TODO: Make this polymorphic on Device type.
 @value
 struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
-    var _compiled_func: AcceleratorFunction[func, target = _get_gpu_target()]
+    var _compiled_func: AcceleratorFunction[
+        func,
+        Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]](None),
+        target = _get_gpu_target(),
+    ]
     alias LaunchArg = Variant[Dim, Int]
 
     @parameter
