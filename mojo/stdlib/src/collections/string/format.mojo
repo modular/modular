@@ -184,11 +184,14 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         var res = String(capacity=fmt_len + size_estimation)
         var offset = 0
         var ptr = fmt_src.unsafe_ptr()
-        alias S = StringSlice[StaticConstantOrigin]
 
         @always_inline("nodebug")
-        fn _build_slice(p: UnsafePointer[UInt8], start: Int, end: Int) -> S:
-            return S(ptr=p + start, length=end - start)
+        fn _build_slice(
+            p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
+        ) -> StringSlice[p.origin]:
+            return StringSlice[p.origin](
+                ptr=p.origin_cast[mut=False]() + start, length=end - start
+            )
 
         var auto_arg_index = 0
         for e in entries:
@@ -301,11 +304,13 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         mut raised_kwarg_field: Optional[String],
         mut total_estimated_entry_byte_width: Int,
     ) raises -> Bool:
-        alias S = StringSlice[StaticConstantOrigin]
-
         @always_inline("nodebug")
-        fn _build_slice(p: UnsafePointer[UInt8], start: Int, end: Int) -> S:
-            return S(ptr=p + start, length=end - start)
+        fn _build_slice(
+            p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
+        ) -> StringSlice[p.origin]:
+            return StringSlice[p.origin](
+                ptr=p.origin_cast[mut=False]() + start, length=end - start
+            )
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()
