@@ -57,14 +57,6 @@ from memory import UnsafePointer
 from .deque import Deque
 
 
-trait IntervalPayload(CollectionElement, Stringable, Comparable):
-    """The trait denotes a trait composition of the `CollectionElement`,
-    `Stringable`, and `Comparable` traits.
-    """
-
-    pass
-
-
 trait IntervalElement(
     CollectionElement,
     Writable,
@@ -338,9 +330,9 @@ struct Interval[T: IntervalElement](CollectionElement, Boolable, Writable):
         return "Interval" + String.write(self) + ""
 
 
-struct _IntervalNode[T: IntervalElement, U: IntervalPayload](
-    CollectionElement, Stringable, Writable
-):
+struct _IntervalNode[
+    T: IntervalElement, U: CollectionElement & Stringable & Comparable
+](CollectionElement, Stringable, Writable):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -529,7 +521,9 @@ struct _IntervalNode[T: IntervalElement, U: IntervalPayload](
         return self.interval > other.interval
 
 
-struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
+struct IntervalTree[
+    T: IntervalElement, U: CollectionElement & Stringable & Comparable
+](Writable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:

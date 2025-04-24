@@ -50,7 +50,7 @@ from builtin.file_descriptor import FileDescriptor
 from builtin.float_literal import FloatLiteral
 from builtin.floatable import Floatable, FloatableRaising, float
 from builtin.format_int import bin, hex, oct
-from builtin.identifiable import Identifiable, StringableIdentifiable
+from builtin.identifiable import Identifiable
 from builtin.int import (
     ImplicitlyIntable,
     Indexer,

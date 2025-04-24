@@ -500,7 +500,7 @@ fn assert_almost_equal[
 
 @always_inline
 fn assert_is[
-    T: StringableIdentifiable
+    T: Stringable & Identifiable
 ](
     lhs: T,
     rhs: T,
@@ -512,7 +512,7 @@ fn assert_is[
     then an Error is raised.
 
     Parameters:
-        T: A StringableIdentifiable type.
+        T: A Stringable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is` statement.
@@ -534,7 +534,7 @@ fn assert_is[
 
 @always_inline
 fn assert_is_not[
-    T: StringableIdentifiable
+    T: Stringable & Identifiable
 ](
     lhs: T,
     rhs: T,
@@ -546,7 +546,7 @@ fn assert_is_not[
     then an Error is raised.
 
     Parameters:
-        T: A StringableIdentifiable type.
+        T: A Stringable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is not` statement.
