@@ -22,6 +22,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "mlir/IR/Dominance.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
 
@@ -968,6 +969,7 @@ public:
 private:
   /// The target info.
   TargetInfoAttr target;
+  mlir::DominanceInfo domInfo;
 
   static unsigned resolveAlignment(std::optional<TypedAttr> alignment) {
     if (!alignment)
@@ -1066,9 +1068,18 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 
   // If all the accesses are simple, we can just remove this entirely.
   if (allSimple && theStore) {
-    for (auto load : loads) {
-      load.replaceAllUsesWith(theStore.getOperand(0));
-      rewriter.eraseOp(load);
+    bool dominates = true;
+    for (auto loadOp : loads) {
+      if (!domInfo.dominates(theStore, loadOp)) {
+        dominates = false;
+        break;
+      }
+    }
+    if (dominates) {
+      for (auto load : loads) {
+        load.replaceAllUsesWith(theStore.getOperand(0));
+        rewriter.eraseOp(load);
+      }
     }
   }
 
