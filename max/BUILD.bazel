@@ -48,6 +48,7 @@ stubfiles = ["stubfiles/_core.pyi"] + [
 
 modular_genrule(
     name = "_core.stubfiles",
+    testonly = True,
     srcs = [
         ":patterns.nb",
         # To ensure our linting + formatting aligns with the rest of our project
