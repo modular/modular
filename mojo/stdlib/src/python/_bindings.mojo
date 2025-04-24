@@ -19,7 +19,7 @@ from sys.info import sizeof
 
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
-from python.python_object import PyFunctionRaising, PyFunction
+from python.python_object import PyFunctionRaising, PyFunction, PythonModule
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
@@ -223,6 +223,11 @@ struct PythonModuleBuilder:
 
     var module: PythonModule
     var functions: List[PyMethodDef]
+    var type_builders: List[PythonTypeBuilder]
+
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
 
     fn __init__(out self, name: StaticString) raises:
         """Construct a Python module builder with the given module name.
@@ -243,6 +248,30 @@ struct PythonModuleBuilder:
         """
         self.module = module
         self.functions = List[PyMethodDef]()
+        self.type_builders = List[PythonTypeBuilder]()
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    fn add_type[
+        T: Pythonable
+    ](mut self, type_name: StaticString) -> ref [
+        self.type_builders
+    ] PythonTypeBuilder:
+        """Add a type to the module and return a builder for it.
+
+        Parameters:
+            T: The mojo type to bind in the module.
+
+        Args:
+            type_name: The name of the type to expose in the module.
+
+        Returns:
+            A reference to a type builder registered in the module builder.
+        """
+        self.type_builders.append(PythonTypeBuilder.__init__[T](type_name))
+        return self.type_builders[-1]
 
     fn def_py_c_function(
         mut self: Self,
@@ -311,21 +340,26 @@ struct PythonModuleBuilder:
     fn finalize(mut self) raises -> PythonModule:
         """Finalize the module builder, creating the module object.
 
-        All functions added to the builder will be built and exposed in the
-        module.
+        All types and functions added to the builder will be built and exposed
+        in the module.
 
         Raises:
             If the module creation fails or if we fail to add any of the
-            declared functions to the module.
+            declared functions or types to the module.
         """
 
         Python.add_functions(self.module, self.functions)
         self.functions.clear()
 
+        for builder in self.type_builders:
+            builder[].finalize(self.module)
+        self.type_builders.clear()
+
         return self.module
 
 
-struct PythonTypeBuilder[T: Pythonable]:
+@value
+struct PythonTypeBuilder:
     """A builder for a Python type binding.
 
     This builder is used to declare method bindings for a Python type, and then
@@ -334,13 +368,19 @@ struct PythonTypeBuilder[T: Pythonable]:
 
     var type_name: StaticString
     var methods: List[PyMethodDef]
+    var get_type_obj: fn (
+        StaticString, List[PyMethodDef]
+    ) raises -> TypedPythonObject["Type"]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self, type_name: StaticString):
+    fn __init__[T: Pythonable](out self, type_name: StaticString):
         """Construct a new builder for a Python type binding.
+
+        Parameters:
+            T: The mojo type to bind in the module.
 
         Args:
             type_name: The name the type will be exposed as in the module.
@@ -348,30 +388,19 @@ struct PythonTypeBuilder[T: Pythonable]:
         self.type_name = type_name
         self.methods = List[PyMethodDef]()
 
-    fn __copyinit__(out self, other: Self):
-        """Copy an instance of this builder.
+        fn get_type_obj(
+            type_name: StaticString, methods: List[PyMethodDef]
+        ) raises -> TypedPythonObject["Type"]:
+            return python_type_object[T](type_name, methods)
 
-        Args:
-            other: The builder to copy from.
-        """
-        self.type_name = other.type_name
-        self.methods = other.methods
-
-    fn __moveinit__(out self, owned other: Self):
-        """Move an instance of this builder.
-
-        Args:
-            other: The builder to move from.
-        """
-        self.type_name = other.type_name
-        self.methods = other.methods^
+        self.get_type_obj = get_type_obj
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
     fn def_py_c_method(
-        owned self,
+        mut self,
         method: PyCFunction,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
@@ -391,9 +420,9 @@ struct PythonTypeBuilder[T: Pythonable]:
         self.methods.append(
             PyMethodDef.function(method, method_name, docstring)
         )
-        return self^
+        return self
 
-    fn finalize(owned self, module: PythonModule) raises:
+    fn finalize(mut self, module: PythonModule) raises:
         """Finalize the builder, creating the type binding with the registered
         methods.
 
@@ -401,8 +430,9 @@ struct PythonTypeBuilder[T: Pythonable]:
             If we fail to add the type to the module.
         """
         self.methods.append(PyMethodDef())  # Zeroed item as terminator
-        var type_obj = python_type_object[T](self.type_name, self.methods)
+        var type_obj = self.get_type_obj(self.type_name, self.methods)
         Python.add_object(module, self.type_name, type_obj)
+        self.methods.clear()
 
 
 # ===-----------------------------------------------------------------------===#
