@@ -1543,48 +1543,62 @@ struct CPython:
         return iterator
 
     # ===-------------------------------------------------------------------===#
-    # Python Tuple operations
+    # Tuple Objects
+    # ref: https://docs.python.org/3/c-api/tuple.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyTuple_New(self, count: Int) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New).
+    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new tuple object of size `length`, or `NULL` with an exception set on failure.
+
+        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New).
         """
 
-        var r = self.lib.call["PyTuple_New", PyObjectPtr](count)
+        # PyObject *PyTuple_New(Py_ssize_t len)
+        var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
 
         self.log(
             r._get_ptr_as_int(),
             " NEWREF PyTuple_New, refcnt:",
             self._Py_REFCNT(r),
             ", tuple size:",
-            count,
+            length,
         )
 
         self._inc_total_rc()
         return r
 
     fn PyTuple_GetItem(
-        self, tuple: PyObjectPtr, pos: Py_ssize_t
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
     ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem).
+        """Return the object at position `pos` in the tuple pointed to by `tuple`.
+
+        Returns borrowed reference.
+
+        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem).
         """
+
+        # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
         return self.lib.call["PyTuple_GetItem", PyObjectPtr](tuple, pos)
 
     fn PyTuple_SetItem(
-        self, tuple_obj: PyObjectPtr, index: Int, element: PyObjectPtr
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+        value: PyObjectPtr,
     ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem).
+        """Insert a reference to object `value` at position `pos` of the tuple pointed to by `tuple`.
+
+        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem).
         """
 
-        # PyTuple_SetItem steals the reference - the element object will be
+        # PyTuple_SetItem steals the reference - the value object will be
         # destroyed along with the tuple
         self._dec_total_rc()
-        return self.lib.call["PyTuple_SetItem", c_int](
-            tuple_obj, index, element
-        )
+
+        # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
+        return self.lib.call["PyTuple_SetItem", c_int](tuple, pos, value)
 
     # ===-------------------------------------------------------------------===#
     # List Objects
