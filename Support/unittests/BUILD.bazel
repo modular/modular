@@ -1,12 +1,6 @@
 load("//bazel:api.bzl", "modular_cc_test", "modular_python_binding_library_test")
 
 modular_cc_test(
-    name = "ASN1Test",
-    srcs = ["ASN1Test.cpp"],
-    deps = ["//Support:ASN1"],
-)
-
-modular_cc_test(
     name = "ADTTest",
     srcs = glob(["ADT/*.cpp"]),
     deps = [
@@ -91,12 +85,6 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "CryptographyTest",
-    srcs = glob(["Cryptography/*.cpp"]),
-    deps = ["//Support:Cryptography"],
-)
-
-modular_cc_test(
     name = "DebugInfoDialectTest",
     srcs = glob(["DebugInfoDialect/*.cpp"]),
     deps = [
@@ -132,12 +120,6 @@ modular_cc_test(
     name = "URITest",
     srcs = ["URITest.cpp"],
     deps = ["//Support:URI"],
-)
-
-modular_cc_test(
-    name = "JSONTest",
-    srcs = ["JSONTest.cpp"],
-    deps = ["//Support:JSON"],
 )
 
 modular_cc_test(

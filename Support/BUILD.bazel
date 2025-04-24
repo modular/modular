@@ -196,13 +196,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "ASN1",
-    srcs = glob(["lib/ASN1/*.cpp"]),
-    hdrs = glob(["include/Support/ASN1/*.h"]),
-    deps = [":Base"],
-)
-
-modular_cc_library(
     name = "ADT",
     srcs = glob([
         "lib/ADT/*.cpp",
@@ -236,20 +229,6 @@ modular_cc_library(
         ":Base",
         ":Configuration",
         "@crashpad//:client",
-    ],
-)
-
-modular_cc_library(
-    name = "Cryptography",
-    srcs = glob(["lib/Cryptography/*.cpp"]),
-    hdrs = glob(["include/Support/Cryptography/*.h"]),
-    deps = [
-        ":Base",
-        ":Base64",
-        ":Buffer",
-        ":Configuration",
-        ":JSON",
-        "@mbedtls",
     ],
 )
 
@@ -299,13 +278,6 @@ modular_cc_library(
     name = "URI",
     srcs = ["lib/URI.cpp"],
     hdrs = ["include/Support/URI.h"],
-    deps = [":Base"],
-)
-
-modular_cc_library(
-    name = "JSON",
-    srcs = ["lib/JSON.cpp"],
-    hdrs = ["include/Support/JSON.h"],
     deps = [":Base"],
 )
 
