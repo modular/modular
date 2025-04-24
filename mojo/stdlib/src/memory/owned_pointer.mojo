@@ -22,6 +22,7 @@ from memory import OwnedPointer
 from memory import UnsafePointer, memcpy
 
 
+@register_passable
 struct OwnedPointer[T: AnyType]:
     """A safe, owning, smart pointer.
 
@@ -97,15 +98,6 @@ struct OwnedPointer[T: AnyType]:
             other: The `OwnedPointer` to copy.
         """
         self = OwnedPointer[T](copy_value=other[])
-
-    fn __moveinit__(out self, owned existing: Self):
-        """Move this `OwnedPointer`.
-
-        Args:
-            existing: The value to move.
-        """
-        self._inner = existing._inner
-        existing._inner = UnsafePointer[T]()
 
     fn __del__(owned self: OwnedPointer[T]):
         """Destroy the OwnedPointer[]."""
