@@ -603,7 +603,7 @@ struct SIMD[dtype: DType, size: Int](
             The value at position `idx`.
         """
         return __mlir_op.`pop.simd.extractelement`[
-            _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`]
+            _type = Scalar[dtype]._mlir_type
         ](self.value, idx.value)
 
     @always_inline("nodebug")

@@ -78,9 +78,7 @@ fn bitcast[
     if new_type == dtype:
         return rebind[SIMD[new_type, new_width]](val)
     return __mlir_op.`pop.bitcast`[
-        _type = __mlir_type[
-            `!pop.simd<`, new_width.value, `, `, new_type.value, `>`
-        ]
+        _type = SIMD[new_type, new_width]._mlir_type
     ](val.value)
 
 
@@ -140,6 +138,6 @@ fn pack_bits[
         ),
     ]()
 
-    return __mlir_op.`pop.bitcast`[
-        _type = __mlir_type[`!pop.scalar<`, new_type.value, `>`]
-    ](val.value)
+    return __mlir_op.`pop.bitcast`[_type = Scalar[new_type]._mlir_type](
+        val.value
+    )
