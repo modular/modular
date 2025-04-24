@@ -72,6 +72,7 @@ from sys.info import _is_sm_9x_or_newer
 
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
+from builtin.device_passable import DevicePassable
 from builtin.dtype import _uint_type_of_width
 from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
@@ -259,6 +260,7 @@ struct SIMD[dtype: DType, size: Int](
     Ceilable,
     CeilDivable,
     CollectionElement,
+    DevicePassable,
     ExplicitlyCopyable,
     Floatable,
     Floorable,
@@ -284,6 +286,9 @@ struct SIMD[dtype: DType, size: Int](
         dtype: The data type of SIMD vector elements.
         size: The size of the SIMD vector.
     """
+
+    alias device_type: AnyTrivialRegType = Self
+    """SIMD types are remapped to the same type when passed to accelerator devices."""
 
     # Fields
     alias _Mask = SIMD[DType.bool, size]

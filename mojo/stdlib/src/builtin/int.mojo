@@ -24,6 +24,7 @@ from hashlib.hash import _hash_simd
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from sys import bitwidthof
 
+from builtin.device_passable import DevicePassable
 from builtin.io import _snprintf
 from builtin.math import (
     Absable,
@@ -214,6 +215,7 @@ struct Int(
     CeilDivable,
     CollectionElement,
     Comparable,
+    DevicePassable,
     ExplicitlyCopyable,
     Hashable,
     ImplicitlyBoolable,
@@ -227,6 +229,9 @@ struct Int(
     _HashableWithHasher,
 ):
     """This type represents an integer value."""
+
+    alias device_type: AnyTrivialRegType = Self
+    """Int is remapped to the same type when passed to accelerator devices."""
 
     # Fields
     var value: __mlir_type.index
