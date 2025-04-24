@@ -2164,7 +2164,6 @@ fn _mha_sm90[
                                     partition, batch_size
                                 )
                             )
-                            constrained[group <= 8]()
                             var q_head_idx = position_prev.head_idx * group + lane // 4
                             exp_sum_ptr[q_head_idx] = rebind[
                                 Scalar[partition_t.accum_dtype]
@@ -2273,7 +2272,6 @@ fn _mha_sm90[
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                     partition, batch_size
                 )
-                constrained[group <= 8]()
                 var q_head_idx = position.head_idx * group + lane // 4
                 exp_sum_ptr[q_head_idx] = rebind[
                     Scalar[partition_t.accum_dtype]
