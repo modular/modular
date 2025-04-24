@@ -152,6 +152,7 @@ class ParamSpace:
 class ProcessOutput:
     stdout: str | None = None
     stderr: str | None = None
+    path: Path | None = None
 
 
 class KBENCH_MODE(Enum):
@@ -218,102 +219,120 @@ class SpecInstance:
         """Get executor command."""
         return self.executor.split() if self.executor else [self.mojo_binary]
 
-    def compile(
-        self,
-        *,
-        output_file: Path | None = None,
-        build_opts: list[str] = None,
-        mode: KBENCH_MODE,
-        dryrun: bool = False,
-        verbose: bool = False,
-        obj_cache: KbenchCache | None = None,
-    ) -> ProcessOutput:
-        """Compile the spec instance."""
-        output_file = output_file or Path(tempfile.gettempdir()) / next(
-            tempfile._get_candidate_names()
-        )
-        file_abs_path = Path(
-            string.Template(str(self.file)).substitute(os.environ)
-        ).absolute()
-        assert file_abs_path.exists()
-
+    @functools.cached_property
+    def _get_defines(self) -> list[str]:
         defines = []
-        vars = []
         for param in self.params:
-            (vars if param.name.startswith("$") else defines).append(
-                param.define()
-            )
+            if not param.name.startswith("$"):
+                defines.append(param.define())
 
         defines = [item for sublist in defines for item in sublist]
+        return defines
+
+    @functools.cached_property
+    def _get_vars(self) -> list[str]:
+        vars = []
+        for param in self.params:
+            if param.name.startswith("$"):
+                vars.append(param.define())
+
         vars = [item for sublist in vars for item in sublist]
+        return vars
 
-        if obj_cache and obj_cache.is_active:
-            defines_str = str(defines)
-            obj_path_in_cache = obj_cache.query(defines_str)
-            print(
-                f"binary: {defines_str} found in cache: {bool(obj_path_in_cache)}"
+    def build(
+        self,
+        *,
+        output_dir: Path,
+        obj_cache: KbenchCache,
+        build_opts: list[str] = [],
+        dryrun: bool = False,
+    ) -> ProcessOutput:
+        """Build the spec instance. Use set of compile-time
+        parameters as path of the compiled binary and store
+        the executable in 'output_dir'.
+        """
+
+        binary_name = self.to_path(with_variables=False)
+
+        logging.info(f"building [{binary_name}]")
+        logging.info(f"defines: {self._get_defines}")
+        logging.info(f"vars   : {self._get_vars}")
+
+        if obj_cache.is_active:
+            bin_path = obj_cache.query(binary_name)
+            logging.info(f"in cache [{binary_name}]: {bool(bin_path)}")
+            if bin_path:
+                return ProcessOutput(None, None, Path(bin_path))
+
+        # Build the binary if:
+        # - cache is not active, or
+        # - could not find executable in the cache
+        bin_path = output_dir / Path(binary_name)
+
+        # TODO: add mojo-specific functions and allow for further expansion to other executors.
+        cmd = self.get_executor()
+        cmd.extend(["build"])
+        if build_opts:
+            cmd.extend(build_opts)
+        cmd.extend(
+            [
+                *self._get_defines,
+                str(self.file),
+                "-o",
+                str(bin_path),
+            ]
+        )
+        out = _run_cmdline(cmd, dryrun)
+        if out.stderr:
+            logging.error(out.stderr)
+            return ProcessOutput(out.stdout, out.stderr, None)
+
+        # store the executable in cache if cache is active
+        if obj_cache.is_active:
+            # TODO: should rework internals of kbench-cache to avoid copying.
+            bin_path_in_cache = obj_cache.store(
+                binary_name, bin_path, output_dir.absolute()
             )
-            print(f"vars  : {vars}")
+            assert bin_path_in_cache, (
+                "Running empty cache with --dryrun is not supported!"
+            )
+            bin_path = bin_path_in_cache
 
-            if not obj_path_in_cache:
-                obj_path = file_abs_path.with_suffix("")
-                cmd = self.get_executor() + [
-                    "build",
-                    *defines,
-                    str(file_abs_path),
-                    "-o",
-                    str(obj_path),
-                ]
-                if verbose:
-                    logging.info(f"[output_file: {output_file}]")
-                out = _run_cmdline(cmd, dryrun)
-                if out.stderr:
-                    print(out.stderr)
-                    return out
-                obj_path_in_cache = obj_cache.store(
-                    defines_str, obj_path, output_file.parent.absolute()
-                )
-                assert obj_path_in_cache, (
-                    "Running empty cache with --dryrun is not supported!"
-                )
+        return ProcessOutput(out.stdout, out.stderr, bin_path)
 
-            cmd = [obj_path_in_cache, "-o", str(output_file), *vars]
-        else:
-            cmd = self.get_executor()
-            if build_opts:
-                cmd.extend(build_opts)
-            cmd.extend([*defines, str(file_abs_path)])
-            if mode != KBENCH_MODE.BUILD:
-                cmd.extend(["-o", str(output_file), *vars])
-
-        if verbose:
-            logging.info(f"[output_file: {output_file}]")
-        return _run_cmdline(cmd, dryrun)
-        # if mode == KBENCH_MODE.BUILD:
-        # TODO: refactor the following into a separate function call, or invoke alias directly.
-        # mojo-clear-cache
-        # subprocess.call(
-        #     (
-        #         "rm -fr $MODULAR_DERIVED_PATH/.mojo_cache"
-        #         " $HOME/.modular/.mojo_cache"
-        #     ),
-        #     shell=True,
-        # )
+    def execute(
+        self,
+        binary_path: Path,
+        output_file: Path,
+        dryrun: bool = False,
+    ) -> ProcessOutput:
+        vars = self._get_vars
+        cmd = [binary_path, "-o", str(output_file), *vars]
+        out = _run_cmdline(cmd, dryrun)
+        return out
 
     def to_obj(self) -> dict[str, Any]:
         return {param.name: param.value for param in self.params}
 
+    @functools.cached_property
+    def file_stem(self) -> str:
+        return Path(self.file).with_suffix("").stem
+
     def __str__(self) -> str:
-        tokens = [self.name]
+        tokens = [self.file_stem]
         for param in self.params:
             tokens.append(f"{param.name}={param.value}")
         return "/".join(tokens)
 
-    def to_path(self) -> str:
-        tokens = [self.name]
+    def to_path(self, with_variables: bool = True) -> str:
+        tokens = [self.file_stem]
         for param in self.params:
-            name = param.name.replace("$", "")
-            tokens.append(f"{name}{param.value}")
+            name = param.name
+            # just use compile-time parameters and ignore runtime variables.
+            if name.startswith("$") and not with_variables:
+                continue
+            name = name.replace("$", "")
+            tokens.append(f"{name}-{param.value}")
         return "_".join(tokens)
 
 
@@ -524,6 +543,14 @@ class Spec:
         return len(self.mesh)
 
     def __post_init__(self):
+        # checking if the file source path is valid
+        file_abs_path = Path(
+            string.Template(str(self.file)).substitute(os.environ)
+        ).absolute()
+        assert file_abs_path.exists()
+        self.file = file_abs_path
+
+        # setup mesh
         if self.params:
             self.setup_mesh()
         else:
@@ -672,8 +699,6 @@ def run(
     tmp_dir = Path(tmp_path)
 
     build_opts = []
-    if mode is KBENCH_MODE.BUILD:
-        build_opts = ["build"]
     if debug_level:
         build_opts.extend(["--debug-level", debug_level])
     if optimization_level:
@@ -699,30 +724,38 @@ def run(
                 shutil.rmtree(output_dir)
             os.makedirs(output_dir, exist_ok=False)
 
-            progress.update(bench_progress, description=s)
+            progress.update(bench_progress, description=str(s))
 
             # Check for the failure here.
             try:
                 output_file = output_dir / "output.csv"
                 t_start_item = time()
 
-                output_msg = s.compile(
-                    output_file=output_file,
-                    build_opts=build_opts,
-                    mode=mode,
-                    dryrun=dryrun,
-                    verbose=verbose,
+                build_output = s.build(
+                    output_dir=output_dir,
                     obj_cache=obj_cache,
+                    build_opts=build_opts,
+                    dryrun=dryrun,
                 )
-                elapsed_time_list[i] = (time() - t_start_item) * 1e3
+
+                # If no errors detected and binary_path is valid run the binary
+                if (
+                    KBENCH_MODE.RUN
+                    and not build_output.stderr
+                    and build_output.path
+                ):
+                    s.execute(build_output.path, output_file, dryrun=dryrun)
+
+                elapsed_time_list[i] = int((time() - t_start_item) * 1e3)
                 spec_list[i] = s
                 output_path_list[i] = output_file
-                output_msg_list[i] = output_msg
-                if verbose:
-                    if output_msg.stdout:
-                        logging.debug(output_msg.stdout)
-                    if output_msg.stderr:
-                        logging.error(output_msg.stderr)
+                output_msg_list[i] = build_output
+
+                # TODO: revise this part and separate build/exec errors.
+                if build_output.stdout:
+                    logging.debug(build_output.stdout)
+                if build_output.stderr:
+                    logging.error(build_output.stderr)
                 print(LINE)
 
             except Exception as e:
@@ -742,11 +775,16 @@ def run(
     ########################################################
     # Elapsed time per spec
     build_df = pd.DataFrame(
-        {"name": [f"build/{str(s)}" for i, s in enumerate(spec)]}
+        {
+            "name": [f"build/{str(s)}" for i, s in enumerate(spec)],
+            "spec": [f"{str(s)}" for i, s in enumerate(spec)],
+        }
     )
     build_df.insert(len(build_df.columns), "met (ms)", elapsed_time_list)
     build_df.insert(len(build_df.columns), "iters", 1)
     build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
+
+    build_df = build_df.loc[:, ["name", "met (ms)", "iters", "spec"]]
 
     output_dict["build_df"] = build_df
     if verbose:
@@ -772,7 +810,7 @@ def run(
             invalid_specs.append([i, output_msg_list[i]])
 
     output_lines += [LINE]
-    output_lines += [f"Running {spec.name} from '{spec.file}'"]
+    output_lines += [f"Running ['{spec.file}']"]
 
     if invalid_specs:
         output_lines += [LINE]
@@ -882,7 +920,7 @@ def check_gpu_clock():
 
 
 class FileGlobArg:
-    def __init__(self, file: List[str]) -> None:
+    def __init__(self, file: list[str]) -> None:
         self._files = file
         if not self._files:
             raise ValueError(
@@ -1027,7 +1065,9 @@ def cli(
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
     shape_path_list = (
-        [sh.to_path() for sh in shape_list] if shapes else [output_path]
+        [sh.to_path(with_variables=True) for sh in shape_list]
+        if shapes
+        else [output_path]
     )
 
     assert len(shape_path_list) == len(shape_list), (
