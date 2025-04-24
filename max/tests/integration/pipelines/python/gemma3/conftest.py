@@ -32,7 +32,7 @@ def text_config() -> Gemma3TextConfig:
 
 
 @pytest.fixture
-def input_tensor(
+def input_indices(
     text_config: Gemma3TextConfig,
     batch_size: int = 1,
     seq_len: int = 7,
@@ -48,10 +48,35 @@ def input_tensor(
 
 
 @pytest.fixture
+def input_tensor(
+    text_config: Gemma3TextConfig,
+    batch_size: int = 1,
+    seq_len: int = 7,
+    seed: int = 42,
+) -> torch.Tensor:
+    torch.manual_seed(seed)
+    return torch.randn(
+        batch_size,
+        seq_len,
+        text_config.hidden_size,
+        dtype=torch.bfloat16,
+    )
+
+
+@pytest.fixture
 def embedding_weights(text_config: Gemma3TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
     return torch.randn(
         text_config.vocab_size,
         text_config.hidden_size,
         dtype=torch.bfloat16,
+    )
+
+
+@pytest.fixture
+def rms_weight(text_config: Gemma3TextConfig) -> torch.Tensor:
+    torch.manual_seed(42)
+    return torch.randn(
+        text_config.hidden_size,
+        dtype=torch.float32,
     )

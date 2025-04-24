@@ -345,7 +345,8 @@ class CrossAttentionModel:
                     dtype=self.dtype,
                     shape=torch_cross_attn.q_norm.weight.shape,
                     device=DeviceRef.GPU(),
-                )
+                ),
+                weight_offset=0.0,
             ),
             k_norm=RMSNorm(
                 Weight(
@@ -353,7 +354,8 @@ class CrossAttentionModel:
                     dtype=self.dtype,
                     shape=torch_cross_attn.k_norm.weight.shape,
                     device=DeviceRef.GPU(),
-                )
+                ),
+                weight_offset=0.0,
             ),
         )
 
