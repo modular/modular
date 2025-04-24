@@ -98,26 +98,9 @@ fn assert_false[
         raise _assert_error(msg, location.or_else(__call_location()))
 
 
-trait Testable(EqualityComparable, Stringable):
-    """A trait that a struct should conform to if we do equality testing on it.
-    """
-
-    pass
-
-
-trait TestableCollectionElement(
-    CollectionElement,
-    EqualityComparable,
-    Representable,
-):
-    """A trait for elements that can be tested in a collection."""
-
-    pass
-
-
 @always_inline
 fn assert_equal[
-    T: Testable
+    T: EqualityComparable & Stringable, //
 ](
     lhs: T,
     rhs: T,
@@ -129,7 +112,7 @@ fn assert_equal[
     is raised.
 
     Parameters:
-        T: A Testable type.
+        T: The type of the input values.
 
     Args:
         lhs: The lhs of the equality.
@@ -213,7 +196,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    T: TestableCollectionElement
+    T: CollectionElement & EqualityComparable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -224,7 +207,7 @@ fn assert_equal[
     """Asserts that two lists are equal.
 
     Parameters:
-        T: A TestableCollectionElement type.
+        T: The type of the elements in the lists.
 
     Args:
         lhs: The left-hand side list.
@@ -327,7 +310,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_not_equal[
-    T: Testable
+    T: EqualityComparable & Stringable, //
 ](
     lhs: T,
     rhs: T,
@@ -339,7 +322,7 @@ fn assert_not_equal[
     Error is raised.
 
     Parameters:
-        T: A Testable type.
+        T: The type of the input values.
 
     Args:
         lhs: The lhs of the inequality.
@@ -422,7 +405,7 @@ fn assert_not_equal[
 
 @always_inline
 fn assert_not_equal[
-    T: TestableCollectionElement
+    T: CollectionElement & EqualityComparable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -433,7 +416,7 @@ fn assert_not_equal[
     """Asserts that two lists are not equal.
 
     Parameters:
-        T: A TestableCollectionElement type.
+        T: The type of the elements in the lists.
 
     Args:
         lhs: The left-hand side list.

@@ -104,7 +104,8 @@ String types in Mojo got several significant improvements:
   avoid initialized memory that the caller plans to overwrite.
 
 The following traits have been removed in favor of trait composition:
-`EqualityComparableCollectionElement`, `RepresentableCollectionElement`.
+`EqualityComparableCollectionElement`, `RepresentableCollectionElement`,
+`TestableCollectionElement`, `Testable`.
 
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.

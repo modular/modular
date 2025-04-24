@@ -579,7 +579,7 @@ def test_splitlines():
     alias S = StringSlice[StaticConstantOrigin]
     alias L = List[StringSlice[StaticConstantOrigin]]
 
-    # FIXME: remove once StringSlice conforms to TestableCollectionElement
+    # FIXME: remove once we can compare Lists of different element types
     fn _assert_equal[
         O1: ImmutableOrigin
     ](l1: List[StringSlice[O1]], l2: List[String]) raises:
