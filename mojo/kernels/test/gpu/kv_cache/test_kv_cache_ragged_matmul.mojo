@@ -899,7 +899,6 @@ def execute_cont_batch_fused_qkv_matmul[
     )
 
     # initialize our KVCache
-    var is_context_encoding = True
     var batch_size = len(cache_sizes)
     var cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
     var max_seq_length_batch = -1
@@ -910,9 +909,6 @@ def execute_cont_batch_fused_qkv_matmul[
         max_context_length = max(
             max_context_length, Int(cache_sizes[i] + prompt_lens[i])
         )
-        if cache_lengths_host.tensor[i] != 0:
-            is_context_encoding = False
-
         if prompt_lens[i] > max_seq_length_batch:
             max_seq_length_batch = prompt_lens[i]
 

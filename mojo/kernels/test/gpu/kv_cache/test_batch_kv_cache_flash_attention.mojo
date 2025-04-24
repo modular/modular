@@ -12,26 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from collections import OptionalReg
+from collections import Set
 from math import isqrt
-from sys import has_nvidia_gpu_accelerator
+from random import random_ui64, seed
 
-from algorithm import max as tensor_max
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.info import H100
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
-from layout.tensor_core import get_mma_shape
+from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
 from memory import UnsafePointer
-from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
-from nn.mha_mask import MaterializedMask, NullMask
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import get_accum_type
+from utils import Index, IndexList
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -45,24 +40,36 @@ def execute_flash_attention[
 ](
     batch_size: Int,
     valid_length: NDBuffer[DType.uint32, 1],
-    max_prompt_len: Int,
     max_seq_len: Int,
+    num_layers: Int,
+    layer_idx: Int,
     cache_valid_length: NDBuffer[DType.uint32, 1],
     ctx: DeviceContext,
 ):
-    alias max_batch_size = 32
-
+    alias num_blocks = 32
+    alias CacheType = ContinuousBatchingKVCache[
+        type,
+        kv_params,
+    ]
     debug_assert(
-        batch_size < max_batch_size,
+        batch_size < num_blocks,
         "batch_size passed to unit test (",
         batch_size,
-        ") is larger than configured max_batch_size (",
-        max_batch_size,
+        ") is larger than configured num_blocks (",
+        num_blocks,
         ")",
     )
 
+    max_prompt_len = 0
+    max_context_len = 0
+
+    for i in range(batch_size):
+        max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
+        max_context_len = max(
+            max_context_len, Int(cache_valid_length[i] + valid_length[i])
+        )
+
     # initialize q tensor
-    # TODO parameterize to layout
     q_host = HostNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
@@ -73,14 +80,11 @@ def execute_flash_attention[
 
     random(q_host.tensor)
 
-    # TODO: Do I need to zero-pad q_host_tensor beyond the valid_size of the
-    #       current batch's valid length? What to initialize with?
-
-    valid_length_device = DeviceNDBuffer[DType.uint32, 1](
+    valid_lengths_device = DeviceNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size),
         ctx=ctx,
     )
-    ctx.enqueue_copy(valid_length_device.buffer, valid_length.data)
+    ctx.enqueue_copy(valid_lengths_device.buffer, valid_length.data)
 
     q_device = DeviceNDBuffer[
         type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
@@ -91,6 +95,15 @@ def execute_flash_attention[
         ctx=ctx,
     )
     ctx.enqueue_copy(q_device.buffer, q_host.tensor.data)
+
+    # initialize mask tensor
+    # TODO this should ideally create a triangular matrix
+    # but the output should be consistent regardless.
+    mask_host = HostNDBuffer[
+        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+    ](IndexList[4](batch_size, num_q_heads, max_prompt_len, max_context_len))
+    random(mask_host.tensor)
+    mask_device = mask_host.copy_to_device(ctx)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
@@ -127,249 +140,148 @@ def execute_flash_attention[
     )
 
     # initialize our KVCache
-    var is_context_encoding = True
-    var max_context_len_in_batch = 0
-    var max_seq_len_in_batch = 0
-    for i in range(batch_size):
-        if cache_valid_length[i] != 0:
-            is_context_encoding = False
-        max_context_len_in_batch = max(
-            max_context_len_in_batch,
-            Int(cache_valid_length[i] + valid_length[i]),
-        )
-        max_seq_len_in_batch = max(max_seq_len_in_batch, Int(valid_length[i]))
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
-    # initialize mask tensor
-    # TODO this should ideally create a triangular matrix
-    # but the output should be consistent regardless.
-    mask_host = HostNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
-    ](
-        IndexList[4](
-            batch_size,
-            num_q_heads,
-            max_prompt_len,
-            max_context_len_in_batch,
-        )
-    )
-
-    random(mask_host.tensor)
-
-    mask_device = mask_host.copy_to_device(ctx)
-
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
-    var cache_lengths = NDBuffer[DType.uint32, 1](
+    var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
         cache_lengths_dev._unsafe_ptr(), Index(batch_size)
     )
-
-    k_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    kv_block_host = HostNDBuffer[type, 6](
+        IndexList[6](
+            num_blocks,
+            2,
+            num_layers,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
     )
-    random(k_block_host.tensor)
-    k_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
-        ),
+    random(kv_block_host.tensor)
+    kv_block_device = kv_block_host.copy_to_device(ctx)
+
+    var lookup_table_host = HostNDBuffer[DType.uint32, 1](
+        IndexList[1](batch_size),
+    )
+
+    var lookup_table_device = DeviceNDBuffer[DType.uint32, 1](
+        IndexList[1](batch_size),
         ctx=ctx,
     )
-    ctx.enqueue_copy(k_block_device.buffer, k_block_host.tensor.data)
 
-    k_cache_device = ContiguousKVCache[type, kv_params](
-        k_block_device.tensor,
-        cache_lengths,
-        is_context_encoding,
-        batch_size,
-        max_seq_len_in_batch,
-        max_context_len_in_batch,
+    # hacky way to get random block indices
+    var block_idx_set = Set[Int]()
+    var idx = 0
+    while len(block_idx_set) < batch_size:
+        var randval = Int(random_ui64(0, num_blocks - 1))
+        if randval in block_idx_set:
+            continue
+        block_idx_set.add(randval)
+        lookup_table_host.tensor[idx] = UInt32(randval)
+        idx += 1
+
+    ctx.enqueue_copy(lookup_table_device.buffer, lookup_table_host.tensor.data)
+
+    var k_cache_device = CacheType(
+        kv_block_device.tensor,
+        cache_lengths_device_nd,
+        lookup_table_device.tensor,
+        max_prompt_len,
+        max_context_len,
+        layer_idx,
+        CacheType.KeyIdx,
+    )
+    var v_cache_device = CacheType(
+        kv_block_device.tensor,
+        cache_lengths_device_nd,
+        lookup_table_device.tensor,
+        max_prompt_len,
+        max_context_len,
+        layer_idx,
+        CacheType.ValueIdx,
     )
 
-    v_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
-        ),
+    flash_attention(
+        test_output_device.tensor,
+        q_device.tensor,
+        k_cache_device,
+        v_cache_device,
+        MaterializedMask(mask_device.tensor, start_pos=cache_lengths_device_nd),
+        IdentityScoreMod(),
+        valid_lengths_device.tensor,
+        isqrt(Float32(kv_params.head_size)),
+        ctx,
     )
-    random(v_block_host.tensor)
-    v_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
-        ),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy(v_block_device.buffer, v_block_host.tensor.data)
 
-    v_cache_device = ContiguousKVCache[type, kv_params](
-        v_block_device.tensor,
-        cache_lengths,
-        is_context_encoding,
-        batch_size,
-        max_seq_len_in_batch,
-        max_context_len_in_batch,
-    )
     mha_gpu_naive(
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(mask_device.tensor, start_pos=cache_lengths),
+        MaterializedMask(mask_device.tensor, start_pos=cache_lengths_device_nd),
         ref_output_device.tensor,
-        valid_length_device.tensor,
+        valid_lengths_device.tensor,
         isqrt(Float32(kv_params.head_size)),
         batch_size,
         max_prompt_len,
-        max_context_len_in_batch,
+        max_context_len,
         num_q_heads,  # TODO fix this for GQA
         kv_params.head_size,
         num_q_heads // kv_params.num_heads,
         ctx,
     )
 
-    @parameter
-    for nps in range(2, 5):
+    ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
+    ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
+    ctx.synchronize()
 
-        @parameter
-        for blf in range(2):
-            # FIXME illegal address if using larger BK and nps
-            alias BK = (
-                (UInt(32) if type is DType.float32 else UInt(64))
-                // (1 if nps == 2 else 2)
-            ) if has_nvidia_gpu_accelerator() else 32
-            alias config = MHAConfig(
-                type,
-                num_q_heads,
-                kv_params.head_size,
-                num_pipeline_stages=nps,
-                k_group_size=1 << blf,
-                BK=OptionalReg(BK),
-            )
-            alias num_k_mmas = config.block_k() // get_mma_shape[
-                type, get_accum_type[type]()
-            ]()[2]
+    ref_out = ref_output_host.tensor
+    test_out = test_output_host.tensor
+    for bs in range(Int(batch_size)):
+        for s in range(Int(valid_length[bs])):
+            for h in range(Int(num_q_heads)):
+                for hd in range(kv_params.head_size):
+                    assert_almost_equal(
+                        ref_out[bs, s, h, hd],
+                        test_out[bs, s, h, hd],
+                        atol=1e-5,
+                        rtol=8e-3,
+                    )
 
-            @parameter
-            if num_k_mmas % (2 * config.k_group_size) != 0:
-                continue
-
-            alias mma_shape = get_mma_shape[type, get_accum_type[type]()]()
-
-            @parameter
-            if (config.block_k() % (mma_shape[2] << blf)) != 0:
-                continue
-            alias width = 32 if type is DType.float32 else (
-                128 if ctx.device_info
-                is H100 else (64 if has_nvidia_gpu_accelerator() else 128)
-            )
-            # fmt: off
-            var config_str = String(
-                "ampere_", type, "_",
-                kv_params.head_size, "x", width, "_",
-                BK, "x", nps,
-            )
-            # fmt: on
-            assert_equal(String(config), config_str)
-            flash_attention[config=config](
-                test_output_device.tensor,
-                q_device.tensor,
-                k_cache_device,
-                v_cache_device,
-                MaterializedMask(mask_device.tensor, start_pos=cache_lengths),
-                IdentityScoreMod(),
-                valid_length_device.tensor,
-                isqrt(Float32(kv_params.head_size)),
-                ctx,
-            )
-
-            ctx.enqueue_copy(
-                test_output_host.tensor.data, test_output_device.buffer
-            )
-            ctx.enqueue_copy(
-                ref_output_host.tensor.data, ref_output_device.buffer
-            )
-            ctx.synchronize()
-
-            ref_out = ref_output_host.tensor
-            test_out = test_output_host.tensor
-            for bs in range(Int(batch_size)):
-                for s in range(Int(valid_length[bs])):
-                    for h in range(Int(num_q_heads)):
-                        for hd in range(Int(kv_params.head_size)):
-                            var ref_val = ref_out[bs, s, h, hd]
-                            var test_val = test_out[bs, s, h, hd]
-                            try:
-                                assert_almost_equal(
-                                    ref_val, test_val, atol=1e-5, rtol=8e-3
-                                )
-                            except e:
-                                print(
-                                    "bs: ", bs, "s: ", s, "h: ", h, "hd: ", hd
-                                )
-                                raise e
     _ = q_device^
     _ = q_host^
     _ = ref_output_device^
     _ = ref_output_host^
     _ = test_output_device^
     _ = test_output_host^
-    _ = v_block_device^
-    _ = v_block_host^
-    _ = k_block_device^
-    _ = k_block_host^
+    _ = kv_block_device^
+    _ = kv_block_host^
     _ = mask_host^
     _ = mask_device^
     _ = cache_lengths_dev^
+    _ = valid_lengths_device^
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
     alias types = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
-    var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(1))
+    var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(bs))
 
     var cache_valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var cache_valid_length = NDBuffer[DType.uint32, 1](
-        cache_valid_length_ptr, Index(1)
+        cache_valid_length_ptr, Index(bs)
     )
 
     @parameter
     for type_idx in range(len(types)):
         alias type = types[type_idx]
+
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64
         cache_valid_length[0] = 0
         cache_valid_length[1] = 0
-        print("test0")
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 128, 1024, cache_valid_length, ctx
+            bs, valid_length, 1024, 4, 3, cache_valid_length, ctx
         )
 
         # Replit context encoding [testing odd query valid length].
@@ -377,9 +289,8 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 65
         cache_valid_length[0] = 0
         cache_valid_length[1] = 0
-        print("test1")
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 128, 1024, cache_valid_length, ctx
+            bs, valid_length, 1024, 4, 0, cache_valid_length, ctx
         )
 
         # Replit token gen [testing even cache valid lengths].
@@ -387,9 +298,9 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 256
-        print("test2")
+
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 1, 1024, cache_valid_length, ctx
+            bs, valid_length, 1024, 4, 1, cache_valid_length, ctx
         )
 
         # Replit token gen [testing even cache valid lengths].
@@ -397,12 +308,13 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 255
-        print("test3")
+
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 1, 1024, cache_valid_length, ctx
+            bs, valid_length, 1024, 4, 2, cache_valid_length, ctx
         )
 
 
 def main():
+    seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)

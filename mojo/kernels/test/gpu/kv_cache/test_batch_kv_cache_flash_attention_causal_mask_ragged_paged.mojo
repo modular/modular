@@ -30,8 +30,7 @@ from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from utils import Index, IndexList
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -123,9 +122,7 @@ def execute_ragged_flash_attention[
     random(kv_block_continuous_host.tensor)
     kv_block_continuous_device = kv_block_continuous_host.copy_to_device(ctx)
     var lookup_table_continuous_host = HostNDBuffer[DType.uint32, 1](
-        IndexList[1](
-            batch_size,
-        ),
+        IndexList[1](batch_size)
     )
 
     # hacky way to select random blocks for continuous batching
@@ -305,7 +302,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     for bs_ref in List[Int](1, 16):
 
         @parameter
-        for type_idx in range(2):
+        for type_idx in range(len(types)):
             alias type = types[type_idx]
             bs = bs_ref[]
             ce_cache_sizes = List[Int]()

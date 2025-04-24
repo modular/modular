@@ -27,8 +27,7 @@ from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from utils import Index, IndexList
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -179,28 +178,10 @@ def execute_ragged_flash_attention[
         layer_idx,
         CacheType.KeyIdx,
     )
-    var k_cache_host = CacheType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
-        max_prompt_length,
-        max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
-    )
     var v_cache_device = CacheType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        max_prompt_length,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
-    var v_cache_host = CacheType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
         max_prompt_length,
         max_context_length,
         layer_idx,
@@ -285,10 +266,8 @@ def execute_ragged_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = (
-        DType.float32,
-        DType.bfloat16,
-    )
+    alias types = (DType.float32, DType.bfloat16)
+
     for bs_ref in List[Int](1, 16):
 
         @parameter
