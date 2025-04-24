@@ -213,6 +213,118 @@ fn tp_repr_wrapper[T: Pythonable](py_self: PyObjectPtr) -> PyObjectPtr:
     return PythonObject(string=repr_str).steal_data()
 
 
+# ===-----------------------------------------------------------------------===#
+# Builders
+# ===-----------------------------------------------------------------------===#
+
+
+struct PythonModuleBuilder:
+    """API for declaring and creating Python bindings for a module."""
+
+    var module: PythonModule
+    var functions: List[PyMethodDef]
+
+    fn __init__(out self, name: StaticString) raises:
+        """Construct a Python module builder with the given module name.
+
+        Args:
+            name: The name of the module.
+
+        Raises:
+            If the module creation fails.
+        """
+        self = Self(PythonModule(name))
+
+    fn __init__(out self, module: PythonModule):
+        """Construct a Python module builder with the given module.
+
+        Args:
+            module: The module to build.
+        """
+        self.module = module
+        self.functions = List[PyMethodDef]()
+
+    fn def_py_c_function(
+        mut self: Self,
+        func: PyCFunction,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ):
+        """Declare a binding for a function with PyObjectPtr signature in the
+        module.
+
+        Args:
+            func: The function to declare a binding for.
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+
+    fn def_py_function[
+        func: PyFunction
+    ](
+        mut self: Self,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ):
+        """Declare a binding for a function with PyObject signature in the
+        module.
+
+        Parameters:
+            func: The function to declare a binding for.
+
+        Args:
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.def_py_c_function(
+            py_c_function_wrapper[func], func_name, docstring
+        )
+
+    fn def_py_function[
+        func: PyFunctionRaising
+    ](
+        mut self: Self,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ):
+        """Declare a binding for a function with PyObject signature in the
+        module.
+
+        Parameters:
+            func: The function to declare a binding for.
+
+        Args:
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.def_py_c_function(
+            py_c_function_wrapper[func], func_name, docstring
+        )
+
+    fn finalize(mut self) raises -> PythonModule:
+        """Finalize the module builder, creating the module object.
+
+        All functions added to the builder will be built and exposed in the
+        module.
+
+        Raises:
+            If the module creation fails or if we fail to add any of the
+            declared functions to the module.
+        """
+
+        Python.add_functions(self.module, self.functions)
+        self.functions.clear()
+
+        return self.module
+
+
 struct PythonTypeBuilder[T: Pythonable]:
     """A builder for a Python type binding.
 
