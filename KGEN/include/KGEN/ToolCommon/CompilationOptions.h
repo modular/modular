@@ -16,6 +16,7 @@
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/TargetParser/Host.h"
+#include <cstddef>
 
 namespace M::KGEN {
 /// This class provides a set of options used to control the compilation of
@@ -124,6 +125,9 @@ public:
   bool enableParallelLLC = true;
 
   std::string emissionOptions = "";
+
+  // Maximum number of threads to be used by AsyncRT. 0 means use all available.
+  size_t numThreads = 0;
 };
 
 bool isGPUTriple(const llvm::Triple &triple);

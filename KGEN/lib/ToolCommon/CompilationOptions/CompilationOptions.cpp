@@ -111,6 +111,10 @@ void CompilationOptions::print(raw_ostream &os) const {
     os << ", targetAccelerator: " << targetAccelerator;
 
   os << ", debugInfoLang: " << debugInfoLanguage;
+
+  if (numThreads != 0)
+    os << ", numThreads: " << numThreads;
+
   os << " }";
 }
 

@@ -33,7 +33,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier sharedLibasan,
     llvm::opt::OptSpecifier externalLibasan,
     llvm::opt::OptSpecifier debugInfoLanguageId,
-    llvm::opt::OptSpecifier stdLibPath) {
+    llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath) {
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
     StringRef sanitizer = args.getLastArgValue(sanitizeId);
@@ -129,7 +129,17 @@ ErrorOrSuccess M::parseCompilationOptions(
             .Case(kDebugLevelLineTables, CompilationOptions::kLineTablesOnly)
             .Case(kDebugLevelFull, CompilationOptions::kFullDebugInfo);
   }
-
+  if (numThreadsId.isValid()) {
+    if (args.hasMultipleArgs(numThreadsId)) {
+      return Error("Number of threads can only be specified once");
+    }
+    StringRef numThreadsStr = args.getLastArgValue(numThreadsId);
+    if (!numThreadsStr.empty()) {
+      // Next line has a side effect of setting compilationOptions.numThreads
+      if (!llvm::to_integer(numThreadsStr, compilationOptions.numThreads))
+        return Error("Invalid number of threads: " + numThreadsStr.str());
+    }
+  }
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
 
   // Initialize the MLIR context.
@@ -335,4 +345,20 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     (*module)->setAttr(EnvAttr::getEnvAttrName(), *envOrErr);
   }
   return module;
+}
+
+void M::configureRuntimeOptions(AsyncRT::RuntimeOptions &runtimeOptions,
+                                const KGEN::CompilationOptions &options) {
+  if (options.numThreads != 0) {
+    // AsyncRT has a sophisticated thread pool configuration system.
+    // There are two parameters: numThreads and maxThreads.
+    // Setting numThreads to non-zero means "Use exactly this many threads"
+    // Setting maxThreads to non-zero means numThreads=min(maxThreads,
+    // heuristicBasedOnNumCores)
+    //
+    // Here we take the stance that mojo build -j 5 means "Use at most 5
+    // threads"
+    runtimeOptions.numThreads = 0;
+    runtimeOptions.maxThreads = options.numThreads;
+  }
 }

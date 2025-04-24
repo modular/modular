@@ -29,6 +29,7 @@ class TimingScope;
 namespace M {
 namespace AsyncRT {
 class Runtime;
+class RuntimeOptions;
 } // namespace AsyncRT
 
 namespace KGEN::LIT {
@@ -51,6 +52,7 @@ parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
                         llvm::opt::OptSpecifier sharedLibasan = {},
                         llvm::opt::OptSpecifier externalLibasan = {},
                         llvm::opt::OptSpecifier debugInfoLanguageId = {},
+                        llvm::opt::OptSpecifier numThreadsId = {},
                         llvm::opt::OptSpecifier stdLibPath = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
@@ -87,6 +89,12 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);
+
+/// Configure runtime options based on compilation options.
+/// Currently handles thread pool configuration based on numThreads.
+void configureRuntimeOptions(AsyncRT::RuntimeOptions &runtimeOptions,
+                             const KGEN::CompilationOptions &options);
+
 } // namespace M
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATION_H
