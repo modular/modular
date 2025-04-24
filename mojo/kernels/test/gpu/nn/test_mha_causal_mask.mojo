@@ -23,7 +23,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import DEFAULT_GPU_ARCH
+from gpu.host.info import DEFAULT_GPU_ARCH, A100, H100
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
@@ -448,3 +448,13 @@ def main():
             32,
             group=4,
         ](1, 5000, ctx)
+
+        @parameter
+        if ctx.device_info is A100 or ctx.device_info is H100:
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                128,
+                32,
+                group=16,
+            ](1, 2008, ctx)
