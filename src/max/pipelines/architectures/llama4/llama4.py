@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
 from max.nn.layer import LayerList
 
 from .layers.attention import Llama4TextAttention
-from .layers.moe import MoE
+from .layers.moe import DistributedMoE
 from .model_config import Llama4Config
 
 
@@ -75,17 +75,14 @@ class Llama4DecoderLayer(Module):
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module
         if self.is_moe_layer:
-            # TODO: This is a hack to avoid overloading GPU 0. This should be
-            # replaced with expert parallelism.
-            self.moe_device_index = layer_idx % len(config.devices)
-            self.feed_forward = MoE(
+            self.feed_forward = DistributedMoE(
                 hidden_dim=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 num_experts=config.num_local_experts,
                 intermediate_size=config.intermediate_size,
                 intermediate_size_mlp=config.intermediate_size_mlp,
                 dtype=config.dtype,
-                device=config.devices[self.moe_device_index],
+                devices=config.devices,
             )
         else:
             self.feed_forward = DistributedMLP(
@@ -123,21 +120,13 @@ class Llama4DecoderLayer(Module):
 
         hidden_states = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
         post_norm_states = self.post_attention_layernorm(hidden_states)
-        if self.is_moe_layer:
-            mlp_outs = self.feed_forward(
-                [post_norm_states[self.moe_device_index]],
-                signal_buffers=signal_buffers,
-            )
-            hidden_states = distribute_value(
-                mlp_outs[0] + hidden_states[self.moe_device_index], self.devices
-            )
-        else:
-            mlp_outs = self.feed_forward(
-                post_norm_states, signal_buffers=signal_buffers
-            )
-            hidden_states = [
-                h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
-            ]
+
+        mlp_outs = self.feed_forward(
+            post_norm_states, signal_buffers=signal_buffers
+        )
+        hidden_states = [
+            h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
+        ]
         return hidden_states
 
 
