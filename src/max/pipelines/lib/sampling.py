@@ -114,6 +114,11 @@ def token_sampler(
                     dtype=DType.int64,
                     device=DeviceRef.CPU(),
                 ),
+                ops.constant(
+                    sampling_config.temperature,
+                    dtype=DType.float32,
+                    device=DeviceRef.CPU(),
+                ),
                 logits,
             ],
             [TensorType(DType.int64, shape, device=device)],

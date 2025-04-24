@@ -106,6 +106,9 @@ class SamplingConfig(MAXConfig):
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
+    temperature: float = 1
+    """Controls the randomness of the model's output; higher values produce more diverse responses."""
+
     in_dtype: DType = DType.float32
     """The data type of the input tokens."""
 
@@ -125,6 +128,7 @@ class SamplingConfig(MAXConfig):
     def help() -> dict[str, str]:
         return {
             "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
+            "temperature": "Controls the randomness of the model's output; higher values produce more diverse responses.",
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
         }
 
