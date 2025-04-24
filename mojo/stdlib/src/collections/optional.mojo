@@ -258,7 +258,7 @@ struct Optional[T: CollectionElement](
         return not self
 
     fn __str__[
-        U: RepresentableCollectionElement, //
+        U: CollectionElement & Representable, //
     ](self: Optional[U]) -> String:
         """Return the string representation of the value of the Optional.
 

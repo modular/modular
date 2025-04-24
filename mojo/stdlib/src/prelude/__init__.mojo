@@ -136,7 +136,6 @@ from builtin.value import (
     Defaultable,
     ExplicitlyCopyable,
     Movable,
-    RepresentableCollectionElement,
     WritableCollectionElement,
 )
 from documentation import doc_private

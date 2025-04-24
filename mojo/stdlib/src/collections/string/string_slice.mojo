@@ -463,7 +463,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Boolable,
     IntableRaising,
     PythonConvertible,
-    RepresentableCollectionElement,
     _CurlyEntryFormattable,
 ):
     """A non-owning view to encoded string data.

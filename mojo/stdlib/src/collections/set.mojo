@@ -320,7 +320,7 @@ struct Set[T: KeyElement](
         """Returns the string representation of the set.
 
         Parameters:
-            U: The type of the List elements. Must have the trait `RepresentableCollectionElement`.
+            U: The type of the List elements. Must have the trait `RepresentableKeyElement`.
 
         Returns:
             The string representation of the set.
@@ -334,7 +334,7 @@ struct Set[T: KeyElement](
         """Returns the string representation of the set.
 
         Parameters:
-            U: The type of the List elements. Must have the trait `RepresentableCollectionElement`.
+            U: The type of the List elements. Must have the trait `RepresentableKeyElement`.
 
         Returns:
             The string representation of the set.
@@ -349,7 +349,7 @@ struct Set[T: KeyElement](
 
         Parameters:
             W: A type conforming to the Writable trait.
-            U: The type of the List elements. Must have the trait `RepresentableCollectionElement`.
+            U: The type of the List elements. Must have the trait `RepresentableKeyElement`.
 
         Args:
             writer: The object to write to.

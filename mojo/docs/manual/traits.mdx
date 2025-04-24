@@ -313,7 +313,6 @@ own types. These standard library traits include:
 * [`PathLike`](/mojo/stdlib/os/pathlike/PathLike)
 * [`Powable`](/mojo/stdlib/builtin/math/Powable)
 * [`Representable`](/mojo/stdlib/builtin/repr/Representable)
-* [`RepresentableCollectionElement`](/mojo/stdlib/builtin/value/RepresentableCollectionElement)
 * [`RepresentableKeyElement`](/mojo/stdlib/collections/dict/RepresentableKeyElement)
 * [`Sized`](/mojo/stdlib/builtin/len/Sized)
 * [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
@@ -585,9 +584,6 @@ struct MyStack[T: CollectionElement](Stacklike):
 
     def pop(mut self) -> Self.EltType:
         return self.list.pop()
-
-    def dump[U: RepresentableCollectionElement](self: MyStack[U]):
-        print(self.list.__repr__())
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
