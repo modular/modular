@@ -20,10 +20,6 @@ from hashlib.hash import _hash_simd
 from math import CeilDivable
 from sys import bitwidthof
 
-from builtin.math import (
-    _CopyableGreaterThanComparable,
-    _CopyableLessThanComparable,
-)
 from documentation import doc_private
 
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -37,8 +33,7 @@ struct UInt(
     Indexer,
     _HashableWithHasher,
     Stringable,
-    _CopyableGreaterThanComparable,
-    _CopyableLessThanComparable,
+    Comparable,
     CeilDivable,
     Writable,
     Boolable,

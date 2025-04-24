@@ -173,12 +173,8 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
     return __mlir_op.`pop.max`(x.value, y.value)
 
 
-trait _CopyableGreaterThanComparable(Copyable, GreaterThanComparable):
-    ...
-
-
 @always_inline
-fn max[T: _CopyableGreaterThanComparable](x: T, *ys: T) -> T:
+fn max[T: Copyable & GreaterThanComparable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -260,12 +256,8 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
     return __mlir_op.`pop.min`(x.value, y.value)
 
 
-trait _CopyableLessThanComparable(Copyable, LessThanComparable):
-    ...
-
-
 @always_inline
-fn min[T: _CopyableLessThanComparable](x: T, *ys: T) -> T:
+fn min[T: Copyable & LessThanComparable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

@@ -50,7 +50,6 @@ query interval data, particularly for finding overlaps.
 
 from collections import Optional
 
-from builtin.math import _CopyableGreaterThanComparable
 from builtin.string_literal import StaticString
 from memory import UnsafePointer
 
@@ -62,7 +61,7 @@ trait IntervalElement(
     Writable,
     Intable,
     Comparable,
-    _CopyableGreaterThanComparable,
+    Copyable,
 ):
     """The trait denotes a trait composition of the `CollectionElement`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
