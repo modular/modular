@@ -76,7 +76,7 @@ def main(
 
     recording = list(jsonl.read_jsonl_recording(recording_file))
 
-    async def run_inner() -> None:
+    async def run_inner() -> replay.ProgressSnapshot:
         async with (
             httpx.AsyncClient(
                 base_url=base_url,
@@ -90,8 +90,16 @@ def main(
                 client=client,
                 notifier=progress_notifier,
             )
+            return progress_notifier.current_progress
 
-    asyncio.run(run_inner())
+    final_progress = asyncio.run(run_inner())
+    _report_metrics(final_progress)
+
+
+def _report_metrics(progress: replay.ProgressSnapshot) -> None:
+    rps = progress.completed_transactions / progress.elapsed_seconds
+    print(f"Throughput: {rps} RPS")
+    print(f"Average latency: {progress.average_latency_seconds} seconds")
 
 
 if __name__ == "__main__":
