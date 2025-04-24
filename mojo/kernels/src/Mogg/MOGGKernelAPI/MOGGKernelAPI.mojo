@@ -4094,6 +4094,7 @@ struct RMSNorm:
         input: FusedInputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
         epsilon: Scalar[dtype=type],
+        weight_offset: Scalar[dtype=type],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -4109,7 +4110,7 @@ struct RMSNorm:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         rms_norm[type, rank, input_fn, target=target](
-            input.shape(), gamma_buf, epsilon, output_buf, ctx
+            input.shape(), gamma_buf, epsilon, weight_offset, output_buf, ctx
         )
 
     @staticmethod
@@ -4120,6 +4121,7 @@ struct RMSNorm:
         input: InputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
         epsilon: Scalar[dtype=type],
+        weight_offset: Scalar[dtype=type],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -8100,6 +8102,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
+            Scalar[type](0.0),  # `weight_offset`--not relevant here
             layer_idx,
             total_seq_len,
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -8134,6 +8137,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
+            Scalar[type](0.0),  # `weight_offset`--not relevant here
             layer_idx,
             total_seq_len,
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
