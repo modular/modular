@@ -56,7 +56,7 @@ class RotaryEmbedding(Module):
         self.n_heads = n_heads
         self.theta = theta
         self.max_seq_len = max_seq_len
-        self.head_dim = self.head_dim
+        self.head_dim = head_dim
         self.interleaved = interleaved
         self.device = device
         self._freqs_cis = _freqs_cis
@@ -67,11 +67,13 @@ class RotaryEmbedding(Module):
         Returns:
             a 1D tensor of thetas of shape [head_dim // 2]
         """
+
         n = (
             self.head_dim
             if self.head_dim is not None
             else self.dim // self.n_heads
         )
+
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
         iota = ops.range(
