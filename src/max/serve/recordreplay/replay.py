@@ -112,6 +112,10 @@ class ProgressSnapshot:
                 - self.in_progress_transaction_total_seconds
                 / self.transactions_in_progress
             )
+            if in_progress_time < 0:
+                # In-progress transactions are taking longer than average
+                # latency.  Best guess is that they'll finish "right now".
+                in_progress_time = 0.0
         else:
             in_progress_time = 0.0
         return in_progress_time + unstarted_time
