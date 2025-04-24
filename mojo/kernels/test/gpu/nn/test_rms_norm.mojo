@@ -62,6 +62,7 @@ fn run_rms_norm_gpu[
     var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var epsilon = Scalar[type](0.001)
+    var weight_offset = Scalar[type](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -82,7 +83,9 @@ fn run_rms_norm_gpu[
     ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
         data_buf.store(idx, val)
 
-    rms_norm_gpu[input_fn, identity_output_fn](shape, gamma, epsilon, ctx)
+    rms_norm_gpu[input_fn, identity_output_fn](
+        shape, gamma, epsilon, weight_offset, ctx
+    )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -91,7 +94,7 @@ fn run_rms_norm_gpu[
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c
-            var val = (data_h[idx] / rms_ref) * gamma_h[c]
+            var val = (data_h[idx] / rms_ref) * (gamma_h[c] + weight_offset)
             assert_almost_equal(val, res[idx], rtol=rtol)
 
     _ = data_d
