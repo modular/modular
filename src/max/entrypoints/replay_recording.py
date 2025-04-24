@@ -43,11 +43,19 @@ from max.serve.recordreplay import jsonl, replay
     metavar="REQUESTS",
     help="Number of requests to send in parallel.",
 )
+@click.option(
+    "--read-timeout",
+    type=click.FloatRange(min=0),
+    default=120,
+    metavar="SECONDS",
+    help="Maximum seconds to wait for a response",
+)
 def main(
     recording_file: Path,
     *,
     base_url: str,
     concurrency: int,
+    read_timeout: float,
 ) -> None:
     """Replay HTTP transactions recorded from MAX Serve.
 
@@ -72,7 +80,7 @@ def main(
         async with (
             httpx.AsyncClient(
                 base_url=base_url,
-                timeout=httpx.Timeout(5, read=120, pool=None),
+                timeout=httpx.Timeout(5, read=read_timeout, pool=None),
             ) as client,
             replay.TerminalProgressNotifier() as progress_notifier,
         ):
