@@ -19,11 +19,12 @@ from builtin._pybind import (
     check_arguments_arity,
 )
 from memory import UnsafePointer
-from python import Python, PythonObject, TypedPythonObject, PythonModule
+from python import Python, PythonObject, TypedPythonObject
 from python._bindings import (
     PyMojoObject,
     py_c_function_wrapper,
     PythonTypeBuilder,
+    PythonModuleBuilder,
 )
 from python._cpython import PyMethodDef, PyObjectPtr, PyTypeObject
 
@@ -36,28 +37,26 @@ fn PyInit_mojo_module() -> PythonObject:
 
     # This will initialize the Python interpreter and create
     # an extension module with the provided name.
-    var module: PythonModule
 
     try:
-        module = (
-            PythonModule("mojo_module")
-            .def_py_function[case_return_arg_tuple]("case_return_arg_tuple")
-            .def_py_function[case_raise_empty_error]("case_raise_empty_error")
-            .def_py_function[case_raise_string_error]("case_raise_string_error")
-            .def_py_function[case_mojo_raise]("case_mojo_raise")
-            .def_py_function[incr_int__wrapper]("incr_int")
-            .def_py_function[add_to_int__wrapper]("add_to_int")
-            .def_py_function[create_string__wrapper]("create_string")
-        )
+        var b = PythonModuleBuilder("mojo_module")
+        b.def_py_function[case_return_arg_tuple]("case_return_arg_tuple")
+        b.def_py_function[case_raise_empty_error]("case_raise_empty_error")
+        b.def_py_function[case_raise_string_error]("case_raise_string_error")
+        b.def_py_function[case_mojo_raise]("case_mojo_raise")
+        b.def_py_function[incr_int__wrapper]("incr_int")
+        b.def_py_function[add_to_int__wrapper]("add_to_int")
+        b.def_py_function[create_string__wrapper]("create_string")
+
+        var module = b.finalize()
         PythonTypeBuilder[Person]("Person").def_py_c_method(
             py_c_function_wrapper[Person.obj_name], "name"
         ).finalize(module)
         PythonTypeBuilder[Int]("Int").finalize(module)
         PythonTypeBuilder[String]("String").finalize(module)
+        return module
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
-
-    return module
 
 
 # ===----------------------------------------------------------------------=== #

@@ -13,8 +13,9 @@
 
 from os import abort
 
-from python import Python, PythonObject, PythonModule
+from python import Python, PythonObject
 from python._cpython import PyObjectPtr
+from python._bindings import PythonModuleBuilder
 
 
 @export
@@ -22,11 +23,13 @@ fn PyInit_mojo_module() -> PythonObject:
     """Create a Python module with a function binding for `mojo_count_args`."""
 
     try:
-        return PythonModule("mojo_module").def_py_c_function(
+        var b = PythonModuleBuilder("mojo_module")
+        b.def_py_c_function(
             mojo_count_args,
             "mojo_count_args",
             docstring="Count the provided arguments",
         )
+        return b.finalize()
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
 

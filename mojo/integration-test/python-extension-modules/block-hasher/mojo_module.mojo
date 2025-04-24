@@ -14,14 +14,10 @@
 from os import abort
 
 from memory import UnsafePointer
-from python import (
-    Python,
-    PythonObject,
-    TypedPythonObject,
-    PythonModule,
-)
+from python import Python, PythonObject, TypedPythonObject
 from python._cpython import PyObjectPtr
 from sys import sizeof
+from python._bindings import PythonModuleBuilder
 
 
 @export
@@ -30,21 +26,20 @@ fn PyInit_mojo_module() -> PythonObject:
     `mojo_block_hasher_return_list` and `mojo_block_hasher_inplace`.
     """
     try:
-        return (
-            PythonModule("mojo_module")
-            .def_py_function[mojo_block_hasher_return_list](
-                "mojo_block_hasher_return_list",
-                docstring=(
-                    "Computes block hashes for a numpy array containing tokens"
-                ),
-            )
-            .def_py_function[mojo_block_hasher_inplace](
-                "mojo_block_hasher_inplace",
-                docstring=(
-                    "Computes block hashes for a numpy array containing tokens"
-                ),
-            )
+        var b = PythonModuleBuilder("mojo_module")
+        b.def_py_function[mojo_block_hasher_return_list](
+            "mojo_block_hasher_return_list",
+            docstring=(
+                "Computes block hashes for a numpy array containing tokens"
+            ),
         )
+        b.def_py_function[mojo_block_hasher_inplace](
+            "mojo_block_hasher_inplace",
+            docstring=(
+                "Computes block hashes for a numpy array containing tokens"
+            ),
+        )
+        return b.finalize()
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
 

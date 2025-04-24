@@ -14,8 +14,9 @@
 from os import abort
 
 from memory import UnsafePointer
-from python import PythonObject, TypedPythonObject, PythonModule
+from python import PythonObject, TypedPythonObject
 from python._cpython import PyObjectPtr
+from python._bindings import PythonModuleBuilder
 
 
 @export
@@ -24,10 +25,12 @@ fn PyInit_mojo_module() -> PythonObject:
     """
 
     try:
-        return PythonModule("mojo_module").def_py_function[mojo_incr_np_array](
+        var b = PythonModuleBuilder("mojo_module")
+        b.def_py_function[mojo_incr_np_array](
             "mojo_incr_np_array",
             docstring="Increment the contents of a numpy array by one",
         )
+        return b.finalize()
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
 
