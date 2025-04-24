@@ -73,6 +73,10 @@ struct UInt(
     which have signed and unsigned variants.
     """
 
+    # ===------------------------------------------------------------------=== #
+    # Life cycle methods
+    # ===------------------------------------------------------------------=== #
+
     @always_inline("builtin")
     fn __init__(out self):
         """Default constructor that produces zero."""
@@ -122,98 +126,37 @@ struct UInt(
         """
         self = value.__uint__()
 
-    @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
-        """Convert to index.
+    # ===------------------------------------------------------------------=== #
+    # Operator dunders
+    # ===------------------------------------------------------------------=== #
 
-        Returns:
-            The corresponding __mlir_type.index value.
-        """
-        return self.value
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert this UInt to a string.
-
-        A small example.
-        ```mojo
-        %# from testing import assert_equal
-        x = UInt(50)
-        assert_equal(String(x), "50")
-        ```
-
-        Returns:
-            The string representation of this UInt.
-        """
-        return String.write(self)
-
-    @always_inline("builtin")
-    fn is_power_of_two(self) -> Bool:
-        """Check if the integer is a (non-zero) power of two.
-
-        Returns:
-            True if the integer is a power of two, False otherwise.
-        """
-        return (self & (self - 1) == 0) & self.__bool__()
-
-    @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
-        """Formats this integer to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
+    @always_inline("nodebug")
+    fn __lt__(self, rhs: UInt) -> Bool:
+        """Return whether this UInt is strictly less than another.
 
         Args:
-            writer: The object to write to.
-        """
-
-        writer.write(UInt64(self))
-
-    @always_inline("builtin")
-    fn __int__(self) -> Int:
-        """Gets the integral value, wrapping to a negative number on overflow.
+            rhs: The other UInt to compare against.
 
         Returns:
-            The value as an integer.
+            True if this UInt is less than the other UInt and False otherwise.
         """
-        return self.value
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate ult>`
+        ](self.value, rhs.value)
 
-    fn __repr__(self) -> String:
-        """Convert this UInt to a string.
-
-        A small example.
-        ```mojo
-        %# from testing import assert_equal
-        x = UInt(50)
-        assert_equal(repr(x), "UInt(50)")
-        ```
-
-        Returns:
-            The string representation of this UInt.
-        """
-        return String("UInt(", String(self), ")")
-
-    fn __hash__(self) -> UInt:
-        """Hash the UInt using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        # TODO(MOCO-636): switch to DType.index
-        return _hash_simd(Scalar[DType.uint64](self))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
-        """Updates hasher with this uint value.
-
-        Parameters:
-            H: The hasher type.
+    @always_inline("nodebug")
+    fn __le__(self, rhs: UInt) -> Bool:
+        """Compare this Int to the RHS using LE comparison.
 
         Args:
-            hasher: The hasher instance.
+            rhs: The other UInt to compare against.
+
+        Returns:
+            True if this Int is less-than the RHS Int and False otherwise.
         """
-        hasher._update_with_simd(UInt64(self))
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate ule>`
+        ](self.value, rhs.value)
 
     @always_inline("builtin")
     fn __eq__(self, rhs: UInt) -> Bool:
@@ -246,6 +189,54 @@ struct UInt(
                 pred = __mlir_attr.`#index<cmp_predicate ne>`
             ](self.value, rhs.value)
         )
+
+    @always_inline("nodebug")
+    fn __gt__(self, rhs: UInt) -> Bool:
+        """Return whether this UInt is strictly greater than another.
+
+        Args:
+            rhs: The other UInt to compare against.
+
+        Returns:
+            True if this UInt is greater than the other UInt and False
+            otherwise.
+        """
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate ugt>`
+        ](self.value, rhs.value)
+
+    @always_inline("nodebug")
+    fn __ge__(self, rhs: UInt) -> Bool:
+        """Return whether this UInt is greater than or equal to another.
+
+        Args:
+            rhs: The other UInt to compare against.
+
+        Returns:
+            True if this UInt is greater than or equal to the other UInt and
+            False otherwise.
+        """
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate uge>`
+        ](self.value, rhs.value)
+
+    @always_inline("builtin")
+    fn __pos__(self) -> UInt:
+        """Return +self.
+
+        Returns:
+            The +self value.
+        """
+        return self
+
+    @always_inline("builtin")
+    fn __invert__(self) -> UInt:
+        """Return ~self.
+
+        Returns:
+            The ~self value.
+        """
+        return self ^ Self.MAX
 
     @always_inline("builtin")
     fn __add__(self, rhs: UInt) -> UInt:
@@ -420,28 +411,6 @@ struct UInt(
             `self | rhs`.
         """
         return __mlir_op.`index.or`(self.value, rhs.value)
-
-    @always_inline("builtin")
-    fn __invert__(self) -> UInt:
-        """Return ~self.
-
-        Returns:
-            The ~self value.
-        """
-        return self ^ Self.MAX
-
-    @always_inline
-    fn __ceildiv__(self, denominator: Self) -> Self:
-        """Return the rounded-up result of dividing self by denominator.
-
-
-        Args:
-            denominator: The denominator.
-
-        Returns:
-            The ceiling of dividing numerator by denominator.
-        """
-        return __mlir_op.`index.ceildivu`(self.value, denominator.value)
 
     # ===-------------------------------------------------------------------===#
     # In place operations.
@@ -692,63 +661,9 @@ struct UInt(
         """
         return value ^ self
 
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: UInt) -> Bool:
-        """Return whether this UInt is strictly greater than another.
-
-        Args:
-            rhs: The other UInt to compare against.
-
-        Returns:
-            True if this UInt is greater than the other UInt and False
-            otherwise.
-        """
-        return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate ugt>`
-        ](self.value, rhs.value)
-
-    @always_inline("nodebug")
-    fn __lt__(self, rhs: UInt) -> Bool:
-        """Return whether this UInt is strictly less than another.
-
-        Args:
-            rhs: The other UInt to compare against.
-
-        Returns:
-            True if this UInt is less than the other UInt and False otherwise.
-        """
-        return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate ult>`
-        ](self.value, rhs.value)
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: UInt) -> Bool:
-        """Compare this Int to the RHS using LE comparison.
-
-        Args:
-            rhs: The other UInt to compare against.
-
-        Returns:
-            True if this Int is less-than the RHS Int and False otherwise.
-        """
-        return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate ule>`
-        ](self.value, rhs.value)
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: UInt) -> Bool:
-        """Return whether this UInt is greater than or equal to another.
-
-        Args:
-            rhs: The other UInt to compare against.
-
-        Returns:
-            True if this UInt is greater than or equal to the other UInt and
-            False otherwise.
-        """
-        return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate uge>`
-        ](self.value, rhs.value)
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
     fn __bool__(self) -> Bool:
@@ -758,6 +673,86 @@ struct UInt(
             False Bool value if the value is equal to 0 and True otherwise.
         """
         return self != 0
+
+    @always_inline("builtin")
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
+
+        Returns:
+            The corresponding __mlir_type.index value.
+        """
+        return self.value
+
+    @always_inline("builtin")
+    fn __int__(self) -> Int:
+        """Gets the integral value, wrapping to a negative number on overflow.
+
+        Returns:
+            The value as an integer.
+        """
+        return self.value
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Convert this UInt to a string.
+
+        A small example.
+        ```mojo
+        %# from testing import assert_equal
+        x = UInt(50)
+        assert_equal(String(x), "50")
+        ```
+
+        Returns:
+            The string representation of this UInt.
+        """
+        return String.write(self)
+
+    fn __repr__(self) -> String:
+        """Convert this UInt to a string.
+
+        A small example.
+        ```mojo
+        %# from testing import assert_equal
+        x = UInt(50)
+        assert_equal(repr(x), "UInt(50)")
+        ```
+
+        Returns:
+            The string representation of this UInt.
+        """
+        return String("UInt(", String(self), ")")
+
+    fn __hash__(self) -> UInt:
+        """Hash the UInt using builtin hash.
+
+        Returns:
+            A 64-bit hash value. This value is _not_ suitable for cryptographic
+            uses. Its intended usage is for data structures. See the `hash`
+            builtin documentation for more details.
+        """
+        # TODO(MOCO-636): switch to DType.index
+        return _hash_simd(Scalar[DType.uint64](self))
+
+    fn __hash__[H: _Hasher](self, mut hasher: H):
+        """Updates hasher with this uint value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher._update_with_simd(UInt64(self))
+
+    @always_inline("builtin")
+    fn __abs__(self) -> Self:
+        """Return the absolute value of the UInt value.
+
+        Returns:
+            The absolute value.
+        """
+        return self
 
     @always_inline("builtin")
     fn __ceil__(self) -> Self:
@@ -807,20 +802,37 @@ struct UInt(
         """
         return self
 
-    @always_inline("builtin")
-    fn __abs__(self) -> Self:
-        """Return the absolute value of the UInt value.
+    @always_inline
+    fn __ceildiv__(self, denominator: Self) -> Self:
+        """Return the rounded-up result of dividing self by denominator.
+
+
+        Args:
+            denominator: The denominator.
 
         Returns:
-            The absolute value.
+            The ceiling of dividing numerator by denominator.
         """
-        return self
+        return __mlir_op.`index.ceildivu`(self.value, denominator.value)
 
     @always_inline("builtin")
-    fn __pos__(self) -> UInt:
-        """Return +self.
+    fn is_power_of_two(self) -> Bool:
+        """Check if the integer is a (non-zero) power of two.
 
         Returns:
-            The +self value.
+            True if the integer is a power of two, False otherwise.
         """
-        return self
+        return (self & (self - 1) == 0) & self.__bool__()
+
+    @no_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        """Formats this integer to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        writer.write(UInt64(self))
