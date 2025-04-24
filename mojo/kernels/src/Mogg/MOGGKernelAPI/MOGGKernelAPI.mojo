@@ -31,6 +31,7 @@ from math import (
     sin,
     sqrt,
     tanh,
+    atanh,
 )
 from random import randn, seed
 from sys import bitwidthof, external_call, llvm_intrinsic
@@ -1395,6 +1396,27 @@ struct Tanh:
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
             return rebind[SIMD[y.type, width]](tanh(x._fused_load[width](idx)))
+
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name=_trace_name,
+        ](y, ctx)
+
+
+@compiler.register("mo.atanh")
+struct ATanh:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        _synchronous: Bool,
+        _trace_name: StaticString,
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
+            return rebind[SIMD[y.type, width]](atanh(x._fused_load[width](idx)))
 
         foreach[
             func,
