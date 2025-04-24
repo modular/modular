@@ -80,3 +80,53 @@ def rms_weight(text_config: Gemma3TextConfig) -> torch.Tensor:
         text_config.hidden_size,
         dtype=torch.float32,
     )
+
+
+@pytest.fixture
+def attention_weights(text_config: Gemma3TextConfig) -> dict[str, torch.Tensor]:
+    torch.manual_seed(42)
+
+    # calculated from google/gemma-3-1b-it checkpoint
+    O_PROJ_STD = 0.0237
+    K_PROJ_STD = 0.0309
+    Q_PROJ_STD = 0.0284
+    V_PROJ_STD = 0.0309
+    K_NORM_STD = 0.793
+    Q_NORM_STD = 0.68
+
+    return {
+        "k_norm.weight": torch.randn(
+            256,
+            dtype=torch.bfloat16,
+        )
+        * K_NORM_STD,
+        "k_proj.weight": torch.randn(
+            256,
+            1152,
+            dtype=torch.bfloat16,
+        )
+        * K_PROJ_STD,
+        "o_proj.weight": torch.randn(
+            1152,
+            1024,
+            dtype=torch.bfloat16,
+        )
+        * O_PROJ_STD,
+        "q_norm.weight": torch.randn(
+            256,
+            dtype=torch.bfloat16,
+        )
+        * Q_NORM_STD,
+        "q_proj.weight": torch.randn(
+            1024,
+            1152,
+            dtype=torch.bfloat16,
+        )
+        * Q_PROJ_STD,
+        "v_proj.weight": torch.randn(
+            256,
+            1152,
+            dtype=torch.bfloat16,
+        )
+        * V_PROJ_STD,
+    }

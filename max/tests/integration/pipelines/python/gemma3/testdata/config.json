@@ -1,38 +1,37 @@
 {
   "architectures": [
-    "Gemma3ForConditionalGeneration"
+    "Gemma3ForCausalLM"
   ],
-  "boi_token_index": 255999,
-  "eoi_token_index": 256000,
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "attn_logit_softcapping": null,
+  "bos_token_id": 2,
+  "cache_implementation": "hybrid",
   "eos_token_id": [
     1,
     106
   ],
-  "image_token_index": 262144,
+  "final_logit_softcapping": null,
+  "head_dim": 256,
+  "hidden_activation": "gelu_pytorch_tanh",
+  "hidden_size": 1152,
   "initializer_range": 0.02,
-  "mm_tokens_per_image": 256,
-  "model_type": "gemma3",
-  "text_config": {
-    "hidden_size": 2560,
-    "intermediate_size": 10240,
-    "model_type": "gemma3_text",
-    "num_hidden_layers": 34,
-    "rope_scaling": {
-      "factor": 8.0,
-      "rope_type": "linear"
-    },
-    "sliding_window": 1024
-  },
+  "intermediate_size": 6912,
+  "max_position_embeddings": 32768,
+  "model_type": "gemma3_text",
+  "num_attention_heads": 4,
+  "num_hidden_layers": 26,
+  "num_key_value_heads": 1,
+  "pad_token_id": 0,
+  "query_pre_attn_scalar": 256,
+  "rms_norm_eps": 1e-06,
+  "rope_local_base_freq": 10000,
+  "rope_scaling": null,
+  "rope_theta": 1000000,
+  "sliding_window": 512,
+  "sliding_window_pattern": 6,
   "torch_dtype": "bfloat16",
   "transformers_version": "4.50.0.dev0",
-  "vision_config": {
-    "hidden_size": 1152,
-    "image_size": 896,
-    "intermediate_size": 4304,
-    "model_type": "siglip_vision_model",
-    "num_attention_heads": 16,
-    "num_hidden_layers": 27,
-    "patch_size": 14,
-    "vision_use_head": false
-  }
+  "use_cache": true,
+  "vocab_size": 262144
 }
