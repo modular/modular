@@ -1087,7 +1087,9 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
       packStruct, typeSig, arg.typeExpr->getLoc(), /*partial=*/false);
   if (!bindingValuesAttr)
     return {};
-  return BindTypeAttr::get(PValue(variadicPackType), bindingValuesAttr);
+  LIT::StructType boundType =
+      packStruct.bindAll(bindingValuesAttr.getValue());
+  return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
 #endif
 
   auto isMutType = typeSig.getParamTypes()[0];
@@ -1375,8 +1377,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
       arg.isErroneous = true;
       return;
     }
-    fullType =
-        ParamType::get(BindTypeAttr::get(PValue(dictType), binding.get()));
+    fullType = cast<LIT::StructType>(dictType).bindAll(binding.get());
 
     // OwnedKwargsDict is memory only and since only the callee can access it,
     // we pass it as owned.
