@@ -289,7 +289,10 @@ fn fused_qk_rope_ragged[
     ]()
     constrained[
         rope_dim <= q_head_size and rope_dim <= k_head_size,
-        "rope_dim must be smaller or equal to head size",
+        "rope_dim must be smaller or equal to head size, but got rope_dim = "
+        + String(rope_dim)
+        + " and head_size = "
+        + String(k_head_size),
     ]()
     constrained[
         (rope_dim == q_head_size and rope_dim == k_head_size) or interleaved,
