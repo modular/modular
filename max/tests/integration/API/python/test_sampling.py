@@ -53,7 +53,7 @@ def test_bitmask_sampling_vs_xgrammar(session: InferenceSession):
             in_dtype=DType.float32,
             out_dtype=DType.float32,
         ),
-        device=DeviceRef.CPU(),
+        device=DeviceRef.GPU(),
     )
 
     device = session.devices[0]
@@ -114,7 +114,7 @@ def test_sampling_return_logits(session: InferenceSession):
             out_dtype=DType.float32,
         ),
         return_logits=True,
-        device=DeviceRef.CPU(),
+        device=DeviceRef.GPU(),
     )
 
     device = session.devices[0]
