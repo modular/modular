@@ -1083,14 +1083,12 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, origin);
 
   auto structOp = cast<StructDeclOp>(decl);
-  ASTType coroType = structOp.bindReference();
   ParameterExprArrayAttr bindings = paramBinds.verifyBindings(
-      structOp, cast<StructMetaType>(coroType.getMetaType()).getSignature(),
-      expr->getLoc(), /*partial=*/false);
+      structOp, structOp.getSignature(), expr->getLoc(), /*partial=*/false);
   if (!bindings)
     return {};
 
-  return BindTypeAttr::get(PValue(coroType), bindings);
+  return structOp.bindReference(bindings);
 }
 
 /// Emit warnings about incorrect code in a direct call.  This is invoked after
