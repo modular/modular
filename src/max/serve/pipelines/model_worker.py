@@ -5,10 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import ctypes
 import logging
 import math
 import multiprocessing
 import os
+import signal
+import sys
 import uuid
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
@@ -45,6 +48,15 @@ logger = logging.getLogger(__name__)
 logger.propagate = False
 
 
+def _set_pdeathsig(pdeathsig: int) -> None:
+    """Set parent death signal, if supported."""
+    if sys.platform != "linux":
+        return
+    PR_SET_PDEATHSIG = 1
+    libc = ctypes.CDLL("libc.so.6")
+    libc.prctl(PR_SET_PDEATHSIG, pdeathsig)
+
+
 def _model_worker_process_fn(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
@@ -52,8 +64,9 @@ def _model_worker_process_fn(
     queues: Mapping[str, MaxQueue],
     settings: Settings,
     metric_client: MetricClient,
-):
+) -> None:
     try:
+        _set_pdeathsig(signal.SIGTERM)
         uvloop.run(
             model_worker_run_v3(
                 pc,
