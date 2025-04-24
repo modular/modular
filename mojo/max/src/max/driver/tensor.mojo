@@ -31,13 +31,13 @@ from memory import UnsafePointer
 from utils import IndexList
 from utils._serialize import _serialize
 
-from testing import Testable
-
 from ._utils import _convert_from
 from .device import Device, DeviceMemory, DeviceTensor
 
 
-struct Tensor[type: DType, rank: Int](CollectionElement, Testable):
+struct Tensor[type: DType, rank: Int](
+    CollectionElement, EqualityComparable, Stringable
+):
     """An owned, indexible buffer type."""
 
     var _ptr: UnsafePointer[Scalar[type]]
