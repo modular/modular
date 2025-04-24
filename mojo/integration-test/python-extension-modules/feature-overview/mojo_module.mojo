@@ -47,9 +47,7 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_py_function[add_to_int__wrapper]("add_to_int")
         b.def_py_function[create_string__wrapper]("create_string")
 
-        b.add_type[Person]("Person").def_py_c_method(
-            py_c_function_wrapper[Person.obj_name], "name"
-        )
+        b.add_type[Person]("Person").def_py_method[Person.obj_name]("name")
         b.add_type[Int]("Int")
         b.add_type[String]("String")
         return b.finalize()
