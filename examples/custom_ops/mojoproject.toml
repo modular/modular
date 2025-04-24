@@ -16,6 +16,7 @@ matrix_multiplication = { cmd = "python matrix_multiplication.py" }
 histogram = { cmd = "python histogram.py" }
 benchmark = { cmd = "mojo benchmarks.mojo" }
 whisper = { cmd = "python whisper.py" }
+image_pipeline = { cmd = "python image_pipeline.py" }
 test = { depends-on = [
   "addition",
   "mandelbrot",
@@ -24,12 +25,14 @@ test = { depends-on = [
   "fused_attention",
   "matrix_multiplication",
   "benchmark",
+  "image_pipeline",
   #"whisper",
 ] }
 
 [dependencies]
 python = ">=3.9,<3.14"
 max = ">=24.6.0.dev2024090821"
+imageio = ">=2.37.0,<3"
 
 # Dependencies needed for the `whisper` example
 
