@@ -413,7 +413,7 @@ struct Fill:
 
 
 @value
-struct Consistency(CollectionElement, EqualityComparableCollectionElement):
+struct Consistency(CollectionElement, EqualityComparable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
