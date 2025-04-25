@@ -6,6 +6,7 @@
 import math
 import random
 
+import hf_repo_lock
 import numpy as np
 import pytest
 import torch
@@ -31,6 +32,7 @@ from max.nn.kv_cache import (
 from max.pipelines.architectures.pixtral.llava.llava_decoder import (
     Transformer as LLavaTransformer,
 )
+from max.pipelines.lib import generate_local_model_path
 from transformers import (
     LlavaForConditionalGeneration,
     MistralConfig,
@@ -42,6 +44,8 @@ from transformers.testing_utils import torch_device
 ACCURACY_ATOL = 1e-05
 ACCURACY_RTOL = 1e-05
 
+REPO_ID = "mistral-community/pixtral-12b"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 # copied from https://github.com/huggingface/transformers/blob/main/tests/test_modeling_common.py
 global_rng = random.Random()
 
@@ -71,8 +75,8 @@ def pytorch_mistral_and_config() -> tuple[MistralForCausalLM, MistralConfig]:
     """Loads the language model in PyTorch pixtral model. Using the community
     pixtral version. It also returns pixtral_model.config.text_config
     """
-    model_id = "mistral-community/pixtral-12b"
-    model = LlavaForConditionalGeneration.from_pretrained(model_id)
+    local_model_path = generate_local_model_path(REPO_ID, REVISION)
+    model = LlavaForConditionalGeneration.from_pretrained(local_model_path)
     return model.language_model, model.config.text_config
 
 
@@ -215,7 +219,8 @@ def mistral_given_pytorch_mistral(
     embedding_layer = Embedding(
         _weight(
             "text.embed_tokens", pytorch_model.model.embed_tokens.weight.data
-        )
+        ),
+        device=DeviceRef.CPU(),
     )
     output_linear = linear(
         "text.output_linear", pytorch_model.lm_head.weight.data

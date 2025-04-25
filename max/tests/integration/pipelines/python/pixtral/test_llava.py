@@ -6,6 +6,7 @@
 import math
 from typing import TypeVar
 
+import hf_repo_lock
 import numpy as np
 import pytest
 import torch
@@ -50,6 +51,7 @@ from max.pipelines.architectures.pixtral.vision_encoder.transformer import (
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
 )
+from max.pipelines.lib import generate_local_model_path
 from transformers import (
     AutoProcessor,
     LlavaConfig,
@@ -63,24 +65,24 @@ from transformers.models.llava.modeling_llava import LlavaMultiModalProjector
 ACCURACY_RTOL = 1e-1
 ACCURACY_ATOL = 1e-1
 VOCAB_SIZE = 131072
+REPO_ID = "mistral-community/pixtral-12b"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 @pytest.fixture
 def pytorch_pixtral_processor() -> PixtralProcessor:
-    model_id = "mistral-community/pixtral-12b"
-    model_name = "mistralai/Pixtral-12B-2409"
+    local_model_path = generate_local_model_path(REPO_ID, REVISION)
     # returns a dict with the following keys: input_ids, attention_mask, pixel_values
     # input_ids and attention_mask map to tensors of the same size = (num_prompts, sequence_length)
     # pixel_values maps to a list of lists of tensors. length of the list is (num_prompts, num_images, tensor([num_channels, height, width]))
-    processor = AutoProcessor.from_pretrained(model_id)
+    processor = AutoProcessor.from_pretrained(local_model_path)
     return processor
 
 
 @pytest.fixture
 def pytorch_pixtral() -> LlavaForConditionalGeneration:
-    model_id = "mistral-community/pixtral-12b"
-    model_name = "mistralai/Pixtral-12B-2409"
-    model = LlavaForConditionalGeneration.from_pretrained(model_id)
+    local_model_path = generate_local_model_path(REPO_ID, REVISION)
+    model = LlavaForConditionalGeneration.from_pretrained(local_model_path)
     return model
 
 
@@ -450,7 +452,8 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
     embedding_layer = Embedding(
         _weight(
             "text.embed_tokens", pytorch_model.model.embed_tokens.weight.data
-        )
+        ),
+        device=DeviceRef.CPU(),
     )
     output_linear = linear(
         "text.output_linear", pytorch_model.lm_head.weight.data
