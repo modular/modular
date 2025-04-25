@@ -1371,7 +1371,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
   Block &body = *funcOp.getBody();
-  assert(isa<EndFnOp>(body.front()) && "expected empty body here");
+  auto endFn = cast<EndFnOp>(body.front());
 
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
@@ -1380,8 +1380,10 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
     // Reset the location on the endfn to correct debug scope.
-    body.front().setLoc(shared.translateLocation(decl.getLoc()));
+    endFn->setLoc(shared.translateLocation(decl.getLoc()));
   }
+  // About to parse the body.
+  endFn.setUnresolved(false);
 
   // If this is a method in a trait, we only allow a "..."
   if (isa<TraitDeclOp>(*decl.getParentDecl())) {

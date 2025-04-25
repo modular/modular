@@ -2444,7 +2444,8 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // Add an EndFnOp to the end of the body. This makes the function able to
   // verify clean, even if we don't body or signature resolve it.  We may end up
   // removing this when resolving the body.
-  OpBuilder::atBlockEnd(fnOp.getBody()).create<EndFnOp>(fnOp.getLoc());
+  OpBuilder::atBlockEnd(fnOp.getBody())
+      .create<EndFnOp>(fnOp.getLoc(), /*unresolved=*/true);
 
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.

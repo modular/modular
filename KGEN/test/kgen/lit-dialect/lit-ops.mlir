@@ -108,6 +108,13 @@ lit.fn @attributesAndDecorators()
   lit.end_fn
 }
 
+// CHECK-LABEL: @end_fn
+lit.fn @end_fn() {
+  // CHECK-NEXT: lit.end_fn unresolved
+  lit.end_fn unresolved
+}
+
+
 lit.fn @ref_immut<life: origin<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
  -> !lit.ref<@MyStruct, muttoimm life> {
   // CHECK: %0 = lit.ref.immut %ref1 : <@MyStruct, mut life>
