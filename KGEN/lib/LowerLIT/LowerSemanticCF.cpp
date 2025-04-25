@@ -742,10 +742,14 @@ void LowerSemanticCF::run() {
   // parser automatically inserts a `return None` in functions that return None.
   if (LIT::EndFnOp endFunc =
           dyn_cast<LIT::EndFnOp>(theFunc.getBody()->getTerminator())) {
-    emitError(endFunc->getLoc(),
-              "return expected at end of function with results");
-    hadError = true;
-    return;
+    // If this is a signature resolved function (not body resolved) then don't
+    // error.
+    if (!endFunc.getUnresolved()) {
+      emitError(endFunc->getLoc(),
+                "return expected at end of function with results");
+      hadError = true;
+      return;
+    }
   }
 
   // If everything looks good, check whether any self-recursive calls are
