@@ -226,9 +226,9 @@ def test_type_checking(mlir_context) -> None:
     assert not isinstance(buffer_type, mo.ChainType)
 
     assert isinstance(chain_type, mo.ChainType)
-    assert not _graph.type_is_opaque(chain_type.ctype)
-    assert not _graph.type_is_tensor(chain_type.ctype)
-    assert not _graph.type_is_buffer(chain_type.ctype)
+    assert not _graph.type_is_opaque(chain_type)
+    assert not _graph.type_is_tensor(chain_type)
+    assert not _graph.type_is_buffer(chain_type)
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])

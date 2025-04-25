@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from max import mlir
+from max._core import Type as _Type
 from max._core import graph as _graph
 
 # TODO(GEX-1846): Get rid of this include.
@@ -346,8 +347,10 @@ class Graph:
         def unwrap(arg):
             if isinstance(arg, Value):
                 return arg._mlir_value
-            if isinstance(arg, list):
+            elif isinstance(arg, list):
                 return [unwrap(elem) for elem in arg]
+            elif isinstance(arg, _Type):
+                return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
             else:
                 return arg
 
