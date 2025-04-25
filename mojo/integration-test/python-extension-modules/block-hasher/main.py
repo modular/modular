@@ -31,15 +31,21 @@ def s2us(s: float) -> float:
     return s * 1000 * 1000
 
 
+# see: https://github.com/modularml/modular/blob/851943b46d2a38b36883009f42fa669ee7d41a2c/SDK/lib/API/python/max/nn/kv_cache/paged_cache/block_utils.py#L76
 def naive_python_hashing(tokens: np.ndarray, block_size: int) -> list[int]:
     num_elts = tokens.size
     num_hashes = num_elts // block_size
 
+    # Initial hash seed value
+    prev_hash = hash("None")
+
     results = []
     for i in range(num_hashes):
         block = tokens[i * block_size : (i + 1) * block_size]
-        hash_val = hash(tuple(block))
-        results.append(hash_val)
+        pair_to_hash = (prev_hash, tuple(block))
+        curr_hash = hash(pair_to_hash)
+        results.append(curr_hash)
+        prev_hash = curr_hash
 
     return results
 
@@ -70,46 +76,20 @@ if __name__ == "__main__":
     print("-" * 80)
 
     block_size = 128
-    # Use int32 for tokens
-    tokens = np.arange(512, dtype=np.int32)
-
-    elapsed = []
-
-    enable_dbg_prints = False
+    tokens = np.arange(3000, dtype=np.int32)  # Use int32 for tokens
 
     time.sleep(1)
 
     print_bench_run(
-        "Mojo Return List    ",
-        lambda: mojo_module.mojo_block_hasher_return_list(
-            tokens, block_size, enable_dbg_prints
-        ),
+        "Mojo 🔥",
+        lambda: mojo_module.mojo_block_hasher(tokens, block_size),
         iter_count=10_000,
     )
 
     time.sleep(0.1)
 
     print_bench_run(
-        "Mojo In-Place       ",
-        lambda: (
-            hashes_mojo_np_array_inout := np.empty(
-                len(tokens) // block_size, dtype=np.uint64
-            ),
-            mojo_module.mojo_block_hasher_inplace(
-                tokens,
-                hashes_mojo_np_array_inout,
-                block_size,
-                enable_dbg_prints,
-            ),
-            hashes_mojo_np_array_inout,
-        )[-1],
-        iter_count=10_000,
-    )
-
-    time.sleep(0.1)
-
-    print_bench_run(
-        "Python Naive Hashing",
+        "Python Naive",
         lambda: naive_python_hashing(tokens, block_size),
         iter_count=10_000,
     )

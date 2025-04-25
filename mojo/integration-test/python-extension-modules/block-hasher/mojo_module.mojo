@@ -22,19 +22,11 @@ from python._bindings import PythonModuleBuilder
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
-    """Create a Python module with function bindings for
-    `mojo_block_hasher_return_list` and `mojo_block_hasher_inplace`.
-    """
+    """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
-        b.def_py_function[mojo_block_hasher_return_list](
-            "mojo_block_hasher_return_list",
-            docstring=(
-                "Computes block hashes for a numpy array containing tokens"
-            ),
-        )
-        b.def_py_function[mojo_block_hasher_inplace](
-            "mojo_block_hasher_inplace",
+        b.def_py_function[mojo_block_hasher](
+            "mojo_block_hasher",
             docstring=(
                 "Computes block hashes for a numpy array containing tokens"
             ),
@@ -71,19 +63,16 @@ struct PyArrayObject[dtype: DType]:
         return num_elts
 
 
+@always_inline
 fn _mojo_block_hasher[
     dtype: DType, //,
 ](
     py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
     block_size: Int,
-    enable_dbg_prints: Bool,
 ) -> PythonObject:
     # Compute number of hashes
     var num_elts: Int = py_array_object_ptr[].num_elts()
     var num_hashes: Int = num_elts // block_size
-    if enable_dbg_prints:
-        print("num_elts:", num_elts)
-        print("num_hashes:", num_hashes)
 
     var cpython = Python().cpython()
 
@@ -91,101 +80,43 @@ fn _mojo_block_hasher[
     # results.
     var result_py_list = cpython.PyList_New(num_hashes)
 
+    # Initial hash seed value
+    alias initial_hash = String("None").__hash__()
+
     # Perfoming hashing
+    var prev_hash = initial_hash
     var num_bytes = block_size * sizeof[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
-        var hash_val = hash(hash_ptr_bytes, num_bytes)
-
+        var token_hash = hash(hash_ptr_bytes, num_bytes)
+        var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
+        var curr_hash = hash(pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
-        var hash_val_obj = cpython.PyLong_FromSsize_t(hash_val)
-        _ = cpython.PyList_SetItem(result_py_list, block_idx, hash_val_obj)
+        var curr_hash_obj = cpython.PyLong_FromSsize_t(curr_hash)
+        _ = cpython.PyList_SetItem(result_py_list, block_idx, curr_hash_obj)
 
-        if enable_dbg_prints:
-            print("  hash([", end="")
-            for i in range(min(block_size, 10)):
-                print(hash_ptr_ints[i], end=" ")
-            print("...]) => ", hash_val)
+        prev_hash = curr_hash
 
     return result_py_list
 
 
 @export
-fn mojo_block_hasher_return_list(
+fn mojo_block_hasher(
     py_self: PythonObject, py_args: TypedPythonObject["Tuple"]
 ) raises -> PythonObject:
     # Parse np array tokens input
-    # ~660ns
     var arg0: PyObjectPtr = py_args[0].unsafe_as_py_object_ptr()
     var py_array_object_ptr: UnsafePointer[
         PyArrayObject[DType.int32]
     ] = arg0.unchecked_cast_to_mojo_value[PyArrayObject[DType.int32]]()
 
     # Parse block size
-    # ~13us
     var block_size = Int.try_from_python(py_args[1])
 
-    # Parse enable_dbg_prints
-    # note: struct 'Bool' does not implement all requirements for 'ConvertibleFromPython'
-    # ~13us
-    var enable_dbg_prints_int = Int.try_from_python(py_args[2])
-    var enable_dbg_prints: Bool = enable_dbg_prints_int != 0
-
     # Perfoming hashing
-    # ~120ns
-    var results = _mojo_block_hasher(
-        py_array_object_ptr, block_size, enable_dbg_prints
-    )
+    var results = _mojo_block_hasher(py_array_object_ptr, block_size)
 
-    # ~7.5us
     return results^
-
-
-@export
-fn mojo_block_hasher_inplace(
-    py_self: PythonObject, py_args: TypedPythonObject["Tuple"]
-) raises -> PythonObject:
-    # Parse np array tokens input
-    # ~660ns
-    var arg0: PyObjectPtr = py_args[0].unsafe_as_py_object_ptr()
-    var np_array_tokens: UnsafePointer[
-        PyArrayObject[DType.int32]
-    ] = arg0.unchecked_cast_to_mojo_value[PyArrayObject[DType.int32]]()
-
-    # Parse np array hashes output
-    # ~660ns
-    var arg1: PyObjectPtr = py_args[1].unsafe_as_py_object_ptr()
-    var np_array_hashes: UnsafePointer[
-        PyArrayObject[DType.uint64]
-    ] = arg1.unchecked_cast_to_mojo_value[PyArrayObject[DType.uint64]]()
-
-    # Parse block size
-    # ~13us
-    var block_size = Int.try_from_python(py_args[2])
-
-    # Parse enable_dbg_prints
-    # note: struct 'Bool' does not implement all requirements for 'ConvertibleFromPython'
-    # ~13us
-    var enable_dbg_prints_int = Int.try_from_python(py_args[3])
-    var enable_dbg_prints: Bool = enable_dbg_prints_int != 0
-
-    # Perform hashing
-    # ~120ns
-    var num_elts: Int = np_array_tokens[].num_elts()
-    var num_hashes: Int = num_elts // block_size
-
-    # Perfoming hashing and store result in np_array_hashes
-    var num_bytes = block_size * sizeof[DType.int32]()
-    var hash_ptr_base = np_array_tokens[].data
-    for block_idx in range(num_hashes):
-        var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
-        var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
-        var hash_val = hash(hash_ptr_bytes, num_bytes)
-
-        np_array_hashes[].data[block_idx] = UInt64(hash_val)
-
-    # ~400ns
-    return PythonObject(None)
