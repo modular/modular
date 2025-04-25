@@ -261,10 +261,11 @@ struct CompileConfig:
         )
         torch_ext_lib_path_str_ptr.free()
 
-        if not Path(torch_ext_lib_path).exists():
+        # If the path does not exist, swallow the error and return None.
+        try:
+            return DLHandle(torch_ext_lib_path)
+        except:
             return None
-
-        return DLHandle(torch_ext_lib_path)
 
     fn __moveinit__(out self, owned existing: Self):
         self._ptr = existing._ptr^

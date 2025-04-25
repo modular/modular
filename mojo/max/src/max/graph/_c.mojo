@@ -6,13 +6,12 @@
 
 from collections.string import StaticString, StringSlice
 from os import abort
-from pathlib import Path
 from sys.ffi import (
-    RTLD,
     _get_dylib_function,
     _Global,
     _OwnedDLHandle,
     external_call,
+    _find_dylib,
 )
 
 import _mlir
@@ -39,10 +38,7 @@ fn _init_dylib() -> _OwnedDLHandle:
     var max_lib_path = String(unsafe_from_utf8_ptr=max_lib_path_str_ptr)
     max_lib_path_str_ptr.free()
 
-    if not Path(max_lib_path).exists():
-        abort("cannot load graph library from " + max_lib_path)
-
-    return _OwnedDLHandle(max_lib_path, RTLD.NOW | RTLD.GLOBAL)
+    return _find_dylib["graph library"](max_lib_path)
 
 
 @always_inline

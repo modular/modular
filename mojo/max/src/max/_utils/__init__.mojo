@@ -61,24 +61,6 @@ fn exchange[T: AnyTrivialRegType](mut old_var: T, owned new_value: T) -> T:
 # ======================================================================#
 
 
-fn handle_from_config(name: String, param: String) -> DLHandle:
-    # TODO: Move KGEN_CompilerRT_getMAXConfigValue to a helper somewhere.
-    var lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](param.unsafe_ptr(), param.byte_length())
-
-    if not lib_path_str_ptr:
-        abort("cannot get " + name + " library location from modular.cfg")
-
-    var lib_path = String(unsafe_from_utf8_ptr=lib_path_str_ptr)
-    lib_path_str_ptr.free()
-
-    if not Path(lib_path).exists():
-        abort("cannot load " + name + " library from " + lib_path)
-
-    return DLHandle(lib_path)
-
-
 @always_inline("nodebug")
 fn call_dylib_func[
     ReturnType: AnyTrivialRegType = NoneType._mlir_type,
