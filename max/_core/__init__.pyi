@@ -35,8 +35,6 @@ from . import (
     profiler as profiler,
 )
 
-OpType = TypeVar("OpType", bound=Operation)
-
 class Attribute:
     def __init__(self, arg: MlirAttribute, /) -> None: ...
     def __eq__(self, arg: object, /) -> bool: ...
@@ -64,6 +62,8 @@ class NamedAttribute:
 
 class OpBuilder:
     def __init__(self, arg: InsertPoint, /) -> None: ...
+
+    OpType = TypeVar("OpType", bound=type[Operation])
     def create(
         self, type: OpType, location: Location
     ) -> Callable[..., OpType]: ...
