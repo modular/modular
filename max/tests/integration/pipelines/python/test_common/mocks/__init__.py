@@ -9,11 +9,16 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Optional, Union
 
+import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
-from max.pipelines.lib import SupportedEncoding, TextGenerationPipeline
+from max.pipelines.lib import (
+    SupportedEncoding,
+    TextGenerationPipeline,
+    generate_local_model_path,
+)
 
 from .pipeline_config import (
     DummyMAXModelConfig,
@@ -25,6 +30,9 @@ from .pipeline_config import (
 )
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
+
+REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 @contextmanager
@@ -45,7 +53,7 @@ def retrieve_mock_text_generation_pipeline(
         device_specs = scan_available_devices()
 
     mock_config = DummyPipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M-Instruct",
+        model_path=generate_local_model_path(REPO_ID, REVISION),
         max_length=max_length,
         device_specs=device_specs,
         quantization_encoding=SupportedEncoding.float32,

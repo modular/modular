@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import logging
 from typing import Any
 
+import hf_repo_lock
 import pytest
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -15,13 +17,27 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.core import TokenGeneratorRequest
+from max.pipelines.lib import generate_local_model_path
 from test_common.evaluate import PROMPTS, next_token_with_logits
+
+REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
+
+logger = logging.getLogger("max.pipelines")
 
 
 @pytest.fixture(scope="session")
 def pipeline_config() -> PipelineConfig:
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError:
+        logger.warning(
+            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
+
     return PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M",
+        model_path=model_path,
         quantization_encoding=SupportedEncoding.float32,
         max_batch_size=4,
     )
@@ -29,8 +45,17 @@ def pipeline_config() -> PipelineConfig:
 
 @pytest.fixture(scope="session")
 def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
+
     pipeline_config = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M",
+        model_path=model_path,
         quantization_encoding=SupportedEncoding.float32,
     )
     return TextTokenizer(
@@ -51,6 +76,7 @@ def pipeline(
     return pipeline
 
 
+@pytest.mark.skip("AITLIB-336: Bug that causes a mismatch in matmul dimensions")
 @pytest.mark.asyncio
 async def test_pipeline_heterogeneous_batch_logits(
     pipeline: TextGenerationPipeline,

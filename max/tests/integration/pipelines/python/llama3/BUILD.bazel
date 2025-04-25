@@ -58,13 +58,12 @@ modular_py_binary(
         },
         imports = ["."],
         tags = [
-            "AITLIB-293",
-            "manual",  # TODO(AITLIB-293)
             "no-sandbox",
             "requires-network",
         ] if src == "test_pipeline_batching.py" else [],
         deps = [
             "//SDK/integration-test/API/python/graph:modular_graph_test",
+            "//SDK/integration-test/pipelines/python:hf_repo_lock",
             "//SDK/integration-test/pipelines/python/test_common",
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/entrypoints",
@@ -122,13 +121,12 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "A100",
-        "AITLIB-293",
         "gpu",
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
     deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/pipelines/architectures",

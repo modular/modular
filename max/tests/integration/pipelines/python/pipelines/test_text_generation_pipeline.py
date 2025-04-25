@@ -6,23 +6,39 @@
 """WIP Test Suite for Unit Testing the TextGenerationPipeline."""
 
 import asyncio
+import logging
 from unittest.mock import patch
 
+import hf_repo_lock
 from max.pipelines.core import TokenGeneratorRequest
+from max.pipelines.lib import generate_local_model_path
 from test_common.mocks import (
     MockTextTokenizer,
     retrieve_mock_text_generation_pipeline,
 )
+
+REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
+
+logger = logging.getLogger("max.pipelines")
 
 
 def test_mock_text_tokenizer():
     tokenizer = MockTextTokenizer()
     test_prompt = "This is a test prompt"
 
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError:
+        logger.warning(
+            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
+
     request = TokenGeneratorRequest(
         id="request_0",
         index=0,
-        model_name="HuggingFaceTB/SmolLM-135M-Instruct",
+        model_name=model_path,
         prompt=test_prompt,
         messages=None,
     )
@@ -44,6 +60,15 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
     weights_format.return_value = None
     max_length = 512
     eos_token = 998
+
+    try:
+        model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError:
+        logger.warning(
+            f"Model path does not exist: {REPO_ID}@{REVISION}, falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        model_path = REPO_ID
+
     with (
         retrieve_mock_text_generation_pipeline(
             vocab_size=1000,
@@ -66,7 +91,7 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
             request = TokenGeneratorRequest(
                 id=id,
                 index=i,
-                model_name="HuggingFaceTB/SmolLM-135M-Instruct",
+                model_name=model_path,
                 prompt=prompt,
                 messages=None,
                 max_new_tokens=max_new_tokens[id],

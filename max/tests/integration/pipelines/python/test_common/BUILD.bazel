@@ -169,6 +169,7 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
         "//SDK/lib/API/python/max/pipelines/lib",
         requirement("transformers"),
         requirement("setuptools"),

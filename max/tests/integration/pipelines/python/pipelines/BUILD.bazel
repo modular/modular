@@ -9,6 +9,9 @@ modular_py_test(
         ["**/*.py"],
         exclude = ["**/*_gpu.py"],
     ),
+    tags = [
+        "requires-network",  # This is needed for escaping HF sandbox.
+    ],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
         "//:asan": ["@platforms//:incompatible"],
@@ -16,6 +19,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/core",
