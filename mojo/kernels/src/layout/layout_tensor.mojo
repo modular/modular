@@ -59,6 +59,8 @@ from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
+from builtin.device_passable import DevicePassable
+
 
 fn _compute_distribute_layout[
     data_layout: Layout,
@@ -279,7 +281,13 @@ struct LayoutTensor[
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
-](CollectionElement, CollectionElementNew, Stringable, Writable):
+](
+    CollectionElement,
+    CollectionElementNew,
+    Stringable,
+    Writable,
+    DevicePassable,
+):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 
@@ -311,6 +319,8 @@ struct LayoutTensor[
     var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5,4)](storage)
     ```
     """
+
+    alias device_type: AnyTrivialRegType = Self
 
     alias rank = layout.rank()
     """The number of dimensions in the tensor's layout."""
