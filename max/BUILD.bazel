@@ -18,7 +18,10 @@ modular_nanobind_extension(
 # Intermediate targets just for stubgen
 modular_py_library(
     name = "_core.stubfile_generator_library",
-    data = [":_core.bindings"],
+    data = [
+        ":_core.bindings",
+        "//SDK/lib/API/python/max/mlir",
+    ],
     imports = [".."],
 )
 
