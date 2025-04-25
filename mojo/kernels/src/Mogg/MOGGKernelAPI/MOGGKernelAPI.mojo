@@ -248,6 +248,7 @@ from tensor_internal.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 from tensor_internal.managed_tensor_slice import get_kernel_simd_width
+from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -4320,7 +4321,7 @@ struct Matmul:
         _synchronous: Bool,
         _trace_name: StaticString,
     ](
-        c: FusedOutputTensor[rank=2],
+        c: _FusedComputeOutputTensor[rank=2],
         a: InputTensor[rank=2],
         b: InputTensor[rank=2],
         ctx: DeviceContextPtr,
@@ -4344,10 +4345,19 @@ struct Matmul:
         fn output_fn[
             _type: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_type, _width]):
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[c.type, _width]](val),
-            )
+            alias has_compute_lambda = c.static_spec.out_compute_lambda is not None
+
+            @parameter
+            if has_compute_lambda:
+                var output = c._fused_compute_output_lambda(
+                    coords, rebind[SIMD[c.type, _width]](val)
+                )
+                c.store[element_alignment=alignment](coords, output)
+            else:
+                c._lambda_store[width=_width, element_alignment=alignment](
+                    coords,
+                    rebind[SIMD[c.type, _width]](val),
+                )
 
         matmul[
             transposed_a,
@@ -4373,7 +4383,7 @@ struct BatchMatmul:
         target: StaticString,
         _synchronous: Bool,
     ](
-        c: FusedOutputTensor[rank=rank],
+        c: _FusedComputeOutputTensor[rank=rank],
         a: InputTensor[rank=rank],
         b: InputTensor[rank=rank],
         ctx: DeviceContextPtr,
@@ -4389,10 +4399,22 @@ struct BatchMatmul:
         fn output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            c._lambda_store[width=_width, element_alignment=alignment](
-                rebind[IndexList[c.rank]](coords),
-                rebind[SIMD[c.type, _width]](val),
-            )
+            alias has_compute_lambda = c.static_spec.out_compute_lambda is not None
+
+            @parameter
+            if has_compute_lambda:
+                var output = c._fused_compute_output_lambda(
+                    rebind[IndexList[c.rank]](coords),
+                    rebind[SIMD[c.type, _width]](val),
+                )
+                c.store[element_alignment=alignment](
+                    rebind[IndexList[c.rank]](coords), output
+                )
+            else:
+                c._lambda_store[width=_width, element_alignment=alignment](
+                    rebind[IndexList[c.rank]](coords),
+                    rebind[SIMD[c.type, _width]](val),
+                )
 
         batched_matmul[
             transpose_a=transpose_a,
