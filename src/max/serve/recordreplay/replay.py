@@ -11,10 +11,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
+import statistics
 import sys
 import time
 import types
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, TextIO
 
@@ -24,6 +25,7 @@ else:
     from taskgroup import TaskGroup
 
 import httpx
+import scipy.special
 
 from . import schema
 
@@ -64,6 +66,49 @@ async def replay_transaction(
     response.raise_for_status()
 
 
+class _IncrementalDistributionComputer:
+    """Computes normal distribution statistics incrementally."""
+
+    def __init__(self) -> None:
+        self._count = 0
+        self._mean = 0.0
+        self._undivided_var = 0.0
+
+    def add_sample(self, sample: float) -> None:
+        # Using Welford's method.  See also:
+        # https://jonisalonen.com/2013/deriving-welfords-method-for-computing-variance/
+        new_count = self._count + 1
+        old_mean = self._mean
+        new_mean = old_mean + (sample - old_mean) / new_count
+        self._count = new_count
+        self._mean = new_mean
+        self._undivided_var += (sample - old_mean) * (sample - new_mean)
+
+    @property
+    def current(self) -> statistics.NormalDist:
+        mean = float("nan")
+        stdev = float("nan")
+        if self._count >= 1:
+            mean = self._mean
+        if self._count >= 2:
+            stdev = math.sqrt(self._undivided_var / (self._count - 1))
+        return statistics.NormalDist(mean, stdev)
+
+
+def _tnmean(a: float) -> float:
+    """Mean of the standard normal distribution, truncated to (a, +∞)."""
+    # Implementation ported from https://github.com/cossio/TruncatedNormal.jl.
+    return math.sqrt(2 / math.pi) * scipy.special.erfcx(a / math.sqrt(2))
+
+
+def _low_truncated_expectation(
+    dist: statistics.NormalDist, lower_bound: float
+) -> float:
+    return dist.mean + dist.stdev * _tnmean(
+        (lower_bound - dist.mean) / dist.stdev
+    )
+
+
 # Please treat this class as-if it were kw_only=True.  I can't trick MyPy into
 # accepting kw_only=True due to our minimum Python version, but consider it the
 # intent.
@@ -75,50 +120,64 @@ class ProgressSnapshot:
     transactions_in_progress: int
     concurrency: int
     total_transactions: int
+    latency_distribution: statistics.NormalDist
     completed_transactions_total_seconds: float
-    in_progress_transaction_total_seconds: float
+    in_progress_transaction_durations: Iterable[float]
     elapsed_seconds: float
-
-    @property
-    def average_latency_seconds(self) -> float:
-        """Average seconds from starting a transaction to completing it."""
-        if self.completed_transactions == 0:
-            return float("nan")
-        return (
-            self.completed_transactions_total_seconds
-            / self.completed_transactions
-        )
 
     @property
     def estimated_seconds_remaining(self) -> float:
         """Estimated number of seconds remaining in the replay."""
-        latency = self.average_latency_seconds
+        if self.completed_transactions == 0:
+            # Not even one has completed -- how could we possibly know how long
+            # any would take?  Still, provide some kind of guess -- each future
+            # task will probably take at least as long as we've taken so far.
+            if self.concurrency == 0:
+                # But if no workers have even started, we have 0 chance of
+                # coming up with anything even remotely sensible, and we should
+                # give up completely.
+                return float("nan")
+            return self.elapsed_seconds * math.ceil(
+                self.total_transactions / self.concurrency
+            )
+        latency = self.latency_distribution.mean
         unstarted_count = (
             self.total_transactions
             - self.completed_transactions
             - self.transactions_in_progress
         )
-        if unstarted_count == 0:
-            unstarted_time = 0.0
-        elif self.concurrency == 0:
-            unstarted_time = float("inf")
+        # Mental model: Say we have some guess about how long each worker
+        # that's currently going is going to take until it's done.
+        worker_times = []
+        for worker_elapsed in self.in_progress_transaction_durations:
+            # Which we compute based on the current duration and the expected
+            # duration.  If we have distribution information, we use the
+            # expected value of the observed latency distribution conditional
+            # on that we've already spent as much time on this task as we have.
+            # We fall back to the (one) latency we've observed if that's all we
+            # have.
+            est_task_dur = latency
+            if self.completed_transactions >= 2:
+                est_task_dur = _low_truncated_expectation(
+                    self.latency_distribution, worker_elapsed
+                )
+            worker_times.append(max(est_task_dur - worker_elapsed, 0.0))
+        # Then, we tack on the time these workers will need to do after they've
+        # completed their current work.  If we have more tasks than
+        # concurrency, these are likely to be "evenly" distributed among
+        # workers, and we can tack that onto the total, so let's consider only
+        # "uneven" unstarted tasks.  The workers that finish their current
+        # tasks first are going to be the ones to pick these up.
+        worker_times.sort(reverse=True)
+        del worker_times[self.concurrency :]
+        worker_times.extend([0.0] * (self.concurrency - len(worker_times)))
+        if unstarted_count > 0:
+            even_count, uneven_count = divmod(unstarted_count, self.concurrency)
+            for i in range(uneven_count):
+                worker_times[-1 - i] += latency
         else:
-            unstarted_time = latency * math.ceil(
-                unstarted_count / self.concurrency
-            )
-        if self.transactions_in_progress:
-            in_progress_time = (
-                latency
-                - self.in_progress_transaction_total_seconds
-                / self.transactions_in_progress
-            )
-            if in_progress_time < 0:
-                # In-progress transactions are taking longer than average
-                # latency.  Best guess is that they'll finish "right now".
-                in_progress_time = 0.0
-        else:
-            in_progress_time = 0.0
-        return in_progress_time + unstarted_time
+            even_count = 0
+        return even_count * latency + max(worker_times, default=0.0)
 
 
 def summarize_progress_transactions(progress: ProgressSnapshot) -> str:
@@ -206,7 +265,7 @@ def _format_little_duration(seconds: float) -> str:
 
 def summarize_progress_stats(progress: ProgressSnapshot) -> str:
     """Summarize statistics of the run into a short string."""
-    latency = progress.average_latency_seconds
+    latency = progress.latency_distribution.mean
     latency_str = _format_little_duration(latency)
     rps_str = _format_little_decimal(progress.concurrency / latency)
     return f"MeanLat {latency_str}; {rps_str} RPS"
@@ -258,6 +317,7 @@ class TrackingProgressNotifier(BaseProgressNotifier):
     __completed_tasks: int
     __completed_tasks_total_seconds: float
     __worker_task_start_times: dict[int, float]
+    __latency_distribution_computer: _IncrementalDistributionComputer
 
     def __init__(self) -> None:
         """Create a new tracking progress notifier."""
@@ -268,6 +328,9 @@ class TrackingProgressNotifier(BaseProgressNotifier):
         self.__completed_tasks = 0
         self.__completed_tasks_total_seconds = 0
         self.__worker_task_start_times = {}
+        self.__latency_distribution_computer = (
+            _IncrementalDistributionComputer()
+        )
 
     @contextlib.contextmanager
     def worker_scope(self) -> Iterator[int]:
@@ -297,6 +360,7 @@ class TrackingProgressNotifier(BaseProgressNotifier):
         task_start = self.__worker_task_start_times.pop(worker)
         self.__completed_tasks += 1
         self.__completed_tasks_total_seconds += now - task_start
+        self.__latency_distribution_computer.add_sample(now - task_start)
         self.progress_changed(major=True)
         super().worker_finish_item(worker, item)
 
@@ -309,13 +373,14 @@ class TrackingProgressNotifier(BaseProgressNotifier):
             transactions_in_progress=len(self.__worker_task_start_times),
             concurrency=self.__concurrency,
             total_transactions=self.__total_tasks,
+            latency_distribution=self.__latency_distribution_computer.current,
             completed_transactions_total_seconds=(
                 self.__completed_tasks_total_seconds
             ),
-            in_progress_transaction_total_seconds=sum(
+            in_progress_transaction_durations=[
                 now - task_start
                 for task_start in self.__worker_task_start_times.values()
-            ),
+            ],
             elapsed_seconds=now - self.__start_time,
         )
 
