@@ -804,6 +804,29 @@ PIPELINES = {
             kl_div_threshold=24,
         ),
     ),
+    "deepseek-V2-lite-chat-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="deepseek-v2-lite",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation=(
+                "torch_deepseek_golden/torch_V2_lite_chat_bfloat16_golden.json"
+            ),
+            # TODO(MODELS-516): Investigate need for high tolerances here.
+            kl_div_threshold=45,
+            cos_dist_threshold=1.5,
+            absolute_tolerance=70,
+            relative_tolerance=3,
+        ),
+    ),
 }
 
 

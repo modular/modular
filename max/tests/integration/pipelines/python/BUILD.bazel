@@ -27,6 +27,7 @@ modular_py_binary(
     data = [
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/test_common",
+        "@torch_deepseek_golden",
         "@torch_llama-gptq_golden",
         "@torch_llama3-vision_golden",
         "@torch_llama4_golden",

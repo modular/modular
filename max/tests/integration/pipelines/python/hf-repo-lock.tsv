@@ -8,6 +8,7 @@ Qwen/Qwen2.5-VL-3B-Instruct	66285546d2b821cf421d4f5eb2576359d3770cd3
 allenai/OLMo-1B-hf	aee7752d9c08ee4775e9b0091426d8410e8f6a89
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
 bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
+deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
 google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
 hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4	f184d2b18e2b7c257af79aa0bc53ef3ee505caa2
 kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit	0dbc9d99d9036c187562e72e9eeb8036da4e1105
