@@ -27,14 +27,14 @@ Key features:
 
 Example:
 ```mojo
-    from compile import compile_info
+from compile import compile_info
 
-    fn my_func():
-        print("Hello")
+fn my_func(x: Int) -> Int:
+    return x
 
-    # Get assembly for the function
-    info = compile_info[my_func]()
-    print(info.asm)
+# Get assembly for the function
+info = compile_info[my_func]()
+print(info)
 ```
 """
 
@@ -100,13 +100,7 @@ struct Info[func_type: AnyTrivialRegType, func: func_type](
         func: The function being compiled.
 
     Attributes:
-        asm: Generated assembly/IR code
-        function_name: Mangled function name
-        module_name: Name of containing module
-        num_captures: Number of captured variables
         populate: Function to populate captures
-        error_msg: Error message if compilation failed
-        is_error: Whether compilation had errors
     """
 
     var asm: StaticString
@@ -130,12 +124,6 @@ struct Info[func_type: AnyTrivialRegType, func: func_type](
         ].populate
     )
     """Function pointer to populate captured variables in the function closure."""
-
-    var error_msg: StaticString
-    """Error message if compilation failed, empty if successful."""
-
-    var is_error: Bool
-    """Flag indicating whether compilation encountered errors (True) or succeeded (False)."""
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -192,6 +180,16 @@ alias _EMISSION_KIND_OBJECT = 3
 
 
 fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
+    constrained[
+        emission_kind == "asm"
+        or emission_kind == "llvm"
+        or emission_kind == "llvm-opt"
+        or emission_kind == "object",
+        "invalid emission kind '",
+        emission_kind,
+        "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'",
+    ]()
+
     @parameter
     if emission_kind == "llvm":
         return _EMISSION_KIND_LLVM
@@ -200,62 +198,7 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
     elif emission_kind == "object":
         return _EMISSION_KIND_OBJECT
     else:
-        constrained[
-            emission_kind == "asm",
-            "invalid emission kind '",
-            emission_kind,
-            "'",
-        ]()
-
         return _EMISSION_KIND_ASM
-
-
-fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
-    """No-op populate function for closures without captures."""
-    return
-
-
-@always_inline
-fn _compile_info_non_failable_impl[
-    func_type: AnyTrivialRegType,
-    func: func_type,
-    /,
-    emission_kind: Int,
-    compile_options: StaticString,
-    target: __mlir_type.`!kgen.target`,
-]() -> Info[func_type, func]:
-    """Internal implementation of compile_info that cannot fail.
-
-    Parameters:
-        func_type: Type of function to compile.
-        func: Function to compile.
-        emission_kind: Output format ID.
-        compile_options: Compiler options string.
-        target: Target architecture.
-
-    Returns:
-        Info struct containing compilation results.
-    """
-    var offload = __mlir_op.`kgen.compile_offload`[
-        target_type=target,
-        emission_kind = index(emission_kind),
-        emission_option = _get_kgen_string[compile_options](),
-        func=func,
-        _type=_Info,
-    ]()
-
-    var result = Info[func_type, func](
-        offload.asm,
-        get_linkage_name[target, func](),
-        # HACK: This is super low-level processing of !kgen.string values.
-        # pop.string.hash should move to an attribute representation or
-        # something.
-        __mlir_op.`pop.string.hash`(offload.asm),
-        offload.num_captures,
-        "",
-        False,
-    )
-    return result
 
 
 @always_inline
@@ -300,21 +243,34 @@ fn compile_info[
 
         ```mojo
         from compile import compile_info
-        fn my_func():
-            print("Hello")
+
+        fn my_func(x: Int) -> Int:
+            return x
 
         info = compile_info[my_func]()
-        print(info.asm)  # Print assembly
+        print(info)  # Print assembly
         ```
 
     Note:
         The compilation is always performed, even if the function is not used.
         For performance-critical code, consider caching the compilation results.
     """
-    return _compile_info_non_failable_impl[
-        func_type,
-        func,
-        emission_kind = _get_emission_kind_id[emission_kind](),
-        compile_options=compile_options,
-        target=target,
+
+    var offload = __mlir_op.`kgen.compile_offload`[
+        target_type=target,
+        emission_kind = index(_get_emission_kind_id[emission_kind]()),
+        emission_option = _get_kgen_string[compile_options](),
+        func=func,
+        _type=_Info,
     ]()
+
+    var result = Info[func_type, func](
+        asm=offload.asm,
+        function_name=get_linkage_name[target, func](),
+        # HACK: This is super low-level processing of !kgen.string values.
+        # pop.string.hash should move to an attribute representation or
+        # something.
+        module_name=__mlir_op.`pop.string.hash`(offload.asm),
+        num_captures=offload.num_captures,
+    )
+    return result
