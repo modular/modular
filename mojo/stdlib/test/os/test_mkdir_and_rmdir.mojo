@@ -136,7 +136,7 @@ fn test_rmdir_not_empty() raises:
 
 
 def main():
-    test_mkdir_and_rmdir("my_dir")
+    test_mkdir_and_rmdir(String("my_dir"))
     test_mkdir_and_rmdir(Path("my_dir"))
     if os.env.getenv("HOME") or os.env.getenv("USERPROFILE"):
         test_mkdir_and_rmdir(Path("~/my_dir").expanduser())

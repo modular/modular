@@ -99,6 +99,15 @@ struct Path(
         """
         self.path = path^
 
+    @implicit
+    fn __init__(out self, path: StringLiteral):
+        """Initializes a path with the provided path.
+
+        Args:
+          path: The file system path.
+        """
+        self.path = path
+
     fn copy(self) -> Self:
         """Copy the object.
 
