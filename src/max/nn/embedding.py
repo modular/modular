@@ -35,12 +35,11 @@ from .layer import Layer, Module
 @dataclass
 class Embedding(Layer):
     weights: TensorValueLike
-    device: Optional[DeviceRef] = None
+    device: DeviceRef
 
     def __call__(self, indices: TensorValueLike) -> TensorValue:
-        if self.device is not None:
-            self.weights = TensorValue(self.weights).to(self.device)
-            indices = TensorValue(indices).to(self.device)
+        self.weights = TensorValue(self.weights).to(self.device)
+        indices = TensorValue(indices).to(self.device)
 
         result = ops.gather(self.weights, indices, axis=0)
         if (
@@ -88,7 +87,7 @@ class EmbeddingV2(Module):
         vocab_size: int,
         hidden_dim: int,
         dtype: DType,
-        device: DeviceRef | None = None,
+        device: DeviceRef,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
     ) -> None:
@@ -106,12 +105,12 @@ class EmbeddingV2(Module):
         """
         super().__init__()
 
-        self.device = device or DeviceRef.CPU()
+        self.device = device
         self.weight = Weight(
             name or "weight",
             dtype,
             shape=(vocab_size, hidden_dim),
-            device=self.device,
+            device=device,
             quantization_encoding=quantization_encoding,
         )
 
@@ -127,9 +126,8 @@ class EmbeddingV2(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        weight = self.weight.to(self.device) if self.device else self.weight
         result = ops.gather(
-            TensorValue(weight),
+            TensorValue(self.weight),
             indices,
             axis=0,
         )

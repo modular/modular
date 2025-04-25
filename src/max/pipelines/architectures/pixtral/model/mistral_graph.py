@@ -97,7 +97,8 @@ def embedding(
     return Embedding(
         weights.weight.allocate(
             dtype, [vocab_size, hidden_dim], device=DeviceRef.GPU()
-        )
+        ),
+        device=DeviceRef.GPU(),
     )
 
 

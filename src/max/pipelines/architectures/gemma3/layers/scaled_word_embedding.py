@@ -37,7 +37,7 @@ class ScaledWordEmbedding(EmbeddingV2):
         vocab_size: int,
         hidden_dim: int,
         dtype: DType,
-        device: Optional[DeviceRef] = None,
+        device: DeviceRef,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
         embed_scale: float = 1.0,

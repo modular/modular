@@ -68,12 +68,15 @@ def embedding(
     max_source_positions: int,
     hidden_dim: int,
     weights: SafetensorWeights,
+    device: DeviceRef,
 ):
     return Embedding(
         weights.weight.allocate(
             dtype,
             [max_source_positions, hidden_dim],
-        )
+            device=device,
+        ),
+        device=device,
     )
 
 
@@ -193,6 +196,7 @@ def encoder(
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
     dtype: DType,
+    device: DeviceRef,
 ) -> WhisperEncoder:
     conv1 = conv1d(
         dtype=dtype,
@@ -220,6 +224,7 @@ def encoder(
         max_source_positions=huggingface_config.max_source_positions,
         hidden_dim=huggingface_config.d_model,
         weights=weights.model.encoder.embed_positions,
+        device=device,
     )
 
     # EncoderBlocks
@@ -275,6 +280,7 @@ def build_graph(
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
     dtype: DType,
+    device: DeviceRef,
 ) -> Graph:
     # Audio input_features.
     input_features_type = TensorType(
@@ -295,6 +301,7 @@ def build_graph(
             weights,
             huggingface_config=huggingface_config,
             dtype=dtype,
+            device=device,
         )
         input_features = graph.inputs[0]
         outputs = model(

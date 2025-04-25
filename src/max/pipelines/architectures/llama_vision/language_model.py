@@ -447,6 +447,7 @@ def instantiate_language_model(
                 ],
                 device=device,
             ),
+            device=device,
         ),
         norm=RMSNorm(
             weight=weights.language_model.model.norm.weight.allocate(

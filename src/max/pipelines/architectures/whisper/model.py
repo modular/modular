@@ -19,7 +19,7 @@ from typing import Optional
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
-from max.graph import _reconcile_weights
+from max.graph import DeviceRef, _reconcile_weights
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.pipelines.lib import (
@@ -94,6 +94,8 @@ class Whisper(PipelineModel):
             self.pipeline_config,
             self.weights,  # type: ignore
             self.huggingface_config,
+            self.encoding.dtype,
+            DeviceRef.from_device(self.devices[0]),
         )
         model = session.load(
             graph,

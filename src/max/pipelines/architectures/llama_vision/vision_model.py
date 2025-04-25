@@ -505,6 +505,7 @@ def instantiate_vision_model(
                 ],
                 device=device,
             ),
+            device=device,
         ),
     )
 
@@ -539,6 +540,7 @@ def instantiate_vision_model(
                 ],
                 device=device,
             ),
+            device=device,
         ),
         is_gated=True,
     )
