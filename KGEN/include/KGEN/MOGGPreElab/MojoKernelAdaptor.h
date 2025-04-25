@@ -107,6 +107,9 @@ struct MojoKernelOperandSourceDescriptor {
   StringRef sourceName;
   // Its position in the function.
   uint64_t position;
+  // If it was a return value that was promoted to a by ref result by the Mojo
+  // compiler.
+  bool isByRefResult;
 };
 
 using MojoKernelOperandVariant =
@@ -125,7 +128,8 @@ struct MojoKernelOperandAdaptor {
 
   MojoKernelOperandAdaptor(std::optional<uint64_t> positionInFunction,
                            StringRef typeName, ArrayAttr argumentSourceNames,
-                           ArrayAttr argsIoSpecs, uint64_t offset = 0);
+                           ArrayAttr argsIoSpecs, uint64_t offset = 0,
+                           bool isByRefResult = false);
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
@@ -246,11 +250,10 @@ struct MojoKernelFunctionAdaptor {
           argumentTypesNames[endOfInputArguments +
                              numberOfArgumentsRelatedToByrefResult - 1]);
       if (argTypeName) {
-        // Providing no mutable or fused tensor positions because they don't
-        // make sense for output results.
         outputResult = MojoKernelOperandAdaptor(
             endOfInputArguments + numberOfArgumentsRelatedToByrefResult - 1,
-            argTypeName.strref(), argumentSourceNames, argsIoSpecsAttr);
+            argTypeName.strref(), argumentSourceNames, argsIoSpecsAttr,
+            true /* isByRefResult */);
       }
     } else if (resultTypeName) {
       // Providing no mutable or fused tensor positions because they don't make
