@@ -17,13 +17,12 @@
 
 
 from nvml import Device
-from nvml.nvml import _get_nvml_library_path
+from nvml.nvml import _get_nvml_library_paths
 
 
 fn has_nvml_library() -> Bool:
     try:
-        _ = _get_nvml_library_path()
-        return True
+        return len(_get_nvml_library_paths()) > 0
     except:
         return False
 
