@@ -32,7 +32,9 @@ fn run_func[
         out[0] = kernel_fn(input)
 
     var out = ctx.enqueue_create_buffer[type](1)
-    ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
+    ctx.enqueue_function_checked[kernel, kernel](
+        out, val, grid_dim=1, block_dim=1
+    )
     ctx.synchronize()
 
     _ = out
