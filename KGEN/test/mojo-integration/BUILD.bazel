@@ -20,7 +20,6 @@ lit_tests(
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/_mlir",
         "//Kernels/mojo/runtime",
-        "//Kernels/mojo/compile",
         "//open-source/max/mojo/stdlib/stdlib",
     ],
     tags = [
