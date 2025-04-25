@@ -154,6 +154,10 @@ struct MojoKernelOperandAdaptor {
     return !(*this == other);
   }
 
+  bool isDpsOutput() const {
+    return sourceDescriptor.has_value() && !sourceDescriptor->isByRefResult;
+  }
+
   bool isVariadicTensorType() const {
     return std::holds_alternative<VariadicTensorOperandAdaptor>(underlyingType);
   }
