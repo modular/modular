@@ -21,45 +21,51 @@ from .max_config import SamplingConfig
 
 
 def _sampling_input_types(
-    sampling_config: SamplingConfig, device: DeviceRef, return_logits: bool
+    sampling_config: SamplingConfig, return_logits: bool, device: DeviceRef
 ) -> dict[str, TensorType]:
     inputs = {}
 
     # Logits are always provided
     if sampling_config.enable_variable_logits:
         logits_in_type = TensorType(
-            sampling_config.in_dtype, ["total_output_len", "vocab_size"], device
+            sampling_config.in_dtype,
+            ["total_output_len", "vocab_size"],
+            device=device,
         )
         inputs["logits"] = logits_in_type
     else:
         logits_in_type = TensorType(
-            sampling_config.in_dtype, ["batch", "vocab_size"], device
+            sampling_config.in_dtype,
+            ["batch", "vocab_size"],
+            device=device,
         )
         inputs["logits"] = logits_in_type
 
     # We are currently, always passing tokens through
     prev_tokens_type = TensorType(
-        DType.int64, ["batch", "num_prev_steps"], device
+        DType.int64, ["batch", "num_prev_steps"], device=device
     )
     inputs["prev_tokens"] = prev_tokens_type
 
     # If we need to return logits, introduce tensor to append to.
     if return_logits:
         logits_type = TensorType(
-            DType.float32, ["batch", "num_prev_steps"], device
+            DType.float32, ["batch", "num_prev_steps"], device=device
         )
         inputs["existing_logits"] = logits_type
 
     # If we have variable token logits enabled
     if sampling_config.enable_variable_logits:
         logit_offset_type = TensorType(
-            DType.uint32, ["logit_offsets_len"], device
+            DType.uint32, ["logit_offsets_len"], device=device
         )
         inputs["logit_offsets"] = logit_offset_type
 
     # If we have structured_outputs enabled
     if sampling_config.enable_structured_output:
-        bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"], device)
+        bitmask_type = TensorType(
+            DType.bool, ["batch", "vocab_size"], device=device
+        )
         inputs["bitmask"] = bitmask_type
 
     return inputs
@@ -70,7 +76,9 @@ def token_sampler(
     device: DeviceRef,
     return_logits: bool = False,
 ) -> Graph:
-    _input_dict = _sampling_input_types(sampling_config, device, return_logits)
+    _input_dict = _sampling_input_types(
+        sampling_config, return_logits=return_logits, device=device
+    )
     with Graph("top_k_sampler", input_types=_input_dict.values()) as graph:
         # Deconstruct inputs
         # TODO: Explore better ways of indexing into these input values
@@ -110,14 +118,12 @@ def token_sampler(
             "topk_fused_sampling",
             [
                 ops.constant(
-                    sampling_config.top_k,
-                    dtype=DType.int64,
-                    device=DeviceRef.CPU(),
+                    sampling_config.top_k, dtype=DType.int64, device=device
                 ),
                 ops.constant(
                     sampling_config.temperature,
                     dtype=DType.float32,
-                    device=DeviceRef.CPU(),
+                    device=device,
                 ),
                 logits,
             ],
@@ -132,9 +138,9 @@ def token_sampler(
         if "existing_logits" in _input_dict:
             token_range = ops.reshape(
                 ops.range(
-                    ops.constant(0, dtype=DType.int64, device=DeviceRef.CPU()),
+                    ops.constant(0, dtype=DType.int64, device=device),
                     tokens.shape[0],
-                    ops.constant(1, dtype=DType.int64, device=DeviceRef.CPU()),
+                    ops.constant(1, dtype=DType.int64, device=device),
                     out_dim=Dim(tokens.shape[0]),
                     device=device,
                 ),

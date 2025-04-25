@@ -206,8 +206,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         self._draft_sampler = draft_session.load(
             token_sampler(
                 draft_sampling_config,
-                DeviceRef.from_device(self.draft_devices[0]),
                 return_logits=True,
+                device=DeviceRef.from_device(self.draft_devices[0]),
             )
         )
 

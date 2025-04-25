@@ -552,7 +552,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._sampler = session.load(
             token_sampler(
                 self._pipeline_config.sampling_config,
-                DeviceRef.from_device(self._devices[0]),
+                device=DeviceRef.from_device(self._devices[0]),
             ),
         )
 
