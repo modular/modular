@@ -8,15 +8,20 @@ info:
     efficient request handling through advanced batching and scheduling, and
     an OpenAI-compatible REST endpoint.
 
-    ## Getting started
+    ## Get started
 
     With just a few commands, you can start a local endpoint with the GenAI
     model of your choice using our [`max-pipelines`](/max/max-pipelines) CLI
-    and start sending requests—[see our quickstart guide](/max/get-started).
+    and start sending requests.
 
     When you want to deploy your model to a cloud-hosted endpoint, you can use
-    our [MAX container](/max/container)—see our [tutorial to deploy an LLM on a
-    GPU](/max/tutorials/max-serve-local-to-cloud).
+    our [MAX container](/max/container)—see our [Get started with
+    MAX](/max/get-started) and then see our tutorials on using MAX Serve:
+
+    - [Start a chat endpoint](max/tutorials/start-a-chat-endpoint)
+    - [Run embeddings with MAX Serve](/max/tutorials/run-embeddings-with-max-serve)
+    - [Generate image descriptions with Llama 3.2 Vision](/max/tutorials/deploy-llama-vision)
+    - [Deploy Llama 3 on GPU-powered Kubernetes clusters](/max/tutorials/max-serve-local-to-cloud)
 
     ## OpenAI API compatibility
 
@@ -25,14 +30,14 @@ info:
     allows you to use many existing OpenAI client applications with MAX Serve
     endpoints.
 
-    * **Supported endpoints:**
+    - **Supported endpoints:**
 
-        * [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
-        * [Completions](#operation/createCompletion) (`/v1/completions`)
-        * [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
-        * [List models](#operation/listModels) (`/v1/models`)
+        - [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
+        - [Completions](#operation/createCompletion) (`/v1/completions`)
+        - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
+        - [List models](#operation/listModels) (`/v1/models`)
 
-    * **Parameter handling:** While aiming for high compatibility, not all
+    - **Parameter handling:** While aiming for high compatibility, not all
     OpenAI body parameters are implemented. Some may be accepted as no-ops
     (ignored but won't cause errors) to maintain client compatibility. The
     specific endpoint documentation below details only the parameters that
