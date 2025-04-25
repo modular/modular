@@ -269,9 +269,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
             # 2. File not found locally or non-existence is cached.
             if repo.repo_type == RepoType.local:
-                raise FileNotFoundError(
-                    f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
-                )
+                if not self._local_weight_path(Path(repo.repo_id) / file_path):
+                    raise FileNotFoundError(
+                        f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
+                    )
             # If it was an online repo, we need to check the API.
             elif repo.repo_type == RepoType.online:
                 # 3. Fallback: File not local/cached, get size via API for online repos.
@@ -578,10 +579,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
             # File not found locally.
             if repo.repo_type == RepoType.local:
-                # Helper returning None for local repo means not found.
-                raise FileNotFoundError(
-                    f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
-                )
+                if not self._local_weight_path(Path(repo.repo_id) / path):
+                    # Helper returning None for local repo means not found.
+                    raise FileNotFoundError(
+                        f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
+                    )
             elif repo.repo_type == RepoType.online:
                 # Verify that it exists on Huggingface.
                 if not repo.file_exists(path_str):

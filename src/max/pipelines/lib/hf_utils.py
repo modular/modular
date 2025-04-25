@@ -568,3 +568,42 @@ class HuggingFaceRepo:
             raise ValueError(
                 f"weight path: {file} not gguf or safetensors, cannot infer encoding from file."
             )
+
+
+# TODO: Over time we'd like to extend this into a new HFAssetResolver class that
+# automatically handles locally cached vs. remotely fetched artifacts via
+# specified repo_ids and revisions.
+def generate_local_model_path(repo_id: str, revision: str) -> str:
+    """Generate the local filesystem path where a HuggingFace model repo is cached.
+
+    This function takes a HuggingFace repository ID and revision hash and returns the full local
+    filesystem path where the model files are cached by the huggingface_hub library. The path
+    follows the standard HuggingFace caching convention of:
+    ~/.cache/huggingface/hub/models--{org}--{model}/snapshots/{revision}
+
+    Args:
+        repo_id: The HuggingFace repository ID in the format "org/model"
+                (e.g. "HuggingFaceTB/SmolLM2-135M")
+        revision: The specific model revision hash to use, typically from a repo lock file
+
+    Returns:
+        str: The absolute path to the cached model files for the specified revision.
+            For example: "~/.cache/huggingface/hub/models--HuggingFaceTB--SmolLM2-135M/snapshots/abc123"
+
+    Raises:
+        FileNotFoundError: If the model path does not exist locally
+    """
+    # Convert repo_id to format used in local path
+    temp_model_path = repo_id.replace("/", "--")
+    # Build full path with revision hash and expand user directory
+    path = (
+        Path(os.environ.get("HF_HOME", "~/.cache/huggingface"))
+        / "hub"
+        / f"models--{temp_model_path}"
+        / "snapshots"
+        / revision
+    ).expanduser()
+
+    if not path.is_dir():
+        raise FileNotFoundError(f"Model path does not exist: {path}")
+    return str(path)

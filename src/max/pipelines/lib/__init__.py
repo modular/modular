@@ -20,6 +20,7 @@ from .hf_utils import (
     HuggingFaceFile,
     HuggingFaceRepo,
     download_weight_files,
+    generate_local_model_path,
     repo_exists_with_retry,
 )
 from .log_probabilities import compute_log_probabilities, log_softmax
@@ -53,6 +54,7 @@ __all__ = [
     "compute_log_probabilities",
     "download_weight_files",
     "EmbeddingsPipeline",
+    "generate_local_model_path",
     "HuggingFaceFile",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",

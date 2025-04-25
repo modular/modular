@@ -19,6 +19,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Generic,
@@ -62,7 +63,7 @@ from transformers import AutoConfig, AutoTokenizer
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
-from .config_enums import SupportedEncoding
+from .config_enums import RepoType, SupportedEncoding
 from .hf_utils import download_weight_files
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
@@ -509,19 +510,27 @@ class TextGenerationPipeline(TokenGenerator[T]):
             else self._pipeline_config.model_config.model_path
         )
 
-        # Download weight files if not existent.
-        weight_paths = download_weight_files(
-            huggingface_model_id=weight_model_id,
-            filenames=[
-                str(x) for x in self._pipeline_config.model_config.weight_path
-            ],
-            revision=self._pipeline_config.model_config.huggingface_weight_revision,
-            force_download=self._pipeline_config.model_config.force_download,
-        )
-
-        # Load weights
-        weights = load_weights(weight_paths)
-        _weight_format = weights_format(weight_paths)
+        weight_paths: list[Path] = []
+        if (
+            self._pipeline_config.model_config.huggingface_weight_repo.repo_type
+            == RepoType.online
+        ):
+            # Download weight files if not existent.
+            weight_paths = download_weight_files(
+                huggingface_model_id=weight_model_id,
+                filenames=[
+                    str(x)
+                    for x in self._pipeline_config.model_config.weight_path
+                ],
+                revision=self._pipeline_config.model_config.huggingface_weight_revision,
+                force_download=self._pipeline_config.model_config.force_download,
+            )
+        else:
+            # Make sure the weight paths are absolute paths
+            weight_paths = [
+                self._pipeline_config.model_config.model_path / x
+                for x in self._pipeline_config.model_config.weight_path
+            ]
 
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
@@ -530,8 +539,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
-            weights=weights,
-            adapter=self._weight_adapters.get(_weight_format, None),
+            weights=load_weights(weight_paths),
+            adapter=self._weight_adapters.get(
+                weights_format(weight_paths), None
+            ),
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,
