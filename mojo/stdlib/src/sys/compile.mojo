@@ -36,7 +36,7 @@ fn is_compile_time() -> Bool:
 
 
 @value
-struct _OptimizationLevel(Intable, Writable):
+struct _OptimizationLevel(Intable, Stringable, Writable):
     """Represents the optimization level used during compilation.
 
     The optimization level is determined by the __OPTIMIZATION_LEVEL environment
@@ -48,21 +48,13 @@ struct _OptimizationLevel(Intable, Writable):
 
     alias level = env_get_int["__OPTIMIZATION_LEVEL", 4]()
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy initialization.
+    fn __int__(self) -> Int:
+        """Returns the integer value of the optimization level.
 
-        Args:
-            existing: The existing optimization level.
+        Returns:
+            The optimization level as an integer.
         """
-        return
-
-    fn __moveinit__(out self, owned existing: Self):
-        """Move initialization.
-
-        Args:
-            existing: The existing optimization level.
-        """
-        return
+        return Self.level
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -78,14 +70,6 @@ struct _OptimizationLevel(Intable, Writable):
         """
         return String.write(self)
 
-    fn __int__(self) -> Int:
-        """Returns the integer value of the optimization level.
-
-        Returns:
-            The optimization level as an integer.
-        """
-        return Self.level
-
 
 alias OptimizationLevel = _OptimizationLevel()
 """Represents the optimization level used during compilation."""
@@ -96,7 +80,7 @@ alias OptimizationLevel = _OptimizationLevel()
 
 
 @value
-struct _DebugLevel(Writable, Stringable):
+struct _DebugLevel(Stringable, Writable):
     """Represents the debug level used during compilation.
 
     The debug level is determined by the __DEBUG_LEVEL environment variable,
@@ -107,22 +91,6 @@ struct _DebugLevel(Writable, Stringable):
     """
 
     alias level = env_get_string["__DEBUG_LEVEL", "none"]()
-
-    fn __copyinit__(out self, existing: Self):
-        """Copy initialization.
-
-        Args:
-            existing: The existing optimization level.
-        """
-        return
-
-    fn __moveinit__(out self, owned existing: Self):
-        """Move initialization.
-
-        Args:
-            existing: The existing optimization level.
-        """
-        return
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -136,7 +104,7 @@ struct _DebugLevel(Writable, Stringable):
         Returns:
             The debug level as a string.
         """
-        return String(Self.level)
+        return String.write(self)
 
 
 alias DebugLevel = _DebugLevel()
