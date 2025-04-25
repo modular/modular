@@ -82,10 +82,9 @@ modular_genrule(
     done
 
     # Lint and format the files
-    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --exclude {excludes} --quiet
-    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --exclude {excludes} --quiet
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --quiet
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --quiet
     """.format(
-        excludes = "dialects/m/__init__.pyi,dialects/mo/__init__.pyi,dialects/mosh/__init__.pyi,dialects/builtin/__init__.pyi,dialects/kgen/__init__.pyi",
         ruff = "//utils/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
     ),
@@ -98,7 +97,7 @@ modular_genrule(
 modular_python_binding_py_library(
     name = "_core",
     srcs = glob([
-        "_core/*.pyi",
+        "_core/**/*.pyi",
         "_core_types/*.py",
     ]),
     bindings_data = [":_core.bindings"],
@@ -129,8 +128,19 @@ modular_python_binding_py_library(
         "graph",
         "engine",
         "profiler",
+        "dialects/builtin",
+        "dialects/kgen",
+        "dialects/m",
+        "dialects/mo",
+        "dialects/mosh",
     )
 ]
+
+diff_test(
+    name = "._core.dialects.diff_test",
+    file1 = "//SDK/lib/API/python/max:stubfiles/dialects/__init__.pyi",
+    file2 = "_core/dialects/__init__.pyi",
+)
 
 diff_test(
     name = "_core.diff_test",
