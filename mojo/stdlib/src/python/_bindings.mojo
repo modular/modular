@@ -443,7 +443,7 @@ struct PythonTypeBuilder:
             The builder with the method binding declared.
         """
 
-        self.def_py_c_method(
+        _ = self.def_py_c_method(
             py_c_function_wrapper[method], method_name, docstring
         )
         return self
