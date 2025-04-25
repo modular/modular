@@ -576,6 +576,27 @@ void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
 }
 
+ParseResult KGEN::parseVTableEntry(AsmParser &p, StringAttr &name,
+                                   TypedAttr &method) {
+  std::string nameStr;
+  if (p.parseString(&nameStr))
+    return failure();
+  name = StringAttr::get(p.getContext(), nameStr);
+  Type type;
+  if (p.parseColon() || parseKGENType(p, type) || p.parseEqual() ||
+      parseParamValue(p, method, type))
+    return failure();
+  return success();
+}
+
+void KGEN::printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
+  p.printString(name.getValue());
+  p << " : ";
+  printKGENType(p, method.getType());
+  p << " = ";
+  printParamValue(p, method);
+}
+
 ParseResult KGEN::parseParamDecl(AsmParser &p, ParamDeclAttr &result) {
   StringAttr name;
   Type type;

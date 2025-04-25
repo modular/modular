@@ -541,31 +541,6 @@ bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// VTableAttr
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseVTableEntry(AsmParser &p, StringAttr &name,
-                                    TypedAttr &method) {
-  std::string nameStr;
-  if (p.parseString(&nameStr))
-    return failure();
-  name = StringAttr::get(p.getContext(), nameStr);
-  Type type;
-  if (p.parseColon() || parseKGENType(p, type) || p.parseEqual() ||
-      parseParamValue(p, method, type))
-    return failure();
-  return success();
-}
-
-static void printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
-  p.printString(name.getValue());
-  p << " : ";
-  printKGENType(p, method.getType());
-  p << " = ";
-  printParamValue(p, method);
-}
-
-//===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
