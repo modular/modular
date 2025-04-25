@@ -83,7 +83,7 @@ It includes the latest MAX version with GPU support, several AI libraries, and
 integrates with orchestration tools like Kubernetes.
 
 The MAX container image is available in the
-[Modular Docker Hub repository](https://hub.docker.com/r/modular/max-openai-api/).
+[Modular Docker Hub repository](https://hub.docker.com/repository/docker/modular/max-nvidia-base/).
 
 ## Contributing
 
