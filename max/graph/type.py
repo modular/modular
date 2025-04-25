@@ -1065,7 +1065,7 @@ class _ChainType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return mo.ChainType(mlir.Context.current)
+        return mo.ChainType()
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> _ChainType:

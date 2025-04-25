@@ -41,5 +41,5 @@ def test_buffer_mlir_roundtrip_no_context(buffer_type: BufferType):
 
 
 def test_chain_type__no_mlir_context():
-    with pytest.raises(TypeError):
+    with pytest.raises(RuntimeError):
         _ChainType().to_mlir()

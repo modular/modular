@@ -208,7 +208,7 @@ def test_type_checking(mlir_context) -> None:
     tensor_type = _graph.tensor_type(mlir_context, dtype, [dim])
     opaque_type = _graph.opaque_type(mlir_context, "custom_type")
     buffer_type = _graph.buffer_type(mlir_context, dtype, [dim])
-    chain_type = mo.ChainType(mlir_context)
+    chain_type = mo.ChainType()
 
     assert _graph.type_is_tensor(tensor_type)
     assert not _graph.type_is_opaque(tensor_type)
