@@ -78,6 +78,20 @@ class LLM:
         max_new_tokens: int | None = 100,
         use_tqdm: bool = True,
     ) -> list[str]:
+        """Generates text completions for the given prompts.
+
+        Args:
+            prompts: The input string or list of strings to generate completions for.
+            max_new_tokens: The maximum number of tokens to generate in the response.
+            use_tqdm: Whether to display a progress bar during generation.
+
+        Returns:
+            A list of generated text completions corresponding to each input prompt.
+
+        Raises:
+            ValueError: If prompts is empty or contains invalid data.
+            RuntimeError: If the model fails to generate completions.
+        """
         if isinstance(prompts, str):
             # Handle the degenerate case where the users just passes in a single string
             return self.generate((prompts,), max_new_tokens, use_tqdm)
