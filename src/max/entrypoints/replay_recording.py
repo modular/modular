@@ -99,7 +99,8 @@ def main(
 def _report_metrics(progress: replay.ProgressSnapshot) -> None:
     rps = progress.completed_transactions / progress.elapsed_seconds
     print(f"Throughput: {rps} RPS")
-    print(f"Average latency: {progress.average_latency_seconds} seconds")
+    print(f"Average latency: {progress.latency_distribution.mean} seconds")
+    print(f"Latency stdev: {progress.latency_distribution.stdev} seconds")
 
 
 if __name__ == "__main__":
