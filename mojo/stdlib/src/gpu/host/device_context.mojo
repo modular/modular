@@ -90,12 +90,8 @@ alias _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
 # Define helper methods to call AsyncRT bindings.
 
 
-fn _string_from_charptr(owned c_str: _CharPtr) -> String:
-    var str_len = 0
-    while c_str.load(str_len):
-        str_len += 1
-
-    result = String(Span[Byte, ImmutableAnyOrigin](ptr=c_str, length=str_len))
+fn _string_from_owned_charptr(c_str: _CharPtr) -> String:
+    var result = String(unsafe_from_utf8_ptr=c_str)
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
     external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](c_str)
     return result
@@ -116,7 +112,7 @@ fn _checked(
 fn _raise_checked_impl(
     err_msg: _CharPtr, msg: String, location: _SourceLocation
 ) raises:
-    var err = _string_from_charptr(err_msg)
+    var err = _string_from_owned_charptr(err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
 
 
@@ -2638,8 +2634,7 @@ struct DeviceContext(CollectionElement):
         ](
             self._handle,
         )
-        var result = _string_from_charptr(name_ptr)
-        return result
+        return _string_from_owned_charptr(name_ptr)
 
     fn api(self) -> String:
         """Returns the name of the API used to program the device.
