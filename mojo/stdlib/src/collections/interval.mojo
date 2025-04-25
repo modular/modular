@@ -61,7 +61,6 @@ trait IntervalElement(
     Writable,
     Intable,
     Comparable,
-    Copyable,
 ):
     """The trait denotes a trait composition of the `CollectionElement`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
