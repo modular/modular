@@ -29,6 +29,7 @@ from tensor_internal import (
     OutputTensor,
     OutputVariadicTensors,
     VariadicTensors,
+    _FusedComputeOutputTensor,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
@@ -1164,3 +1165,28 @@ struct MutableStore:
             _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](tensor, ctx)
+
+
+@compiler.register("my_square_compute_out_fusion")
+struct MySquareComputeOutFusion:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: _FusedComputeOutputTensor[type=type, rank=1],
+        input: InputTensor[type=type, rank=1],
+    ):
+        var res = input[0] * input[0]
+        alias has_compute_lambda = out.static_spec.out_compute_lambda is not None
+        alias has_store_lambda = out.static_spec.out_lambda is not None
+        print("has_compute_lambda =", has_compute_lambda)
+        print("has_store_lambda =", has_store_lambda)
+
+        @parameter
+        if has_compute_lambda:
+            out[0] = out._fused_compute_output_lambda[width=1](
+                IndexList[1](0), res
+            )
+        else:
+            # We still need to support normal fusion in case the kernel is fused with a cast.
+            out._fused_store[width=1](IndexList[1](0), res)
