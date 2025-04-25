@@ -7,6 +7,8 @@
 
 import functools
 
+import pytest
+
 # TODO(MAXPLAT-75): Generate mypy stubs
 from max import mlir
 from max._core import OpBuilder, Type
@@ -17,29 +19,25 @@ from max._core.dtype import DType
 
 
 def test_mo_attr(mlir_context):
-    attr = mo.DTypeAttr(mlir_context, DType.bool)
+    attr = mo.DTypeAttr(DType.bool)
     assert attr.dtype == DType.bool
-    assert attr == mo.DTypeAttr(mlir_context, DType.bool)
-    assert attr != mo.DTypeAttr(mlir_context, DType.int8)
+    assert attr == mo.DTypeAttr(DType.bool)
+    assert attr != mo.DTypeAttr(DType.int8)
 
 
 def test_mosh(mlir_context):
-    shape_type = mosh.ShapeType(mlir_context)
+    shape_type = mosh.ShapeType()
     assert isinstance(shape_type, mosh.ShapeType)
     assert isinstance(shape_type, Type)
-    assert shape_type == mosh.ShapeType(mlir_context)
+    assert shape_type == mosh.ShapeType()
 
 
 def test_mosh_shapeattr(mlir_context):
-    shape_type = mosh.ShapeType(mlir_context)
+    shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([1, 2, 3], shape_type)
     dims = attr.values
-    index_type = builtin.IntegerType(
-        mlir_context, 64, builtin.SignednessSemantics.signed
-    )
-    uint8_type = builtin.IntegerType(
-        mlir_context, 8, builtin.SignednessSemantics.unsigned
-    )
+    index_type = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+    uint8_type = builtin.IntegerType(8, builtin.SignednessSemantics.unsigned)
     Index = functools.partial(builtin.IntegerAttr, index_type)
     UInt8 = functools.partial(builtin.IntegerAttr, uint8_type)
     expected = [Index(1), Index(2), Index(3)]
@@ -50,23 +48,18 @@ def test_mosh_shapeattr(mlir_context):
 
 
 def test_mosh_shapeattr_empty(mlir_context):
-    shape_type = mosh.ShapeType(mlir_context)
+    shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([], shape_type)
     assert list(attr.values) == []
 
 
-def test_mosh_shapeattr__no_active_context():
-    with mlir.Context() as ctx:
-        shape_type = mosh.ShapeType(ctx)
-    attr = mosh.ShapeAttr([], shape_type)
-    assert attr.values == []
-    assert attr.type == shape_type
+def test_no_active_context():
+    with pytest.raises(RuntimeError):
+        shape_type = mosh.ShapeType()
 
 
 def test_builtin_integerattr(mlir_context):
-    int_type = builtin.IntegerType(
-        mlir_context, 1, builtin.SignednessSemantics.unsigned
-    )
+    int_type = builtin.IntegerType(1, builtin.SignednessSemantics.unsigned)
     int_attr = builtin.IntegerAttr(int_type, 1)
     assert int_attr.type == int_type
 
@@ -83,11 +76,11 @@ def test_mo_graph_op(mlir_context):
     graph = builder.create(mo.GraphOp, loc)("hello", [], [], is_subgraph=False)
 
     assert graph.name == "hello"
-    assert graph.input_params == []
-    assert graph.function_type == builtin.FunctionType(mlir_context, [], [])
+    assert graph.input_parameters == []
+    assert graph.function_type == builtin.FunctionType([], [])
 
 
 def test_device_ref_attr(mlir_context):
-    attr = m.DeviceRefAttr(mlir_context, "cpu", 0)
+    attr = m.DeviceRefAttr("cpu", 0)
     assert attr.label == "cpu"
     assert attr.id == 0
