@@ -50,6 +50,12 @@ struct StaticTensorSpec[
         IndexList[rank], SIMD[type, simd_width]
     ) capturing -> None
 
+    alias out_compute_lambda_t = fn[
+        simd_width: Int, element_alignment: Int = 1
+    ] (IndexList[rank], SIMD[type, simd_width]) capturing -> SIMD[
+        type, simd_width
+    ]
+
     var shape: DimList
     var strides: DimList
 
@@ -59,6 +65,7 @@ struct StaticTensorSpec[
 
     var in_lambda: OptionalReg[Self.in_lambda_t]
     var out_lambda: OptionalReg[Self.out_lambda_t]
+    var out_compute_lambda: OptionalReg[Self.out_compute_lambda_t]
 
     fn __init__(
         out self,
@@ -69,6 +76,7 @@ struct StaticTensorSpec[
         exclusive: Bool,
         in_lambda: OptionalReg[Self.in_lambda_t],
         out_lambda: OptionalReg[Self.out_lambda_t],
+        out_compute_lambda: OptionalReg[Self.out_compute_lambda_t],
     ):
         self.shape = shape
         self.strides = strides
@@ -77,6 +85,7 @@ struct StaticTensorSpec[
         self.exclusive = exclusive
         self.in_lambda = in_lambda
         self.out_lambda = out_lambda
+        self.out_compute_lambda = out_compute_lambda
 
     @staticmethod
     fn create_unknown() -> Self:
@@ -92,6 +101,7 @@ struct StaticTensorSpec[
             True,
             OptionalReg[Self.in_lambda_t](None),
             OptionalReg[Self.out_lambda_t](None),
+            OptionalReg[Self.out_compute_lambda_t](None),
         )
 
     @always_inline
@@ -106,6 +116,7 @@ struct StaticTensorSpec[
             self.alignment,
             self.address_space,
             self.exclusive,
+            None,
             None,
             None,
         )

@@ -242,6 +242,7 @@ fn rebuild_static_tensor_specs_with_input_lambda[
         exclusive=spec.exclusive,
         in_lambda=rebind[spec.in_lambda_t](in_lambda),
         out_lambda=None,
+        out_compute_lambda=None,
     )
 
 
@@ -263,6 +264,7 @@ fn rebuild_static_tensor_specs_with_output_lambda[
         exclusive=spec.exclusive,
         in_lambda=None,
         out_lambda=rebind[spec.out_lambda_t](out_lambda),
+        out_compute_lambda=None,
     )
 
 
@@ -339,6 +341,10 @@ alias InputTensor = ManagedTensorSlice[io_spec=Input]
 alias _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
 alias _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
 alias _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
+
+alias _FusedComputeOutputTensor = ManagedTensorSlice[
+    io_spec=_FusedComputeOutput
+]
 
 
 struct DynamicTensor[
@@ -847,6 +853,28 @@ struct ManagedTensorSlice[
         constrained[Bool(out_lambda)]()
         alias out_fn = out_lambda.value()
         out_fn[width, element_alignment](ridx, val)
+
+    @always_inline
+    fn _fused_compute_output_lambda[
+        width: Int,
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=static_spec],
+        index: IndexList[_rank],
+        val: SIMD[type, width],
+    ) capturing -> SIMD[type, width]:
+        constrained[_rank == rank]()
+        var ridx = rebind[IndexList[rank]](index)
+
+        alias out_compute_lambda = static_spec.out_compute_lambda
+
+        @parameter
+        if out_compute_lambda:
+            alias out_fn = out_compute_lambda.value()
+            return out_fn[width](ridx, val)
+        else:
+            return val
 
     @always_inline
     fn with_layout[

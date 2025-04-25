@@ -20,6 +20,7 @@ from .io_spec import (
     IOUnknown,
     MutableInput,
     Output,
+    _FusedComputeOutput,
 )
 from .managed_tensor_slice import (
     DynamicTensor,
@@ -30,6 +31,7 @@ from .managed_tensor_slice import (
     OutputVariadicTensors,
     StaticTensorSpec,
     VariadicTensors,
+    _FusedComputeOutputTensor,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,

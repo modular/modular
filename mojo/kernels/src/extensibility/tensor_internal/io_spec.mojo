@@ -28,6 +28,9 @@ struct IO:
     alias FusedInput = IO(2)
     alias FusedOutput = IO(3)
 
+    # Output fusion using a compute lambda.
+    alias _FusedComputeOutput = IO(31)
+
     @always_inline("builtin")
     fn __init__(out self, value: Int):
         self.value = value
@@ -63,3 +66,5 @@ alias MutableInput = IOSpec[True, IO.Input]()
 
 alias FusedInput = IOSpec[False, IO.FusedInput]()
 alias FusedOutput = IOSpec[True, IO.FusedOutput]()
+
+alias _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
