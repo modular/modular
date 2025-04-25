@@ -15,6 +15,7 @@ from collections import OptionalReg
 from collections.string import StaticString
 from math import align_down, ceildiv
 from sys.info import alignof, simdwidthof
+from layout import Layout, LayoutTensor
 
 from algorithm import (
     sync_parallelize,
@@ -83,6 +84,10 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+
+from compiler_internal import StaticTensorSpec
+from tensor_internal import ManagedTensorSlice
+from tensor_internal.io_spec import IO, Input, FusedOutput
 
 
 @value
@@ -3070,6 +3075,72 @@ fn conv2d_gpu_naive_nhwc_rscf[
             output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
 
 
+fn conv2d_gpu_naive_nhwc_rscf_new[
+    input_layout: Layout,
+    filter_layout: Layout,
+    output_layout: Layout,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    block_size: Int,
+    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
+](
+    input: LayoutTensor[input_type, input_layout, MutableAnyOrigin],
+    filter: LayoutTensor[filter_type, filter_layout, MutableAnyOrigin],
+    output: LayoutTensor[output_type, output_layout, MutableAnyOrigin],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+):
+    var N = input.dim(0)
+    var H = input.dim(1)
+    var W = input.dim(2)
+    var C_in = input.dim(3)  # channel_in
+    var R = filter.dim(0)
+    var S = filter.dim(1)
+    var H_out = output.dim(1)
+    var W_out = output.dim(2)
+    var C_out = output.dim(3)  # channel_out
+    var pad_h = padding[0]
+    var pad_w = padding[1]
+    var stride_h = stride[0]
+    var stride_w = stride[1]
+    var dil_h = dilation[0]
+    var dil_w = dilation[1]
+
+    var n = block_idx.z
+    var h = block_idx.y * block_dim.y + thread_idx.y
+    var w = block_idx.x * block_dim.x + thread_idx.x
+
+    if h >= H_out or w >= W_out:
+        return
+
+    for co in range(C_out):
+        alias accum_type = get_accum_type[output_type]()
+        var value = Scalar[accum_type](0)
+        for r in range(R):
+            for s in range(S):
+                var h_in = h * stride_h - pad_h + r * dil_h
+                var w_in = w * stride_w - pad_w + s * dil_w
+                if 0 <= h_in < H and 0 <= w_in < W:
+                    for ci in range(C_in):
+                        # TODO: any way without rebinds?
+                        var from_input: Scalar[accum_type] = rebind[
+                            Scalar[accum_type]
+                        ](input[n, h_in, w_in, ci].cast[accum_type]())
+                        var from_filter: Scalar[accum_type] = rebind[
+                            Scalar[accum_type]
+                        ](filter[r, s, ci, co].cast[accum_type]())
+                        value += from_input * from_filter
+
+        @parameter
+        if maybe_epilogue_func:
+            alias epilogue_func = maybe_epilogue_func.value()
+            epilogue_func(IndexList[4](n, h, w, co), value.cast[output_type]())
+        else:
+            output[n, h, w, co] = value.cast[output_type]()
+
+
 @always_inline
 fn check_cudnn_error(stat: cudnnStatus_t):
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
@@ -3234,6 +3305,88 @@ fn conv_gpu[
         stride,
         dilation,
         padding,
+        grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+        block_dim=(block_size, block_size),
+    )
+
+
+# A version of the above conv_gpu that uses `enqueue_function_checked`
+# under the hood.
+# TODO: Migrate other conv_gpu sites to use this.
+fn conv_gpu_new[
+    *,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    input_dim: DimList,
+    filter_dim: DimList,
+    output_dim: DimList,
+    input_static_spec: StaticTensorSpec[input_type, 4],
+    filter_static_spec: StaticTensorSpec[filter_type, 4],
+    output_static_spec: StaticTensorSpec[output_type, 4],
+    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
+](
+    input: ManagedTensorSlice[io_spec=Input, static_spec=input_static_spec],
+    filter: ManagedTensorSlice[io_spec=Input, static_spec=filter_static_spec],
+    output: ManagedTensorSlice[
+        io_spec=FusedOutput, static_spec=output_static_spec
+    ],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    alias block_size = 16
+
+    alias input_layout = input_static_spec.to_layout()
+    alias filter_layout = filter_static_spec.to_layout()
+    alias output_layout = output_static_spec.to_layout()
+
+    # TODO: Why capturing?
+    alias conv_gpu_n: fn (
+        LayoutTensor[input_type, input_layout, MutableAnyOrigin],
+        LayoutTensor[filter_type, filter_layout, MutableAnyOrigin],
+        LayoutTensor[output_type, output_layout, MutableAnyOrigin],
+        IndexList[2],
+        IndexList[2],
+        IndexList[2],
+    ) capturing -> None = conv2d_gpu_naive_nhwc_rscf_new[
+        input_layout,
+        filter_layout,
+        output_layout,
+        input_type,
+        filter_type,
+        output_type,
+        block_size,
+        maybe_epilogue_func,
+    ]
+
+    var grid_dim_x = ceildiv(output_layout.shape[2].value(), block_size)
+    var grid_dim_y = ceildiv(output_layout.shape[1].value(), block_size)
+    var grid_dim_z = output_layout.shape[0].value()
+
+    # Sanity check all argument types.
+    var input_checked: LayoutTensor[
+        input_type, input_layout, MutableAnyOrigin
+    ] = input.to_layout_tensor()
+    var filter_checked: LayoutTensor[
+        filter_type, filter_layout, MutableAnyOrigin
+    ] = filter.to_layout_tensor()
+    var output_checked: LayoutTensor[
+        output_type, output_layout, MutableAnyOrigin
+    ] = output.to_layout_tensor()
+    var stride_checked: IndexList[2] = stride
+    var dilation_checked: IndexList[2] = dilation
+    var padding_checked: IndexList[2] = padding
+    # Invoke the kernel
+    ctx.enqueue_function_checked[conv_gpu_n, conv_gpu_n](
+        input_checked,
+        filter_checked,
+        output_checked,
+        stride_checked,
+        dilation_checked,
+        padding_checked,
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size),
     )
