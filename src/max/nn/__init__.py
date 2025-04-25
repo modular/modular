@@ -41,7 +41,14 @@ from .linear import (
     Linear,
     LinearV2,
 )
-from .norm import DistributedRMSNorm, LayerNorm, LayerNormV2, RMSNorm, RMSNormV2
+from .norm import (
+    DistributedRMSNorm,
+    GroupNorm,
+    LayerNorm,
+    LayerNormV2,
+    RMSNorm,
+    RMSNormV2,
+)
 from .rotary_embedding import (
     LinearScalingParams,
     Llama3RopeScalingParams,
@@ -87,6 +94,7 @@ __all__ = [
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinearV2",
+    "GroupNorm",
     "Layer",
     "LayerNorm",
     "LayerNormV2",
