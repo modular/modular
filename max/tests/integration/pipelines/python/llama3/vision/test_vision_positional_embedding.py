@@ -69,7 +69,8 @@ class PositionalEmbedding:
                     dtype=self.dtype,
                     shape=torch_pos_embed.tile_embedding.weight.shape,
                     device=DeviceRef.CPU(),
-                )
+                ),
+                device=DeviceRef.CPU(),
             ),
         )
 
@@ -120,7 +121,8 @@ class AspectRatioEmbedding:
                     dtype=self.dtype,
                     shape=torch_aspect_ratio_embed.embedding.weight.shape,
                     device=DeviceRef.CPU(),
-                )
+                ),
+                device=DeviceRef.CPU(),
             ),
             is_gated=is_gated,
         )

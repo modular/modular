@@ -122,6 +122,7 @@ class WrappedVisionModel:
                     shape=torch_vision_model.gated_positional_embedding.tile_embedding.weight.shape,
                     device=DeviceRef.CPU(),
                 ),
+                device=DeviceRef.CPU(),
             ),
         )
 
@@ -141,6 +142,7 @@ class WrappedVisionModel:
                     shape=torch_vision_model.pre_tile_positional_embedding.embedding.weight.shape,
                     device=DeviceRef.CPU(),
                 ),
+                device=DeviceRef.CPU(),
             ),
             is_gated=True,
         )
@@ -161,6 +163,7 @@ class WrappedVisionModel:
                     shape=torch_vision_model.post_tile_positional_embedding.embedding.weight.shape,
                     device=DeviceRef.CPU(),
                 ),
+                device=DeviceRef.CPU(),
             ),
             is_gated=True,
         )
