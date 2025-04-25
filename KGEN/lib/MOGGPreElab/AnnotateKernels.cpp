@@ -746,6 +746,8 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
     return IOSpec::FusedInputTensor;
   else if (mut == kIOSpecMutable && input == kIOSpecIOFusedOutput)
     return IOSpec::FusedOutputTensor;
+  else if (mut == kIOSpecMutable && input == kIOSpecIOFusedComputeOutput)
+    return IOSpec::FusedComputeOutputTensor;
 
   emitError(loc, "Error for argument '" + argName + "': Invalid " +
                      kIOSpec.back() +
