@@ -8,13 +8,9 @@
 import functools
 
 import pytest
-
-# TODO(MAXPLAT-75): Generate mypy stubs
 from max import mlir
 from max._core import OpBuilder, Type
-
-# TODO(MAXPLAT-75): typing
-from max._core.dialects import builtin, m, mo, mosh  # type: ignore
+from max._core.dialects import builtin, m, mo, mosh
 from max._core.dtype import DType
 
 
