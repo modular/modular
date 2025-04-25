@@ -439,7 +439,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             target_outputs.logits,
             target_outputs.logit_offsets,
         )
-
         assert isinstance(first_rejected_tokens, Tensor)
         assert isinstance(sampled_target_tokens, Tensor)
 

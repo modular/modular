@@ -29,7 +29,7 @@ from max.graph import (
     TensorValue,
     _reconcile_weights,
 )
-from max.graph.weights import Weights, WeightsAdapter
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -196,6 +196,72 @@ class LlamaModelBase(PipelineModel[TextContext]):
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Llama3Config.get_num_layers(huggingface_config)
+
+    def graph_inputs(self) -> tuple[TensorType]:
+        # Generate DeviceRef
+        device_ref = DeviceRef.from_device(self.devices[0])
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64,
+            shape=["return_n_logits"],
+            device=DeviceRef.CPU(),
+        )
+
+        kv_inputs = self.kv_manager.input_symbols()
+
+        # Construct Graph Inputs
+        if self.kv_cache_config.cache_strategy.uses_opaque():
+            tokens_type = TensorType(
+                DType.int64, shape=["total_seq_len"], device=device_ref
+            )
+            input_row_offsets_type = TensorType(
+                DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+            )
+
+            if len(self.devices) > 1:
+                # Flatten kv types for each device
+                flattened_kv_types = [
+                    kv_type for sublist in kv_inputs for kv_type in sublist
+                ]
+
+                signals = Signals(
+                    devices=(DeviceRef(d.label, d.id) for d in self.devices)
+                )
+
+                return (
+                    tokens_type,
+                    input_row_offsets_type,
+                    return_n_logits_type,
+                    *signals.input_types(),
+                    *flattened_kv_types,
+                )
+            else:
+                return (
+                    tokens_type,
+                    input_row_offsets_type,
+                    return_n_logits_type,
+                    *kv_inputs[0],
+                )
+
+        else:
+            tokens_type = TensorType(
+                DType.int64,
+                shape=["batch_size", "seq_len"],
+                device=DeviceRef.from_device(self.devices[0]),
+            )
+            attn_mask_type = TensorType(
+                DType.float32,
+                shape=["batch_size", "seq_len", "post_seq_len"],
+                device=DeviceRef.from_device(self.devices[0]),
+            )
+
+            return (
+                tokens_type,
+                attn_mask_type,
+                return_n_logits_type,
+                *kv_inputs[0],
+            )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
@@ -445,24 +511,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
         ]
         return kv_caches_per_dev
 
-    def _build_opaque_graph(
-        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
-    ) -> Graph:
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        # NOTE: input_row_offsets_len should be batch_size + 1.
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
-        )
-
+    def _get_state_dict(
+        self,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+    ) -> dict[str, WeightData]:
+        # Get Config
         huggingface_config = self.huggingface_config
         if adapter:
             state_dict = adapter(
@@ -472,9 +526,20 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
         else:
             state_dict = {key: value.data() for key, value in weights.items()}
+
+        return state_dict
+
+    def _build_opaque_graph(
+        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+    ) -> Graph:
+        device0 = self.devices[0]
+        device_ref = DeviceRef(device0.label, device0.id)
+
+        # Retrieve config
+        state_dict = self._get_state_dict(weights, adapter)
         model_config = Llama3Config.generate(
             pipeline_config=self.pipeline_config,
-            huggingface_config=huggingface_config,
+            huggingface_config=self.huggingface_config,
             state_dict=state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
@@ -485,43 +550,33 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
+
+        # Get Graph Inputs
+        graph_inputs = self.graph_inputs()
+
+        # Build Graph
         nn_model: Module
         if len(self.devices) > 1:
-            kv_cache_args = self.kv_manager.input_symbols()
-            flattened_kv_types = [
-                kv_type for sublist in kv_cache_args for kv_type in sublist
-            ]
-
-            # Create metadata for signal buffers.
-            signals = Signals(
-                devices=(DeviceRef(d.label, d.id) for d in self.devices)
-            )
-
             nn_model = DistributedLlama3(model_config)
 
-            # Load weights. We allow the weight types to be overriden due to
-            # multiple quantization encodings in GGUF checkpoints.
+            # Load weights.
             nn_model.load_state_dict(
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
             )
+
             self.state_dict = nn_model.state_dict()
+
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
-                input_types=[
-                    tokens_type,
-                    input_row_offsets_type,
-                    return_n_logits_type,
-                    *signals.input_types(),
-                    *flattened_kv_types,
-                ],
+                input_types=[*graph_inputs],
             ) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
                 )
 
-                # Multi-GPU passes a signal buffer per device: unmarshal those.
+                # Multi-GPU passes a signal buffer per device: unmarshal these.
                 signal_buffers = [
                     v.buffer for v in variadic_args[: len(self.devices)]
                 ]
@@ -540,27 +595,24 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     input_row_offsets=input_row_offsets,
                     return_n_logits=return_n_logits.tensor,
                 )
+
                 graph.output(*outputs)
                 return graph
         else:
             nn_model = Llama3(model_config)
 
-            # Load weights. We allow the weight types to be overriden due to
-            # multiple quantization encodings in GGUF checkpoints.
+            # Load weights.
             nn_model.load_state_dict(
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
             )
+
             self.state_dict = nn_model.state_dict()
+
             with Graph(
                 "llama3",
-                input_types=[
-                    tokens_type,
-                    input_row_offsets_type,
-                    return_n_logits_type,
-                    *self.kv_manager.input_symbols()[0],
-                ],
+                input_types=graph_inputs,
             ) as graph:
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
@@ -602,14 +654,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
         kv_inputs = self.kv_manager.input_symbols()[0]
-        if adapter:
-            state_dict = adapter(
-                dict(weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {key: value.data() for key, value in weights.items()}
+
+        state_dict = self._get_state_dict(weights, adapter)
         model_config = Llama3Config.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
@@ -618,6 +664,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            attention_bias=self.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
