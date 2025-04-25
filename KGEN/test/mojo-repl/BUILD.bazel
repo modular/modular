@@ -12,7 +12,6 @@ lit_tests(
         "//utils:lit-lldb-init.in",
     ],
     mojo_deps = [
-        "//Kernels/mojo/buffer",
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/runtime",
         "//open-source/max/mojo/stdlib/stdlib",
