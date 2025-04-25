@@ -63,7 +63,7 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
     ],
     env = {
-        "PIPELINES_CUSTOM_MODEL": "SDK/integration-test/pipelines/python/test_common:pipeline_model_dummy",
+        "PIPELINES_CUSTOM_ARCHITECTURE": "SDK/integration-test/pipelines/python/test_common:pipeline_model_dummy",
     },
     tags = [
         "AITLIB-293",

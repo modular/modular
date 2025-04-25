@@ -32,7 +32,7 @@ def test_pipelines_cli__smollm_float32(capsys):
 
 
 def test_pipelines_cli__custom_model(capsys):
-    path = os.getenv("PIPELINES_CUSTOM_MODEL")
+    path = os.getenv("PIPELINES_CUSTOM_ARCHITECTURE")
     with pytest.raises(SystemExit):
         pipelines.main(
             [
@@ -46,7 +46,7 @@ def test_pipelines_cli__custom_model(capsys):
                 "--trust-remote-code",
                 "--quantization-encoding=q4_k",
                 "--device-memory-utilization=0.1",
-                f"--custom-models={path}",
+                f"--custom-architectures={path}",
             ]
         )
     captured = capsys.readouterr()
