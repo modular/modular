@@ -135,6 +135,175 @@ class Conv1D(Layer):
         return ops.squeeze(output, 1)
 
 
+class Conv1DV2(Module):
+    """A 1D convolution over an input signal composed of several input
+    planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv1DV2(
+                kernel_size=3,
+                in_channels=64,
+                out_channels=128,
+                dtype=DType.float32,
+                stride=1,
+                padding=0,
+                has_bias=False,
+                name="conv1d_weight",
+                device=DeviceRef.GPU(),
+            )
+    """
+
+    device: Union[DeviceRef, None]
+    """The device where matrix operations are performed."""
+
+    filter: Weight
+    """The weight matrix stored on CPU with shape (kernel_size, in_channels / num_groups, out_channels).
+    Model init moves the weight to :obj:`device`."""
+
+    stride: int
+    """Controls the stride for the cross-correlation."""
+
+    padding: int
+    """Controls the amount of padding applied before and after the input."""
+
+    dilation: int
+    """Controls the dilation rate."""
+
+    num_groups: int
+    """Number of blocked connections from input channels to output channels."""
+
+    bias: Union[Weight, None] = None
+    """The optional bias vector stored on CPU with shape (out_channels,).
+    Model init moves the bias to :obj:`device` if present."""
+
+    permute: bool = False
+    """bool controls whether self.filter is permuted from PyTorch order to max order.
+    PyTorch order is: (out_channels, in_channels / num_groups, kernel_size)
+    Max API order: (kernel_size, in_channels / num_groups, out_channels)."""
+
+    def __init__(
+        self,
+        kernel_size: int,
+        in_channels: int,
+        out_channels: int,
+        dtype: DType,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        num_groups: int = 1,
+        device: Union[DeviceRef, None] = None,
+        has_bias: bool = False,
+        permute: bool = False,
+        name: Union[str, None] = None,
+    ) -> None:
+        """Initializes the Conv1D layer with weights and optional bias.
+
+        Args:
+            kernel_size: Size of the convolving kernel.
+            in_channels: Number of channels in the input signal.
+            out_channels: Number of channels produced by the convolution.
+            dtype: The data type for both weights and bias.
+            stride: Stride of the convolution. Default: 1
+            padding: Padding added to both sides of the input. Default: 0
+            dilation: Spacing between kernel elements. Default: 1
+            num_groups: Number of blocked connections from input channels to output channels. Default: 1
+            device: The target device for computation.
+                Weights remain on CPU until moved during computation.
+            name: Base name for weights (appended with ``.weight`` and
+                ``.bias`` if applicable).
+            has_bias: When :obj:`True`, adds a bias vector to the layer.
+                Defaults to :obj:`False`.
+        """
+        super().__init__()
+
+        self.device = device
+        self.permute = permute
+
+        if self.permute:
+            self.filter = Weight(
+                name=f"{name}.weight" if name else "weight",
+                dtype=dtype,
+                shape=[out_channels, in_channels // num_groups, kernel_size],
+                device=self.device or DeviceRef.CPU(),
+            )
+        else:
+            self.filter = Weight(
+                name=f"{name}.weight" if name else "weight",
+                dtype=dtype,
+                shape=[kernel_size, in_channels // num_groups, out_channels],
+                device=self.device or DeviceRef.CPU(),
+            )
+
+        if has_bias:
+            self.bias = Weight(
+                name=f"{name}.bias" if name else "bias",
+                dtype=dtype,
+                shape=(out_channels,),
+                device=self.device or DeviceRef.CPU(),
+            )
+
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.num_groups = num_groups
+
+        if (
+            isinstance(self.filter, Weight)
+            and self.filter.quantization_encoding is not None
+        ):
+            raise ValueError("Conv1D not implemented with weight quantization.")
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Applied 1D convolution to input `x`. Permutes pytorch weights to match max API if permute=True.
+
+        Args:
+            x: a tensor of shape [batch_size, length, in_channels]
+            if self.permute, then input is of shape: [batch_size, in_channels, length]
+            and will be permuted to match max's expected input shape.
+
+        Returns:
+            a tensor of shape [batch_size, new_length, out_channels]
+            if self.permute, then output shape will be [batch_size, out_channels, new_length]
+            new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
+        """
+        weight: TensorValue = self.filter
+        if self.permute:
+            weight = ops.permute(
+                self.filter, [2, 1, 0]
+            )  # [out_channels, in_channels / num_groups, kernel_size]
+            x = ops.permute(x, [0, 2, 1])  # [batch_size, length, in_channels]
+
+        # Reshape for Conv2D
+        x = ops.unsqueeze(x, 1)  # [batch_size, height=1, length, in_channels]
+        weight = ops.unsqueeze(
+            weight, 0
+        )  # [height=1, kernel_size, in_channels, out_channels]
+
+        output = ops.conv2d(
+            x,
+            weight,
+            (1, self.stride),
+            (1, self.dilation),
+            (0, 0, self.padding, self.padding),
+            self.num_groups,
+            self.bias,
+        )
+
+        # Reshape back from Conv2D
+        output = ops.squeeze(
+            output, 1
+        )  # [batch_size, new_length, out_channels]
+
+        if self.permute:
+            output = ops.permute(
+                output, [0, 2, 1]
+            )  # [batch_size, out_channels, new_length]
+
+        return output
+
+
 @dataclass
 class Conv3D(Layer):
     """A 3D convolution over an input signal composed of several input

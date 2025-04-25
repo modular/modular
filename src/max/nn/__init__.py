@@ -27,7 +27,7 @@ from .attention import (
     RaggedAttention,
 )
 from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv2D, Conv3D, Conv3DV2
+from .conv import Conv1D, Conv1DV2, Conv2D, Conv3D, Conv3DV2
 from .conv_transpose import ConvTranspose1d
 from .embedding import Embedding, EmbeddingV2, VocabParallelEmbedding
 from .kernels import MHAMaskVariant
@@ -81,6 +81,7 @@ __all__ = [
     "Conv2D",
     "Conv3D",
     "Conv3DV2",
+    "Conv1DV2",
     "ConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
