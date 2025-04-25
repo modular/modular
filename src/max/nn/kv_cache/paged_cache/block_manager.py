@@ -52,7 +52,8 @@ logger = logging.getLogger("max.pipelines")
 
 
 class SwappingStrategy(Enum):
-    """Strategy for offboarding blocks from the device."""
+    """Strategy for offboarding blocks from the device when experimental paging to
+    CPU feature is enabled."""
 
     # Copy device blocks to host as soon as they are committed.
     # This results in more copies but is efficient if copies can be hidden in a
@@ -294,6 +295,69 @@ class BlockManager(Generic[T]):
         self.cached_prompt_tokens += orig_prompt_len - new_prompt_len
 
     @traced
+    def _get_full_blocks_from_device_prefix_cache(
+        self,
+        desired_hashes: list[BlockHashType],
+    ) -> list[KVCacheBlock]:
+        """Returns a list of device blocks with the desired hashes."""
+
+        device_prefix_cache = self.device_block_pool.hash_to_committed_block
+
+        blocks = []
+        for block_hash in desired_hashes:
+            hash_value = block_hash.value
+            if hash_value not in device_prefix_cache:
+                break
+            block = device_prefix_cache[hash_value]
+            blocks.append(block)
+            self.device_block_pool.touch(block)
+
+        return blocks
+
+    @traced
+    def _get_full_blocks_from_host_prefix_cache(
+        self,
+        desired_hashes: list[BlockHashType],
+    ) -> list[KVCacheBlock]:
+        """Returns a list of device blocks with the desired hashes.
+
+        These device blocks are newly allocated and initialized with the
+        contents of the host blocks.
+        """
+
+        assert self.host_block_pool is not None
+        host_prefix_cache = self.host_block_pool.hash_to_committed_block
+
+        blocks = []
+        for block_hash in desired_hashes:
+            hash_value = block_hash.value
+            if (
+                hash_value not in host_prefix_cache
+                or len(self.device_block_pool.free_block_queue) == 0
+            ):
+                break
+
+            host_block = host_prefix_cache[hash_value]
+            assert host_block.block_hash is not None
+            self.host_block_pool.touch(host_block)
+
+            # Allocate a new device block.
+            device_block = self.allocate_device_block()
+            blocks.append(device_block)
+
+            # Enqueue a H2D block copy operation.
+            assert self.block_copy_engine is not None
+            self.block_copy_engine.memcpy_h2d(device_block.bid, host_block.bid)
+
+            # Commit the device block into the prefix cache.
+            # We should use the hash from the host block.
+            self.device_block_pool.commit_into_prefix_cache(
+                host_block.block_hash, device_block
+            )
+
+        return blocks
+
+    @traced
     def get_full_blocks_from_prefix_cache(
         self,
         ctx: T,
@@ -314,49 +378,24 @@ class BlockManager(Generic[T]):
             num_committed_blocks:num_inflight_blocks
         ]
 
-        blocks = []
-        device_prefix_cache = self.device_block_pool.hash_to_committed_block
-        host_prefix_cache = (
-            self.host_block_pool.hash_to_committed_block
-            if self.host_block_pool is not None
-            else None
+        # query the device prefix cache for full blocks
+        device_blocks = self._get_full_blocks_from_device_prefix_cache(
+            uncommitted_hashes
         )
-        for block_hash in uncommitted_hashes:
-            hash_value = block_hash.value
-            if hash_value in device_prefix_cache:
-                block = device_prefix_cache[hash_value]
-                blocks.append(block)
-                self.device_block_pool.touch(block)
-            elif (
-                host_prefix_cache is not None
-                and hash_value in host_prefix_cache
-                and len(self.device_block_pool.free_block_queue) > 0
-            ):
-                assert self.host_block_pool is not None
 
-                host_block = host_prefix_cache[hash_value]
-                assert host_block.block_hash is not None
-                self.host_block_pool.touch(host_block)
+        if self.host_block_pool is None:
+            return device_blocks
 
-                # Allocate a new device block.
-                device_block = self.allocate_device_block()
-                blocks.append(device_block)
+        # remove the hashes that were found in the device prefix cache
+        if len(device_blocks) > 0:
+            uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
 
-                # Enqueue a H2D block copy operation.
-                assert self.block_copy_engine is not None
-                self.block_copy_engine.memcpy_h2d(
-                    device_block.bid, host_block.bid
-                )
+        # query the host prefix cache for full blocks
+        host_blocks = self._get_full_blocks_from_host_prefix_cache(
+            uncommitted_hashes
+        )
 
-                # Commit the device block into the prefix cache.
-                # We should use the hash from the host block.
-                self.device_block_pool.commit_into_prefix_cache(
-                    host_block.block_hash, device_block
-                )
-            else:
-                break
-
-        return blocks
+        return device_blocks + host_blocks
 
     @traced
     def get_partial_block_from_prefix_cache(
