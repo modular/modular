@@ -93,6 +93,7 @@ from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
+from nn.irfft import irfft
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
@@ -5460,6 +5461,37 @@ struct ConvTranspose:
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
             managed_tensor_slice_to_ndbuffer(output_paddings),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# FFT kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("irfft")
+struct IRFFT:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        type: DType,
+        rank: Int,
+        n: Int,
+    ](
+        output: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        irfft[input.rank, input.type, output.type,](
+            input_buf,
+            output_buf,
+            n,
+            ctx.get_device_context(),
         )
 
 
