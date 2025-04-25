@@ -4144,17 +4144,24 @@ fn mha_splitk_reduce[
 
     var inv_global_exp_sum = 1.0 / exp_sum
     # TODO: vectorize load and store operations
-    for d in range(thread_idx.x, depth, num_threads):
-        var acc = Scalar[accum_type](0)
+    alias width = Int(depth // num_threads)
+    acc = tb[accum_type]().layout[width]().local().alloc().fill(0)
+    for partition_idx in range(num_partitions):
+        var partition_exp_sum = exp_sums[partition_idx]
+        if partition_exp_sum > 0:
 
-        for partition_idx in range(num_partitions):
-            var partition_exp_sum = exp_sums[partition_idx]
-            if partition_exp_sum > 0:
+            @parameter
+            for w in range(width):
+                d = thread_idx.x + w * num_threads
                 var x = intermediate_output[
                     partition_idx, batch_idx, q_head_idx, d
                 ].cast[accum_type]() * inv_global_exp_sum * partition_exp_sum
-                acc += x[0]
-        output[batch_idx, q_head_idx, d] = acc.cast[output_type]()
+                acc[w] += x[0]
+
+    @parameter
+    for w in range(width):
+        d = thread_idx.x + w * num_threads
+        output[batch_idx, q_head_idx, d] = acc[w].cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#
