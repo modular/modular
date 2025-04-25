@@ -484,6 +484,24 @@ type variable. You also can use the [`String`
 constructor](/mojo/stdlib/collections/string/string/String#__init__) to
 explicitly convert the `StringLiteral` to a `String` value at run-time.
 
+Additionally, the
+[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice) type
+is a non-copying view of a `String` or `StringLiteral` value. It provides some
+additional methods for string manipulation. A common use case is to create a
+`StringSlice` from a `StringLiteral` using the `StaticString` alias so that you
+can then invoke the `format()` method on it. For example:
+
+```mojo
+alias message = StaticString('{} says, "{}"')
+name = "Pat"
+greeting = "Good day!"
+print(message.format(name, greeting))
+```
+
+```output
+Pat says, "Good day!"
+```
+
 #### String concatenation
 
 The `+` operator performs string concatenation. The `StringLiteral` type
@@ -571,7 +589,7 @@ alias divider2 = symbol * 40
 
 # You must define the following function using `fn` because an alias
 # initializer cannot call a function that can potentially raise an error.
-fn generate_divider(char: StringLiteral, repeat: IntLiteral) -> StringLiteral:
+fn generate_divider(char: String, repeat: Int) -> String:
     return char * repeat
 
 alias divider3 = generate_divider("~", 40)  # Evaluated at compile-time
@@ -613,19 +631,19 @@ the character encoding.
 var animal: String = "bird"
 
 is_cat_eq = "cat" == animal
-print('Is "cat" equal to "{}"?'.format(animal), is_cat_eq)
+print(StaticString('Is "cat" equal to "{}"?').format(animal), is_cat_eq)
 
 is_cat_ne = "cat" != animal
-print('Is "cat" not equal to "{}"?'.format(animal), is_cat_ne)
+print(StaticString('Is "cat" not equal to "{}"?').format(animal), is_cat_ne)
 
 is_bird_eq = "bird" == animal
-print('Is "bird" equal to "{}"?'.format(animal), is_bird_eq)
+print(StaticString('Is "bird" equal to "{}"?').format(animal), is_bird_eq)
 
 is_cat_gt = "CAT" > animal
-print('Is "CAT" greater than "{}"?'.format(animal), is_cat_gt)
+print(StaticString('Is "CAT" greater than "{}"?').format(animal), is_cat_gt)
 
 is_ge_cat = animal >= "CAT"
-print('Is "{}" greater than or equal to "CAT"?'.format(animal), is_ge_cat)
+print(StaticString('Is "{}" greater than or equal to "CAT"?').format(animal), is_ge_cat)
 ```
 
 ```output
@@ -638,10 +656,10 @@ Is "bird" greater than or equal to "CAT"? True
 
 #### Substring testing
 
-Both `String` and `StringLiteral` support using the `in` operator to produce a
-`Bool` result indicating whether a given substring appears within another
-string. The operator is overloaded so that you can use any combination of
-`String` and `StringLiteral` for both the substring and the string to test.
+`String`, `StringLiteral`, and `StringSlice` support using the `in` operator to
+produce a `Bool` result indicating whether a given substring appears within
+another string. The operator is overloaded so that you can use any combination
+of `String` and `StringLiteral` for both the substring and the string to test.
 
 ```mojo
 var food: String = "peanut butter"
@@ -658,7 +676,7 @@ It contains a nut
 
 #### String indexing and slicing
 
-Both the `String` and `StringLiteral` types allow you to use indexing to return
+`String`, `StringLiteral`, and `StringSlice` allow you to use indexing to return
 a single character. Character positions are identified with a zero-based index
 starting from the first character. You can also specify a negative index to
 count backwards from the end of the string, with the last character identified
@@ -677,13 +695,13 @@ print(alphabet[0], alphabet[-1])
 A Z
 ```
 
-The `String` type—but *not* the `StringLiteral` type—also supports slices to
-return a substring from the original `String`. Providing a slice in the form
-`[start:end]` returns a substring starting with the character index specified by
-`start` and continuing up to but not including the character at index `end`. You
-can use positive or negative indexing for both the start and end values.
-Omitting `start` is the same as specifying `0`, and omitting `end` is the same
-as specifying 1 plus the length of the string.
+The `String` and `StringSlice` types—but *not* the `StringLiteral` type—also
+support slices to return a substring from the original `String`. Providing a
+slice in the form `[start:end]` returns a substring starting with the character
+index specified by `start` and continuing up to but not including the character
+at index `end`. You can use positive or negative indexing for both the start and
+end values. Omitting `start` is the same as specifying `0`, and omitting `end`
+is the same as specifying 1 plus the length of the string.
 
 ```mojo
 var alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -1105,7 +1123,7 @@ real and imaginary fields.
 
 ```mojo
 c1 = Complex(-1.2, 6.5)
-print("c1: Real: {}; Imaginary: {}".format(c1.re, c1.im))
+print(StaticString("c1: Real: {}; Imaginary: {}").format(c1.re, c1.im))
 ```
 
 ```output
@@ -1130,7 +1148,7 @@ Now we can create a `Complex` instance and provide just a real component.
 
 ```mojo
 c2 = Complex(3.14159)
-print("c2: Real: {}; Imaginary: {}".format(c2.re, c2.im))
+print(StaticString("c2: Real: {}; Imaginary: {}").format(c2.re, c2.im))
 ```
 
 ```output
@@ -1226,7 +1244,7 @@ Now let's try getting and setting the real and imaginary components of a
 
 ```mojo
 c2 = Complex(3.14159)
-print("c2[0]: {}; c2[1]: {}".format(c2[0], c2[1]))
+print(StaticString("c2[0]: {}; c2[1]: {}").format(c2[0], c2[1]))
 c2[0] = 2.71828
 c2[1] = 42
 print("c2[0] = 2.71828; c2[1] = 42; c2:", c2)

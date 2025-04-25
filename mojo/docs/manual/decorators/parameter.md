@@ -46,7 +46,6 @@ following example, the `list`, `threshold`, and `count` variables are all
 run-time values).
 
 ```mojo
-from collections import List
 from random import rand
 
 def main():
@@ -63,7 +62,7 @@ def main():
         if (list[i] > threshold):
             count += 1
 
-    print(String("{} items over 0.6").format(count))
+    print(StaticString("{} items over 0.6").format(count))
 ```
 
 The `@parameter for` construct unrolls at the beginning of compilation, which

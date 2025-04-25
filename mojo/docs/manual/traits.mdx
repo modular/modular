@@ -387,7 +387,7 @@ that can be explicitly converted to
 [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait
 describes a type that can be converted to a `String`, but the conversion might
 raise an error. These traits also mean that the type can support both the `{!s}`
-and `{}` format specifiers of the `String` class's
+and `{}` format specifiers of the `String` and `StringSlice` class's
 [`format()`](/mojo/stdlib/collections/string/string/String#format) method. These
 traits require the type to define the
 [`__str__()`](/mojo/stdlib/builtin/str/Stringable#__str__) method.
@@ -446,7 +446,7 @@ var dog = Dog("Rex", 5)
 print(repr(dog))
 print(dog)
 
-var dog_info = "String: {!s}\nRepresentation: {!r}".format(dog, dog)
+var dog_info = StaticString("String: {!s}\nRepresentation: {!r}").format(dog, dog)
 print(dog_info)
 ```
 

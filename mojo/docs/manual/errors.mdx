@@ -170,7 +170,7 @@ def main():
             print("try     =>", value[])
             if value[] == 1:
                 continue
-            result = "{} incremented is {}".format(value[], incr(value[]))
+            result = StaticString("{} incremented is {}").format(value[], incr(value[]))
         except e:
             print("except  =>", e)
         else:
