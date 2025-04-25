@@ -23,6 +23,7 @@ what we publish.
   - `subprocess`
   - `complex`
   - `buffer`
+  - `compile`
 
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
