@@ -40,10 +40,10 @@ imageio = ">=2.37.0,<3"
 #datasets = "*"
 #
 #[target.linux-64.dependencies]
-#pytorch = {version = ">=2.5.0,<=2.6.0", channel = "pytorch"}
+#pytorch = {version = ">=2.5.0,<=2.7.0", channel = "pytorch"}
 #
 #[target.osx-arm64.dependencies]
-#pytorch = {version = ">=2.5.0,<=2.6.0", channel = "pytorch"}
+#pytorch = {version = ">=2.5.0,<=2.7.0", channel = "pytorch"}
 #
 ## Linux aarch64 wheels are not available in Conda yet.
 ## https://github.com/pytorch/pytorch/issues/134117
