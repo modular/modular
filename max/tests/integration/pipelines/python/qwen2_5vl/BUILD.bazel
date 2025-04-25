@@ -12,15 +12,15 @@ modular_py_test(
     srcs = glob(["**/test_*.py"]),
     data = ["//ModularFramework/tools/max"],
     tags = [
-        "AITLIB-293",
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
-        "requires-network",
+        "requires-network",  # process_vision_info() API call in test_visual_transformer.py requires network.
     ],
     deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/lib",
         requirement("torch"),
         requirement("torchvision"),
         requirement("transformers"),

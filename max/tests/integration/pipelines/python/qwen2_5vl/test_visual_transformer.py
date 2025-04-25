@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from typing import Optional
 
+import hf_repo_lock
 import numpy as np
 import pytest
 import torch
@@ -22,6 +23,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
     VisionWindowSdpaAttention,
 )
+from max.pipelines.lib import generate_local_model_path
 from qwen_vl_utils import process_vision_info
 from transformers import AutoProcessor
 
@@ -555,7 +557,19 @@ def test_get_rope_index():
     vision_start_token_id = 151652
     tokens_per_second = 2
 
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
+    local_model_path = generate_local_model_path(
+        "Qwen/Qwen2.5-VL-3B-Instruct",
+        hf_repo_lock.revision_for_hf_repo(
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+        ),
+    )
+
+    processor = AutoProcessor.from_pretrained(
+        local_model_path,
+        revision=hf_repo_lock.revision_for_hf_repo(
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+        ),
+    )
     messages = [
         {
             "role": "user",
