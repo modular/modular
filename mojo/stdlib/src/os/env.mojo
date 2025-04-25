@@ -97,4 +97,4 @@ fn getenv(owned name: String, default: String = "") -> String:
     )
     if not ptr:
         return default
-    return String(StringSlice[ptr.origin](unsafe_from_utf8_ptr=ptr))
+    return String(unsafe_from_utf8_ptr=ptr)

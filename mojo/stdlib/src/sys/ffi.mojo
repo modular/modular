@@ -385,7 +385,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             if err:
                 abort(
                     "dlsym failed: ",
-                    String(StringSlice[err.origin](unsafe_from_utf8_ptr=err)),
+                    String(unsafe_from_utf8_ptr=err),
                 )
 
         return res

@@ -43,9 +43,7 @@ fn cwd() raises -> Path:
     if res == UnsafePointer[c_char]():
         raise Error("unable to query the current directory")
 
-    return String(
-        StringSlice[__origin_of(buf)](unsafe_from_utf8_ptr=buf.unsafe_ptr())
-    )
+    return String(unsafe_from_utf8_ptr=buf.unsafe_ptr())
 
 
 @always_inline
