@@ -10,11 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The `gpu.comm` package provides communication primitives for GPUs.
+# REQUIRES: has_not
+# RUN: not mojo %s 2>&1
 
-This package includes functions for sending and receiving data between GPUs,
-as well as for synchronizing threads across GPUs.
-"""
+from pathlib import Path
+from sys import DLHandle
 
-from .allgather import allgather
-from .allreduce import allreduce
+
+def check_invalid_dlhandle():
+    _ = DLHandle("/an/invalid/library")
+
+
+def check_invalid_dlhandle_path():
+    _ = DLHandle(Path("/an/invalid/library"))
+
+
+def main():
+    check_invalid_dlhandle()
+    check_invalid_dlhandle_path()
