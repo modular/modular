@@ -13,20 +13,23 @@
 # RUN: mojo %s 2>&1
 
 from pathlib import Path
-from sys import DLHandle
+from sys import DLHandle, os_is_linux
 from sys.ffi import _find_dylib, _try_find_dylib
 
 
 def check_dlhandle():
-    _ = DLHandle("libm.so.6")
+    if os_is_linux():
+        _ = DLHandle("libm.so.6")
 
 
 def check_find_dylib():
-    _ = _find_dylib("libm.so.6")
+    if os_is_linux():
+        _ = _find_dylib("libm.so.6")
 
 
 def check_find_dylib_multiple():
-    _ = _find_dylib("invalid", "libm.so.6")
+    if os_is_linux():
+        _ = _find_dylib("invalid", "libm.so.6")
 
 
 def check_try_find_dylib():
