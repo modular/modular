@@ -14,11 +14,9 @@
 from collections import OptionalReg
 from collections.string import StaticString
 from math import fma
-from os import abort
-from pathlib import Path
 from sys import os_is_macos, simdwidthof
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, _OwnedDLHandle, _find_dylib
 
 from algorithm import elementwise, vectorize
 from algorithm.functional import (
@@ -73,10 +71,7 @@ alias APPLE_ACCELERATE = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    var handle = _OwnedDLHandle(LIB_ACC_PATH)
-    if not handle._handle:
-        abort("the accelerate library was not found at " + LIB_ACC_PATH)
-    return handle^
+    return _find_dylib["Apple Accelerate library"](LIB_ACC_PATH)
 
 
 @always_inline
