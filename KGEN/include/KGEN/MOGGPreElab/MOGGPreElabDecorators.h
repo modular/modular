@@ -262,6 +262,7 @@ static constexpr int64_t kIOSpecIOOutput = 0;
 static constexpr int64_t kIOSpecIOInput = 1;
 static constexpr int64_t kIOSpecIOFusedInput = 2;
 static constexpr int64_t kIOSpecIOFusedOutput = 3;
+static constexpr int64_t kIOSpecIOFusedComputeOutput = 31;
 
 static constexpr int64_t kIOSpecIOUnknown = -1;
 
@@ -270,6 +271,8 @@ static constexpr llvm::StringLiteral kOutputTensor = "OutputTensor";
 static constexpr llvm::StringLiteral kMutableInputTensor = "MutableInputTensor";
 static constexpr llvm::StringLiteral kFusedInputTensor = "FusedInputTensor";
 static constexpr llvm::StringLiteral kFusedOutputTensor = "FusedOutputTensor";
+static constexpr llvm::StringLiteral kFusedComputeOutputTensor =
+    "FusedComputeOutputTensor";
 
 enum class IOSpec {
   InputTensor,        // Input tensor, read-only
@@ -277,6 +280,7 @@ enum class IOSpec {
   MutableInputTensor, // Input tensor that can be modified
   FusedInputTensor,
   FusedOutputTensor,
+  FusedComputeOutputTensor,
 };
 
 } // namespace M::KGEN::MOGGPreElab
