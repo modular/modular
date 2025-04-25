@@ -49,11 +49,13 @@ class BlockPool:
         memory_tier: MemoryTier,
         total_num_blocks: int,
         enable_prefix_caching: bool,
+        enable_parent_to_child_mapping: bool = False,
         enable_runtime_checks: bool = False,
     ):
         self.memory_tier = memory_tier
         self.total_num_blocks = total_num_blocks
         self.enable_prefix_caching = enable_prefix_caching
+        self.enable_parent_to_child_mapping = enable_parent_to_child_mapping
         self.enable_runtime_checks = enable_runtime_checks
 
         # A Block pool of all kv-cache blocks.
@@ -74,6 +76,7 @@ class BlockPool:
         self.hash_to_committed_block: dict[int, KVCacheBlock] = {}
 
         # Mapping from parent block hash to a trie of all child block hashes.
+        # This is only used to support COW for device blocks.
         self.parent_hash_to_child_token_ids: dict[int, SimpleTrie] = (
             defaultdict(SimpleTrie)
         )
@@ -97,9 +100,10 @@ class BlockPool:
 
         # Update the parent hash to child token_ids trie.
         parent_hash_value = block_hash.parent_hash_value
-        self.parent_hash_to_child_token_ids[parent_hash_value].insert(
-            block_hash.token_ids
-        )
+        if self.enable_parent_to_child_mapping:
+            self.parent_hash_to_child_token_ids[parent_hash_value].insert(
+                block_hash.token_ids
+            )
 
         if self.kv_cache_agent_queue is None:
             return
@@ -158,9 +162,10 @@ class BlockPool:
         # Delete the block from the prefix cache
         parent_hash_value = block.block_hash.parent_hash_value
         del self.hash_to_committed_block[hash_value]
-        del self.parent_hash_to_child_token_ids[parent_hash_value][
-            block.block_hash.token_ids
-        ]
+        if self.enable_parent_to_child_mapping:
+            del self.parent_hash_to_child_token_ids[parent_hash_value][
+                block.block_hash.token_ids
+            ]
         block.block_hash = None
 
         if self.kv_cache_agent_queue is None:

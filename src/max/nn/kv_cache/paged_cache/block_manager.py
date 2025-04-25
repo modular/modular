@@ -96,7 +96,8 @@ class BlockManager(Generic[T]):
             device_memory_tier,
             total_num_blocks,
             enable_prefix_caching,
-            enable_runtime_checks,
+            enable_parent_to_child_mapping=True,
+            enable_runtime_checks=enable_runtime_checks,
         )
 
         # A pool of host blocks.
@@ -107,7 +108,8 @@ class BlockManager(Generic[T]):
                 MemoryTier.MEMORY_TIER_CPU,
                 total_num_host_blocks,
                 enable_prefix_caching,
-                enable_runtime_checks,
+                enable_parent_to_child_mapping=False,
+                enable_runtime_checks=enable_runtime_checks,
             )
 
             if self.block_copy_engine is None:
