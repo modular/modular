@@ -6,29 +6,47 @@
 """Test for running pipelines_lm_eval."""
 
 import json
+import logging
 from pathlib import Path
 
+import hf_repo_lock
 import pipelines_lm_eval
 from click.testing import CliRunner
+from max.pipelines.lib import generate_local_model_path
+
+REPO_ID = "HuggingFaceTB/SmolLM2-135M"
+REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
+
+logger = logging.getLogger("max.pipelines")
 
 
 def test_pipelines_lm_eval_smollm(tmp_path: Path):
     runner = CliRunner()
     output_dir = tmp_path / "lm-eval-output"
+
+    try:
+        local_model_path = generate_local_model_path(REPO_ID, REVISION)
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {REPO_ID} as config to PipelineConfig"
+        )
+        local_model_path = REPO_ID
+
     result = runner.invoke(
         pipelines_lm_eval.main,
         [
             "--pipelines-probe-port=8000",
             "--pipelines-probe-timeout=240",
             "--pipelines-arg=serve",
-            "--pipelines-arg=--model-path=HuggingFaceTB/SmolLM2-135M",
+            f"--pipelines-arg=--model-path={local_model_path}",
             "--pipelines-arg=--quantization-encoding=float32",
             "--pipelines-arg=--max-length=512",
             "--pipelines-arg=--max-new-tokens=10",
             "--pipelines-arg=--device-memory-utilization=0.3",
             "--lm-eval-arg=--model=local-completions",
             "--lm-eval-arg=--tasks=smol_task",
-            "--lm-eval-arg=--model_args=model=HuggingFaceTB/SmolLM2-135M,base_url=http://localhost:8000/v1/completions,tokenized_requests=False,num_concurrent=20,max_retries=3,max_length=512",
+            f"--lm-eval-arg=--model_args=model={local_model_path},base_url=http://localhost:8000/v1/completions,tokenized_requests=False,num_concurrent=20,max_retries=3,max_length=512",
             f"--lm-eval-arg=--output_path={output_dir}",
             "--lm-eval-arg=--log_samples",
         ],

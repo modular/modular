@@ -232,13 +232,13 @@ modular_py_test(
     srcs = ["test_pipelines_lm_eval.py"],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
-        "AITLIB-293",
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
     deps = [
         ":pipelines-lm-eval",
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
+        "//SDK/lib/API/python/max/pipelines/lib",
         requirement("click"),
     ],
 )
