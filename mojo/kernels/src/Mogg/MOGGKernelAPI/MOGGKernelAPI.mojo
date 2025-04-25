@@ -444,13 +444,7 @@ fn build_static_tensor_specs[
     alias SpecType = StaticTensorSpec[type, rank]
 
     return SpecType(
-        shape,
-        strides,
-        alignment,
-        address_space,
-        exclusive,
-        None,
-        None,
+        shape, strides, alignment, address_space, exclusive, None, None, None
     )
 
 
