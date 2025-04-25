@@ -108,9 +108,9 @@ class PipelineConfig(MAXConfig):
     ignore_eos: bool = False
     """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 
-    custom_models: list[str] = field(default_factory=list)
-    """A list of custom model implementations to register.
-    Each input can either be a raw module name or a import path followed by a colon and the module name.
+    custom_architectures: list[str] = field(default_factory=list)
+    """A list of custom architecture implementations to register.
+    Each input can either be a raw module name or an import path followed by a colon and the module name.
     Ex:
     - `my_module`
     - `folder/path/to/import:my_module`
@@ -237,7 +237,7 @@ class PipelineConfig(MAXConfig):
         config fields have been initialized to a valid state.
         """
         # Before anything else, import custom model modules to add them to the registry.
-        for module_spec in self.custom_models:
+        for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
                 msg = (
