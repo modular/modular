@@ -24,7 +24,7 @@ else:
 import numpy as np
 from max import mlir
 from max._core import graph as _graph
-from max._core.dialects import mo  # type: ignore
+from max._core.dialects import mo
 from max.driver import Device
 from max.dtype import DType
 
@@ -1065,7 +1065,7 @@ class _ChainType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
-        return mo.ChainType()
+        return mo.ChainType()  # type: ignore
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> _ChainType:

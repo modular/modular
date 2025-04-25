@@ -19,7 +19,7 @@ import numpy as np
 from max import mlir
 from max._core import Value as _Value
 from max._core import graph as _graph
-from max._core.dialects import mo  # type: ignore
+from max._core.dialects import mo
 from max.dtype import DType
 
 from . import ops
