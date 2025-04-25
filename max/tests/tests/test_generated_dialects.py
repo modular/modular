@@ -80,12 +80,11 @@ def test_mo_graph_op(mlir_context):
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc, "hello", [], [], is_subgraph=False)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [], is_subgraph=False)
 
-    # TODO(MAXPLAT-75): typing
-    assert graph.name == "hello"  # type: ignore
-    assert graph.input_params == []  # type: ignore
-    assert graph.function_type == builtin.FunctionType(mlir_context, [], [])  # type: ignore
+    assert graph.name == "hello"
+    assert graph.input_params == []
+    assert graph.function_type == builtin.FunctionType(mlir_context, [], [])
 
 
 def test_device_ref_attr(mlir_context):
