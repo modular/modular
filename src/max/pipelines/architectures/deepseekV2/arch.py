@@ -27,7 +27,7 @@ deepseekV2_arch = SupportedArchitecture(
     name="DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
-        "deepseek-ai/DeepSeek-V2-Lite",
+        "deepseek-ai/DeepSeek-V2-Lite-Chat",
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
