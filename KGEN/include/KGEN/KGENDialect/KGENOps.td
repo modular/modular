@@ -278,8 +278,8 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
-    HasParent<"ModuleOp">, Symbol, DeclInterface, SingleBlock, NoTerminator,
-    KGEN_GeneratorOpInterface]> {
+    HasParent<"ModuleOp">, Symbol, SymbolTable, DeclInterface, SingleBlock,
+    NoTerminator, KGEN_GeneratorOpInterface]> {
   let summary = "Struct generator definition.";
   let description = [{
     The `kgen.struct.generator` operation defines a type-value generator. It is
@@ -341,6 +341,75 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
   let assemblyFormat = [{
     $sym_name `` custom<StructInstanceSpec>($valueDomainType, $metaType, $body)
     attr-dict-with-keyword
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ConformanceOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ConformanceOp : KGENOp<"conformance", [
+    Symbol, SingleBlock, NoTerminator]> {
+  let summary = "Conformance table of a struct type.";
+  let description = [{
+    The `kgen.conformance` operation defines the conformance table of a struct
+    type for a trait.
+
+    Its body contains the conformance table entries the map trait requirements to
+    the struct type's definitions.
+
+    Example:
+
+    ```mlir
+    kgen.struct.generator @SIMD<type: dtype, size> = ... {
+      kgen.conformance @Boolable {
+        kgen.witness @"__bool__" : (!pop.simd<size, type>) -> i1
+          = @"SIMD::__bool__(::SIMD[$0, $1])"<:dtype type, size>
+      }
+      ...
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name);
+  let regions = (region SizedRegion<1>:$body);
+
+  let assemblyFormat = "$sym_name $body attr-dict-with-keyword";
+}
+
+//===----------------------------------------------------------------------===//
+// WitnessOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_WitnessOp : KGENOp<"witness", [
+    HasParent<"ConformanceOp">]> {
+  let summary = "Witness table entry of a struct type.";
+  let description = [{
+    The `kgen.witness` operation defines a witness table entry in a
+    conformance table. It represents a single requirement satisfied by a struct
+    type for the trait being conformed to.
+
+    TODO: Make this a Symbol by using the mangled name from the trait. At the
+    same time, get_vtable_entry should also be emitted with the mangled name.
+
+    Example:
+
+    ```mlir
+    kgen.struct.generator @SIMD<type: dtype, size> = ... {
+      kgen.conformance @Boolable {
+        kgen.witness @"__bool__" : (!pop.simd<size, type>) -> i1
+          = @"SIMD::__bool__(::SIMD[$0, $1])"<:dtype type, size>
+      }
+      ...
+    }
+    ```
+  }];
+
+  let arguments = (ins Builtin_StringAttr:$name,
+                       TypedAttrInterface:$value);
+
+  let assemblyFormat = [{
+    custom<VTableEntry>($name, $value) attr-dict-with-keyword
   }];
 }
 
