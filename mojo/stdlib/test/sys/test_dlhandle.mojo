@@ -10,38 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s 2>&1
+# REQUIRES: has_not
+# RUN: not --crash mojo %s 2>&1
 
 from pathlib import Path
-from sys import DLHandle, os_is_linux
-from sys.ffi import _find_dylib, _try_find_dylib
+from sys import DLHandle
 
 
-def check_dlhandle():
-    if os_is_linux():
-        _ = DLHandle("libm.so.6")
+def check_invalid_dlhandle():
+    _ = DLHandle("/an/invalid/library")
 
 
-def check_find_dylib():
-    if os_is_linux():
-        _ = _find_dylib("libm.so.6")
-
-
-def check_find_dylib_multiple():
-    if os_is_linux():
-        _ = _find_dylib("invalid", "libm.so.6")
-
-
-def check_try_find_dylib():
-    try:
-        # CHECK: Failed to load my_library from invalid
-        _ = _try_find_dylib["my_library"]("invalid")
-    except e:
-        print(e)
+def check_invalid_dlhandle_path():
+    _ = DLHandle(Path("/an/invalid/library"))
 
 
 def main():
-    check_dlhandle()
-    check_find_dylib()
-    check_find_dylib_multiple()
-    check_try_find_dylib()
+    check_invalid_dlhandle()
+    check_invalid_dlhandle_path()

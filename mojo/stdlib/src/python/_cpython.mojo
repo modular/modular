@@ -825,12 +825,7 @@ struct CPython:
             print("PYTHONEXECUTABLE:", getenv("PYTHONEXECUTABLE"))
             print("libpython selected:", python_lib)
 
-        try:
-            self.lib = DLHandle(python_lib)
-        except e:
-            self.lib = abort[DLHandle](
-                String("Failed to load libpython from", python_lib, ":\n", e)
-            )
+        self.lib = DLHandle(python_lib)
         self.total_ref_count = UnsafePointer[Int].alloc(1)
         self.logging_enabled = logging_enabled
         if not self.init_error:
