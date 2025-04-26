@@ -141,6 +141,7 @@ class Graph:
     # Python 3.7.
     _params: dict[str, None]
     _mlir_op: mlir.Operation | mlir.OpView
+    _graph_body: mlir.Block
     _context: mlir.Context
     _module: mlir.Module
     _unique_symbolic_dim_counter: int
@@ -200,6 +201,7 @@ class Graph:
                     self._module, loc, name, function_type
                 )
                 self._current_block = self._mlir_op.regions[0].blocks[0]
+                self._graph_body = self._current_block
         param_decl = _graph.dim_param_decl_array_attr(
             self._context,
             [
@@ -341,7 +343,7 @@ class Graph:
         return results
 
     def _add_op_get_op_with_results(
-        self, op, *args, **kwargs
+        self, op, *args, _ip: Optional[mlir.InsertionPoint] = None, **kwargs
     ) -> tuple[list[Value], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):
@@ -360,17 +362,20 @@ class Graph:
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
         # location contains info about the source of the op (e.g. file, line)
-        with mlir.InsertionPoint(self._body), self._location():
+        with _ip or mlir.InsertionPoint(self._body), self._location():
             try:
                 with self._capturing_mlir_diagnostics():
-                    # Insert op at the end of self._body, location set up by
-                    # the context manager.
                     results = op(*unwrapped_args, **unwrapped_kwargs)
 
-                    # Get the op we just staged, which is the last op in the body block.
-                    ops = self._body.operations
+                    if isinstance(results, (mlir.OpResult, mlir.OpResultList)):
+                        assert hasattr(results.owner, "opview")
+                        staged_op = results.owner.opview
 
-                    staged_op = self._body.operations[len(ops) - 1]
+                    else:
+                        assert isinstance(
+                            results, (mlir.Operation, mlir.OpView)
+                        )
+                        staged_op = results.opview
                     self._verify_op(staged_op)
 
             except (mlir.MLIRError, ValueError) as e:  # type: ignore
@@ -604,6 +609,7 @@ class Graph:
                 # example by checkpoint metadata.
                 weight.align if weight.align is not None else weight.dtype.align
             ),
+            _ip=mlir.InsertionPoint.at_block_begin(self._graph_body),
         )[0]
 
         # Set the constant external op's device explicitly to the passed device.

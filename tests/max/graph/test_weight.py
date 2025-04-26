@@ -34,12 +34,47 @@ def test_add_weight() -> None:
             graph.add_weight(w),
             graph.add_weight(w2),
         )
-        gen_mlir = str(graph._mlir_op)
+        gen_mlir = str(graph._mlir_op).splitlines()
+        # Most recent weight is at the top
         assert re.search(
-            r"mo.constant.external.*!mo.tensor<\[5, 10\], si64", gen_mlir
+            r'mo.constant.external.*name = "scalar_float".*!mo.tensor<\[1\], f32',
+            gen_mlir[1],
         )
         assert re.search(
-            r"mo.constant.external.*!mo.tensor<\[1\], f32", gen_mlir
+            r'mo.constant.external.*name = "random_weight".*!mo.tensor<\[5, 10\], si64',
+            gen_mlir[2],
+        )
+
+
+def test_add_weights_with_sum() -> None:
+    """Tests adding weights with a sum and ensuring that weights are added to the top of the graph."""
+    with Graph("graph_with_weights", input_types=()) as graph:
+        w1 = Weight(
+            "random_weight1",
+            dtype=DType.int64,
+            shape=[5, 10],
+            device=DeviceRef.CPU(),
+        )
+
+        w2 = Weight(
+            "random_weight2",
+            dtype=DType.int64,
+            shape=[5, 10],
+            device=DeviceRef.CPU(),
+        )
+
+        graph.output(
+            graph.add_weight(w1) + graph.add_weight(w2),
+        )
+        gen_mlir = str(graph._mlir_op).splitlines()
+        # Most recent weight is at the top
+        assert re.search(
+            r'mo.constant.external.*name = "random_weight2".*!mo.tensor<\[5, 10\], si64',
+            gen_mlir[1],
+        )
+        assert re.search(
+            r'mo.constant.external.*name = "random_weight1".*!mo.tensor<\[5, 10\], si64',
+            gen_mlir[2],
         )
 
 
