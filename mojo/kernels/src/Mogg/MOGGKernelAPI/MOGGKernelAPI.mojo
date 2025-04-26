@@ -4131,6 +4131,7 @@ struct RMSNorm:
         type: DType,
         rank: Int,
         target: StaticString,
+        multiply_before_cast: Bool = True,
     ](
         output: OutputTensor[type=type, rank=rank],
         input: FusedInputTensor[type=type, rank=rank],
@@ -4151,8 +4152,19 @@ struct RMSNorm:
         var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        rms_norm[type, rank, input_fn, target=target](
-            input.shape(), gamma_buf, epsilon, weight_offset, output_buf, ctx
+        rms_norm[
+            type,
+            rank,
+            input_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma_buf,
+            epsilon,
+            weight_offset,
+            output_buf,
+            ctx,
         )
 
     @staticmethod
@@ -8192,11 +8204,13 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        rms_norm_kv_cache_ragged_continuous_batching[target=target](
+        rms_norm_kv_cache_ragged_continuous_batching[
+            target=target, multiply_before_cast=True
+        ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
-            Scalar[type](0.0),  # `weight_offset`--not relevant here
+            Scalar[type](0.0),  # weight_offset
             layer_idx,
             total_seq_len,
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -8227,11 +8241,13 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        rms_norm_kv_cache_ragged_paged[target=target](
+        rms_norm_kv_cache_ragged_paged[
+            target=target, multiply_before_cast=True
+        ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
-            Scalar[type](0.0),  # `weight_offset`--not relevant here
+            Scalar[type](0.0),  # weight_offset
             layer_idx,
             total_seq_len,
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
