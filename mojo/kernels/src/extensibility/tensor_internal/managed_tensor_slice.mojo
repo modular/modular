@@ -1104,7 +1104,7 @@ fn foreach[
         ctx: The call context (forward this from the custom operation).
     """
     debug_assert(
-        ctx.handle_ or is_cpu[target](),
+        ctx._handle or is_cpu[target](),
         "Expecting non-null device ctx for GPU kernels",
     )
 
@@ -1158,7 +1158,7 @@ fn foreach[
         ctx: The call context (forward this from the custom operation).
     """
     debug_assert(
-        ctx.handle_ or is_cpu[target](),
+        ctx._handle or is_cpu[target](),
         "Expecting non-null device ctx for GPU kernels",
     )
 
