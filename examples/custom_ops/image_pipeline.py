@@ -27,22 +27,17 @@ from max.graph import (
 
 
 def main():
-    if accelerator_count() == 0:
-        raise RuntimeError(
-            "The image_pipeline example currently only runs on GPU"
-        )
-
-    device = Accelerator()
+    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     img = imread("dogs.jpg")
 
-    color_tensor = TensorType(
+    color_tensor_type = TensorType(
         DType.uint8,
         shape=img.shape,
         device=DeviceRef.from_device(device),
     )
 
-    gray_tensor = TensorType(
+    gray_tensor_type = TensorType(
         DType.uint8,
         shape=[img.shape[0], img.shape[1]],
         device=DeviceRef.from_device(device),
@@ -50,7 +45,7 @@ def main():
 
     graph = Graph(
         "image_pipeline",
-        input_types=[color_tensor],
+        input_types=[color_tensor_type],
         custom_extensions=[Path(__file__).parent / "kernels"],
     )
 
@@ -58,7 +53,7 @@ def main():
         return ops.custom(
             name="grayscale",
             values=[x],
-            out_types=[gray_tensor],
+            out_types=[gray_tensor_type],
         )[0].tensor
 
     def brightness(x: TensorValue, brightness: float) -> TensorValue:
