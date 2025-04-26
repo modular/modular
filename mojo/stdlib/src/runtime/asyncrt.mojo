@@ -27,15 +27,15 @@ from utils import StaticTuple
 from .tracing import TraceLevel
 
 # ===-----------------------------------------------------------------------===#
-# AsyncContext
+# _AsyncContext
 # ===-----------------------------------------------------------------------===#
 
 
 @register_passable("trivial")
-struct Chain(Boolable):
-    """A proxy for the C++ runtime's AsyncValueRef<Chain> type."""
+struct _Chain(Boolable):
+    """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
-    # Actually an AsyncValueRef<Chain>, which is just an AsyncValue*
+    # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
     var storage: UnsafePointer[Int]
 
     fn __init__(out self):
@@ -46,7 +46,7 @@ struct Chain(Boolable):
 
 
 @register_passable("trivial")
-struct AsyncContext:
+struct _AsyncContext:
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
@@ -58,17 +58,17 @@ struct AsyncContext:
     to available.
     """
 
-    alias callback_fn_type = fn (Chain) -> None
+    alias callback_fn_type = fn (_Chain) -> None
 
     var callback: Self.callback_fn_type
-    var chain: Chain
+    var chain: _Chain
 
     @staticmethod
-    fn get_chain(ctx: UnsafePointer[AsyncContext]) -> UnsafePointer[Chain]:
+    fn get_chain(ctx: UnsafePointer[_AsyncContext]) -> UnsafePointer[_Chain]:
         return UnsafePointer(to=ctx[].chain)
 
     @staticmethod
-    fn complete(ch: Chain):
+    fn complete(ch: _Chain):
         var tmp = ch
         _async_complete(UnsafePointer(to=tmp))
 
@@ -78,19 +78,19 @@ struct AsyncContext:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _init_asyncrt_chain(chain: UnsafePointer[Chain]):
+fn _init_asyncrt_chain(chain: UnsafePointer[_Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
 
 
-fn _del_asyncrt_chain(chain: UnsafePointer[Chain]):
+fn _del_asyncrt_chain(chain: UnsafePointer[_Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
         chain.address
     )
 
 
-fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
+fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[_Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -102,46 +102,18 @@ fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     )
 
 
-fn _async_wait(chain: UnsafePointer[Chain]):
+fn _async_wait(chain: UnsafePointer[_Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
 
 
-fn _async_complete(chain: UnsafePointer[Chain]):
+fn _async_complete(chain: UnsafePointer[_Chain]):
     external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
 
 
-fn _async_wait_timeout(chain: UnsafePointer[Chain], timeout: Int) -> Bool:
+fn _async_wait_timeout(chain: UnsafePointer[_Chain], timeout: Int) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain.address, timeout
     )
-
-
-struct ChainPromise:
-    var chain: Chain
-
-    fn __init__(out self):
-        self.chain = Chain()
-        _init_asyncrt_chain(UnsafePointer(to=self.chain))
-
-    @implicit
-    fn __init__(out self, owned chain: Chain):
-        self.chain = chain
-
-    fn __del__(owned self):
-        if self.chain:
-            _del_asyncrt_chain(UnsafePointer(to=self.chain))
-
-    @always_inline
-    fn __await__(self):
-        @always_inline
-        @parameter
-        fn await_body(cur_hdl: AnyCoroutine):
-            _async_and_then(cur_hdl, UnsafePointer(to=self.chain))
-
-        _suspend_async[await_body]()
-
-    fn wait(self):
-        _async_wait(UnsafePointer(to=self.chain))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -164,31 +136,31 @@ fn create_task(
     owned handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime."""
-    var ctx = handle._get_ctx[AsyncContext]()
-    _init_asyncrt_chain(AsyncContext.get_chain(ctx))
-    ctx[].callback = AsyncContext.complete
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
     task = Task(handle^)
     _async_execute[handle.type](task._handle._handle, desired_worker_id=-1)
 
 
 @always_inline
 fn run(owned handle: Coroutine[*_], out result: handle.type):
-    var ctx = handle._get_ctx[AsyncContext]()
-    _init_asyncrt_chain(AsyncContext.get_chain(ctx))
-    ctx[].callback = AsyncContext.complete
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
     handle._set_result_slot(UnsafePointer(to=result))
     _async_execute[handle.type](handle._handle, -1)
-    _async_wait(AsyncContext.get_chain(ctx))
-    _del_asyncrt_chain(AsyncContext.get_chain(ctx))
+    _async_wait(_AsyncContext.get_chain(ctx))
+    _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
     handle^.force_destroy()
 
 
 @always_inline
 fn run(owned handle: RaisingCoroutine[*_], out result: handle.type) raises:
-    var ctx = handle._get_ctx[AsyncContext]()
-    _init_asyncrt_chain(AsyncContext.get_chain(ctx))
-    ctx[].callback = AsyncContext.complete
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
     handle._set_result_slot(
         __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
         __mlir_op.`lit.ref.to_pointer`(
@@ -196,8 +168,8 @@ fn run(owned handle: RaisingCoroutine[*_], out result: handle.type) raises:
         ),
     )
     _async_execute[handle.type](handle._handle, -1)
-    _async_wait(AsyncContext.get_chain(ctx))
-    _del_asyncrt_chain(AsyncContext.get_chain(ctx))
+    _async_wait(_AsyncContext.get_chain(ctx))
+    _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
     if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
         handle^.force_destroy()
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -234,8 +206,8 @@ struct Task[type: AnyType, origins: OriginSet]:
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
-        var ctx = self._handle._get_ctx[AsyncContext]()
-        _del_asyncrt_chain(AsyncContext.get_chain(ctx))
+        var ctx = self._handle._get_ctx[_AsyncContext]()
+        _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
         self._handle^.force_destroy()
 
     @always_inline
@@ -250,7 +222,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         fn await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
                 cur_hdl,
-                AsyncContext.get_chain(self._handle._get_ctx[AsyncContext]()),
+                _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]()),
             )
 
         _suspend_async[await_body]()
@@ -259,7 +231,7 @@ struct Task[type: AnyType, origins: OriginSet]:
     fn wait(self) -> ref [self.get()] type:
         """Block the current thread until the future value becomes available."""
         _async_wait(
-            AsyncContext.get_chain(self._handle._get_ctx[AsyncContext]())
+            _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
         )
         return self.get()
 
@@ -318,18 +290,18 @@ struct _TaskGroupBox(CollectionElement):
 
 struct TaskGroup:
     var counter: Atomic[DType.index]
-    var chain: Chain
+    var chain: _Chain
     var tasks: List[_TaskGroupBox]
 
     fn __init__(out self):
-        var chain = Chain()
-        _init_asyncrt_chain(UnsafePointer[Chain](to=chain))
+        var chain = _Chain()
+        _init_asyncrt_chain(UnsafePointer[_Chain](to=chain))
         self.counter = Atomic[DType.index](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(owned self):
-        _del_asyncrt_chain(UnsafePointer[Chain](to=self.chain))
+        _del_asyncrt_chain(UnsafePointer[_Chain](to=self.chain))
 
     @always_inline
     fn _counter_decr(mut self) -> Int:
@@ -342,7 +314,7 @@ struct TaskGroup:
 
     fn _task_complete(mut self):
         if self._counter_decr() == 0:
-            _async_complete(UnsafePointer[Chain](to=self.chain))
+            _async_complete(UnsafePointer[_Chain](to=self.chain))
 
     fn create_task(
         mut self,
@@ -371,7 +343,7 @@ struct TaskGroup:
 
     @staticmethod
     fn await_body_impl(hdl: AnyCoroutine, mut task_group: Self):
-        _async_and_then(hdl, UnsafePointer[Chain](to=task_group.chain))
+        _async_and_then(hdl, UnsafePointer[_Chain](to=task_group.chain))
         task_group._task_complete()
 
     @always_inline
@@ -385,7 +357,7 @@ struct TaskGroup:
 
     fn wait[origins: OriginSet = __origin_of()](mut self):
         self._task_complete()
-        _async_wait(UnsafePointer[Chain](to=self.chain))
+        _async_wait(UnsafePointer[_Chain](to=self.chain))
 
 
 # ===-----------------------------------------------------------------------===#
