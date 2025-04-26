@@ -49,7 +49,7 @@ def save[PathLike: PathLike](tensor_dict: TensorDict, path: PathLike):
               filename and file extension you want.
     """
     # Write header and metadata
-    var header = String(_serialization_header())
+    var header = String(bytes=_serialization_header())
     var version = current_version()
 
     # Compute metadata size and tensor offsets.
@@ -143,7 +143,7 @@ fn _read_int[type: DType](f: FileHandle) raises -> Scalar[type]:
 fn _read_string(f: FileHandle, size: UInt32) raises -> String:
     """Reads string of the specified size from a file."""
     var string_bytes = f.read_bytes(Int(size))
-    return String(string_bytes)
+    return String(bytes=string_bytes)
 
 
 @value
