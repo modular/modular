@@ -471,7 +471,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var size: Int
+    var _len: Int
     """The number of elements currently stored in the dict."""
     var _n_entries: Int
     """The number of entries currently allocated."""
@@ -489,7 +489,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     @always_inline
     fn __init__(out self):
         """Initialize an empty dictiontary."""
-        self.size = 0
+        self._len = 0
         self._n_entries = 0
         self._entries = Self._new_entries(Self._initial_reservation)
         self._index = _DictIndex(len(self._entries))
@@ -516,7 +516,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             and power_of_two_initial_capacity >= 8,
             "power_of_two_initial_capacity need to be >=8 and a power of two",
         )
-        self.size = 0
+        self._len = 0
         self._n_entries = 0
         self._entries = Self._new_entries(power_of_two_initial_capacity)
         self._index = _DictIndex(len(self._entries))
@@ -573,7 +573,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         Args:
             existing: The existing dict.
         """
-        self.size = existing.size
+        self._len = existing._len
         self._n_entries = existing._n_entries
         self._index = existing._index.copy(existing._reserved())
         self._entries = existing._entries
@@ -584,7 +584,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         Args:
             existing: The existing dict.
         """
-        self.size = existing.size
+        self._len = existing._len
         self._n_entries = existing._n_entries
         self._index = existing._index^
         self._entries = existing._entries^
@@ -678,7 +678,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         Returns:
             The number of elements currently stored in the dictionary.
         """
-        return self.size
+        return self._len
 
     fn __bool__(self) -> Bool:
         """Check if the dictionary is empty or not.
@@ -872,7 +872,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             debug_assert(entry[].__bool__(), "entry in index must be full")
             var entry_value = entry[].unsafe_take()
             entry[] = None
-            self.size -= 1
+            self._len -= 1
             return entry_value^.reap_value()
         raise "KeyError"
 
@@ -954,7 +954,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     fn clear(mut self):
         """Remove all elements from the dictionary."""
-        self.size = 0
+        self._len = 0
         self._n_entries = 0
         self._entries = Self._new_entries(Self._initial_reservation)
         self._index = _DictIndex(self._reserved())
@@ -1003,7 +1003,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         self._entries[index] = entry^
         if not found:
             self._set_index(slot, index)
-            self.size += 1
+            self._len += 1
             self._n_entries += 1
 
     fn _get_index(self, slot: UInt64) -> Int:
@@ -1044,7 +1044,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             self._next_index_slot(slot, perturb)
 
     fn _over_load_factor(self) -> Bool:
-        return 3 * self.size > 2 * self._reserved()
+        return 3 * self._len > 2 * self._reserved()
 
     fn _over_compact_factor(self) -> Bool:
         return 4 * self._n_entries > 3 * self._reserved()
@@ -1055,7 +1055,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
                 self._compact()
             return
         var _reserved = self._reserved() * 2
-        self.size = 0
+        self._len = 0
         self._n_entries = 0
         var old_entries = self._entries^
         self._entries = self._new_entries(_reserved)
@@ -1069,7 +1069,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     fn _compact(mut self):
         self._index = _DictIndex(self._reserved())
         var right = 0
-        for left in range(self.size):
+        for left in range(self._len):
             while not self._entries[right]:
                 right += 1
                 debug_assert(right < self._reserved(), "Invalid dict state")
@@ -1081,7 +1081,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
                 self._entries[left] = entry.unsafe_take()
             right += 1
 
-        self._n_entries = self.size
+        self._n_entries = self._len
 
 
 struct OwnedKwargsDict[V: CollectionElement](
