@@ -35,7 +35,8 @@ from internal_utils import (
     random,
     zero,
 )
-from internal_utils._utils import ValOrDim, dynamic, static, ulp_distance
+from test_utils import ulp_distance
+from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
