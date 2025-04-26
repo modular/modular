@@ -17,7 +17,7 @@ from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, c_char, _try_find_dylib
+from sys.ffi import _Global, _OwnedDLHandle, c_char
 
 from memory import UnsafePointer, stack_allocation
 
@@ -34,19 +34,20 @@ alias CUDA_NVML_LIBRARY_EXT = ".so"
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_nvml_library_paths() raises -> List[Path]:
-    var paths = List[Path]()
+fn _get_nvml_library_path() raises -> Path:
     var common_path = CUDA_NVML_LIBRARY_DIR / (
         CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
     )
     if common_path.exists():
-        paths.append(common_path)
+        return common_path
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
         if not (CUDA_NVML_LIBRARY_DIR / fd[]).is_file():
             continue
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd[]):
-            paths.append(fd[])
-    return paths
+            return fd[]
+    raise Error(
+        "the CUDA NVML library was not found in ", CUDA_NVML_LIBRARY_DIR
+    )
 
 
 alias CUDA_NVML_LIBRARY = _Global[
@@ -56,11 +57,12 @@ alias CUDA_NVML_LIBRARY = _Global[
 
 fn _init_dylib() -> _OwnedDLHandle:
     try:
-        var dylib = _try_find_dylib(_get_nvml_library_paths())
+        var lib_path = _get_nvml_library_path()
+        var dylib = _OwnedDLHandle(String(lib_path))
         _ = dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
         return dylib^
     except e:
-        return abort[_OwnedDLHandle](String("CUDA NVML library not found: ", e))
+        return abort[_OwnedDLHandle](e)
 
 
 @always_inline
