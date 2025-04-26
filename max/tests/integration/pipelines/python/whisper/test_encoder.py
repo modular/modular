@@ -103,6 +103,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             shape=weights_registry["embed_positions"].shape,
             device=DeviceRef.CPU(),
         ),
+        device=DeviceRef.CPU(),
     )
     layers = [
         WhisperEncoderLayer(
@@ -393,6 +394,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             shape=weights_registry["embed_positions"].shape,
             device=DeviceRef.CPU(),
         ),
+        device=DeviceRef.CPU(),
     )
 
     session = InferenceSession()
