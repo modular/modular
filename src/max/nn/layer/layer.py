@@ -121,6 +121,15 @@ class Module(Layer, ABC):
             if isinstance(value, Module):
                 self._sublayers[name] = value
             elif isinstance(value, Weight):
+                if existing_weight := getattr(self, name, None):
+                    if isinstance(existing_weight, Weight):
+                        # If the attribute being set is a weight, remove the existing weight from
+                        # the layer weights. This is to avoid having irrelevant weights returned by
+                        # `raw_state_dict()`. This is particularly important for subgraphs as Weight
+                        # instances are materialized by accessing their `_mlir_value` attribute, and
+                        # doing so on an weight that's meant to be sharded will raise an error because
+                        # we'll end up trying to add a weight that's already been added to the graph.
+                        del self._layer_weights[existing_weight.name]
                 self._layer_weights[value.name] = value
         except AttributeError:
             # The layer didn't call `super().__init__()` first thing.
