@@ -58,6 +58,7 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
                         StringAttr name, IRMapping &mapping,
                         SymbolTable *symtab = nullptr,
                         std::optional<uint64_t> kernelId = std::nullopt) {
+
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
@@ -96,12 +97,13 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     sliced = sliced.clone();
     sliced.setSymNameAttr(stubName);
     symtab->insert(sliced);
-
   } else {
     sliced.setSymNameAttr(stubName);
   }
+
   auto wrapper = b.create<GeneratorOp>(name, sigGen);
   wrapper.setExported();
+
   SmallVector<Attribute> metadataArray =
       llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
   if (kernelId) {
@@ -349,7 +351,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
   // This loop cannot be parallelized since different targets may need
   // different llvm options that are global states.
   for (auto [target, info] : targetOffloadInfos) {
-
     DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>
         &targetEmissionResult = result[target];
 
@@ -376,18 +377,41 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       OwningOpRef<ModuleOp> module = produceStandaloneModule(
           symtab, offloadInfo.exportedSymbols, mapping,
-          /*overrideExported*/ isGPUBackend(compilationOptions));
+          /*overrideExported*/ isGPUTriple(target.getTriple()));
 
       // Override the target.
       eraseTargetInfo(*module);
       setTargetInfo(*module, target);
       SymbolTable slicedSymtab(*module);
+
+      // Collect SymbolConstantAttr names to rename.
+      DenseMap<SymbolRefAttr, StringAttr> symToRename;
+
       for (auto [op, symbolInfo] : offloadInfo.symbols) {
         // If there are input parameters, we have to go generate a stub to root
         // instantiation of the generator. Go find the cloned generator.
         auto func = cast<GeneratorOp>(op);
+        StringAttr newCalleeName = StringAttr::get(
+            func->getContext(),
+            FlatSymbolRefAttr::get(func).getAttr().str() + "_callee");
+
+        std::optional<StringAttr> newName;
         for (auto [symbol, kernelInfo] : symbolInfo) {
           if (!symbol.getParamValues().empty()) {
+            // Add "_callee" postfix to the generator that is both a callee of a
+            // kernel and a kernel entry function itself. So that we don't end
+            // up with two functions with the same name one for the kernel entry
+            // wrapper for instantiated stub, and one for the callee in another
+            // kernel (they have different function bodies).
+            module->walk(
+                [&newCalleeName, &newName, &func, &symToRename](CallOp call) {
+                  if (call.getCalleeSymbol() == FlatSymbolRefAttr::get(func)) {
+                    newName = newCalleeName;
+                    symToRename.insert(
+                        {call.getCallee().getSymbol(), newCalleeName});
+                  }
+                });
+
             generateInstantiateStub(func, symbol, kernelInfo.name, mapping,
                                     &slicedSymtab, kernelInfo.kernelId);
           } else {
@@ -403,6 +427,30 @@ static ElaboratorCompileOffloadRetType compileOffloads(
                 ArrayAttr::get(sliced.getContext(), metadataArray));
           }
         }
+        if (newName) {
+          // Rename the generator since it is used both as kernel entry function
+          // and callee for another kernel.
+          GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
+          sliced.setSymNameAttr(*newName);
+        }
+      }
+
+      // Replace the SymbolConstantAttr names for the renamed generator
+      // references.
+      if (!symToRename.empty()) {
+        mlir::AttrTypeReplacer replacer;
+        replacer.addReplacement([&symToRename](SymbolConstantAttr attr) {
+          auto iter = symToRename.find(attr.getSymbol());
+          if (iter != symToRename.end()) {
+            return SymbolConstantAttr::get(iter->second, attr.getType(),
+                                           attr.getParamValues());
+          }
+          return attr;
+        });
+
+        replacer.recursivelyReplaceElementsIn(*module, /*replaceAttrs=*/true,
+                                              /*replaceLocs=*/true,
+                                              /*replaceTypes=*/true);
       }
 
       // Initialize the object compiler.
