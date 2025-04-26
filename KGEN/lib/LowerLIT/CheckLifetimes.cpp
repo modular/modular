@@ -3732,6 +3732,12 @@ CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
   if (isa<UnreachableOp>(funcBody.front()))
     return success();
 
+  // Similarly, if this is a signature resolved function (not body resolved),
+  // then ignore it.
+  if (auto endFunc = dyn_cast<EndFnOp>(funcBody.front()))
+    if (endFunc.getUnresolved())
+      return success();
+
   // Walk #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func, originFinder);
