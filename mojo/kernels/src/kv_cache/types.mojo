@@ -18,6 +18,31 @@ from memory import UnsafePointer
 from utils import IndexList
 
 
+@parameter
+fn _strides_from_shape[rank: Int](shape: DimList) -> DimList:
+    var strides = List[Dim](length=rank, fill=Dim())
+    var stride = Dim(1)
+
+    @parameter
+    for i in reversed(range(rank)):
+        strides[i] = stride
+        stride *= shape.at[i]()
+
+    @parameter
+    if rank == 6:
+        return DimList(
+            strides[0],
+            strides[1],
+            strides[2],
+            strides[3],
+            strides[4],
+            strides[5],
+        )
+    else:
+        constrained[False, "Extend to support additional ranks."]()
+        return DimList.create_unknown[rank]()
+
+
 @value
 @register_passable("trivial")
 struct KVCacheStaticParams(EqualityComparable):
@@ -139,15 +164,22 @@ struct ContinuousBatchingKVCache[
     alias type = type_
     alias kv_params = kv_params_
 
-    alias single_block_shape = DimList(
-        Dim(), Self.kv_params.num_heads, Self.kv_params.head_size
-    )
-
     # shape is
     # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
-    # - BHSD: [num_blocks, 2, num_layers, num_heads, max_seq_len, head_size]
-    alias BlocksType = NDBuffer[Self.type, 6, MutableAnyOrigin]
-    var blocks: Self.BlocksType
+    alias blocks_shape = DimList(
+        Dim(),
+        Dim(),
+        Dim(),
+        Dim(),
+        Dim(Int(Self.kv_params.num_heads)),
+        Dim(Int(Self.kv_params.head_size)),
+    )
+    alias blocks_stride = _strides_from_shape[6](Self.blocks_shape)
+    alias blocks_type = NDBuffer[
+        Self.type, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    ]
+
+    var blocks: Self.blocks_type
     var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
 
@@ -194,15 +226,24 @@ struct ContinuousBatchingKVCache[
 
     fn __init__(
         out self,
-        blocks: Self.BlocksType,
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        lookup_table: NDBuffer[DType.uint32, 1],
+        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         layer_idx: Int,
         kv_idx: Int,
     ):
-        self.blocks = blocks
+        debug_assert(
+            blocks.dim[4]() == Int(Self.kv_params.num_heads),
+            "blocks.dim[4]() must be equal to kv_params.num_heads",
+        )
+        debug_assert(
+            blocks.dim[5]() == Int(Self.kv_params.head_size),
+            "blocks.dim[5]() must be equal to kv_params.head_size",
+        )
+
+        self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.batch_size = cache_lengths.dim[0]()
@@ -321,7 +362,20 @@ struct PagedKVCache[
     """The entire region of memory for KVCache blocks with shape:
     [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     """
-    var blocks: NDBuffer[Self.type, 6, MutableAnyOrigin]
+    alias blocks_shape = DimList(
+        Dim(),
+        Dim(),
+        Dim(),
+        Dim(page_size),
+        Dim(Int(Self.kv_params.num_heads)),
+        Dim(Int(Self.kv_params.head_size)),
+    )
+    alias blocks_stride = _strides_from_shape[6](Self.blocks_shape)
+    alias blocks_type = NDBuffer[
+        Self.type, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    ]
+
+    var blocks: Self.blocks_type
     var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
 
@@ -338,9 +392,9 @@ struct PagedKVCache[
 
     fn __init__(
         out self,
-        blocks: NDBuffer[Self.type, 6],
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        lookup_table: NDBuffer[DType.uint32, 2],
+        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         layer_idx: Int,
@@ -350,7 +404,16 @@ struct PagedKVCache[
             blocks.dim[3]() == page_size,
             "blocks.dim[3]() must be equal to page_size",
         )
-        self.blocks = blocks
+        debug_assert(
+            blocks.dim[4]() == Int(Self.kv_params.num_heads),
+            "blocks.dim[4]() must be equal to kv_params.num_heads",
+        )
+        debug_assert(
+            blocks.dim[5]() == Int(Self.kv_params.head_size),
+            "blocks.dim[5]() must be equal to kv_params.head_size",
+        )
+
+        self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
@@ -704,7 +767,7 @@ struct ContinuousBatchingKVCacheCollection[
 
     var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    var blocks: Self.CacheType.BlocksType
+    var blocks: Self.CacheType.blocks_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
     var num_layers: Int
@@ -712,13 +775,13 @@ struct ContinuousBatchingKVCacheCollection[
 
     fn __init__(
         out self,
-        blocks: Self.CacheType.BlocksType,
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        lookup_table: NDBuffer[DType.uint32, 1],
+        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        self.blocks = rebind[self.CacheType.BlocksType](blocks)
+        self.blocks = rebind[self.CacheType.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
@@ -728,12 +791,12 @@ struct ContinuousBatchingKVCacheCollection[
 
     fn __init__(
         out self,
-        blocks: Self.CacheType.BlocksType,
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        lookup_table: NDBuffer[DType.uint32, 1],
+        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         is_cache_empty: Bool,
     ):
-        self.blocks = rebind[self.CacheType.BlocksType](blocks)
+        self.blocks = rebind[self.CacheType.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = blocks.dim[3]()
@@ -807,7 +870,7 @@ struct PagedKVCacheCollection[
     alias kv_params = kv_params_
     alias CacheType = PagedKVCache[Self.type, Self.kv_params, page_size]
 
-    var blocks: NDBuffer[Self.type, 6, MutableAnyOrigin]
+    var blocks: Self.CacheType.blocks_type
     var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
     var max_seq_length: UInt32
@@ -815,13 +878,13 @@ struct PagedKVCacheCollection[
 
     fn __init__(
         out self,
-        blocks: NDBuffer[Self.type, 6],
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        lookup_table: NDBuffer[DType.uint32, 2],
+        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        self.blocks = blocks
+        self.blocks = rebind[Self.CacheType.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
