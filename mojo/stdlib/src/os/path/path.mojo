@@ -398,7 +398,9 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the tail section of a path.
 
     ```mojo
-    basename("a/path/foo.txt") # returns "foo.txt"
+    from os.path import basename
+
+    basename("a/path/foo.txt")  # returns "foo.txt"
     ```
 
     Parameters:
