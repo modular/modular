@@ -11,22 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .test_utils import libm_call
-from .types import (
-    AbortOnCopy,
-    AbortOnDel,
-    CopyCountedStruct,
-    CopyCounter,
-    DelCounter,
-    DelRecorder,
-    ExplicitCopyOnly,
-    ImplicitCopyOnly,
-    MoveCopyCounter,
-    MoveCounter,
-    MoveOnly,
-    ObservableDel,
-    ObservableMoveOnly,
-    g_dtor_count,
-)
-from .compare_helpers import compare
-from .math_helpers import ulp_distance
+from builtin.dtype import _integral_type_of
+from memory import bitcast
+from sys import bitwidthof
+
+
+fn ulp_distance[type: DType](a: Scalar[type], b: Scalar[type]) -> Int:
+    alias bitwidth = bitwidthof[type]()
+    alias T = _integral_type_of[type]()
+    # widen to Int first to avoid overflow
+    var a_int = Int(bitcast[T](a))
+    var b_int = Int(bitcast[T](b))
+    # to twos complement
+    alias two_complement_const = Int(1 << (bitwidth - 1))
+    a_int = two_complement_const - a_int if a_int < 0 else a_int
+    b_int = two_complement_const - b_int if b_int < 0 else b_int
+    return abs(a_int - b_int)
