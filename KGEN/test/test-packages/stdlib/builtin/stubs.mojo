@@ -308,6 +308,10 @@ struct Span[
     var _data: UnsafePointer[T, mut=mut, origin=origin]
     var _len: Int
 
+    fn __init__(out self):
+        self._data = UnsafePointer[T, mut=mut, origin=origin]()
+        self._len = 0
+
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[T, mut=mut, origin=origin,]:
@@ -341,9 +345,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
 
     @implicit
     fn __init__[
-        O: ImmutableOrigin, //
-    ](out self: StringSlice[O], ref [O]value: String):
-        pass
+        origin: ImmutableOrigin, //
+    ](out self: StringSlice[origin], ref [origin]value: String):
+        self._slice = Span[Byte, origin]()
 
     @implicit
     fn __init__(out self: StaticString, lit: StringLiteral):
@@ -410,10 +414,10 @@ struct String(KeyElement):
     fn __len__(self) -> Int:
         return 0
 
-    fn __contains__(self, substr: String) -> Bool:
+    fn __contains__(self, substr: StringSlice[mut=False]) -> Bool:
         return True
 
-    fn __iadd__(mut self, rhs: String):
+    fn __iadd__(mut self, rhs: StringSlice[mut=False]):
         pass
 
     fn byte_length(self) -> Int:

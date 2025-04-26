@@ -99,9 +99,11 @@ fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
 
 # CHECK-LABEL: lit.fn @"test_in
 fn test_in(a: String, b: String):
-    # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, %a)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
+    # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     _ = a in b
-    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__contains__{{.*}}(%b, %a)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
     _ = a not in b
