@@ -14,6 +14,7 @@
 """Speculative Decoding Text Generation Pipeline"""
 
 import logging
+from pathlib import Path
 from typing import Any, TypeVar, cast
 
 import numpy as np
@@ -39,6 +40,7 @@ from max.pipelines.core import (
 from max.profiler import traced
 from transformers import AutoConfig
 
+from .config_enums import RepoType
 from .hf_utils import download_weight_files
 from .pipeline import (
     ModelInputs,
@@ -105,14 +107,28 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             self.pipeline_config.model_config.huggingface_weight_repo
         )
 
-        weight_paths = download_weight_files(
-            huggingface_model_id=target_hf_repo.repo_id,
-            filenames=[
-                str(x) for x in self.pipeline_config.model_config.weight_path
-            ],
-            revision=self.pipeline_config.model_config.huggingface_weight_revision,
-            max_workers=8,
-        )
+        weight_paths: list[Path] = []
+        if (
+            self.pipeline_config.model_config.huggingface_weight_repo.repo_type
+            == RepoType.online
+        ):
+            # Download weight files if not existent.
+            weight_paths = download_weight_files(
+                huggingface_model_id=target_hf_repo.repo_id,
+                filenames=[
+                    str(x)
+                    for x in self.pipeline_config.model_config.weight_path
+                ],
+                revision=self.pipeline_config.model_config.huggingface_weight_revision,
+                max_workers=8,
+            )
+        else:
+            # Make sure the weight paths are absolute paths
+            weight_paths = [
+                self.pipeline_config.model_config.model_path / x
+                for x in self.pipeline_config.model_config.weight_path
+            ]
+
         target_weights = load_weights(weight_paths)
         _target_weights_format = weights_format(weight_paths)
 
@@ -180,13 +196,27 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             raise ValueError("could not identify weight_files for draft model.")
 
         _draft_weights_format = list(weight_files.keys())[0]
-        _draft_weight_paths = download_weight_files(
-            huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
-            filenames=[str(x) for x in weight_files[_draft_weights_format]],
-            revision=None,
-            max_workers=8,
-        )
-        draft_weights = load_weights(_draft_weight_paths)
+
+        draft_weight_paths: list[Path] = []
+        if (
+            self.pipeline_config.draft_model_config.huggingface_weight_repo.repo_type
+            == RepoType.online
+        ):
+            # Download weight files if not existent.
+            draft_weight_paths = download_weight_files(
+                huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
+                filenames=[str(x) for x in weight_files[_draft_weights_format]],
+                revision=self.pipeline_config.draft_model_config.huggingface_weight_revision,
+                max_workers=8,
+            )
+        else:
+            # Make sure the weight paths are absolute paths
+            draft_weight_paths = [
+                self.pipeline_config.draft_model_config.model_path / x
+                for x in self.pipeline_config.draft_model_config.weight_path
+            ]
+
+        draft_weights = load_weights(draft_weight_paths)
 
         self._draft_model = pipeline_model(
             pipeline_config=self.pipeline_config,
