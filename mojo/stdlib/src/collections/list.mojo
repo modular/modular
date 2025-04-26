@@ -330,16 +330,28 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         if x == 0:
             return Self()
         var result = self.copy()
-        result.__mul(x)
+        result *= x
         return result^
 
     fn __imul__(mut self, x: Int):
-        """Multiplies the list by x in place.
+        """Appends the original elements of this list x-1 times or clears it if
+        x is <= 0.
+
+        ```mojo
+        var a = List[Int](1, 2)
+        a *= 2 # a = [1, 2, 1, 2]
+        ```
 
         Args:
             x: The multiplier number.
         """
-        self.__mul(x)
+        if x <= 0 or len(self) == 0:
+            self.clear()
+            return
+        var orig = self.copy()
+        self.reserve(len(self) * x)
+        for _ in range(x - 1):
+            self.extend(orig)
 
     fn __add__(self, owned other: Self) -> Self:
         """Concatenates self with other and returns the result as a new list.
@@ -493,6 +505,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         """
         return len(self) * sizeof[T]()
 
+    @no_inline
     fn _realloc(mut self, new_capacity: Int):
         var new_data = UnsafePointer[T].alloc(new_capacity)
 
@@ -529,7 +542,8 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Args:
             elements: The elements to append.
         """
-        var new_num_elts = self._len + len(elements)
+        var elements_len = len(elements)
+        var new_num_elts = self._len + elements_len
         if new_num_elts > self.capacity:
             # Make sure our capacity at least doubles to avoid O(n^2) behavior.
             self._realloc(max(self.capacity * 2, new_num_elts))
@@ -537,9 +551,13 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         var i = self._len
         self._len = new_num_elts
 
-        for elt in elements:
-            UnsafePointer(to=self[i]).init_pointee_copy(elt[])
-            i += 1
+        @parameter
+        if hint_trivial_type:
+            memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
+        else:
+            for elt in elements:
+                UnsafePointer(to=self[i]).init_pointee_copy(elt[])
+                i += 1
 
     fn insert(mut self, i: Int, owned value: T):
         """Inserts a value to the list at the given index.
@@ -570,25 +588,6 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn __mul(mut self, x: Int):
-        """Appends the original elements of this list x-1 times.
-
-        ```mojo
-        var a = List[Int](1, 2)
-        a.__mul(2) # a = [1, 2, 1, 2]
-        ```
-
-        Args:
-            x: The multiplier number.
-        """
-        if x == 0:
-            self.clear()
-            return
-        var orig = self.copy()
-        self.reserve(len(self) * x)
-        for _ in range(x - 1):
-            self.extend(orig)
-
     fn extend(mut self, owned other: List[T, *_]):
         """Extends this list by consuming the elements of `other`.
 
@@ -596,42 +595,31 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             other: List whose elements will be added in order at the end of this list.
         """
 
-        var final_size = len(self) + len(other)
-        var other_original_size = len(other)
-
+        var other_len = len(other)
+        var final_size = len(self) + other_len
         self.reserve(final_size)
 
-        # Defensively mark `other` as logically being empty, as we will be doing
-        # consuming moves out of `other`, and so we want to avoid leaving `other`
-        # in a partially valid state where some elements have been consumed
-        # but are still part of the valid `size` of the list.
-        #
-        # That invalid intermediate state of `other` could potentially be
-        # visible outside this function if a `__moveinit__()` constructor were
-        # to throw (not currently possible AFAIK though) part way through the
-        # logic below.
-        other._len = 0
+        var dest_ptr = self.data + self._len
+        var src_ptr = other.unsafe_ptr()
 
-        var dest_ptr = self.data + len(self)
-        var src_ptr: UnsafePointer[
-            other.T,
-            address_space = __type_of(other.data).address_space,
-            origin = __origin_of(other),  # (to prevent other^.__del__())
-            alignment = __type_of(other.data).alignment,
-        ] = other.data
+        @parameter
+        if hint_trivial_type:
+            memcpy(dest_ptr, src_ptr, other_len)
+        else:
+            for _ in range(other_len):
+                # This (TODO: optimistically) moves an element directly from the
+                # `other` list into this list using a single `T.__moveinit()__`
+                # call, without moving into an intermediate temporary value
+                # (avoiding an extra redundant move constructor call).
+                src_ptr.move_pointee_into(dest_ptr)
+                src_ptr += 1
+                dest_ptr += 1
 
-        for _ in range(other_original_size):
-            # This (TODO: optimistically) moves an element directly from the
-            # `other` list into this list using a single `T.__moveinit()__`
-            # call, without moving into an intermediate temporary value
-            # (avoiding an extra redundant move constructor call).
-            src_ptr.move_pointee_into(dest_ptr)
-            src_ptr = src_ptr + 1
-            dest_ptr = dest_ptr + 1
-
-        # Update the size now that all new elements have been moved into this
-        # list.
+        # Update the size now since all elements have been moved into this list.
         self._len = final_size
+        # The elements of `other` are now consumed, so we mark it as empty so
+        # they don't get destroyed when it goes out of scope.
+        other._len = 0
 
     fn extend[
         D: DType, //
@@ -778,8 +766,11 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
                 " value to fill the new slots with. If not, make sure the new"
                 " size is smaller than the current size."
             )
-        for i in range(new_size, len(self)):
-            (self.data + i).destroy_pointee()
+
+        @parameter
+        if not hint_trivial_type:
+            for i in range(new_size, len(self)):
+                (self.data + i).destroy_pointee()
         self._len = new_size
         self.reserve(new_size)
 
