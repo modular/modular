@@ -142,7 +142,7 @@ fn create_buffer_ref_async(
     call_ctx: DeviceContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.data, len(buffer), async_ptr, call_ctx.handle_
+        buffer.data, len(buffer), async_ptr, call_ctx._handle
     )
 
 
