@@ -36,9 +36,9 @@ fn vec_func(
     out[tid] = in0[tid] + in1[tid] + s
 
 
-fn test_function(ctx: DeviceContext) raises:
+fn test_function_unchecked(ctx: DeviceContext) raises:
     print("-------")
-    print("Running test_function(" + ctx.name() + "):")
+    print("Running test_function_unchecked(" + ctx.name() + "):")
 
     alias length = 1024
     alias block_dim = 32
@@ -128,5 +128,5 @@ fn test_function_checked(ctx: DeviceContext) raises:
 
 fn main() raises:
     var ctx = create_test_device_context()
-    test_function(ctx)
+    test_function_unchecked(ctx)
     test_function_checked(ctx)

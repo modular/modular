@@ -61,7 +61,7 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
 
     var block_dim = 32
 
-    ctx1.enqueue_function[vec_func](
+    ctx1.enqueue_function_checked[vec_func, vec_func](
         in0_dev1,
         in1_dev1,
         out_dev1,
@@ -69,7 +69,7 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    ctx2.enqueue_function[vec_func](
+    ctx2.enqueue_function_checked[vec_func, vec_func](
         in0_dev2,
         in1_dev2,
         out_dev2,
