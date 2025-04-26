@@ -13,12 +13,13 @@
 
 from collections.string import StaticString
 from os import abort, getenv
+from pathlib import Path
 from sys.ffi import (
+    RTLD,
     _get_dylib_function,
     _Global,
     _OwnedDLHandle,
     external_call,
-    _find_dylib,
 )
 from sys.param_env import env_get_string, is_defined
 
@@ -42,7 +43,10 @@ fn _init_dylib() -> _OwnedDLHandle:
     # KGEN_CompilerRT_getMAXConfigValue returns an allocated pointer.
     mof_lib_path_str_ptr.free()
 
-    return _find_dylib["graph library"](mof_lib_path)
+    if not Path(mof_lib_path).exists():
+        abort("cannot load graph library from " + mof_lib_path)
+
+    return _OwnedDLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL)
 
 
 alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]

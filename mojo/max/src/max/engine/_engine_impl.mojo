@@ -6,7 +6,7 @@
 
 from pathlib import Path
 from sys import external_call
-from sys.ffi import _OwnedDLHandle, DLHandle, _find_dylib
+from sys.ffi import DLHandle
 
 from max._utils import CString, call_dylib_func, exchange, get_lib_path_from_cfg
 from memory import UnsafePointer
@@ -19,21 +19,20 @@ fn _get_engine_path() raises -> String:
 struct _EngineImpl:
     """Represents an instance of Modular AI Engine."""
 
-    var owned_lib: _OwnedDLHandle
-    # FIXME, lib should not be accessed directly.
     var lib: DLHandle
     """Handle to Modular AI Engine library."""
+    var can_close_lib: Bool
 
     alias VersionFnName = "M_version"
 
     @implicit
     fn __init__(out self, path: String):
-        self.owned_lib = _find_dylib["Modular AI Engine"](path)
-        self.lib = self.owned_lib.handle()
+        self.lib = DLHandle(path)
+        self.can_close_lib = True
 
     fn __moveinit__(out self, owned existing: Self):
-        self.owned_lib = existing.owned_lib^
-        self.lib = existing.lib^
+        self.lib = existing.lib
+        self.can_close_lib = exchange[Bool](existing.can_close_lib, False)
 
     fn get_version(self) -> String:
         """Returns version of modular AI engine.
@@ -46,3 +45,7 @@ struct _EngineImpl:
 
     fn __enter__(owned self) -> Self:
         return self^
+
+    fn __del__(owned self):
+        if self.can_close_lib:
+            self.lib.close()
