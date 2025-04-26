@@ -11,10 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
-# RUN: %mojo-no-debug %s
-
-# fail is tracked by KERN-1740
-# XFAIL: H100-GPU
+# RUN: %mojo-no-debug-no-assert %s
 
 from collections import Set
 from math import ceildiv
