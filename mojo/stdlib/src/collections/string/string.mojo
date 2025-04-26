@@ -799,7 +799,7 @@ struct String(
             self._capacity_or_data.set_has_nul_terminator(True)
 
     @always_inline
-    fn __init__(out self, bytes: Span[UInt8, *_]):
+    fn __init__(out self, *, bytes: Span[Byte, *_]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
 

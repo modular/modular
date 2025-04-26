@@ -178,7 +178,7 @@ struct FileHandle(Writer):
         """
 
         var list = self.read_bytes(size)
-        return String(list)
+        return String(bytes=list)
 
     fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If

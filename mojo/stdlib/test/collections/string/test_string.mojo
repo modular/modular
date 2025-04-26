@@ -647,9 +647,9 @@ def test_split():
             "\x1c",
             "\x1d",
             "\x1e",
-            String(next_line),
-            String(unicode_line_sep),
-            String(unicode_paragraph_sep),
+            String(bytes=next_line),
+            String(bytes=unicode_line_sep),
+            String(bytes=unicode_paragraph_sep),
         )
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
@@ -807,7 +807,7 @@ def test_splitlines():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
     for elt in List(next_line, unicode_line_sep, unicode_paragraph_sep):
-        u = String(elt[])
+        u = String(bytes=elt[])
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -836,9 +836,9 @@ def test_isspace():
         String("\x1c"),
         String("\x1d"),
         String("\x1e"),
-        String(next_line),
-        String(unicode_line_sep),
-        String(unicode_paragraph_sep),
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
 
     for i in univ_sep_var:
