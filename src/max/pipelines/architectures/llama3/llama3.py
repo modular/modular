@@ -65,7 +65,10 @@ class Llama3(Transformer):
                     "rms_norm_eps cannot be None for model that uses RMSNorm."
                 )
             create_norm = functools.partial(
-                RMSNorm, config.hidden_size, config.rms_norm_eps
+                RMSNorm,
+                config.hidden_size,
+                config.rms_norm_eps,
+                multiply_before_cast=False,  # disable Gemma3-style scaling
             )
         else:
             create_norm = functools.partial(

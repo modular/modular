@@ -38,6 +38,7 @@ class RMSNormV1(Layer):
     weight: TensorValueLike
     eps: float = 1e-6
     weight_offset: float = 0.0
+    multiply_before_cast: bool = True
 
     def __call__(self, x: TensorValue) -> TensorValue:
         return ops.custom(
@@ -49,6 +50,7 @@ class RMSNormV1(Layer):
                 ops.constant(self.weight_offset, dtype=x.dtype),
             ],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+            parameters={"multiply_before_cast": self.multiply_before_cast},
         )[0].tensor
 
 
@@ -60,6 +62,10 @@ class RMSNorm(Module):
         eps: Value added to denominator for numerical stability.
         weight_offset: Constant offset added to the learned weights at runtime.
             For Gemma-style RMSNorm, this should be set to 1.0.
+        multiply_before_cast: True if we multiply the inputs by the learned
+            weights before casting to the input type (Gemma3-style). False if we
+            cast the inputs to the input type first, then multiply by the learned
+            weights (Llama-style).
     """
 
     def __init__(
@@ -67,6 +73,7 @@ class RMSNorm(Module):
         dim: int,
         eps: float = 1e-6,
         weight_offset: float = 0.0,
+        multiply_before_cast: bool = True,
     ):
         super().__init__()
         self.weight = Weight(
@@ -74,6 +81,7 @@ class RMSNorm(Module):
         )
         self.eps = eps
         self.weight_offset = weight_offset
+        self.multiply_before_cast = multiply_before_cast
 
     def __call__(self, x: TensorValue) -> TensorValue:
         weight: TensorValue = ops.cast(self.weight, x.dtype)
@@ -89,6 +97,7 @@ class RMSNorm(Module):
                 ops.constant(self.weight_offset, dtype=x.dtype),
             ],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+            parameters={"multiply_before_cast": self.multiply_before_cast},
         )[0].tensor
 
 
