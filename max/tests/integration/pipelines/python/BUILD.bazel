@@ -66,13 +66,13 @@ modular_py_test(
         "PIPELINES_CUSTOM_ARCHITECTURE": "SDK/integration-test/pipelines/python/test_common:pipeline_model_dummy",
     },
     tags = [
-        "AITLIB-293",
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
     deps = [
+        ":hf_repo_lock",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//SDK/lib/API/python/max/pipelines/lib",
         requirement("transformers"),
         requirement("gguf"),
     ],
@@ -88,9 +88,7 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
-        "AITLIB-293",
         "gpu",
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
