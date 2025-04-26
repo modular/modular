@@ -123,7 +123,11 @@ fn _async_wait_timeout(chain: UnsafePointer[_Chain], timeout: Int) -> Bool:
 
 @always_inline
 fn parallelism_level() -> Int:
-    """Gets the parallelism level of the Runtime."""
+    """Gets the parallelism level of the Runtime.
+
+    Returns:
+        The number of worker threads available in the async runtime.
+    """
     return Int(
         external_call[
             "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
@@ -135,7 +139,18 @@ fn parallelism_level() -> Int:
 fn create_task(
     owned handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
 ):
-    """Run the coroutine as a task on the AsyncRT Runtime."""
+    """Run the coroutine as a task on the AsyncRT Runtime.
+
+    This function creates a task from a coroutine and schedules it for execution
+    on the async runtime. The task will execute asynchronously without blocking
+    the current execution context.
+
+    Args:
+        handle: The coroutine to execute as a task. Ownership is transferred.
+
+    Returns:
+        The `task` output parameter is initialized with the created task.
+    """
     var ctx = handle._get_ctx[_AsyncContext]()
     _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
     ctx[].callback = _AsyncContext.complete
@@ -145,6 +160,17 @@ fn create_task(
 
 @always_inline
 fn run(owned handle: Coroutine[*_], out result: handle.type):
+    """Executes a coroutine and waits for its completion.
+
+    This function runs the given coroutine on the async runtime and blocks until
+    it completes. The result of the coroutine is stored in the output parameter.
+
+    Args:
+        handle: The coroutine to execute. Ownership is transferred.
+
+    Returns:
+        The `result` output parameter is initialized with the coroutine's result.
+    """
     var ctx = handle._get_ctx[_AsyncContext]()
     _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
     ctx[].callback = _AsyncContext.complete
@@ -158,6 +184,18 @@ fn run(owned handle: Coroutine[*_], out result: handle.type):
 
 @always_inline
 fn run(owned handle: RaisingCoroutine[*_], out result: handle.type) raises:
+    """Executes a raising coroutine and waits for its completion.
+
+    This function runs the given raising coroutine on the async runtime and blocks
+    until it completes. The result of the coroutine is stored in the output parameter.
+    If the coroutine raises an error, that error is propagated to the caller.
+
+    Args:
+        handle: The raising coroutine to execute. Ownership is transferred.
+
+    Returns:
+        The `result` output parameter is initialized with the coroutine's result.
+    """
     var ctx = handle._get_ctx[_AsyncContext]()
     _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
     ctx[].callback = _AsyncContext.complete
@@ -186,11 +224,32 @@ fn run(owned handle: RaisingCoroutine[*_], out result: handle.type) raises:
 
 
 struct Task[type: AnyType, origins: OriginSet]:
+    """Represents an asynchronous task that will produce a value of the specified type.
+
+    A Task encapsulates a coroutine that is executing asynchronously and will eventually
+    produce a result. Tasks can be awaited in async functions or waited on in synchronous code.
+
+    Parameters:
+        type: The type of value that this task will produce when completed.
+        origins: The set of origins for the coroutine wrapped by this task.
+    """
+
     var _handle: Coroutine[type, origins]
+    """The underlying coroutine that executes the task."""
+
     var _result: type
+    """Storage for the result value produced by the task."""
 
     @implicit
     fn __init__(out self, owned handle: Coroutine[type, origins]):
+        """Initialize a task with a coroutine.
+
+        Takes ownership of the provided coroutine and sets up the task to receive
+        its result when completed.
+
+        Args:
+            handle: The coroutine to execute as a task. Ownership is transferred.
+        """
         self._handle = handle^
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._result)
@@ -199,7 +258,11 @@ struct Task[type: AnyType, origins: OriginSet]:
 
     fn get(self) -> ref [self._result] type:
         """Get the task's result value. Calling this on an incomplete task is
-        undefined behaviour."""
+        undefined behavior.
+
+        Returns:
+            A reference to the result value produced by the task.
+        """
         return self._result
 
     fn __del__(owned self):
@@ -215,6 +278,12 @@ struct Task[type: AnyType, origins: OriginSet]:
         """Suspend the current async function until the task completes and its
         result becomes available. This function must be force inlined into the
         calling async function.
+
+        This method enables the use of the 'await' keyword with Task objects in
+        async functions.
+
+        Returns:
+            A reference to the result value produced by the task.
         """
 
         @always_inline
@@ -229,7 +298,15 @@ struct Task[type: AnyType, origins: OriginSet]:
         return self.get()
 
     fn wait(self) -> ref [self.get()] type:
-        """Block the current thread until the future value becomes available."""
+        """Block the current thread until the future value becomes available.
+
+        This method is used in synchronous code to wait for an asynchronous task
+        to complete. Unlike `__await__`, this method does not suspend the current
+        coroutine but instead blocks the entire thread.
+
+        Returns:
+            A reference to the result value produced by the task.
+        """
         _async_wait(
             _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
         )
@@ -244,10 +321,21 @@ struct Task[type: AnyType, origins: OriginSet]:
 @value
 @register_passable("trivial")
 struct TaskGroupContext:
+    """Context structure for task group operations.
+
+    This structure holds a callback function and a pointer to a TaskGroup,
+    allowing asynchronous operations to interact with their parent TaskGroup
+    when they complete.
+    """
+
     alias tg_callback_fn_type = fn (mut TaskGroup) -> None
+    """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type
+    """Callback function to be invoked on the TaskGroup when an operation completes."""
+
     var task_group: UnsafePointer[TaskGroup]
+    """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
 @register_passable
@@ -289,11 +377,24 @@ struct _TaskGroupBox(CollectionElement):
 
 
 struct TaskGroup:
+    """A group of tasks that can be executed concurrently.
+
+    TaskGroup manages a collection of coroutines that can be executed in parallel.
+    It provides mechanisms to create, track, and wait for the completion of tasks.
+    """
+
     var counter: Atomic[DType.index]
+    """Atomic counter tracking the number of active tasks in the group."""
+
     var chain: _Chain
+    """Chain used for asynchronous completion notification."""
+
     var tasks: List[_TaskGroupBox]
+    """Collection of tasks managed by this TaskGroup."""
 
     fn __init__(out self):
+        """Initialize a new TaskGroup with an empty task list and initialized chain.
+        """
         var chain = _Chain()
         _init_asyncrt_chain(UnsafePointer[_Chain](to=chain))
         self.counter = Atomic[DType.index](1)
@@ -301,6 +402,7 @@ struct TaskGroup:
         self.tasks = List[_TaskGroupBox](capacity=16)
 
     fn __del__(owned self):
+        """Clean up resources associated with the TaskGroup."""
         _del_asyncrt_chain(UnsafePointer[_Chain](to=self.chain))
 
     @always_inline
@@ -321,6 +423,11 @@ struct TaskGroup:
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
         owned task: Coroutine[NoneType._mlir_type],
     ):
+        """Add a new task to the TaskGroup for execution.
+
+        Args:
+            task: The coroutine to be executed as a task.
+        """
         self._create_task(task^, desired_worker_id=-1)
 
     # Deprecated, use create_task() instead
@@ -343,11 +450,22 @@ struct TaskGroup:
 
     @staticmethod
     fn await_body_impl(hdl: AnyCoroutine, mut task_group: Self):
+        """Implementation of the await functionality for TaskGroup.
+
+        Args:
+            hdl: The coroutine handle to be awaited.
+            task_group: The TaskGroup to be awaited.
+        """
         _async_and_then(hdl, UnsafePointer[_Chain](to=task_group.chain))
         task_group._task_complete()
 
     @always_inline
     fn __await__(mut self):
+        """Make TaskGroup awaitable in async contexts.
+
+        This allows using 'await task_group' syntax in async functions.
+        """
+
         @always_inline
         @parameter
         fn await_body(cur_hdl: AnyCoroutine):
@@ -356,6 +474,13 @@ struct TaskGroup:
         _suspend_async[await_body]()
 
     fn wait[origins: OriginSet = __origin_of()](mut self):
+        """Wait for all tasks in the `TaskGroup` to complete.
+
+        This is a blocking call that returns only when all tasks have finished.
+
+        Parameters:
+            origins: The origin set for the wait operation.
+        """
         self._task_complete()
         _async_wait(UnsafePointer[_Chain](to=self.chain))
 
@@ -369,46 +494,114 @@ struct TaskGroup:
 struct DeviceContextPtr:
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
-    Note: When initializing a DeviceContext from a pointer, the refcount is not
-    incremented. This is considered safe because get_device_context()
-    is only used within kernels and the DeviceContext lifetime is managed
+    Note: When initializing a `DeviceContext` from a pointer, the refcount is not
+    incremented. This is considered safe because `get_device_context()`
+    is only used within kernels and the `DeviceContext` lifetime is managed
     by the graph compiler.
     """
 
-    var handle_: UnsafePointer[NoneType]
+    var _handle: UnsafePointer[NoneType]
+    """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
     fn __init__(out self):
-        self.handle_ = UnsafePointer[NoneType]()
+        """Initialize an empty `DeviceContextPtr` with a null pointer.
+
+        This creates a `DeviceContextPtr` that doesn't point to any device context.
+        """
+        self._handle = UnsafePointer[NoneType]()
 
     @implicit
     fn __init__(out self, handle: UnsafePointer[NoneType]):
-        self.handle_ = handle
+        """Initialize a `DeviceContextPtr` from a raw pointer.
+
+        Args:
+            handle: A raw pointer to a C++ `DeviceContext`.
+        """
+        self._handle = handle
 
     @implicit
     fn __init__(out self, device: DeviceContext):
-        self.handle_ = rebind[UnsafePointer[NoneType]](device._handle)
+        """Initialize a DeviceContextPtr from a `DeviceContext`.
+
+        This constructor allows implicit conversion from `DeviceContext` to `DeviceContextPtr`.
+
+        Args:
+            device: The `DeviceContext` to wrap in this pointer.
+        """
+        self._handle = rebind[UnsafePointer[NoneType]](device._handle)
 
     fn __getitem__(self) -> DeviceContext:
-        return DeviceContext(self.handle_)
+        """Dereference the pointer to get the `DeviceContext`.
+
+        Returns:
+            The `DeviceContext` that this pointer points to.
+        """
+        return DeviceContext(self._handle)
 
     fn get_device_context(self) -> DeviceContext:
+        """Get the `DeviceContext` that this pointer points to.
+
+        This is an alias for the dereference operator.
+
+        Returns:
+            The `DeviceContext` that this pointer points to.
+        """
         return self[]
 
 
 @register_passable("trivial")
 struct DeviceContextPtrList[size: Int]:
+    """A fixed-size collection of `DeviceContextPtr` objects.
+
+    This struct provides a lightweight, register-passable container for a fixed number
+    of `DeviceContextPtr` objects, with array-like access semantics.
+
+    Parameters:
+        size: The fixed number of `DeviceContextPtr` objects in the collection.
+    """
+
     var ptrs: StaticTuple[DeviceContextPtr, size]
+    """The underlying storage for the device context pointers."""
 
     @always_inline
     fn __init__(out self, ptrs: StaticTuple[DeviceContextPtr, size]):
+        """Initialize with a StaticTuple of `DeviceContextPtr` objects.
+
+        Args:
+            ptrs: A StaticTuple containing the `DeviceContextPtr` objects to store.
+        """
         self.ptrs = ptrs
 
     fn __getitem__[index: Int](self) -> DeviceContext:
+        """Access a `DeviceContext` at a compile-time known index.
+
+        Parameters:
+            index: A compile-time integer index.
+
+        Returns:
+            The `DeviceContext` at the specified index.
+        """
         return self.ptrs[index][]
 
     fn __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
+        """Access a `DeviceContext` using a runtime index value.
+
+        Parameters:
+            I: A type that conforms to the `Indexer` trait.
+
+        Args:
+            idx: A runtime index value that conforms to the Indexer trait.
+
+        Returns:
+            The `DeviceContext` at the specified index.
+        """
         return self.ptrs[idx][]
 
     fn __len__(self) -> Int:
+        """Get the number of `DeviceContextPtr` objects in the collection.
+
+        Returns:
+            The size of the collection as specified by the size parameter.
+        """
         return size
