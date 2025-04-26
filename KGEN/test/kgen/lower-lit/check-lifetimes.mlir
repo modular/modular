@@ -35,6 +35,22 @@ lit.fn @mark_initialized[mut lt](%arg: !lit.ref<@HasMemFields, mut lt> byref_res
   kgen.return
 }
 
+
+// CHECK-LABEL: lit.fn @resolved_fn
+// CHECK-NEXT:  lit.call @HasMemFields::@__del__{{.*}}(%arg0)
+// CHECK-NEXT:  kgen.return
+lit.fn @resolved_fn(%arg0: !lit.ref<@HasMemFields, mut dellife> owned_in_mem) {
+  kgen.return
+}
+
+// CHECK-LABEL: lit.fn @unresolved_fn
+// CHECK-NEXT: lit.end_fn unresolved
+lit.fn @unresolved_fn(%arg0: !lit.ref<@HasMemFields, mut dellife> owned_in_mem) {
+  // Don't process this function or insert the destructor call.  The structdecl
+  // might not be resolved.
+  lit.end_fn unresolved
+}
+
 // -----
 
 // COM: Test that destructors are inserted for error instances.

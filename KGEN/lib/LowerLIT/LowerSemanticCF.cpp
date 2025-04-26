@@ -740,7 +740,7 @@ void LowerSemanticCF::run() {
 
   // A return is required at the end of function, diagnose it if missing.  The
   // parser automatically inserts a `return None` in functions that return None.
-  if (LIT::EndFnOp endFunc =
+  if (auto endFunc =
           dyn_cast<LIT::EndFnOp>(theFunc.getBody()->getTerminator())) {
     // If this is a signature resolved function (not body resolved) then don't
     // error.

@@ -39,3 +39,12 @@ lit.fn @bad_break_2(%arg0: i1) {
   lit.return
   lit.end_fn
 }
+
+lit.fn @unresolved_fn() {
+  lit.end_fn unresolved // disables error.
+}
+
+lit.fn @resolved_fn() {
+  lit.end_fn // expected-error {{return expected at end of function with results}}
+}
+
