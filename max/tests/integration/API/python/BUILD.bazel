@@ -107,8 +107,7 @@ modular_py_test(
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
     exec_properties = {
-        # 2 here means *at least* 2 GPUs, in practice CI will have 4
-        "resources:gpu-count": "2",
+        "resources:gpu-2": "0.01",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["multi-gpu"],
@@ -136,8 +135,7 @@ modular_run_binary_test(
         "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
     },
     exec_properties = {
-        # 2 here means *at least* 2 GPUs, in practice CI will have 4
-        "resources:gpu-count": "2",
+        "resources:gpu-2": "0.01",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
