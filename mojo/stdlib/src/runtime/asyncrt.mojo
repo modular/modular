@@ -24,7 +24,7 @@ from memory import UnsafePointer
 
 from utils import StaticTuple
 
-from .tracing import TraceLevel, is_mojo_profiling_disabled
+from .tracing import TraceLevel
 
 # ===-----------------------------------------------------------------------===#
 # AsyncContext

@@ -54,6 +54,8 @@ struct TraceCategory(EqualityComparable, Intable):
     alias MAX = Self(4)
 
     var value: Int
+    """The integer value representing the trace category. Used for bitwise operations
+    when determining if profiling is enabled for a specific category."""
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Self) -> Bool:
@@ -105,6 +107,11 @@ struct TraceCategory(EqualityComparable, Intable):
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
+        """Converts the trace category to an integer.
+
+        Returns:
+            The integer value of the trace category.
+        """
         return self.value
 
 
@@ -123,10 +130,22 @@ struct TraceLevel(EqualityComparable):
     alias THREAD = Self(2)
 
     var value: Int
+    """The integer value representing the trace level.
+
+    Lower values indicate higher priority trace levels:
+    - 0 (ALWAYS): Always traced
+    - 1 (OP): Operation-level tracing
+    - 2 (THREAD): Thread-level tracing
+    """
 
     @always_inline
     @implicit
     fn __init__(out self, value: Int):
+        """Initializes a TraceLevel with the given integer value.
+
+        Args:
+            value: The integer value for the trace level.
+        """
         self.value = value
 
     @always_inline("nodebug")
@@ -191,6 +210,11 @@ struct TraceLevel(EqualityComparable):
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
+        """Converts the trace level to an integer.
+
+        Returns:
+            The integer value of the trace level.
+        """
         return self.value
 
 
@@ -202,7 +226,15 @@ struct TraceLevel(EqualityComparable):
 @always_inline
 fn is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns True if the profiling is enabled for that specific type and
-    level and False otherwise."""
+    level and False otherwise.
+
+    Parameters:
+        type: The trace category to check.
+        level: The trace level to check.
+
+    Returns:
+        True if profiling is enabled for the specified type and level.
+    """
     alias kProfilingTypeWidthBits = 3
 
     @parameter
@@ -222,7 +254,15 @@ fn is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
 @always_inline
 fn is_profiling_disabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns False if the profiling is enabled for that specific type and
-    level and True otherwise."""
+    level and True otherwise.
+
+    Parameters:
+        type: The trace category to check.
+        level: The trace level to check.
+
+    Returns:
+        True if profiling is disabled for the specified type and level.
+    """
     return not is_profiling_enabled[type, level]()
 
 
@@ -251,13 +291,13 @@ fn _is_gpu_profiler_detailed_enabled[
 
 
 @always_inline
-fn is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
+fn _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
 
 
 @always_inline
-fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
+fn _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is disabled for the specified level."""
     return is_profiling_disabled[TraceCategory.MAX, level]()
 
@@ -265,6 +305,13 @@ fn is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
 @always_inline
 fn trace_arg(name: String, shape: IndexList) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
+
+    Args:
+        name: The name of the argument.
+        shape: The shape of the argument.
+
+    Returns:
+        A string representation of the argument with its shape.
     """
     var s = name + "="
     for i in range(len(shape)):
@@ -277,6 +324,14 @@ fn trace_arg(name: String, shape: IndexList) -> String:
 @always_inline
 fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
+
+    Args:
+        name: The name of the argument.
+        shape: The shape of the argument.
+        dtype: The data type of the argument.
+
+    Returns:
+        A string representation of the argument with its shape and data type.
     """
     return trace_arg(name, shape) + "x" + String(dtype)
 
@@ -284,6 +339,13 @@ fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
 @always_inline
 fn trace_arg(name: String, buf: NDBuffer) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
+
+    Args:
+        name: The name of the argument.
+        buf: The NDBuffer to trace.
+
+    Returns:
+        A string representation of the buffer with its shape and data type.
     """
     return trace_arg(name, buf.dynamic_shape, buf.type)
 
@@ -300,13 +362,29 @@ struct Trace[
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
 ]:
-    """An object representing a specific trace."""
+    """An object representing a specific trace.
+
+    This struct provides functionality for creating and managing trace events
+    for profiling and debugging purposes.
+
+    Parameters:
+        level: The trace level to use.
+        category: The trace category to use (defaults to TraceCategory.MAX).
+        target: Optional target information to include in the trace.
+    """
 
     var _name_value: Variant[String, StaticString]
     var int_payload: OptionalReg[Int]
+    """Optional integer payload, typically used for task IDs that are appended to trace names."""
+
     var detail: String
+    """Additional details about the trace event, included when detailed tracing is enabled."""
+
     var event_id: Int
+    """Unique identifier for the trace event, assigned when the trace begins."""
+
     var parent_id: Int
+    """Identifier of the parent trace event, used for creating hierarchical trace relationships."""
 
     # This constructor is intentionally hidden because Variant is too flexible
     # about what it allows and we want to ensure that only StaticString or
@@ -375,6 +453,15 @@ struct Trace[
         *,
         task_id: OptionalReg[Int] = None,
     ):
+        """Creates a Mojo trace with the given string name.
+
+        Args:
+            name: The name that is used to identify this Mojo trace.
+            detail: Details of the trace entry.
+            parent_id: Parent to associate the trace with. Trace name will be
+                appended to parent name. 0 (default) indicates no parent.
+            task_id: Int that is appended to name.
+        """
         self = Self(
             _name_value=name^,
             detail=detail,
@@ -391,6 +478,15 @@ struct Trace[
         *,
         task_id: OptionalReg[Int] = None,
     ):
+        """Creates a Mojo trace with the given static string name.
+
+        Args:
+            name: The name that is used to identify this Mojo trace.
+            detail: Details of the trace entry.
+            parent_id: Parent to associate the trace with. Trace name will be
+                appended to parent name. 0 (default) indicates no parent.
+            task_id: Int that is appended to name.
+        """
         self = Self(
             _name_value=name,
             detail=detail,
@@ -407,6 +503,15 @@ struct Trace[
         *,
         task_id: OptionalReg[Int] = None,
     ):
+        """Creates a Mojo trace with the given string literal name.
+
+        Args:
+            name: The name that is used to identify this Mojo trace.
+            detail: Details of the trace entry.
+            parent_id: Parent to associate the trace with. Trace name will be
+                appended to parent name. 0 (default) indicates no parent.
+            task_id: Int that is appended to name.
+        """
         self = Self(
             _name_value=StaticString(name),
             detail=detail,
@@ -525,7 +630,10 @@ struct Trace[
 
     @always_inline
     fn mark(self):
-        """Marks the tracer with the info at the specific point of time."""
+        """Marks the tracer with the info at the specific point of time.
+
+        This creates a point event in the trace timeline rather than a range.
+        """
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
@@ -540,6 +648,11 @@ struct Trace[
 
     @always_inline
     fn name(self) -> String:
+        """Returns the name of the trace.
+
+        Returns:
+            The name of the trace as a String.
+        """
         return String(self._name_value[StaticString]) if self._name_value.isa[
             StaticString
         ]() else self._name_value[String]
@@ -561,19 +674,32 @@ struct Trace[
             return ""
 
     fn start(mut self):
-        """Start recording trace event."""
+        """Start recording trace event.
+
+        This begins recording of the trace event, similar to __enter__.
+        """
         self.__enter__()
 
     fn end(mut self):
-        """End recording trace event."""
+        """End recording trace event.
+
+        This finishes recording of the trace event, similar to __exit__.
+        """
         self.__exit__()
 
 
 fn get_current_trace_id[level: TraceLevel]() -> Int:
-    """Returns the id of last created trace entry on the current thread."""
+    """Returns the id of last created trace entry on the current thread.
+
+    Parameters:
+        level: The trace level to check.
+
+    Returns:
+        The ID of the current trace if profiling is enabled, otherwise 0.
+    """
 
     @parameter
-    if is_mojo_profiling_enabled[level]():
+    if _is_mojo_profiling_enabled[level]():
         return external_call[
             "KGEN_CompilerRT_TimeTraceProfilerGetCurrentId", Int
         ]()
