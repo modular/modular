@@ -24,7 +24,7 @@ from ..attention.interfaces import (
     AttentionImpl,
     AttentionImplQKV,
 )
-from ..embedding import Embedding, EmbeddingV2
+from ..embedding import Embedding, EmbeddingV1
 from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
@@ -34,7 +34,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Layer, LayerList, Module
-from ..linear import Linear, LinearV2
+from ..linear import Linear, LinearV1
 
 
 class TransformerBlock(Module):
@@ -97,8 +97,8 @@ class Transformer(Module):
         n_heads: int,
         layers: list[TransformerBlock],
         norm: Layer,
-        output: Linear | LinearV2,
-        embedding: Embedding | EmbeddingV2,
+        output: LinearV1 | Linear,
+        embedding: EmbeddingV1 | Embedding,
         kv_params: KVCacheParams,
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection

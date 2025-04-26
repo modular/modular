@@ -20,13 +20,13 @@ from typing import Optional
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, TensorValueLike, dtype_promotion, ops
-from max.nn import MLP, Conv3D, Linear, RMSNorm, Sequential
+from max.nn import MLPV1, Conv3DV1, LinearV1, RMSNormV1, Sequential
 from max.nn.layer import Module
 
 
 @dataclass
 class VisionPatchEmbed(Module):
-    proj: Conv3D
+    proj: Conv3DV1
     patch_size: int = 14
     temporal_patch_size: int = 2
     in_channels: int = 3
@@ -42,7 +42,7 @@ class VisionPatchEmbed(Module):
         """Generates patch embeddings from pixel_values of patches (`x`) and reorders them by window_index.
 
         Reshapes input to (batch_size, in_channels, depth, height, width).
-        Permutes it to be compatible with max.pipelines.nn.Conv3D input tensor.
+        Permutes it to be compatible with max.pipelines.nn.Conv3DV1 input tensor.
         Permutes the output then flattens it.
 
         Args:
@@ -172,8 +172,8 @@ class VisionRotaryEmbedding(Module):
 class VisionWindowSdpaAttention(Module):
     dim: int
     n_heads: int
-    qkv: Linear
-    proj: Linear
+    qkv: LinearV1
+    proj: LinearV1
 
     @staticmethod
     def apply_rotary_pos_emb_vision(
@@ -231,10 +231,10 @@ class VisionWindowSdpaAttention(Module):
         attention_mask: TensorValue,
     ) -> TensorValue:
         """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL. It does the following steps:
-            1. Linear Projections Q, K, V
-            2. Apply Rotary position embeddings on the Linear Projections Q, and K
+            1. LinearV1 Projections Q, K, V
+            2. Apply Rotary position embeddings on the LinearV1 Projections Q, and K
             3. Scaled dot product attention
-            4. Final Linear projection layer
+            4. Final LinearV1 projection layer
 
         Args:
             x:
@@ -280,10 +280,10 @@ class VisionWindowSdpaAttention(Module):
 
 @dataclass
 class VisionBlock(Module):
-    norm1: RMSNorm
-    norm2: RMSNorm
+    norm1: RMSNormV1
+    norm2: RMSNormV1
     attn: VisionWindowSdpaAttention
-    mlp: MLP
+    mlp: MLPV1
 
     def __post_init__(self):
         super().__init__()
@@ -310,7 +310,7 @@ class PatchMerger(Module):
     dimension that aligns with the text embeddings used in the LLM.
     """
 
-    norm: RMSNorm
+    norm: RMSNormV1
     mlp: Sequential
     dim: int
 

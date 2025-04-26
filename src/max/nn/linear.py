@@ -39,7 +39,7 @@ from .kernels import swish_glu
 from .layer import Layer, Module
 
 
-class LinearV2(Module):
+class Linear(Module):
     """
     Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
@@ -52,7 +52,7 @@ class LinearV2(Module):
 
     .. code-block:: python
 
-        linear_layer = LinearV2(
+        linear_layer = Linear(
             in_dim=256,
             out_dim=128,
             dtype=DType.float32,
@@ -161,7 +161,7 @@ class LinearV2(Module):
         return res
 
 
-class ColumnParallelLinear(LinearV2):
+class ColumnParallelLinear(Linear):
     """A Linear layer where the weight and bias are sharded onto multiple devices.
 
     This layer first computes :math:`y = xW_i^T + b_i` for each device `i` in
@@ -241,7 +241,7 @@ class ColumnParallelLinear(LinearV2):
         for n, device in enumerate(self.devices):
             arguments = list(args)
             arguments.append(device)
-            layer = LinearV2(*arguments, **kwargs)
+            layer = Linear(*arguments, **kwargs)
             layer.device = device
             layer.weight = self.weight.shard(n, device)
             if self.bias is not None:
@@ -281,8 +281,11 @@ def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
 
 
 @dataclass
-class Linear(Layer):
-    """A unified linear layer that delegates to either regular or quantized implementation."""
+class LinearV1(Layer):
+    """A unified linear layer that delegates to either regular or quantized implementation.
+
+    Deprecated: Use `Linear` instead.
+    """
 
     weight: TensorValueLike
     bias: TensorValueLike | None = None
@@ -309,7 +312,7 @@ class Linear(Layer):
         weights: Weights | Weight,
         bias: Weights | Weight | None = None,
         quantization_config: QuantizationConfig | None = None,
-    ) -> Linear:
+    ) -> LinearV1:
         """Factory method to create a Linear layer with appropriate implementation."""
         if not quantization_encoding:
             weight = _allocate_if_needed(
@@ -320,9 +323,9 @@ class Linear(Layer):
                 if bias
                 else None
             )
-            return Linear(weight=weight, bias=bias_weight)
+            return LinearV1(weight=weight, bias=bias_weight)
         else:
-            return QLinear._create(
+            return QLinearV1._create(
                 dtype,
                 quantization_encoding,
                 in_features,
@@ -334,7 +337,7 @@ class Linear(Layer):
 
 
 @dataclass
-class QLinear(Linear):
+class QLinearV1(LinearV1):
     """A quantized fully connected layer."""
 
     # Because Linear.bias is optional and Linear is a dataclass and we inherit from Linear, all our fields must be optional even if it doesn't make logical sense
@@ -350,7 +353,7 @@ class QLinear(Linear):
         weights: Weights | Weight,
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
-    ) -> Linear:
+    ) -> LinearV1:
         if quantization_encoding != QuantizationEncoding.GPTQ:
             weight = _allocate_if_needed(
                 weights, dtype, [in_features, out_features]
@@ -360,14 +363,14 @@ class QLinear(Linear):
                 if bias
                 else None
             )
-            return QLinear(
+            return QLinearV1(
                 weight=weight,
                 bias=bias_weight,
                 # GGUF weights can have different quantization per weight
                 quantization_encoding=weight.quantization_encoding,
             )
         else:
-            return GPTQLinear._create(
+            return GPTQLinearV1._create(
                 dtype,
                 quantization_encoding,
                 in_features,
@@ -394,7 +397,7 @@ class QLinear(Linear):
 
 
 @dataclass
-class GPTQLinear(QLinear):
+class GPTQLinearV1(QLinearV1):
     "A Linear layer for GPTQ encoding"
 
     # Because QLinear has optional fields, so must we, since we subclass QLinear
@@ -411,7 +414,7 @@ class GPTQLinear(QLinear):
         weights: Weights | Weight,
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
-    ) -> Linear:
+    ) -> LinearV1:
         """Internal method to create a Linear layer from GPTQ weights."""
 
         assert quantization_config, (
@@ -454,7 +457,7 @@ class GPTQLinear(QLinear):
                     weights._allocated[perm_idx.name]  # type: ignore
                 ).astype(np.int32)
 
-            return GPTQLinear(
+            return GPTQLinearV1(
                 weight=weight,
                 bias=None,
                 quantization_encoding=quantization_encoding,
@@ -471,7 +474,7 @@ class GPTQLinear(QLinear):
                 if bias
                 else None
             )
-            return Linear(weight, bias_weight)
+            return LinearV1(weight, bias_weight)
 
     def __call__(self, x: TensorValue) -> TensorValue:
         assert self.quantization_encoding is not None
@@ -498,7 +501,7 @@ class GPTQLinear(QLinear):
 
 
 @dataclass
-class GPTQLinearV2(LinearV2):
+class GPTQLinear(Linear):
     "A Linear layer for GPTQ encoding"
 
     def __init__(
@@ -529,7 +532,7 @@ class GPTQLinearV2(LinearV2):
         if has_bias:
             raise ValueError("has_bias=True is not supported in GPTQLinear.")
 
-        # Skip LinearV2 initialization.
+        # Skip Linear initialization.
         Module.__init__(self)
         self.device = device
         self.qweight = Weight(
@@ -604,15 +607,15 @@ class GPTQLinearV2(LinearV2):
 
 
 @dataclass
-class MLP(Layer):
+class MLPV1(Layer):
     """
     Simple multi-layer perceptron composed of three linear layers.
     Uses SiLU activation function.
     """
 
-    gate_proj: Linear
-    down_proj: Linear
-    up_proj: Linear
+    gate_proj: LinearV1
+    down_proj: LinearV1
+    up_proj: LinearV1
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         if (
@@ -644,7 +647,7 @@ _ACTIVATION_FUNCTIONS = {
 }
 
 
-class MLPV2(Module):
+class MLP(Module):
     """
     Simple multi-layer perceptron composed of three linear layers.
     Defaults to SiLU activation function.
@@ -657,7 +660,7 @@ class MLPV2(Module):
         hidden_dim: int,
         feed_forward_length: int,
         devices: Sequence[DeviceRef],
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         has_bias: bool = False,
         activation_function: str = "silu",
     ):
@@ -768,7 +771,7 @@ class MLPV2(Module):
             return self.down_proj(self.activation_function(gate_out) * up_out)
 
 
-class DistributedMLP(MLPV2):
+class DistributedMLP(MLP):
     """A distributed multi-layer perceptron.
 
     This class has the same state keys as the non-distributed MLP Layer.
@@ -803,7 +806,7 @@ class DistributedMLP(MLPV2):
         # not recorded by the nn.Module and do not appear in the state dict.
         self.list_of_mlps = []
         for n, device in enumerate(self.devices):
-            layer = MLPV2(*args, **kwargs)
+            layer = MLP(*args, **kwargs)
 
             layer.gate_proj.device = device
             layer.gate_proj.weight = self.gate_proj.weight.shard(n, device)

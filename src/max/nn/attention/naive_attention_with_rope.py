@@ -21,7 +21,7 @@ from max.graph import BufferValue, TensorValue, TensorValueLike, ops
 
 from ..kv_cache import KVCacheParams
 from ..layer import Module
-from ..linear import Linear, LinearV2
+from ..linear import Linear, LinearV1
 from ..rotary_embedding import RotaryEmbedding
 
 
@@ -31,10 +31,10 @@ class NaiveAttentionWithRope(Module):
         n_heads: int,
         kv_params: KVCacheParams,
         dim: int,
-        wq: Linear | LinearV2,
-        wk: Linear | LinearV2,
-        wv: Linear | LinearV2,
-        wo: Linear | LinearV2,
+        wq: LinearV1 | Linear,
+        wk: LinearV1 | Linear,
+        wv: LinearV1 | Linear,
+        wo: LinearV1 | Linear,
         rope: RotaryEmbedding,
         scale: float | None = None,
     ):

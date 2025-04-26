@@ -16,7 +16,7 @@
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
-from max.nn.linear import LinearV2
+from max.nn.linear import Linear
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import MaxMoEGate
 
 
@@ -103,19 +103,19 @@ class MoE(Module):
         )
 
         # Shared experts weights
-        self.shared_expert_up_proj = LinearV2(
+        self.shared_expert_up_proj = Linear(
             in_dim=self.hidden_size,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
             dtype=dtype,
             device=device,
         )
-        self.shared_expert_down_proj = LinearV2(
+        self.shared_expert_down_proj = Linear(
             in_dim=self.moe_intermediate_size * self.n_shared_experts,
             out_dim=self.hidden_size,
             dtype=dtype,
             device=device,
         )
-        self.shared_expert_gate_proj = LinearV2(
+        self.shared_expert_gate_proj = Linear(
             in_dim=self.hidden_size,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
             dtype=dtype,
@@ -170,7 +170,7 @@ class MoE(Module):
         summed_down_projs = (topk_weight @ down_projs).cast(identity.dtype)
         final_out = ops.squeeze(summed_down_projs, axis=1)
 
-        # TODO(MODELS-396): Probably should be a MLPV2 layer
+        # TODO(MODELS-396): Probably should be a MLP layer
         shared_expert_out = self.shared_expert_down_proj(
             ops.silu(self.shared_expert_gate_proj(identity))
             * self.shared_expert_up_proj(identity)

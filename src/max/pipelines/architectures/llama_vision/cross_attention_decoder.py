@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn import MLP, RMSNorm
+from max.nn import MLPV1, RMSNormV1
 from max.nn.kernels import (
     MHAMaskVariant,
     cross_attention_ragged,
@@ -29,7 +29,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import ContinuousBatchingKVCacheCollection, KVCacheParams
 from max.nn.layer import Layer
-from max.nn.linear import Linear
+from max.nn.linear import LinearV1
 
 
 @dataclass
@@ -45,22 +45,22 @@ class CrossSdpaAttention(Layer):
     layer_idx: int
     """Index into the cross attention layers' KV cache."""
 
-    q_proj: Linear
+    q_proj: LinearV1
     """A linear layer for the query projection."""
 
     wk: Weight
-    """The k weight vector. Combines with wv to form a Linear."""
+    """The k weight vector. Combines with wv to form a LinearV1."""
 
     wv: Weight
-    """The v weight vector. Combines with wk to form a Linear."""
+    """The v weight vector. Combines with wk to form a LinearV1."""
 
-    o_proj: Linear
+    o_proj: LinearV1
     """A linear layer for the output projection."""
 
-    q_norm: RMSNorm
+    q_norm: RMSNormV1
     """Layer normalization."""
 
-    k_norm: RMSNorm
+    k_norm: RMSNormV1
     """Layer normalization."""
 
     def __call__(
@@ -136,10 +136,10 @@ class CrossAttentionDecoderLayer(Layer):
     """Cross-attention transformer block with tanh-gated attention and feedforward."""
 
     cross_attn: CrossSdpaAttention
-    input_layernorm: RMSNorm
+    input_layernorm: RMSNormV1
     cross_attn_attn_gate: Weight
-    mlp: MLP
-    post_attention_layernorm: RMSNorm
+    mlp: MLPV1
+    post_attention_layernorm: RMSNormV1
     cross_attn_mlp_gate: Weight
 
     def __call__(

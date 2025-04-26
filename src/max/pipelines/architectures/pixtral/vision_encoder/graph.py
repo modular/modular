@@ -15,7 +15,7 @@
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import Weights
-from max.nn import Conv2D, Linear, RMSNorm
+from max.nn import Conv2DV1, LinearV1, RMSNormV1
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
@@ -31,7 +31,7 @@ def _patch_conv2d(
     patch_size: int,
     out_channels: int,
     weights: Weights,
-) -> Conv2D:
+) -> Conv2DV1:
     """Creates a 2D convolution layer with the following assumptions:
     - kernel size = (patch_size, patch_size)
     - stride = (patch_size, patch_size)
@@ -41,14 +41,14 @@ def _patch_conv2d(
     of each patch. The embedding dim is out_channels.
     """
     # Loaded torch weights shape = torch.Size([1024, 3, 16, 16]).
-    # Conv2D expects (height, width, in_channels, out_channels) = [16, 16, 3, 1024].
+    # Conv2DV1 expects (height, width, in_channels, out_channels) = [16, 16, 3, 1024].
     filter_weights = ops.permute(
         weights.weight.allocate(
             dtype, [out_channels, in_channels, patch_size, patch_size], None
         ),
         [2, 3, 1, 0],
     )
-    return Conv2D(
+    return Conv2DV1(
         filter_weights,
         stride=(patch_size, patch_size),
     )
@@ -59,8 +59,8 @@ def _linear(
     in_features: int,
     out_features: int,
     weights: Weights,
-) -> Linear:
-    return Linear(
+) -> LinearV1:
+    return LinearV1(
         weights.weight.allocate(dtype, [in_features, out_features], None)
     )
 
@@ -93,8 +93,8 @@ def _feed_forward(
     )
 
 
-def _rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
-    return RMSNorm(
+def _rms_norm(dims: int, eps: float, weights: Weights) -> RMSNormV1:
+    return RMSNormV1(
         weights.weight.allocate(DType.bfloat16, [dims], device=DeviceRef.GPU()),
         eps,
     )

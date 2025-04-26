@@ -22,8 +22,8 @@ from max.graph import TensorValue, TensorValueLike, ops
 from max.nn.layer import Layer
 
 if TYPE_CHECKING:
-    from max.nn.linear import Linear
-    from max.nn.norm import RMSNorm
+    from max.nn.linear import LinearV1
+    from max.nn.norm import RMSNormV1
 
     from .attention import Attention
 
@@ -35,9 +35,9 @@ class MLP(Layer):
     Uses Gelu activation function.
     """
 
-    gate_proj: Linear
-    down_proj: Linear
-    up_proj: Linear
+    gate_proj: LinearV1
+    down_proj: LinearV1
+    up_proj: LinearV1
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
@@ -45,12 +45,12 @@ class MLP(Layer):
 
 @dataclass
 class TransformerBlock(Layer):
-    """Stack of Attention, FeedForward, and RMSNorm layers."""
+    """Stack of Attention, FeedForward, and RMSNormV1 layers."""
 
     attention: Attention
     mlp: MLP
-    attention_norm: RMSNorm
-    mlp_norm: RMSNorm
+    attention_norm: RMSNormV1
+    mlp_norm: RMSNormV1
     residual_multiplier: float = 1.0
 
     def __call__(

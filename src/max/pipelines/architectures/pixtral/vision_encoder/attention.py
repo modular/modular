@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from max.graph import TensorValue, TensorValueLike, ops
 from max.nn.layer import Layer
-from max.nn.linear import Linear
+from max.nn.linear import LinearV1
 
 from .attention_utils import rotate_half
 
@@ -30,10 +30,10 @@ class Attention(Layer):
 
     dropout: float
 
-    wq: Linear
-    wk: Linear
-    wv: Linear
-    wo: Linear
+    wq: LinearV1
+    wk: LinearV1
+    wv: LinearV1
+    wo: LinearV1
 
     def apply_rotary_embedding(
         self,

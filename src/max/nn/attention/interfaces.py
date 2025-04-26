@@ -29,7 +29,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Layer, Module
-from ..linear import Linear
+from ..linear import LinearV1
 
 
 @dataclass
@@ -93,7 +93,7 @@ class AttentionImpl(Layer, ABC):
     wqkv: TensorValue
     """The concatenation of q, k, and v weight vectors."""
 
-    wo: Linear
+    wo: LinearV1
     """A linear layer for the output projection."""
 
     scale: float
@@ -202,7 +202,7 @@ class AttentionImplQKV(Layer, ABC):
     wv: TensorValueLike
     """The v weight vector."""
 
-    wo: Linear
+    wo: LinearV1
     """A linear layer for the output projection."""
 
     scale: float

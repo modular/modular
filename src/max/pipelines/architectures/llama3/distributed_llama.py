@@ -21,7 +21,7 @@ from typing import Callable
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
-    AttentionWithRopeV2,
+    AttentionWithRope,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
     DistributedMLP,
@@ -29,8 +29,8 @@ from max.nn import (
     DistributedTransformer,
     DistributedTransformerBlock,
     GPTQAttentionWithRope,
-    GPTQLinearV2,
-    LinearV2,
+    GPTQLinear,
+    Linear,
     Llama3RotaryEmbedding,
     Module,
     VocabParallelEmbedding,
@@ -76,17 +76,17 @@ class DistributedLlama3(DistributedTransformer):
         )
 
         # Select linear layer class.
-        linear_cls: Callable[..., LinearV2]
+        linear_cls: Callable[..., Linear]
         if config.quantization_config:
             logger.warning(
                 "Model contains GPTQ weights. This is currently not supported with multiple GPUs, and will run on %s.",
                 config.devices[0],
             )
             linear_cls = functools.partial(
-                GPTQLinearV2, quantization_config=config.quantization_config
+                GPTQLinear, quantization_config=config.quantization_config
             )
         else:
-            linear_cls = LinearV2
+            linear_cls = Linear
 
         # Select MLP class.
         mlp_cls: Callable[..., Module]
@@ -100,7 +100,7 @@ class DistributedLlama3(DistributedTransformer):
             mlp_cls = DistributedMLP
 
         # Select attention class.
-        attention_cls: Callable[..., AttentionWithRopeV2]
+        attention_cls: Callable[..., AttentionWithRope]
         if config.quantization_config:
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,

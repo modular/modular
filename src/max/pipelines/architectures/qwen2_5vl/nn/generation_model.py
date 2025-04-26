@@ -15,7 +15,7 @@ from typing import Callable, Union, cast
 
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
-from max.nn import LinearV2, ReturnLogits
+from max.nn import Linear, ReturnLogits
 from max.nn.layer import Module
 
 from .decoder import Qwen2_5VLDecoderTransformer
@@ -25,7 +25,7 @@ from .visual_transformer import VisionTransformer
 class GenerationModel(Module):
     visual: VisionTransformer
     model: Qwen2_5VLDecoderTransformer
-    lm_head: LinearV2
+    lm_head: Linear
     dim: int
     n_heads: int
     image_token_id: int
@@ -38,7 +38,7 @@ class GenerationModel(Module):
         self,
         visual: VisionTransformer,
         model: Qwen2_5VLDecoderTransformer,
-        lm_head: LinearV2,
+        lm_head: Linear,
         dim: int,
         n_heads: int,
         image_token_id: int,

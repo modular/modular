@@ -23,12 +23,12 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.embedding import EmbeddingV2
+from max.nn.embedding import Embedding
 
 
-class ScaledWordEmbedding(EmbeddingV2):
+class ScaledWordEmbedding(Embedding):
     """
-    This layer is a wrapper around nn.EmbeddingV2 that multiplies the embeddings
+    This layer is a wrapper around nn.Embedding that multiplies the embeddings
     with a scale factor.
     """
 

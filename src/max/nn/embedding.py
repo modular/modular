@@ -33,7 +33,12 @@ from .layer import Layer, Module
 
 
 @dataclass
-class Embedding(Layer):
+class EmbeddingV1(Layer):
+    """A lookup table for embedding integer indices into dense vectors.
+
+    Deprecated: Use `Embedding` instead.
+    """
+
     weights: TensorValueLike
     device: DeviceRef
 
@@ -50,7 +55,7 @@ class Embedding(Layer):
         return result
 
 
-class EmbeddingV2(Module):
+class Embedding(Module):
     """
     A lookup table for embedding integer indices into dense vectors.
 
@@ -62,7 +67,7 @@ class EmbeddingV2(Module):
 
     .. code-block:: python
 
-        embedding_layer = EmbeddingV2(
+        embedding_layer = Embedding(
             vocab_size=1000,
             hidden_dim=256,
             dtype=DType.float32,

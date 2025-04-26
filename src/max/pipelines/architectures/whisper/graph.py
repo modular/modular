@@ -16,7 +16,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
-from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
+from max.nn import Conv1DV1, EmbeddingV1, LayerNormV1, LinearV1, Sequential
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
@@ -31,7 +31,7 @@ def conv1d(
     padding: int,
     out_channels: int,
     weights: SafetensorWeights,
-) -> Conv1D:
+) -> Conv1DV1:
     """Creates a 1D convolution layer.
     For conv1: ( hugging_face weights: model.encoder.conv1.weight)
     in_channels = 128
@@ -51,7 +51,7 @@ def conv1d(
     # Graph-API Conv1D expects (kernel_size, in_channels, out_channels) = [3, 128, 1280].
     # TODO: Implement Conv1D with bias and use it here.
     bias = weights.bias.allocate(dtype, [out_channels])
-    return Conv1D(
+    return Conv1DV1(
         filter=ops.permute(
             weights.weight.allocate(
                 dtype, [out_channels, in_channels, 1, kernel_size], None
@@ -70,7 +70,7 @@ def embedding(
     weights: SafetensorWeights,
     device: DeviceRef,
 ):
-    return Embedding(
+    return EmbeddingV1(
         weights.weight.allocate(
             dtype,
             [max_source_positions, hidden_dim],
@@ -80,9 +80,11 @@ def embedding(
     )
 
 
-def layer_norm(dims: int, eps: float, weights: SafetensorWeights) -> LayerNorm:
+def layer_norm(
+    dims: int, eps: float, weights: SafetensorWeights
+) -> LayerNormV1:
     # TODO: check the shape of bias
-    return LayerNorm(
+    return LayerNormV1(
         weight=weights.weight.allocate(DType.bfloat16, [dims]),
         eps=eps,
         bias=weights.bias.allocate(DType.bfloat16, [dims]),
@@ -94,9 +96,9 @@ def linear(
     in_features: int,
     out_features: int,
     weights: SafetensorWeights,
-) -> Linear:
+) -> LinearV1:
     # TODO: Check we are passing the correct dim for bias
-    return Linear(
+    return LinearV1(
         weights.weight.allocate(dtype, [in_features, out_features], None),
         bias=weights.bias.allocate(dtype, [out_features], None),
     )
@@ -181,10 +183,10 @@ def attention(
         n_heads=huggingface_config.n_heads,
         head_dim=huggingface_config.d_model
         // huggingface_config.encoder_attention_heads,
-        wq=Linear(wq, bias=bias_q),
-        wk=Linear(wk, bias=bias_k),
-        wv=Linear(wv, bias=bias_v),
-        wo=Linear(
+        wq=LinearV1(wq, bias=bias_q),
+        wk=LinearV1(wk, bias=bias_k),
+        wv=LinearV1(wv, bias=bias_v),
+        wo=LinearV1(
             wo,
             bias=bias_o,
         ),
@@ -258,7 +260,7 @@ def encoder(
         for i in range(huggingface_config.encoder_layers)
     ]
 
-    # Hugging Face model uses default eps for nn.LayerNorm which is = 1e-5
+    # Hugging Face model uses default eps for nn.LayerNormV1 which is = 1e-5
     norm = layer_norm(
         dims=huggingface_config.d_model,
         eps=1e-5,

@@ -35,7 +35,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Linear, ReturnLogits
+from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     KVCacheInputs,
@@ -546,7 +546,7 @@ class LlamaVisionModel(Layer):
             device=DeviceRef.GPU(),
         )
 
-        self.multi_modal_projector = Linear(
+        self.multi_modal_projector = LinearV1(
             weights.multi_modal_projector.weight.allocate(
                 dtype,
                 [

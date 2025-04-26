@@ -20,7 +20,7 @@ from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
 from max.nn.comm import Allreduce
 from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
 from max.nn.layer import Module
-from max.nn.linear import LinearV2
+from max.nn.linear import Linear
 
 
 class MoE(Module):
@@ -104,26 +104,26 @@ class MoE(Module):
         )
 
         # Shared experts weights
-        self.shared_expert_up_proj = LinearV2(
+        self.shared_expert_up_proj = Linear(
             in_dim=self.hidden_dim,
             out_dim=self.intermediate_size,
             dtype=dtype,
             device=devices[0],
         )
-        self.shared_expert_down_proj = LinearV2(
+        self.shared_expert_down_proj = Linear(
             in_dim=self.intermediate_size,
             out_dim=self.hidden_dim,
             dtype=dtype,
             device=devices[0],
         )
-        self.shared_expert_gate_proj = LinearV2(
+        self.shared_expert_gate_proj = Linear(
             in_dim=self.hidden_dim,
             out_dim=self.intermediate_size,
             dtype=dtype,
             device=devices[0],
         )
 
-        self.router = LinearV2(
+        self.router = Linear(
             in_dim=self.hidden_dim,
             out_dim=self.num_experts,
             dtype=dtype,

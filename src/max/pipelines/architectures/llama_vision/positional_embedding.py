@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph import TensorValue, Weight, ops
-from max.nn import Embedding
+from max.nn import EmbeddingV1
 from max.nn.layer import Layer
 
 
@@ -37,7 +37,7 @@ class PrecomputedAspectRatioEmbedding(Layer):
     max_num_tiles: int
     hidden_size: int
     gate: Weight
-    embedding: Embedding
+    embedding: EmbeddingV1
     is_gated: bool = False
 
     def __call__(
@@ -82,7 +82,7 @@ class PrecomputedPositionEmbedding(Layer):
     max_num_tiles: int
     gate: Weight
     embedding: Weight
-    tile_embedding: Embedding
+    tile_embedding: EmbeddingV1
 
     def __call__(
         self, hidden_state: TensorValue, aspect_ratio_ids: TensorValue

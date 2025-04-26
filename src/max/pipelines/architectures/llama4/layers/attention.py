@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
     PagedKVCacheCollection,
 )
 from max.nn.layer import Module
-from max.nn.linear import LinearV2
+from max.nn.linear import Linear
 from max.nn.rotary_embedding import OptimizedRotaryEmbedding
 
 from .norm import l2_norm
@@ -67,7 +67,7 @@ class _Llama4TextAttention(Module):
         floor_scale: float,
         attn_scale: float,
         devices: list[DeviceRef],
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = False,
         use_rope: bool = True,

@@ -17,9 +17,9 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValueLike, ops
-from max.nn import Conv2D
+from max.nn import Conv2DV1
 from max.nn.layer import Layer
-from max.nn.norm import RMSNorm
+from max.nn.norm import RMSNormV1
 
 from .rotary_embedding_2d import RotaryEmbedding2D, patch_position_ids
 from .transformer import Transformer
@@ -34,8 +34,8 @@ class VisionEncoder(Layer):
     embeddings of patches.
     """
 
-    patch_conv: Conv2D
-    layer_norm: RMSNorm
+    patch_conv: Conv2DV1
+    layer_norm: RMSNormV1
     patch_positional_embedding: RotaryEmbedding2D
     transformer: Transformer
     dtype: DType

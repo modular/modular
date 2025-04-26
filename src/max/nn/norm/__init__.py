@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from .group_norm import GroupNorm
-from .layer_norm import LayerNorm, LayerNormV2
-from .rms_norm import DistributedRMSNorm, RMSNorm, RMSNormV2
+from .layer_norm import LayerNorm, LayerNormV1
+from .rms_norm import DistributedRMSNorm, RMSNorm, RMSNormV1
 
 __all__ = [
     "GroupNorm",
+    "LayerNormV1",
     "LayerNorm",
-    "LayerNormV2",
+    "RMSNormV1",
     "RMSNorm",
-    "RMSNormV2",
     "DistributedRMSNorm",
 ]

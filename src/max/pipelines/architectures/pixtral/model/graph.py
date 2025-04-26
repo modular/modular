@@ -14,7 +14,7 @@
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights
-from max.nn import Linear
+from max.nn import LinearV1
 from max.nn.kv_cache import KVCacheManager, KVCacheParams
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
@@ -34,11 +34,11 @@ def _linear(
     in_features: int,
     out_features: int,
     weights: Weights,
-) -> Linear:
+) -> LinearV1:
     """Unlike the vision encoder's version, this linear layer has a bias.
     This linear layer is used by the LlavaMultiModalConnector
     """
-    return Linear(
+    return LinearV1(
         weights.weight.allocate(dtype, [in_features, out_features], None),
         bias=weights.bias.allocate(dtype, [in_features], None),
     )

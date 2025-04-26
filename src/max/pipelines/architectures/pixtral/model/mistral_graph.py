@@ -19,12 +19,12 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import Weights
 from max.nn import (
-    MLP,
-    AttentionWithRope,
-    Embedding,
-    Linear,
+    MLPV1,
+    AttentionWithRopeV1,
+    EmbeddingV1,
+    LinearV1,
     OptimizedRotaryEmbedding,
-    RMSNorm,
+    RMSNormV1,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -45,7 +45,7 @@ def feed_forward(
     feed_forward_length: int,
     weights: Weights,
 ):
-    return MLP(
+    return MLPV1(
         linear(
             dtype,
             feed_forward_length,
@@ -72,16 +72,16 @@ def linear(
     in_features: int,
     out_features: int,
     weights: Weights,
-) -> Linear:
-    return Linear(
+) -> LinearV1:
+    return LinearV1(
         weights.weight.allocate(
             dtype, [in_features, out_features], device=DeviceRef.GPU()
         )
     )
 
 
-def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
-    return RMSNorm(
+def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNormV1:
+    return RMSNormV1(
         weights.weight.allocate(DType.bfloat16, [dims], device=DeviceRef.GPU()),
         eps,
     )
@@ -94,7 +94,7 @@ def embedding(
     weights: Weights,
     dtype: DType,
 ):
-    return Embedding(
+    return EmbeddingV1(
         weights.weight.allocate(
             dtype, [vocab_size, hidden_dim], device=DeviceRef.GPU()
         ),
@@ -137,7 +137,7 @@ def _attention_opaque(
     )
     wqkv = ops.concat((wq, wk, wv))
 
-    return AttentionWithRope(
+    return AttentionWithRopeV1(
         n_heads=huggingface_config.text_config.num_attention_heads,
         kv_params=kv_params,
         wqkv=wqkv,

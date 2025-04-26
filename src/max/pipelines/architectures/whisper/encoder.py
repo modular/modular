@@ -18,10 +18,10 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
 from max.nn import (
-    Conv1D,
-    Embedding,
-    LayerNorm,
-    Linear,
+    Conv1DV1,
+    EmbeddingV1,
+    LayerNormV1,
+    LinearV1,
     Sequential,
 )
 from max.nn.layer import Layer
@@ -32,10 +32,10 @@ class WhisperSdpaAttention(Layer):
     n_heads: int
     head_dim: int
 
-    wq: Linear
-    wk: Linear
-    wv: Linear
-    wo: Linear
+    wq: LinearV1
+    wk: LinearV1
+    wv: LinearV1
+    wo: LinearV1
 
     def scaled_dot_product_attention(
         self,
@@ -107,12 +107,12 @@ class WhisperSdpaAttention(Layer):
 
 @dataclass
 class WhisperEncoderLayer(Layer):
-    """Stack of Attention, FeedForward, and LayerNorm layers."""
+    """Stack of Attention, FeedForward, and LayerNormV1 layers."""
 
     attention: WhisperSdpaAttention
     mlp: Sequential
-    attention_norm: LayerNorm
-    mlp_norm: LayerNorm
+    attention_norm: LayerNormV1
+    mlp_norm: LayerNormV1
 
     def __call__(
         self,
@@ -147,11 +147,13 @@ class WhisperEncoder(Layer):
         3. No final transformer linear layer "output".
     """
 
-    conv1: Conv1D
-    conv2: Conv1D
-    embed_positions: Embedding
+    conv1: Conv1DV1
+    conv2: Conv1DV1
+    embed_positions: EmbeddingV1
     layers: list[WhisperEncoderLayer]
-    norm: LayerNorm  # TODO: Is LayerNorm here not the same as nn.LayerNorm
+    norm: (
+        LayerNormV1  # TODO: Is LayerNormV1 here not the same as nn.LayerNormV1
+    )
 
     all_logits: bool = False
 

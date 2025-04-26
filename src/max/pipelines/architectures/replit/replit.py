@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from max.graph import ops
 from max.nn import (
-    EmbeddingV2,
-    LayerNormV2,
-    LinearV2,
+    Embedding,
+    LayerNorm,
+    Linear,
     MHAMaskVariant,
     Module,
     RaggedAttention,
@@ -54,14 +54,14 @@ class Replit(Transformer):
                 ),
                 mlp=Sequential(
                     layers=[
-                        LinearV2(
+                        Linear(
                             config.hidden_size,
                             12288,
                             config.dtype,
                             config.devices[0],
                         ),
                         Gelu(),
-                        LinearV2(
+                        Linear(
                             12288,
                             config.hidden_size,
                             config.dtype,
@@ -69,13 +69,13 @@ class Replit(Transformer):
                         ),
                     ]
                 ),
-                attention_norm=LayerNormV2(
+                attention_norm=LayerNorm(
                     config.hidden_size,
                     config.devices[0],
                     1e-5,
                     use_bias=False,
                 ),
-                mlp_norm=LayerNormV2(
+                mlp_norm=LayerNorm(
                     config.hidden_size,
                     config.devices[0],
                     1e-5,
@@ -87,13 +87,13 @@ class Replit(Transformer):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
-        embedding_layer = EmbeddingV2(
+        embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
             embedding_output_dtype,
             config.devices[0],
         )
-        output = LinearV2(
+        output = Linear(
             config.hidden_size,
             config.vocab_size,
             embedding_output_dtype,
@@ -105,7 +105,7 @@ class Replit(Transformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=LayerNormV2(
+            norm=LayerNorm(
                 config.hidden_size,
                 config.devices[0],
                 1e-5,

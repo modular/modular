@@ -21,14 +21,14 @@ from .layer import Layer, Module
 
 
 @dataclass
-class Conv2D(Layer):
+class Conv2DV1(Layer):
     """A 2D convolution over an input signal composed of several input
     planes.
 
     Example:
         .. code-block:: python
 
-            conv = nn.Conv2D(
+            conv = nn.Conv2DV1(
                 filter=filter_2d,
                 bias=bias_2d,
                 stride=2,
@@ -66,7 +66,9 @@ class Conv2D(Layer):
             isinstance(self.filter, Weight)
             and self.filter.quantization_encoding is not None
         ):
-            raise ValueError("Conv1D not implemented with weight quantization.")
+            raise ValueError(
+                "Conv2DV1 not implemented with weight quantization."
+            )
         return ops.conv2d(
             x,
             self.filter,
@@ -79,14 +81,16 @@ class Conv2D(Layer):
 
 
 @dataclass
-class Conv1D(Layer):
+class Conv1DV1(Layer):
     """A 1D convolution over an input signal composed of several input
     planes.
+
+    Deprecated: Use `Conv1D` instead.
 
     Example:
         .. code-block:: python
 
-            conv = nn.Conv1D(
+            conv = nn.Conv1DV1(
                 filter=filter_1d,
                 bias=bias_1d,
                 stride=1,
@@ -111,7 +115,7 @@ class Conv1D(Layer):
             a tensor of shape [batch_size, new_length, out_channels]
             new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
         """
-        # TODO(GEX-327): Support Conv1D in mo rather than implementing it using Conv2D.
+        # TODO(GEX-327): Support Conv1D in mo rather than implementing it using Conv2DV1.
         # Reshape [batch_size, length, in_channels] to [batch_size, height=1, length, in_channels].
         x = ops.unsqueeze(x, 1)
         # Reshape  [kernel_size, in_channels, out_channels] to [height=1, kernel_size, in_channels, out_channels].
@@ -135,14 +139,14 @@ class Conv1D(Layer):
         return ops.squeeze(output, 1)
 
 
-class Conv1DV2(Module):
+class Conv1D(Module):
     """A 1D convolution over an input signal composed of several input
     planes.
 
     Example:
         .. code-block:: python
 
-            conv = nn.Conv1DV2(
+            conv = nn.Conv1D(
                 kernel_size=3,
                 in_channels=64,
                 out_channels=128,
@@ -275,7 +279,7 @@ class Conv1DV2(Module):
             )  # [out_channels, in_channels / num_groups, kernel_size]
             x = ops.permute(x, [0, 2, 1])  # [batch_size, length, in_channels]
 
-        # Reshape for Conv2D
+        # Reshape for Conv2DV1
         x = ops.unsqueeze(x, 1)  # [batch_size, height=1, length, in_channels]
         weight = ops.unsqueeze(
             weight, 0
@@ -291,7 +295,7 @@ class Conv1DV2(Module):
             self.bias,
         )
 
-        # Reshape back from Conv2D
+        # Reshape back from Conv2DV1
         output = ops.squeeze(
             output, 1
         )  # [batch_size, new_length, out_channels]
@@ -305,14 +309,16 @@ class Conv1DV2(Module):
 
 
 @dataclass
-class Conv3D(Layer):
+class Conv3DV1(Layer):
     """A 3D convolution over an input signal composed of several input
     planes.
+
+    Deprecated: Use `Conv3D` instead.
 
     Example:
         .. code-block:: python
 
-            conv = nn.Conv3D(
+            conv = nn.Conv3DV1(
                 filter=filter_3d,
                 bias=bias_3d,
                 stride=1,
@@ -377,14 +383,14 @@ class Conv3D(Layer):
         )
 
 
-class Conv3DV2(Module):
+class Conv3D(Module):
     """A 3D convolution over an input signal composed of several input
     planes.
 
     Example:
         .. code-block:: python
 
-            conv = nn.Conv3DV2(
+            conv = nn.Conv3D(
                 depth=,
                 height=,
                 width=,

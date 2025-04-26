@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass
 
 from max.graph import TensorValue, ops
-from max.nn import Linear
+from max.nn import LinearV1
 from max.nn.layer import Layer
 
 
@@ -25,10 +25,10 @@ class Attention(Layer):
     n_heads: int
     head_dim: int
 
-    wq: Linear
-    wk: Linear
-    wv: Linear
-    wo: Linear
+    wq: LinearV1
+    wk: LinearV1
+    wv: LinearV1
+    wo: LinearV1
 
     def attention(
         self,

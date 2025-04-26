@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.nn.norm.rms_norm import RMSNormV2
+from max.nn.norm.rms_norm import RMSNorm
 
 
-class Gemma3RMSNorm(RMSNormV2):
+class Gemma3RMSNorm(RMSNorm):
     def __init__(self, dim: int, eps: float = 1e-6):
         # Gemma3 uses (1.0 + weight) as the scale factor
         super().__init__(dim=dim, eps=eps, weight_offset=1.0)

@@ -20,16 +20,16 @@ from typing import Callable
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
-    MLPV2,
-    AttentionWithRopeV2,
-    EmbeddingV2,
+    MLP,
+    AttentionWithRope,
+    Embedding,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
-    GPTQLinearV2,
-    LinearV2,
+    GPTQLinear,
+    Linear,
     Llama3RotaryEmbedding,
     Module,
-    RMSNormV2,
+    RMSNorm,
     Transformer,
     TransformerBlock,
 )
@@ -65,7 +65,7 @@ class Llama3(Transformer):
                     "rms_norm_eps cannot be None for model that uses RMSNorm."
                 )
             create_norm = functools.partial(
-                RMSNormV2, config.hidden_size, config.rms_norm_eps
+                RMSNorm, config.hidden_size, config.rms_norm_eps
             )
         else:
             create_norm = functools.partial(
@@ -73,15 +73,15 @@ class Llama3(Transformer):
             )
 
         # Select linear layer class.
-        linear_cls: Callable[..., LinearV2]
+        linear_cls: Callable[..., Linear]
         if config.quantization_config:
             linear_cls = functools.partial(
-                GPTQLinearV2, quantization_config=config.quantization_config
+                GPTQLinear, quantization_config=config.quantization_config
             )
         else:
-            linear_cls = LinearV2
-        mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
-        attention_cls: Callable[..., AttentionWithRopeV2]
+            linear_cls = Linear
+        mlp_cls = StackedMLP if config.stacked_mlp else MLP
+        attention_cls: Callable[..., AttentionWithRope]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             assert config.quantization_config is not None
             assert not config.attention_bias, (
@@ -103,7 +103,7 @@ class Llama3(Transformer):
             )
         else:
             attention_cls = functools.partial(
-                AttentionWithRopeV2,
+                AttentionWithRope,
                 stacked_qkv=config.stacked_qkv,
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
@@ -144,14 +144,14 @@ class Llama3(Transformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        embedding_layer = EmbeddingV2(
+        embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
             embedding_output_dtype,
             config.devices[0],
             quantization_encoding=embedding_output_quantization,
         )
-        output = LinearV2(
+        output = Linear(
             config.hidden_size,
             config.vocab_size,
             embedding_output_dtype,

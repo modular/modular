@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from max.graph import DeviceRef
 from max.nn import (
-    MLPV2,
-    AttentionWithRopeV2,
-    EmbeddingV2,
-    LinearV2,
+    MLP,
+    AttentionWithRope,
+    Embedding,
+    Linear,
     OptimizedRotaryEmbedding,
-    RMSNormV2,
+    RMSNorm,
     Transformer,
     TransformerBlock,
 )
@@ -52,7 +52,7 @@ class Mistral(Transformer):
 
         layers = [
             TransformerBlock(
-                attention=AttentionWithRopeV2(
+                attention=AttentionWithRope(
                     rope=rope,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
@@ -65,18 +65,18 @@ class Mistral(Transformer):
                     stacked_qkv=False,
                     has_bias=False,
                 ),
-                mlp=MLPV2(
+                mlp=MLP(
                     dtype=config.dtype,
                     quantization_encoding=None,
                     hidden_dim=config.hidden_size,
                     feed_forward_length=config.feed_forward_length,
                     devices=config.devices,
                 ),
-                attention_norm=RMSNormV2(
+                attention_norm=RMSNorm(
                     config.hidden_size,
                     config.rms_norm_eps,
                 ),
-                mlp_norm=RMSNormV2(
+                mlp_norm=RMSNorm(
                     config.hidden_size,
                     config.rms_norm_eps,
                 ),
@@ -86,13 +86,13 @@ class Mistral(Transformer):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
-        embedding_layer = EmbeddingV2(
+        embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
             embedding_output_dtype,
             config.devices[0],
         )
-        output = LinearV2(
+        output = Linear(
             config.hidden_size,
             config.vocab_size,
             embedding_output_dtype,
@@ -116,7 +116,7 @@ class Mistral(Transformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=RMSNormV2(
+            norm=RMSNorm(
                 config.hidden_size,
                 config.rms_norm_eps,
             ),

@@ -15,7 +15,7 @@
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import LinearV2
+from max.nn import Linear
 from max.nn.layer import Module
 
 
@@ -72,7 +72,7 @@ class MaxMoEGate(Module):
                 - topk_weight: (batch_size * seq_length, num_experts_per_tok)
         """
         super().__init__()
-        self.gate_score = LinearV2(
+        self.gate_score = Linear(
             in_dim=gating_dim,
             out_dim=n_routed_experts,
             dtype=DType.float32,

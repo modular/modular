@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import LayerNorm
+from max.nn import LayerNormV1
 from max.nn.layer import Layer
 
 from .attention import Attention
@@ -32,8 +32,8 @@ class VisionEncoderLayer(Layer):
     """
 
     mlp: MLP
-    input_layernorm: LayerNorm
-    post_attention_layernorm: LayerNorm
+    input_layernorm: LayerNormV1
+    post_attention_layernorm: LayerNormV1
     self_attn: Attention
     is_gated: bool = False
     gate_attn: TensorValueLike | None = None

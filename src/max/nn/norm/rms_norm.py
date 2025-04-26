@@ -29,7 +29,12 @@ from ..layer import Layer, Module
 
 
 @dataclass
-class RMSNorm(Layer):
+class RMSNormV1(Layer):
+    """Computes the Root Mean Square normalization on inputs.
+
+    Deprecated: Use `RMSNorm` instead.
+    """
+
     weight: TensorValueLike
     eps: float = 1e-6
     weight_offset: float = 0.0
@@ -47,7 +52,7 @@ class RMSNorm(Layer):
         )[0].tensor
 
 
-class RMSNormV2(Module):
+class RMSNorm(Module):
     """Computes the Root Mean Square normalization on inputs.
 
     Args:
@@ -87,7 +92,7 @@ class RMSNormV2(Module):
         )[0].tensor
 
 
-class DistributedRMSNorm(RMSNormV2):
+class DistributedRMSNorm(RMSNorm):
     def __init__(self, *args, devices: list[DeviceRef], **kwargs):
         super().__init__(*args, **kwargs)
         self.num_devices = len(devices)
@@ -97,7 +102,7 @@ class DistributedRMSNorm(RMSNormV2):
         # Create a separate RMS layer for each device.
         self.rms_norms = []
         for n, device in enumerate(devices):
-            layer = RMSNormV2(*args, **kwargs)
+            layer = RMSNorm(*args, **kwargs)
             layer.weight = self.weight.shard(n, device)
             self.rms_norms.append(layer)
 

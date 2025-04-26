@@ -16,7 +16,7 @@
 from dataclasses import dataclass
 
 from max.graph import TensorValue, ops
-from max.nn import Linear
+from max.nn import LinearV1
 from max.nn.layer import Layer
 
 
@@ -27,8 +27,8 @@ class MLP(Layer):
     Uses GELU activation function.
     """
 
-    fc1: Linear
-    fc2: Linear
+    fc1: LinearV1
+    fc2: LinearV1
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
         hidden_states = self.fc1(hidden_states)

@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
-from max.nn import Embedding, LayerNorm, Linear, Sequential
+from max.nn import EmbeddingV1, LayerNormV1, LinearV1, Sequential
 from max.nn.layer import Layer
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
@@ -46,7 +46,7 @@ class MPNetEmbeddings(Layer):
         device: DeviceRef,
     ):
         config = self.config = huggingface_config
-        self.word_embeddings = Embedding(
+        self.word_embeddings = EmbeddingV1(
             weights.word_embeddings.weight.allocate(
                 dtype,
                 [
@@ -57,7 +57,7 @@ class MPNetEmbeddings(Layer):
             ),
             device,
         )
-        self.position_embeddings = Embedding(
+        self.position_embeddings = EmbeddingV1(
             weights.position_embeddings.weight.allocate(
                 dtype,
                 [
@@ -67,7 +67,7 @@ class MPNetEmbeddings(Layer):
             ),
             device,
         )
-        self.layer_norm = LayerNorm(
+        self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
                 dtype,
                 [config.hidden_size],
@@ -121,7 +121,7 @@ class MPNetSelfAttention(Layer):
         )
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.q = Linear(
+        self.q = LinearV1(
             weights.q.weight.allocate(
                 dtype,
                 [self.all_head_size, config.hidden_size],
@@ -133,7 +133,7 @@ class MPNetSelfAttention(Layer):
                 _quantization_encoding(pipeline_config),
             ),
         )
-        self.k = Linear(
+        self.k = LinearV1(
             weights.k.weight.allocate(
                 dtype,
                 [self.all_head_size, config.hidden_size],
@@ -145,7 +145,7 @@ class MPNetSelfAttention(Layer):
                 _quantization_encoding(pipeline_config),
             ),
         )
-        self.v = Linear(
+        self.v = LinearV1(
             weights.v.weight.allocate(
                 dtype,
                 [self.all_head_size, config.hidden_size],
@@ -157,7 +157,7 @@ class MPNetSelfAttention(Layer):
                 _quantization_encoding(pipeline_config),
             ),
         )
-        self.o = Linear(
+        self.o = LinearV1(
             weights.o.weight.allocate(
                 dtype,
                 [config.hidden_size, config.hidden_size],
@@ -232,7 +232,7 @@ class MPNetAttention(Layer):
             huggingface_config,
             dtype,
         )
-        self.layer_norm = LayerNorm(
+        self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
                 DType.float32, [config.hidden_size]
             ),
@@ -276,7 +276,7 @@ class MPNetIntermediate(Layer):
         dtype: DType,
     ):
         config = huggingface_config
-        self.dense = Linear(
+        self.dense = LinearV1(
             weights.dense.weight.allocate(
                 dtype,
                 [config.intermediate_size, config.hidden_size],
@@ -307,7 +307,7 @@ class MPNetOutput(Layer):
         dtype: DType,
     ):
         config = huggingface_config
-        self.dense = Linear(
+        self.dense = LinearV1(
             weights.dense.weight.allocate(
                 dtype,
                 [config.hidden_size, config.intermediate_size],
@@ -319,7 +319,7 @@ class MPNetOutput(Layer):
                 _quantization_encoding(pipeline_config),
             ),
         )
-        self.layer_norm = LayerNorm(
+        self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
                 DType.float32, [config.hidden_size]
             ),
@@ -401,7 +401,7 @@ class MPNetEncoder(Layer):
                 for n in range(num_hidden_layers)
             ]
         )
-        self.relative_attention_bias = Embedding(
+        self.relative_attention_bias = EmbeddingV1(
             weights.relative_attention_bias.weight.allocate(
                 dtype,
                 [

@@ -19,9 +19,9 @@ from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
 
 from ..attention import NaiveAttentionWithRope
-from ..embedding import Embedding, EmbeddingV2
+from ..embedding import Embedding, EmbeddingV1
 from ..layer import Layer, LayerList, Module
-from ..linear import Linear, LinearV2
+from ..linear import Linear, LinearV1
 from .transformer import ReturnLogits
 
 
@@ -82,9 +82,9 @@ class NaiveTransformer(Module):
         n_heads: int,
         layers: list[NaiveTransformerBlock],
         norm: Layer,
-        output: Linear | LinearV2,
+        output: LinearV1 | Linear,
         theta: float,
-        embedding: Embedding | EmbeddingV2,
+        embedding: EmbeddingV1 | Embedding,
         output_type: DType | None = None,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]

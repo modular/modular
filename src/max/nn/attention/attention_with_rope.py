@@ -52,8 +52,8 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import LinearV2
-from ..norm import RMSNormV2
+from ..linear import Linear
+from ..norm import RMSNorm
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
     AttentionImpl,
@@ -63,7 +63,12 @@ from .interfaces import (
 
 
 @dataclass
-class AttentionWithRope(AttentionImpl):
+class AttentionWithRopeV1(AttentionImpl):
+    """Implementation of attention that uses the rope frequency.
+
+    Deprecated: Use `AttentionWithRope` instead.
+    """
+
     # This class will not use the RotaryEmbedding to
     # calculate rope, but it already includes a freqs_cis
     # calculation, which we will borrow
@@ -144,12 +149,8 @@ class AttentionWithRope(AttentionImpl):
         return self.wo(attn_out)
 
 
-class AttentionWithRopeV2(Module):
-    """Implementation of attention that uses the rope frequency.
-
-    `AttentionWithRopeV2` will replace `AttentionWithRope` as we roll out
-    the new Layer API.
-    """
+class AttentionWithRope(Module):
+    """Implementation of attention that uses the rope frequency."""
 
     # This class will not use the RotaryEmbedding to
     # calculate rope, but it already includes a freqs_cis
@@ -167,7 +168,7 @@ class AttentionWithRopeV2(Module):
         layer_idx: int,
         devices: list[DeviceRef] | None = None,
         dtype: DType = DType.float32,
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
@@ -364,7 +365,7 @@ class AttentionWithRopeV2(Module):
         return self.o_proj(attn_out)
 
 
-class LatentAttentionWithRope(AttentionWithRopeV2):
+class LatentAttentionWithRope(AttentionWithRope):
     """Implementation of Latent Attention with Rope."""
 
     # TODO: This will be replaced with a generic Yarn Rope implementation for Deepseek-V2-lite.
@@ -381,7 +382,7 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         layer_idx: int,
         dtype: DType,
         devices: list[DeviceRef] | None = None,
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
@@ -412,7 +413,7 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`
         """
-        # Skip AttentionWithRopeV2.__init__ because the weights are created
+        # Skip AttentionWithRope.__init__ because the weights are created
         # differently.
         Module.__init__(self)
 
@@ -456,7 +457,7 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
                 shape=(self.q_lora_rank, self.hidden_size),
                 device=self.devices[0],
             )
-            self.q_a_layernorm = RMSNormV2(dim=self.q_lora_rank, eps=1e-6)
+            self.q_a_layernorm = RMSNorm(dim=self.q_lora_rank, eps=1e-6)
             self.q_b_proj = Weight(
                 name="q_b_proj.weight",
                 dtype=dtype,
@@ -719,7 +720,7 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         return self.o_proj(attn_out)
 
 
-class GGUFQAttentionWithRope(AttentionWithRopeV2):
+class GGUFQAttentionWithRope(AttentionWithRope):
     """Implementation of attention with GGUF quantized weights."""
 
     # This class will not use the RotaryEmbedding to
@@ -739,7 +740,7 @@ class GGUFQAttentionWithRope(AttentionWithRopeV2):
         dtype: DType,
         quantization_encoding: QuantizationEncoding,
         devices: list[DeviceRef] | None = None,
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
@@ -765,7 +766,7 @@ class GGUFQAttentionWithRope(AttentionWithRopeV2):
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`
         """
-        # Skip AttentionWithRopeV2.__init__ because the weights are created
+        # Skip AttentionWithRope.__init__ because the weights are created
         # differently.
         Module.__init__(self)
 
@@ -909,7 +910,7 @@ class GGUFQAttentionWithRope(AttentionWithRopeV2):
         return self.o_proj(attn_out)
 
 
-class GPTQAttentionWithRope(AttentionWithRopeV2):
+class GPTQAttentionWithRope(AttentionWithRope):
     """Implementation of the GPT-Q attention layer."""
 
     def __init__(
@@ -924,9 +925,9 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
         devices: list[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         scale: float | None = None,
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
     ):
-        # Skip AttentionWithRopeV2.__init__ because the weights are created
+        # Skip AttentionWithRope.__init__ because the weights are created
         # differently.
         Module.__init__(self)
         self.quantization_config = quantization_config
@@ -1106,9 +1107,7 @@ def distribute_value(
     return [v.to(device) for device in devices]
 
 
-class DistributedAttentionWithRope(
-    AttentionWithRopeV2, DistributedAttentionImpl
-):
+class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if not self.devices or len(self.devices) < 2:
@@ -1140,7 +1139,7 @@ class DistributedAttentionWithRope(
         kwargs["num_attention_heads"] //= len(self.devices)
         for n, device in enumerate(self.devices):
             kwargs["devices"] = [device]
-            layer = AttentionWithRopeV2(**kwargs)
+            layer = AttentionWithRope(**kwargs)
             if self.stacked_qkv:
                 layer.qkv_proj = self.qkv_proj.shard(n, device)
             else:

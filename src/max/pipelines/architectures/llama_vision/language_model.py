@@ -22,12 +22,12 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.weights import Weights
 from max.nn import (
-    MLP,
+    MLPV1,
     AttentionWithRopeQKV,
-    Embedding,
-    Linear,
+    EmbeddingV1,
+    LinearV1,
     OptimizedRotaryEmbedding,
-    RMSNorm,
+    RMSNormV1,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -50,9 +50,9 @@ class TextModel(Layer):
 
     dtype: DType
     kv_params: KVCacheParams
-    embed_tokens: Embedding
+    embed_tokens: EmbeddingV1
     layers: list[CrossAttentionDecoderLayer | TransformerBlock]
-    norm: RMSNorm
+    norm: RMSNormV1
     cross_attention_layers: list[int]
     rotary_emb: OptimizedRotaryEmbedding
 
@@ -118,7 +118,7 @@ class CausalLanguageModel(Layer):
     dtype: DType
     kv_params: KVCacheParams
     model: TextModel
-    lm_head: Linear
+    lm_head: LinearV1
 
     def __call__(
         self,
@@ -165,7 +165,7 @@ def cross_attention_decoder_layer(
         n_heads=num_attention_heads,
         kv_params=kv_params,
         layer_idx=layer_idx,
-        q_proj=Linear(
+        q_proj=LinearV1(
             weights.cross_attn.q_proj.weight.allocate(
                 dtype,
                 [
@@ -192,7 +192,7 @@ def cross_attention_decoder_layer(
             ],
             device=device,
         ),
-        o_proj=Linear(
+        o_proj=LinearV1(
             weight=weights.cross_attn.o_proj.weight.allocate(
                 dtype,
                 [
@@ -203,13 +203,13 @@ def cross_attention_decoder_layer(
             ),
             bias=None,
         ),
-        q_norm=RMSNorm(
+        q_norm=RMSNormV1(
             weight=weights.cross_attn.q_norm.weight.allocate(
                 dtype, [head_dim], device=device
             ),
             eps=rms_norm_eps,
         ),
-        k_norm=RMSNorm(
+        k_norm=RMSNormV1(
             weight=weights.cross_attn.k_norm.weight.allocate(
                 dtype, [head_dim], device=device
             ),
@@ -218,7 +218,7 @@ def cross_attention_decoder_layer(
     )
     return CrossAttentionDecoderLayer(
         cross_attn=sdpa_attn,
-        input_layernorm=RMSNorm(
+        input_layernorm=RMSNormV1(
             weight=weights.input_layernorm.weight.allocate(
                 dtype, [hidden_size], device=device
             ),
@@ -227,8 +227,8 @@ def cross_attention_decoder_layer(
         cross_attn_attn_gate=weights.cross_attn_attn_gate.allocate(
             dtype, [1], device=device
         ),
-        mlp=MLP(
-            gate_proj=Linear(
+        mlp=MLPV1(
+            gate_proj=LinearV1(
                 weight=weights.mlp.gate_proj.weight.allocate(
                     dtype,
                     [
@@ -239,7 +239,7 @@ def cross_attention_decoder_layer(
                 ),
                 bias=None,
             ),
-            down_proj=Linear(
+            down_proj=LinearV1(
                 weight=weights.mlp.down_proj.weight.allocate(
                     dtype,
                     [
@@ -250,7 +250,7 @@ def cross_attention_decoder_layer(
                 ),
                 bias=None,
             ),
-            up_proj=Linear(
+            up_proj=LinearV1(
                 weight=weights.mlp.up_proj.weight.allocate(
                     dtype,
                     [
@@ -262,7 +262,7 @@ def cross_attention_decoder_layer(
                 bias=None,
             ),
         ),
-        post_attention_layernorm=RMSNorm(
+        post_attention_layernorm=RMSNormV1(
             weight=weights.post_attention_layernorm.weight.allocate(
                 dtype, [hidden_size], device=device
             ),
@@ -304,7 +304,7 @@ def self_attention_decoder_layer(
         shape=[num_key_value_heads * head_dim, hidden_size],
         device=device,
     )
-    o_proj = Linear(
+    o_proj = LinearV1(
         weight=weights.self_attn.o_proj.weight.allocate(
             dtype,
             shape=[hidden_size, num_attention_heads * head_dim],
@@ -326,33 +326,33 @@ def self_attention_decoder_layer(
 
     return TransformerBlock(
         attention=attention,
-        mlp=MLP(
-            gate_proj=Linear(
+        mlp=MLPV1(
+            gate_proj=LinearV1(
                 weight=weights.mlp.gate_proj.weight.allocate(
                     dtype, [intermediate_size, hidden_size], device=device
                 ),
                 bias=None,
             ),
-            down_proj=Linear(
+            down_proj=LinearV1(
                 weight=weights.mlp.down_proj.weight.allocate(
                     dtype, [hidden_size, intermediate_size], device=device
                 ),
                 bias=None,
             ),
-            up_proj=Linear(
+            up_proj=LinearV1(
                 weight=weights.mlp.up_proj.weight.allocate(
                     dtype, [intermediate_size, hidden_size], device=device
                 ),
                 bias=None,
             ),
         ),
-        attention_norm=RMSNorm(
+        attention_norm=RMSNormV1(
             weight=weights.input_layernorm.weight.allocate(
                 dtype, [hidden_size], device=device
             ),
             eps=rms_norm_eps,
         ),
-        mlp_norm=RMSNorm(
+        mlp_norm=RMSNormV1(
             weight=weights.post_attention_layernorm.weight.allocate(
                 dtype, [hidden_size], device=device
             ),
@@ -437,7 +437,7 @@ def instantiate_language_model(
     text_model = TextModel(
         dtype=dtype,
         kv_params=kv_params,
-        embed_tokens=Embedding(
+        embed_tokens=EmbeddingV1(
             weights.language_model.model.embed_tokens.weight.allocate(
                 dtype,
                 [
@@ -449,7 +449,7 @@ def instantiate_language_model(
             ),
             device=device,
         ),
-        norm=RMSNorm(
+        norm=RMSNormV1(
             weight=weights.language_model.model.norm.weight.allocate(
                 dtype, [hidden_size], device=device
             ),
@@ -465,7 +465,7 @@ def instantiate_language_model(
         dtype=dtype,
         kv_params=kv_params,
         model=text_model,
-        lm_head=Linear(
+        lm_head=LinearV1(
             weights.language_model.lm_head.weight.allocate(
                 dtype,
                 [

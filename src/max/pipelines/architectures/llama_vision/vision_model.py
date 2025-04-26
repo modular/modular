@@ -27,7 +27,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights
-from max.nn import Conv2D, Embedding, LayerNorm, Linear
+from max.nn import Conv2DV1, EmbeddingV1, LayerNormV1, LinearV1
 from max.nn.layer import Layer
 
 from .attention import Attention
@@ -42,7 +42,7 @@ from .positional_embedding import (
 # TODO(MAXCORE-170): We should clean this up. This is just a RSCF layout permutation so it
 # conforms with our conv op API.
 @dataclass
-class VisionConv2D(Conv2D):
+class VisionConv2D(Conv2DV1):
     def __call__(self, x: TensorValue) -> TensorValue:
         # Permute first before calling the parent forward pass.
         self.filter = ops.permute(self.filter, [2, 3, 1, 0])
@@ -65,7 +65,7 @@ class VisionModel(Layer):
         pre_tile_positional_embedding: Precomputed aspect ratio positional embeddings applied before tiling the input patches.
         post_tile_positional_embedding: Precomputed aspect ratio positional embeddings applied after tiling the input patches.
         patch_embedding: Convolutional layer that extracts features from input image patches.
-        class_embedding: Embedding that is concatenated to the sequence for classification tasks.
+        class_embedding: EmbeddingV1 that is concatenated to the sequence for classification tasks.
         layernorm_pre: Layer normalization applied before feeding inputs into the transformer encoders.
         layernorm_post: Layer normalization applied after processing through the transformer layers.
         transformer: Transformer responsible for capturing local spatial relationships in the image.
@@ -77,8 +77,8 @@ class VisionModel(Layer):
     post_tile_positional_embedding: PrecomputedAspectRatioEmbedding
     patch_embedding: VisionConv2D
     class_embedding: TensorValueLike
-    layernorm_pre: LayerNorm
-    layernorm_post: LayerNorm
+    layernorm_pre: LayerNormV1
+    layernorm_post: LayerNormV1
     transformer: VisionEncoder
     global_transformer: VisionEncoder
     dtype: DType
@@ -496,7 +496,7 @@ def instantiate_vision_model(
             ],
             device=device,
         ),
-        tile_embedding=Embedding(
+        tile_embedding=EmbeddingV1(
             weights.vision_model.gated_positional_embedding.tile_embedding.weight.allocate(
                 dtype,
                 [
@@ -515,7 +515,7 @@ def instantiate_vision_model(
         gate=weights.vision_model.pre_tile_positional_embedding.gate.allocate(
             dtype, [1], device=device
         ),
-        embedding=Embedding(
+        embedding=EmbeddingV1(
             weights.vision_model.pre_tile_positional_embedding.embedding.weight.allocate(
                 dtype,
                 [max_aspect_ratio_id, max_num_tiles * hidden_size],
@@ -531,7 +531,7 @@ def instantiate_vision_model(
         gate=weights.vision_model.post_tile_positional_embedding.gate.allocate(
             dtype, [1], device=device
         ),
-        embedding=Embedding(
+        embedding=EmbeddingV1(
             weights.vision_model.post_tile_positional_embedding.embedding.weight.allocate(
                 dtype,
                 [
@@ -561,7 +561,7 @@ def instantiate_vision_model(
         dtype, [hidden_size], device=device
     )
 
-    layernorm_pre = LayerNorm(
+    layernorm_pre = LayerNormV1(
         weights.vision_model.layernorm_pre.weight.allocate(
             dtype, [hidden_size], device=device
         ),
@@ -571,7 +571,7 @@ def instantiate_vision_model(
         eps=norm_eps,
     )
 
-    layernorm_post = LayerNorm(
+    layernorm_post = LayerNormV1(
         weights.vision_model.layernorm_post.weight.allocate(
             dtype, [hidden_size], device=device
         ),
@@ -590,7 +590,7 @@ def instantiate_vision_model(
         transformer_encoder_layers.append(
             VisionEncoderLayer(
                 mlp=MLP(
-                    Linear(
+                    LinearV1(
                         curr_layer_weight.mlp.fc1.weight.allocate(
                             dtype,
                             [intermediate_size, hidden_size],
@@ -600,7 +600,7 @@ def instantiate_vision_model(
                             dtype, [intermediate_size], device=device
                         ),
                     ),
-                    Linear(
+                    LinearV1(
                         curr_layer_weight.mlp.fc2.weight.allocate(
                             dtype,
                             [hidden_size, intermediate_size],
@@ -611,7 +611,7 @@ def instantiate_vision_model(
                         ),
                     ),
                 ),
-                input_layernorm=LayerNorm(
+                input_layernorm=LayerNormV1(
                     curr_layer_weight.input_layernorm.weight.allocate(
                         dtype, [hidden_size], device=device
                     ),
@@ -620,7 +620,7 @@ def instantiate_vision_model(
                     ),
                     eps=norm_eps,
                 ),
-                post_attention_layernorm=LayerNorm(
+                post_attention_layernorm=LayerNormV1(
                     curr_layer_weight.post_attention_layernorm.weight.allocate(
                         dtype, [hidden_size], device=device
                     ),
@@ -632,7 +632,7 @@ def instantiate_vision_model(
                 self_attn=Attention(
                     n_heads=attention_heads,
                     head_dim=head_dim,
-                    wk=Linear(
+                    wk=LinearV1(
                         curr_layer_weight.self_attn.k_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
@@ -640,7 +640,7 @@ def instantiate_vision_model(
                         ),
                         bias=None,
                     ),
-                    wv=Linear(
+                    wv=LinearV1(
                         curr_layer_weight.self_attn.v_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
@@ -648,7 +648,7 @@ def instantiate_vision_model(
                         ),
                         bias=None,
                     ),
-                    wq=Linear(
+                    wq=LinearV1(
                         curr_layer_weight.self_attn.q_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],
@@ -656,7 +656,7 @@ def instantiate_vision_model(
                         ),
                         bias=None,
                     ),
-                    wo=Linear(
+                    wo=LinearV1(
                         curr_layer_weight.self_attn.o_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
@@ -682,7 +682,7 @@ def instantiate_vision_model(
         global_transformer_layers.append(
             VisionEncoderLayer(
                 mlp=MLP(
-                    Linear(
+                    LinearV1(
                         curr_layer_weight.mlp.fc1.weight.allocate(
                             dtype,
                             [intermediate_size, hidden_size],
@@ -692,7 +692,7 @@ def instantiate_vision_model(
                             dtype, [intermediate_size], device=device
                         ),
                     ),
-                    Linear(
+                    LinearV1(
                         curr_layer_weight.mlp.fc2.weight.allocate(
                             dtype,
                             [hidden_size, intermediate_size],
@@ -703,7 +703,7 @@ def instantiate_vision_model(
                         ),
                     ),
                 ),
-                input_layernorm=LayerNorm(
+                input_layernorm=LayerNormV1(
                     curr_layer_weight.input_layernorm.weight.allocate(
                         dtype, [hidden_size], device=device
                     ),
@@ -712,7 +712,7 @@ def instantiate_vision_model(
                     ),
                     eps=norm_eps,
                 ),
-                post_attention_layernorm=LayerNorm(
+                post_attention_layernorm=LayerNormV1(
                     curr_layer_weight.post_attention_layernorm.weight.allocate(
                         dtype, [hidden_size], device=device
                     ),
@@ -724,7 +724,7 @@ def instantiate_vision_model(
                 self_attn=Attention(
                     n_heads=attention_heads,
                     head_dim=head_dim,
-                    wk=Linear(
+                    wk=LinearV1(
                         curr_layer_weight.self_attn.k_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
@@ -732,7 +732,7 @@ def instantiate_vision_model(
                         ),
                         bias=None,
                     ),
-                    wv=Linear(
+                    wv=LinearV1(
                         curr_layer_weight.self_attn.v_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
@@ -740,7 +740,7 @@ def instantiate_vision_model(
                         ),
                         bias=None,
                     ),
-                    wq=Linear(
+                    wq=LinearV1(
                         curr_layer_weight.self_attn.q_proj.weight.allocate(
                             dtype,
                             [hidden_size, attention_heads * head_dim],
@@ -748,7 +748,7 @@ def instantiate_vision_model(
                         ),
                         bias=None,
                     ),
-                    wo=Linear(
+                    wo=LinearV1(
                         curr_layer_weight.self_attn.o_proj.weight.allocate(
                             dtype,
                             [attention_heads * head_dim, hidden_size],

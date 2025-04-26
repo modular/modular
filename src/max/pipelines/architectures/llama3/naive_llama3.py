@@ -23,16 +23,16 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
-    MLPV2,
-    EmbeddingV2,
-    GPTQLinearV2,
-    LinearV2,
+    MLP,
+    Embedding,
+    GPTQLinear,
+    Linear,
     Llama3RotaryEmbedding,
     Module,
     NaiveAttentionWithRope,
     NaiveTransformer,
     NaiveTransformerBlock,
-    RMSNormV2,
+    RMSNorm,
     RotaryEmbedding,
 )
 from max.nn.kv_cache import KVCacheParams
@@ -97,22 +97,22 @@ class NaiveLlama3(NaiveTransformer):
                     "rms_norm_eps cannot be None for model that uses RMSNorm."
                 )
             create_norm = functools.partial(
-                RMSNormV2, config.hidden_size, config.rms_norm_eps
+                RMSNorm, config.hidden_size, config.rms_norm_eps
             )
         else:
             create_norm = functools.partial(
                 ConstantLayerNorm, config.hidden_size, config.devices[0]
             )
 
-        linear_cls: Callable[..., LinearV2]
+        linear_cls: Callable[..., Linear]
         if config.quantization_config:
             linear_cls = functools.partial(
-                GPTQLinearV2, quantization_config=config.quantization_config
+                GPTQLinear, quantization_config=config.quantization_config
             )
         else:
-            linear_cls = LinearV2
+            linear_cls = Linear
 
-        mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
+        mlp_cls = StackedMLP if config.stacked_mlp else MLP
         layers = [
             NaiveTransformerBlock(
                 attention=NaiveLLama3Attention(
@@ -143,7 +143,7 @@ class NaiveLlama3(NaiveTransformer):
             for i in range(config.num_hidden_layers)
         ]
 
-        embedding_layer = EmbeddingV2(
+        embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
             config.dtype,
@@ -151,7 +151,7 @@ class NaiveLlama3(NaiveTransformer):
             quantization_encoding=config.model_quantization_encoding,
         )
 
-        output = LinearV2(
+        output = Linear(
             config.hidden_size,
             config.vocab_size,
             config.dtype,
@@ -185,7 +185,7 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
         rope: RotaryEmbedding,
         dtype: DType,
         quantization_encoding: Optional[QuantizationEncoding],
-        linear_cls: Callable[..., LinearV2],
+        linear_cls: Callable[..., Linear],
         scale: float | None,
         device: DeviceRef,
         clip_qkv: float | None,
@@ -242,7 +242,7 @@ class StackedMLP(Module):
         hidden_dim: int,
         feed_forward_length: int,
         devices: Sequence[DeviceRef],
-        linear_cls: Callable[..., LinearV2],
+        linear_cls: Callable[..., Linear],
     ):
         super().__init__()
         self.gate_up_proj = linear_cls(

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from max.graph import TensorValue, ops
 from max.nn.layer import Layer
-from max.nn.linear import Linear
+from max.nn.linear import LinearV1
 
 
 @dataclass
@@ -27,8 +27,8 @@ class LlavaMultiModalConnector(Layer):
     Uses Gelu activation function.
     """
 
-    linear_1: Linear
-    linear_2: Linear
+    linear_1: LinearV1
+    linear_2: LinearV1
 
     def __call__(self, x: TensorValue) -> TensorValue:
         return self.linear_2(ops.gelu(self.linear_1(x)))

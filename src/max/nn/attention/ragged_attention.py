@@ -33,7 +33,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import LinearV2
+from ..linear import Linear
 
 
 @dataclass
@@ -51,7 +51,7 @@ class RaggedAttention(Module):
         layer_idx: int,
         devices: list[DeviceRef] | None = None,
         dtype: DType = DType.float32,
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,

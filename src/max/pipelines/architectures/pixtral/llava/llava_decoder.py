@@ -17,10 +17,10 @@ from typing import Union
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
 from max.nn import (
-    Embedding,
-    LayerNorm,
-    Linear,
-    RMSNorm,
+    EmbeddingV1,
+    LayerNormV1,
+    LinearV1,
+    RMSNormV1,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -48,9 +48,9 @@ class Transformer(Layer):
     dim: int
     n_heads: int
     layers: list[TransformerBlock]
-    norm: Union[RMSNorm, LayerNorm]
-    output: Linear
-    embedding: Embedding
+    norm: Union[RMSNormV1, LayerNormV1]
+    output: LinearV1
+    embedding: EmbeddingV1
     kv_params: KVCacheParams
     kv_collection_constructor: Union[
         FetchContinuousBatchingKVCacheCollection, FetchPagedKVCacheCollection

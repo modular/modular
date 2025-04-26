@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 from max.nn import (
-    MLPV2,
-    EmbeddingV2,
-    LinearV2,
+    MLP,
+    Embedding,
+    Linear,
     Module,
-    RMSNormV2,
+    RMSNorm,
     Transformer,
     TransformerBlock,
 )
@@ -77,11 +77,11 @@ class DeepseekV2(Transformer):
                     devices=config.devices,
                 ),
                 mlp=self._get_mlp(config, i),
-                attention_norm=RMSNormV2(
+                attention_norm=RMSNorm(
                     config.hidden_size,
                     config.rms_norm_eps,
                 ),
-                mlp_norm=RMSNormV2(
+                mlp_norm=RMSNorm(
                     config.hidden_size,
                     config.rms_norm_eps,
                 ),
@@ -91,13 +91,13 @@ class DeepseekV2(Transformer):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
-        embedding_layer = EmbeddingV2(
+        embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
             embedding_output_dtype,
             config.devices[0],
         )
-        lm_head = self.lm_head = LinearV2(
+        lm_head = self.lm_head = Linear(
             config.hidden_size,
             config.vocab_size,
             dtype=config.dtype,
@@ -108,7 +108,7 @@ class DeepseekV2(Transformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=RMSNormV2(
+            norm=RMSNorm(
                 config.hidden_size,
                 config.rms_norm_eps,
             ),
@@ -129,7 +129,7 @@ class DeepseekV2(Transformer):
             i: Layer index
 
         Returns:
-            Either a MoE or MLPV2 module depending on the layer index and config
+            Either a MoE or MLP module depending on the layer index and config
         """
         if (
             config.n_routed_experts is not None
@@ -148,7 +148,7 @@ class DeepseekV2(Transformer):
                 device=config.devices[0],
             )
         else:
-            return MLPV2(
+            return MLP(
                 dtype=config.dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,

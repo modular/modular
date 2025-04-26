@@ -25,8 +25,11 @@ from ..layer import Layer, Module
 
 
 @dataclass
-class LayerNorm(Layer):
-    """Layer normalization block."""
+class LayerNormV1(Layer):
+    """Layer normalization block.
+
+    Deprecated: Use `LayerNorm` instead.
+    """
 
     weight: Weight
     bias: Weight | None = None
@@ -59,7 +62,7 @@ class LayerNorm(Layer):
         return res
 
 
-class LayerNormV2(Module):
+class LayerNorm(Module):
     """Layer normalization block."""
 
     def __init__(

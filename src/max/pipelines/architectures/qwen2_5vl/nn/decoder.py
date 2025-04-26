@@ -21,9 +21,9 @@ from typing import Callable, Optional
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import (
-    EmbeddingV2,
+    Embedding,
     Module,
-    RMSNormV2,
+    RMSNorm,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -125,8 +125,8 @@ class Qwen2_5VLDecoderTransformer(Module):
         n_heads: int,
         rotary_emb: Qwen2_5VLRotaryEmbedding,
         layers: list[TransformerBlock],
-        norm: RMSNormV2,
-        embedding: EmbeddingV2,
+        norm: RMSNorm,
+        embedding: Embedding,
         kv_params: KVCacheParams,
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection

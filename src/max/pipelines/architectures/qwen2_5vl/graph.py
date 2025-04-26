@@ -19,10 +19,10 @@ from max.graph import (
 )
 from max.graph.weights import Weights
 from max.nn import (
-    MLP,
-    Conv3D,
-    Linear,
-    RMSNorm,
+    MLPV1,
+    Conv3DV1,
+    LinearV1,
+    RMSNormV1,
     Sequential,
 )
 from transformers import AutoConfig
@@ -60,7 +60,7 @@ def patch_embed(
         ),
         [2, 3, 4, 1, 0],
     )
-    proj = Conv3D(
+    proj = Conv3DV1(
         filter=filter_weights,
         bias=None,
         stride=kernel_size,
@@ -89,8 +89,8 @@ def linear_with_bias(
     in_features: int,
     out_features: int,
     weights: Weights,
-) -> Linear:
-    return Linear(
+) -> LinearV1:
+    return LinearV1(
         weights.weight.allocate(
             dtype,
             [in_features, out_features],
@@ -107,8 +107,8 @@ def mlp_with_bias(
     hidden_dim: int,
     feed_forward_length: int,
     weights: Weights,
-) -> MLP:
-    return MLP(
+) -> MLPV1:
+    return MLPV1(
         linear_with_bias(
             dtype,
             feed_forward_length,
@@ -130,8 +130,8 @@ def mlp_with_bias(
     )
 
 
-def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
-    return RMSNorm(
+def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNormV1:
+    return RMSNormV1(
         weight=weights.weight.allocate(DType.float32, [dims]),
         eps=eps,
     )

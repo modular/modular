@@ -38,7 +38,7 @@ from max.nn.kv_cache import (
     PagedKVCacheCollection,
 )
 from max.nn.layer import Module
-from max.nn.linear import LinearV2
+from max.nn.linear import Linear
 from max.nn.rotary_embedding import OptimizedRotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import (
     Gemma3RMSNorm,
@@ -60,7 +60,7 @@ class _Gemma3Attention(Module):
         sliding_window_pattern: int = 6,
         dtype: DType = DType.float32,
         devices: list[DeviceRef],
-        linear_cls: Callable[..., LinearV2] = LinearV2,
+        linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = False,
         use_rope: bool = True,
