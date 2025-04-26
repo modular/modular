@@ -23,6 +23,8 @@ import numpy as np
 # path.
 sys.path.insert(0, "")
 
+import hashlib
+
 # Imports from 'mojo_module.so'
 import mojo_module
 
@@ -48,6 +50,25 @@ def naive_python_hashing(tokens: np.ndarray, block_size: int) -> list[int]:
         prev_hash = curr_hash
 
     return results
+
+
+# https://github.com/vllm-project/vllm/blob/a5450f11c95847cf51a17207af9a3ca5ab569b2c/vllm/distributed/kv_transfer/kv_connector/mooncake_store_connector.py#L196
+def python_tensor_hash(tokens: np.ndarray, block_size: int) -> list[int]:
+    """Calculate the hash value of the tensor."""
+    num_elts = tokens.size
+    num_hashes = num_elts // block_size
+
+    # Initial hash seed value
+    prev_hash = hash("None")
+
+    results = []
+    for i in range(num_hashes):
+        block = tokens[i * block_size : (i + 1) * block_size]
+        digest = hashlib.blake2b(block.tobytes()).hexdigest()
+        pair_to_hash = (prev_hash, digest)
+        curr_hash = hash(pair_to_hash)
+
+        results.append(curr_hash)
 
 
 def print_bench_run(
@@ -83,6 +104,14 @@ if __name__ == "__main__":
     print_bench_run(
         "Mojo 🔥",
         lambda: mojo_module.mojo_block_hasher(tokens, block_size),
+        iter_count=10_000,
+    )
+
+    time.sleep(0.1)
+
+    print_bench_run(
+        "Python Tensor Hash",
+        lambda: python_tensor_hash(tokens, block_size),
         iter_count=10_000,
     )
 
