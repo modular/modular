@@ -181,7 +181,7 @@ wrote results to [output.csv]
 ```YAML
 name: placeholder
 file: path-to-mojo source
-params: 
+params:
     - spec #spec refers to a group of parameters, each with their own values.
         param_name: value-set|single-value #Each parameter can have 1+ values.
 ```
@@ -219,7 +219,7 @@ remains as it is:
 - dtype: DType.float16
   shape: 1024x512x256
   stages: 8
-  
+
 - dtype: DType.float16
   shape: 32x32x32
   stages: 4

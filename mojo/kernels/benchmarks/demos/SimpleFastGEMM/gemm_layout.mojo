@@ -150,7 +150,7 @@ fn gemm[
         # sync_parallelize[process_row](M // MR)
 
 
-# kgen --emit-asm Kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
+# kgen --emit-asm open-source/max/mojo/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
 fn gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype]],
