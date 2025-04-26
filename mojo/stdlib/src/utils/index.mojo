@@ -29,8 +29,6 @@ from builtin.io import _get_dtype_printf_format, _snprintf
 
 from .static_tuple import StaticTuple
 
-from builtin.device_passable import DevicePassable
-
 # ===-----------------------------------------------------------------------===#
 # Utilities
 # ===-----------------------------------------------------------------------===#
@@ -174,7 +172,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Writable,
     Comparable,
     CollectionElement,
-    DevicePassable,
 ):
     """A base struct that implements size agnostic index functions.
 
@@ -182,8 +179,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         size: The size of the tuple.
         element_type: The underlying dtype of the integer element value.
     """
-
-    alias device_type: AnyTrivialRegType = Self
 
     alias _int_type = Scalar[element_type]
     """The underlying storage of the integer element value."""
