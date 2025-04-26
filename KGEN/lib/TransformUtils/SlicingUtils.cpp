@@ -105,6 +105,8 @@ OwningOpRef<ModuleOp>
 M::produceStandaloneModule(const SymbolTable &symtab,
                            const ExportMap &exportedSymbols, IRMapping &mapping,
                            bool overrideExported) {
+
+  DenseSet<const void *> visited;
   CompilerTimeTraceScope traceScope("produceStandaloneModule");
   auto module = cast<ModuleOp>(symtab.getOp());
   // Create a new module for these funcs. This will go away at the end
@@ -116,7 +118,6 @@ M::produceStandaloneModule(const SymbolTable &symtab,
   SymbolTable sliceSymtab(*singleModule);
 
   IRMapping reusedMapping;
-  DenseSet<const void *> visited;
   DenseSet<ExportInterface> exported;
 
   for (auto [sym, exportVal] : exportedSymbols) {
