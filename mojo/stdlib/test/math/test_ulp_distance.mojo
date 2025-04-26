@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from internal_utils._utils import ulp_distance
+from test_utils import ulp_distance
 from testing import assert_true
 
 
