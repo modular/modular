@@ -12,19 +12,28 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from os import Atomic
 
+from compile import compile_info
 from testing import assert_true
 
-from utils.lock import SpinWaiter
 
+def test_compile_atomic():
+    @parameter
+    fn my_add_function[
+        type: DType
+    ](mut x: Atomic[type, scope="agent"]) -> Scalar[type]:
+        return x.fetch_add(1)
 
-def test_spin_waiter():
-    var waiter = SpinWaiter()
-    alias RUNS = 1000
-    for _ in range(RUNS):
-        waiter.wait()
-    assert_true(True)
+    var asm = compile_info[
+        my_add_function[DType.float32], emission_kind="llvm"
+    ]()
+
+    assert_true(
+        'atomicrmw fadd ptr %2, float 1.000000e+00 syncscope("agent") seq_cst'
+        in asm
+    )
 
 
 def main():
-    test_spin_waiter()
+    test_compile_atomic()
