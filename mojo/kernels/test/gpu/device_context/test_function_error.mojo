@@ -33,7 +33,7 @@ def test_function_error(ctx: DeviceContext):
         res_host.free()
     except e:
         assert_true(
-            "Kernels/test/gpu/device_context/test_function_error.mojo:27:24"
+            "open-source/max/mojo/kernels/test/gpu/device_context/test_function_error.mojo:27:24"
             in String(e)
         )
 
