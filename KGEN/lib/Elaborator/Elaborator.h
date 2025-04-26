@@ -496,6 +496,10 @@ private:
   /// Bundled offload functions for different targets.
   Shared<llvm::MapVector<TargetInfoAttr, OffloadInfo>> targetOffloadInfos;
 
+  /// Mutex to protect diagnostic handler in MLIRContext. Mutex must be locked
+  /// for a short period of time and only to set diagnostics.
+  std::mutex scopedDiagnosticHandleMutex;
+
   friend class IREvaluator;
 };
 
