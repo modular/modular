@@ -255,15 +255,6 @@ from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
 
-from tensor_internal.io_spec import IO, Input, FusedOutput
-from nn.conv import (
-    ConvInfoStatic,
-    conv_gpu,
-    conv_gpu_new,
-    conv_nhwc_direct,
-    conv_shape,
-)
-
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
 # ===-----------------------------------------------------------------------===#
@@ -5231,14 +5222,6 @@ struct SplitOutputShapeHelper:
 struct Conv:
     @staticmethod
     fn execute[
-        input_type: DType,
-        filter_type: DType,
-        output_type: DType,
-        filter_rank: Int,
-        input_rank: Int,
-        input_static_spec: StaticTensorSpec[input_type, input_rank],
-        filter_static_spec: StaticTensorSpec[filter_type, filter_rank],
-        output_static_spec: StaticTensorSpec[output_type, input_rank], //,
         filter_packed: Bool,
         lambdas_have_fusion: Bool,
         static_strides: DimList,
@@ -5246,11 +5229,9 @@ struct Conv:
         static_padding: DimList,
         target: StaticString,
     ](
-        output: FusedOutputTensor[
-            rank=input_rank, static_spec=output_static_spec
-        ],
-        input: InputTensor[rank=input_rank, static_spec=input_static_spec],
-        filter: InputTensor[rank=filter_rank, static_spec=filter_static_spec],
+        output: FusedOutputTensor,
+        input: InputTensor[rank = output.rank],
+        filter: InputTensor,
         strides: InputTensor,
         dilation: InputTensor,
         paddings: InputTensor,
@@ -5317,12 +5298,12 @@ struct Conv:
             ](),  # filter C, RSCF or FRSCf
         )
 
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
         @parameter
         if is_cpu[target]():
-            var input_buf = managed_tensor_slice_to_ndbuffer(input)
-            var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
-            var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
             conv_nhwc_direct[
                 input.rank,
                 filter.rank,
@@ -5358,48 +5339,20 @@ struct Conv:
             ]()
 
             var cuda_ctx = ctx.get_device_context()
-            conv_gpu_new[
-                input_dim = input._static_shape,
-                filter_dim = filter._static_shape,
-                output_dim = output._static_shape,
-                input_type = input.type,
-                filter_type = filter.type,
-                output_type = output.type,
-                input_static_spec = rebind[StaticTensorSpec[input_type, 4]](
-                    input_static_spec
-                ),
-                filter_static_spec = rebind[StaticTensorSpec[filter_type, 4]](
-                    filter_static_spec
-                ),
-                output_static_spec = rebind[StaticTensorSpec[output_type, 4]](
-                    output_static_spec
-                ),
-                maybe_epilogue_func=output_fn,
+            conv_gpu[
+                input.rank,
+                filter.rank,
+                input._static_shape,  # input shape
+                filter._static_shape,  # filter shape
+                output._static_shape,  # output shape
+                input.type,
+                filter.type,
+                output.type,
+                output_fn,
             ](
-                rebind[
-                    ManagedTensorSlice[
-                        io_spec=Input,
-                        static_spec = rebind[StaticTensorSpec[input_type, 4]](
-                            input_static_spec
-                        ),
-                    ]
-                ](input),
-                rebind[
-                    ManagedTensorSlice[
-                        io_spec=Input,
-                        static_spec = rebind[StaticTensorSpec[filter_type, 4]](
-                            filter_static_spec
-                        ),
-                    ]
-                ](filter),
-                rebind[
-                    ManagedTensorSlice[
-                        io_spec=FusedOutput,
-                        static_spec = rebind[StaticTensorSpec[output_type, 4]](
-                            output_static_spec
-                        ),
-                    ]
-                ](output),
+                input_buf,
+                filter_buf,
+                output_buf,
                 IndexList[2](stride_tuple[0], stride_tuple[1]),
                 IndexList[2](dilation_tuple[0], dilation_tuple[1]),
                 IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
