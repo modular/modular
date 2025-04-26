@@ -876,7 +876,11 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
 
 
 def rms_norm_kv_cache_ragged_continuous_batching[
-    type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+    type: DType,
+    num_heads: Int,
+    head_dim: Int, //,
+    target: StaticString,
+    multiply_before_cast: Bool,
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
@@ -906,8 +910,12 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
     head_size.
 
-    `weight_offset` is a constant offset added to the learned weights at
-    runtime. Here, we don't use any offset, so we pass in a zero scalar.
+    `weight_offset` is a constant offset argument added to the learned weights
+    at runtime. Here, we don't use any offset, so we pass in a zero scalar.
+
+    `multiply_before_cast` is a boolean parameter that determines whether to
+    multiply the normalized values by the gamma tensor before casting to the
+    output type or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
@@ -982,12 +990,21 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         + String(kv_collection.kv_params.head_size),
     ):
         _rms_norm_impl[
-            type, rank, key_cache_input_fn, key_cache_output_fn, target=target
+            type,
+            rank,
+            key_cache_input_fn,
+            key_cache_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
         ](shape, gamma, epsilon, weight_offset, context)
 
 
 def rms_norm_kv_cache_ragged_paged[
-    type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+    type: DType,
+    num_heads: Int,
+    head_dim: Int, //,
+    target: StaticString,
+    multiply_before_cast: Bool,
 ](
     kv_collection: PagedKVCacheCollection[
         type,
@@ -1017,8 +1034,12 @@ def rms_norm_kv_cache_ragged_paged[
     rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
     head_size.
 
-    `weight_offset` is a constant offset added to the learned weights at
-    runtime. Here, we don't use any offset, so we pass in a zero scalar.
+    `weight_offset` is a constant offset argument added to the learned weights
+    at runtime. Here, we don't use any offset, so we pass in a zero scalar.
+
+    `multiply_before_cast` is a boolean parameter that determines whether to
+    multiply the normalized values by the gamma tensor before casting to the
+    output type or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
@@ -1093,7 +1114,12 @@ def rms_norm_kv_cache_ragged_paged[
         + String(kv_collection.kv_params.head_size),
     ):
         _rms_norm_impl[
-            type, rank, key_cache_input_fn, key_cache_output_fn, target=target
+            type,
+            rank,
+            key_cache_input_fn,
+            key_cache_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
         ](shape, gamma, epsilon, weight_offset, context)
 
 
