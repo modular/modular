@@ -584,19 +584,6 @@ struct Mode:
         return True if self._value & mode._value else False
 
 
-fn ulp_distance[type: DType](a: Scalar[type], b: Scalar[type]) -> Int:
-    alias bitwidth = bitwidthof[type]()
-    alias T = _integral_type_of[type]()
-    # widen to Int first to avoid overflow
-    var a_int = Int(bitcast[T](a))
-    var b_int = Int(bitcast[T](b))
-    # to twos complement
-    alias two_complement_const = Int(1 << (bitwidth - 1))
-    a_int = two_complement_const - a_int if a_int < 0 else a_int
-    b_int = two_complement_const - b_int if b_int < 0 else b_int
-    return abs(a_int - b_int)
-
-
 fn random[
     dtype: DType
 ](buffer: NDBuffer[mut=True, dtype, **_], min: Float64 = 0, max: Float64 = 1):

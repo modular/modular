@@ -16,7 +16,6 @@ from ._testing import (
     assert_almost_equal,
     assert_equal,
     assert_with_measure,
-    compare,
 )
 from ._utils import (
     DeviceNDBuffer,
