@@ -265,16 +265,15 @@ struct PythonVersion:
         The version string is parsed to extract major, minor, and patch numbers.
         If parsing fails for any component, it defaults to -1.
         """
-        var version_string = String(version)
         var components = InlineArray[Int, 3](-1)
         var start = 0
         var next_idx = 0
         var i = 0
-        while next_idx < len(version_string) and i < 3:
-            if version_string[next_idx] == "." or (
-                version_string[next_idx] == " " and i == 2
+        while next_idx < len(version) and i < 3:
+            if version[next_idx] == "." or (
+                version[next_idx] == " " and i == 2
             ):
-                var c = version_string[start:next_idx]
+                var c = version[start:next_idx]
                 try:
                     components[i] = atol(c)
                 except:
@@ -1106,14 +1105,14 @@ struct CPython:
 
     fn PyImport_ImportModule(
         self,
-        name: StringSlice,
+        owned name: String,
     ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule).
         """
 
         var r = self.lib.call["PyImport_ImportModule", PyObjectPtr](
-            name.unsafe_ptr()
+            name.unsafe_cstr_ptr()
         )
 
         self.log(
@@ -1127,12 +1126,12 @@ struct CPython:
         self._inc_total_rc()
         return r
 
-    fn PyImport_AddModule(self, name: StringSlice) -> PyObjectPtr:
+    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
         """
         return self.lib.call["PyImport_AddModule", PyObjectPtr](
-            name.unsafe_ptr().bitcast[c_char]()
+            name.unsafe_cstr_ptr()
         )
 
     fn PyModule_Create(
@@ -1230,11 +1229,11 @@ struct CPython:
     # Python Evaluation
     # ===-------------------------------------------------------------------===#
 
-    fn PyRun_SimpleString(self, strref: StringSlice) -> Bool:
+    fn PyRun_SimpleString(self, owned str: String) -> Bool:
         """Executes the given Python code.
 
         Args:
-            strref: The python code to execute.
+            str: The python code to execute.
 
         Returns:
             `True` if the code executed successfully or `False` if the code
@@ -1245,12 +1244,13 @@ struct CPython:
             https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString).
         """
         return (
-            self.lib.call["PyRun_SimpleString", c_int](strref.unsafe_ptr()) == 0
+            self.lib.call["PyRun_SimpleString", c_int](str.unsafe_cstr_ptr())
+            == 0
         )
 
     fn PyRun_String(
         self,
-        strref: StringSlice,
+        owned str: String,
         globals: PyObjectPtr,
         locals: PyObjectPtr,
         run_mode: Int,
@@ -1259,13 +1259,13 @@ struct CPython:
         https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String).
         """
         var result = self.lib.call["PyRun_String", PyObjectPtr](
-            strref.unsafe_ptr(), Int32(run_mode), globals, locals
+            str.unsafe_cstr_ptr(), Int32(run_mode), globals, locals
         )
 
         self.log(
             result._get_ptr_as_int(),
             " NEWREF PyRun_String, str:",
-            strref,
+            str,
             ", ptr: ",
             result._get_ptr_as_int(),
             ", refcnt:",
@@ -1298,8 +1298,8 @@ struct CPython:
 
     fn Py_CompileString(
         self,
-        strref: StringSlice,
-        filename: StringSlice,
+        owned str: String,
+        owned filename: String,
         compile_mode: Int,
     ) -> PyObjectPtr:
         """[Reference](
@@ -1307,7 +1307,9 @@ struct CPython:
         """
 
         var r = self.lib.call["Py_CompileString", PyObjectPtr](
-            strref.unsafe_ptr(), filename.unsafe_ptr(), Int32(compile_mode)
+            str.unsafe_cstr_ptr(),
+            filename.unsafe_cstr_ptr(),
+            Int32(compile_mode),
         )
         self._inc_total_rc()
         return r
@@ -2004,7 +2006,7 @@ struct CPython:
     fn PyCapsule_New(
         mut self,
         pointer: OpaquePointer,
-        name: StringSlice,
+        owned name: String,
         destructor: destructor,
     ) -> PyObjectPtr:
         """Create a PyCapsule to communicate to another C extension the C API in `pointer`, identified by `name` and with the custom destructor in `destructor`.
@@ -2013,7 +2015,7 @@ struct CPython:
         """
         # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
         var new_capsule = self.lib.call["PyCapsule_New", PyObjectPtr](
-            pointer, name.unsafe_ptr().bitcast[c_char](), destructor
+            pointer, name.unsafe_cstr_ptr(), destructor
         )
         self._inc_total_rc()
         return new_capsule
@@ -2021,7 +2023,7 @@ struct CPython:
     fn PyCapsule_GetPointer(
         mut self,
         capsule: PyObjectPtr,
-        name: StringSlice,
+        owned name: String,
     ) -> OpaquePointer:
         """Extract the pointer to another C extension from a PyCapsule `capsule` with the given `name`.
 
@@ -2029,5 +2031,5 @@ struct CPython:
         """
         # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
         return self.lib.call["PyCapsule_GetPointer", OpaquePointer](
-            capsule, name.unsafe_ptr().bitcast[c_char]()
+            capsule, name.unsafe_cstr_ptr()
         )

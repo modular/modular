@@ -105,7 +105,7 @@ struct Python:
     fn _cpython_ptr(self) -> Pointer[CPython, StaticConstantOrigin]:
         return self._impl
 
-    fn eval(self, code: StringSlice) -> Bool:
+    fn eval(self, owned code: String) -> Bool:
         """Executes the given Python code.
 
         Args:
@@ -116,11 +116,11 @@ struct Python:
             raised an exception.
         """
         var cpython = self.cpython()
-        return cpython.PyRun_SimpleString(code)
+        return cpython.PyRun_SimpleString(code^)
 
     @staticmethod
     fn evaluate(
-        expr: StringSlice,
+        owned expr: String,
         file: Bool = False,
         name: StringSlice[StaticConstantOrigin] = "__main__",
     ) raises -> PythonObject:
@@ -152,7 +152,7 @@ struct Python:
             # the initial state: this is essentially whether it is expecting
             # to compile an expression, a file or statements (e.g. repl).
             var code = PythonObject(
-                cpython.Py_CompileString(expr, "<evaluate>", Py_file_input)
+                cpython.Py_CompileString(expr^, "<evaluate>", Py_file_input)
             )
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
@@ -173,7 +173,7 @@ struct Python:
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
             var result = cpython.PyRun_String(
-                expr, dict_obj.py_object, dict_obj.py_object, Py_eval_input
+                expr^, dict_obj.py_object, dict_obj.py_object, Py_eval_input
             )
             # We no longer need module and dictionary, release them.
             Python.throw_python_exception_if_error_state(cpython)
@@ -209,7 +209,7 @@ struct Python:
 
     # TODO(MSTDL-880): Change this to return `PythonModule`
     @staticmethod
-    fn import_module(module: StringSlice) raises -> PythonObject:
+    fn import_module(owned module: String) raises -> PythonObject:
         """Imports a Python module.
 
         This provides you with a module object you can use just like you would
@@ -234,7 +234,7 @@ struct Python:
         var cpython = Python().cpython()
         # Throw error if it occurred during initialization
         cpython.check_init_error()
-        var module_maybe = cpython.PyImport_ImportModule(module)
+        var module_maybe = cpython.PyImport_ImportModule(module^)
         Python.throw_python_exception_if_error_state(cpython)
         return PythonObject(module_maybe)
 
