@@ -1774,14 +1774,20 @@ ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
   replacer.replaceElementsIn(resultOp, /*replaceAttrs=*/true,
                              /*replaceLocs=*/false, /*replaceTypes=*/false);
 
-  std::string errorMessage;
-  mlir::ScopedDiagnosticHandler handler(
-      op.getContext(), [&](Diagnostic &diag) { errorMessage = diag.str(); });
-  // Verify that the resulting op is correctly constructed. If not, we fail.
-  if (failed(mlir::verify(resultOp))) {
-    inode->setToError(
-        ErrorTree(loc, "MLIR verification error: " + errorMessage));
-    return failure();
+  {
+    // MLIRContext is not thread safe for ScopedDiagnosticHandler, so if
+    // multiple deferred operations are being verified and failed, the content
+    // of error message can be corrupted.
+    std::lock_guard<std::mutex> lock(scopedDiagnosticHandleMutex);
+    std::string errorMessage;
+    mlir::ScopedDiagnosticHandler handler(
+        op.getContext(), [&](Diagnostic &diag) { errorMessage = diag.str(); });
+    // Verify that the resulting op is correctly constructed. If not, we fail.
+    if (failed(mlir::verify(resultOp))) {
+      inode->setToError(
+          ErrorTree(loc, "MLIR verification error: " + errorMessage));
+      return failure();
+    }
   }
 
   DenseSet<StringAttr> inherentAttrs;
