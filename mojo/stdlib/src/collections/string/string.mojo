@@ -81,485 +81,6 @@ from python import PythonObject, PythonConvertible
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import write_buffered
 
-# ===----------------------------------------------------------------------=== #
-# ord
-# ===----------------------------------------------------------------------=== #
-
-
-fn ord(s: StringSlice) -> Int:
-    """Returns an integer that represents the codepoint of a single-character
-    string.
-
-    Given a string containing a single character `Codepoint`, return an integer
-    representing the codepoint of that character. For example, `ord("a")`
-    returns the integer `97`. This is the inverse of the `chr()` function.
-
-    Args:
-        s: The input string, which must contain only a single- character.
-
-    Returns:
-        An integer representing the code point of the given character.
-    """
-    return Int(Codepoint.ord(s))
-
-
-# ===----------------------------------------------------------------------=== #
-# chr
-# ===----------------------------------------------------------------------=== #
-
-
-fn chr(c: Int) -> String:
-    """Returns a String based on the given Unicode code point. This is the
-    inverse of the `ord()` function.
-
-    Args:
-        c: An integer that represents a code point.
-
-    Returns:
-        A string containing a single character based on the given code point.
-
-    Examples:
-    ```mojo
-    print(chr(97), chr(8364)) # "a €"
-    ```
-    .
-    """
-
-    if c < 0b1000_0000:  # 1 byte ASCII char
-        var str = String(capacity=1)
-        str.append_byte(c)
-        return str^
-
-    var char_opt = Codepoint.from_u32(c)
-    if not char_opt:
-        # TODO: Raise ValueError instead.
-        return abort[String](
-            String("chr(", c, ") is not a valid Unicode codepoint")
-        )
-
-    # SAFETY: We just checked that `char` is present.
-    return String(char_opt.unsafe_value())
-
-
-# ===----------------------------------------------------------------------=== #
-# ascii
-# ===----------------------------------------------------------------------=== #
-
-
-fn _chr_ascii(c: UInt8) -> String:
-    """Returns a string based on the given ASCII code point.
-
-    Args:
-        c: An integer that represents a code point.
-
-    Returns:
-        A string containing a single character based on the given code point.
-    """
-    var result = String(capacity=1)
-    result.append_byte(c)
-    return result
-
-
-fn _repr_ascii(c: UInt8) -> String:
-    """Returns a printable representation of the given ASCII code point.
-
-    Args:
-        c: An integer that represents a code point.
-
-    Returns:
-        A string containing a representation of the given code point.
-    """
-    alias ord_tab = ord("\t")
-    alias ord_new_line = ord("\n")
-    alias ord_carriage_return = ord("\r")
-    alias ord_back_slash = ord("\\")
-
-    if c == ord_back_slash:
-        return r"\\"
-    elif Codepoint(c).is_ascii_printable():
-        return _chr_ascii(c)
-    elif c == ord_tab:
-        return r"\t"
-    elif c == ord_new_line:
-        return r"\n"
-    elif c == ord_carriage_return:
-        return r"\r"
-    else:
-        var uc = c.cast[DType.uint8]()
-        if uc < 16:
-            return hex(uc, prefix=r"\x0")
-        else:
-            return hex(uc, prefix=r"\x")
-
-
-@always_inline
-fn ascii(value: StringSlice) -> String:
-    """Get the ASCII representation of the object.
-
-    Args:
-        value: The object to get the ASCII representation of.
-
-    Returns:
-        A string containing the ASCII representation of the object.
-    """
-    alias ord_squote = ord("'")
-    var result = String()
-    var use_dquote = False
-
-    for idx in range(len(value._slice)):
-        var char = value._slice[idx]
-        result += _repr_ascii(char)
-        use_dquote = use_dquote or (char == ord_squote)
-
-    if use_dquote:
-        return '"' + result + '"'
-    else:
-        return "'" + result + "'"
-
-
-# ===----------------------------------------------------------------------=== #
-# strtol
-# ===----------------------------------------------------------------------=== #
-
-
-fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
-    """Parses and returns the given string as an integer in the given base.
-
-    If base is set to 0, the string is parsed as an Integer literal, with the
-    following considerations:
-    - '0b' or '0B' prefix indicates binary (base 2)
-    - '0o' or '0O' prefix indicates octal (base 8)
-    - '0x' or '0X' prefix indicates hexadecimal (base 16)
-    - Without a prefix, it's treated as decimal (base 10)
-
-    Args:
-        str_slice: A string to be parsed as an integer in the given base.
-        base: Base used for conversion, value must be between 2 and 36, or 0.
-
-    Returns:
-        An integer value that represents the string.
-
-    Raises:
-        If the given string cannot be parsed as an integer value or if an
-        incorrect base is provided.
-
-    Examples:
-        >>> atol("32")
-        32
-        >>> atol("FF", 16)
-        255
-        >>> atol("0xFF", 0)
-        255
-        >>> atol("0b1010", 0)
-        10
-
-    Notes:
-        This follows [Python's integer literals](
-        https://docs.python.org/3/reference/lexical_analysis.html#integers).
-    """
-
-    if (base != 0) and (base < 2 or base > 36):
-        raise Error("Base must be >= 2 and <= 36, or 0.")
-    if not str_slice:
-        raise Error(_str_to_base_error(base, str_slice))
-
-    var real_base: Int
-    var ord_num_max: Int
-
-    var ord_letter_max = (-1, -1)
-    var result = 0
-    var is_negative: Bool
-    var has_prefix: Bool
-    var start: Int
-    var str_len = str_slice.byte_length()
-
-    start, is_negative = _trim_and_handle_sign(str_slice, str_len)
-
-    alias ord_0 = ord("0")
-    alias ord_letter_min = (ord("a"), ord("A"))
-    alias ord_underscore = ord("_")
-
-    if base == 0:
-        var real_base_new_start = _identify_base(str_slice, start)
-        real_base = real_base_new_start[0]
-        start = real_base_new_start[1]
-        has_prefix = real_base != 10
-        if real_base == -1:
-            raise Error(_str_to_base_error(base, str_slice))
-    else:
-        start, has_prefix = _handle_base_prefix(start, str_slice, str_len, base)
-        real_base = base
-
-    if real_base <= 10:
-        ord_num_max = ord(String(real_base - 1))
-    else:
-        ord_num_max = ord("9")
-        ord_letter_max = (
-            ord("a") + (real_base - 11),
-            ord("A") + (real_base - 11),
-        )
-
-    var buff = str_slice.unsafe_ptr()
-    var found_valid_chars_after_start = False
-    var has_space_after_number = False
-
-    # Prefixed integer literals with real_base 2, 8, 16 may begin with leading
-    # underscores under the conditions they have a prefix
-    var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
-    for pos in range(start, str_len):
-        var ord_current = Int(buff[pos])
-        if ord_current == ord_underscore:
-            if was_last_digit_underscore:
-                raise Error(_str_to_base_error(base, str_slice))
-            else:
-                was_last_digit_underscore = True
-                continue
-        else:
-            was_last_digit_underscore = False
-        if ord_0 <= ord_current <= ord_num_max:
-            result += ord_current - ord_0
-            found_valid_chars_after_start = True
-        elif ord_letter_min[0] <= ord_current <= ord_letter_max[0]:
-            result += ord_current - ord_letter_min[0] + 10
-            found_valid_chars_after_start = True
-        elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
-            result += ord_current - ord_letter_min[1] + 10
-            found_valid_chars_after_start = True
-        elif Codepoint(UInt8(ord_current)).is_posix_space():
-            has_space_after_number = True
-            start = pos + 1
-            break
-        else:
-            raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
-            var nextresult = result * real_base
-            if nextresult < result:
-                raise Error(
-                    _str_to_base_error(base, str_slice)
-                    + " String expresses an integer too large to store in Int."
-                )
-            result = nextresult
-
-    if was_last_digit_underscore or (not found_valid_chars_after_start):
-        raise Error(_str_to_base_error(base, str_slice))
-
-    if has_space_after_number:
-        for pos in range(start, str_len):
-            if not Codepoint(buff[pos]).is_posix_space():
-                raise Error(_str_to_base_error(base, str_slice))
-    if is_negative:
-        result = -result
-    return result
-
-
-@always_inline
-fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
-    """Trims leading whitespace, handles the sign of the number in the string.
-
-    Args:
-        str_slice: A StringSlice containing the number to parse.
-        str_len: The length of the string.
-
-    Returns:
-        A tuple containing:
-        - The starting index of the number after whitespace and sign.
-        - A boolean indicating whether the number is negative.
-    """
-    var buff = str_slice.unsafe_ptr()
-    var start: Int = 0
-    while start < str_len and Codepoint(buff[start]).is_posix_space():
-        start += 1
-    var p: Bool = buff[start] == ord("+")
-    var n: Bool = buff[start] == ord("-")
-    return start + (Int(p) or Int(n)), n
-
-
-@always_inline
-fn _handle_base_prefix(
-    pos: Int, str_slice: StringSlice, str_len: Int, base: Int
-) -> (Int, Bool):
-    """Adjusts the starting position if a valid base prefix is present.
-
-    Handles "0b"/"0B" for base 2, "0o"/"0O" for base 8, and "0x"/"0X" for base
-    16. Only adjusts if the base matches the prefix.
-
-    Args:
-        pos: Current position in the string.
-        str_slice: The input StringSlice.
-        str_len: Length of the input string.
-        base: The specified base.
-
-    Returns:
-        A tuple containing:
-            - Updated position after the prefix, if applicable.
-            - A boolean indicating if the prefix was valid for the given base.
-    """
-    var start = pos
-    var buff = str_slice.unsafe_ptr()
-    if start + 1 < str_len:
-        var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == ord("0") and (
-            (base == 2 and (prefix_char == "b" or prefix_char == "B"))
-            or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
-            or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
-        ):
-            start += 2
-    return start, start != pos
-
-
-fn _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
-    return String(
-        "String is not convertible to integer with base ",
-        base,
-        ": '",
-        str_slice,
-        "'",
-    )
-
-
-fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
-    var length = str_slice.byte_length()
-    # just 1 digit, assume base 10
-    if start == (length - 1):
-        return 10, start
-    if str_slice[start] == "0":
-        var second_digit = str_slice[start + 1]
-        if second_digit == "b" or second_digit == "B":
-            return 2, start + 2
-        if second_digit == "o" or second_digit == "O":
-            return 8, start + 2
-        if second_digit == "x" or second_digit == "X":
-            return 16, start + 2
-        # checking for special case of all "0", "_" are also allowed
-        var was_last_character_underscore = False
-        for i in range(start + 1, length):
-            if str_slice[i] == "_":
-                if was_last_character_underscore:
-                    return -1, -1
-                else:
-                    was_last_character_underscore = True
-                    continue
-            else:
-                was_last_character_underscore = False
-            if str_slice[i] != "0":
-                return -1, -1
-    elif ord("1") <= ord(str_slice[start]) <= ord("9"):
-        return 10, start
-    else:
-        return -1, -1
-
-    return 10, start
-
-
-fn _atof_error(str_ref: StringSlice) -> Error:
-    return Error("String is not convertible to float: '", str_ref, "'")
-
-
-fn atof(str_slice: StringSlice) raises -> Float64:
-    """Parses the given string as a floating point and returns that value.
-
-    For example, `atof("2.25")` returns `2.25`.
-
-    Raises:
-        If the given string cannot be parsed as an floating point value, for
-        example in `atof("hi")`.
-
-    Args:
-        str_slice: A string to be parsed as a floating point.
-
-    Returns:
-        An floating point value that represents the string, or otherwise raises.
-    """
-
-    if not str_slice:
-        raise _atof_error(str_slice)
-
-    var result: Float64 = 0.0
-    var exponent: Int = 0
-    var sign: Int = 1
-
-    alias ord_0 = UInt8(ord("0"))
-    alias ord_9 = UInt8(ord("9"))
-    alias ord_dot = UInt8(ord("."))
-    alias ord_plus = UInt8(ord("+"))
-    alias ord_minus = UInt8(ord("-"))
-    alias ord_f = UInt8(ord("f"))
-    alias ord_F = UInt8(ord("F"))
-    alias ord_e = UInt8(ord("e"))
-    alias ord_E = UInt8(ord("E"))
-
-    var start: Int = 0
-    var str_slice_strip = str_slice.strip()
-    var str_len = len(str_slice_strip)
-    var buff = str_slice_strip.unsafe_ptr()
-
-    # check sign, inf, nan
-    if buff[start] == ord_plus:
-        start += 1
-    elif buff[start] == ord_minus:
-        start += 1
-        sign = -1
-    if (str_len - start) >= 3:
-        if StringSlice[buff.origin](ptr=buff + start, length=3) == "nan":
-            return FloatLiteral.nan
-        if StringSlice[buff.origin](ptr=buff + start, length=3) == "inf":
-            return FloatLiteral.infinity * sign
-    # read before dot
-    for pos in range(start, str_len):
-        if ord_0 <= buff[pos] <= ord_9:
-            result = result * 10.0 + Int(buff[pos] - ord_0)
-            start += 1
-        else:
-            break
-    # if dot -> read after dot
-    if buff[start] == ord_dot:
-        start += 1
-        for pos in range(start, str_len):
-            if ord_0 <= buff[pos] <= ord_9:
-                result = result * 10.0 + Int(buff[pos] - ord_0)
-                exponent -= 1
-            else:
-                break
-            start += 1
-    # if e/E -> read scientific notation
-    if buff[start] == ord_e or buff[start] == ord_E:
-        start += 1
-        var sign: Int = 1
-        var shift: Int = 0
-        var has_number: Bool = False
-        for pos in range(start, str_len):
-            if buff[start] == ord_plus:
-                pass
-            elif buff[pos] == ord_minus:
-                sign = -1
-            elif ord_0 <= buff[start] <= ord_9:
-                has_number = True
-                shift = shift * 10 + Int(buff[pos] - ord_0)
-            else:
-                break
-            start += 1
-        exponent += sign * shift
-        if not has_number:
-            raise _atof_error(str_slice)
-    # check for f/F at the end
-    if buff[start] == ord_f or buff[start] == ord_F:
-        start += 1
-    # check if string got fully parsed
-    if start != str_len:
-        raise _atof_error(str_slice)
-    # apply shift
-    # NOTE: Instead of `var result *= 10.0 ** exponent`, we calculate a positive
-    # integer factor as shift and multiply or divide by it based on the shift
-    # direction. This allows for better precision.
-    # TODO: investigate if there is a floating point arithmetic problem.
-    var shift: Int = 10 ** abs(exponent)
-    if exponent > 0:
-        result *= shift
-    if exponent < 0:
-        result /= shift
-    # apply sign
-    return result * sign
-
 
 # This is a private struct used to store the capacity and bitflags for a String.
 # It is not exported and should not be used directly.
@@ -2202,7 +1723,487 @@ struct String(
 
 
 # ===----------------------------------------------------------------------=== #
-# Utilities
+# ord
+# ===----------------------------------------------------------------------=== #
+
+
+fn ord(s: StringSlice) -> Int:
+    """Returns an integer that represents the codepoint of a single-character
+    string.
+
+    Given a string containing a single character `Codepoint`, return an integer
+    representing the codepoint of that character. For example, `ord("a")`
+    returns the integer `97`. This is the inverse of the `chr()` function.
+
+    Args:
+        s: The input string, which must contain only a single- character.
+
+    Returns:
+        An integer representing the code point of the given character.
+    """
+    return Int(Codepoint.ord(s))
+
+
+# ===----------------------------------------------------------------------=== #
+# chr
+# ===----------------------------------------------------------------------=== #
+
+
+fn chr(c: Int) -> String:
+    """Returns a String based on the given Unicode code point. This is the
+    inverse of the `ord()` function.
+
+    Args:
+        c: An integer that represents a code point.
+
+    Returns:
+        A string containing a single character based on the given code point.
+
+    Examples:
+    ```mojo
+    print(chr(97), chr(8364)) # "a €"
+    ```
+    .
+    """
+
+    if c < 0b1000_0000:  # 1 byte ASCII char
+        var str = String(capacity=1)
+        str.append_byte(c)
+        return str^
+
+    var char_opt = Codepoint.from_u32(c)
+    if not char_opt:
+        # TODO: Raise ValueError instead.
+        return abort[String](
+            String("chr(", c, ") is not a valid Unicode codepoint")
+        )
+
+    # SAFETY: We just checked that `char` is present.
+    return String(char_opt.unsafe_value())
+
+
+# ===----------------------------------------------------------------------=== #
+# ascii
+# ===----------------------------------------------------------------------=== #
+
+
+fn _chr_ascii(c: UInt8) -> String:
+    """Returns a string based on the given ASCII code point.
+
+    Args:
+        c: An integer that represents a code point.
+
+    Returns:
+        A string containing a single character based on the given code point.
+    """
+    var result = String(capacity=1)
+    result.append_byte(c)
+    return result
+
+
+fn _repr_ascii(c: UInt8) -> String:
+    """Returns a printable representation of the given ASCII code point.
+
+    Args:
+        c: An integer that represents a code point.
+
+    Returns:
+        A string containing a representation of the given code point.
+    """
+    alias ord_tab = ord("\t")
+    alias ord_new_line = ord("\n")
+    alias ord_carriage_return = ord("\r")
+    alias ord_back_slash = ord("\\")
+
+    if c == ord_back_slash:
+        return r"\\"
+    elif Codepoint(c).is_ascii_printable():
+        return _chr_ascii(c)
+    elif c == ord_tab:
+        return r"\t"
+    elif c == ord_new_line:
+        return r"\n"
+    elif c == ord_carriage_return:
+        return r"\r"
+    else:
+        var uc = c.cast[DType.uint8]()
+        if uc < 16:
+            return hex(uc, prefix=r"\x0")
+        else:
+            return hex(uc, prefix=r"\x")
+
+
+@always_inline
+fn ascii(value: StringSlice) -> String:
+    """Get the ASCII representation of the object.
+
+    Args:
+        value: The object to get the ASCII representation of.
+
+    Returns:
+        A string containing the ASCII representation of the object.
+    """
+    alias ord_squote = ord("'")
+    var result = String()
+    var use_dquote = False
+
+    for idx in range(len(value._slice)):
+        var char = value._slice[idx]
+        result += _repr_ascii(char)
+        use_dquote = use_dquote or (char == ord_squote)
+
+    if use_dquote:
+        return '"' + result + '"'
+    else:
+        return "'" + result + "'"
+
+
+# ===----------------------------------------------------------------------=== #
+# atol
+# ===----------------------------------------------------------------------=== #
+
+
+fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
+    """Parses and returns the given string as an integer in the given base.
+
+    If base is set to 0, the string is parsed as an Integer literal, with the
+    following considerations:
+    - '0b' or '0B' prefix indicates binary (base 2)
+    - '0o' or '0O' prefix indicates octal (base 8)
+    - '0x' or '0X' prefix indicates hexadecimal (base 16)
+    - Without a prefix, it's treated as decimal (base 10)
+
+    Args:
+        str_slice: A string to be parsed as an integer in the given base.
+        base: Base used for conversion, value must be between 2 and 36, or 0.
+
+    Returns:
+        An integer value that represents the string.
+
+    Raises:
+        If the given string cannot be parsed as an integer value or if an
+        incorrect base is provided.
+
+    Examples:
+        >>> atol("32")
+        32
+        >>> atol("FF", 16)
+        255
+        >>> atol("0xFF", 0)
+        255
+        >>> atol("0b1010", 0)
+        10
+
+    Notes:
+        This follows [Python's integer literals](
+        https://docs.python.org/3/reference/lexical_analysis.html#integers).
+    """
+
+    if (base != 0) and (base < 2 or base > 36):
+        raise Error("Base must be >= 2 and <= 36, or 0.")
+    if not str_slice:
+        raise Error(_str_to_base_error(base, str_slice))
+
+    var real_base: Int
+    var ord_num_max: Int
+
+    var ord_letter_max = (-1, -1)
+    var result = 0
+    var is_negative: Bool
+    var has_prefix: Bool
+    var start: Int
+    var str_len = str_slice.byte_length()
+
+    start, is_negative = _trim_and_handle_sign(str_slice, str_len)
+
+    alias ord_0 = ord("0")
+    alias ord_letter_min = (ord("a"), ord("A"))
+    alias ord_underscore = ord("_")
+
+    if base == 0:
+        var real_base_new_start = _identify_base(str_slice, start)
+        real_base = real_base_new_start[0]
+        start = real_base_new_start[1]
+        has_prefix = real_base != 10
+        if real_base == -1:
+            raise Error(_str_to_base_error(base, str_slice))
+    else:
+        start, has_prefix = _handle_base_prefix(start, str_slice, str_len, base)
+        real_base = base
+
+    if real_base <= 10:
+        ord_num_max = ord(String(real_base - 1))
+    else:
+        ord_num_max = ord("9")
+        ord_letter_max = (
+            ord("a") + (real_base - 11),
+            ord("A") + (real_base - 11),
+        )
+
+    var buff = str_slice.unsafe_ptr()
+    var found_valid_chars_after_start = False
+    var has_space_after_number = False
+
+    # Prefixed integer literals with real_base 2, 8, 16 may begin with leading
+    # underscores under the conditions they have a prefix
+    var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
+    for pos in range(start, str_len):
+        var ord_current = Int(buff[pos])
+        if ord_current == ord_underscore:
+            if was_last_digit_underscore:
+                raise Error(_str_to_base_error(base, str_slice))
+            else:
+                was_last_digit_underscore = True
+                continue
+        else:
+            was_last_digit_underscore = False
+        if ord_0 <= ord_current <= ord_num_max:
+            result += ord_current - ord_0
+            found_valid_chars_after_start = True
+        elif ord_letter_min[0] <= ord_current <= ord_letter_max[0]:
+            result += ord_current - ord_letter_min[0] + 10
+            found_valid_chars_after_start = True
+        elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
+            result += ord_current - ord_letter_min[1] + 10
+            found_valid_chars_after_start = True
+        elif Codepoint(UInt8(ord_current)).is_posix_space():
+            has_space_after_number = True
+            start = pos + 1
+            break
+        else:
+            raise Error(_str_to_base_error(base, str_slice))
+        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
+            var nextresult = result * real_base
+            if nextresult < result:
+                raise Error(
+                    _str_to_base_error(base, str_slice)
+                    + " String expresses an integer too large to store in Int."
+                )
+            result = nextresult
+
+    if was_last_digit_underscore or (not found_valid_chars_after_start):
+        raise Error(_str_to_base_error(base, str_slice))
+
+    if has_space_after_number:
+        for pos in range(start, str_len):
+            if not Codepoint(buff[pos]).is_posix_space():
+                raise Error(_str_to_base_error(base, str_slice))
+    if is_negative:
+        result = -result
+    return result
+
+
+@always_inline
+fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
+    """Trims leading whitespace, handles the sign of the number in the string.
+
+    Args:
+        str_slice: A StringSlice containing the number to parse.
+        str_len: The length of the string.
+
+    Returns:
+        A tuple containing:
+        - The starting index of the number after whitespace and sign.
+        - A boolean indicating whether the number is negative.
+    """
+    var buff = str_slice.unsafe_ptr()
+    var start: Int = 0
+    while start < str_len and Codepoint(buff[start]).is_posix_space():
+        start += 1
+    var p: Bool = buff[start] == ord("+")
+    var n: Bool = buff[start] == ord("-")
+    return start + (Int(p) or Int(n)), n
+
+
+@always_inline
+fn _handle_base_prefix(
+    pos: Int, str_slice: StringSlice, str_len: Int, base: Int
+) -> (Int, Bool):
+    """Adjusts the starting position if a valid base prefix is present.
+
+    Handles "0b"/"0B" for base 2, "0o"/"0O" for base 8, and "0x"/"0X" for base
+    16. Only adjusts if the base matches the prefix.
+
+    Args:
+        pos: Current position in the string.
+        str_slice: The input StringSlice.
+        str_len: Length of the input string.
+        base: The specified base.
+
+    Returns:
+        A tuple containing:
+            - Updated position after the prefix, if applicable.
+            - A boolean indicating if the prefix was valid for the given base.
+    """
+    var start = pos
+    var buff = str_slice.unsafe_ptr()
+    if start + 1 < str_len:
+        var prefix_char = chr(Int(buff[start + 1]))
+        if buff[start] == ord("0") and (
+            (base == 2 and (prefix_char == "b" or prefix_char == "B"))
+            or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
+            or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
+        ):
+            start += 2
+    return start, start != pos
+
+
+fn _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
+    return String(
+        "String is not convertible to integer with base ",
+        base,
+        ": '",
+        str_slice,
+        "'",
+    )
+
+
+fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
+    var length = str_slice.byte_length()
+    # just 1 digit, assume base 10
+    if start == (length - 1):
+        return 10, start
+    if str_slice[start] == "0":
+        var second_digit = str_slice[start + 1]
+        if second_digit == "b" or second_digit == "B":
+            return 2, start + 2
+        if second_digit == "o" or second_digit == "O":
+            return 8, start + 2
+        if second_digit == "x" or second_digit == "X":
+            return 16, start + 2
+        # checking for special case of all "0", "_" are also allowed
+        var was_last_character_underscore = False
+        for i in range(start + 1, length):
+            if str_slice[i] == "_":
+                if was_last_character_underscore:
+                    return -1, -1
+                else:
+                    was_last_character_underscore = True
+                    continue
+            else:
+                was_last_character_underscore = False
+            if str_slice[i] != "0":
+                return -1, -1
+    elif ord("1") <= ord(str_slice[start]) <= ord("9"):
+        return 10, start
+    else:
+        return -1, -1
+
+    return 10, start
+
+
+fn _atof_error(str_ref: StringSlice) -> Error:
+    return Error("String is not convertible to float: '", str_ref, "'")
+
+
+fn atof(str_slice: StringSlice) raises -> Float64:
+    """Parses the given string as a floating point and returns that value.
+
+    For example, `atof("2.25")` returns `2.25`.
+
+    Raises:
+        If the given string cannot be parsed as an floating point value, for
+        example in `atof("hi")`.
+
+    Args:
+        str_slice: A string to be parsed as a floating point.
+
+    Returns:
+        An floating point value that represents the string, or otherwise raises.
+    """
+
+    if not str_slice:
+        raise _atof_error(str_slice)
+
+    var result: Float64 = 0.0
+    var exponent: Int = 0
+    var sign: Int = 1
+
+    alias ord_0 = UInt8(ord("0"))
+    alias ord_9 = UInt8(ord("9"))
+    alias ord_dot = UInt8(ord("."))
+    alias ord_plus = UInt8(ord("+"))
+    alias ord_minus = UInt8(ord("-"))
+    alias ord_f = UInt8(ord("f"))
+    alias ord_F = UInt8(ord("F"))
+    alias ord_e = UInt8(ord("e"))
+    alias ord_E = UInt8(ord("E"))
+
+    var start: Int = 0
+    var str_slice_strip = str_slice.strip()
+    var str_len = len(str_slice_strip)
+    var buff = str_slice_strip.unsafe_ptr()
+
+    # check sign, inf, nan
+    if buff[start] == ord_plus:
+        start += 1
+    elif buff[start] == ord_minus:
+        start += 1
+        sign = -1
+    if (str_len - start) >= 3:
+        if StringSlice[buff.origin](ptr=buff + start, length=3) == "nan":
+            return FloatLiteral.nan
+        if StringSlice[buff.origin](ptr=buff + start, length=3) == "inf":
+            return FloatLiteral.infinity * sign
+    # read before dot
+    for pos in range(start, str_len):
+        if ord_0 <= buff[pos] <= ord_9:
+            result = result * 10.0 + Int(buff[pos] - ord_0)
+            start += 1
+        else:
+            break
+    # if dot -> read after dot
+    if buff[start] == ord_dot:
+        start += 1
+        for pos in range(start, str_len):
+            if ord_0 <= buff[pos] <= ord_9:
+                result = result * 10.0 + Int(buff[pos] - ord_0)
+                exponent -= 1
+            else:
+                break
+            start += 1
+    # if e/E -> read scientific notation
+    if buff[start] == ord_e or buff[start] == ord_E:
+        start += 1
+        var sign: Int = 1
+        var shift: Int = 0
+        var has_number: Bool = False
+        for pos in range(start, str_len):
+            if buff[start] == ord_plus:
+                pass
+            elif buff[pos] == ord_minus:
+                sign = -1
+            elif ord_0 <= buff[start] <= ord_9:
+                has_number = True
+                shift = shift * 10 + Int(buff[pos] - ord_0)
+            else:
+                break
+            start += 1
+        exponent += sign * shift
+        if not has_number:
+            raise _atof_error(str_slice)
+    # check for f/F at the end
+    if buff[start] == ord_f or buff[start] == ord_F:
+        start += 1
+    # check if string got fully parsed
+    if start != str_len:
+        raise _atof_error(str_slice)
+    # apply shift
+    # NOTE: Instead of `var result *= 10.0 ** exponent`, we calculate a positive
+    # integer factor as shift and multiply or divide by it based on the shift
+    # direction. This allows for better precision.
+    # TODO: investigate if there is a floating point arithmetic problem.
+    var shift: Int = 10 ** abs(exponent)
+    if exponent > 0:
+        result *= shift
+    if exponent < 0:
+        result /= shift
+    # apply sign
+    return result * sign
+
+
+# ===----------------------------------------------------------------------=== #
+# Other utilities
 # ===----------------------------------------------------------------------=== #
 
 
