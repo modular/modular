@@ -13,7 +13,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
-from max.nn import Embedding
+from max.nn import EmbeddingV1
 from max.pipelines.architectures.llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
     PrecomputedPositionEmbedding,
@@ -63,7 +63,7 @@ class PositionalEmbedding:
                 shape=torch_pos_embed.embedding.shape,
                 device=DeviceRef.CPU(),
             ),
-            tile_embedding=Embedding(
+            tile_embedding=EmbeddingV1(
                 Weight(
                     name="tile_embedding",
                     dtype=self.dtype,
@@ -115,7 +115,7 @@ class AspectRatioEmbedding:
                 shape=torch_aspect_ratio_embed.gate.shape,
                 device=DeviceRef.CPU(),
             ),
-            embedding=Embedding(
+            embedding=EmbeddingV1(
                 Weight(
                     name="embedding",
                     dtype=self.dtype,

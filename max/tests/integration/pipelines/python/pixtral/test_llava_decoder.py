@@ -16,12 +16,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 from max.nn import (
-    MLP,
-    AttentionWithRope,
-    Embedding,
-    Linear,
+    MLPV1,
+    AttentionWithRopeV1,
+    EmbeddingV1,
+    LinearV1,
     OptimizedRotaryEmbedding,
-    RMSNorm,
+    RMSNormV1,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -107,10 +107,10 @@ def mistral_given_pytorch_mistral(
     ]
 
     ############ Define Graph-API layers with weights with pytorch #############
-    def linear(name: str, array) -> Linear:
+    def linear(name: str, array) -> LinearV1:
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
-        return Linear(
+        return LinearV1(
             Weight(
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
@@ -161,7 +161,7 @@ def mistral_given_pytorch_mistral(
         )
         wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
 
-        return AttentionWithRope(
+        return AttentionWithRopeV1(
             n_heads=config.num_attention_heads,
             kv_params=kv_params,
             wqkv=wqkv,
@@ -199,24 +199,24 @@ def mistral_given_pytorch_mistral(
 
         layer = TransformerBlock(
             attention=attention(kv_params, rope, i),
-            mlp=MLP(gate_proj, down_proj, up_proj),
-            attention_norm=RMSNorm(
+            mlp=MLPV1(gate_proj, down_proj, up_proj),
+            attention_norm=RMSNormV1(
                 pytorch_model.model.layers[
                     i
                 ].post_attention_layernorm.weight.data,
                 config.rms_norm_eps,
             ),
-            mlp_norm=RMSNorm(
+            mlp_norm=RMSNormV1(
                 pytorch_model.model.layers[i].input_layernorm.weight.data,
                 config.rms_norm_eps,
             ),
         )
         transformer_layers.append(layer)
 
-    norm_layer = RMSNorm(
+    norm_layer = RMSNormV1(
         pytorch_model.model.norm.weight.data, config.rms_norm_eps
     )
-    embedding_layer = Embedding(
+    embedding_layer = EmbeddingV1(
         _weight(
             "text.embed_tokens", pytorch_model.model.embed_tokens.weight.data
         ),

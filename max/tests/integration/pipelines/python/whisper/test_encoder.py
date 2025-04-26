@@ -13,7 +13,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Weight, ops
-from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
+from max.nn import Conv1DV1, EmbeddingV1, LayerNormV1, LinearV1, Sequential
 from max.pipelines.architectures.whisper.encoder import (
     WhisperEncoder,
     WhisperEncoderLayer,
@@ -64,7 +64,7 @@ def graph_api_inputs(torch_inputs):
 
 
 def graph_api_whisper_encoder(weights_registry, model):
-    graph_api_conv1 = Conv1D(
+    graph_api_conv1 = Conv1DV1(
         filter=Weight(
             "conv1_weight",
             DType.from_numpy(weights_registry["conv1_weight"].numpy().dtype),
@@ -80,7 +80,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             device=DeviceRef.CPU(),
         ),
     )
-    graph_api_conv2 = Conv1D(
+    graph_api_conv2 = Conv1DV1(
         filter=Weight(
             "conv2_weight",
             DType.from_numpy(weights_registry["conv2_weight"].numpy().dtype),
@@ -96,7 +96,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             device=DeviceRef.CPU(),
         ),
     )
-    graph_api_embed_positions = Embedding(
+    graph_api_embed_positions = EmbeddingV1(
         Weight(
             "embed_positions",
             DType.from_numpy(weights_registry["embed_positions"].numpy().dtype),
@@ -110,7 +110,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             attention=WhisperSdpaAttention(
                 n_heads=model.model.encoder.layers[i].self_attn.num_heads,
                 head_dim=model.model.encoder.layers[i].self_attn.head_dim,
-                wq=Linear(
+                wq=LinearV1(
                     Weight(
                         f"layer{i}_self_att_wq",
                         DType.from_numpy(
@@ -134,7 +134,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         device=DeviceRef.CPU(),
                     ),
                 ),
-                wk=Linear(
+                wk=LinearV1(
                     Weight(
                         f"layer{i}_self_att_wk",
                         DType.from_numpy(
@@ -146,7 +146,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         device=DeviceRef.CPU(),
                     )
                 ),
-                wv=Linear(
+                wv=LinearV1(
                     Weight(
                         f"layer{i}_self_att_wv",
                         DType.from_numpy(
@@ -170,7 +170,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         device=DeviceRef.CPU(),
                     ),
                 ),
-                wo=Linear(
+                wo=LinearV1(
                     Weight(
                         f"layer{i}_self_att_wo",
                         DType.from_numpy(
@@ -197,7 +197,7 @@ def graph_api_whisper_encoder(weights_registry, model):
             ),
             mlp=Sequential(
                 layers=[
-                    Linear(
+                    LinearV1(
                         Weight(
                             f"layer{i}_fc1",
                             DType.from_numpy(
@@ -218,7 +218,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                         ),
                     ),
                     ops.gelu,  # type: ignore
-                    Linear(
+                    LinearV1(
                         Weight(
                             f"layer{i}_fc2",
                             DType.from_numpy(
@@ -240,7 +240,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                     ),
                 ]
             ),
-            attention_norm=LayerNorm(
+            attention_norm=LayerNormV1(
                 weight=Weight(
                     f"layer{i}_attention_norm",
                     DType.from_numpy(
@@ -265,7 +265,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                     device=DeviceRef.CPU(),
                 ),
             ),
-            mlp_norm=LayerNorm(
+            mlp_norm=LayerNormV1(
                 weight=Weight(
                     f"layer{i}_mlp_norm",
                     DType.from_numpy(
@@ -289,7 +289,7 @@ def graph_api_whisper_encoder(weights_registry, model):
         )
         for i in range(len(model.model.encoder.layers))
     ]
-    norm = LayerNorm(
+    norm = LayerNormV1(
         weight=Weight(
             "final_norm",
             DType.from_numpy(weights_registry["final_norm"].numpy().dtype),
@@ -354,7 +354,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
         model.model.encoder.embed_positions.weight.data
     )  # [out_channels]
 
-    graph_api_conv1 = Conv1D(
+    graph_api_conv1 = Conv1DV1(
         filter=Weight(
             "conv1_weight",
             DType.from_numpy(weights_registry["conv1_weight"].numpy().dtype),
@@ -370,7 +370,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
             device=DeviceRef.CPU(),
         ),
     )
-    graph_api_conv2 = Conv1D(
+    graph_api_conv2 = Conv1DV1(
         filter=Weight(
             "conv2_weight",
             DType.from_numpy(weights_registry["conv2_weight"].numpy().dtype),
@@ -387,7 +387,7 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
         ),
     )
 
-    graph_api_embed_positions = Embedding(
+    graph_api_embed_positions = EmbeddingV1(
         Weight(
             "embed_positions",
             DType.from_numpy(weights_registry["embed_positions"].numpy().dtype),

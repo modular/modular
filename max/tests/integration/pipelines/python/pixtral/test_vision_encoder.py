@@ -12,8 +12,8 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Weight
-from max.nn import Conv2D, Linear
-from max.nn.norm import RMSNorm
+from max.nn import Conv2DV1, LinearV1
+from max.nn.norm import RMSNormV1
 from max.pipelines.architectures.pixtral.vision_encoder.attention import (
     Attention,
 )
@@ -118,10 +118,10 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
     # Collect all the weights into the weights registry.
     weights_registry: dict = {}
 
-    def linear(name: str, array) -> Linear:
-        """Creates a Linear layer backed by a weight."""
+    def linear(name: str, array) -> LinearV1:
+        """Creates a LinearV1 layer backed by a weight."""
         weights_registry[name] = array
-        return Linear(
+        return LinearV1(
             Weight(
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
@@ -166,8 +166,10 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
 
     ###################### Graph-API VisionEncoder #########################
 
-    graph_patch_conv = Conv2D(filters.numpy(), stride=(patch_size, patch_size))
-    graph_ln_pre = RMSNorm(weight=rms_norm_weight, eps=1e-5)
+    graph_patch_conv = Conv2DV1(
+        filters.numpy(), stride=(patch_size, patch_size)
+    )
+    graph_ln_pre = RMSNormV1(weight=rms_norm_weight, eps=1e-5)
     graph_rope = RotaryEmbedding2D(
         dim=hidden_size,
         n_heads=num_attention_heads,
@@ -213,8 +215,8 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
             wv=wv,
             wo=wo,
         )
-        attention_norm = RMSNorm(weight=np.ones(hidden_size), eps=1e-5)
-        mlp_norm = RMSNorm(weight=np.ones(hidden_size), eps=1e-5)
+        attention_norm = RMSNormV1(weight=np.ones(hidden_size), eps=1e-5)
+        mlp_norm = RMSNormV1(weight=np.ones(hidden_size), eps=1e-5)
         attention_layers.append(
             TransformerBlock(attention, mlp, attention_norm, mlp_norm)
         )
@@ -263,7 +265,7 @@ def test_patch_conv(imgs, img_sizes) -> None:
     session = InferenceSession()
     graph = Graph(
         "conv",
-        Conv2D(filters.numpy(), stride=(patch_size, patch_size)),
+        Conv2DV1(filters.numpy(), stride=(patch_size, patch_size)),
         input_types=(
             TensorType(
                 DType.float32,

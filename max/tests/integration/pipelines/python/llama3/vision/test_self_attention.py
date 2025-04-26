@@ -16,7 +16,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
+from max.nn import AttentionWithRopeQKV, LinearV1, OptimizedRotaryEmbedding
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -163,7 +163,7 @@ def _attention_layer(
             wq=wq,
             wk=wk,
             wv=wv,
-            wo=Linear(wo),
+            wo=LinearV1(wo),
             rope=rotary_embedding,
             scale=math.sqrt(1.0 / head_dim),
         )

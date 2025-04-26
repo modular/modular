@@ -10,7 +10,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Weight
-from max.nn import Conv1D, Conv1DV2, Conv3D, Conv3DV2
+from max.nn import Conv1D, Conv1DV1, Conv3D, Conv3DV1
 
 ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6
@@ -73,7 +73,7 @@ def test_conv1d() -> None:
     session = InferenceSession()
     graph = Graph(
         "conv1d",
-        Conv1D(
+        Conv1DV1(
             graph_api_filters,
             bias=graph_api_bias,
             stride=stride,
@@ -153,7 +153,7 @@ def test_conv3d() -> None:
     session = InferenceSession()
     graph = Graph(
         "conv3d",
-        Conv3D(
+        Conv3DV1(
             graph_api_filters,
             bias=None,
             stride=stride,
@@ -211,7 +211,7 @@ def test_conv3dv2() -> None:
         bias=False,
     )
 
-    max_conv = Conv3DV2(
+    max_conv = Conv3D(
         depth=kernel_size[0],
         height=kernel_size[1],
         width=kernel_size[2],
@@ -289,8 +289,8 @@ def test_conv1dv2() -> None:
         bias=False,
     )
 
-    # Create our Conv1DV2 layer
-    max_conv = Conv1DV2(
+    # Create our Conv1D layer
+    max_conv = Conv1D(
         kernel_size=kernel_size,
         in_channels=in_channels,
         out_channels=hidden_size,

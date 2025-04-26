@@ -17,7 +17,7 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, StaticDim, TensorType, TensorValue
-from max.nn import MLP, Linear, Signals
+from max.nn import MLPV1, LinearV1, Signals
 from max.nn.comm.allreduce import Allreduce
 from test_common.graph_utils import are_all_buffer_values_sequence
 
@@ -107,7 +107,7 @@ def distributed_mlp_graph(
         assert isinstance(w3_graph, TensorValue)
         assert are_all_buffer_values_sequence(signal_buffers)
 
-        # Typical strategy to parallelize MLP
+        # Typical strategy to parallelize MLPV1
         # Column shard weights on gate/up projections which are on input layers
         # Silu can now be done individually and combined via
         # the row-sharded linear layer on down_proj and final all-reduce
@@ -118,7 +118,11 @@ def distributed_mlp_graph(
         w3_devs = shard_row_value(w3_graph, devices)
 
         mlp_fns = [
-            MLP(gate_proj=Linear(w1), down_proj=Linear(w2), up_proj=Linear(w3))
+            MLPV1(
+                gate_proj=LinearV1(w1),
+                down_proj=LinearV1(w2),
+                up_proj=LinearV1(w3),
+            )
             for w1, w2, w3 in zip(w1_devs, w2_devs, w3_devs)
         ]
         mlp_out = [mlp_fn(x) for (x, mlp_fn) in zip(x_devs, mlp_fns)]

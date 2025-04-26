@@ -14,14 +14,14 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Weight, ops
-from max.nn import MLP as nnMLP
+from max.nn import MLPV1 as nnMLP
 from max.nn import (
-    AttentionWithRope,
-    Conv2D,
-    Embedding,
-    Linear,
+    AttentionWithRopeV1,
+    Conv2DV1,
+    EmbeddingV1,
+    LinearV1,
     OptimizedRotaryEmbedding,
-    RMSNorm,
+    RMSNormV1,
 )
 from max.nn import TransformerBlock as nnTransformerBlock
 from max.nn.kv_cache import (
@@ -159,7 +159,7 @@ def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
     weights_registry["linear_1"] = pytorch_connector.linear_1.weight.data
     weights_registry["linear_2"] = pytorch_connector.linear_2.weight.data
 
-    linear_1 = Linear(
+    linear_1 = LinearV1(
         Weight(
             name="linear_1",
             dtype=DType.from_numpy(weights_registry["linear_1"].numpy().dtype),
@@ -167,7 +167,7 @@ def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
             device=DeviceRef.CPU(),
         )
     )
-    linear_2 = Linear(
+    linear_2 = LinearV1(
         Weight(
             name="linear_2",
             dtype=DType.from_numpy(weights_registry["linear_2"].numpy().dtype),
@@ -184,10 +184,10 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
     # Collect all the weights into the weights registry.
     weights_registry: dict = {}
 
-    def linear(name: str, array) -> Linear:
+    def linear(name: str, array) -> LinearV1:
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
-        return Linear(
+        return LinearV1(
             Weight(
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
@@ -232,10 +232,10 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
 
     ###################### Graph-API VisionEncoder #########################
 
-    graph_patch_conv = Conv2D(
+    graph_patch_conv = Conv2DV1(
         filters.numpy(), stride=(config.patch_size, config.patch_size)
     )
-    graph_ln_pre = RMSNorm(weight=rms_norm_weight, eps=1e-5)
+    graph_ln_pre = RMSNormV1(weight=rms_norm_weight, eps=1e-5)
     graph_rope = RotaryEmbedding2D(
         dim=config.hidden_size,
         n_heads=config.num_attention_heads,
@@ -282,8 +282,8 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
             wv=wv,
             wo=wo,
         )
-        attention_norm = RMSNorm(weight=np.ones(config.hidden_size), eps=1e-5)
-        mlp_norm = RMSNorm(weight=np.ones(config.hidden_size), eps=1e-5)
+        attention_norm = RMSNormV1(weight=np.ones(config.hidden_size), eps=1e-5)
+        mlp_norm = RMSNormV1(weight=np.ones(config.hidden_size), eps=1e-5)
         attention_layers.append(
             TransformerBlock(attention, mlp, attention_norm, mlp_norm)
         )
@@ -338,10 +338,10 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
     ]
 
     ############ Define Graph-API layers with weights with pytorch #############
-    def linear(name: str, array) -> Linear:
+    def linear(name: str, array) -> LinearV1:
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
-        return Linear(
+        return LinearV1(
             Weight(
                 name=name,
                 dtype=DType.from_numpy(array.numpy().dtype),
@@ -361,7 +361,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
 
     def attention(
         kv_params, rope: OptimizedRotaryEmbedding, layer_idx: int
-    ) -> AttentionWithRope:
+    ) -> AttentionWithRopeV1:
         wq = ops.transpose(
             _weight(
                 f"text.wq_weights_{layer_idx}",
@@ -394,7 +394,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         )
         wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
 
-        return AttentionWithRope(
+        return AttentionWithRopeV1(
             n_heads=config.num_attention_heads,
             kv_params=kv_params,
             wqkv=wqkv,
@@ -433,23 +433,23 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         layer = nnTransformerBlock(
             attention=attention(kv_params, rope, i),
             mlp=nnMLP(gate_proj, down_proj, up_proj),
-            attention_norm=RMSNorm(
+            attention_norm=RMSNormV1(
                 pytorch_model.model.layers[
                     i
                 ].post_attention_layernorm.weight.data,
                 config.rms_norm_eps,
             ),
-            mlp_norm=RMSNorm(
+            mlp_norm=RMSNormV1(
                 pytorch_model.model.layers[i].input_layernorm.weight.data,
                 config.rms_norm_eps,
             ),
         )
         transformer_layers.append(layer)
 
-    norm_layer = RMSNorm(
+    norm_layer = RMSNormV1(
         pytorch_model.model.norm.weight.data, config.rms_norm_eps
     )
-    embedding_layer = Embedding(
+    embedding_layer = EmbeddingV1(
         _weight(
             "text.embed_tokens", pytorch_model.model.embed_tokens.weight.data
         ),

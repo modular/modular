@@ -24,7 +24,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Allreduce, Linear, Signals
+from max.nn import Allreduce, LinearV1, Signals
 from max.nn.attention import Attention
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -82,7 +82,7 @@ def _attention_block(
         kv_params=kv_params,
         layer_idx=ops.constant(LAYER_IDX, DType.uint32),
         wqkv=wqkv,
-        wo=Linear(wo),
+        wo=LinearV1(wo),
         scale=math.sqrt(1.0 / kv_params.head_dim),
     )
 

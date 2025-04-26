@@ -11,7 +11,7 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import RMSNorm
+from max.nn import RMSNormV1
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 
@@ -32,7 +32,7 @@ def run_test_norm(
     with Graph("norm", input_types=[input_type, weight_type]) as graph:
         assert are_all_tensor_values(graph.inputs)
         x, weight = graph.inputs
-        graph.output(RMSNorm(weight)(x))
+        graph.output(RMSNormV1(weight)(x))
 
         @modular_graph_test(session, graph)
         def test_correctness(execute, inputs, torch_inputs):

@@ -21,7 +21,7 @@ from max.graph import (
     TensorValue,
     Weight,
 )
-from max.nn import Linear, RMSNorm
+from max.nn import LinearV1, RMSNormV1
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -67,7 +67,7 @@ class CrossAttentionModel:
             config.num_attention_heads,
             kv_params,
             layer_idx=0,
-            q_proj=Linear(
+            q_proj=LinearV1(
                 Weight(
                     name="wq",
                     dtype=self.dtype,
@@ -87,7 +87,7 @@ class CrossAttentionModel:
                 shape=torch_cross_attn.v_proj.weight.shape,
                 device=DeviceRef.CPU(),
             ),
-            o_proj=Linear(
+            o_proj=LinearV1(
                 Weight(
                     name="wo",
                     dtype=self.dtype,
@@ -95,7 +95,7 @@ class CrossAttentionModel:
                     device=DeviceRef.CPU(),
                 )
             ),
-            q_norm=RMSNorm(
+            q_norm=RMSNormV1(
                 Weight(
                     name="q_norm",
                     dtype=self.dtype,
@@ -103,7 +103,7 @@ class CrossAttentionModel:
                     device=DeviceRef.CPU(),
                 )
             ),
-            k_norm=RMSNorm(
+            k_norm=RMSNormV1(
                 Weight(
                     name="k_norm",
                     dtype=self.dtype,

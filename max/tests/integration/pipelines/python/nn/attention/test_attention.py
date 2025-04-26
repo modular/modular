@@ -14,7 +14,7 @@ from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import Linear
+from max.nn import LinearV1
 from max.nn.attention import Attention
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from max.nn.kv_cache import (
@@ -156,7 +156,7 @@ def _attention_layer(
             kv_params=kv_params,
             layer_idx=ops.constant(LAYER_IDX, DType.uint32),
             wqkv=wqkv,
-            wo=Linear(wo),
+            wo=LinearV1(wo),
             scale=math.sqrt(1.0 / kv_params.head_dim),
         )
 

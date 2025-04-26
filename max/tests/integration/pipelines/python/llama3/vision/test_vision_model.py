@@ -14,7 +14,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
-from max.nn import Embedding, LayerNorm, Linear
+from max.nn import EmbeddingV1, LayerNormV1, LinearV1
 from max.pipelines.architectures.llama_vision.attention import Attention
 from max.pipelines.architectures.llama_vision.encoder import (
     VisionEncoder,
@@ -115,7 +115,7 @@ class WrappedVisionModel:
                 shape=torch_vision_model.gated_positional_embedding.embedding.shape,
                 device=DeviceRef.CPU(),
             ),
-            tile_embedding=Embedding(
+            tile_embedding=EmbeddingV1(
                 Weight(
                     name="gated_positional_embedding.tile_embedding",
                     dtype=dtype,
@@ -135,7 +135,7 @@ class WrappedVisionModel:
                 shape=torch_vision_model.pre_tile_positional_embedding.gate.shape,
                 device=DeviceRef.CPU(),
             ),
-            embedding=Embedding(
+            embedding=EmbeddingV1(
                 Weight(
                     name="pre_tile_positional_embedding.embedding",
                     dtype=dtype,
@@ -156,7 +156,7 @@ class WrappedVisionModel:
                 shape=torch_vision_model.post_tile_positional_embedding.gate.shape,
                 device=DeviceRef.CPU(),
             ),
-            embedding=Embedding(
+            embedding=EmbeddingV1(
                 Weight(
                     name="post_tile_positional_embedding.embedding",
                     dtype=dtype,
@@ -188,7 +188,7 @@ class WrappedVisionModel:
             device=DeviceRef.CPU(),
         )
 
-        layernorm_pre = LayerNorm(
+        layernorm_pre = LayerNormV1(
             Weight(
                 name="layernorm_pre",
                 dtype=dtype,
@@ -198,7 +198,7 @@ class WrappedVisionModel:
             eps=norm_eps,
         )
 
-        layernorm_post = LayerNorm(
+        layernorm_post = LayerNormV1(
             Weight(
                 name="layernorm_post",
                 dtype=dtype,
@@ -217,7 +217,7 @@ class WrappedVisionModel:
             transformer_encoder_layers.append(
                 VisionEncoderLayer(
                     mlp=MLP(
-                        Linear(
+                        LinearV1(
                             Weight(
                                 name=f"transformer.{index}.mlp.fc1",
                                 dtype=dtype,
@@ -226,7 +226,7 @@ class WrappedVisionModel:
                             ),
                             bias=None,
                         ),
-                        Linear(
+                        LinearV1(
                             Weight(
                                 name=f"transformer.{index}.mlp.fc2",
                                 dtype=dtype,
@@ -236,7 +236,7 @@ class WrappedVisionModel:
                             bias=None,
                         ),
                     ),
-                    input_layernorm=LayerNorm(
+                    input_layernorm=LayerNormV1(
                         Weight(
                             name=f"transformer.{index}.input_layernorm",
                             dtype=dtype,
@@ -245,7 +245,7 @@ class WrappedVisionModel:
                         ),
                         eps=norm_eps,
                     ),
-                    post_attention_layernorm=LayerNorm(
+                    post_attention_layernorm=LayerNormV1(
                         Weight(
                             name=f"transformer.{index}.post_attention_layernorm",
                             dtype=dtype,
@@ -257,7 +257,7 @@ class WrappedVisionModel:
                     self_attn=Attention(
                         n_heads=attention_heads,
                         head_dim=head_dim,
-                        wk=Linear(
+                        wk=LinearV1(
                             Weight(
                                 name=f"transformer.{index}.self_attn.k_proj",
                                 dtype=dtype,
@@ -265,7 +265,7 @@ class WrappedVisionModel:
                                 device=DeviceRef.CPU(),
                             )
                         ),
-                        wv=Linear(
+                        wv=LinearV1(
                             Weight(
                                 name=f"transformer.{index}.self_attn.v_proj",
                                 dtype=dtype,
@@ -273,7 +273,7 @@ class WrappedVisionModel:
                                 device=DeviceRef.CPU(),
                             )
                         ),
-                        wq=Linear(
+                        wq=LinearV1(
                             Weight(
                                 name=f"transformer.{index}.self_attn.q_proj",
                                 dtype=dtype,
@@ -281,7 +281,7 @@ class WrappedVisionModel:
                                 device=DeviceRef.CPU(),
                             )
                         ),
-                        wo=Linear(
+                        wo=LinearV1(
                             Weight(
                                 name=f"transformer.{index}.self_attn.o_proj",
                                 dtype=dtype,
@@ -305,7 +305,7 @@ class WrappedVisionModel:
             global_transformer_layers.append(
                 VisionEncoderLayer(
                     mlp=MLP(
-                        Linear(
+                        LinearV1(
                             Weight(
                                 name=f"global_transformer.{index}.mlp.fc1",
                                 dtype=dtype,
@@ -314,7 +314,7 @@ class WrappedVisionModel:
                             ),
                             bias=None,
                         ),
-                        Linear(
+                        LinearV1(
                             Weight(
                                 name=f"global_transformer.{index}.mlp.fc2",
                                 dtype=dtype,
@@ -324,7 +324,7 @@ class WrappedVisionModel:
                             bias=None,
                         ),
                     ),
-                    input_layernorm=LayerNorm(
+                    input_layernorm=LayerNormV1(
                         Weight(
                             name=f"global_transformer.{index}.input_layernorm",
                             dtype=dtype,
@@ -333,7 +333,7 @@ class WrappedVisionModel:
                         ),
                         eps=norm_eps,
                     ),
-                    post_attention_layernorm=LayerNorm(
+                    post_attention_layernorm=LayerNormV1(
                         Weight(
                             name=f"global_transformer.{index}.post_attention_layernorm",
                             dtype=dtype,
@@ -345,7 +345,7 @@ class WrappedVisionModel:
                     self_attn=Attention(
                         n_heads=attention_heads,
                         head_dim=head_dim,
-                        wk=Linear(
+                        wk=LinearV1(
                             Weight(
                                 name=f"global_transformer.{index}.self_attn.k_proj",
                                 dtype=dtype,
@@ -353,7 +353,7 @@ class WrappedVisionModel:
                                 device=DeviceRef.CPU(),
                             )
                         ),
-                        wv=Linear(
+                        wv=LinearV1(
                             Weight(
                                 name=f"global_transformer.{index}.self_attn.v_proj",
                                 dtype=dtype,
@@ -361,7 +361,7 @@ class WrappedVisionModel:
                                 device=DeviceRef.CPU(),
                             )
                         ),
-                        wq=Linear(
+                        wq=LinearV1(
                             Weight(
                                 name=f"global_transformer.{index}.self_attn.q_proj",
                                 dtype=dtype,
@@ -369,7 +369,7 @@ class WrappedVisionModel:
                                 device=DeviceRef.CPU(),
                             )
                         ),
-                        wo=Linear(
+                        wo=LinearV1(
                             Weight(
                                 name=f"global_transformer.{index}.self_attn.o_proj",
                                 dtype=dtype,

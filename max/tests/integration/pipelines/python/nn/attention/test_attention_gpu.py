@@ -15,7 +15,7 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
-from max.nn import Linear, RMSNorm
+from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import Attention
 from max.nn.kernels import (
     MHAMaskVariant,
@@ -168,7 +168,7 @@ def _attention_layer(
             kv_params=kv_params,
             layer_idx=ops.constant(LAYER_IDX, DType.uint32, DeviceRef.CPU()),
             wqkv=wqkv,
-            wo=Linear(wo),
+            wo=LinearV1(wo),
             scale=math.sqrt(1 / HEAD_DIM),
         )
 
@@ -311,7 +311,7 @@ class CrossAttentionModel:
             config.num_attention_heads,
             kv_params,
             layer_idx=0,
-            q_proj=Linear(
+            q_proj=LinearV1(
                 Weight(
                     name="wq",
                     dtype=self.dtype,
@@ -331,7 +331,7 @@ class CrossAttentionModel:
                 shape=torch_cross_attn.v_proj.weight.shape,
                 device=DeviceRef.GPU(),
             ),
-            o_proj=Linear(
+            o_proj=LinearV1(
                 Weight(
                     name="wo",
                     dtype=self.dtype,
@@ -339,7 +339,7 @@ class CrossAttentionModel:
                     device=DeviceRef.GPU(),
                 )
             ),
-            q_norm=RMSNorm(
+            q_norm=RMSNormV1(
                 Weight(
                     name="q_norm",
                     dtype=self.dtype,
@@ -348,7 +348,7 @@ class CrossAttentionModel:
                 ),
                 weight_offset=0.0,
             ),
-            k_norm=RMSNorm(
+            k_norm=RMSNormV1(
                 Weight(
                     name="k_norm",
                     dtype=self.dtype,

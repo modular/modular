@@ -18,7 +18,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
+from max.nn import LinearV1, NaiveAttentionWithRope, RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from modular_graph_test import modular_graph_test
 from torch import nn
@@ -167,10 +167,10 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                 n_heads,
                 kv_params=kv_params,
                 dim=dim,
-                wq=Linear(wq),
-                wk=Linear(wk),
-                wv=Linear(wv),
-                wo=Linear(wo),
+                wq=LinearV1(wq),
+                wk=LinearV1(wk),
+                wv=LinearV1(wv),
+                wo=LinearV1(wo),
                 rope=RotaryEmbedding(
                     dim=dim,
                     n_heads=n_heads,

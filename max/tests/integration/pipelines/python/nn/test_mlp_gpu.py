@@ -13,7 +13,7 @@ from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import MLP, Linear
+from max.nn import MLPV1, LinearV1
 from modular_graph_test import are_all_tensor_values
 
 
@@ -41,7 +41,7 @@ def mlp_graph(types: list[TensorType]) -> Graph:
     ) as graph:
         assert are_all_tensor_values(graph.inputs)
         x, w1, w2, w3 = graph.inputs
-        mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
+        mlp = MLPV1(LinearV1(w1), LinearV1(w2), LinearV1(w3))
         graph.output(mlp(x))
         return graph
 

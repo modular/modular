@@ -12,7 +12,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import MLPV2
+from max.nn import MLP
 
 DTYPE = DType.float32
 TORCH_DTYPE = torch.float32
@@ -109,7 +109,7 @@ def mlp_output(
             }
         )
 
-    mlp = MLPV2(
+    mlp = MLP(
         dtype,
         None,
         gate_proj.shape[1],

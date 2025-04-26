@@ -11,7 +11,7 @@ import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import Linear
+from max.nn import LinearV1
 from max.pipelines.architectures.llama_vision.mlp import MLP
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.distance_metrics import is_euclidean_distance_close
@@ -42,7 +42,7 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
     with Graph("mlp", input_types=[input_type, w1_type, w2_type]) as graph:
         assert are_all_tensor_values(graph.inputs)
         x, w1, w2 = graph.inputs
-        mlp = MLP(Linear(w1), Linear(w2))
+        mlp = MLP(LinearV1(w1), LinearV1(w2))
         graph.output(mlp(x))
 
         # This is set so it fits a float type with width of 32.
@@ -51,7 +51,7 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
             result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 
-            # Transpose weights to match our Linear semantics.
+            # Transpose weights to match our LinearV1 semantics.
             expected = TorchVisionEncoderMLP(w1, w2)(x).detach().numpy()
             assert is_euclidean_distance_close(
                 result, expected, rtol=0.01, atol=1e-5

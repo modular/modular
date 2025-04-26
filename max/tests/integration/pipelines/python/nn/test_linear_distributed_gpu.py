@@ -20,7 +20,7 @@ from max.graph import (
     TensorValue,
     _reconcile_weights,
 )
-from max.nn import ColumnParallelLinear, LinearV2
+from max.nn import ColumnParallelLinear, Linear
 
 
 def _distribute_value(
@@ -37,7 +37,7 @@ def _single_gpu_linear(
     session: InferenceSession,
 ) -> Model:
     """Compiles a Linear layer that runs on a single device."""
-    linear = LinearV2(
+    linear = Linear(
         in_dim,
         out_dim,
         DType.float32,
