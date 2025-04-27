@@ -1548,6 +1548,21 @@ static void printClosureTypes(AsmPrinter &p, SymbolRefAttr symbol,
 }
 
 //===----------------------------------------------------------------------===//
+// DeferredType
+//===----------------------------------------------------------------------===//
+
+// Deferred types don't have a runtime representation, but can sometimes get
+// exposed to the interpreter (e.g. in stack allocations) when they interact
+// with generic code.
+std::optional<int64_t> DeferredType::getTypeSize(TargetInfoAttr target) const {
+  return 0;
+}
+
+std::optional<int64_t> DeferredType::getTypeAlign(TargetInfoAttr target) const {
+  return 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

@@ -803,7 +803,8 @@ def KGEN_ParamClosureType : KGENType<"ParamClosure", "param_closure"> {
 // DeferredType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DeferredType : KGENType<"Deferred", "deferred"> {
+def KGEN_DeferredType : KGENType<"Deferred", "deferred",
+                          [ DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "Represents a deferred type";
   let description = [{
     A `!kgen.deferred` type represents a deferred attribute that will be
