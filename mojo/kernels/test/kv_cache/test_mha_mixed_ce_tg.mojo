@@ -18,7 +18,7 @@ from random import random_ui64
 
 from buffer import Dim, DimList, NDBuffer
 from internal_utils import HostNDBuffer, random
-from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
@@ -34,7 +34,9 @@ def execute_ragged_flash_attention():
     alias type = DType.float32
     alias num_paged_blocks = 32
     alias page_size = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
+    alias PagedCollectionType = PagedKVCacheCollection[
+        type, kv_params, page_size
+    ]
     var num_layers = 1
     var layer_idx = 0
 
@@ -161,44 +163,20 @@ def execute_ragged_flash_attention():
             paged_lut_set.add(randval)
             paged_lut.tensor[bs, block_idx] = randval
 
-    true_ce_k_cache = PagedCacheType(
+    true_ce_kv_collection = PagedCollectionType(
         kv_block_paged.tensor,
         true_ce_cache_lengths.tensor,
         paged_lut.tensor,
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
 
-    true_ce_v_cache = PagedCacheType(
-        kv_block_paged.tensor,
-        true_ce_cache_lengths.tensor,
-        paged_lut.tensor,
-        true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
-    )
-
-    mixed_ce_k_cache = PagedCacheType(
+    mixed_ce_kv_collection = PagedCollectionType(
         kv_block_paged.tensor,
         mixed_ce_cache_lengths.tensor,
         paged_lut.tensor,
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
-    )
-
-    mixed_ce_v_cache = PagedCacheType(
-        kv_block_paged.tensor,
-        mixed_ce_cache_lengths.tensor,
-        paged_lut.tensor,
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
     )
 
     # "true CE" execution
@@ -207,8 +185,8 @@ def execute_ragged_flash_attention():
         true_ce_q_ragged.tensor,
         true_ce_row_offsets.tensor,
         true_ce_row_offsets.tensor,
-        true_ce_k_cache,
-        true_ce_v_cache,
+        true_ce_kv_collection.get_key_cache(layer_idx),
+        true_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
         true_ce_output.tensor,
@@ -220,8 +198,8 @@ def execute_ragged_flash_attention():
         mixed_ce_q_ragged.tensor,
         mixed_ce_row_offsets.tensor,
         mixed_ce_row_offsets.tensor,
-        mixed_ce_k_cache,
-        mixed_ce_v_cache,
+        mixed_ce_kv_collection.get_key_cache(layer_idx),
+        mixed_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
         mixed_ce_output.tensor,
