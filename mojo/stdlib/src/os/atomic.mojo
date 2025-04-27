@@ -194,7 +194,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @staticmethod
     @always_inline("nodebug")
-    fn _fetch_add[
+    fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]) -> Scalar[
         dtype
@@ -306,7 +306,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The original value before addition.
         """
         var value_addr = UnsafePointer(to=self.value)
-        return Self._fetch_add[ordering=ordering](value_addr, rhs)
+        return Self.fetch_add[ordering=ordering](value_addr, rhs)
 
     @always_inline
     fn __iadd__(self, rhs: Scalar[dtype]):

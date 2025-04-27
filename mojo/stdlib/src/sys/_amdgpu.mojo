@@ -70,7 +70,7 @@ fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
         UnsafePointer[amd_signal_t, address_space = _GPUAddressSpace.GLOBAL]
     ]()[]
-    _ = Atomic._fetch_add(UnsafePointer(to=s[].value), value)
+    _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
     update_mbox(s)
 
 
@@ -582,7 +582,7 @@ struct Header:
             var ready_flag = UInt32(1)
             if me == low:
                 var ptr = UnsafePointer(to=self._handle[].control)
-                var control = Atomic._fetch_add(ptr, 0)
+                var control = Atomic.fetch_add(ptr, 0)
                 ready_flag = get_ready_flag(control)
 
             ready_flag = readfirstlane(ready_flag.cast[DType.int32]()).cast[
@@ -652,13 +652,13 @@ struct Buffer:
         )
 
     fn pop(mut self, top: UnsafePointer[UInt64, **_]) -> UInt64:
-        var f = Atomic._fetch_add(top, 0)
+        var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
         # one packet.
         while True:
             var p = self.get_header(f)
-            var n = Atomic._fetch_add(
+            var n = Atomic.fetch_add(
                 UnsafePointer(to=p._handle[].next),
                 0,
             )
@@ -695,7 +695,7 @@ struct Buffer:
         )
 
     fn push(mut self, top: UnsafePointer[UInt64, **_], ptr: UInt64):
-        var f = Atomic._fetch_add(top, 0)
+        var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
