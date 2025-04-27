@@ -624,7 +624,7 @@ struct QueuedTileScheduler[
             if thread_idx.x == 0:
                 var idx: UInt32
                 while True:
-                    idx = Atomic._fetch_add(self.gidx_ptr, 1)
+                    idx = Atomic.fetch_add(self.gidx_ptr, 1)
                     if not state.is_valid(idx):
 
                         @parameter
