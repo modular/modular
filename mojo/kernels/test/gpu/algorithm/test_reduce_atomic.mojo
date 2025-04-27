@@ -48,7 +48,7 @@ fn reduce(
     if tid >= len:
         return
 
-    _ = Atomic._fetch_add(res_add, vec[tid])
+    _ = Atomic.fetch_add(res_add, vec[tid])
 
     Atomic.min(res_min, vec[tid])
     Atomic.max(res_max, vec[tid])

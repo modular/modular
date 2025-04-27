@@ -33,11 +33,11 @@ fn compare_and_swap(
     e: Int,
     d: Int,
 ) -> Int32:
-    var old = Atomic._fetch_add(ptr, 0)
+    var old = Atomic.fetch_add(ptr, 0)
     while old == e:
         if Atomic._xchg(ptr, d) == old:
             break
-        old = Atomic._fetch_add(ptr, 0)
+        old = Atomic.fetch_add(ptr, 0)
     return old
 
 
@@ -140,7 +140,7 @@ fn mac_loop[
         if global_r < M and global_c < N:
             while compare_and_swap(locks.offset(tile_id), 1, 1) != 1:
                 pass
-            _ = Atomic._fetch_add(
+            _ = Atomic.fetch_add(
                 C.offset(global_r * stride_cm + global_c * stride_cn), accum
             )
 
