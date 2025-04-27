@@ -175,23 +175,17 @@ fn empty_tp_init_wrapper[
             T
         ]()
 
-        # ------------------------------------------------
-        # Call the user-provided initialization function.
-        # ------------------------------------------------
-
-        # TODO(MSTDL-950): Avoid forming ref through uninit pointee.
-        obj_ptr[] = T()
-
+        # Call the user-provided initialization function on uninit memory.
+        __get_address_as_uninit_lvalue(obj_ptr.address) = T()
         return 0
+
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
-
         cpython.PyErr_SetString(
             error_type,
             e.unsafe_cstr_ptr(),
         )
-
         return -1
 
 
