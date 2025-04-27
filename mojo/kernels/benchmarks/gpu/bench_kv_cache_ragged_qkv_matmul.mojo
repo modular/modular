@@ -17,13 +17,16 @@ from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
-from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer
 from nn.kv_cache_ragged import _fused_qkv_matmul_kv_cache_ragged_impl
 
-from utils.index import IndexList
+from utils import IndexList
 
 
 fn _get_run_name[
@@ -57,7 +60,7 @@ def execute_kv_cache_ragged_matmul[
     seq_len: Int,
     use_random_lengths: Bool,
 ):
-    alias CacheType = ContinuousBatchingKVCache[
+    alias CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
     ]
@@ -148,24 +151,16 @@ def execute_kv_cache_ragged_matmul[
 
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
-    var k_cache_device = CacheType(
+    var kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_prompt_length,
         max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    var v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
-        max_prompt_length,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     @parameter
     @__copy_capture(

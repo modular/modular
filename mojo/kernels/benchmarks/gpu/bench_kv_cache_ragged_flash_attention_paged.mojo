@@ -18,16 +18,15 @@ from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
-from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from memory import UnsafePointer
-from nn.kv_cache_ragged import _flash_attention_kv_cache_ragged_impl
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 
-from utils.index import IndexList
+from utils import IndexList
 
 
 def flops(
@@ -95,7 +94,7 @@ def execute_kv_cache_ragged_flash_attention[
     alias num_layers = 1
     alias layer_idx = 0
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
-    alias CacheType = PagedKVCache[
+    alias CollectionType = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
         page_size,
@@ -196,25 +195,16 @@ def execute_kv_cache_ragged_flash_attention[
     random(kv_block_paged_host.tensor)
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
-    k_cache_device = CacheType(
+    kv_collection_device = CollectionType(
         kv_block_paged_device.tensor,
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
         max_seq_length,
         max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
     )
 
-    v_cache_device = CacheType(
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
-        max_seq_length,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+    k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     @parameter
     @__copy_capture(

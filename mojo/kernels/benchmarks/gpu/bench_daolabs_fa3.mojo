@@ -25,9 +25,8 @@ from flash_attention3.flash_attention import (
     daolabs_flash_attention3_paged_ragged_dispatch,
 )
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
 from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
-from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from kv_cache.types import KVCacheStaticParams
 from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
@@ -35,7 +34,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import IndexList
-from utils.index import StaticTuple
 
 
 def flops(
@@ -88,8 +86,6 @@ def test_flash_attention[
     ctx: DeviceContext,
 ):
     alias type = DType.bfloat16
-
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
 
     var num_layers = 1
     layer_idx = 0

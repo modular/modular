@@ -18,16 +18,18 @@ from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
-from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer
-from nn.kv_cache_ragged import _flash_attention_kv_cache_ragged_impl
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 
-from utils.index import IndexList
+from utils import IndexList
 
 
 fn _get_run_name[
@@ -74,8 +76,11 @@ def execute_kv_cache_ragged_flash_attention[
     cache_len: Int,
     use_random_cache_lengths: Bool,
 ):
+    alias num_layers = 1
+    alias layer_idx = 0
+
     var num_blocks = batch_size * 2
-    alias CacheType = ContinuousBatchingKVCache[
+    alias CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
     ]
@@ -157,7 +162,7 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[6](
             num_blocks,
             2,
-            1,
+            num_layers,
             seq_len + cache_len,
             num_kv_heads,
             head_dim,
@@ -185,24 +190,17 @@ def execute_kv_cache_ragged_flash_attention[
         idx += 1
 
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
-    var k_cache_device = CacheType(
+
+    var kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_seq_length,
         max_context_length,
-        0,
-        CacheType.KeyIdx,
     )
-    var v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
-        max_seq_length,
-        max_context_length,
-        0,
-        CacheType.ValueIdx,
-    )
+
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     @parameter
     @__copy_capture(
