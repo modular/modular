@@ -44,8 +44,8 @@ static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "list", "List"};
 static constexpr std::array<StringLiteral, 4> kPythonObject = {
     "stdlib", "python", "python_object", "PythonObject"};
-static constexpr std::array<StringLiteral, 3> kMaxRuntimeDeviceContextPtrList =
-    {"runtime", "asyncrt", "DeviceContextPtrList"};
+static constexpr std::array<StringLiteral, 4> kMaxRuntimeDeviceContextPtrList =
+    {"stdlib", "runtime", "asyncrt", "DeviceContextPtrList"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
