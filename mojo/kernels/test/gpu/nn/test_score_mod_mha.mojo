@@ -20,20 +20,21 @@ from collections import Set
 from math import exp2, iota, isclose, isqrt
 from random import random_ui64, seed
 
-from algorithm import max as tensor_max
 from bit import prev_power_of_two
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaterializedMask, NullMask
+from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from utils import Index, IndexList
 from utils.numerics import min_or_neg_inf
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
@@ -90,7 +91,8 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CacheType = ContinuousBatchingKVCache[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+
     debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test (",
@@ -266,24 +268,16 @@ def execute_flash_attention[
 
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
 
-    k_cache_device = CacheType(
+    kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths,
         lookup_table_device.tensor,
         max_prompt_len,
         max_context_len,
-        0,
-        CacheType.KeyIdx,
     )
-    v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths,
-        lookup_table_device.tensor,
-        max_prompt_len,
-        max_context_len,
-        0,
-        CacheType.ValueIdx,
-    )
+
+    k_cache_device = kv_collection_device.get_key_cache(0)
+    v_cache_device = kv_collection_device.get_value_cache(0)
 
     flash_attention[use_score_mod=True](
         test_output_device.tensor,

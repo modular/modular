@@ -25,7 +25,7 @@ from flash_attention3.flash_attention import (
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
@@ -33,7 +33,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import IndexList
-from utils.index import StaticTuple
 
 
 def test_flash_attention[
@@ -49,7 +48,9 @@ def test_flash_attention[
     alias num_paged_blocks = 4096
     var flattened_num_paged_blocks = num_paged_blocks * num_layers
     var num_splits = 1
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
+    alias PagedCollectionType = PagedKVCacheCollection[
+        type, kv_params, page_size
+    ]
 
     var batch_size = len(valid_lengths)
     var input_row_offsets_host = HostNDBuffer[DType.int32, 1](
@@ -164,31 +165,19 @@ def test_flash_attention[
             their_paged_lut_host.tensor[bs, block_idx] = their_randval
             memcpy(
                 our_kv_block_paged_host.tensor._offset(
-                    StaticTuple[Int, 6](randval, 0, layer_idx, 0, 0, 0)
+                    IndexList[6](randval, 0, layer_idx, 0, 0, 0)
                 ),
                 their_kv_block_paged_host.tensor._offset(
-                    StaticTuple[Int, 5](
-                        0,
-                        their_randval,
-                        0,
-                        0,
-                        0,
-                    )
+                    IndexList[5](0, their_randval, 0, 0, 0)
                 ),
                 page_size * kv_params.num_heads * kv_params.head_size,
             )
             memcpy(
                 our_kv_block_paged_host.tensor._offset(
-                    StaticTuple[Int, 6](randval, 1, layer_idx, 0, 0, 0)
+                    IndexList[6](randval, 1, layer_idx, 0, 0, 0)
                 ),
                 their_kv_block_paged_host.tensor._offset(
-                    StaticTuple[Int, 5](
-                        1,
-                        their_randval,
-                        0,
-                        0,
-                        0,
-                    )
+                    IndexList[5](1, their_randval, 0, 0, 0)
                 ),
                 page_size * kv_params.num_heads * kv_params.head_size,
             )
@@ -210,29 +199,19 @@ def test_flash_attention[
         ctx,
     )
 
-    var k_cache_opaque = PagedCacheType(
+    var kv_collection_opaque = PagedCollectionType(
         our_kv_block_paged_device.tensor,
         cache_lengths_ui32_device.tensor,
         our_paged_lut_device.tensor,
         max_prompt_length,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
-    var v_cache_opaque = PagedCacheType(
-        our_kv_block_paged_device.tensor,
-        cache_lengths_ui32_device.tensor,
-        our_paged_lut_device.tensor,
-        max_prompt_length,
-        max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
-    )
+
     flash_attention[ragged=True](
         ref_output_device.tensor,
         q_device.tensor,
-        k_cache_opaque,
-        v_cache_opaque,
+        kv_collection_opaque.get_key_cache(layer_idx),
+        kv_collection_opaque.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_ui32_device.tensor,

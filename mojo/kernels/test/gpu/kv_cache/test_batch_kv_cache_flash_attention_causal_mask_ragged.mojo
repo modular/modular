@@ -20,17 +20,17 @@ from sys import has_nvidia_gpu_accelerator
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, NullMask
+from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -47,10 +47,7 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CacheType = ContinuousBatchingKVCache[
-        type,
-        kv_params,
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
     var batch_size = len(valid_lengths)
     debug_assert(
@@ -169,24 +166,16 @@ def execute_ragged_flash_attention[
         idx += 1
 
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
-    var k_cache_device = CacheType(
+
+    var kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_prompt_length,
         max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    var v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
-        max_prompt_length,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     # ragged execution
     flash_attention[ragged=True](

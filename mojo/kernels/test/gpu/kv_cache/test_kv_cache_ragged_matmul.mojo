@@ -19,14 +19,12 @@ from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import DeviceNDBuffer, HostNDBuffer, fill, random, zero
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
-    KVCollectionT,
-    PagedKVCache,
+    PagedKVCacheCollection,
 )
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
@@ -39,9 +37,6 @@ from nn.kv_cache_ragged import (
 from testing import assert_almost_equal
 
 from utils import IndexList
-
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -140,10 +135,7 @@ def execute_matmul_kv_cache_ragged[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias num_blocks = 32
 
-    alias CacheType = ContinuousBatchingKVCache[
-        type,
-        kv_params,
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -229,42 +221,27 @@ def execute_matmul_kv_cache_ragged[
 
     lookup_table_device = lookup_table_host.copy_to_device(ctx)
 
-    k_cache_device = CacheType(
+    kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_prompt_len,
         max_context_len,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    k_cache_host = CacheType(
+
+    k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+
+    kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
         max_prompt_len,
         max_context_len,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
-        max_prompt_len,
-        max_context_len,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
-    v_cache_host = CacheType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
-        max_prompt_len,
-        max_context_len,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+
+    k_cache_host = kv_collection_host.get_key_cache(layer_idx)
+    v_cache_host = kv_collection_host.get_value_cache(layer_idx)
 
     # Execute test.
     _matmul_kv_cache_ragged_impl[target="gpu"](
@@ -356,7 +333,7 @@ def execute_matmul_k_cache_ragged[
 
     alias num_paged_blocks = 32
     alias page_size = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
+    alias CollectionType = PagedKVCacheCollection[type, kv_params, page_size]
     var batch_size = len(prompt_lens)
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -409,24 +386,25 @@ def execute_matmul_k_cache_ragged[
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
     kv_block_device = kv_block_host.copy_to_device(ctx)
 
-    k_cache_device = PagedCacheType(
+    kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
         max_seq_length_batch,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
-    k_cache_host = PagedCacheType(
+
+    k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+
+    kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         paged_lut_host.tensor,
         max_seq_length_batch,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
+
+    k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
     input_row_offsets_host = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
@@ -745,7 +723,7 @@ def execute_paged_fused_qkv_matmul[
 ):
     alias num_paged_blocks = 32
     alias page_size = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
+    alias CollectionType = PagedKVCacheCollection[type, kv_params, page_size]
     var batch_size = len(prompt_lens)
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -798,44 +776,28 @@ def execute_paged_fused_qkv_matmul[
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
     kv_block_device = kv_block_host.copy_to_device(ctx)
 
-    k_cache_device = PagedCacheType(
+    kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
         max_seq_length_batch,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
-    k_cache_host = PagedCacheType(
+
+    k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+
+    kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         paged_lut_host.tensor,
         max_seq_length_batch,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
 
-    v_cache_device = PagedCacheType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
-        max_seq_length_batch,
-        max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
-    )
+    k_cache_host = kv_collection_host.get_key_cache(layer_idx)
+    v_cache_host = kv_collection_host.get_value_cache(layer_idx)
 
-    v_cache_host = PagedCacheType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        paged_lut_host.tensor,
-        max_seq_length_batch,
-        max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
-    )
     # execute the matmul
     var results = generic_execute_fused_qkv_cache_ragged[
         kv_params, type, num_q_heads
@@ -882,10 +844,7 @@ def execute_cont_batch_fused_qkv_matmul[
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias num_blocks = 32
 
-    alias CacheType = ContinuousBatchingKVCache[
-        type,
-        kv_params,
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -942,42 +901,27 @@ def execute_cont_batch_fused_qkv_matmul[
 
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
 
-    var k_cache_device = CacheType(
+    var kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_seq_length_batch,
         max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    var k_cache_host = CacheType(
+
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+
+    var kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
         max_seq_length_batch,
         max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    var v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
-        max_seq_length_batch,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
-    var v_cache_host = CacheType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
-        max_seq_length_batch,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+
+    var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
+    var v_cache_host = kv_collection_host.get_value_cache(layer_idx)
 
     # execute the matmul
     var results = generic_execute_fused_qkv_cache_ragged[

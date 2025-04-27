@@ -19,7 +19,10 @@ from random import random_ui64, seed
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
@@ -48,10 +51,8 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CacheType = ContinuousBatchingKVCache[
-        type,
-        kv_params,
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+
     debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test (",
@@ -193,24 +194,16 @@ def execute_flash_attention[
 
     ctx.enqueue_copy(lookup_table_device.buffer, lookup_table_host.tensor.data)
 
-    var k_cache_device = CacheType(
+    var kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_device_nd,
         lookup_table_device.tensor,
         max_prompt_len,
         max_context_len,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    var v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_device_nd,
-        lookup_table_device.tensor,
-        max_prompt_len,
-        max_context_len,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     flash_attention(
         test_output_device.tensor,

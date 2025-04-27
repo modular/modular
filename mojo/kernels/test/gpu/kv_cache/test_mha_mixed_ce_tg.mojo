@@ -19,7 +19,7 @@ from random import random_ui64
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
@@ -37,7 +37,9 @@ def execute_ragged_flash_attention(
     alias type = DType.float32
     alias num_paged_blocks = 32
     alias page_size = 128
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
+    alias PagedCollectionType = PagedKVCacheCollection[
+        type, kv_params, page_size
+    ]
     var num_layers = 1
     var layer_idx = 0
 
@@ -180,44 +182,20 @@ def execute_ragged_flash_attention(
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
-    true_ce_k_cache_device = PagedCacheType(
+    true_ce_kv_collection_device = PagedCollectionType(
         kv_block_paged_device.tensor,
         true_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
     )
 
-    true_ce_v_cache_paged_device = PagedCacheType(
-        kv_block_paged_device.tensor,
-        true_ce_cache_lengths_device.tensor,
-        paged_lut_device.tensor,
-        true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
-    )
-
-    mixed_ce_k_cache_device = PagedCacheType(
+    mixed_ce_kv_collection_device = PagedCollectionType(
         kv_block_paged_device.tensor,
         mixed_ce_cache_lengths_device.tensor,
         paged_lut_device.tensor,
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
-    )
-
-    mixed_ce_v_cache_paged_device = PagedCacheType(
-        kv_block_paged_device.tensor,
-        mixed_ce_cache_lengths_device.tensor,
-        paged_lut_device.tensor,
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
     )
 
     # "true CE" execution
@@ -225,8 +203,8 @@ def execute_ragged_flash_attention(
     flash_attention[ragged=True](
         true_ce_output_device.tensor,
         true_ce_q_ragged_device.tensor,
-        true_ce_k_cache_device,
-        true_ce_v_cache_paged_device,
+        true_ce_kv_collection_device.get_key_cache(layer_idx),
+        true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
         true_ce_row_offsets_device.tensor,
@@ -240,8 +218,8 @@ def execute_ragged_flash_attention(
     flash_attention[ragged=True](
         mixed_ce_output_device.tensor,
         mixed_ce_q_ragged_device.tensor,
-        mixed_ce_k_cache_device,
-        mixed_ce_v_cache_paged_device,
+        mixed_ce_kv_collection_device.get_key_cache(layer_idx),
+        mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
         mixed_ce_row_offsets_device.tensor,

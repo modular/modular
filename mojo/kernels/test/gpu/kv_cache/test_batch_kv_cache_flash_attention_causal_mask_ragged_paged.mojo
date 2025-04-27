@@ -18,22 +18,19 @@ from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, fill, random
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    PagedKVCache,
+    PagedKVCacheCollection,
 )
 from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, NullMask
+from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -52,8 +49,7 @@ def execute_ragged_flash_attention[
     alias num_continuous_blocks = 32
     alias num_paged_blocks = 32
     alias page_size = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
-    alias ContinuousBatchCacheType = ContinuousBatchingKVCache[type, kv_params]
+
     var batch_size = len(valid_lengths)
     debug_assert(
         batch_size < num_continuous_blocks,
@@ -137,23 +133,15 @@ def execute_ragged_flash_attention[
         lookup_table_continuous_host.tensor[idx] = UInt32(randval)
         idx += 1
     var lookup_table_device = lookup_table_continuous_host.copy_to_device(ctx)
-    var k_cache_continuous_device = ContinuousBatchCacheType(
+
+    kv_collection_continuous_device = ContinuousBatchingKVCacheCollection[
+        type, kv_params
+    ](
         kv_block_continuous_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         max_prompt_length,
         max_full_context_length,
-        layer_idx,
-        ContinuousBatchCacheType.KeyIdx,
-    )
-    var v_cache_continuous_device = ContinuousBatchCacheType(
-        kv_block_continuous_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
-        max_prompt_length,
-        max_full_context_length,
-        layer_idx,
-        ContinuousBatchCacheType.ValueIdx,
     )
 
     kv_block_paged_host = HostNDBuffer[type, 6](
@@ -203,32 +191,22 @@ def execute_ragged_flash_attention[
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
-    k_cache_paged_device = PagedCacheType(
+    kv_collection_paged_device = PagedKVCacheCollection[
+        type, kv_params, page_size
+    ](
         kv_block_paged_device.tensor,
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
         max_prompt_length,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
-    )
-
-    v_cache_paged_device = PagedCacheType(
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
-        max_prompt_length,
-        max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
     )
 
     # continuous execution
     flash_attention[ragged=True](
         ref_output_device.tensor,
         q_ragged_device.tensor,
-        k_cache_continuous_device,
-        v_cache_continuous_device,
+        kv_collection_continuous_device.get_key_cache(layer_idx),
+        kv_collection_continuous_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_device.tensor,
@@ -240,8 +218,8 @@ def execute_ragged_flash_attention[
     flash_attention[ragged=True](
         test_output_device.tensor,
         q_ragged_device.tensor,
-        k_cache_paged_device,
-        v_cache_paged_device,
+        kv_collection_paged_device.get_key_cache(layer_idx),
+        kv_collection_paged_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_device.tensor,

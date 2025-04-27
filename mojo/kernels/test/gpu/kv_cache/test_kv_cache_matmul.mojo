@@ -18,15 +18,7 @@ from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    arange,
-    fill,
-    random,
-    zero,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
