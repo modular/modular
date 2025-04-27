@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """The core `String` type implementation for Mojo.
 
-This module provides the primary `String` type and its fundamental operations. The `String` type
-is designed to handle UTF-8 encoded text efficiently while providing a safe and ergonomic
-interface for string manipulation.
+This module provides the primary `String` type and its fundamental operations.
+The `String` type is designed to handle UTF-8 encoded text efficiently while
+providing a safe and ergonomic interface for string manipulation.
 
 Key Features:
+- Short string optimization (SSO) and lazy copying of constant string data.
+- O(1) copy operation.
 - UTF-8 encoded string storage
 - Memory-safe string operations
 - Efficient string concatenation and slicing
@@ -70,7 +72,7 @@ from collections.string.string_slice import (
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
-from sys import bitwidthof, is_compile_time
+from sys import bitwidthof, is_compile_time, sizeof
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
@@ -80,6 +82,11 @@ from python import PythonObject, PythonConvertible
 
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import write_buffered
+from os.atomic import Atomic
+
+# ===----------------------------------------------------------------------=== #
+# String Implementation Details
+# ===----------------------------------------------------------------------=== #
 
 
 # This is a private struct used to store the capacity and bitflags for a String.
@@ -194,6 +201,57 @@ struct _StringCapacityField:
             len_or_data = new_len
 
 
+# This is a private struct used to store the reference count of a out-of-line
+# mutable string buffer.
+struct _StringOutOfLineHeader:
+    var refcount: Atomic[DType.index]
+    alias _self_size = sizeof[Self]()
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        """Create an initialized instance of this with a refcount of 1."""
+        self.refcount = Scalar[DType.index](1)
+
+    @always_inline("nodebug")
+    fn add_ref(mut self):
+        """Atomically increment the refcount."""
+        _ = self.refcount.fetch_add(1)
+
+    @always_inline("nodebug")
+    fn drop_ref(mut self):
+        """Atomically decrement the refcount and deallocate self if the result
+        hits zero."""
+        if self.refcount.fetch_sub(1) == 1:
+            UnsafePointer(to=self).bitcast[UInt8]().free()
+
+    @always_inline("nodebug")
+    fn is_unique(mut self) -> Bool:
+        """Return true if the refcount is 1."""
+        return self.refcount.load() == 1
+
+    @staticmethod
+    fn alloc(capacity: Int) -> UnsafePointer[UInt8]:
+        """Allocate space for a new out-of-line string buffer."""
+        var ptr = UnsafePointer[UInt8].alloc(capacity + Self._self_size)
+
+        # Initialize the header.
+        __get_address_as_uninit_lvalue(
+            ptr.bitcast[_StringOutOfLineHeader]().address
+        ) = _StringOutOfLineHeader()
+
+        # Return a pointer to right after the header, which is where the string
+        # data will be stored.
+        return ptr + sizeof[Self]()
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn get(
+        ptr: UnsafePointer[UInt8, origin=_]
+    ) -> ref [ptr.origin] _StringOutOfLineHeader:
+        # The header is stored before the string data.
+        return (ptr - Self._self_size).bitcast[Self]()[]
+
+
 # ===----------------------------------------------------------------------=== #
 # String
 # ===----------------------------------------------------------------------=== #
@@ -248,15 +306,17 @@ struct String(
     @always_inline("nodebug")
     fn __del__(owned self):
         """Destroy the string data."""
-        if self._should_free():
-            self._ptr_or_data.free()
+        if self._has_mutable_buffer():
+            _StringOutOfLineHeader.get(self._ptr_or_data).drop_ref()
 
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
         self._ptr_or_data = UnsafePointer[UInt8]()
         self._len_or_data = 0
-        self._capacity_or_data = _StringCapacityField(0)
+        # Note: we treat a nul pointer as a "static constant" pointer because
+        # in the out-of-line form, it has no ARC header.
+        self._capacity_or_data = _StringCapacityField(static_const_length=0)
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
@@ -274,7 +334,7 @@ struct String(
             self._capacity_or_data = cap_field
         else:
             self._len_or_data = 0
-            self._ptr_or_data = UnsafePointer[UInt8].alloc(
+            self._ptr_or_data = _StringOutOfLineHeader.alloc(
                 cap_field.get_capacity()
             )
             self._capacity_or_data = cap_field
@@ -509,18 +569,14 @@ struct String(
             other: The string to copy.
         """
         # Keep inline strings inline, and static strings static.
-        if (
-            other._capacity_or_data.is_inline()
-            | other._capacity_or_data.is_static_constant()
-        ):
-            self._ptr_or_data = other._ptr_or_data
-            self._len_or_data = other._len_or_data
-            self._capacity_or_data = other._capacity_or_data
-        else:
-            # Otherwise, copy the data for an out-of-line representation.
-            var len = other.byte_length()
-            self = Self(unsafe_uninit_length=len)
-            memcpy(self.unsafe_ptr(), other.unsafe_ptr(), len)
+        self._ptr_or_data = other._ptr_or_data
+        self._len_or_data = other._len_or_data
+        self._capacity_or_data = other._capacity_or_data
+
+        # If the other string is out-of-line and not static, increment the
+        # refcount of the out-of-line representation.
+        if other._has_mutable_buffer():
+            _StringOutOfLineHeader.get(self._ptr_or_data).add_ref()
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -1080,9 +1136,9 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        # If immutable, copy to a new buffer to ensure mutability.
-        if self._capacity_or_data.is_static_constant():
-            self.reserve(self.byte_length())
+        # If out of line, make sure it is uniquely owned and mutable.
+        if not self._capacity_or_data.is_inline():
+            self._make_unique_mutable()
         return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
@@ -1684,17 +1740,31 @@ struct String(
         """
         if new_capacity <= self.capacity():
             return
-        self._reserve_grow(new_capacity)
+        self._realloc_mutable(new_capacity)
+
+    # This is called whne the string is known to be indirect.  This checks to
+    # make sure the indirect representation is uniquely owned and mutable,
+    # copying if necessary.
+    fn _make_unique_mutable(mut self):
+        # If already mutable and uniquely owned, we're done.
+        if (
+            not self._capacity_or_data.is_static_constant()
+            and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
+        ):
+            return
+
+        # Otherwise, copy to a new buffer to ensure mutability.
+        self._realloc_mutable(self.byte_length())
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string.
     @no_inline
-    fn _reserve_grow(mut self, owned new_capacity: UInt):
+    fn _realloc_mutable(mut self, owned new_capacity: UInt):
         # Get these fields before we change _capacity_or_data, which can modify
         # where they are stored.
         var len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
-        var should_free = self._should_free()
+        var should_drop_ref = self._has_mutable_buffer()
 
         # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
         # make use of extra space if it exists.
@@ -1705,18 +1775,18 @@ struct String(
         var new_capacity_field = _StringCapacityField(
             out_of_line_capacity=new_capacity
         )
-        var new_data = UnsafePointer[UInt8].alloc(
+        var new_data = _StringOutOfLineHeader.alloc(
             new_capacity_field.get_capacity()
         )
         memcpy(new_data, old_ptr, len)
         self._len_or_data = len  # May have been stored in capacity before.
         self._ptr_or_data = new_data
         self._capacity_or_data = new_capacity_field
-        if should_free:
-            old_ptr.free()
+        if should_drop_ref:
+            _StringOutOfLineHeader.get(old_ptr).drop_ref()
 
     @always_inline("nodebug")
-    fn _should_free(self) -> Bool:
+    fn _has_mutable_buffer(self) -> Bool:
         return (not self._capacity_or_data.is_static_constant()) & (
             not self._capacity_or_data.is_inline()
         )

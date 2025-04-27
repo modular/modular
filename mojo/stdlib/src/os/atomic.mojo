@@ -32,6 +32,7 @@ from memory import UnsafePointer, bitcast
 # ===-----------------------------------------------------------------------===#
 
 
+@register_passable("trivial")
 struct Consistency:
     """Represents the consistency model for atomic operations.
 

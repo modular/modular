@@ -1496,9 +1496,9 @@ def test_sso():
     assert_equal(s._capacity_or_data.is_inline(), False)
     assert_equal(s, "ffff")
 
-    # Copying the small out-of-line string should bring it inline.
+    # Copying the small out-of-line string should just bump the count.
     var s2 = s.copy()
-    assert_equal(s2._capacity_or_data.is_inline(), True)
+    assert_equal(s2._capacity_or_data.is_inline(), False)
     assert_equal(s2, "ffff")
 
     # Stringizing short things should be inline.

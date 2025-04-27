@@ -74,7 +74,8 @@ String types in Mojo got several significant improvements:
   make construction from these values be implicit, which improves ergonomics and
   performance together. It also implements the "small string optimization",
   which avoids heap allocation for common short strings.  On a 64-bit system,
-  `String` can hold up to 23 bytes inline.
+  `String` can hold up to 23 bytes inline. Its copy constructor is now O(1),
+  performing string data copy lazily on mutation.
 
 - `Set` now conforms to `Copyable` so it can be used in other collection elements.
 
