@@ -21,6 +21,7 @@ from os import Atomic
 
 from collections.string.string_slice import _get_kgen_string
 from sys.info import is_nvidia_gpu
+from sys import is_compile_time
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from memory import UnsafePointer, bitcast
@@ -146,9 +147,7 @@ struct Consistency:
         if self is Self.SEQUENTIAL:
             return __mlir_attr.`#pop<atomic_ordering seq_cst>`
 
-        abort("Invalid atomic ordering")
-
-        return __mlir_attr.`#pop<atomic_ordering not_atomic>`
+        return abort[__mlir_type.`!kgen.deferred`]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -183,8 +182,10 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         self.value = value
 
+    # TODO: Unfortunate this is mut, but this is using fetch_add to load the
+    # value. There is probably a better way to do this.
     @always_inline
-    fn load(self) -> Scalar[dtype]:
+    fn load(mut self) -> Scalar[dtype]:
         """Loads the current value from the atomic.
 
         Returns:
@@ -196,9 +197,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]) -> Scalar[
-        dtype
-    ]:
+    ](
+        ptr: UnsafePointer[Scalar[dtype], mut=True, **_], rhs: Scalar[dtype]
+    ) -> Scalar[dtype]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -217,6 +218,12 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
             The original value before addition.
         """
+        # Comptime interpreter doesn't support these operations.
+        if is_compile_time():
+            var res = ptr[]
+            ptr[] += rhs
+            return res
+
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
             ordering = ordering.__mlir_attr(),
@@ -231,9 +238,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn _xchg[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]) -> Scalar[
-        dtype
-    ]:
+    ](
+        ptr: UnsafePointer[Scalar[dtype], mut=True, **_], value: Scalar[dtype]
+    ) -> Scalar[dtype]:
         """Performs an atomic exchange.
         The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
@@ -249,6 +256,12 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
             The value of the value before the operation.
         """
+        # Comptime interpreter doesn't support these operations.
+        if is_compile_time():
+            var res = ptr[]
+            ptr[] = value
+            return res
+
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
             ordering = ordering.__mlir_attr(),
@@ -262,7 +275,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn store[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+    ](ptr: UnsafePointer[Scalar[dtype], mut=True, **_], value: Scalar[dtype]):
         """Performs atomic store.
         The operation is a read-modify-write operation. Memory
         is affected according to the value of order which is sequentially
@@ -275,6 +288,11 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr: The source pointer.
             value: The value to store.
         """
+        # Comptime interpreter doesn't support these operations.
+        if is_compile_time():
+            ptr[] = value
+            return
+
         _ = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
             ordering = ordering.__mlir_attr(),
@@ -287,7 +305,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](self, rhs: Scalar[dtype]) -> Scalar[dtype]:
+    ](mut self, rhs: Scalar[dtype]) -> Scalar[dtype]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -309,7 +327,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         return Self.fetch_add[ordering=ordering](value_addr, rhs)
 
     @always_inline
-    fn __iadd__(self, rhs: Scalar[dtype]):
+    fn __iadd__(mut self, rhs: Scalar[dtype]):
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -326,7 +344,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn fetch_sub[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](self, rhs: Scalar[dtype]) -> Scalar[dtype]:
+    ](mut self, rhs: Scalar[dtype]) -> Scalar[dtype]:
         """Performs atomic in-place sub.
 
         Atomically replaces the current value with the result of arithmetic
@@ -344,6 +362,12 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
             The original value before subtraction.
         """
+        # Comptime interpreter doesn't support these operations.
+        if is_compile_time():
+            var res = self.value
+            self.value -= rhs
+            return res
+
         var value_addr = UnsafePointer(to=self.value.value)
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
@@ -353,7 +377,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         ](value_addr.address, rhs.value)
 
     @always_inline
-    fn __isub__(self, rhs: Scalar[dtype]):
+    fn __isub__(mut self, rhs: Scalar[dtype]):
         """Performs atomic in-place sub.
 
         Atomically replaces the current value with the result of arithmetic

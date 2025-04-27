@@ -90,7 +90,19 @@ def test_compare_exchange_weak():
     assert_false(ok)
 
 
+def test_comptime_atomic():
+    fn comptime_fn() -> Int:
+        var atom = Atomic[DType.index](3)
+        atom += 4
+        atom -= 4
+        return Int(atom.load())
+
+    alias value = comptime_fn()
+    assert_equal(value, 3)
+
+
 def main():
     test_atomic()
     test_atomic_floating_point()
     test_compare_exchange_weak()
+    test_comptime_atomic()
