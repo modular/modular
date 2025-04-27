@@ -1,5 +1,9 @@
 # String, ASCII, Unicode, UTF, Graphemes
 
+Edit 0: 2025-02-05. Created.
+Edit 1: 2025-04-27. Reduced the scope to only affect `StringSlice` and fixed
+some details after feedback.
+
 The current proposal will attempt to unify the handling of the standards.
 Providing nice ergonomics, as Python-like defaults as possible, and keeping the
 door open for optimizations.
@@ -7,10 +11,10 @@ door open for optimizations.
 ## String
 
 String is currently an owning type which encodes string data in UTF-8, which is
-a variable length encoding format. Data can be 1 byte up to 4 bytes long. ASCII
-text, which is where English text falls, is 1 byte long. As such, the defaults
-should optimize for that character set given it is most typical on the internet
-and on backend systems.
+a variable length encoding format. Unicode Codepoints can be 1 byte up to 4
+bytes long. ASCII text, which is where English text falls, is 1 byte long. As
+such, the defaults should optimize for that character set given it is most
+typical on the internet and on backend systems.
 
 ## ASCII
 
@@ -56,9 +60,8 @@ C, C++, and Rust use UTF-8 with no default support for graphemes.
 Swift is an interesting case study. For compatibility with Objective-C they went
 for UTF-16. They decided to support grapheme clusters by default. They recently
 changed the preferred encoding from UTF-16 to UTF-8. They have a `Character`
-that I think inspired our current `Char` type, it is a generic representation of
-a Character in any encoding, that can be from one codepoint up to any grapheme
-cluster.
+type which is a generic representation of a Character in any encoding, that can
+be from one codepoint up to any grapheme cluster.
 
 ### Python
 
@@ -75,9 +78,9 @@ of heterogeneous hardware and modern type system features.
 
 ## Value vs. Reference
 
-Our current `Char` type uses a u32 as storage, every time an iterator that
-yields `Char`is used, an instance is parsed from the internal UTF-8 encoded
-`StringSlice` (into UTF-32).
+Our current `Codepoint` type uses a UInt32 as storage, every time an iterator
+that yields `Codepoint` is used, an instance is parsed from the internal UTF-8
+encoded `StringSlice` (into UTF-32).
 
 The default iterator for `String` returns a `StringSlice` which is a view into
 the character in the UTF-8 encoded `StringSlice`. This is much more efficient
@@ -89,6 +92,8 @@ and does not add any complexity into the type system nor developer headspace.
 
 #### Hold off on developing Char further and remove it from stdlib.builtin
 
+Status: Implemented. It was renamed to `Codepoint` as well.
+
 `Char` is currently expensive to create and use compared to a `StringSlice`
 which is a view over the original data. There is also the problem that it forces
 UTF-32 on the data, and those transformations are expensive.
@@ -97,12 +102,14 @@ We can revisit `Char` later on making it take encoding into account. But the
 current state of the type makes it add more complexity than strictly necessary.
 
 #### Full ASCII optimizations
+
 If someone wishes to use a `String` as if it's an ASCII-only String, then there
 should either be a parameter that signifies that, or the stdlib/community should
 add an `ASCIIString` type which has all optimizations possible for such
 scenarios.
 
 #### Mostly ASCII optimizations
+
 Many functions can make use of branch predition, instruction and data
 prefetching, and algorithmic tricks to make processing faster for languages
 which have mostly ASCII characters but still keep full unicode support.
@@ -114,7 +121,10 @@ Grapheme support should exist but be opt-in due to their high compute cost.
 
 With a clear goal in mind, this is a concrete (tentative) way forward.
 
-#### Add parameters to String and StringSlice
+#### Add parameters to `StringSlice`
+
+Note: We can define the defaults later. There are several options and each have
+their own merit.
 
 ```mojo
 struct Encoding:
@@ -122,45 +132,58 @@ struct Encoding:
     alias UTF16 = 1
     alias UTF32 = 2
     alias ASCII = 3
+    # maybe in the future we will even implement parsing for http header encoding
+    # alias ISO_8859_1 = 4
 
 struct Indexing:
-    alias DIRECT = 0
+    alias RAW = 0
     alias CODEPOINT = 1
     alias GRAPHEME = 2
 
-alias ASCIIString = String[encoding=Encoding.ASCII, indexing=Indexing.DIRECT]
+alias ASCIIString = StringSlice[encoding=Encoding.ASCII, indexing=Indexing.RAW]
 
-struct String[
-    encoding: Encoding = Encoding.UTF8,
-    indexing: Indexing = Indexing.CODEPOINT,
-]:
-    ... # data is bitcasted to bigger DTypes when encoding is 16 or 32 bits
 
 struct StringSlice[
     encoding: Encoding = Encoding.UTF8,
-    indexing: Indexing = Indexing.CODEPOINT,
+    indexing: Indexing = Indexing.RAW,
 ]:
     ... # data is bitcasted to bigger DTypes when encoding is 16 or 32 bits
+
+struct String:
+    fn as_string_slice(
+      ref self
+    ) -> StringSlice[__origin_of(self), Encoding.UTF8, Indexing.RAW]:
+        ...
 ```
 
 #### What this requires
 
-First, we can add the parameters and constraint on the supported encodings.
+1. Phase 1: Add parameters and constraints.
+- Add the parameters and constraint on the supported encodings. This
+will enable progressive implementation for each encoding and indexing scheme
+without breaking any existing code, since our type currently already implements
+UTF-8 encoding and (to my chagrin) raw indexing.
 
-Then, we need to rewrite every function signature that makes two `String`s
-interact with one another, where the code doesn't require both to be the
-defaults.
+2. Phase 2: Add parametric support for other encodings.
+- Rewrite every function signature that uses `StringSlice`s, where the code
+doesn't require them to be the defaults. This will be a lot of work because it
+basically affects every place `StringSlice` is used in a function signature with
+a specified origin or mutability.
 
-Many of those functions will need to be branched when the encodings are
-different and allocations for parsing added. But the default same-encoding
-ones will remain the same **(as long as the code is encoding and
+3. Phase 3: Add parsing for other encodings.
+- We will need to add parametrized `StringSlice` constructors that parse
+`StringSlice`s from another encoding. But the default same-encoding internal
+methods will remain the same **(as long as the code is encoding and
 indexing-agnostic)**.
 
-The implementations can be added with time making liberal use of `constrained`.
+4. Phase 4: Optimize for each encoding.
+- Add support for functions like `.isspace()`, `.split()` and `.splitlines()`
+for those encodings.
 
-#### Adapt StringSliceIter
 
-The default iterator should iterate in the way in which the `String` is
+#### Adapt CodepointIter
+
+The default iterator should iterate in the way in which the `StringSlice` is
 parametrized. The iterator could then have functions which return the other
 types of iterators for ergonomics (or have constructors for each) *.
 
@@ -168,15 +191,9 @@ types of iterators for ergonomics (or have constructors for each) *.
 
 e.g.
 ```mojo
-data = String("123 \n\u2029🔥")
+data = StringSlice("123 \n\u2029🔥")
 for c in data:
   ... # StringSlice in the same encoding and indexing scheme by default
-
-# Once we have Char developed enough
-for c in iter(data).chars[encoding.UTF8]():
-  ... # Char type instances (UTF8 packed in a UInt32 ?)
-for c in iter(data).chars[encoding.UTF32]():
-  ... # Char type instances
 
 # We could also have lazy iterators which return StringSlices according to the
 # encoding and indexing parameter.
@@ -186,4 +203,45 @@ for c in iter(data).split():
   ... # StringSlice lazily split by all whitespace
 for c in iter(data).splitlines():
   ... # StringSlice lazily split by all newline characters
+```
+
+#### What this enables
+
+```mojo
+# ability to go down raw for people who want to
+direct_utf8 = StringSlice[indexing=Indexing.RAW]("some long long string")
+# performance benefits of raw indexing
+direct_utf8[0: direct_utf8.find("end_of_something")]
+
+# faster split, splitlines, and indexing for UTF-32
+utf32 = StringSlice[encoding=Encoding.UTF32]("some long long string")
+utf32.splitlines() # no bounds checking *, direct value comparison, etc.
+ascii_val[0:3] # raw indexing, no counting codepoints
+
+# faster everything for ASCII only strings
+ascii_val = StringSlice[encoding=Encoding.ASCII]("some long long string")
+ascii_val.splitlines() # no bounds checking *, direct value comparison, etc.
+ascii_val[0:3] # raw indexing, no counting codepoints
+ascii_val.uppercase() # incredibly fast due to bitflip trick
+```
+
+#### An example part of the implementation
+
+```mojo
+struct StringSlice[
+    encoding: Encoding = Encoding.UTF8,
+    indexing: Indexing = Indexing.RAW,
+]:
+  fn __getitem__(self, slice: Slice) -> Self:
+    @parameter
+    if encoding is Encoding.UTF32:
+      return Self(unsafe_from_utf32=rebind[Span[UInt32, origin]](self._slice)[slice])
+    elif encoding is Encoding.UTF16 and indexing is Indexing.RAW:
+      return Self(unsafe_from_utf16=rebind[Span[UInt16, origin]](self._slice)[slice])
+    elif encoding is Encoding.ASCII and indexing is not Indexing.GRAPHEME:
+      return Self(unsafe_from_ascii=self._slice[slice])
+    elif encoding is Encoding.UTF8 and indexing is Indexing.RAW:
+      ... # current implementation
+    else:
+      constrained[False, "given encoding and indexing scheme not supported yet"]()
 ```
