@@ -30,7 +30,7 @@ inline bool isDPSTensor(LIT::StructType maybeTensor) {
 }
 
 inline bool isMojoDeviceContextPtr(LIT::StructType maybeCallContextPtr) {
-  return isXType(maybeCallContextPtr, "runtime", "DeviceContextPtr");
+  return isXType(maybeCallContextPtr, "stdlib", "DeviceContextPtr");
 }
 
 inline bool fnNeedsConformances(LIT::FnOp fnOp) {
