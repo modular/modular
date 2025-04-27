@@ -1,0 +1,28 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+git apiVersion: v2
+appVersion: "0.1.0"
+description: The MAX platform unifies the leading AI development frameworks (TensorFlow, PyTorch, ONNX) and hardware backends in order to simplify deployment for AI production teams and accelerate innovation for AI developers.
+name: max-openai-api-chart
+home: https://www.modular.com/
+keywords:
+  - machine learning
+  - inference
+sources:
+  - https://github.com/modular/max
+maintainers:
+  - name: Modular team
+    email: max-feedback@modular.com
+    url: https://github.com/modular/max
+version: 0.1.0

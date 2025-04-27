@@ -46,7 +46,6 @@ jobs:
         run: |
           pip install pre-commit
           pre-commit install
-      
-      - name: Run pre-commit
-        run: magic run pre-commit run --all-files
 
+      - name: Run pre-commit
+        run: magic run --manifest-path mojo pre-commit run --all-files

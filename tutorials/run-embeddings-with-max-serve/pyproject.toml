@@ -1,0 +1,25 @@
+[project]
+authors = [{name = "Modular", email = "hello@modular.com"}]
+dependencies = []
+description = "Run an embeddings model using the all-mpnet-base-v2 model"
+name = "embeddings"
+requires-python = ">= 3.11"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.project]
+channels = ["https://conda.modular.com/max-nightly", "https://conda.modular.com/max", "https://repo.prefix.dev/modular-community", "conda-forge"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+embeddings = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+numpy = ">=2.2.2,<3"
+scikit-learn = ">=1.6.1,<2"
+requests = ">=2.32.3,<3"
