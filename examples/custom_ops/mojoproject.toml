@@ -25,8 +25,7 @@ test = { depends-on = [
   "fused_attention",
   "matrix_multiplication",
   "benchmark",
-  # Not included by default since it only runs on GPUs
-  #"image_pipeline",
+  "image_pipeline",
   # FIXME
   #"whisper",
 ] }
