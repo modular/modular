@@ -26,7 +26,7 @@ from hashlib._ahash import (
 from hashlib._hasher import _hash_with_hasher
 from hashlib.hash import hash as old_hash
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from bit import byte_swap, rotate_bits_left
 from memory import UnsafePointer
 
@@ -607,7 +607,7 @@ fn bench_small_keys[s: String](mut b: Bencher) raises:
     fn call_fn():
         for w in words:
             var h = old_hash(w[])
-            benchmark.keep(h)
+            keep(h)
 
     b.iter[call_fn]()
 
@@ -621,7 +621,7 @@ fn bench_small_keys_new_hash_function[s: String](mut b: Bencher) raises:
     fn call_fn():
         for w in words:
             var h = _hash_with_hasher(w[].unsafe_ptr(), w[].byte_length())
-            benchmark.keep(h)
+            keep(h)
 
     b.iter[call_fn]()
 
@@ -632,7 +632,7 @@ fn bench_long_key[s: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var h = old_hash(s)
-        benchmark.keep(h)
+        keep(h)
 
     b.iter[call_fn]()
 
@@ -643,7 +643,7 @@ fn bench_long_key_new_hash_function[s: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var h = _hash_with_hasher(s.unsafe_ptr(), s.byte_length())
-        benchmark.keep(h)
+        keep(h)
 
     b.iter[call_fn]()
 
