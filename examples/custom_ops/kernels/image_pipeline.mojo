@@ -18,13 +18,15 @@ from utils.index import IndexList
 from layout import LayoutTensor, Layout
 from gpu import global_idx
 from math import ceildiv
+from builtin.simd import SIMD
+from algorithm.functional import vectorize
 
 
-# TODO: Convert to using `foreach` to win Mojo swag
 @register("grayscale")
 struct Grayscale:
     @staticmethod
     fn execute[
+        # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
         img_out: OutputTensor[type = DType.uint8, rank=2],
@@ -32,29 +34,26 @@ struct Grayscale:
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
-        fn color_to_grayscale():
-            var col = global_idx.x
-            var row = global_idx.y
-            var height = img_in.shape()[0]
-            var width = img_in.shape()[1]
+        @always_inline
+        fn color_to_grayscale[
+            simd_width: Int
+        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+            var row = idx[0]
+            var col = idx[1]
 
-            if col < width and row < height:
-                var red = img_in[row, col, 0].cast[DType.float32]()
-                var green = img_in[row, col, 1].cast[DType.float32]()
-                var blue = img_in[row, col, 2].cast[DType.float32]()
+            var r_idx = IndexList[3](row, col, 0)
+            var g_idx = IndexList[3](row, col, 1)
+            var b_idx = IndexList[3](row, col, 2)
 
-                var gray = 0.21 * red + 0.71 * green + 0.07 * blue
-                img_out[row, col, 0] = gray.cast[DType.uint8]()
+            var r_f32 = img_in.load[simd_width](r_idx).cast[DType.float32]()
+            var g_f32 = img_in.load[simd_width](g_idx).cast[DType.float32]()
+            var b_f32 = img_in.load[simd_width](b_idx).cast[DType.float32]()
 
-        alias BLOCK_SIZE = 16
-        var row_blocks = ceildiv(img_in.shape()[0], BLOCK_SIZE)
-        var col_blocks = ceildiv(img_in.shape()[1], BLOCK_SIZE)
+            var gray_f32 = 0.21 * r_f32 + 0.71 * g_f32 + 0.07 * b_f32
 
-        var dev_ctx = ctx.get_device_context()
-        dev_ctx.enqueue_function[color_to_grayscale](
-            grid_dim=(col_blocks, row_blocks),
-            block_dim=(BLOCK_SIZE, BLOCK_SIZE),
-        )
+            return gray_f32.clamp(0, 255).cast[DType.uint8]()
+
+        foreach[color_to_grayscale, target=target](img_out, ctx)
 
 
 @register("brightness")
@@ -69,16 +68,19 @@ struct Brightness:
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
+        @always_inline  # Added for consistency
         fn brighten[
-            width: Int
-        ](idx: IndexList[img_in.rank]) -> SIMD[img_in.type, width]:
-            var pixels = img_in.load[width](idx).cast[DType.float32]()
-            return (pixels * brightness).clamp(0, 255).cast[DType.uint8]()
+            simd_width: Int  # Renamed 'width' to 'simd_width'
+        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+            var pixels_f32 = img_in.load[simd_width](idx).cast[DType.float32]()
+
+            var brightened_f32 = pixels_f32 * brightness
+
+            return brightened_f32.clamp(0, 255).cast[DType.uint8]()
 
         foreach[brighten, target=target](img_out, ctx)
 
 
-# TODO: Add CPU implementation to win Mojo swag (see other kernels for examples)
 @register("blur")
 struct Blur:
     @staticmethod
@@ -91,34 +93,37 @@ struct Blur:
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
-        fn blur_kernel():
-            var col = global_idx.x
-            var row = global_idx.y
+        @always_inline
+        fn blur_kernel[
+            simd_width: Int
+        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+            """
+            Computes the blurred value for a SIMD vector of pixels.
+            """
             var height = img_in.shape()[0]
             var width = img_in.shape()[1]
-            var size = Int(blur_size)
+            var size = Int(blur_size)  # Surrounding pixels to average
 
-            if col < width and row < height:
-                var pix_val = 0
-                var pixels = 0
+            var base_row: Int = idx[0]
+            var base_col: Int = idx[1]
 
-                for blur_row in range(-size, size + 1):
-                    for blur_col in range(-size, size + 1):
-                        var cur_row = row + blur_row
-                        var cur_col = col + blur_col
-                        if 0 <= cur_row < height and 0 <= cur_col < width:
-                            pix_val += Int(
-                                img_in[cur_row, cur_col, block_idx.x]
-                            )
-                            pixels += 1
-                img_out[row, col, block_idx.x] = UInt8(pix_val / pixels)
+            var pix_val_accum = 0
+            var pixel_count = 0
 
-        alias BLOCK_SIZE = 16
-        var row_blocks = ceildiv(img_in.shape()[0], BLOCK_SIZE)
-        var col_blocks = ceildiv(img_in.shape()[1], BLOCK_SIZE)
+            # Iterate over the blur kernel window
+            for blur_row_offset in range(-size, size + 1):
+                for blur_col_offset in range(-size, size + 1):
+                    var cur_row = base_row + blur_row_offset
+                    var cur_col = base_col + blur_col_offset
 
-        var dev_ctx = ctx.get_device_context()
-        dev_ctx.enqueue_function[blur_kernel](
-            grid_dim=(col_blocks, row_blocks),
-            block_dim=(BLOCK_SIZE, BLOCK_SIZE),
-        )
+                    # Check if the neighbor pixel is within bounds
+                    if 0 <= cur_row < height and 0 <= cur_col < width:
+                        pix_val_accum += Int(img_in[cur_row, cur_col])
+                        pixel_count += 1
+
+            return (
+                (pix_val_accum / pixel_count).clamp(0, 255).cast[DType.uint8]()
+            )
+
+        # Apply the kernel to each pixel in the output tensor
+        foreach[blur_kernel, target=target, simd_width=1](img_out, ctx)
