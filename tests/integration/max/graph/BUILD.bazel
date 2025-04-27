@@ -46,7 +46,6 @@ modular_py_test(
         "//PyTorch/test/utils/custom_ops",
         "//Kernels/mojo/algorithm",
         "//Kernels/mojo/register",
-        "//Kernels/mojo/runtime",
         "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
         "//open-source/max/mojo/stdlib/stdlib",
