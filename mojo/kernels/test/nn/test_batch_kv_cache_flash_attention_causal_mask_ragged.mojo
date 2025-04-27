@@ -19,17 +19,16 @@ from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import flash_attention_kv_cache
-from nn.mha_mask import CausalMask, NullMask
+from nn.mha_mask import CausalMask
 from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
-
-alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
-alias replit_num_q_heads = 24
+from utils import Index, IndexList
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -45,10 +44,7 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
 ):
     alias num_blocks = 32
-    alias CacheType = ContinuousBatchingKVCache[
-        type,
-        kv_params,
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
     var batch_size = len(valid_lengths_list)
     debug_assert(
@@ -152,24 +148,16 @@ def execute_ragged_flash_attention[
         lookup_table.tensor[idx] = UInt32(randval)
         idx += 1
 
-    var k_cache = CacheType(
+    var kv_collection = CollectionType(
         kv_block.tensor,
         cache_lengths.tensor,
         lookup_table.tensor,
         max_prompt_length,
         max_context_length,
-        layer_idx,
-        CacheType.KeyIdx,
     )
-    var v_cache = CacheType(
-        kv_block.tensor,
-        cache_lengths.tensor,
-        lookup_table.tensor,
-        max_prompt_length,
-        max_context_length,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
+
+    var k_cache = kv_collection.get_key_cache(layer_idx)
+    var v_cache = kv_collection.get_value_cache(layer_idx)
 
     # ragged execution
     flash_attention_kv_cache(

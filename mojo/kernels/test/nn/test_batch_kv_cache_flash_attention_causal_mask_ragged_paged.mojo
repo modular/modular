@@ -20,9 +20,9 @@ from random import random_ui64, seed
 from buffer import Dim, DimList, NDBuffer
 from internal_utils import HostNDBuffer, fill, random
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    PagedKVCache,
+    PagedKVCacheCollection,
 )
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import flash_attention_kv_cache
@@ -30,8 +30,7 @@ from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from utils import Index, IndexList
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -52,8 +51,6 @@ def execute_ragged_flash_attention[
     alias num_continuous_blocks = 32
     alias page_size = 512
     alias num_paged_blocks = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
-    alias ContinuousBatchCacheType = ContinuousBatchingKVCache[type, kv_params]
     var batch_size = len(valid_lengths)
     debug_assert(
         batch_size < num_continuous_blocks,
@@ -131,23 +128,15 @@ def execute_ragged_flash_attention[
         block_idx_set.add(randval)
         lookup_table_continuous.tensor[idx] = UInt32(randval)
         idx += 1
-    var k_cache_continuous = ContinuousBatchCacheType(
+
+    kv_collection_continuous = ContinuousBatchingKVCacheCollection[
+        type, kv_params
+    ](
         kv_block_continuous.tensor,
         cache_lengths_nd.tensor,
         lookup_table_continuous.tensor,
         max_prompt_length,
         max_full_context_length,
-        layer_idx,
-        ContinuousBatchCacheType.KeyIdx,
-    )
-    var v_cache_continuous = ContinuousBatchCacheType(
-        kv_block_continuous.tensor,
-        cache_lengths_nd.tensor,
-        lookup_table_continuous.tensor,
-        max_prompt_length,
-        max_full_context_length,
-        layer_idx,
-        ContinuousBatchCacheType.ValueIdx,
     )
 
     kv_block_paged = HostNDBuffer[type, 6](
@@ -195,24 +184,12 @@ def execute_ragged_flash_attention[
                     page_size * kv_params.num_heads * kv_params.head_size,
                 )
 
-    k_cache_paged = PagedCacheType(
+    kv_collection_paged = PagedKVCacheCollection[type, kv_params, page_size](
         kv_block_paged.tensor,
         cache_lengths_nd.tensor,
         paged_lut.tensor,
         max_prompt_length,
         max_full_context_length,
-        layer_idx,
-        PagedCacheType.KeyIdx,
-    )
-
-    v_cache_paged = PagedCacheType(
-        kv_block_paged.tensor,
-        cache_lengths_nd.tensor,
-        paged_lut.tensor,
-        max_prompt_length,
-        max_full_context_length,
-        layer_idx,
-        PagedCacheType.ValueIdx,
     )
 
     # continuous execution
@@ -221,8 +198,8 @@ def execute_ragged_flash_attention[
         input_row_offsets.tensor,
         # Assume self attention: Q and KV sequence lengths are equal.
         input_row_offsets.tensor,
-        k_cache_continuous,
-        v_cache_continuous,
+        kv_collection_continuous.get_key_cache(layer_idx),
+        kv_collection_continuous.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
         ref_output.tensor,
@@ -234,8 +211,8 @@ def execute_ragged_flash_attention[
         input_row_offsets.tensor,
         # Assume self attention: Q and KV sequence lengths are equal.
         input_row_offsets.tensor,
-        k_cache_paged,
-        v_cache_paged,
+        kv_collection_paged.get_key_cache(layer_idx),
+        kv_collection_paged.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
         test_output.tensor,
