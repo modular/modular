@@ -32,6 +32,13 @@ class Accelerator(Device):
             device = driver.Accelerator(id=1)  # Second GPU
             # Get device id
             device_id = device.id
+
+        Args:
+            id (int, optional): The device ID to use. Defaults to -1, which selects
+                the first available accelerator.
+
+        Returns:
+            Accelerator: A new Accelerator device object.
         """
 
 class CPU(Device):
@@ -46,6 +53,13 @@ class CPU(Device):
             device = driver.CPU()
             # Device id is always 0 for CPU devices
             device_id = device.id
+
+        Args:
+            id (int, optional): The device ID to use.
+                Defaults to -1.
+
+        Returns:
+            CPU: A new CPU device object.
         """
 
 class Device:
@@ -75,7 +89,7 @@ class Device:
         Ensures all operations on this device complete before returning.
 
         Raises:
-            ValueError: If any enqueue'd operations had an internal error.
+            ValueError: If any enqueued operations had an internal error.
         """
 
     @property
@@ -101,7 +115,10 @@ class Device:
             from max import driver
 
             device = driver.CPU()
-            device.stats
+            stats = device.stats
+
+        Returns:
+            dict: A dictionary containing device utilization statistics.
         """
 
     @property
@@ -154,19 +171,31 @@ class Device:
             from max import driver
 
             device = driver.Accelerator()
-            device.id
+            device_id = device.id
+
+        Returns:
+            int: The device ID.
         """
 
     @property
     def default_stream(self) -> DeviceStream:
         """
-        Returns the default stream for this device. The default stream is
-        initialized when the device object is created.
+        Returns the default stream for this device.
+
+        The default stream is initialized when the device object is created.
+
+        Returns:
+            DeviceStream: The default execution stream for this device.
         """
 
     @property
     def is_compatible(self) -> bool:
-        """Returns whether this device is compatible with MAX."""
+        """
+        Returns whether this device is compatible with MAX.
+
+        Returns:
+            bool: True if the device is compatible with MAX, False otherwise.
+        """
 
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
@@ -180,6 +209,9 @@ class DeviceStream:
     """
     Provides access to a stream of execution on a device.
 
+    A stream represents a sequence of operations that will be executed in order.
+    Multiple streams on the same device can execute concurrently.
+
     .. code-block:: python
 
         from max import driver
@@ -192,14 +224,22 @@ class DeviceStream:
     """
 
     def __init__(self, device: Device) -> None:
-        """Creates a new stream of execution associated with the device."""
+        """
+        Creates a new stream of execution associated with the device.
+
+        Args:
+            device (Device): The device to create the stream on.
+
+        Returns:
+            DeviceStream: A new stream of execution.
+        """
 
     def synchronize(self) -> None:
         """
-        Ensures all operation on this stream complete before returning.
+        Ensures all operations on this stream complete before returning.
 
         Raises:
-            ValueError: If any enqueue'd opertaions had an internal error.
+            ValueError: If any enqueued operations had an internal error.
         """
 
     @overload
@@ -207,6 +247,9 @@ class DeviceStream:
         """
         Ensures all operations on the other stream complete before future work
         submitted to this stream is scheduled.
+
+        Args:
+            stream (DeviceStream): The stream to wait for.
         """
 
     @overload
@@ -214,6 +257,9 @@ class DeviceStream:
         """
         Ensures all operations on device's default stream complete before
         future work submitted to this stream is scheduled.
+
+        Args:
+            device (Device): The device whose default stream to wait for.
         """
 
     @property
@@ -226,17 +272,33 @@ class DeviceStream:
 
 class Tensor:
     """
-    Device-resident tensor representation. Allocates memory onto a given device
-    with the provided shape and dtype. Tensors can be sliced to provide strided
-    views of the underlying memory, but any tensors input into model execution
-    must be contiguous. Does not currently support setting items across multiple
-    indices, but does support numpy-style slicing.
+    Device-resident tensor representation.
 
-    :param dtype: DType of tensor
-    :param shape: Tuple of positive, non-zero integers denoting the tensor shape.
-    :param device: Device to allocate tensor onto.
-    :param on_host: If True tensor is allocated in host memory, but associated
-                    with the device.
+    Allocates memory onto a given device with the provided shape and dtype.
+    Tensors can be sliced to provide strided views of the underlying memory,
+    but any tensors input into model execution must be contiguous.
+
+    Supports numpy-style slicing but does not currently support setting
+    items across multiple indices.
+
+    .. code-block:: python
+
+        from max import driver
+        from max.dtype import DType
+
+        # Create a tensor on CPU
+        cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.float32)
+
+        # Create a tensor on GPU
+        gpu = driver.Accelerator()
+        gpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.float32, device=gpu)
+
+    Args:
+        dtype (DType): Data type of tensor elements.
+        shape (Sequence[int]): Tuple of positive, non-zero integers denoting the tensor shape.
+        device (Device, optional): Device to allocate tensor onto. Defaults to the CPU.
+        pinned (bool, optional): If True, memory is page-locked (pinned). Defaults to False.
+        stream (DeviceStream, optional): Stream to associate the tensor with.
     """
 
     @overload
@@ -331,14 +393,22 @@ class Tensor:
 
     @overload
     def copy(self, stream: DeviceStream) -> Tensor:
-        """Create a deep copy on the device associated with the stream."""
+        """
+        Creates a deep copy on the device associated with the stream.
+
+        Args:
+            stream (DeviceStream): The stream to associate the new tensor with.
+
+        Returns:
+            Tensor: A new tensor that is a copy of this tensor.
+        """
 
     @overload
     def copy(self, device: Device | None = None) -> Tensor:
         """
-        Create a deep copy on an optionally given device.
+        Creates a deep copy on an optionally given device.
 
-        If a device is None (default), a copy is created on the same device.
+        If device is None (default), a copy is created on the same device.
 
         .. code-block:: python
 
@@ -346,8 +416,18 @@ class Tensor:
             from max.dtype import DType
 
             cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
-
             cpu_copy = cpu_tensor.copy()
+
+            # Copy to GPU
+            gpu = driver.Accelerator()
+            gpu_copy = cpu_tensor.copy(device=gpu)
+
+        Args:
+            device (Device, optional): The device to create the copy on.
+                Defaults to None (same device).
+
+        Returns:
+            Tensor: A new tensor that is a copy of this tensor.
         """
 
     @staticmethod
@@ -373,17 +453,33 @@ class Tensor:
     @staticmethod
     def from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
         """
-        Create a tensor from an object implementing the dlpack protocol.
+        Creates a tensor from an object implementing the dlpack protocol.
+
         This usually does not result in a copy, and the producer of the object
         retains ownership of the underlying memory.
+
+        Args:
+            array (Any): An object that implements the dlpack protocol.
+            copy (bool, optional): Whether to create a copy of the data.
+                Defaults to None.
+
+        Returns:
+            Tensor: A new tensor that views or copies the dlpack data.
         """
 
     @staticmethod
     def from_numpy(arr: numpy.ndarray) -> Tensor:
         """
         Creates a tensor from a provided numpy array on the host device.
+
         The underlying data is not copied unless the array is noncontiguous. If
         it is, a contiguous copy will be returned.
+
+        Args:
+            arr (numpy.ndarray): The numpy array to convert.
+
+        Returns:
+            Tensor: A new tensor that views or copies the numpy array data.
         """
 
     def item(self) -> Any:
@@ -428,6 +524,9 @@ class Tensor:
 
         If the tensor is on the host (CPU), the numpy array aliases the existing memory.
         Otherwise, it is copied to the host device.
+
+        Returns:
+            numpy.ndarray: A numpy array containing the tensor data.
         """
 
     @property
@@ -450,7 +549,18 @@ class Tensor:
         dtype: max._core.dtype.DType,
         device: Device | None = None,
     ) -> Tensor:
-        """Allocates a tensor with all elements initialized to zero."""
+        """
+        Allocates a tensor with all elements initialized to zero.
+
+        Args:
+            shape (Sequence[int]): The shape of the tensor.
+            dtype (DType): The data type of the tensor.
+            device (Device, optional): The device to allocate the tensor on.
+                Defaults to None (CPU).
+
+        Returns:
+            Tensor: A new tensor filled with zeros.
+        """
 
     def __dlpack__(
         self, *, stream: object | None = None, _mmap: object | None = None
