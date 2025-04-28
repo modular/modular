@@ -97,5 +97,8 @@ fn useNonmaterializable(p: Bool):
     # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType #NmTarget1, :variadic<!AnyType> [#NmTarget1]>
     tail_types(NmStruct(5), NmStruct(6))
 
-    # CHECK: apply({{.*}}@"nmResult()")
+    # CHECK: %nmResult = lit.var.decl
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}nmResult{{.*}}()
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}NmTarget::@"__init__{{.*}}([[TMP]])
+    # CHECK-NEXT: lit.ref.store [[TMP2]], %nmResult
     var nmResult = nmResult()
