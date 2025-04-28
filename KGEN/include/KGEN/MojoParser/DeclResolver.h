@@ -164,8 +164,8 @@ public:
   LogicalResult resolveSignature(ASTDecl &decl, llvm::SMLoc loc) {
     return resolve(decl, DeclResolvedness::signature, loc);
   }
-  LogicalResult resolveFully(ASTDecl &decl, llvm::SMLoc loc) {
-    return resolve(decl, DeclResolvedness::fully, loc);
+  LogicalResult resolveBody(ASTDecl &decl, llvm::SMLoc loc) {
+    return resolve(decl, DeclResolvedness::body, loc);
   }
 
   //===--------------------------------------------------------------------===//

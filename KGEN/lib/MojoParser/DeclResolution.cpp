@@ -679,8 +679,8 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
       continue;
 
     if (isa<UnresolvedImportOp>(nameDecls.back())) {
-      if (failed(shared.getDeclResolver().resolveFully(*nameDecls.back(),
-                                                       funcDecl.getLoc()))) {
+      if (failed(shared.getDeclResolver().resolveBody(*nameDecls.back(),
+                                                      funcDecl.getLoc()))) {
         shared.emitError(funcDecl.getLoc(), "cannot resolve alias '")
             << name << "' used in '@__llvm_metadata'";
         return {};
@@ -1258,7 +1258,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Fully resolve the body so we can swap the IR value of the decl. Later on,
   // we will need this to determine the capture signature.
-  decl.resolvedness = DeclResolvedness::fully;
+  decl.resolvedness = DeclResolvedness::body;
   if (failed(resolveBody(funcOp, lexer, decl)))
     return failure();
 
@@ -1665,7 +1665,7 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
                                   /*searchParentScopes=*/false);
   if (initResult.isSuccess()) {
     ASTDecl &initDecl = *initResult.getIfSuccess().front();
-    if (failed(resolveFully(initDecl, decl.loc)))
+    if (failed(resolveBody(initDecl, decl.loc)))
       return failure();
     if (auto initDeclOp = dyn_cast<ASTDeclInterface>(initDecl)) {
       // Inherit the docstring from the __init__ if it is present.
@@ -2745,7 +2745,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
       continue;
     for (ASTDecl *decl : decls) {
       auto func = cast<FnOp>(*decl);
-      if (failed(resolveFully(*decl, decl->getLoc())))
+      if (failed(resolveBody(*decl, decl->getLoc())))
         return failure();
 
       existingFns.insert({name, func.getSymNameAttr()});
@@ -2760,7 +2760,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   Block &body = *traitOp.getBody();
   for (SymbolRefAttr parent : traitOp.getCanonicalTrait().getSymbols()) {
     ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
-    if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
+    if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       continue;
 
     ASTType parentSelfType = parentDecl.getTypeDeclSelf();
@@ -2771,7 +2771,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
       if (decls.empty() || !isa<FnOp>(decls.front()))
         continue;
       for (ASTDecl *decl : decls) {
-        if (failed(resolveFully(*decl, traitDecl.getLoc())))
+        if (failed(resolveBody(*decl, traitDecl.getLoc())))
           continue;
         auto func = cast<FnOp>(decl);
         // Ensure that a function with the same name and signature hasn't
@@ -2864,13 +2864,13 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
 
   for (SymbolRefAttr symbol : traitType.getSymbols()) {
     ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
-    if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
+    if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       return failure();
 
     // Inherit members from the parent.
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
-        if (failed(resolveFully(*decl, traitDecl.getLoc())))
+        if (failed(resolveBody(*decl, traitDecl.getLoc())))
           return failure();
 
         if (auto fn = dyn_cast<FnOp>(decl)) {

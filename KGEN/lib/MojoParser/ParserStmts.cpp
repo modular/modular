@@ -2450,7 +2450,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.
   if (curDeclScope->getNearestDeclOfType<FnOp>())
-    (void)getDeclResolver().resolveFully(funcDecl, loc);
+    (void)getDeclResolver().resolveBody(funcDecl, loc);
   return success();
 }
 
@@ -2591,7 +2591,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   }
 
   // Now mark the decl as fully resolved.
-  decl.resolvedness = DeclResolvedness::fully;
+  decl.resolvedness = DeclResolvedness::body;
 
   shared.notifyListenerOnVariableDecl(decl, identifierLoc);
   return success();
@@ -2737,7 +2737,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
   ASTDecl &decl =
       getDeclResolver().addDecl(op, loc, identifier, curDeclScope, startCursor,
                                 getLexer().getCursor(), curIndent);
-  decl.resolvedness = DeclResolvedness::fully;
+  decl.resolvedness = DeclResolvedness::body;
 
   // Parse the argument list if present.
   struct RegionArgument {

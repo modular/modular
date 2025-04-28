@@ -694,7 +694,7 @@ static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
   MLIRContext *ctx = sharedState.getContext();
   auto fileLoc = FileLineColLoc::get(ctx, exprId, /*line=*/1, /*column=*/1);
   ASTDecl &decl = sharedState.createModule(moduleName, sourceBuf, fileLoc);
-  (void)sharedState.declResolver->resolveFully(decl, decl.getLoc());
+  (void)sharedState.declResolver->resolveBody(decl, decl.getLoc());
   return decl;
 }
 

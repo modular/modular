@@ -84,7 +84,7 @@ enum class DeclResolvedness : uint8_t {
 
   /// This declaration has been fully type checked, including its body.  Any
   /// declarations within the body may not be fully resolved though.
-  fully
+  body,
 };
 
 /// This is state shared across multiple different instances of Parser

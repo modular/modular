@@ -270,7 +270,7 @@ bool ASTType::hasDestructor(llvm::SMLoc loc, SharedState &shared) const {
     return false;
 
   // Make sure we know about the signature of the type.
-  if (failed(shared.declResolver->resolveFully(*decl, loc)))
+  if (failed(shared.declResolver->resolveBody(*decl, loc)))
     return false;
 
   // Generic types are always destructable.
@@ -295,7 +295,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // Look for a copy constructor.
-  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
+  if (failed(shared.declResolver->resolveBody(*typeDecl, loc)))
     return true;
   return !typeDecl->lookupInCurrentScope("__copyinit__").empty();
 }
@@ -314,7 +314,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // Look for a move constructor.
-  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
+  if (failed(shared.declResolver->resolveBody(*typeDecl, loc)))
     return true;
   return !typeDecl->lookupInCurrentScope("__moveinit__").empty();
 }
@@ -329,7 +329,7 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
     return true;
 
   SMLoc loc = value.expr->getLoc();
-  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
+  if (failed(shared.declResolver->resolveBody(*typeDecl, loc)))
     return true;
 
   // If the type is register passable at all, then it is movable.

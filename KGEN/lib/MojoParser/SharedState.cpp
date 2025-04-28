@@ -153,12 +153,12 @@ private:
     ASTDecl *decl = &shared.importModule(rootAttr, /*currentPackage=*/nullptr,
                                          resolutionContextLoc);
     if (decl->isErroneous() ||
-        failed(shared.declResolver->resolveFully(*decl, resolutionContextLoc)))
+        failed(shared.declResolver->resolveBody(*decl, resolutionContextLoc)))
       return {};
     for (FlatSymbolRefAttr name : nestedRefs) {
       if (!(decl = shared.lookupAndResolveMangledDecl(
                 name.getAttr(), resolutionContextLoc, *decl,
-                DeclResolvedness::fully)))
+                DeclResolvedness::body)))
         return {};
     }
     resolvedSymbolParents.try_emplace({rootAttr, nestedRefs}, decl);
@@ -192,7 +192,7 @@ private:
             return mlir::success();
 
           // Fully resolve every other decl.
-          return shared.declResolver->resolveFully(*decl, resolutionContextLoc);
+          return shared.declResolver->resolveBody(*decl, resolutionContextLoc);
         })
         .Default(WalkResult::advance());
   }
@@ -427,14 +427,14 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
       topLevelDecl.getIfOperation(), topLevelDecl.getLoc(), StringAttr(),
       nullptr, topLevelDecl.getCursor(), topLevelDecl.getCursor(), -1);
   addBuiltinTypes(builtinsDecl);
-  builtinsDecl.resolvedness = DeclResolvedness::fully;
+  builtinsDecl.resolvedness = DeclResolvedness::body;
 
   // The outermost scope contains all of the __builtins__ function definitions.
   for (auto &[name, decls] : builtinsDecl.getDeclsInScope())
     declResolver->aliasDecls(decls, name, topLevelDecl.getLoc(), topLevelDecl);
 
   // Top level is fully resolved now.
-  topLevelDecl.resolvedness = DeclResolvedness::fully;
+  topLevelDecl.resolvedness = DeclResolvedness::body;
 }
 
 /// Shared state maintains an MLIR Block and deallocates it when the parser is
@@ -666,7 +666,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
   // Ensure the context is fully resolved, so all its members are known.  It
   // would be bad to look something up in a scope without all members known.
-  if (failed(declResolver->resolveFully(scope, loc)))
+  if (failed(declResolver->resolveBody(scope, loc)))
     return LookupResult::getErroneous();
 
   auto nameAttr = StringAttr::get(getContext(), name);
@@ -1059,7 +1059,7 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 
   // Now we can import the final decl. If the parent package has an unresolved
   // import, mark it as resolved and import the state for the module.
-  if (failed(declResolver->resolveFully(*parentDecl, loc)))
+  if (failed(declResolver->resolveBody(*parentDecl, loc)))
     return emitError();
   if (parentDecl->declsInScope) {
     auto it =
@@ -1196,8 +1196,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
     // Import the main standard library package.
     impl->stdlibPackageState =
         &importModuleState("stdlib", impl->topLevelDecl, moduleDecl.getLoc());
-    if (failed(declResolver->resolveFully(*impl->stdlibPackageState->decl,
-                                          moduleDecl.getLoc())))
+    if (failed(declResolver->resolveBody(*impl->stdlibPackageState->decl,
+                                         moduleDecl.getLoc())))
       return;
 
     // Import the prelude package.
@@ -1205,8 +1205,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
         *importModuleState("stdlib.prelude", impl->topLevelDecl,
                            moduleDecl.getLoc())
              .decl;
-    if (failed(declResolver->resolveFully(preludePackageDecl,
-                                          moduleDecl.getLoc())))
+    if (failed(
+            declResolver->resolveBody(preludePackageDecl, moduleDecl.getLoc())))
       return;
 
     for (StringRef name :
@@ -1364,7 +1364,7 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
     theModule.push_back(thunk);
     ASTDecl &thunkDecl = declResolver->addBytecodeDecl(
         &*thunk, thunk.getSourceNameAttr(), &getTopLevelDecl(),
-        DeclResolvedness::fully);
+        DeclResolvedness::body);
     declResolver->finalizeFuncSignature(thunk, thunkDecl);
   }
 
@@ -1516,9 +1516,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     if (failed(result))
       return failure();
   }
-  if (resolvedness < DeclResolvedness::fully)
+  if (resolvedness < DeclResolvedness::body)
     return success();
-  decl.resolvedness = DeclResolvedness::fully;
+  decl.resolvedness = DeclResolvedness::body;
 
   // Start body resolution by materializing the regions of this operation from
   // the bytecode reader. To materialize, we need to resolve the bytecode reader
@@ -1575,7 +1575,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
       for (FlatSymbolRefAttr dep : deps) {
         ASTDecl *depDecl = &importModule(
             dep.getValue(), /*currentPackage=*/nullptr, decl.getLoc());
-        if (failed(declResolver->resolveFully(*depDecl, decl.getLoc())))
+        if (failed(declResolver->resolveBody(*depDecl, decl.getLoc())))
           return failure();
       }
     }
@@ -1817,7 +1817,7 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
   // listener see the full set of declarations, as unresolved imports are
   // generally lazily resolved, and also ensures the availability of things like
   // documentation.
-  if (failed(declResolver.resolveFully(decl, loc)))
+  if (failed(declResolver.resolveBody(decl, loc)))
     return;
   ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> decls =
       decl.getDeclsInScope();
@@ -1831,7 +1831,7 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
     if (children.empty())
       continue;
 
-    (void)declResolver.resolveFully(*children.front(), loc);
+    (void)declResolver.resolveBody(*children.front(), loc);
   }
   // Resolve any pending wildcards in the decl. We don't care about failure
   // here, as we still want to enable lookup for the decls that could be
@@ -2408,7 +2408,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
                                  "'@always_inline(\"builtin\")' functions";
     return {};
   }
-  if (failed(resolver.resolveFully(*calleeDecl, calleeDecl->getLoc())) ||
+  if (failed(resolver.resolveBody(*calleeDecl, calleeDecl->getLoc())) ||
       // Double check to ensure body resolution's check succeeded.
       fnOp.getInlineLevel() != InlineLevel::AlwaysBuiltin) {
     return {}; // Error already diagnosed.
