@@ -15,8 +15,6 @@
 
 import math
 
-from register import register_internal
-
 from utils.numerics import get_accum_type
 
 # ===----------------------------------------------------------------------=== #
@@ -101,7 +99,6 @@ fn elu[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_internal("mo.relu")
 @always_inline
 fn relu[
     type: DType, simd_width: Int
@@ -150,7 +147,6 @@ fn relu_n1[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_internal("mo.gelu")
 @always_inline
 fn gelu[
     type: DType, simd_width: Int

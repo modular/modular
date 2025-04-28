@@ -20,7 +20,6 @@ from utils.index import IndexList
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
-@register_internal("mo.static.reshape")
 @always_inline
 fn reshape[
     rank: Int,

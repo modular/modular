@@ -22,7 +22,6 @@ from utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("mo.range")
 @always_inline
 fn arange[
     type: DType, simd_width: Int

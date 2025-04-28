@@ -13,7 +13,6 @@
 
 from buffer import NDBuffer
 from memory import memcpy
-from register import register_internal
 
 from utils import IndexList
 
@@ -25,7 +24,6 @@ from utils import IndexList
 #       or less elements than the input's rank).
 
 
-@register_internal("mo.tile")
 @always_inline
 fn tile[
     rank: Int, type: DType, rank_repeats: Int, type_repeats: DType

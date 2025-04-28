@@ -644,7 +644,6 @@ fn layer_norm_cpu[
     sync_parallelize[task_func](num_workers)
 
 
-@register_internal("mo.layer_norm")
 @always_inline
 fn layer_norm[
     type: DType,
