@@ -435,6 +435,19 @@ public:
 
         attrsToAdd.push_back(NamedAttribute{
             builder.getStringAttr(kMOGGElementwiseLambda), asParam.getName()});
+
+        // If we have 13 params then we using the overload of foreach that
+        // accepts out_func as a param.
+        // Annotate it so we cane make use of it in fuse-in-out-lambdas pass.
+        if (elementwiseOp.getParamValues().size() == 13) {
+          TypedAttr elemwiseOutLambda = elementwiseOp.getParamValues()[3];
+          ParamDeclRefAttr asOutParam =
+              cast<ParamDeclRefAttr>(elemwiseOutLambda);
+          attrsToAdd.push_back(NamedAttribute{
+              builder.getStringAttr(kMOGGElementwiseOutputLambda),
+              asOutParam.getName()});
+        }
+
         kernel->setAttrs(attrsToAdd);
       }
     }
