@@ -195,13 +195,15 @@ def execute_fused_qkv_matmul[
         kv_block_device.tensor,
         cache_lengths_dev.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_seq_len,
+        0 if is_context_encoding else max_seq_len,
     )
     var kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
-        is_context_encoding,
+        max_seq_len,
+        0 if is_context_encoding else max_seq_len,
     )
     _fused_qkv_matmul_kv_cache_impl[target="gpu"](
         hidden_state_device.tensor,
