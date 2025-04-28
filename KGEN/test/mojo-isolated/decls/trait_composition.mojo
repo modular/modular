@@ -227,3 +227,33 @@ struct MyStruct(Defaultable, IntConstructable):
 
     fn __init__(out self, x: Int):
         self.x = x
+
+
+# // -----
+
+# Check that we can call parametric trait methods on types that were declared
+# with trait composition.
+
+trait Writer:
+    fn write(self):
+        ...
+
+trait Writable:
+    fn write_to[T: Writer](self, x: T):
+        ...
+
+trait Defaultable:
+    fn __init__(out self):
+        ...
+
+struct YourStruct:
+    var x: Int
+
+    fn __init__(out self):
+        self.x = 42
+
+    fn foo[W: Writable](self, x: W):
+        pass
+
+    fn do_it[W: Writable & Defaultable](self, x: W):
+        self.foo(x)  # make sure this doesn't crash
