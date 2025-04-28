@@ -181,6 +181,8 @@ public:
   /// module.
   LogicalResult resolveAllWildcardImports(ASTDecl &module);
 
+  ArrayRef<ASTDecl *> getParsedDeclList() const { return parsedDeclList; }
+
   //===--------------------------------------------------------------------===//
   // Symbol-ASTDecl Mapping
   //===--------------------------------------------------------------------===//

@@ -116,6 +116,15 @@ public:
   /// is true, any unparsed decls are removed from the module.
   MojoASTDeclRef parseFile(unsigned fileId, bool eraseUnparsedDecls = true);
 
+  /// Parse a SourceMgr file given its ID as a module. This is a specialized
+  /// variant of parseFile that does as little work as possible while still
+  /// producing a decl that is usable for the language server.
+  MojoASTDeclRef parseFileForLSP(unsigned fileId);
+
+  /// Ensures that all parsed decls have been signature-resolved. This is a
+  /// required step to ensure the IR is well-formed.
+  void ensureSignaturesResolved();
+
   /// Parse a package with the given path.
   ///
   /// In the case of success, the decl corresponding to the package is returned.
