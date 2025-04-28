@@ -32,22 +32,8 @@ modular_py_binary(
     deps = ["_core.stubfile_generator_library"],
 )
 
-stubfiles = ["stubfiles/_core.pyi"] + [
-    "stubfiles/" + dir + "/__init__.pyi"
-    for dir in (
-        "profiler",
-        "graph",
-        "engine",
-        "dtype",
-        "driver",
-        "dialects",
-        "dialects/builtin",
-        "dialects/kgen",
-        "dialects/m",
-        "dialects/mo",
-        "dialects/mosh",
-    )
-]
+# Strip "_core/"
+stubfiles = [file[6:] for file in glob(["**/*.pyi"])]
 
 modular_genrule(
     name = "_core.stubfiles",
@@ -57,14 +43,14 @@ modular_genrule(
         # To ensure our linting + formatting aligns with the rest of our project
         "//:pyproject.toml",
     ],
-    outs = stubfiles,
+    outs = [("stubfiles/" + file) for file in stubfiles],
     cmd = """
     set -e
     # When profiling is enabled, it replaces the bound methods entirely, which causes weird things to
     # happen with the stubfiles. Avoid the issue entirely by just forcing it off when generating.
     export MODULAR_ENABLE_PROFILING=OFF
 
-    export folder=$(dirname $(location stubfiles/_core.pyi))
+    export folder=$(dirname $(location stubfiles/dtype.pyi))
     $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
 
     # Add copyright headers
@@ -84,6 +70,14 @@ modular_genrule(
     # Lint and format the files
     BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --quiet
     BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --quiet
+
+    # Fix file names
+    # foo/__init__.pyi -> foo.pyi
+    for file in $(find $folder -name __init__.pyi); do
+        mv $file $(dirname $file).pyi
+    done
+    mv $folder/_core.pyi $folder/__init__.pyi
+    mv $folder/dialects.pyi $folder/dialects/__init__.pyi
     """.format(
         ruff = "//utils/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
@@ -112,41 +106,23 @@ modular_python_binding_py_library(
 # We commit the changes for a few reasons:
 # 1. It is easier to see when they change
 # 2. For other tooling that uses them, such as docs or (perhaps in the future) copybara.
-# We can also select which ones to commit, if some of the generated ones are not to our
-# liking, since we don't directly depend on any of the generated ones.
 
 # Can run `./utils/sync-stubfiles.py` to sync the committed ones to the generated ones.
 [
     diff_test(
-        name = name + ".diff_test",
-        file1 = "//SDK/lib/API/python/max:stubfiles/{}/__init__.pyi".format(name),
-        file2 = "_core/{}.pyi".format(name),
+        name = file + ".diff_test",
+        failure_message = """
+        {} is out of sync with its generated counterpart.
+        If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
+        When you modify a .cpp file in the _core/src directory, you can run
+        `./utils/sync-stubfiles.py` and commit the results.
+        """.format(file),
+        file1 = "//SDK/lib/API/python/max:stubfiles/{}".format(file),
+        file2 = "_core/{}".format(file),
+        tags = ["stubfiles"],
     )
-    for name in (
-        "driver",
-        "dtype",
-        "graph",
-        "engine",
-        "profiler",
-        "dialects/builtin",
-        "dialects/kgen",
-        "dialects/m",
-        "dialects/mo",
-        "dialects/mosh",
-    )
+    for file in stubfiles
 ]
-
-diff_test(
-    name = "._core.dialects.diff_test",
-    file1 = "//SDK/lib/API/python/max:stubfiles/dialects/__init__.pyi",
-    file2 = "_core/dialects/__init__.pyi",
-)
-
-diff_test(
-    name = "_core.diff_test",
-    file1 = "//SDK/lib/API/python/max:stubfiles/_core.pyi",
-    file2 = "_core/__init__.pyi",
-)
 
 modular_py_library(
     name = "max",
