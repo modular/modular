@@ -298,7 +298,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
     @always_inline
     fn _get_function[
         result_type: AnyTrivialRegType
-    ](self, *, cstr_name: UnsafePointer[c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[c_char, **_]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -337,7 +337,9 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[Int8]) -> UnsafePointer[result_type]:
+    ](self, *, cstr_name: UnsafePointer[Int8, **_]) -> UnsafePointer[
+        result_type
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
