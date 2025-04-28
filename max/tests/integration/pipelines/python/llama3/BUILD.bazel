@@ -141,38 +141,3 @@ modular_py_test(
         requirement("setuptools"),
     ],
 )
-
-# TODO: Integrate this into the existing test suite. We might want to refactor
-# the test suite to mirror the structure of newer suites, like Gemma3.
-modular_py_test(
-    name = "rms_norm_test_gpu",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_rms_norm_gpu.py",
-    ],
-    data = [
-        "//ModularFramework/tools/max",
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
-    ],
-    env = {
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "no-sandbox",
-    ],
-    deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//Support/python:support",
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-    ],
-)
