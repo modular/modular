@@ -1651,7 +1651,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (ASTDecl *parent = fnDecl->tryGetMethodParentDecl()) {
       // The parent decl must be fully resolved in order to resolve any of its
       // members.
-      assert(parent->resolvedness == DeclResolvedness::fully);
+      assert(parent->resolvedness == DeclResolvedness::body);
       selfType = parent->getTypeDeclSelf();
     }
   }
@@ -1812,7 +1812,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
       parent && isa<StructDeclOp, TraitDeclOp>(*parent)) {
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
-    assert(parent->resolvedness == DeclResolvedness::fully);
+    assert(parent->resolvedness == DeclResolvedness::body);
     selfType = parent->getTypeDeclSelf();
   }
 

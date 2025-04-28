@@ -172,7 +172,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   TraitDeclOp traitDeclOp = cast<TraitDeclOp>(traitDecl);
 
   // Make sure to fully resolve the trait first.
-  if (failed(shared.declResolver->resolveFully(traitDecl, structDecl.getLoc())))
+  if (failed(shared.declResolver->resolveBody(traitDecl, structDecl.getLoc())))
     return failure();
 
   if (traitDeclOp.isRegisterPassable() && !regPassable) {
@@ -363,7 +363,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 /// abandoned based on the client's needs.
 bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
                                        std::optional<InflightDiag> &diag) {
-  if (failed(shared.declResolver->resolveFully(*this, getLoc())))
+  if (failed(shared.declResolver->resolveBody(*this, getLoc())))
     return false; // Error emitted.
 
   // Collect all the symbols that the type explicitly provides.

@@ -950,7 +950,7 @@ static LIT::ASTDecl *lookupSingleMember(LIT::ASTDecl &decl, StringAttr name) {
   // Mark the decl as fully resolved so we can look up into it.  This is pretty
   // unfortunate, should we resolve the decl instead?
   auto oldResolvedness = decl.resolvedness;
-  decl.resolvedness = LIT::DeclResolvedness::fully;
+  decl.resolvedness = LIT::DeclResolvedness::body;
 
   ArrayRef<LIT::ASTDecl *> existingDecls = decl.lookupInCurrentScope(name);
   decl.resolvedness = oldResolvedness;

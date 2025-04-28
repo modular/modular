@@ -245,7 +245,7 @@ MojoASTDeclRef MojoParserContext::parseFileOrPackageNonRecursive(
     return nullptr;
 
   // Resolve just the top-level decl.
-  (void)impl->sharedState.declResolver->resolveFully(*moduleDecl, SMLoc());
+  (void)impl->sharedState.declResolver->resolveBody(*moduleDecl, SMLoc());
   return MojoASTDeclRef(moduleDecl);
 }
 
@@ -274,7 +274,7 @@ MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
       }
     }
 
-    (void)impl->sharedState.declResolver->resolveFully(*decl, SMLoc());
+    (void)impl->sharedState.declResolver->resolveBody(*decl, SMLoc());
     for (auto &[_, decls] : decl->getDeclsInScope()) {
       for (ASTDecl *childDecl : decls) {
         if (childDecl->getParentDecl() == decl) {

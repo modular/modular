@@ -88,7 +88,7 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             ASTDecl *parentDecl) {
   auto &decl =
       addDecl(declVal, loc, name, parentDecl, LexerCursor(), LexerCursor(), 0);
-  decl.resolvedness = DeclResolvedness::fully;
+  decl.resolvedness = DeclResolvedness::body;
   return decl;
 }
 
@@ -302,7 +302,7 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         importOp.getDeclNameAttr() == declNameInModule) {
       // Mark the placeholder imports as being resolved.
       for (ASTDecl *decl : entries)
-        decl->resolvedness = DeclResolvedness::fully;
+        decl->resolvedness = DeclResolvedness::body;
       entries = TinyPtrVector<ASTDecl *>(decls);
     }
     return success();
@@ -417,7 +417,7 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
 
   // Make sure the module has been resolved.
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
-  if (failed(resolveFully(module, loc)))
+  if (failed(resolveBody(module, loc)))
     return failure();
 
   // Resolve pending wildcard imports in this module.
@@ -522,13 +522,13 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Never regress resolvedness. In the case of non inlined nested functions,
     // the body is fully resolved when the signature is resolved in order
     // to identify the value of 'capturing'
-    if (decl.resolvedness != DeclResolvedness::fully)
+    if (decl.resolvedness != DeclResolvedness::body)
       decl.resolvedness = DeclResolvedness::signature;
   }
 
   // If the declaration hasn't been fully parsed and we need to, do so.
-  if (decl.resolvedness < DeclResolvedness::fully &&
-      howResolved == DeclResolvedness::fully) {
+  if (decl.resolvedness < DeclResolvedness::body &&
+      howResolved == DeclResolvedness::body) {
     auto checkEndOfBodyCursor = [&](Lexer &lexer) {
       // If the final parse of the declaration didn't match the initial
       // parse, report an error about unrecognized tokens at end of
@@ -554,7 +554,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // Mark the body as already resolved so that name lookup can be performed
     // in the decl during resolution.
-    decl.resolvedness = DeclResolvedness::fully;
+    decl.resolvedness = DeclResolvedness::body;
 
     // If the decl is already erroneous, trying to process further may crash or
     // cause spurious error messages.
@@ -616,7 +616,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     worklist.pop_back();
 
     // Resolve the decl.
-    (void)resolveFully(*declIt, declIt->getLoc());
+    (void)resolveBody(*declIt, declIt->getLoc());
 
     // When validating doc strings, we wish to only validate those defined on
     // decl in the main container. As this point the main container decl has
@@ -629,7 +629,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     if (isa<PackageOp>(*declIt)) {
       for (auto &[_, decls] : declIt->getDeclsInScope())
         if (isa<UnresolvedImportOp>(*decls.front()))
-          (void)resolveFully(*decls.front(), declIt->getLoc());
+          (void)resolveBody(*decls.front(), declIt->getLoc());
     }
 
     // Traverse the children. We don't resolve alias children, these will be
@@ -663,7 +663,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
         }
       }
 
-      (void)resolveFully(decl, decl.getLoc());
+      (void)resolveBody(decl, decl.getLoc());
     }
 
     // After resolving the newly parsed decls, make sure we resolve any
@@ -675,7 +675,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
         // Fully resolve this decl if it was only midway resolved during normal
         // parsing resolution.
         if (decl->resolvedness == DeclResolvedness::signature) {
-          (void)resolveFully(*decl, decl->getLoc());
+          (void)resolveBody(*decl, decl->getLoc());
           resolvedAnything = true;
         }
       }
@@ -842,7 +842,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
       return nullptr;
     }
     ASTDecl *decl = result.getIfSuccess().front();
-    if (failed(resolveFully(*decl, decl->getLoc())))
+    if (failed(resolveBody(*decl, decl->getLoc())))
       return nullptr;
     return result.getIfSuccess().front();
   };

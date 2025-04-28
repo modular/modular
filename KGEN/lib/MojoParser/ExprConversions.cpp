@@ -1293,7 +1293,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Synthesize the vtable required for the trait from the struct. Make sure the
   // trait body is fully resolved so we know what the methods are.
   ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
-  if (failed(getDeclResolver().resolveFully(*traitDecl, value.expr->getLoc())))
+  if (failed(getDeclResolver().resolveBody(*traitDecl, value.expr->getLoc())))
     return {};
 
   ArrayRef<ParamDeclAttr> structParamDecls;
@@ -1479,7 +1479,7 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                                      TraitType trait) {
   ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
   // Make sure the body of the trait is resolved.
-  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
+  if (failed(shared.declResolver->resolveBody(traitDecl, loc)))
     return false; // an error was emitted
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
@@ -1518,7 +1518,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   SMLoc loc = value.expr->getLoc();
   ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
   // Make sure the body of the trait is resolved.
-  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
+  if (failed(shared.declResolver->resolveBody(traitDecl, loc)))
     return {};
 
   // Use a special wrapper decl in the builtins as stubs.

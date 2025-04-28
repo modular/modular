@@ -48,7 +48,7 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
 }
 
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
-  assert(resolvedness == DeclResolvedness::fully &&
+  assert(resolvedness == DeclResolvedness::body &&
          "cannot perform lookup in a decl that isn't fully resolved");
   if (!declsInScope)
     return {};
