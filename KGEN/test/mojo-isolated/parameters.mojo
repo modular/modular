@@ -521,11 +521,13 @@ fn nonmaterializable_arg(x: IntLiteral) -> ConvertFromIntLiteral:
 
 # CHECK-LABEL: lit.fn @"parameter_memoryonly_call
 fn parameter_memoryonly_call():
-    # CHECK: [[CST:%.*]] = kgen.param.materialize: !ConvertFromIntLiteral = <apply_result_slot({{.*}}@ConvertFromIntLiteral::@"__init__
-    # CHECK-NEXT: store [[CST]], %x
+    # CHECK-NEXT: %x = lit.var.decl "x"
+    # CHECK-NEXT: [[TWO:%.*]] = kgen.param.constant: {{.*}}@IntLiteral<:!pop.int_literal 2>
+    # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}ConvertFromIntLiteral::@"__init__{{.*}}([[TWO]], %x)
     var x: ConvertFromIntLiteral = 2
-    # CHECK: [[CST:%.*]] = kgen.param.materialize: !ConvertFromIntLiteral = <apply_result_slot({{.*}}@"nonmaterializable_arg
-    # CHECK-NEXT: store [[CST]], %y
+    # CHECK-NEXT: %y = lit.var.decl "y"
+    # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}@IntLiteral<:!pop.int_literal 4>
+    # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}nonmaterializable_arg{{.*}}([[FOUR]], %y)
     var y = nonmaterializable_arg(4)
 
 
@@ -540,7 +542,17 @@ fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
     var wrapper : IntBoxParam[res]
     takeIntBoxParam[res](wrapper)
 
+# https://github.com/modular/max/issues/4362 + MOCO-187
+# Function call with IntLiteral incorrectly eliminated despite side-effects
+fn take_nonmat(x: IntLiteral):
+    _ = x
 
+# CHECK-LABEL: lit.fn @"call_take_nonmat
+fn call_take_nonmat():
+  alias a = 1
+  # CHECK: lit.call {{.*}}take_nonmat
+  take_nonmat(a)
+    
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
 ##===----------------------------------------------------------------------===##

@@ -70,8 +70,12 @@ fn metatypes():
 
     # COM: Test inferring from a non-materializable type.
     alias nm_alias = NMType()
-    # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply({{.*}}@Thing::@"__init__
-    # CHECK: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:type !Thing>([[MVAL]])
+    # CHECK: [[DNMVAL:%.*]] = lit.var.decl "anonymous*"
+    # CHECK-NEXT: [[NMVAL:%.*]] = kgen.param.materialize: !NMType = <apply(:!lit.generator<() -> !NMType> @metatypes::@NMType::@"__init__()")>
+    # CHECK-NEXT: lit.ref.store [[NMVAL]], [[DNMVAL]]
+    # CHECK-NEXT: [[IMMUT:%.*]] = lit.ref.immut [[DNMVAL]]
+    # CHECK-NEXT: [[MVAL:%.*]] = lit.call {{.*}}@Thing::@"__init__{{.*}}([[IMMUT]])
+    # CHECK-NEXT: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:type !Thing>([[MVAL]])
     anytype_arg(nm_alias)
 
 

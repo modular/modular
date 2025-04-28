@@ -738,8 +738,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {
     ASTDecl *traitDecl = shared.lookupBuiltinTrait(
         traitName, structDecl.getParentDecl(), structDecl.getLoc());
-    assert(traitDecl && "Unable to resolve builtin trait");
-    addTraitParent(declOp, traitDecl);
+    if (traitDecl) // Don't crash if the builtin trait is not found.
+      addTraitParent(declOp, traitDecl);
   };
 
   FnOp copyFunc;

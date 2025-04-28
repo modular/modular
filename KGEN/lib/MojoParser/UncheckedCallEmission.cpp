@@ -1445,10 +1445,10 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   }
 }
 
-/// When emitting a call where any of the arguments are nonmaterializable, we
-/// know the type lacks a runtime representation and that it must be
-/// interpretable. If all other arguments are PValues, we can safely emit the
-/// call in a parameter context.
+/// When emitting a call where all of the arguments are PValues, and the callee
+/// is @always_inline("builtin"), we can safely emit the call in a parameter
+/// context.  We know it doesn't have side effects because of the checks that
+/// @always_inline("builtin") performs.
 static bool shouldEmitParameterCall(RValue callee,
                                     ArrayRef<ASTExprAnd<AnyValue>> argValues,
                                     SharedState &shared) {
@@ -1471,18 +1471,7 @@ static bool shouldEmitParameterCall(RValue callee,
         return true;
     }
   }
-
-  // Otherwise, if this involves any non-materializable operations, keep in in
-  // the parameter domain.
-  // TODO: Why aren't we aggressively folding towards pvalues?  We would lose
-  // some location info (which seems fixable) but this would keep things
-  // consistent and canonical.  This seems arbitrary.
-  auto isNonMaterializable = [&](ASTExprAnd<AnyValue> arg) {
-    return arg.ir.getIfPValue().getType().getNonmaterializableTarget(shared);
-  };
-  return (llvm::any_of(argValues, isNonMaterializable) ||
-          ASTType(calleeSig.getUserResultType())
-              .getNonmaterializableTarget(shared));
+  return false;
 }
 
 /// Compute the union of all references origins in a set of function call
