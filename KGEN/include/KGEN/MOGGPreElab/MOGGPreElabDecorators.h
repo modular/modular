@@ -175,6 +175,8 @@ static constexpr StringLiteral kMOGGBufferArgs = "mogg.buffer_args";
 static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";
 static constexpr StringLiteral kMOGGOutputLambdas = "_out_lambdas";
 static constexpr StringLiteral kMOGGElementwiseLambda = "_elementwise_lambda";
+static constexpr StringLiteral kMOGGElementwiseOutputLambda =
+    "_elementwise_output_lambda";
 
 // Mark a function as the outlined body of an elementwise kernel.
 // During InlineLambdas those functions can be CSE.
