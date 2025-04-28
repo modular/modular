@@ -59,7 +59,7 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
-        "multi-gpu",
+        "gpu",
     ],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",

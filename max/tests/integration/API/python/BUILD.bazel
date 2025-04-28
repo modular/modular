@@ -106,8 +106,8 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
-    gpu_constraints = ["//:has_multi_gpu"],
-    tags = ["multi-gpu"],
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
@@ -131,9 +131,9 @@ modular_run_binary_test(
     env = {
         "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
     },
-    gpu_constraints = ["//:has_multi_gpu"],
+    gpu_constraints = ["//:has_4_gpus"],
     tags = [
-        "multi-gpu",
+        "gpu",
         "no-sandbox",
     ],
 )
