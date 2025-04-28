@@ -260,6 +260,11 @@ public:
                 const mlir::lsp::Position &pos, StringRef newName,
                 LSPResponder<mlir::lsp::WorkspaceEdit> responder);
 
+  //===--------------------------------------------------------------------===//
+  // Debugging methods
+
+  void dumpParsedIR();
+
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn,

@@ -146,6 +146,11 @@ public:
   void onRename(const mlir::lsp::RenameParams &params,
                 LSPResponder<mlir::lsp::WorkspaceEdit> responder);
 
+  /// Dump the parsed MLIR to a file for inspection.
+  ///
+  /// This is only available in debug builds.
+  void dumpParsedIR(const mlir::lsp::TextDocumentIdentifier &params);
+
 private:
   MojoServer(std::unique_ptr<Impl> &&);
   std::unique_ptr<Impl> impl;

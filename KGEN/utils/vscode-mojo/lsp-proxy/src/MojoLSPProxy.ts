@@ -308,6 +308,11 @@ export class MojoLSPProxy {
         this.docsStateHandler.onDidChangeNotebookDocument(params, this.server!);
       },
     );
+
+    this.client.onNotification('mojo/emitParsedIR', (params) => {
+      this.client.console.log(JSON.stringify(params));
+      this.server!.sendNotification(params, 'mojo/emitParsedIR');
+    });
   }
 
   /**

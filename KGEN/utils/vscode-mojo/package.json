@@ -193,6 +193,11 @@
       },
       {
         "category": "Mojo",
+        "command": "mojo.lsp.dumpParsedIR",
+        "title": "Dump document MLIR"
+      },
+      {
+        "category": "Mojo",
         "command": "mojo.extension.restart",
         "title": "Restart the Extension"
       },
