@@ -15,21 +15,29 @@ from buffer import Dim, DimList, NDBuffer
 from layout import Layout, LayoutTensor
 from memory import UnsafePointer
 
-from utils import IndexList
+from utils import Index, IndexList
 
 
 @parameter
-fn _strides_from_shape[rank: Int](shape: DimList) -> DimList:
+fn _strides_from_shape[shape: DimList, *, skip: Int = 0]() -> DimList:
+    alias rank = len(shape)
     var strides = List[Dim](length=rank, fill=Dim())
     var stride = Dim(1)
 
+    # Skip over dimensions that are not contiguous. This occurs when computing the
+    # strides for a buffer slice where some intermediate dimensions needed to
+    # compute the full stride are not available. In the current use case, one of
+    # these dimensions is `num_layers` and this is not a statically known value at
+    # this time.
     @parameter
-    for i in reversed(range(rank)):
+    for i in reversed(range(skip, rank)):
         strides[i] = stride
         stride *= shape.at[i]()
 
     @parameter
-    if rank == 6:
+    if rank == 4:
+        return DimList(strides[0], strides[1], strides[2], strides[3])
+    elif rank == 6:
         return DimList(
             strides[0],
             strides[1],
@@ -41,6 +49,34 @@ fn _strides_from_shape[rank: Int](shape: DimList) -> DimList:
     else:
         constrained[False, "Extend to support additional ranks."]()
         return DimList.create_unknown[rank]()
+
+
+@always_inline
+fn _compute_kv_cache_dynamic_shape_strides[
+    type: DType, rank: Int, //, kv_cache_rank: Int, drop_list: Tuple
+](blocks: NDBuffer[type, rank, **_]) -> (
+    IndexList[kv_cache_rank],
+    IndexList[kv_cache_rank],
+):
+    var kv_cache_shape = IndexList[kv_cache_rank]()
+    var kv_cache_strides = IndexList[kv_cache_rank]()
+    var out_index = kv_cache_rank - 1
+    var stride = 1
+
+    @parameter
+    for i in reversed(range(rank)):
+        var dim = blocks.dim[i]()
+
+        # Skip dimensions in the drop list (kv_idx and layer_idx).
+        @parameter
+        if i not in drop_list:
+            kv_cache_shape[out_index] = dim
+            kv_cache_strides[out_index] = stride
+            out_index = out_index - 1
+
+        stride *= dim
+
+    return (kv_cache_shape, kv_cache_strides)
 
 
 @value
@@ -71,12 +107,6 @@ trait KVCacheT(CollectionElement):
 
     alias type: DType
     alias kv_params: KVCacheStaticParams
-
-    @staticmethod
-    fn id() -> String:
-        """Returns a string id describing the type, this is used when defining
-        mo.opaque symbols."""
-        ...
 
     fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
         """Returns the cache lengths as a NDBuffer."""
@@ -158,25 +188,19 @@ struct ContinuousBatchingKVCache[
     THIS IS THE TYPE THAT IS PASSED TO KV PROJECTION AND FLASH ATTENTION KERNELS.
     """
 
-    alias KeyIdx = 0
-    alias ValueIdx = 1
-
     alias type = type_
     alias kv_params = kv_params_
 
-    # shape is
-    # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
+    # Shape is [num_blocks, max_seq_len, num_heads, head_size].
     alias blocks_shape = DimList(
-        Dim(),
-        Dim(),
         Dim(),
         Dim(),
         Dim(Int(Self.kv_params.num_heads)),
         Dim(Int(Self.kv_params.head_size)),
     )
-    alias blocks_stride = _strides_from_shape[6](Self.blocks_shape)
+    alias blocks_stride = _strides_from_shape[Self.blocks_shape, skip=1]()
     alias blocks_type = NDBuffer[
-        Self.type, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+        Self.type, 4, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
     ]
 
     var blocks: Self.blocks_type
@@ -191,14 +215,11 @@ struct ContinuousBatchingKVCache[
     # This is effectively:
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
-    var batch_size: Int
-    var layer_idx: Int
-    var kv_idx: Int
 
     @always_inline
     fn _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
-    ) -> IndexList[6]:
+    ) -> IndexList[4]:
         debug_assert(
             head_idx < Self.kv_params.num_heads, "KVCache head_idx out of range"
         )
@@ -207,17 +228,10 @@ struct ContinuousBatchingKVCache[
             "KVCache head_dim_idx is out of range",
         )
         debug_assert(
-            tok_idx < self.blocks.dim[3](),
+            tok_idx < self.blocks.dim[1](),
             "KVCache tok_idx out of range",
         )
-        return IndexList[6](
-            block_idx,
-            self.kv_idx,
-            self.layer_idx,
-            tok_idx,
-            head_idx,
-            head_dim_idx,
-        )
+        return Index(block_idx, tok_idx, head_idx, head_dim_idx)
 
     @staticmethod
     fn max_tile_size() -> Int:
@@ -226,35 +240,30 @@ struct ContinuousBatchingKVCache[
 
     fn __init__(
         out self,
-        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        blocks: Self.blocks_type,
         cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
-        layer_idx: Int,
-        kv_idx: Int,
     ):
         debug_assert(
-            blocks.dim[4]() == Int(Self.kv_params.num_heads),
-            "blocks.dim[4]() must be equal to kv_params.num_heads",
+            blocks.dim[2]() == Int(Self.kv_params.num_heads),
+            "blocks.dim[2]() must be equal to kv_params.num_heads",
         )
         debug_assert(
-            blocks.dim[5]() == Int(Self.kv_params.head_size),
-            "blocks.dim[5]() must be equal to kv_params.head_size",
+            blocks.dim[3]() == Int(Self.kv_params.head_size),
+            "blocks.dim[3]() must be equal to kv_params.head_size",
         )
 
-        self.blocks = rebind[Self.blocks_type](blocks)
+        self.blocks = blocks
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
-        self.batch_size = cache_lengths.dim[0]()
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
-        self.layer_idx = layer_idx
-        self.kv_idx = kv_idx
 
-    @staticmethod
-    fn id() -> String:
-        return "KVCacheRegisterPassable"
+    @always_inline
+    fn _batch_size(self) -> Int:
+        return self.cache_lengths.dim[0]()
 
     @always_inline
     fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
@@ -263,7 +272,7 @@ struct ContinuousBatchingKVCache[
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
         debug_assert(
-            batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
+            batch_idx < self._batch_size(), "KVCache batch_idx is out of bounds"
         )
         return Int(self.cache_lengths[batch_idx][0])
 
@@ -274,7 +283,7 @@ struct ContinuousBatchingKVCache[
         Self.type, width
     ]:
         debug_assert(
-            bs < self.batch_size,
+            bs < self._batch_size(),
             "KVCache::load batch_size out of range",
         )
 
@@ -294,7 +303,7 @@ struct ContinuousBatchingKVCache[
         val: SIMD[Self.type, *_],
     ):
         debug_assert(
-            bs < self.batch_size,
+            bs < self._batch_size(),
             "KVCache::store batch_size out of range",
         )
         var block_idx = self.lookup_table[bs]
@@ -302,12 +311,6 @@ struct ContinuousBatchingKVCache[
             Int(block_idx), head_idx, tok_idx, head_dim_idx
         )
         self.blocks.store(idx, val)
-
-    fn incr_cache_length(mut self, batch_idx: Int, inc: Int):
-        debug_assert(
-            batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
-        )
-        self.cache_lengths[batch_idx] += inc
 
     fn empty_cache(self) -> Bool:
         """Returns true if the cache_lengths for all requests is 0,
@@ -356,23 +359,16 @@ struct PagedKVCache[
     alias type = type_
     alias kv_params = kv_params_
 
-    alias KeyIdx = 0
-    alias ValueIdx = 1
-
-    """The entire region of memory for KVCache blocks with shape:
-    [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
-    """
+    # Shape is [total_num_blocks, page_size, num_heads, head_size].
     alias blocks_shape = DimList(
-        Dim(),
-        Dim(),
         Dim(),
         Dim(page_size),
         Dim(Int(Self.kv_params.num_heads)),
         Dim(Int(Self.kv_params.head_size)),
     )
-    alias blocks_stride = _strides_from_shape[6](Self.blocks_shape)
+    alias blocks_stride = _strides_from_shape[Self.blocks_shape, skip=1]()
     alias blocks_type = NDBuffer[
-        Self.type, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+        Self.type, 4, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
     ]
 
     var blocks: Self.blocks_type
@@ -387,50 +383,38 @@ struct PagedKVCache[
     # This is effectively:
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
-    var layer_idx: Int
-    var kv_idx: Int
 
     fn __init__(
         out self,
-        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
+        blocks: Self.blocks_type,
         cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
-        layer_idx: Int,
-        kv_idx: Int,
     ):
         debug_assert(
-            blocks.dim[3]() == page_size,
-            "blocks.dim[3]() must be equal to page_size",
+            blocks.dim[1]() == page_size,
+            "blocks.dim[1]() must be equal to page_size",
         )
         debug_assert(
-            blocks.dim[4]() == Int(Self.kv_params.num_heads),
-            "blocks.dim[4]() must be equal to kv_params.num_heads",
+            blocks.dim[2]() == Int(Self.kv_params.num_heads),
+            "blocks.dim[2]() must be equal to kv_params.num_heads",
         )
         debug_assert(
-            blocks.dim[5]() == Int(Self.kv_params.head_size),
-            "blocks.dim[5]() must be equal to kv_params.head_size",
+            blocks.dim[3]() == Int(Self.kv_params.head_size),
+            "blocks.dim[3]() must be equal to kv_params.head_size",
         )
 
-        self.blocks = rebind[Self.blocks_type](blocks)
+        self.blocks = blocks
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
-        self.layer_idx = layer_idx
-        self.kv_idx = kv_idx
 
     @staticmethod
     fn max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
         return page_size
-
-    @staticmethod
-    fn id() -> String:
-        """Returns a string id describing the type, this is used when defining
-        mo.opaque symbols."""
-        return String("PagedKVCache+", Self.type)
 
     @always_inline
     fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
@@ -443,7 +427,7 @@ struct PagedKVCache[
     @always_inline
     fn _get_idx(
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
-    ) -> IndexList[6]:
+    ) -> IndexList[4]:
         debug_assert(
             head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
@@ -458,7 +442,7 @@ struct PagedKVCache[
         lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         debug_assert(
-            tok_in_block_idx < self.blocks.dim[3](),
+            tok_in_block_idx < self.blocks.dim[1](),
             "KVCache tok_idx out of range",
         )
 
@@ -471,14 +455,7 @@ struct PagedKVCache[
             self.page_size,
         )
         block_idx = Int(self.lookup_table[bs, lut_block_index])
-        return IndexList[6](
-            block_idx,
-            self.kv_idx,
-            self.layer_idx,
-            tok_in_block_idx,
-            head_idx,
-            head_dim_idx,
-        )
+        return Index(block_idx, tok_in_block_idx, head_idx, head_dim_idx)
 
     @always_inline
     fn load[
@@ -613,12 +590,6 @@ struct PagedKVCacheFA3Fallback[
         """Returns the maximum tile size for the KVCache."""
         return page_size
 
-    @staticmethod
-    fn id() -> String:
-        """Returns a string id describing the type, this is used when defining
-        mo.opaque symbols."""
-        return String("PagedKVCache+", Self.type)
-
     @always_inline
     fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
         return rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
@@ -735,10 +706,6 @@ trait KVCollectionT(CollectionElement):
     alias type: DType
     alias kv_params: KVCacheStaticParams
 
-    @staticmethod
-    fn id() -> String:
-        ...
-
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         ...
 
@@ -765,13 +732,27 @@ struct ContinuousBatchingKVCacheCollection[
     alias kv_params = kv_params_
     alias CacheType = ContinuousBatchingKVCache[Self.type, Self.kv_params]
 
+    # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
+    alias blocks_shape = DimList(
+        Dim(),
+        Dim(),
+        Dim(),
+        Dim(),
+        Dim(Int(Self.kv_params.num_heads)),
+        Dim(Int(Self.kv_params.head_size)),
+    )
+    alias blocks_stride = _strides_from_shape[Self.blocks_shape]()
+    alias blocks_type = NDBuffer[
+        Self.type, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    ]
+
     var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    var blocks: Self.CacheType.blocks_type
+    var blocks: Self.blocks_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
-    var num_layers: Int
-    var batch_size: Int
+    var kv_cache_dynamic_shape: IndexList[4]
+    var kv_cache_dynamic_strides: IndexList[4]
 
     fn __init__(
         out self,
@@ -781,46 +762,32 @@ struct ContinuousBatchingKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        self.blocks = rebind[self.CacheType.blocks_type](blocks)
+        self.blocks = rebind[self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
-        self.num_layers = blocks.dim[2]()
-        self.batch_size = cache_lengths.dim[0]()
-
-    fn __init__(
-        out self,
-        blocks: NDBuffer[Self.type, 6, MutableAnyOrigin],
-        cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        is_cache_empty: Bool,
-    ):
-        self.blocks = rebind[self.CacheType.blocks_type](blocks)
-        self.cache_lengths = cache_lengths
-        self.lookup_table = lookup_table
-        self.max_seq_length = blocks.dim[3]()
-        self.max_cache_length = 0 if is_cache_empty else self.max_seq_length
-        self.num_layers = blocks.dim[2]()
-        self.batch_size = cache_lengths.dim[0]()
+        self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
+            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
+        )
 
     fn __moveinit__(out self, owned other: Self):
         self.blocks = other.blocks
         self.cache_lengths = other.cache_lengths
         self.lookup_table = other.lookup_table
-        self.num_layers = other.num_layers
-        self.batch_size = other.batch_size
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
+        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
+        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
 
     fn __copyinit__(out self, other: Self):
         self.blocks = other.blocks
         self.cache_lengths = other.cache_lengths
         self.lookup_table = other.lookup_table
-        self.num_layers = other.num_layers
-        self.batch_size = other.batch_size
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
+        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
+        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
 
     @always_inline
     fn copy(self) -> Self:
@@ -831,30 +798,28 @@ struct ContinuousBatchingKVCacheCollection[
         """
         return self
 
-    @staticmethod
-    fn id() -> String:
-        return "KVCacheCollection"
-
+    @always_inline
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
-        return self.CacheType(
-            self.blocks,
-            self.cache_lengths,
-            self.lookup_table,
-            self.max_seq_length,
-            self.max_cache_length,
-            layer_idx,
-            Self.CacheType.KeyIdx,
-        )
+        return self._get_cache[0](layer_idx)
 
+    @always_inline
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self._get_cache[1](layer_idx)
+
+    @always_inline
+    fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
         return self.CacheType(
-            self.blocks,
+            self.CacheType.blocks_type(
+                self.blocks._offset(
+                    IndexList[6](0, kv_idx, layer_idx, 0, 0, 0)
+                ),
+                self.kv_cache_dynamic_shape,
+                self.kv_cache_dynamic_strides,
+            ),
             self.cache_lengths,
             self.lookup_table,
             self.max_seq_length,
             self.max_cache_length,
-            layer_idx,
-            Self.CacheType.ValueIdx,
         )
 
     fn cache_length(self, bs_idx: Int) -> Int:
@@ -870,11 +835,27 @@ struct PagedKVCacheCollection[
     alias kv_params = kv_params_
     alias CacheType = PagedKVCache[Self.type, Self.kv_params, page_size]
 
-    var blocks: Self.CacheType.blocks_type
+    # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
+    alias blocks_shape = DimList(
+        Dim(),
+        Dim(),
+        Dim(),
+        Dim(page_size),
+        Dim(Int(Self.kv_params.num_heads)),
+        Dim(Int(Self.kv_params.head_size)),
+    )
+    alias blocks_stride = _strides_from_shape[Self.blocks_shape]()
+    alias blocks_type = NDBuffer[
+        Self.type, 6, MutableAnyOrigin, Self.blocks_shape, Self.blocks_stride
+    ]
+
+    var blocks: Self.blocks_type
     var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
     var max_seq_length: UInt32
     var max_cache_length: UInt32
+    var kv_cache_dynamic_shape: IndexList[4]
+    var kv_cache_dynamic_strides: IndexList[4]
 
     fn __init__(
         out self,
@@ -884,11 +865,14 @@ struct PagedKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        self.blocks = rebind[Self.CacheType.blocks_type](blocks)
+        self.blocks = rebind[Self.blocks_type](blocks)
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
+        self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
+            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
+        )
 
     fn __copyinit__(out self, other: Self):
         self.blocks = other.blocks
@@ -896,6 +880,8 @@ struct PagedKVCacheCollection[
         self.lookup_table = other.lookup_table
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
+        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
+        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
 
     @always_inline
     fn copy(self) -> Self:
@@ -912,31 +898,31 @@ struct PagedKVCacheCollection[
         self.lookup_table = other.lookup_table
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
+        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
+        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
 
-    @staticmethod
-    fn id() -> String:
-        return String("PagedKVCacheCollection+", Self.type)
-
+    @always_inline
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
-        return self.CacheType(
-            self.blocks,
-            self.cache_lengths,
-            self.lookup_table,
-            self.max_seq_length,
-            self.max_cache_length,
-            layer_idx,
-            Self.CacheType.KeyIdx,
-        )
+        return self._get_cache[0](layer_idx)
 
+    @always_inline
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self._get_cache[1](layer_idx)
+
+    @always_inline
+    fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
         return self.CacheType(
-            self.blocks,
+            Self.CacheType.blocks_type(
+                self.blocks._offset(
+                    IndexList[6](0, kv_idx, layer_idx, 0, 0, 0)
+                ),
+                self.kv_cache_dynamic_shape,
+                self.kv_cache_dynamic_strides,
+            ),
             self.cache_lengths,
             self.lookup_table,
             self.max_seq_length,
             self.max_cache_length,
-            layer_idx,
-            Self.CacheType.ValueIdx,
         )
 
     fn cache_length(self, bs_idx: Int) -> Int:
@@ -996,10 +982,6 @@ struct PagedKVCacheCollectionFA3Fallback[
         self.lookup_table = other.lookup_table
         self.max_seq_length = other.max_seq_length
         self.max_cache_length = other.max_cache_length
-
-    @staticmethod
-    fn id() -> String:
-        return String("PagedKVCacheCollection+", Self.type)
 
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         return self.CacheType(
