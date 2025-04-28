@@ -67,7 +67,7 @@ be from one codepoint up to any grapheme cluster.
 
 Python currently uses UTF-32 for its string type. So the slicing and indexing
 is simple and fast (but consumes a lot of memory, they have some tricks to
-reduce it). They do not support graphemes by default. Pypi is implementing a
+reduce it). They do not support graphemes by default. Pypy is implementing a
 UTF-8 version of Python strings, which keeps the length state every x
 characters.
 
