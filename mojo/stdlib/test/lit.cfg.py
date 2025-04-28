@@ -83,14 +83,6 @@ else:
     config.substitutions.insert(0, ("%mojo-no-debug-no-assert", "mojo"))
     config.substitutions.insert(0, ("%mojo-no-debug", base_mojo_command))
 
-    # The `mojo` nightly compiler ships with its own `stdlib.mojopkg`. For the
-    # open-source stdlib, we need to specify the paths to the just-built
-    # `stdlib.mojopkg` and `test_utils.mojopkg`. Otherwise, without this, the
-    # `mojo` compiler would use its own `stdlib.mojopkg` it ships with which is not
-    # what we want. We override both the stable and nightly `mojo` import paths
-    # here to support both versions of the compiler.
-    os.environ["MODULAR_MOJO_MAX_IMPORT_PATH"] = str(build_root)
-
     # Pass through several environment variables
     # to the underlying subprocesses that run the tests.
     lit.llvm.initialize(lit_config, config)

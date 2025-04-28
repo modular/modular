@@ -46,8 +46,6 @@ config.test_source_root = Path(__file__).parent.resolve()
 # Substitute %mojo for just `mojo` itself.
 config.substitutions.insert(0, ("%mojo", "mojo"))
 
-os.environ["MODULAR_MOJO_MAX_IMPORT_PATH"] = str(build_root)
-
 # Pass through several environment variables
 # to the underlying subprocesses that run the tests.
 lit.llvm.initialize(lit_config, config)

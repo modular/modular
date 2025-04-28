@@ -49,8 +49,6 @@ else:
     # polluting the source tree.
     config.test_exec_root = (build_root / "stdlib" / "benchmarks").resolve()
 
-    os.environ["MODULAR_MOJO_MAX_IMPORT_PATH"] = str(build_root)
-
     # Pass through several environment variables
     # to the underlying subprocesses that run the tests.
     lit.llvm.initialize(lit_config, config)
