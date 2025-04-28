@@ -1064,24 +1064,22 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
     fn unsafe_ptr(
         ref self,
     ) -> UnsafePointer[
-        T,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        T, mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
     ]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
             The pointer to the underlying memory.
         """
-        return self.data
+        return self.data.origin_cast[
+            mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
+        ]()
 
     @always_inline
     fn _unsafe_next_uninit_ptr(
         ref self,
     ) -> UnsafePointer[
-        T,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        T, mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
     ]:
         """Retrieves a pointer to the next uninitialized element position.
 
@@ -1107,7 +1105,9 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             ),
         )
 
-        return self.data + self._len
+        return (self.data + self._len).origin_cast[
+            mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
+        ]()
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
