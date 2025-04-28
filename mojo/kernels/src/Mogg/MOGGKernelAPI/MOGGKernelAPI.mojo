@@ -166,6 +166,7 @@ from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from nn.rand_uniform import random_uniform
+from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
@@ -4643,6 +4644,46 @@ struct Tile:
         return tile_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(repeats),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Repeat Interleave kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("repeat_interleave")
+struct RepeatInterleave:
+    @staticmethod
+    fn execute(
+        output: OutputTensor,
+        input: InputTensor[type = output.type, rank = output.rank],
+        repeats: InputTensor[rank=1],
+        axis: Scalar,
+    ) raises:
+        constrained[
+            axis.dtype.is_integral(), "axis value must be integer type"
+        ]()
+
+        repeat_interleave(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(repeats),
+            Int(normalize_neg_index(axis, input.rank)),
+            managed_tensor_slice_to_ndbuffer(output),
+        )
+
+    @staticmethod
+    fn shape(
+        input: InputTensor, repeats: InputTensor[rank=1], axis: Scalar
+    ) raises -> IndexList[input.rank]:
+        constrained[
+            axis.dtype.is_integral(), "axis value must be integer type"
+        ]()
+
+        return repeat_interleave_shape(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(repeats),
+            Int(normalize_neg_index(axis, input.rank)),
         )
 
 
