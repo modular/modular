@@ -26,7 +26,6 @@ from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import ManagedTensorSlice
