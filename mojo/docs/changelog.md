@@ -309,5 +309,8 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 - [#4360](https://github.com/modular/max/issues/4360) - Fix constructor emission
   for parameterized types conforming to a trait composition.
 
+- [#4362](https://github.com/modular/max/issues/4362) - Function call with
+  `IntLiteral` incorrectly eliminated despite side-effects.
+
 - [#4431](https://github.com/modular/max/issues/4431) - [BUG] Python.evaluate
   doesn't handle nul termination correctly.

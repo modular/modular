@@ -551,7 +551,8 @@ struct SIMD[dtype: DType, size: Int](
         for i in range(size):
             self[i] = elems[i]
 
-    @always_inline
+    # TODO: should be "builtin" when constrained is replaced with 'requires'.
+    @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: FloatLiteral, /):
         """Initializes the SIMD vector with a float.
