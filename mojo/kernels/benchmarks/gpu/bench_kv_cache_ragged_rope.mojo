@@ -75,7 +75,6 @@ def execute_kv_cache_ragged_rope[
         IndexList[1](batch_size)
     )
     var max_prompt_length = 0
-    var is_context_encoding = False  # unused by rope
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
 
@@ -93,6 +92,8 @@ def execute_kv_cache_ragged_rope[
 
         cache_lengths_host.tensor[i] = cache_len
         total_seq_len += curr_seq_length
+
+    max_context_length = max_prompt_length + cache_len
 
     input_row_offsets_host.tensor[batch_size] = total_seq_len
     var input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
@@ -141,7 +142,8 @@ def execute_kv_cache_ragged_rope[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_context_length,
+        max_context_length,
     )
 
     var freqs_cis_table_device = DeviceNDBuffer[
