@@ -54,15 +54,13 @@ class MoE(Module):
     ):
         """
         Args:
+            devices: The devices to use to run this layer.
             hidden_dim: Hidden dimension size.
             top_k: Number of experts to route each token to.
             num_experts: Total number of experts.
             intermediate_size: Hidden dimension size for MoE intermediate layer.
             intermediate_size_mlp: Hidden dimension size for MoE MLP layer.
             dtype: Data type for weights.
-            device: The device to use to run this layer. If multiple are provided,
-                the first device is used instead. Use `DistributedMoE` to use
-                all devices.
         """
         super().__init__()
 
