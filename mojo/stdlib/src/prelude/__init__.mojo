@@ -127,7 +127,6 @@ from builtin.type_aliases import (
 from builtin.uint import UInt
 from builtin.value import (
     BoolableCollectionElement,
-    BoolableKeyElement,
     CollectionElement,
     CollectionElementNew,
     ComparableCollectionElement,

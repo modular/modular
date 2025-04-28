@@ -43,18 +43,11 @@ from memory import UnsafePointer, bitcast, memcpy
 from .optional import Optional
 
 
-trait KeyElement(CollectionElement, Hashable, EqualityComparable):
+trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
     """A trait composition for types which implement all requirements of
-    dictionary keys. Dict keys must minimally be Movable, Hashable,
+    dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
     and EqualityComparable for a hash map. Until we have references
     they must also be copyable."""
-
-    pass
-
-
-trait RepresentableKeyElement(KeyElement, Representable):
-    """A trait composition for types which implement all requirements of
-    dictionary keys and Stringable."""
 
     pass
 
@@ -690,7 +683,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     @no_inline
     fn __str__[
-        T: RepresentableKeyElement, U: CollectionElement & Representable, //
+        T: KeyElement & Representable, U: CollectionElement & Representable, //
     ](self: Dict[T, U]) -> String:
         """Returns a string representation of a `Dict`.
 
@@ -716,7 +709,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
         Parameters:
             T: The type of the keys in the Dict. Must implement the
-              traits `Representable` and `KeyElement`.
+                traits `Representable` and `KeyElement`.
             U: The type of the values in the Dict. Must implement the
                 traits `Representable` and `CollectionElement`.
 
