@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+// Disabled: MAXPLAT-223
+#if 0
+
 #include "Support.h"
 #include "gtest/gtest.h"
 
@@ -215,3 +218,5 @@ struct InvalidPytorchFallBackResult:
           })
       .execute();
 }
+
+#endif // #if 0

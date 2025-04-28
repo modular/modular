@@ -19,6 +19,7 @@
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 
 #include "AsyncRT/Runtime/Runtime.h"
@@ -217,6 +218,63 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
                                                            eraseUnparsedDecls);
 
   return MojoASTDeclRef(moduleDecl);
+}
+
+/// Resolves an unparsed decl enough for the language server to operate. We
+/// fully parse everything descended from the root decl, and leave everything
+/// else unparsed.
+static void resolveForLSP(DeclResolver &resolver, ASTDecl &decl) {
+  CompilerTimeTraceScope traceScope("resolveForLSP", [&] {
+    return decl.getNameIfOperation().value_or("").str();
+  });
+
+  // We need to resolve decls in a breadth-first style, hence why we use a queue
+  // here instead of implementing this using recursion.
+  std::deque<ASTDecl *> worklist({&decl});
+  while (!worklist.empty()) {
+    ASTDecl *declIt = worklist.back();
+    worklist.pop_back();
+
+    // Resolve the decl. We don't care if this fails - a diagnostic will be
+    // reported as well, and that's all we want.
+    (void)resolver.resolveBody(*declIt, declIt->getLoc());
+
+    // When validating doc strings, we wish to only validate those defined on
+    // decl in the main container. As this point the main container decl has
+    // been fully resolved, so it's an opportune time to validate.
+    validateDocString(*declIt);
+
+    // Traverse the children of this decl.
+    for (auto &[_, decls] : declIt->getDeclsInScope()) {
+      for (ASTDecl *decl : decls)
+        if (decl->getParentDecl() == declIt)
+          worklist.push_front(decl);
+    }
+  }
+}
+
+MojoASTDeclRef MojoParserContext::parseFileForLSP(unsigned fileId) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+
+  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
+  StringRef filepathStr = sourceBuf->getBufferIdentifier();
+  std::filesystem::path filepath(filepathStr.str());
+
+  ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
+  resolveForLSP(*impl->sharedState.declResolver, *moduleDecl);
+  ensureSignaturesResolved();
+
+  return MojoASTDeclRef(moduleDecl);
+}
+
+void MojoParserContext::ensureSignaturesResolved() {
+  DeclResolver &resolver = *impl->sharedState.declResolver;
+
+  size_t i = 0;
+  while (i != resolver.getParsedDeclList().size()) {
+    ASTDecl *parsedDecl = resolver.getParsedDeclList()[i++];
+    (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
+  }
 }
 
 MojoASTDeclRef

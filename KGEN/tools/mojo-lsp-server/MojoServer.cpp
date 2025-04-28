@@ -17,6 +17,7 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
@@ -1810,12 +1811,13 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 size_t MojoTextDocument::parseDocumentImpl() {
   KGEN::CompilerTimeTraceScope traceScope("parseTextDocument");
 
-  // Parse the file and make sure not to kill off things that weren't parsed,
-  // these may get referenced later.
-  parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID(),
-                                            /*eraseUnparsedDecls=*/false);
+  parsedDecl =
+      getParserContext().parseFileForLSP(getSourceMgr().getMainFileID());
+
   checkModuleSemantics(parsedDecl);
   processDocStrings(docStrings, parsedDecl);
+  getParserContext().ensureSignaturesResolved();
+
   return contents.length();
 }
 

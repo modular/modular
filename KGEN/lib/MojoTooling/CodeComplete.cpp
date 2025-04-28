@@ -412,7 +412,7 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
     MLIRContext *context, const KGEN::CompilationOptions &options) {
   return codeComplete(
       buffer, completionPosition, context, options,
-      [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
+      [](MojoParserContext &ctx, int fileID) { ctx.parseFileForLSP(fileID); });
 }
 
 std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
@@ -437,7 +437,7 @@ MojoParserContext::signatureHelp(llvm::MemoryBufferRef buffer,
                                  const KGEN::CompilationOptions &options) {
   return signatureHelp(
       buffer, position, context, options,
-      [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
+      [](MojoParserContext &ctx, int fileID) { ctx.parseFileForLSP(fileID); });
 }
 
 std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
