@@ -63,7 +63,7 @@ The following shows an example of the `add()` function with two inputs:
 .. code-block:: python
 
     def add_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("add_graph", input_types=(input_type, input_type)) as graph:
             x = graph.inputs[0]
@@ -133,7 +133,7 @@ and adds it to the graph, returning the symbolic result.
 .. code-block:: python
 
     def maximum_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("maximum_graph", input_types=(input_type, input_type)) as graph:
             out = ops.max(graph.inputs[0], graph.inputs[1])
@@ -170,7 +170,7 @@ and adds it to the graph, returning the symbolic result.
 .. code-block:: python
 
     def min_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("min_graph", input_types=(input_type, input_type)) as graph:
             out = ops.min(graph.inputs[0], graph.inputs[1])
@@ -291,7 +291,7 @@ and adds it to the graph, returning the symbolic result.
 .. code-block:: python
 
     def sub_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("sub_graph", input_types=(input_type, input_type)) as graph:
             x = graph.inputs[0]  # Minuend (number being subtracted from)
@@ -331,7 +331,7 @@ tensor values and adds it to the graph, returning the symbolic result.
 .. code-block:: python
 
     def equal_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(3,))
+        input_type = TensorType(dtype=DType.float32, shape=(3,), device=DeviceRef.CPU())
 
         with Graph("equal_graph", input_types=(input_type, input_type)) as graph:
             x = graph.inputs[0]  # First input
@@ -372,7 +372,7 @@ tensor values and adds it to the graph, returning the symbolic result.
 .. code-block:: python
 
     def greater_than_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("greater_graph", input_types=(input_type, input_type)) as graph:
             x = graph.inputs[0]  # Left hand side
@@ -441,7 +441,7 @@ tensor values and adds it to the graph, returning the symbolic result.
 .. code-block:: python
 
     def not_equal_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("not_equal_graph", input_types=(input_type, input_type)) as graph:
             x = graph.inputs[0]  # Left hand side
@@ -569,7 +569,7 @@ The following demonstrates how to compute the absolute value using the :obj:`abs
 .. code-block:: python
 
     def abs_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(2,))
+        input_type = TensorType(dtype=DType.float32, shape=(2,), device=DeviceRef.CPU())
 
         with Graph("abs_graph", input_types=(input_type,)) as graph:
             x = graph.inputs[0]
@@ -963,7 +963,7 @@ For example, if the model has one input tensor:
 .. code-block:: python
 
     def round_graph():
-        input_type = TensorType(dtype=DType.float32, shape=(4,))
+        input_type = TensorType(dtype=DType.float32, shape=(4,), device=DeviceRef.CPU())
 
         with Graph("round_graph_example", input_types=(input_type,)) as graph:
             x = graph.inputs[0]

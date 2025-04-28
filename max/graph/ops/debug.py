@@ -33,7 +33,7 @@ def print(value: str | TensorValue, label: str = "debug_tensor"):
     .. code-block:: python
 
         def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, Any]:
-            input_type = TensorType(dtype=DType.float32, shape=(1,))
+            input_type = TensorType(dtype=DType.float32, shape=(1,), device=DeviceRef.CPU())
             with Graph(
                 "simple_add_graph", input_types=(input_type, input_type)
             ) as graph:

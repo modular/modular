@@ -42,7 +42,7 @@ def cond(
 
             result = ops.cond(
                 pred,
-                [TensorType(DType.int32, [])],
+                [TensorType(DType.int32, [], device=device)],
                 then_fn,
                 else_fn
             )

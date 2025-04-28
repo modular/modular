@@ -14,8 +14,8 @@ from max import mlir
 from max.dtype import DType
 from max.mlir.dialects import mo
 
-from ..graph import Graph
-from ..type import DeviceRef, TensorType
+from ..graph import DeviceRef, Graph
+from ..type import TensorType
 from ..value import BufferValue, TensorValue, Value
 
 
