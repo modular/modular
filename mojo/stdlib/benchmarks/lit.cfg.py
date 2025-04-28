@@ -42,31 +42,12 @@ else:
     # test_source_root: The root path where tests are located.
     config.test_source_root = Path(__file__).parent.resolve()
 
-    # This is important since `benchmark` is closed source
-    # still right now and is always used by the benchmarks.
-    # If running through `magic`, this will be preset,
-    # but is overridable by users.
-    # MODULAR_HOME is at <package root>/share/max by default
-    pre_built_packages_path = (
-        Path(os.environ["MODULAR_HOME"]).parent.parent / "lib" / "mojo"
-    ).resolve()
-
-    repo_root = Path(__file__).parent.parent.parent
-
     # The `run-tests.sh` script creates the build directory for you.
-    build_root = repo_root / "build"
+    build_root = Path(__file__).parent.parent.parent / "build"
 
     # The tests are executed inside this build directory to avoid
     # polluting the source tree.
     config.test_exec_root = (build_root / "stdlib" / "benchmarks").resolve()
-
-    # Add both the open source, locally built `stdlib.mojopkg`
-    # along with the closed source, pre-built packages shipped
-    # with the Mojo SDK to the appropriate environment variables.
-    # These environment variables are interpreted by the mojo parser
-    # when resolving imports.
-    joint_path = f"{build_root.resolve()},{pre_built_packages_path.resolve()}"
-    os.environ["MODULAR_MOJO_MAX_IMPORT_PATH"] = joint_path
 
     # Pass through several environment variables
     # to the underlying subprocesses that run the tests.
