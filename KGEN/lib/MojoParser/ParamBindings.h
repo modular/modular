@@ -60,8 +60,11 @@ public:
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
+  /// If the caller provides a known parent trait type, this will upcast the
+  /// given type to it.
   static ParamBindings getForDeclaredType(ASTDecl &declScope, ASTType type,
-                                          const ExprNode *expr);
+                                          const ExprNode *expr,
+                                          Type optionalParentTraitType = {});
 
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant

@@ -91,7 +91,8 @@ void ParamBindings::operator=(ParamBindings &&other) {
 /// type is not a parametric user defined type, this returns empty bindings.
 ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
                                                 ASTType type,
-                                                const ExprNode *expr) {
+                                                const ExprNode *expr,
+                                                Type optionalParentTraitType) {
   ParamBindings paramBindings(declScope);
   // TODO: this will not work with arbitrary parametric ancestors.
   // Default params need to come from the original declaration, instead of
@@ -136,10 +137,18 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     }
     paramBindings.addPrechecked(expr, typeAttr);
   } else if (isa<TraitType>(decl->getIfTypeValue())) {
-    // If this is a trait composition, the method signature's self type won't
-    // match directly (need to upcast the composition into the trait type that
-    // declared the method). Add as _not_ prechecked.
-    paramBindings.add(expr, PValue(type).get());
+    if (optionalParentTraitType) {
+      // If caller provided a parent trait type, we need to upcast the self.
+      auto typeAttr = UpcastAttr::get(
+          optionalParentTraitType, PValue(type),
+          VTableAttr::get(optionalParentTraitType.getContext(), {}));
+      paramBindings.addPrechecked(expr, typeAttr);
+    } else {
+      // If this is a trait composition, the method signature's self type won't
+      // match directly (need to upcast the composition into the trait type that
+      // declared the method). Add as _not_ prechecked.
+      paramBindings.add(expr, PValue(type).get());
+    }
   }
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();

@@ -1420,8 +1420,16 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
       // Form a set of bindings to plow into the impl signature by binding Self
       // to the appropriate Struct or derived Trait type.
-      auto implBindings =
-          ParamBindings::getForDeclaredType(getDeclScope(), type, value.expr);
+      // We need to upcast the self type to the parent trait type, so that it
+      // can be marked prechecked in the bindings of trait functions that have
+      // parameters in their signature, e.g.:
+      // trait Writable:
+      //     fn write_to[W: Writer](self, mut writer: W): pass
+      auto parentTraitType = cast<TraitType>(
+          expected->getParentDecl()->getTypeDeclSelf().getMetaType());
+      auto implBindings = ParamBindings::getForDeclaredType(
+          getDeclScope(), type, value.expr, parentTraitType);
+
       // Leave the rest of the the parameters Unbound.
       ParameterEvaluator evaluator;
       for (Type type : requirementSig.getInputParamTypes()) {
