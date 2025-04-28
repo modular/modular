@@ -83,7 +83,7 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
-from .mha_utils import get_start_and_end_for_partitions
+from .mha import _get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 
 # ===-----------------------------------------------------------------------===#
@@ -706,7 +706,7 @@ fn mla_decoding_single_batch[
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout](q_ptr + q_offset)
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    start, end = get_start_and_end_for_partitions[BN](
+    start, end = _get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 

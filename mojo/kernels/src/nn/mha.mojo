@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from collections.string import StaticString
-from math import align_down, align_up, ceildiv, recip
+from math import align_down, align_up, ceildiv, exp, recip
 from math.constants import log2e
 from sys import (
     alignof,
@@ -87,19 +87,8 @@ from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from nn.mha_mask import MaterializedMask, MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from nn.mha_sm90 import (
-    mha_sm90_dispatch,
-    DynamicInt,
-    StaticInt,
-    NoPartition,
-    SplitKPartition,
-)
-from nn.mha_utils import (
-    MHAConfig,
-    _copy_frag_to_smem,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
+from nn.mha_sm90 import mha_sm90_dispatch, DynamicInt, StaticInt
+from nn.mha_utils import MHAConfig, _copy_frag_to_smem, _kernel_mask
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -108,8 +97,6 @@ from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import (
-    _exp2_concrete,
-    _exp_concrete,
     _online_softmax_iter_for_mma_output,
     _online_softmax_iter_for_mma_output_split_warp_reduce,
     _softmax_gpu,
@@ -184,7 +171,7 @@ fn flash_attention[
 fn get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
-    alias sm_count = ctx.device_info.sm_count
+    var sm_count = ctx.device_info.sm_count
     # TODO: This is dumb, make it more granular as a follow up
     if num_keys > 512 and group <= 8:
         return min(
@@ -441,8 +428,8 @@ fn flash_attention_dispatch[
                     ragged=ragged,
                     _is_cache_length_accurate=_is_cache_length_accurate,
                 ](
-                    output.data,
-                    q.data,
+                    output,
+                    q,
                     k,
                     v,
                     mask_functor,
@@ -451,10 +438,10 @@ fn flash_attention_dispatch[
                     DynamicInt(max_prompt_len),
                     max_cache_valid_length,
                     scale,
+                    is_token_generation,
+                    ctx,
                     kv_input_row_offsets,
                     batch_size,
-                    NoPartition[get_accum_type[q.type]()](),
-                    ctx,
                 )
 
             else:
@@ -547,12 +534,38 @@ fn flash_attention_dispatch[
                     batch_size, max_cache_valid_length, ctx
                 )
 
-            alias use_sm90_kernel = (
+            @parameter
+            if (
                 ctx.device_info is H100
                 and q_half_float
                 and (ragged or not _use_valid_length)
                 and mask_t.mask_safe_out_of_bounds
-            )
+            ):
+                if num_partitions_value == 1:
+                    mha_sm90_dispatch[
+                        config=config,
+                        group=group,
+                        use_score_mod=use_score_mod,
+                        ragged=ragged,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                    ](
+                        output,
+                        q,
+                        k,
+                        v,
+                        mask_functor,
+                        score_mod_functor,
+                        valid_length,
+                        StaticInt[1](),
+                        max_cache_valid_length,
+                        scale,
+                        is_token_generation,
+                        ctx,
+                        kv_input_row_offsets,
+                        batch_size,
+                    )
+                    return
+
             alias kernel = mha_decoding[
                 q.type,
                 k_t,
@@ -578,66 +591,38 @@ fn flash_attention_dispatch[
                 decoding_warp_split_k=decoding_warp_split_k,
             ]
 
+            alias nullptr = UnsafePointer[Scalar[accum_type]]()
+
             if num_partitions_value == 1:
-
-                @parameter
-                if use_sm90_kernel:
-                    mha_sm90_dispatch[
-                        config=config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ](
-                        output.data,
-                        q.data,
-                        k,
-                        v,
-                        mask_functor,
-                        score_mod_functor,
-                        valid_length,
-                        StaticInt[1](),
-                        max_cache_valid_length,
-                        scale,
-                        kv_input_row_offsets,
-                        batch_size,
-                        NoPartition[accum_type](),
-                        ctx,
-                    )
-                else:
-                    alias nullptr = UnsafePointer[Scalar[accum_type]]()
-                    ctx.enqueue_function[kernel](
-                        q.data,
-                        k,
-                        v,
-                        output.data,
-                        nullptr,
-                        nullptr,
-                        scale,
-                        batch_size,
-                        num_partitions_value,
-                        max_cache_valid_length,
-                        valid_length,
-                        mask_functor,
-                        score_mod_functor,
-                        grid_dim=(
-                            1,
-                            Int(num_blocks_y),
-                            Int(batch_size),
-                        ),
-                        block_dim=(num_threads, 1, 1),
-                        shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            (
-                                ctx.device_info.shared_memory_per_multiprocessor
-                                - 4096
-                            ) if has_nvidia_gpu_accelerator() else 0
-                        ),
-                    )
-                return
-
+                ctx.enqueue_function[kernel](
+                    q.data,
+                    k,
+                    v,
+                    output.data,
+                    nullptr,
+                    nullptr,
+                    scale,
+                    batch_size,
+                    num_partitions_value,
+                    max_cache_valid_length,
+                    valid_length,
+                    mask_functor,
+                    score_mod_functor,
+                    grid_dim=(
+                        1,
+                        Int(num_blocks_y),
+                        Int(batch_size),
+                    ),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        (
+                            ctx.device_info.shared_memory_per_multiprocessor
+                            - 4096
+                        ) if has_nvidia_gpu_accelerator() else 0
+                    ),
+                )
             else:
-                # We split partitions and then reduce
                 # allocate memory for intermediate results
                 # q # [B, S, H, D]
                 var output_intermediate_data = ctx.enqueue_create_buffer[
@@ -654,79 +639,53 @@ fn flash_attention_dispatch[
                     ),
                 )
 
-                var data_len = num_heads * batch_size * num_partitions_value
-                var data_dim = Index(
-                    num_partitions_value,
-                    batch_size,
-                    Int(num_heads),
-                )
-                var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
-                    2 * data_len
+                var exp_sum_data = ctx.enqueue_create_buffer[accum_type](
+                    num_heads * batch_size * num_partitions_value
                 )
 
                 var exp_sum = NDBuffer[accum_type, 3](
-                    exp_sum_qk_max_data._unsafe_ptr(), data_dim
+                    exp_sum_data._unsafe_ptr(),
+                    Index(
+                        num_partitions_value,
+                        batch_size,
+                        Int(num_heads),
+                    ),
+                )
+
+                var qk_max_data = ctx.enqueue_create_buffer[accum_type](
+                    num_heads * batch_size * num_partitions_value
                 )
 
                 var qk_max = NDBuffer[accum_type, 3](
-                    exp_sum_qk_max_data._unsafe_ptr().offset(data_len), data_dim
+                    qk_max_data._unsafe_ptr(),
+                    Index(num_partitions_value, batch_size, Int(num_heads)),
                 )
 
-                @parameter
-                if use_sm90_kernel:
-                    # FIXME: pass `exp_sum_qk_max_data`
-                    mha_sm90_dispatch[
-                        config=config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ](
-                        output_intermediate.data,
-                        q.data,
-                        k,
-                        v,
-                        mask_functor,
-                        score_mod_functor,
-                        valid_length,
-                        StaticInt[1](),
-                        max_cache_valid_length,
-                        scale,
-                        kv_input_row_offsets,
-                        batch_size,
-                        SplitKPartition(
-                            exp_sum_qk_max_data._unsafe_ptr(),
-                            num_partitions_value,
-                        ),
-                        ctx,
-                    )
-                else:
-                    ctx.enqueue_function[kernel](
-                        q.data,
-                        k,
-                        v,
-                        output_intermediate.data,
-                        exp_sum.data,
-                        qk_max.data,
-                        scale,
-                        batch_size,
+                ctx.enqueue_function[kernel](
+                    q.data,
+                    k,
+                    v,
+                    output_intermediate.data,
+                    exp_sum.data,
+                    qk_max.data,
+                    scale,
+                    batch_size,
+                    num_partitions_value,
+                    max_cache_valid_length,
+                    valid_length,
+                    mask_functor,
+                    score_mod_functor,
+                    grid_dim=(
                         num_partitions_value,
-                        max_cache_valid_length,
-                        valid_length,
-                        mask_functor,
-                        score_mod_functor,
-                        grid_dim=(
-                            num_partitions_value,
-                            Int(num_blocks_y),
-                            Int(batch_size),
-                        ),
-                        block_dim=(num_threads, 1, 1),
-                        shared_mem_bytes=shared_mem_bytes,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            ctx.device_info.shared_memory_per_multiprocessor
-                            - 4096
-                        ),
-                    )
+                        Int(num_blocks_y),
+                        Int(batch_size),
+                    ),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        ctx.device_info.shared_memory_per_multiprocessor - 4096
+                    ),
+                )
 
                 alias kernel_reduce = mha_splitk_reduce[
                     output.type,
@@ -734,7 +693,6 @@ fn flash_attention_dispatch[
                     num_heads=num_heads,
                     num_threads=WARP_SIZE,
                     group=group,
-                    use_exp2=use_sm90_kernel,
                 ]
 
                 ctx.enqueue_function[kernel_reduce](
@@ -751,7 +709,8 @@ fn flash_attention_dispatch[
                     ),
                     block_dim=(WARP_SIZE, 1, 1),
                 )
-                _ = exp_sum_qk_max_data^
+                _ = exp_sum_data^
+                _ = qk_max_data^
                 _ = output_intermediate_data^
 
         # Not supported by contexting and decoding, e.g cross-attention or depth != 128
@@ -2927,6 +2886,41 @@ fn scale_and_mask_helper[
         )
 
 
+@always_inline
+fn _get_start_and_end_for_partitions[
+    tile_size: Int
+](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
+    """Calculate start and end indices for a partition.
+
+    Args:
+        num_keys: Total number of keys (sequence length)
+        num_partitions: Number of partitions to split keys into
+        partition_idx: Index of current partition (0 to num_partitions-1)
+
+    Returns:
+        Tuple of (start_idx, end_idx) for the partition, aligned to tile_size
+    """
+    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
+
+    # Align start to tile_size
+    var start = align_up(num_keys_per_partition * partition_idx, tile_size)
+    # If start is already beyond num_keys, return empty range
+    if start >= num_keys:
+        return (num_keys, num_keys)
+    var next_start = align_up(
+        num_keys_per_partition * (partition_idx + 1), tile_size
+    )
+    var end = min(num_keys, next_start)
+    return (start, end)
+
+    # ^ may lead to non-uniform distribution of keys across partitions because of alignment requirement,
+    # we may want to use the following instead for non-paged kvcache but then we will have to know which cache is being used.
+    # Keep this here for now, can remove it later if we are only using paged kvcache.
+    # var start = num_keys_per_partition * partition_idx
+    # var end = min(num_keys, start + num_keys_per_partition)
+    # return (start, end)
+
+
 fn mha_decoding_single_batch[
     q_type: DType,
     k_t: MHAOperand,
@@ -3128,7 +3122,7 @@ fn mha_decoding_single_batch[
     )
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    start, end = get_start_and_end_for_partitions[BN](
+    start, end = _get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 
@@ -3767,7 +3761,7 @@ fn mha_decoding_single_batch_pipelined[
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
     # Loop over Key and Value tiles
-    start, end = get_start_and_end_for_partitions[BN](
+    start, end = _get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 
@@ -4078,7 +4072,6 @@ fn mha_splitk_reduce[
     num_heads: UInt,
     num_threads: UInt,
     group: UInt = 1,
-    use_exp2: Bool = False,
 ](
     intermediate_ptr: UnsafePointer[Scalar[output_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
@@ -4130,10 +4123,9 @@ fn mha_splitk_reduce[
     ).view(output_ptr)
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
-    alias exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
     if partition_idx < num_partitions:
         var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx + q_head_idx
-        rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp_fn(l - qk_max)
+        rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp(l - qk_max)
         exp_sums[partition_idx] = rescaled_exp_sum
 
     # ensure exp_sums is written to before reading
