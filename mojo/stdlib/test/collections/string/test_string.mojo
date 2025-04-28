@@ -1460,10 +1460,11 @@ def test_variadic_ctors():
 
 
 def test_sso():
-    # String literals are stored inline when short.
+    # String literals are stored inline when short and not nul-terminated.
     var s: String = String("hello")
     assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s._capacity_or_data.is_inline(), True)
+    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
     # String literals are stored out-of-line when longer than SSO and
     # nul-terminated.
@@ -1471,11 +1472,13 @@ def test_sso():
     assert_equal(s.capacity(), 0)
     assert_equal(s._capacity_or_data.is_inline(), False)
     assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Empty strings are stored inline.
     s = String()
     assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s._capacity_or_data.is_inline(), True)
+    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
     s += "f" * _StringCapacityField.NUM_SSO_BYTES
     assert_equal(len(s), _StringCapacityField.NUM_SSO_BYTES)
@@ -1485,7 +1488,7 @@ def test_sso():
     # One more byte.
     s += "f"
 
-    # The capcity should be 2x the previous amount, rounded up to 8.
+    # The capacity should be 2x the previous amount, rounded up to 8.
     alias expected_capacity = (_StringCapacityField.NUM_SSO_BYTES * 2 + 7) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._capacity_or_data.is_inline(), False)

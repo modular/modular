@@ -347,8 +347,11 @@ struct String(
         Args:
             data: The static constant string to refer to.
         """
-        var length = len(data)
+        var length = data.byte_length()
         var cap_field = _StringCapacityField(static_const_length=length)
+        # NOTE: we can't set set_has_nul_terminator(True) because there is no
+        # guarantee that this wasn't constructed from a
+        # Span[Byte, StaticConstantOrigin] without a nul terminator.
         if cap_field.is_inline():
             # Tell mojo it is ok for this to be uninitialized.
             __mlir_op.`lit.ownership.mark_initialized`(
@@ -375,7 +378,8 @@ struct String(
             data: The static constant string to refer to.
         """
         self = StaticString(data)
-        # Indirect string literals are always nul-terminated by the compiler.
+        # All string literals are nul terminated by the compiler but the inline
+        # String overwrites it at any given point
         if not self._capacity_or_data.is_inline():
             self._capacity_or_data.set_has_nul_terminator(True)
 
@@ -811,7 +815,7 @@ struct String(
         var rhs_len = len(rhs)
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
-        var result_ptr = result.unsafe_ptr()
+        var result_ptr = result.unsafe_ptr_mut()
         memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
@@ -1151,14 +1155,17 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        # The string may be empty, add a nul terminator if so.
-        if not self._capacity_or_data.has_nul_terminator():
+        # Add a nul terminator.
+        # Reallocate the out-of-line static strings to ensure mutability.
+        if not self._capacity_or_data.has_nul_terminator() or (
+            self._capacity_or_data.is_static_constant()
+        ):
             var len = self.byte_length()
             self.reserve(len + 1)  # This will reallocate if constant.
             self.unsafe_ptr_mut()[len] = 0
             self._capacity_or_data.set_has_nul_terminator(True)
 
-        return self.unsafe_ptr().bitcast[c_char]()
+        return self.unsafe_ptr_mut().bitcast[c_char]()
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
@@ -1783,7 +1790,9 @@ struct String(
         self._ptr_or_data = new_data
         self._capacity_or_data = new_capacity_field
         if should_drop_ref:
-            _StringOutOfLineHeader.get(old_ptr).drop_ref()
+            _StringOutOfLineHeader.get(
+                old_ptr.origin_cast[mut=True]()
+            ).drop_ref()
 
     @always_inline("nodebug")
     fn _has_mutable_buffer(self) -> Bool:
