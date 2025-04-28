@@ -14,8 +14,12 @@
 from collections.string import StaticString
 from os import abort
 from pathlib import Path
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import (
+    _get_dylib_function as _ffi_get_dylib_function,
+    _Global,
+    _OwnedDLHandle,
+    _find_dylib,
+)
 
 from gpu.host._nvidia_cuda import CUstream
 from memory import UnsafePointer
@@ -36,11 +40,7 @@ alias CUDA_CUDNN_INFER_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    if not Path(CUDA_CUDNN_LIBRARY_PATH).exists():
-        return abort[_OwnedDLHandle](
-            "the CUDA CUDNN library was not found at " + CUDA_CUDNN_LIBRARY_PATH
-        )
-    return _OwnedDLHandle(CUDA_CUDNN_LIBRARY_PATH)
+    return _find_dylib["CUDA CUDNN library"](CUDA_CUDNN_LIBRARY_PATH)
 
 
 @always_inline

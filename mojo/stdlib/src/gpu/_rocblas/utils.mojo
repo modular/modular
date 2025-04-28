@@ -13,10 +13,13 @@
 
 from collections import List
 from collections.string import StaticString
-from os import abort
 from pathlib import Path
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import (
+    _get_dylib_function as _ffi_get_dylib_function,
+    _Global,
+    _OwnedDLHandle,
+    _find_dylib,
+)
 
 from .types import Status
 
@@ -24,7 +27,7 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATHS = List[String](
+alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
     "/opt/rocm/lib/librocblas.so",
     "/opt/rocm/lib/librocblas.so.4",
 )
@@ -34,23 +37,8 @@ alias ROCM_ROCBLAS_LIBRARY = _Global[
 ]()
 
 
-fn _get_library_path() -> String:
-    for path in ROCM_ROCBLAS_LIBRARY_PATHS:
-        if Path(path[]).exists():
-            return path[]
-    return abort[String](
-        String(
-            (
-                "the ROCM rocBLAS library was not found in any of the"
-                " following paths: "
-            ),
-            String(", ").join(ROCM_ROCBLAS_LIBRARY_PATHS),
-        )
-    )
-
-
 fn _init_dylib() -> _OwnedDLHandle:
-    return _OwnedDLHandle(_get_library_path())
+    return _find_dylib["ROCm rocBLAS library"](ROCM_ROCBLAS_LIBRARY_PATHS)
 
 
 @always_inline

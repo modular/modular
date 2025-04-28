@@ -12,9 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from pathlib import Path
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import (
+    _get_dylib_function as _ffi_get_dylib_function,
+    _Global,
+    _OwnedDLHandle,
+    _find_dylib,
+)
 
 from gpu.host._amdgpu_hip import hipStream_t
 
@@ -201,12 +204,7 @@ alias HIPBLASLT_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    if not Path(HIPBLASLT_LIBRARY_PATH).exists():
-        return abort[_OwnedDLHandle](
-            "the ROCm hipBLASLt library was not found at "
-            + HIPBLASLT_LIBRARY_PATH
-        )
-    return _OwnedDLHandle(HIPBLASLT_LIBRARY_PATH)
+    return _find_dylib["HIP BLAS LT library"](HIPBLASLT_LIBRARY_PATH)
 
 
 @always_inline

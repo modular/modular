@@ -14,6 +14,7 @@
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import PathLike, abort
+from pathlib import Path, DIR_SEPARATOR
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
 from memory import UnsafePointer
@@ -142,7 +143,7 @@ struct _OwnedDLHandle(Movable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD):
+    fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD) raises:
         self._handle = DLHandle(path, flags)
 
     fn __moveinit__(out self, owned other: Self):
@@ -176,7 +177,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
     @always_inline
     fn __init__[
         PathLike: os.PathLike, //
-    ](out self, path: PathLike, flags: Int = DEFAULT_RTLD):
+    ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize a DLHandle object by loading the dynamic library at the
         given path.
 
@@ -194,13 +195,13 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             var handle = dlopen(fspath.unsafe_cstr_ptr(), flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
-                abort(
-                    "dlopen failed: ",
+                raise Error(
                     String(
+                        "dlopen failed: ",
                         StringSlice[error_message.origin](
                             unsafe_from_utf8_ptr=error_message
-                        )
-                    ),
+                        ),
+                    )
                 )
             self.handle = handle
         else:
@@ -458,6 +459,91 @@ fn _get_dylib_function[
     )
 
     return new_func
+
+
+fn _try_find_dylib[
+    name: StaticString = ""
+](paths: List[Path]) raises -> _OwnedDLHandle:
+    """Try to load a dynamically linked library given a list of possible paths.
+
+    Parameters:
+        name: Optional name for the library to be used in error messages.
+
+    Args:
+        paths: A list of paths or library names to pass to the DLHandle
+               constructor.
+
+    Returns:
+        A handle to the loaded dynamic library.
+
+    Raises:
+        Error: If the library could not be loaded from any of the provided paths.
+    """
+    alias dylib_name = name if name != "" else "dynamic library"
+    for path in paths:
+        # Skip paths that don't exist.
+        # FIXME: This will need to be changed in order to load libraries by name
+        if not path[].exists():
+            continue
+        # If we are given a library name like libfoo.so, pass it directly to
+        # dlopen(), which will invoke the system linker to find the library.
+        # We can't check the existence of the path ahead of time, we have to
+        # call the function and check for an error.
+        try:
+            return _OwnedDLHandle(String(path[]))
+        except:
+            # If the call to DLOpen fails, we should just try the next path
+            # in the list. It's only a fatal error if the library cannot be
+            # loaded from any of the paths provided.
+            pass
+
+    raise Error(
+        String("Failed to load " + dylib_name + " from ")
+        + String(" or ").join(paths)
+    )
+
+
+fn _try_find_dylib[
+    name: StaticString = ""
+](*paths: Path) raises -> _OwnedDLHandle:
+    """Load a dynamically linked library given a variadic list of possible names.
+    """
+    # Convert the variadic pack to a list.
+    var paths_list = List[Path]()
+    for path in paths:
+        paths_list.append(path[])
+    return _try_find_dylib[name](paths_list)
+
+
+fn _find_dylib[name: StaticString = ""](paths: List[Path]) -> _OwnedDLHandle:
+    """Load a dynamically linked library given a list of possible paths or names.
+
+    If the library is not found, the function will abort.
+
+    Parameters:
+        name: Optional name for the library to be used in error messages.
+
+    Args:
+        paths: A list of paths or library names to pass to the DLHandle
+               constructor.
+
+    Returns:
+        A handle to the loaded dynamic library.
+    """
+    try:
+        return _try_find_dylib[name](paths)
+    except e:
+        return abort[_OwnedDLHandle](e)
+
+
+fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
+    """Load a dynamically linked library given a variadic list of possible names.
+    """
+    # Convert the variadic pack to a list.
+    var paths_list = List[Path]()
+    for path in paths:
+        paths_list.append(path[])
+    return _find_dylib[name](paths_list)
 
 
 # ===-----------------------------------------------------------------------===#

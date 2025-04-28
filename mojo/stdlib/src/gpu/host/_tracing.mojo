@@ -20,8 +20,12 @@ from sys import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
 )
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, c_char
+from sys.ffi import (
+    _get_dylib_function as _ffi_get_dylib_function,
+    _Global,
+    _OwnedDLHandle,
+    _try_find_dylib,
+)
 from sys.param_env import env_get_int
 
 from memory import UnsafePointer, stack_allocation
@@ -32,11 +36,11 @@ from utils.variant import Variant
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_NVTX_LIBRARY_PATHS = List[String](
+alias CUDA_NVTX_LIBRARY_PATHS = List[Path](
     "/usr/local/cuda/lib64/libnvToolsExt.so",
     "/usr/lib/x86_64-linux-gnu/libnvToolsExt.so.1",
 )
-alias ROCTX_LIBRARY_PATHS = List[String](
+alias ROCTX_LIBRARY_PATHS = List[Path](
     "/opt/rocm/lib/librocprofiler-sdk-roctx.so"
 )
 
@@ -74,24 +78,25 @@ alias GPU_TRACING_LIBRARY = _Global[
 ]()
 
 
-fn _find_library_path() -> Optional[String]:
-    for path in LIBRARY_PATHS:
-        if Path(path[]).exists():
-            return path[]
-    return None
-
-
 fn _init_dylib() -> _OwnedDLHandle:
     @parameter
     if _is_disabled():
         return abort[_OwnedDLHandle]("cannot load dylib when disabled")
 
-    var library_path = _find_library_path()
+    try:
+        var dylib = _try_find_dylib["GPU tracing library"](LIBRARY_PATHS)
 
-    if not library_path:
-        var msg = "the GPU tracing library was not found at " + StaticString(
-            ","
-        ).join(LIBRARY_PATHS)
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            _setup_categories(
+                dylib._handle.get_function[
+                    fn (UInt32, UnsafePointer[UInt8]) -> NoneType
+                ]("nvtxNameCategoryA")
+            )
+
+        return dylib^
+    except e:
+        var msg = String(e, "\n")
 
         @parameter
         if has_nvidia_gpu_accelerator():
@@ -105,18 +110,6 @@ fn _init_dylib() -> _OwnedDLHandle:
             msg += " please install ROCprofiler."
 
         return abort[_OwnedDLHandle](msg)
-
-    var dylib = _OwnedDLHandle(library_path.value())
-
-    @parameter
-    if has_nvidia_gpu_accelerator():
-        _setup_categories(
-            dylib._handle.get_function[
-                fn (UInt32, UnsafePointer[UInt8]) -> NoneType
-            ]("nvtxNameCategoryA")
-        )
-
-    return dylib^
 
 
 @always_inline
