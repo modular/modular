@@ -743,7 +743,6 @@ fn rms_norm_gpu_warp_tiling[
     output_fn: fn[width: Int] (
         row: Int, col: Int, val: SIMD[type, width]
     ) capturing -> None,
-    multiply_before_cast: Bool,
 ](
     gamma: NDBuffer[type, 1, MutableAnyOrigin],
     epsilon: Scalar[type],
@@ -757,6 +756,7 @@ fn rms_norm_gpu_warp_tiling[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
+
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * simd_width
@@ -774,26 +774,12 @@ fn rms_norm_gpu_warp_tiling[
         var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
 
         if idx < num_cols:
-            var norm_val: SIMD[
-                type, simd_width
-            ]  # Declare once with correct final type
-
             var gamma_val = gamma.load[width=simd_width, alignment=align](
                 Index(idx)
             )
-
-            @parameter
-            if multiply_before_cast:
-                var gamma_accum = gamma_val.cast[
-                    accum_type
-                ]() + weight_offset_accum
-                norm_val = (vec_data * norm_factor * gamma_accum).cast[type]()
-            else:
-                norm_val = (vec_data * norm_factor).cast[type]() * (
-                    gamma_val + weight_offset
-                )
-
-            output_fn(row, idx, norm_val)
+            var gamma_accum = gamma_val.cast[accum_type]() + weight_offset_accum
+            var norm_val = vec_data * norm_factor * gamma_accum
+            output_fn(row, idx, norm_val.cast[type]())
 
 
 fn rms_norm_gpu_block[
@@ -806,7 +792,6 @@ fn rms_norm_gpu_block[
     output_fn: fn[width: Int] (
         row: Int, col: Int, val: SIMD[type, width]
     ) capturing -> None,
-    multiply_before_cast: Bool,
 ](
     gamma: NDBuffer[type, 1, MutableAnyOrigin],
     epsilon: Scalar[type],
@@ -842,27 +827,17 @@ fn rms_norm_gpu_block[
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
             if offset < num_cols:
-                var vec_data = input_fn[simd_width](row, offset).cast[
-                    accum_type
-                ]()
-                var norm_val: SIMD[type, simd_width]
                 var gamma_val = gamma.load[width=simd_width, alignment=align](
                     Index(offset)
                 )
-
-                if multiply_before_cast:
-                    var gamma_accum = gamma_val.cast[
-                        accum_type
-                    ]() + weight_offset_accum
-                    norm_val = (vec_data * norm_factor * gamma_accum).cast[
-                        type
-                    ]()
-                else:
-                    norm_val = (vec_data * norm_factor).cast[type]() * (
-                        gamma_val + weight_offset
-                    )
-
-                output_fn(row, offset, norm_val)
+                var gamma_accum = gamma_val.cast[
+                    accum_type
+                ]() + weight_offset_accum
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+                var norm_val = vec_data * norm_factor * gamma_accum
+                output_fn(row, offset, norm_val.cast[type]())
 
 
 fn rms_norm_gpu[
@@ -874,7 +849,6 @@ fn rms_norm_gpu[
     output_fn: fn[width: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-    multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, **_],
     gamma: NDBuffer[type, 1],
@@ -929,11 +903,7 @@ fn rms_norm_gpu[
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             ctx.enqueue_function[
                 rms_norm_gpu_warp_tiling[
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
+                    simd_width, max_warps_per_block, input_fn_2d, output_fn_2d
                 ]
             ](
                 gamma,
@@ -947,11 +917,7 @@ fn rms_norm_gpu[
         else:
             ctx.enqueue_function[
                 rms_norm_gpu_block[
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
+                    simd_width, max_warps_per_block, input_fn_2d, output_fn_2d
                 ]
             ](
                 gamma,
@@ -965,11 +931,7 @@ fn rms_norm_gpu[
     else:
         ctx.enqueue_function[
             rms_norm_gpu_block[
-                1,
-                max_warps_per_block,
-                input_fn_2d,
-                output_fn_2d,
-                multiply_before_cast=multiply_before_cast,
+                1, max_warps_per_block, input_fn_2d, output_fn_2d
             ]
         ](
             gamma,
@@ -986,7 +948,6 @@ fn rms_norm_cpu[
     type: DType, //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
     output_fn: fn[width: Int] (Int, Int, SIMD[type, width]) capturing -> None,
-    multiply_before_cast: Bool,
 ](
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
@@ -1017,16 +978,7 @@ fn rms_norm_cpu[
         fn _normalize[simd_width: Int](col: Int):
             var input_val = input_fn[simd_width](row, col)
             var gamma_val = gamma.load[width=simd_width](col)
-            var norm_val: SIMD[type, simd_width]
-
-            if multiply_before_cast:
-                var gamma_offset = gamma_val + weight_offset
-                norm_val = input_val * norm_factor * gamma_offset
-            else:
-                norm_val = (input_val * norm_factor).cast[type]() * (
-                    gamma_val + weight_offset
-                )
-
+            var norm_val = input_val * norm_factor * (gamma_val + weight_offset)
             output_fn[simd_width](row, col, norm_val)
 
         vectorize[_normalize, simd_width](num_cols)
@@ -1041,7 +993,6 @@ fn rms_norm_cpu[
     output_fn: fn[width: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-    multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
@@ -1090,11 +1041,7 @@ fn rms_norm_cpu[
             indices[rank - 1] = col
             return input_fn[simd_width, rank](indices)
 
-        rms_norm_cpu[
-            input_fn_2d,
-            output_fn_2d,
-            multiply_before_cast=multiply_before_cast,
-        ](
+        rms_norm_cpu[input_fn_2d, output_fn_2d](
             gamma,
             epsilon,
             weight_offset,
@@ -1116,7 +1063,6 @@ fn _rms_norm_impl[
     ) capturing -> None,
     /,
     target: StaticString = "cpu",
-    multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
@@ -1140,18 +1086,12 @@ fn _rms_norm_impl[
 
     @parameter
     if is_cpu[target]():
-        rms_norm_cpu[
-            input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
-        ](shape, gamma, epsilon, weight_offset)
+        rms_norm_cpu[input_0_fn, output_fn](
+            shape, gamma, epsilon, weight_offset
+        )
     elif is_gpu[target]():
-        rms_norm_gpu[
-            input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
-        ](
-            shape,
-            gamma,
-            epsilon,
-            weight_offset,
-            ctx.get_device_context(),
+        rms_norm_gpu[input_0_fn, output_fn](
+            shape, gamma, epsilon, weight_offset, ctx.get_device_context()
         )
     else:
         constrained[False, "unsupported target " + target]()
@@ -1167,7 +1107,6 @@ fn rms_norm[
     ],
     /,
     target: StaticString = "cpu",
-    multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
@@ -1199,12 +1138,7 @@ fn rms_norm[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         _rms_norm_impl[
-            type,
-            rank,
-            input_0_fn,
-            identity_output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
+            type, rank, input_0_fn, identity_output_fn, target=target
         ](shape, gamma, epsilon, weight_offset, ctx)
 
 

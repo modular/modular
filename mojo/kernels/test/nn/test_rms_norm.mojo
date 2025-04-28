@@ -72,11 +72,8 @@ fn run_rms_norm_cpu[
     ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
         output_buf.store(idx, val)
 
-    rms_norm_cpu[input_fn, identity_output_fn, multiply_before_cast=True](
-        shape,
-        gamma,
-        epsilon,
-        weight_offset,
+    rms_norm_cpu[input_fn, identity_output_fn](
+        shape, gamma, epsilon, weight_offset
     )
 
     for r in range(rows):
