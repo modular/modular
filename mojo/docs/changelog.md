@@ -245,6 +245,9 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 - **Fixed SIMD boolean display in debugger:** SIMD boolean values now display
   correctly with proper bit extraction.
 
+- **Improved language server performance:** The language server now avoids
+  parsing more than it needs to, improving performance across the board.
+
 ### Mojo Compiler
 
 - The Mojo compiler is now able to interpret all arithmetic operations from
