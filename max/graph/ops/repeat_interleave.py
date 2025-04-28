@@ -5,21 +5,47 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for repeat_interleave."""
 
-from typing import Optional
+from typing import Optional, Union
 
-from ..value import Shape, TensorValue, TensorValueLike
-from .reshape import reshape
-from .tile import tile
-from .unsqueeze import unsqueeze
+import numpy as np
+
+from ..type import Dim, DType
+from ..value import DimLike, Shape, TensorType, TensorValue, TensorValueLike
+from .broadcast_to import broadcast_to
+from .constant import constant
+from .custom import custom
+
+
+def _promote_repeats(
+    repeats: Union[int, TensorValue],
+    input_dim: Dim,
+    out_dim: Optional[DimLike],
+) -> tuple[TensorValue, Optional[Dim]]:
+    if out_dim is not None:
+        out_dim = Dim(out_dim)
+
+    if isinstance(repeats, TensorValue):
+        if repeats.rank == 0:
+            repeats = broadcast_to(repeats, [1])
+        return repeats, out_dim
+
+    if repeats <= 0:
+        raise ValueError(
+            f"repeats_inteleave: repeat value must be positive, given {repeats=}"
+        )
+
+    return constant(np.array([repeats]), DType.int64), input_dim * repeats
 
 
 def repeat_interleave(
-    x: TensorValueLike, repeats: int, axis: Optional[int] = None
+    x: TensorValueLike,
+    repeats: Union[int, TensorValue],
+    axis: Optional[int] = None,
+    out_dim: Optional[DimLike] = None,
 ) -> TensorValue:
     """Repeats elements of a tensor along the given dimension.
 
     Modeled after :obj:`torch.repeat_interleave`, with the constraint that
-    Tensor-valued ``repeats`` are not yet supported.
 
     For example, given ``repeats=2`` and the following input:
 
@@ -46,6 +72,16 @@ def repeat_interleave(
 
     ``repeat_interleave`` with ``axis=None`` (the default):
 
+    ``repeat_interleave`` with ``repeats=[2, 3]`` and ``axis=0``:
+
+    .. code-block:: python
+
+        repeat_value = TensorValue([2, 3])
+
+        # Output tensor with shape (5, 2)
+        output = repeat_interleave(input, repeats=repeat_value, axis=0)
+        # Contains [[1.0, 2.0], [1.0, 2.0], [3.0, 4.0], [3.0, 4.0], [3.0, 4.0]]
+
     .. code-block:: python
 
         # Output tensor with shape (8,)
@@ -70,9 +106,6 @@ def repeat_interleave(
     """
     x = TensorValue(x)
 
-    if repeats <= 0:
-        raise ValueError(f"repeat_interleave: {repeats=} must be > 0")
-
     if axis is not None and not -x.rank <= axis < x.rank:
         raise ValueError(
             f"repeat_interleave: {axis=} out of bounds for {x.rank=}"
@@ -86,26 +119,23 @@ def repeat_interleave(
     if axis < 0:
         axis += x.rank
 
-    # To implement `repeat_interleave`, we need to unsqueeze at axis+1 so that
-    # we can tile each element of the given axis. (Tiling without unsqueezing
-    # would not give us interleaved elements.) We can then squeeze the input
-    # back to the expected shape. For example: input=1x8x1025x128xbf16,
-    # repeats=3, and axis=1 would be:
-    #    - input:     1x8x1025x128
-    #    - unsqueeze: 1x8x1x1025x128   (use axis+1)
-    #    - tile:      1x8x3x1025x128   (use axis+1)
-    #    - reshape:   1x24x1025x128
-    # The one exception is when `axis` is `None`, in which case the input array
-    # is flattened and all elements are tiled.
-    tile_dim = axis + 1
-    # Tile by repeats on the tile dimension
-    tiles = [1] * x.rank
-    tiles.insert(tile_dim, repeats)
+    repeats, inferred_size = _promote_repeats(repeats, x.shape[axis], out_dim)
 
-    # Multiply by repeats on axis
     result_shape = Shape(x.shape)
-    result_shape[axis] *= repeats
 
-    unsqueezed = unsqueeze(x, tile_dim)
-    tiled = tile(unsqueezed, tiles)
-    return reshape(tiled, result_shape)
+    if inferred_size is None:
+        raise ValueError("out_dim must be provided for TensorValue repeats")
+
+    # Try to infer the output shape if the multiplier along the axis
+    # is statically known, otherwise use the provided out_dim.
+    result_shape[axis] = inferred_size
+
+    axis_val = constant(np.array([axis]), DType.int64)
+
+    output = custom(
+        "repeat_interleave",
+        values=[x, repeats, axis_val],
+        out_types=[TensorType(x.dtype, result_shape, device=x.device)],
+    )
+
+    return output[0].tensor
