@@ -46,14 +46,7 @@ config.test_source_root = Path(__file__).parent.resolve()
 # Substitute %mojo for just `mojo` itself.
 config.substitutions.insert(0, ("%mojo", "mojo"))
 
-# MODULAR_HOME is at <package root>/share/max by default
-pre_built_packages_path = (
-    Path(os.environ["MODULAR_HOME"]).parent.parent / "lib" / "mojo"
-).resolve()
-
-os.environ[
-    "MODULAR_MOJO_MAX_IMPORT_PATH"
-] = f"{build_root},{pre_built_packages_path}"
+os.environ["MODULAR_MOJO_MAX_IMPORT_PATH"] = str(build_root)
 
 # Pass through several environment variables
 # to the underlying subprocesses that run the tests.
