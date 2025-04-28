@@ -79,13 +79,8 @@ modular_py_test(
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
     ],
-    exec_properties = {
-        "resources:gpu-2": "0.01",
-    },
     gpu_constraints = ["//:has_multi_gpu"],
-    tags = [
-        "multi-gpu",
-    ],
+    tags = ["multi-gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",

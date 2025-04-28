@@ -106,9 +106,6 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
-    exec_properties = {
-        "resources:gpu-2": "0.01",
-    },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["multi-gpu"],
     deps = [
@@ -133,9 +130,6 @@ modular_run_binary_test(
     binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
     env = {
         "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
-    },
-    exec_properties = {
-        "resources:gpu-2": "0.01",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
