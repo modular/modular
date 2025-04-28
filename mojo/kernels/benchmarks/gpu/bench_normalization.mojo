@@ -168,9 +168,9 @@ fn bench_rms_norm_gpu[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            rms_norm_gpu[
-                input_fn, identity_output_fn, multiply_before_cast=True
-            ](shape, gamma, epsilon, weight_offset, ctx)
+            rms_norm_gpu[input_fn, identity_output_fn](
+                shape, gamma, epsilon, weight_offset, ctx
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
