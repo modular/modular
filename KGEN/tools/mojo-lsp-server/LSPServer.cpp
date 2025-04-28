@@ -332,6 +332,11 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                         &MojoServer::getSignatureHelp);
   requestHandler.method("textDocument/rename", &server, &MojoServer::onRename);
 
+#ifndef MODULAR_PRODUCTION
+  messageHandler.notification("mojo/emitParsedIR", &server,
+                              &MojoServer::dumpParsedIR);
+#endif // MODULAR_PRODUCTION
+
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {
     Logger::error("Transport error: {0}", error);

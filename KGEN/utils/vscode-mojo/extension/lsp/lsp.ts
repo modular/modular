@@ -76,6 +76,21 @@ export class MojoLSPManager extends DisposableContext {
           await this.activate();
         }),
       );
+
+      this.pushSubscription(
+        vscode.commands.registerTextEditorCommand(
+          'mojo.lsp.dumpParsedIR',
+          async (textEditor) => {
+            if (!this.lspClient) {
+              return;
+            }
+
+            await this.lspClient.sendNotification('mojo/emitParsedIR', {
+              uri: textEditor.document.uri.toString(),
+            });
+          },
+        ),
+      );
     }
 
     this.statusBarItem = vscode.window.createStatusBarItem(

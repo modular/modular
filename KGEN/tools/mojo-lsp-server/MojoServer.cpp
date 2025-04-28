@@ -28,8 +28,10 @@
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ReferenceCounted.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/FileUtilities.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
@@ -37,6 +39,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include <KGEN/Support/CompilerProfiling.h>
 #include <optional>
 
@@ -797,6 +800,23 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
     lsp::Logger::debug("The 'check' pipeline failed to run on the module {0}",
                        decl.getName().value_or("<unnamed>"));
   }
+}
+
+void MojoDocument::dumpParsedIR() {
+  startTaskAfterParsing([](MojoDocument &doc) {
+    std::string message;
+    auto out = mlir::openOutputFile("lsp-parsed.mlir", &message);
+    if (!out) {
+      llvm::errs() << "Error opening output file: " << message << "\n";
+      return;
+    }
+
+    (void)mlir::writeBytecodeToFile(
+        doc.getParserContext().getModule().getOperation(), out->os());
+    out->keep();
+
+    llvm::errs() << "Parsed IR dumped to " << out->getFilename() << "\n";
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -2625,5 +2645,16 @@ void MojoServer::onRename(const lsp::RenameParams &params,
                   std::move(responder));
   } else {
     responder.replyInvalidRequest();
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Debug-only methods
+void MojoServer::dumpParsedIR(const lsp::TextDocumentIdentifier &params) {
+  llvm::errs() << "dumpParsedIR: " << params.uri.file() << "\n";
+  if (MojoDocumentRef doc = impl->findDocument(params.uri.file())) {
+    doc->dumpParsedIR();
+  } else {
+    llvm::errs() << "no document for URI: " << params.uri.file() << "\n";
   }
 }
