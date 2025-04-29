@@ -214,14 +214,14 @@ fn run_gemm_kernel_1[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
     ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -242,7 +242,7 @@ fn run_gemm_kernel_1[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
@@ -335,14 +335,14 @@ fn run_gemm_kernel_2[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
     ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -363,7 +363,7 @@ fn run_gemm_kernel_2[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
@@ -482,14 +482,14 @@ fn run_gemm_kernel_3[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         gemm_kernel_3[dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN]
     ]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -510,7 +510,7 @@ fn run_gemm_kernel_3[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
@@ -645,7 +645,7 @@ fn run_gemm_kernel_4[
     var K = a.shape[1]()
 
     alias NUM_THREADS = (BM * BN) // TM
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         gemm_kernel_4[
             dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
         ]
@@ -654,7 +654,7 @@ fn run_gemm_kernel_4[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -675,7 +675,7 @@ fn run_gemm_kernel_4[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
@@ -800,7 +800,7 @@ fn run_gemm_kernel_5[
 
     alias NUM_THREADS = (BM * BN) // (TM * TN)
 
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         gemm_kernel_5[
             dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
         ]
@@ -809,7 +809,7 @@ fn run_gemm_kernel_5[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -829,7 +829,7 @@ fn run_gemm_kernel_5[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
@@ -979,7 +979,7 @@ fn run_gemm_kernel_6[
     var K = a.shape[1]()
 
     alias NUM_THREADS = (BM * BN) // (TM * TN)
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         gemm_kernel_6[
             dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
         ]
@@ -988,7 +988,7 @@ fn run_gemm_kernel_6[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -1008,7 +1008,7 @@ fn run_gemm_kernel_6[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
@@ -1196,7 +1196,7 @@ fn run_gemm_kernel_tc[
     var K = a.shape[1]()
 
     alias NUM_WARPS = (BM // WM) * (BN // WN)
-    var func = ctx.compile_function[
+    var func = ctx.compile_function_unchecked[
         matmul_kernel_tc[
             dtype,
             a.layout,
@@ -1216,7 +1216,7 @@ fn run_gemm_kernel_tc[
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function(
+        ctx.enqueue_function_unchecked(
             func,
             a,
             b,
@@ -1236,7 +1236,7 @@ fn run_gemm_kernel_tc[
         ),
         0,
     )
-    ctx.enqueue_function(
+    ctx.enqueue_function_unchecked(
         func,
         a,
         b,
