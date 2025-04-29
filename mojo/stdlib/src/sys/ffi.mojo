@@ -483,10 +483,6 @@ fn _try_find_dylib[
     """
     alias dylib_name = name if name != "" else "dynamic library"
     for path in paths:
-        # Skip paths that don't exist.
-        # FIXME: This will need to be changed in order to load libraries by name
-        if not path[].exists():
-            continue
         # If we are given a library name like libfoo.so, pass it directly to
         # dlopen(), which will invoke the system linker to find the library.
         # We can't check the existence of the path ahead of time, we have to

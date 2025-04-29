@@ -29,11 +29,8 @@ alias cublasContext = NoneType
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUBLAS_LIBRARY_PATHS = List[Path](
-    "/usr/local/cuda-12.8/lib64/libcublas.so",
-    "/usr/local/cuda-12.8/lib64/libcublas.so.0",
+    "libcublas.so.12",
     "/usr/local/cuda-12.8/lib64/libcublas.so.12",
-    "/usr/local/cuda/lib64/libcublas.so",
-    "/usr/local/cuda/lib64/libcublas.so.0",
     "/usr/local/cuda/lib64/libcublas.so.12",
 )
 
