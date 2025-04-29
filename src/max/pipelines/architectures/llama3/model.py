@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, Callable, Literal, Optional, cast
+from typing import Any, Callable, Literal, Optional
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -264,7 +264,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        model_inputs = cast(Llama3Inputs, model_inputs)
+        assert isinstance(model_inputs, Llama3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         model_outputs = self.model.execute(
             model_inputs.tokens,
@@ -275,15 +275,19 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[1]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                logits=model_outputs[1],
+                next_token_logits=model_outputs[0],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[0]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=model_outputs[0],
+                next_token_logits=model_outputs[0],
             )
 
     def _prepare_ragged_initial_token_inputs(
@@ -388,7 +392,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         """Prepare the inputs for the next token in multistep execution.
         This should avoid any device synchronization or copy operations.
         """
-        prev_model_inputs = cast(Llama3Inputs, prev_model_inputs)
+        assert isinstance(prev_model_inputs, Llama3Inputs)
         if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_next_token_inputs(
                 next_tokens, prev_model_inputs
@@ -746,18 +750,20 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 return None
             logits = model_outputs.logits.to_numpy()
 
-        llama3_inputs = cast(Llama3Inputs, model_inputs)
-        next_token_logits = cast(
-            Tensor, model_outputs.next_token_logits
-        ).to_numpy()
+        assert isinstance(model_inputs, Llama3Inputs)
+        llama3_inputs: Llama3Inputs = model_inputs
+        assert model_outputs.next_token_logits is not None
+        next_token_logits = model_outputs.next_token_logits.to_numpy()
 
         sampled_tokens = next_tokens.to_numpy()
+        tokens = llama3_inputs.tokens
+        if isinstance(tokens, Tensor):
+            tokens = tokens.to_numpy()
         if self.kv_cache_config.cache_strategy.uses_opaque():
             # Handle the ragged inputs
-            tokens = cast(Tensor, llama3_inputs.tokens).to_numpy()
-            input_row_offsets = cast(
-                Tensor, llama3_inputs.input_row_offsets
-            ).to_numpy()
+            input_row_offsets = llama3_inputs.input_row_offsets
+            if isinstance(input_row_offsets, Tensor):
+                input_row_offsets = input_row_offsets.to_numpy()
 
             def _get_logits_and_samples(
                 batch_index: int, echo: bool
@@ -782,7 +788,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
         else:
             # Handle batched inputs. Llama pads them to the right so the seq
             # lengths can be computed by finding the first 0 token.
-            tokens = cast(np.ndarray, llama3_inputs.tokens)
             seq_lens = np.sum(tokens > 0, axis=1)
 
             def _get_logits_and_samples(
