@@ -70,14 +70,6 @@ from .sampling import token_sampler
 
 try:
     import xgrammar as xgr
-
-    # This retrieves the last logger handler added
-    # which presumably is the one initialized in xgrammar
-    # and removes it, this stops our server logging from
-    # doubling up.
-    logger = logging.getLogger()
-    handler = logger.handlers[-1]
-    logger.removeHandler(handler)
 except ImportError:
     pass
 
