@@ -177,6 +177,8 @@ static constexpr StringLiteral kMOGGOutputLambdas = "_out_lambdas";
 static constexpr StringLiteral kMOGGElementwiseLambda = "_elementwise_lambda";
 static constexpr StringLiteral kMOGGElementwiseOutputLambda =
     "_elementwise_output_lambda";
+static constexpr StringLiteral kMOGGFusionBodyOutputLambda =
+    "fusionBodyOutputLambda";
 
 // Mark a function as the outlined body of an elementwise kernel.
 // During InlineLambdas those functions can be CSE.
