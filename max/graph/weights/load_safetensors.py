@@ -12,7 +12,7 @@ from os import PathLike
 from typing import Any, Optional
 
 import numpy.typing as npt
-from max.dtype import DType, max_to_torch_type, torch_to_max_type
+from max.dtype import DType, torch_to_max_type
 from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
@@ -144,12 +144,6 @@ class SafetensorWeights(Weights):
         with safe_open(filepath, framework="pt") as f:
             tensor = f.get_tensor(self.name)
 
-        # Some checkpoints have mixed bf16/float32 weights, while others have
-        # weights that are all the same precision.
-        # The max graph expects a certain dtype so make sure to convert it here.
-        if dtype is not None and torch_to_max_type(tensor.dtype) != dtype:
-            tensor = tensor.to(max_to_torch_type(dtype))
-
         self._st_weight_map[self._prefix] = tensor
         return tensor
 
@@ -227,10 +221,18 @@ class SafetensorWeights(Weights):
         # Validate the loaded weight.
         weight_shape = tuple(dim for dim in weight.shape)
         if shape is not None and weight_shape != tuple(shape):
-            raise ValueError(
-                f"Did not get expected shape for weight {self._prefix}"
-                f"\n\tExpected shape: {shape}, got: {weight_shape}"
+            msg = (
+                f"Value provided to weight '{self.name}' had different shape"
+                f" (expected={shape}, actual={weight_shape})"
             )
+            raise ValueError(msg)
+        if dtype is not None and weight_dtype != dtype:
+            msg = (
+                f"Value provided to weight '{self.name}' had different dtype"
+                f" (expected={dtype}, actual={weight_dtype})"
+            )
+            raise ValueError(msg)
+
         return weight
 
     def allocate_as_bytes(self, dtype: DType | None = None) -> Weight:

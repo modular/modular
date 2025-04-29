@@ -211,21 +211,22 @@ class PytorchWeights:
         )
 
         # Validate the loaded weight.
-        shape_match = True
-        dtype_match = True
         if shape is not None:
             expected_shape = tuple(shape)
             weight_unpacked_shape = tuple(dim for dim in weight.shape)
-            shape_match = weight_unpacked_shape == expected_shape
-        if dtype is not None:
-            dtype_match = dtype == weight.dtype
 
-        if not (shape_match and dtype_match):
-            raise ValueError(
-                "Did not get expected weight shape and/or dtype.\n\tExpected"
-                f" dtype: {dtype}, got: {weight.dtype}\n\tExpected shape:"
-                f" {expected_shape}, got: {weight_unpacked_shape}"
+        if shape is not None and weight_unpacked_shape != expected_shape:
+            msg = (
+                f"Value provided to weight '{self.name}' had different shape"
+                f" (expected={expected_shape}, actual={weight_unpacked_shape})"
             )
+            raise ValueError(msg)
+        if dtype is not None and weight.dtype != dtype:
+            msg = (
+                f"Value provided to weight '{self.name}' had different dtype"
+                f" (expected={dtype}, actual={weight.dtype})"
+            )
+            raise ValueError(msg)
 
         return weight
 
