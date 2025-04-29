@@ -54,7 +54,7 @@ fn test_function_unchecked(ctx: DeviceContext) raises:
             out_host[i] = length + i
     var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
-    ctx.enqueue_function[vec_func](
+    ctx.enqueue_function_unchecked[vec_func](
         in0,
         in1,
         out,

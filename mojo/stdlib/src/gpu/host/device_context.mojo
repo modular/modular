@@ -2772,6 +2772,9 @@ struct DeviceContext(CollectionElement):
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
         self,
         *,
@@ -2779,8 +2782,8 @@ struct DeviceContext(CollectionElement):
         out result: DeviceFunction[
             func,
             Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]](None),
-            target = Self.device_info.target(),
-            _ptxas_info_verbose=False,
+            target=_target,
+            _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
         """Compiles the provided function for execution on this device.
@@ -2792,6 +2795,14 @@ struct DeviceContext(CollectionElement):
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
                 path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+            _target: Change the target to different device type than the
+                one associated with this `DeviceContext`.
 
         Args:
             func_attribute: An attribute to use when compiling the code (such
@@ -2800,17 +2811,17 @@ struct DeviceContext(CollectionElement):
         Returns:
             The compiled function.
         """
-        result = self.compile_function[
+        result = self.compile_function_unchecked[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
-            _dump_sass=False,
-            _target = Self.device_info.target(),
-            _ptxas_info_verbose=False,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+            _target=_target,
         ](func_attribute=func_attribute)
 
     @always_inline
-    fn compile_function[
+    fn compile_function_unchecked[
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
@@ -3168,7 +3179,102 @@ struct DeviceContext(CollectionElement):
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=func_attribute)
 
-        self._enqueue_function(
+        self._enqueue_function_unchecked(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn enqueue_function_unchecked[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *Ts: AnyType,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            func_type: The type of the function to launch.
+            func: The function to launch.
+            Ts: The types of the arguments being passed to the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        var gpu_kernel = self.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+        self._enqueue_function_unchecked(
             gpu_kernel,
             args,
             grid_dim=grid_dim,
@@ -3249,7 +3355,88 @@ struct DeviceContext(CollectionElement):
                 " `enqueue_function_checked`."
             ),
         ]()
-        self._enqueue_function(
+        self._enqueue_function_unchecked(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn enqueue_function_unchecked[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            Ts: Argument types.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        """
+        constrained[
+            not f.declared_arg_types,
+            (
+                "A checked DeviceFunction should be called with"
+                " `enqueue_function_checked`."
+            ),
+        ]()
+        self._enqueue_function_unchecked(
             f,
             args,
             grid_dim=grid_dim,
@@ -3544,7 +3731,7 @@ struct DeviceContext(CollectionElement):
 
     @parameter
     @always_inline
-    fn _enqueue_function[
+    fn _enqueue_function_unchecked[
         *Ts: AnyType
     ](
         self,
