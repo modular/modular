@@ -48,8 +48,10 @@ class PrintKVCacheModel:
             values=[
                 valid_lengths,
                 kv_collection,
-                ops.constant(self.layer_idx, DType.uint32),
-                ops.constant(True, DType.bool),
+                ops.constant(
+                    self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+                ),
+                ops.constant(True, DType.bool, device=DeviceRef.CPU()),
             ],
             parameters={
                 "num_heads": self.kv_params.n_kv_heads_per_device,

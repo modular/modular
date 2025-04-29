@@ -183,7 +183,7 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                 attn_mask,
                 k_cache,
                 v_cache,
-                ops.constant(start_pos, DType.int64),
+                ops.constant(start_pos, DType.int64, device=DeviceRef.CPU()),
                 layer_index,
             )
         )

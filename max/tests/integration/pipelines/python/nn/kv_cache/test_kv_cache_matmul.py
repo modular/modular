@@ -99,7 +99,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 lookup_table,
                 is_cache_empty,
             ) = g.inputs
-            layer_idx = ops.constant(0, DType.uint32)
+            layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
             kv_collection = fetch_op(
                 blocks, cache_lengths, lookup_table, is_cache_empty

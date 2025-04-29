@@ -154,7 +154,9 @@ def _attention_layer(
         attn_fn = Attention(
             n_heads=N_HEADS,
             kv_params=kv_params,
-            layer_idx=ops.constant(LAYER_IDX, DType.uint32),
+            layer_idx=ops.constant(
+                LAYER_IDX, DType.uint32, device=DeviceRef.CPU()
+            ),
             wqkv=wqkv,
             wo=LinearV1(wo),
             scale=math.sqrt(1.0 / kv_params.head_dim),
@@ -334,10 +336,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
                 lookup_table,
                 is_cache_empty,
             ) = g.inputs
-            layer_idx = ops.constant(
-                0,
-                DType.uint32,
-            )
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
             kv_collection = fetch_op(
                 blocks, cache_lengths, lookup_table, is_cache_empty

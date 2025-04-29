@@ -80,7 +80,7 @@ def _attention_block(
     attn_fn = Attention(
         n_heads=kv_params.n_kv_heads_per_device,  # Should be n_heads_per_device
         kv_params=kv_params,
-        layer_idx=ops.constant(LAYER_IDX, DType.uint32),
+        layer_idx=ops.constant(LAYER_IDX, DType.uint32, device=DeviceRef.CPU()),
         wqkv=wqkv,
         wo=LinearV1(wo),
         scale=math.sqrt(1.0 / kv_params.head_dim),

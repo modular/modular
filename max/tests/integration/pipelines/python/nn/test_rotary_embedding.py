@@ -355,6 +355,7 @@ def test_kv_cache_ragged_rope(session):
             layer_idx = ops.constant(
                 0,
                 DType.uint32,
+                DeviceRef.CPU(),
             )
 
             kv_collection = fetch_op(

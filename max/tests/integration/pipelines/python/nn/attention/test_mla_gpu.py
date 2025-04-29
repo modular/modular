@@ -65,7 +65,7 @@ def test_mla_prefill_plan() -> None:
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
-            layer_idx = ops.constant(0, DType.uint32)
+            layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
             kv_collection = fetch_op(*[v.tensor for v in g.inputs[1:]])
 
@@ -174,7 +174,7 @@ def test_mla_decompress_k_cache() -> None:
         ) as g:
             input_row_offsets = g.inputs[0].tensor
             weight = g.inputs[1].tensor
-            layer_idx = ops.constant(0, DType.uint32)
+            layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
             kv_collection = fetch_op(*[v.tensor for v in g.inputs[2:]])
 
