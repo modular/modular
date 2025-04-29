@@ -17,9 +17,8 @@ It includes efficient implementations for string manipulation, formatting, and U
 operations while maintaining memory safety and performance.
 
 Key Components:
-- `String`: The main string type supporting UTF-8 encoded text
+- `String`: The main string type supporting UTF-8 encoded text,
 - `StringSlice`: Memory-efficient string view type for zero-copy operations
-- `InlineString`: Small string optimization for short strings
 - `Codepoint`: Unicode code point handling and operations
 - Format: String formatting and interpolation utilities
 

@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the utils package."""
 
-from collections.string.inline_string import InlineString
-
 from .index import Index, IndexList, product
 from .lock import BlockingScopedLock, BlockingSpinLock, SpinWaiter
 from .static_tuple import StaticTuple

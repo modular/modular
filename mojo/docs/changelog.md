@@ -297,6 +297,9 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
   - The `bool` free function. Use the `Bool` constructor instead.
   - The `float` free function. Use the `Float64` constructor instead.
 
+- The `InlinedString` type has been removed.  Use `String` instead which now
+  supports the Small String Optimization (SSO).
+
 ### 🛠️ Fixed
 
 - [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't
