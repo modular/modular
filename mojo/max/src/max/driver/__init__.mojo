@@ -3,7 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""APIs to interact with devices.
+"""DEPRECATED:
+The `max.driver` Mojo API is being deprecated in favor of the open source
+`gpu.host` API, which has better ergonomics, and is more feature complete.
+
+APIs to interact with devices.
 
 Although there are several modules in this `max.driver` package, you'll get
 everything you need from this top-level `driver` namespace, so you don't need

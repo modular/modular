@@ -129,6 +129,10 @@ struct _GraphLayerContext:
 
 
 @value
+@deprecated(
+    "the Mojo max.engine API has been deprecated in favor of the Python API. It"
+    " will be open sourced in a future patch prior to being removed."
+)
 struct Graph(CollectionElement, Stringable, Writable):
     """Represents a single MAX graph.
 

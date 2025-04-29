@@ -3,7 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""APIs to build inference graphs for MAX Engine.
+"""DEPRECATED:
+The Mojo graph and engine APIs are being deprecated. Internally we build graphs
+using the Python APIs, and our engineering efforts have been focused on that. As
+a result, the Mojo version has not kept pace with new features and language
+improvements. These APIs will be open sourced for the community in a future
+patch prior to being removed.
 
 The MAX Graph API provides a low-level programming interface for
 high-performance inference graphs written in Mojo. It's an API for

@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""APIs to run inference with MAX Engine.
+"""DEPRECATED:
+The Mojo graph and engine APIs are being deprecated. Internally we build graphs
+using the Python APIs, and our engineering efforts have been focused on that. As
+a result, the Mojo version has not kept pace with new features and language
+improvements. These APIs will be open sourced for the community in a future
+patch prior to being removed.
+
+APIs to run inference with MAX Engine.
 
 Although there are several modules in this `max.engine` package, you'll get
 everything you need from this top-level `engine` namespace, so you don't need

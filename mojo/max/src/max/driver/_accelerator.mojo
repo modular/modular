@@ -23,11 +23,13 @@ from ._status import Status
 from .device import Device, _CDevice, _get_driver_path
 
 
+@deprecated("use gpu.host.DeviceContext.number_of_devices() instead")
 fn accelerator_count() raises -> Int:
     var lib = DriverLibrary()
     return lib.accelerator_count_fn()
 
 
+@deprecated("use gpu.host.DeviceContext() instead")
 fn accelerator(gpu_id: Int = 0) raises -> Device:
     var lib = DriverLibrary()
     var status = Status(lib)
@@ -94,6 +96,7 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
         )
 
 
+@deprecated("use gpu.host.DeviceContext.enqueue_function() instead")
 struct Accelerator:
     @staticmethod
     fn check_compute_capability(device: Device) -> Bool:

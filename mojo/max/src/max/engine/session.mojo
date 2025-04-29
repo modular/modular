@@ -429,6 +429,10 @@ struct SessionOptions:
 
 
 @value
+@deprecated(
+    "the Mojo max.engine API has been deprecated in favor of the Python API. It"
+    " will be open sourced in a future patch prior to being removed."
+)
 struct InferenceSession:
     """
     Holds the context for MAX Engine in which you can load and run models.

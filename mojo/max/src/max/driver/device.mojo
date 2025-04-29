@@ -66,6 +66,7 @@ struct _CDevice:
         return self._ptr == other._ptr
 
 
+@deprecated("use gpu.host.DeviceContext() instead")
 struct Device(Stringable):
     """Represents a logical instance of a device, for eg: CPU. This
     can be used to allocate and manage memory in a device's address space,
@@ -219,6 +220,7 @@ struct Device(Stringable):
         device_context[].synchronize()
 
 
+@deprecated('use gpu.host.DeviceContext(api="cpu") instead')
 fn cpu() raises -> Device:
     """Creates a CPU Device.
 
