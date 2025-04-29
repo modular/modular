@@ -32,6 +32,7 @@ what we publish.
 - Parts of the Kernel library continue to be progressively open sourced!
   Packages that are open sourced now include:
   - `register`
+  - `layout`
 
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
