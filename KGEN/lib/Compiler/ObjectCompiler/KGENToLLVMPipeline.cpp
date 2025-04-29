@@ -34,8 +34,7 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   // And finally canonicalize again.
   // FIXME(#25742): The MLIR region simplifier has exponential behaviour.
   mlir::GreedyRewriteConfig config;
-  config.setRegionSimplificationLevel(
-      mlir::GreedySimplifyRegionLevel::Disabled);
+  config.enableRegionSimplification = mlir::GreedySimplifyRegionLevel::Disabled;
   pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass(config));
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
