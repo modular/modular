@@ -173,6 +173,10 @@ struct MojoKernelOperandAdaptor {
                underlyingType);
   }
 
+  bool isScalarType() const {
+    return std::holds_alternative<ScalarOperandAdaptor>(underlyingType);
+  }
+
   bool isTensorType() const {
     return std::holds_alternative<TensorOperandAdaptor>(underlyingType) ||
            std::holds_alternative<VariadicTensorOperandAdaptor>(
