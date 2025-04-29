@@ -201,7 +201,7 @@ struct _DictValueIter[
 
 @value
 struct DictEntry[K: KeyElement, V: CollectionElement](
-    CollectionElement, CollectionElementNew
+    CollectionElement, ExplicitlyCopyable
 ):
     """Store a key-value pair entry inside a dictionary.
 
@@ -344,7 +344,7 @@ struct _DictIndex:
 
 
 struct Dict[K: KeyElement, V: CollectionElement](
-    Sized, CollectionElement, CollectionElementNew, Boolable
+    Sized, CollectionElement, ExplicitlyCopyable, Boolable
 ):
     """A container that stores key-value pairs.
 
@@ -1078,7 +1078,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
 
 struct OwnedKwargsDict[V: CollectionElement](
-    Sized, CollectionElement, CollectionElementNew
+    Sized, CollectionElement, ExplicitlyCopyable
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 

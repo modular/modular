@@ -781,7 +781,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement List.__eq__ for Self[ComparableCollectionElement]
+    # TODO: implement List.__eq__ for Self[CollectionElement & Comparable]
     # var y = List[List[Int]]()
     # y.append(List(1,2))
     # assert_equal(List(1,2) in y,True)

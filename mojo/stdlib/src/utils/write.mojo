@@ -226,7 +226,7 @@ struct _WriteBufferHeap(Writer):
         self.pos = 0
 
     fn write_list[
-        T: WritableCollectionElement
+        T: CollectionElement & Writable, //
     ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
@@ -266,7 +266,7 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: WritableCollectionElement
+        T: CollectionElement & Writable, //
     ](out self, values: List[T, *_], sep: String = String()):
         self.size = 0
         var length = len(values)
@@ -302,7 +302,7 @@ struct _WriteBufferStack[
         self.writer = Pointer(to=writer)
 
     fn write_list[
-        T: WritableCollectionElement
+        T: CollectionElement & Writable, //
     ](mut self, values: List[T, *_], *, sep: String = String()):
         var length = len(values)
         if length == 0:
@@ -424,7 +424,7 @@ fn write_buffered[
 
 fn write_buffered[
     W: Writer,
-    T: WritableCollectionElement, //,
+    T: CollectionElement & Writable, //,
     buffer_size: Int = 4096,
 ](mut writer: W, values: List[T, *_], *, sep: StaticString = StaticString()):
     """
@@ -436,7 +436,8 @@ fn write_buffered[
 
     Parameters:
         W: The type of the `Writer` to write to.
-        T: The `Writable` type of the `List`.
+        T: The element type of the `List`. Must implement the `Writable` and
+            `CollectionElement` traits.
         buffer_size: How many bytes to write to a buffer before writing out to
             the `writer` (default `4096`).
 

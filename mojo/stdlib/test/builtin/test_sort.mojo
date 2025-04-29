@@ -52,7 +52,7 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[T: ComparableCollectionElement](mut list: List[T]) raises:
+fn assert_sorted[T: CollectionElement & Comparable](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 
@@ -536,7 +536,7 @@ def test_sort_strings():
 
 
 @value
-struct Person(ComparableCollectionElement):
+struct Person(CollectionElement, Comparable):
     var name: String
     var age: Int
 

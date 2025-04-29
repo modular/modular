@@ -56,7 +56,7 @@ struct Node[
         self.next = next.value() if next else Self._NodePointer()
 
     fn __str__[
-        ElementType: WritableCollectionElement
+        ElementType: CollectionElement & Writable
     ](self: Node[ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -71,7 +71,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        ElementType: WritableCollectionElement, W: Writer
+        ElementType: CollectionElement & Writable, W: Writer
     ](self: Node[ElementType], mut writer: W):
         """Write this node's value to the given writer.
 
@@ -788,7 +788,7 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        ElementType: WritableCollectionElement
+        ElementType: CollectionElement & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -807,7 +807,7 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        ElementType: WritableCollectionElement
+        ElementType: CollectionElement & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -826,7 +826,7 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        W: Writer, ElementType: WritableCollectionElement
+        W: Writer, ElementType: CollectionElement & Writable
     ](self: LinkedList[ElementType], mut writer: W):
         """Write the list to the given writer.
 
@@ -845,7 +845,7 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, ElementType: WritableCollectionElement
+        W: Writer, ElementType: CollectionElement & Writable
     ](
         self: LinkedList[ElementType],
         mut writer: W,

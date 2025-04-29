@@ -164,7 +164,7 @@ struct _OwnedDLHandle(Movable):
 
 @value
 @register_passable("trivial")
-struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
+struct DLHandle(CollectionElement, ExplicitlyCopyable, Boolable):
     """Represents a dynamically linked library that can be loaded and unloaded.
 
     The library is loaded on initialization and unloaded by `close`.

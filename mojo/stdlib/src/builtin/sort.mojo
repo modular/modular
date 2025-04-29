@@ -580,7 +580,7 @@ fn sort[
 
 
 fn sort[
-    T: ComparableCollectionElement,
+    T: CollectionElement & Comparable,
     origin: MutableOrigin, //,
     *,
     stable: Bool = False,

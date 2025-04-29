@@ -37,7 +37,7 @@ struct Error(
     Representable,
     Writable,
     CollectionElement,
-    CollectionElementNew,
+    ExplicitlyCopyable,
     _CurlyEntryFormattable,
 ):
     """This type represents an Error."""

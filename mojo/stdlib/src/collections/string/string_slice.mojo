@@ -455,7 +455,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Sized,
     Writable,
     CollectionElement,
-    CollectionElementNew,
+    ExplicitlyCopyable,
     EqualityComparable,
     Hashable,
     PathLike,
@@ -2129,11 +2129,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             result += fillchar
         return result
 
-    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
+    fn join[
+        T: CollectionElement & Writable
+    ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            T: The types of the elements.
+            T: The type of the elements, must implement the `CollectionElement`
+                and `Writable` traits.
 
         Args:
             elems: The input values.

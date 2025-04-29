@@ -163,9 +163,9 @@ struct CopyCounter(CollectionElement, ExplicitlyCopyable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCounter[T: CollectionElementNew](
+struct MoveCounter[T: ExplicitlyCopyable & Movable](
     CollectionElement,
-    CollectionElementNew,
+    ExplicitlyCopyable,
 ):
     """Counts the number of moves performed on a value."""
 

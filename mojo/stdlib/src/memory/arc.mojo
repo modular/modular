@@ -46,7 +46,7 @@ struct _ArcPointerInner[T: Movable]:
 
 @register_passable
 struct ArcPointer[T: Movable](
-    CollectionElement, CollectionElementNew, Identifiable
+    CollectionElement, ExplicitlyCopyable, Identifiable
 ):
     """Atomic reference-counted pointer.
 

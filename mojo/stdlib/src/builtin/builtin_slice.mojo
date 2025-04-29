@@ -24,7 +24,7 @@ struct Slice(
     EqualityComparable,
     Representable,
     Writable,
-    CollectionElementNew,
+    ExplicitlyCopyable,
 ):
     """Represents a slice expression.
 

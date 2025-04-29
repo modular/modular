@@ -69,7 +69,7 @@ from utils import Variant
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
 @value
-struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
+struct _FormatCurlyEntry(CollectionElement, ExplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """

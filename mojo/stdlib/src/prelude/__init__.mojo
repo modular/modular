@@ -126,15 +126,11 @@ from builtin.type_aliases import (
 )
 from builtin.uint import UInt
 from builtin.value import (
-    BoolableCollectionElement,
     CollectionElement,
-    CollectionElementNew,
-    ComparableCollectionElement,
     Copyable,
     Defaultable,
     ExplicitlyCopyable,
     Movable,
-    WritableCollectionElement,
 )
 from documentation import doc_private
 from memory import AddressSpace, Pointer, Span

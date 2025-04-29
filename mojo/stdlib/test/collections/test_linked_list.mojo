@@ -479,7 +479,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement LinkedList.__eq__ for Self[ComparableCollectionElement]
+    # TODO: implement LinkedList.__eq__ for Self[CollectionElement & Comparable]
     # var y = LinkedList[LinkedList[Int]]()
     # y.append(LinkedList(1,2))
     # assert_equal(LinkedList(1,2) in y,True)

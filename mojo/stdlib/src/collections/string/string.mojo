@@ -268,10 +268,10 @@ struct String(
     Boolable,
     Writable,
     Writer,
-    CollectionElementNew,
+    ExplicitlyCopyable,
     FloatableRaising,
     _HashableWithHasher,
-    WritableCollectionElement,
+    CollectionElement,
     PathLike,
     _CurlyEntryFormattable,
     PythonConvertible,
@@ -1017,7 +1017,7 @@ struct String(
         return String(elems, sep=sep)
 
     fn join[
-        T: WritableCollectionElement, //, buffer_size: Int = 4096
+        T: CollectionElement & Writable, //, buffer_size: Int = 4096
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
@@ -1028,7 +1028,8 @@ struct String(
         instead of the heap.
 
         Parameters:
-            T: The types of the elements.
+            T: The type of the elements. Must implement the `CollectionElement`
+                and `Writable` traits.
             buffer_size: The max size of the stack buffer.
 
         Args:

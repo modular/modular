@@ -51,7 +51,7 @@ from utils import Variant
 
 
 @value
-struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
+struct InlineString(Sized, Stringable, CollectionElement, ExplicitlyCopyable):
     """A string that performs small-string optimization to avoid heap allocations for short strings.
     """
 
@@ -285,7 +285,7 @@ struct _FixedString[CAP: Int](
     Writable,
     Writer,
     CollectionElement,
-    CollectionElementNew,
+    ExplicitlyCopyable,
 ):
     """A string with a fixed available capacity.
 

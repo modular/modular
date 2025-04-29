@@ -68,7 +68,7 @@ struct Path(
     Boolable,
     Writable,
     CollectionElement,
-    CollectionElementNew,
+    ExplicitlyCopyable,
     PathLike,
     KeyElement,
 ):
