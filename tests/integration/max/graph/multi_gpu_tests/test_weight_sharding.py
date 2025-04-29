@@ -28,7 +28,7 @@ def create_sharded_weight_graph() -> Graph:
         sharding_strategy=sharding_strategy,
     )
     # Shards must be able to be created outside the graph.
-    shard_0 = weight.shard(0)  # Keep on CPU.
+    shard_0 = weight.shard(0, DeviceRef.CPU())  # Keep on CPU.
     assert isinstance(shard_0, Weight)
     shard_1 = weight.shard(1, DeviceRef.GPU(0))  # Move to GPU 0.
     shard_2 = weight.shard(2, DeviceRef.GPU(1))  # Move to GPU 1.

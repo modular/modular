@@ -154,9 +154,7 @@ class Weight(TensorValue):
             self, sharding_strategy
         )
 
-    def shard(
-        self, shard_idx: int, device: Optional[DeviceRef] = None
-    ) -> Weight:
+    def shard(self, shard_idx: int, device: DeviceRef) -> Weight:
         """Gets a specific shard from the Weight.
 
         This `Weight` must have `sharding_strategy` defined. The shard object
@@ -164,7 +162,7 @@ class Weight(TensorValue):
 
         Args:
             shard_idx: int value of the shard.
-            device: Optional device to place the shard.
+            device: device to place the shard.
 
         Returns:
             The sharded weight.
@@ -181,7 +179,7 @@ class Weight(TensorValue):
             name=f"{self.name}[{shard_idx}]",
             dtype=self._dtype,
             shape=self._shape,
-            device=device or self._device,
+            device=device,
             quantization_encoding=self.quantization_encoding,
             align=self.align,
         )
