@@ -1078,6 +1078,8 @@ from python import Python
 def run_display():
     # This is roughly equivalent to Python's `import pygame`
     pygame = Python.import_module("pygame")
+
+    # Initialize pygame modules
     pygame.init()
 ```
 
@@ -1099,7 +1101,7 @@ a look at the updated code for `life.mojo` and we'll explain more of it below:
 
 ```mojo title="life.mojo"
 from gridv1 import Grid
-from python import Python, PythonObject
+from python import Python
 import time
 
 def run_display(
@@ -1118,7 +1120,7 @@ def run_display(
 
     # Create a window and set its title
     window = pygame.display.set_mode(
-        PythonObject.tuple(window_height, window_width)
+        Python.tuple(window_height, window_width)
     )
     pygame.display.set_caption("Conway's Game of Life")
 
@@ -1154,7 +1156,7 @@ def run_display(
                     pygame.draw.rect(
                         window,
                         cell_fill_color,
-                        PythonObject.tuple(x, y, width, height),
+                        Python.tuple(x, y, width, height),
                     )
 
         # Update the display
@@ -1185,7 +1187,7 @@ After importing the `pygame` module, we call `pygame.init()` to initialize all
 the pygame subsystems.
 
 The `set_mode()` function creates and initializes a window, with the height and
-width passed as a Mojo tuple of two values. This returns a
+width passed as a Python tuple of two values. This returns a
 [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper for the
 window, which we can then use to call functions and set attributes to manipulate
 the window. (For more information about interacting with Python objects from

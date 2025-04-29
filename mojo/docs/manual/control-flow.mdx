@@ -444,10 +444,11 @@ The following is a simple example of iterating over a mixed-type Python list.
 ```mojo
 from python import Python
 
-# Create a mixed-type Python list
-py_list = Python.evaluate("[42, 'cat', 3.14159]")
-for py_obj in py_list:  # Each element is of type "PythonObject"
-    print(py_obj)
+def main():
+    # Create a mixed-type Python list
+    py_list = Python.list(42, "cat", 3.14159)
+    for py_obj in py_list:  # Each element is of type "PythonObject"
+        print(py_obj)
 ```
 
 ```output
@@ -472,10 +473,11 @@ iterate directly using the dictionary, which produces a sequence of its keys.
 ```mojo
 from python import Python
 
-# Create a mixed-type Python dictionary
-py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
-for py_key in py_dict:  # Each element is of type "PythonObject"
-    print(py_key, py_dict[py_key])
+def main():
+    # Create a mixed-type Python dictionary
+    py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
+    for py_key in py_dict:  # Each key is of type "PythonObject"
+        print(py_key, py_dict[py_key])
 ```
 
 ```output
@@ -489,8 +491,13 @@ The second approach to iterating over a Python dictionary is to invoke its
 Within the loop body, you can then access the key and value by index.
 
 ```mojo
-for py_tuple in py_dict.items():  # Each element is of type "PythonObject"
-    print(py_tuple[0], py_tuple[1])
+from python import Python
+
+def main():
+    # Create a mixed-type Python dictionary
+    py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
+    for py_tuple in py_dict.items():  # Each 2-tuple is of type "PythonObject"
+        print(py_tuple[0], py_tuple[1])
 ```
 
 ```output

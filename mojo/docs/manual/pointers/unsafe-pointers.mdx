@@ -350,12 +350,14 @@ from memory import UnsafePointer
 
 def share_array():
     np = Python.import_module("numpy")
-    arr = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
     ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
     for i in range(9):
         print(ptr[i], end=", ")
+    print()
 
-share_array()
+def main():
+    share_array()
 ```
 
 ```output
@@ -399,7 +401,6 @@ Each chunk begins with an 8-bit integer that identifies the number of values
 in the chunk.
 
 ```mojo
-
 def read_chunks(owned ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
