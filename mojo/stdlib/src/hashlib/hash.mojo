@@ -176,7 +176,12 @@ fn _hash_simd[dtype: DType, size: Int](data: SIMD[dtype, size]) -> UInt:
     return Int(final_data)
 
 
-fn hash(bytes: UnsafePointer[UInt8], n: Int) -> UInt:
+fn hash(
+    bytes: UnsafePointer[
+        UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
+    ],
+    n: Int,
+) -> UInt:
     """Hash a byte array using a SIMD-modified DJBX33A hash algorithm.
 
     _This hash function is not suitable for cryptographic purposes._ The
