@@ -367,15 +367,22 @@ class Graph:
                 with self._capturing_mlir_diagnostics():
                     results = op(*unwrapped_args, **unwrapped_kwargs)
 
-                    if isinstance(results, (mlir.OpResult, mlir.OpResultList)):
-                        assert hasattr(results.owner, "opview")
-                        staged_op = results.owner.opview
+                    if _ip is None:
+                        # Get the op we just staged, which is the last op in the body block.
+                        ops = self._body.operations
 
+                        staged_op = self._body.operations[len(ops) - 1]
                     else:
-                        assert isinstance(
-                            results, (mlir.Operation, mlir.OpView)
-                        )
-                        staged_op = results.opview
+                        cur_block = _ip.block
+                        ops = cur_block.operations
+                        for idx, op in enumerate(ops):
+                            if op == _ip.ref_operation:
+                                staged_op = ops[idx - 1]
+                                break
+                        else:
+                            assert False, (
+                                "Could not find constructed operation in current block"
+                            )
                     self._verify_op(staged_op)
 
             except (mlir.MLIRError, ValueError) as e:  # type: ignore
