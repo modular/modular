@@ -17,7 +17,7 @@ from conftest import (
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+from max.graph import DeviceRef, TensorType, Weight, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 static_tensor_type = tensor_types(
@@ -45,12 +45,12 @@ stride_type = st.tuples(pos_int, pos_int)
     padding=padding_type,
 )
 def test_conv_valid(
-    x_type: TensorType, filter_type: TensorType, stride, padding
+    graph_builder, x_type: TensorType, filter_type: TensorType, stride, padding
 ):
     assume(filter_type.shape[0] <= x_type.shape[1])
     assume(filter_type.shape[1] <= x_type.shape[2])
 
-    with Graph("conv", input_types=[x_type, filter_type]) as graph:
+    with graph_builder(input_types=[x_type, filter_type]) as graph:
         try:
             out = ops.conv2d(
                 graph.inputs[0].tensor,
@@ -84,13 +84,13 @@ def test_conv_valid(
         graph.output(out)
 
 
-def test_conv_dtype_promote_np():
+def test_conv_dtype_promote_np(graph_builder):
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
     filter_shape = [3, 3, 4, 5]
     filter = np.ones(filter_shape, dtype=np.float32)
-    with Graph("conv", input_types=[x_type]) as graph:
+    with graph_builder(input_types=[x_type]) as graph:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
@@ -100,7 +100,7 @@ def test_conv_dtype_promote_np():
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight():
+def test_conv_dtype_promote_weight(graph_builder):
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -111,7 +111,7 @@ def test_conv_dtype_promote_weight():
         shape=filter_shape,
         device=DeviceRef.CPU(),
     )
-    with Graph("conv", input_types=[x_type]) as graph:
+    with graph_builder(input_types=[x_type]) as graph:
         out = ops.conv2d(
             graph.inputs[0],
             filter,
@@ -121,7 +121,7 @@ def test_conv_dtype_promote_weight():
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight_success():
+def test_conv_dtype_promote_weight_success(graph_builder):
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -132,7 +132,7 @@ def test_conv_dtype_promote_weight_success():
         shape=filter_shape,
         device=DeviceRef.CPU(),
     )
-    with Graph("conv", input_types=[x_type]) as graph:
+    with graph_builder(input_types=[x_type]) as graph:
         # Both the input and weight have strong dtypes. Conv requires them to match.
         out = ops.conv2d(
             graph.inputs[0].tensor,
@@ -141,7 +141,7 @@ def test_conv_dtype_promote_weight_success():
         assert out.dtype == DType.float32
 
 
-def test_conv_dtype_promote_weight_failed():
+def test_conv_dtype_promote_weight_failed(graph_builder):
     x_type = TensorType(DType.int32, [1, 128, 128, 4], device=DeviceRef.CPU())
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
@@ -150,7 +150,7 @@ def test_conv_dtype_promote_weight_failed():
         shape=filter_shape,
         device=DeviceRef.CPU(),
     )
-    with Graph("conv", input_types=[x_type]) as graph:
+    with graph_builder(input_types=[x_type]) as graph:
         # Both the input and weight have strong dtypes. Conv requires them to match.
         with pytest.raises(
             ValueError,
@@ -165,7 +165,7 @@ def test_conv_dtype_promote_weight_failed():
             )
 
 
-def test_conv_symbolic_shapes():
+def test_conv_symbolic_shapes(graph_builder):
     input_type = TensorType(
         DType.bfloat16,
         [1, "height", "width", "channels"],
@@ -180,7 +180,7 @@ def test_conv_symbolic_shapes():
     paddings = (0, 0, 0, 0)
     num_groups = 1
 
-    with Graph("symbolic_conv", input_types=[input_type, filter_type]) as graph:
+    with graph_builder(input_types=[input_type, filter_type]) as graph:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             graph.inputs[1].tensor,

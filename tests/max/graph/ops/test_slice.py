@@ -20,9 +20,8 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, StaticDim, TensorType, ops
 
 
-def test_slice_basic():
-    with Graph(
-        "slice",
+def test_slice_basic(graph_builder):
+    with graph_builder(
         input_types=[
             TensorType(DType.int32, [1, 2, 3, 4, 5], device=DeviceRef.CPU())
         ],
@@ -33,9 +32,8 @@ def test_slice_basic():
         graph.output(out)
 
 
-def test_slice_with_tensor_value():
-    with Graph(
-        "slice",
+def test_slice_with_tensor_value(graph_builder):
+    with graph_builder(
         input_types=[
             TensorType(DType.int32, [5, "in_dim"], device=DeviceRef.CPU())
         ],
@@ -115,11 +113,11 @@ def expected_slice_shape(shape, index):
     tensor_type=tensor_types(shapes=shared_shapes),
     index=shared_shapes.flatmap(shape_indexes),
 )
-def test_slice_valid_ints(tensor_type: TensorType, index):
+def test_slice_valid_ints(graph_builder, tensor_type: TensorType, index):
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 
-    with Graph("slice", input_types=[tensor_type]) as graph:
+    with graph_builder(input_types=[tensor_type]) as graph:
         out = ops.slice_tensor(graph.inputs[0].tensor, index)
         assert out.shape == expected_slice_shape(tensor_type.shape, index)
         graph.output(out)
@@ -129,11 +127,13 @@ def test_slice_valid_ints(tensor_type: TensorType, index):
     tensor_type=tensor_types(shapes=shared_shapes),
     index=shared_shapes.flatmap(shape_indexes),
 )
-def test_slice_valid_tensorvalues(tensor_type: TensorType, index):
+def test_slice_valid_tensorvalues(
+    graph_builder, tensor_type: TensorType, index
+):
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 
-    with Graph("slice", input_types=[tensor_type]) as graph:
+    with graph_builder(input_types=[tensor_type]) as graph:
         out = ops.slice_tensor(
             graph.inputs[0].tensor,
             [
@@ -192,13 +192,15 @@ static_tensor_type = tensor_types(
 
 
 @given(tensor_type=static_tensor_type, rand=...)
-def test_slice_static_dims(tensor_type: TensorType, rand: random.Random):
+def test_slice_static_dims(
+    graph_builder, tensor_type: TensorType, rand: random.Random
+):
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 
     index = [gen_slice(int(d), rand) for d in tensor_type.shape]
 
-    with Graph("slice", input_types=[tensor_type]) as graph:
+    with graph_builder(input_types=[tensor_type]) as graph:
         out = ops.slice_tensor(graph.inputs[0].tensor, index)
         assert out.shape == expected_slice_shape(tensor_type.shape, index)
         graph.output(out)
@@ -277,7 +279,7 @@ def test_slice_static_dims(tensor_type: TensorType, rand: random.Random):
     ],
 )
 def test_slice_symbolic_tensor(
-    tensor_type: TensorType, indices: list[slice]
+    graph_builder, tensor_type: TensorType, indices: list[slice]
 ) -> None:
     """Tests slicing vectors of symbolic dims by another symbolic dim vector."""
     # NOTE: the `Graph` constructor verifies the staged graph op.
@@ -298,7 +300,7 @@ def test_slice_symbolic_tensor(
     ],
 )
 def test_slice_dim_overflow(
-    tensor_type: TensorType, indices: list[slice]
+    graph_builder, tensor_type: TensorType, indices: list[slice]
 ) -> None:
     """Tests cases that would overflow an int64 slice index."""
     with pytest.raises(
@@ -344,6 +346,7 @@ def test_slice_dim_overflow(
     ],
 )
 def test_slice_none_dims(
+    graph_builder,
     tensor_type: TensorType,
     indices: list[slice],
     expected_length: int,
@@ -463,6 +466,7 @@ def test_slice_none_dims(
     ],
 )
 def test_slice_int_dims(
+    graph_builder,
     tensor_type: TensorType,
     indices: tuple[Any, ...],
     expected_shape: list[str | int],
@@ -489,7 +493,7 @@ def test_slice_int_dims(
     )
 
 
-def test_slice_invalid_start_stop() -> None:
+def test_slice_invalid_start_stop(graph_builder) -> None:
     """Checks that slicing with invalid start/stop/step raises an error."""
     with pytest.raises(
         ValueError,

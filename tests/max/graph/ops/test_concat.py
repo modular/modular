@@ -10,7 +10,7 @@ from conftest import axes, shapes, symbolic_axes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, Graph, Shape, StaticDim, TensorType, ops
+from max.graph import DeviceRef, Dim, Shape, StaticDim, TensorType, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes())
@@ -34,7 +34,7 @@ def with_dim(shape: Shape, axis: int, dim: StaticDim):
     axis=axes(shared_tensor_types),
 )
 def test_concat__static_dim(
-    base_type: TensorType, axis_sizes: list[StaticDim], axis: int
+    graph_builder, base_type: TensorType, axis_sizes: list[StaticDim], axis: int
 ):
     assume(axis_sizes)
     merged_size = sum(dim.dim for dim in axis_sizes)
@@ -50,7 +50,7 @@ def test_concat__static_dim(
         for dim in axis_sizes
     ]
 
-    with Graph("concat", input_types=input_types) as graph:
+    with graph_builder(input_types=input_types) as graph:
         out = ops.concat(graph.inputs, axis)
         assert out.shape == with_dim(base_type.shape, axis, merged_size)
         graph.output(out)
@@ -60,10 +60,12 @@ def test_concat__static_dim(
     base_type=shared_tensor_types,
     axis=st.integers(),
 )
-def test_concat__axis_out_of_bounds(base_type: TensorType, axis: int):
+def test_concat__axis_out_of_bounds(
+    graph_builder, base_type: TensorType, axis: int
+):
     assume(axis < -base_type.rank or axis >= base_type.rank)
 
-    with Graph("concat", input_types=[base_type]) as graph:
+    with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError):
             out = ops.concat(graph.inputs, axis)
 
@@ -73,7 +75,9 @@ def test_concat__axis_out_of_bounds(base_type: TensorType, axis: int):
     type_b=tensor_types(shapes=shared_shapes),
     axis=axes(shared_tensor_types),
 )
-def test_concat__bad_dtype(type_a: TensorType, type_b: TensorType, axis: int):
+def test_concat__bad_dtype(
+    graph_builder, type_a: TensorType, type_b: TensorType, axis: int
+):
     assume(type_a.dtype != type_b.dtype)
     assert type_a.shape == type_b.shape
     assume(
@@ -81,14 +85,14 @@ def test_concat__bad_dtype(type_a: TensorType, type_b: TensorType, axis: int):
         or 2 * type_a.shape[axis].dim < 2**63
     )
 
-    with Graph("concat", input_types=[type_a, type_b]) as graph:
+    with graph_builder(input_types=[type_a, type_b]) as graph:
         with pytest.raises(ValueError):
             out = ops.concat(graph.inputs, axis)
 
 
 @given(axis=...)
-def test_concat__no_inputs(axis: int):
-    with Graph("concat", input_types=[]) as graph:
+def test_concat__no_inputs(graph_builder, axis: int):
+    with graph_builder(input_types=[]) as graph:
         with pytest.raises(ValueError):
             out = ops.concat([], axis)
 
@@ -99,12 +103,12 @@ def test_concat__no_inputs(axis: int):
     axis=axes(shared_tensor_types),
 )
 def test_concat__different_ranks(
-    type_a: TensorType, type_b: TensorType, axis: int
+    graph_builder, type_a: TensorType, type_b: TensorType, axis: int
 ):
     assert type_a.dtype == type_b.dtype
     assume(type_a.rank != type_b.rank)
 
-    with Graph("concat", input_types=[type_a, type_b]) as graph:
+    with graph_builder(input_types=[type_a, type_b]) as graph:
         with pytest.raises(ValueError):
             out = ops.concat(graph.inputs, axis)
 
@@ -120,7 +124,7 @@ def test_concat__different_ranks(
     axis=axes(shared_tensor_types),
 )
 def test_concat__mismatched_dims(
-    type_a: TensorType, type_b: TensorType, axis: int
+    graph_builder, type_a: TensorType, type_b: TensorType, axis: int
 ):
     assert type_a.dtype == type_b.dtype
     assert type_a.rank == type_b.rank
@@ -132,16 +136,18 @@ def test_concat__mismatched_dims(
         )
     )
 
-    with Graph("concat", input_types=[type_a, type_b]) as graph:
+    with graph_builder(input_types=[type_a, type_b]) as graph:
         with pytest.raises(ValueError):
             out = ops.concat(graph.inputs, axis)
 
 
 @given(base_type=shared_tensor_types, axis=symbolic_axes(shared_tensor_types))
-def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
+def test_concat__symbolic__size_1(
+    graph_builder, base_type: TensorType, axis: int
+):
     assume(not isinstance(base_type.shape[axis], StaticDim))
 
-    with Graph("concat", input_types=[base_type]) as graph:
+    with graph_builder(input_types=[base_type]) as graph:
         out = ops.concat(graph.inputs, axis)
         assert out.shape == base_type.shape
         graph.output(out)
@@ -153,6 +159,7 @@ def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
     axis_dims=st.lists(st.from_type(Dim), min_size=2, max_size=MAX_CONCAT_SIZE),
 )
 def test_concat__symbolic__algebraic_result(
+    graph_builder,
     base_type: TensorType,
     axis: int,
     axis_dims: list[Dim],
@@ -172,12 +179,12 @@ def test_concat__symbolic__algebraic_result(
         for dim in axis_dims
     ]
 
-    with Graph("concat", input_types=input_types) as graph:
+    with graph_builder(input_types=input_types) as graph:
         out = ops.concat(graph.inputs, axis)
         assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))
 
 
-def test_oncat_different_devices():
+def test_oncat_different_devices(graph_builder):
     input_types = [
         TensorType(DType.float32, [12], DeviceRef.CPU(0)),
         TensorType(DType.float32, [13], DeviceRef.CPU(0)),
@@ -185,7 +192,7 @@ def test_oncat_different_devices():
     ]
 
     with (
-        Graph("concat", input_types=input_types) as graph,
+        graph_builder(input_types=input_types) as graph,
         pytest.raises(
             ValueError, match="Cannot concat inputs on different devices .*"
         ),
