@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv, isclose
@@ -19,26 +20,14 @@ from sys import _RegisterPackType, bitwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_idx, thread_idx
+from gpu import block_idx, thread_idx, block_dim, barrier, Semaphore
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.memory import AddressSpace
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer, bitcast
+from memory import UnsafePointer, bitcast, stack_allocation
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-
-
-fn compare_and_swap(
-    ptr: UnsafePointer[Int32],
-    e: Int,
-    d: Int,
-) -> Int32:
-    var old = Atomic.fetch_add(ptr, 0)
-    while old == e:
-        if Atomic._xchg(ptr, d) == old:
-            break
-        old = Atomic.fetch_add(ptr, 0)
-    return old
 
 
 fn swizzle_tile(
@@ -114,10 +103,12 @@ fn mac_loop[
 
     var tx = thread_idx.x
     var ty = thread_idx.y
-    var partial_offset_k = (start_iter % iters_per_tile) * BLOCK_K
     var global_r = rm_base + ty
     var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
+    var thread_id = thread_idx.x + thread_idx.y * block_dim.x
+    var sema = Semaphore(locks.offset(tile_id), thread_id)
+    sema.fetch()
 
     for iter in range(start_iter, end_iter):
         var k_offset = (iter % iters_per_tile) * BLOCK_K
@@ -129,20 +120,23 @@ fn mac_loop[
                 var b_val = B.load(actual_k * stride_bk + global_c * stride_bn)
                 accum += a_val.cast[c_type]() * b_val.cast[c_type]()
 
+    var c_offset = global_r * stride_cm + global_c * stride_cn
+    # Due to the construction of the stream-k scheduling, every last
+    # reduction iteration will be executed early. In fact, in the ideal case,
+    # the last split reduction will be executed by a SM first. Therefore, for
+    # the semaphore signaling, we should initialize the semaphore to 0 which
+    # corresponds to the last reduction iteration, and go backward from there,
+    # i.e. each thread block waits for the `end_iter` signal and releases the
+    # `start_iter` signal.
     if (end_iter % iters_per_tile) == 0:
+        sema.wait(0)
         if global_r < M and global_c < N:
-            C[global_r * stride_cm + global_c * stride_cn] = accum
-
-        if (start_iter % iters_per_tile) != 0:
-            if thread_idx.x == 0 and thread_idx.y == 0:
-                _ = Atomic._xchg(locks.offset(tile_id), 1)
+            C[c_offset] = accum
     else:
+        sema.wait(end_iter)
         if global_r < M and global_c < N:
-            while compare_and_swap(locks.offset(tile_id), 1, 1) != 1:
-                pass
-            _ = Atomic.fetch_add(
-                C.offset(global_r * stride_cm + global_c * stride_cn), accum
-            )
+            C[c_offset] += accum
+    sema.release(start_iter)
 
 
 fn first_wave_kernel[
@@ -537,5 +531,5 @@ def main():
     with DeviceContext() as ctx:
         run_matmul_stream_k[DType.float32, 128, 128, 128](ctx)
         run_matmul_stream_k[DType.float32, 512, 2560, 8192](ctx)
-        # run_matmul_stream_k[DType.float32, 256, 256, 1024](ctx)
-        # run_matmul_stream_k[DType.float32, 128, 128, 1024](ctx)
+        run_matmul_stream_k[DType.float32, 256, 256, 1024](ctx)
+        run_matmul_stream_k[DType.float32, 128, 128, 1024](ctx)
