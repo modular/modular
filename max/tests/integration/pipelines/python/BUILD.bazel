@@ -184,7 +184,7 @@ modular_py_test(
     tags = [
         "AITLIB-293",
         "gpu",
-        "manual",  # TODO(AITLIB-293)
+        "manual",  # TODO(AITLIB-293, AITLIB-345)
         "no-sandbox",
         "requires-network",
     ],

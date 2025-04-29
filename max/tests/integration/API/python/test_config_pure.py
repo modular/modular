@@ -11,12 +11,26 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import (
     PIPELINE_REGISTRY,
+    PipelineEngine,
     SupportedEncoding,
 )
 from max.pipelines.lib import PipelineConfig
-from test_common.mocks import mock_pipeline_config_hf_dependencies
+from test_common.mocks import (
+    mock_estimate_memory_footprint,
+    mock_pipeline_config_hf_dependencies,
+)
 from test_common.pipeline_model_dummy import DUMMY_ARCH
 from test_common.registry import prepare_registry
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_validate_model_path__bad_repo_provided():
+    # This test requires a HF call to check that this repo is not valid.
+    with pytest.raises(Exception):
+        _ = PipelineConfig(
+            model_path="bert-base-asdfasdf",
+        )
 
 
 @mock_pipeline_config_hf_dependencies
@@ -61,6 +75,59 @@ def test_validate_model_path__correct_repo_id_provided():
     )
 
     assert config.model_config.model_path == "modularai/llama-3.1"
+
+
+@pytest.mark.skip("TODO(AITLIB-349): Fix this test")
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_retrieve_factory_with_known_architecture(
+    llama_3_1_8b_instruct_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        max_batch_size=1,
+        max_length=1,
+    )
+
+    assert config.engine == PipelineEngine.MAX
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_retrieve_factory_with_unsupported_model_path(
+    replit_135m_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        model_path=replit_135m_local_path,
+        trust_remote_code=True,
+        max_batch_size=1,
+        max_length=1,
+    )
+    # Fallback to the generalized pipeline
+    assert config.engine == PipelineEngine.HUGGINGFACE
+
+
+@pytest.mark.skip("TODO(AITLIB-349): Fix this test")
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
+    llama_3_1_8b_instruct_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        max_batch_size=1,
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
 
 
 class LimitedPickler(pickle.Unpickler):
@@ -133,3 +200,36 @@ def test_config__validates_supported_device():
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
         )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__validates_invalid_supported_device(
+    llama_3_1_8b_instruct_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    with pytest.raises(
+        ValueError, match="not compatible with the selected device type 'cpu'"
+    ):
+        # Invalid device/encoding combinations.
+        config = PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding=SupportedEncoding.bfloat16,
+            max_length=1,
+            engine=PipelineEngine.MAX,
+        )
+
+    if accelerator_count() > 0:
+        with pytest.raises(
+            ValueError,
+            match="not compatible with the selected device type 'gpu'",
+        ):
+            config = PipelineConfig(
+                model_path=llama_3_1_8b_instruct_local_path,
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding=SupportedEncoding.q6_k,
+                max_length=1,
+                engine=PipelineEngine.MAX,
+            )

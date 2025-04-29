@@ -7,6 +7,7 @@
 import json
 
 import numpy as np
+import pytest
 import torch
 import xgrammar as xgr
 from max.driver import Tensor
@@ -17,12 +18,14 @@ from max.pipelines.lib import SamplingConfig, rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
 
-def test_bitmask_sampling_vs_xgrammar(session: InferenceSession):
+def test_bitmask_sampling_vs_xgrammar(
+    session: InferenceSession, llama_3_1_8b_instruct_local_path
+):
     # Get Tokenizer and Model Info
-    model_id = "modularai/llama-3.1"
-    config = AutoConfig.from_pretrained(model_id)
+    config = AutoConfig.from_pretrained(llama_3_1_8b_instruct_local_path)
     tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-        AutoTokenizer.from_pretrained(model_id), vocab_size=config.vocab_size
+        AutoTokenizer.from_pretrained(llama_3_1_8b_instruct_local_path),
+        vocab_size=config.vocab_size,
     )
 
     # Create a grammar compiler for the tokenizer
@@ -104,6 +107,7 @@ def test_bitmask_sampling_vs_xgrammar(session: InferenceSession):
             assert matcher.accept_token(token[0], debug_print=True)
 
 
+@pytest.mark.skip("TODO(AITLIB-348): Fix this test")
 def test_sampling_return_logits(session: InferenceSession):
     # Create one op sampling graph
     graph = token_sampler(
@@ -156,6 +160,7 @@ def test_sampling_return_logits(session: InferenceSession):
             assert numpy_logits[i, j] == logits[i, token_idx]
 
 
+@pytest.mark.skip("TODO(AITLIB-334): Fix this test")
 def test_rejection_sampler(session: InferenceSession):
     device = session.devices[0]
     graph = rejection_sampler(

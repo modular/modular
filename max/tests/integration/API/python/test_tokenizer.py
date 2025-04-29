@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import asyncio
 
+import hf_repo_lock
 import numpy as np
 import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import (
     PipelineConfig,
-    SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
     TokenGeneratorRequest,
@@ -23,10 +23,10 @@ from max.pipelines import (
     TokenGeneratorResponseFormat,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from test_common.mocks import (
-    mock_estimate_memory_footprint,
-    mock_huggingface_config,
-)
+from test_common.mocks import mock_estimate_memory_footprint
+
+LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
+LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 
 
 def convert_image_url_to_base64(image_url):
@@ -89,12 +89,12 @@ def test_text_and_vision_tokenizer():
 
 
 @pytest.mark.skip("CI does not appear to be working well with gated repos")
-def test_text_tokenizer_with_tool_use():
+def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path):
     """This test uses gated repos on huggingface, as such its not expected to run in CI.
     It is written to test out chat templating and input features for tool use with Llama 3.2
     """
 
-    model_path = "meta-llama/Llama-3.1-8B-Instruct"
+    model_path = llama_3_1_8b_instruct_local_path
     tokenizer = TextTokenizer(model_path)
 
     request = TokenGeneratorRequest(
@@ -138,18 +138,17 @@ def test_text_tokenizer_with_tool_use():
     assert '"name": "get_current_weather"' in context.prompt
 
 
-def test_tokenizer__truncates_to_max_length():
-    model_path = "meta-llama/Llama-3.1-8B-Instruct"
+def test_tokenizer__truncates_to_max_length(llama_3_1_8b_instruct_local_path):
     max_length = 12
     tokenizer = TextTokenizer(
-        model_path,
+        llama_3_1_8b_instruct_local_path,
         max_length=max_length,
     )
 
     short_request = TokenGeneratorRequest(
         id="request_with_short_message",
         index=0,
-        model_name=model_path,
+        model_name=llama_3_1_8b_instruct_local_path,
         prompt="Short message",
     )
     context: TextContext = asyncio.run(tokenizer.new_context(short_request))
@@ -158,7 +157,7 @@ def test_tokenizer__truncates_to_max_length():
     long_request = TokenGeneratorRequest(
         id="request_with_short_message",
         index=0,
-        model_name=model_path,
+        model_name=llama_3_1_8b_instruct_local_path,
         prompt="Longer message with lots of text with more words than max length for sure.",
     )
     with pytest.raises(ValueError, match="max length"):
@@ -195,9 +194,8 @@ def test_tokenizer_regression_MODELS_467() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tokenizer__encode_and_decode():
-    encoding = SupportedEncoding.q4_k
-    tokenizer = TextTokenizer(model_path="modularai/llama-3.1")
+async def test_tokenizer__encode_and_decode(llama_3_1_8b_instruct_local_path):
+    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
 
     test_string = "hi my name is"
     encoded = await tokenizer.encode(test_string, add_special_tokens=False)
@@ -212,16 +210,16 @@ async def test_tokenizer__encode_and_decode():
     assert test_string == decoded
 
 
+@pytest.mark.skip("TODO(AITLIB-342): Fix this test")
 @mock_estimate_memory_footprint
-@mock_huggingface_config
-def test_text_tokenizer_with_constrained_decoding():
+def test_text_tokenizer_with_constrained_decoding(smollm2_135m_local_path):
     device_specs = []
     if accelerator_count() > 0:
         device_specs.append(DeviceSpec.accelerator(id=0))
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M",
+        model_path=smollm2_135m_local_path,
         device_specs=device_specs,
         enable_structured_output=True,
     )

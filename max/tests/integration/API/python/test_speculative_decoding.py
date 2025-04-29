@@ -23,24 +23,29 @@ from test_common.registry import prepare_registry
 
 @prepare_registry
 @mock_estimate_memory_footprint
-def test_config__validate_speculative_decoding_pipeline():
+def test_config__validate_speculative_decoding_pipeline(
+    smollm2_135m_local_path,
+    llama_3_1_8b_instruct_local_path,
+    exaone_2_4b_local_path,
+    deepseek_r1_distill_llama_8b_local_path,
+):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Valid device/encoding combinations
     config = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M",
+        model_path=smollm2_135m_local_path,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
-        draft_model_path="HuggingFaceTB/SmolLM-135M",
+        draft_model_path=smollm2_135m_local_path,
     )
 
     with pytest.raises(ValueError):
         # Invalid device/encoding combinations
         config = PipelineConfig(
-            model_path="modularai/llama-3.1",
+            model_path=llama_3_1_8b_instruct_local_path,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            draft_model_path="HuggingFaceTB/SmolLM-135M",
+            draft_model_path=smollm2_135m_local_path,
             engine=PipelineEngine.HUGGINGFACE,
         )
 
@@ -48,22 +53,22 @@ def test_config__validate_speculative_decoding_pipeline():
         # Test that when the target & draft architectures are different
         # we raise an error.
         config = PipelineConfig(
-            model_path="LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
+            model_path=exaone_2_4b_local_path,
             quantization_encoding=SupportedEncoding.q4_k,
             device_specs=[DeviceSpec.cpu()],
-            draft_model_path="HuggingFaceTB/SmolLM-135M",
+            draft_model_path=smollm2_135m_local_path,
         )
 
     with pytest.raises(ValueError):
         # Test that the target & draft architectures are the same,
         # but the tokenizers are different
         config = PipelineConfig(
-            model_path="deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+            model_path=deepseek_r1_distill_llama_8b_local_path,
             quantization_encoding=SupportedEncoding.q4_k,
             weight_path=[
                 Path(
                     "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
                 )
             ],
-            draft_model_path="HuggingFaceTB/SmolLM-135M",
+            draft_model_path=smollm2_135m_local_path,
         )

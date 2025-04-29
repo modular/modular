@@ -17,7 +17,9 @@ modular_py_test(
         "test_load_weights.py",
         "test_memory_estimation.py",
         "test_registry.py",
+        "test_sampling.py",
         "test_telemetry.py",
+        "test_tokenizer.py",
     ],
     data = [
         "//PyTorch:TorchRuntimePlugins",
@@ -30,7 +32,15 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
-    tags = ["gpu"],
+    env_inherit = ["HF_TOKEN"],
+    gpu_constraints = [
+        "//:has_gpu",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
@@ -39,6 +49,49 @@ modular_py_test(
         requirement("click"),
         requirement("gguf"),
         requirement("hypothesis"),
+        requirement("safetensors"),
+        requirement("torch"),
+        requirement("transformers"),
+    ] + select({
+        "//:has_gpu": [requirement("xgrammar")],  # needed only for test_sampling.py
+        "//conditions:default": [],
+    }),
+)
+
+# TODO(AITLIB-349): Fix this test. For some reason it doesn't work on AMD, so
+# we created a separate Bazel target and configured it to run only on NVIDIA GPUs.
+modular_py_test(
+    name = "test-speculative-decoding",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_speculative_decoding.py",
+    ],
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//PyTorch:TorchRuntimePlugins",
+        "//PyTorch/tools/torch:mtorch",
+        "//SDK/integration-test/API:inputs",
+        "//SDK/integration-test/API:pytest_inputs",
+    ],
+    env = {"MODULAR_PATH": "."},
+    env_inherit = ["HF_TOKEN"],
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max",
+        "//SDK/lib/API/python/max/entrypoints",
+        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
+        requirement("click"),
+        requirement("gguf"),
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
@@ -52,9 +105,6 @@ modular_py_test(
         "conftest.py",
         "test_config.py",
         "test_huggingface_utilities.py",
-        "test_sampling.py",
-        "test_speculative_decoding.py",
-        "test_tokenizer.py",
     ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
@@ -69,7 +119,7 @@ modular_py_test(
     tags = [
         "AITLIB-293",
         "gpu",
-        "manual",  # TODO(AITLIB-293)
+        "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
         "no-sandbox",
         "requires-network",
     ],
@@ -83,7 +133,6 @@ modular_py_test(
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
-        requirement("xgrammar"),
     ],
 )
 

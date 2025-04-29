@@ -12,10 +12,10 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo, SupportedEncoding
 
 
-def test_huggingface_repo__formats_available():
+def test_huggingface_repo__formats_available(llama_3_1_8b_instruct_local_path):
     # Test a GGUF repo
     hf_repo = HuggingFaceRepo(
-        repo_id="modularai/llama-3.1",
+        repo_id=llama_3_1_8b_instruct_local_path,
     )
 
     assert WeightsFormat.gguf in hf_repo.formats_available
@@ -32,9 +32,11 @@ def test_huggingface_repo__formats_available():
     assert WeightsFormat.safetensors in hf_repo.formats_available
 
 
-def test_huggingface_repo__encodings_supported():
+def test_huggingface_repo__encodings_supported(
+    llama_3_1_8b_instruct_local_path,
+):
     # Test a llama based gguf repo.
-    hf_repo = HuggingFaceRepo(repo_id="modularai/llama-3.1")
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
 
     # Test a Safetensors repo.
@@ -56,18 +58,20 @@ def test_huggingface_repo__encodings_supported():
     assert SupportedEncoding.float32 in hf_repo.supported_encodings
 
 
-def test_huggingface_repo__file_exists():
+def test_huggingface_repo__file_exists(llama_3_1_8b_instruct_local_path):
     # Test a llama based gguf repo.
-    hf_repo = HuggingFaceRepo(repo_id="modularai/llama-3.1")
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     assert hf_repo.file_exists("llama-3.1-8b-instruct-bf16.gguf")
     assert not hf_repo.file_exists(
         "this_definitely_should_not_exist.safetensors"
     )
 
 
-def test_huggingface_repo__get_files_for_encoding():
+def test_huggingface_repo__get_files_for_encoding(
+    llama_3_1_8b_instruct_local_path,
+):
     # Test a llama based gguf repo.
-    hf_repo = HuggingFaceRepo(repo_id="modularai/llama-3.1")
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
     assert WeightsFormat.gguf in files
     assert len(files[WeightsFormat.gguf]) == 1
@@ -135,7 +139,7 @@ def test_huggingface_repo__get_files_for_encoding():
     assert files[WeightsFormat.pytorch][0] == Path("pytorch_model.bin"), files
 
 
-def test_huggingface_repo__encoding_for_file():
+def test_huggingface_repo__encoding_for_file(llama_3_1_8b_instruct_local_path):
     # This repo, has one safetensors file, and its a bf16 file.
     hf_repo = HuggingFaceRepo(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     model_encoding = hf_repo.encoding_for_file("model.safetensors")
@@ -149,7 +153,7 @@ def test_huggingface_repo__encoding_for_file():
     assert model_encoding == SupportedEncoding.bfloat16
 
     # This repo, has a few GGUF files, and they are a variety of encodings.
-    hf_repo = HuggingFaceRepo(repo_id="modularai/llama-3.1")
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     model_encoding = hf_repo.encoding_for_file("llama-3.1-8b-instruct-f32.gguf")
     assert model_encoding == SupportedEncoding.float32
 
@@ -159,8 +163,10 @@ def test_huggingface_repo__encoding_for_file():
     assert model_encoding == SupportedEncoding.q4_k
 
 
-@pytest.mark.skip("hf download is flaky")
-def test_huggingface_repo__local_download():
+@pytest.mark.skip(
+    "hf download is flaky. Additionally, this test may cause HF 429 errors."
+)
+def test_huggingface_repo__local_download(llama_3_1_8b_instruct_local_path):
     # Download huggingface repo to local path.
     target_path = os.path.join(os.getcwd(), "tmp_repo")
     downloaded_path = snapshot_download(
