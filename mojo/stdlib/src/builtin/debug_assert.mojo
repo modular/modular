@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements a debug assert.
+"""Implements run-time assertions.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -63,41 +63,22 @@ fn debug_assert[
     cpu_only: Bool = False,
     *Ts: Writable,
 ](*messages: *Ts):
-    """Asserts that the condition is true.
+    """Asserts that the condition is true at run time.
 
-    Parameters:
-        cond: The function to invoke to check if the assertion holds.
-        assert_mode: Determines when the assert is turned on.
-        cpu_only: If true, only run the assert on CPU.
-        Ts: The element types conforming to `Writable` for the message.
+    If the condition is false, the assertion displays the given message and
+    causes the program to exit.
 
-    Args:
-        messages: Arguments to convert to a `String` message.
-
-
-    You can pass in multiple args that are `Writable` to generate a formatted
-    message, by default this will be a no-op:
+    You can pass in multiple arguments to generate a formatted
+    message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
     x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
-    You can change the assertion level for example:
-
-    ```sh
-    mojo -D ASSERT=all main.mojo
-    ```
-
-    Assertion modes:
-
-    - none: turn off all assertions for performance at the cost of safety.
-    - warn: print any errors instead of aborting.
-    - safe: standard safety checks that are on even in release builds.
-    - all: turn on all assertions.
-
-    You can set the `assert_mode` to `safe` so the assertion runs even in
-    release builds:
+    Normal assertions are off by default—they only run when the program is
+    compiled with all assertions enabled. You can set the `assert_mode` to
+    `safe` to create an assertion that's on by default:
 
     ```mojo
     debug_assert[assert_mode="safe"](
@@ -105,9 +86,23 @@ fn debug_assert[
     )
     ```
 
-    To ensure that you have no runtime penality from your assertion in release
-    builds, make sure there are no side effects in your message and condition.
-    Take this example:
+    Use the `ASSERT` variable to turn assertions on or off when building or
+    running a Mojo program:
+
+    ```sh
+    mojo -D ASSERT=all main.mojo
+    ```
+
+    The `ASSERT` variable takes the following values:
+
+    - all: Turn on all assertions.
+    - safe: Turn on "safe" assertions only. This is the default.
+    - none: Turn off all assertions, for performance at the cost of safety.
+    - warn: Turn on all assertions, but print any errors instead of exiting.
+
+    To ensure that you have no run-time penalty from your assertions even when
+    they're disabled, make sure there are no side effects in your message and
+    condition expressions. For example:
 
     ```mojo
     person = "name: john, age: 50"
@@ -115,9 +110,10 @@ fn debug_assert[
     debug_assert(String("name: ") + name == person, "unexpected name")
     ```
 
-    This will have a runtime penality due to allocating a `String` in the
-    condition even in release builds, you must put the condition inside a
-    closure so it only runs when the assertion is turned on:
+    This will have a run-time penalty due to allocating a `String` in the
+    condition expression, even when assertions are disabled. To avoid this, put
+    the condition inside a closure so it runs only when the assertion is turned
+    on:
 
     ```mojo
     fn check_name() capturing -> Bool:
@@ -132,6 +128,21 @@ fn debug_assert[
     ```mojo
     debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
+
+    For compile-time assertions, see
+    [`constrained()`](/mojo/stdlib/builtin/constrained/constrained).
+
+    Parameters:
+        cond: The function to invoke to check if the assertion holds.
+        assert_mode: Determines when the assert is turned on.
+            - default ("none"): Turned on when compiled with `-D ASSERT=all`.
+            - "safe": Turned on by default.
+        cpu_only: If true, only run the assert on CPU.
+        Ts: The element types for the message arguments.
+
+    Args:
+        messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
+            arguments to convert to a `String` message.
     """
 
     @parameter
@@ -147,40 +158,22 @@ fn debug_assert[
     cpu_only: Bool = False,
     *Ts: Writable,
 ](cond: Bool, *messages: *Ts):
-    """Asserts that the condition is true.
+    """Asserts that the condition is true at run time.
 
-    Parameters:
-        assert_mode: Determines when the assert is turned on.
-        cpu_only: If true, only run the assert on CPU.
-        Ts: The element types conforming to `Writable` for the message.
+    If the condition is false, the assertion displays the given message and
+    causes the program to exit.
 
-    Args:
-        cond: The bool value to assert.
-        messages: Arguments to convert to a `String` message.
-
-    You can pass in multiple args that are `Writable` to generate a formatted
-    message, by default this will be a no-op:
+    You can pass in multiple arguments to generate a formatted
+    message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
     x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
-    You can change the assertion level for example:
-
-    ```sh
-    mojo -D ASSERT=all main.mojo
-    ```
-
-    Assertion modes:
-
-    - none: turn off all assertions for performance at the cost of safety.
-    - warn: print any errors instead of aborting.
-    - safe: standard safety checks that are on even in release builds.
-    - all: turn on all assertions.
-
-    You can set the `assert_mode` to `safe` so the assertion runs even in
-    release builds:
+    Normal assertions are off by default—they only run when the program is
+    compiled with all assertions enabled. You can set the `assert_mode` to
+    `safe` to create an assertion that's on by default:
 
     ```mojo
     debug_assert[assert_mode="safe"](
@@ -188,9 +181,23 @@ fn debug_assert[
     )
     ```
 
-    To ensure that you have no runtime penality from your assertion in release
-    builds, make sure there are no side effects in your message and condition.
-    Take this example:
+    Use the `ASSERT` variable to turn assertions on or off when building or
+    running a Mojo program:
+
+    ```sh
+    mojo -D ASSERT=all main.mojo
+    ```
+
+    The `ASSERT` variable takes the following values:
+
+    - all: Turn on all assertions.
+    - safe: Turn on "safe" assertions only. This is the default.
+    - none: Turn off all assertions, for performance at the cost of safety.
+    - warn: Turn on all assertions, but print any errors instead of exiting.
+
+    To ensure that you have no run-time penalty from your assertions even when
+    they're disabled, make sure there are no side effects in your message and
+    condition expressions. For example:
 
     ```mojo
     person = "name: john, age: 50"
@@ -198,9 +205,10 @@ fn debug_assert[
     debug_assert(String("name: ") + name == person, "unexpected name")
     ```
 
-    This will have a runtime penality due to allocating a `String` in the
-    condition even in release builds, you must put the condition inside a
-    closure so it only runs when the assertion is turned on:
+    This will have a run-time penalty due to allocating a `String` in the
+    condition expression, even when assertions are disabled. To avoid this, put
+    the condition inside a closure so it runs only when the assertion is turned
+    on:
 
     ```mojo
     fn check_name() capturing -> Bool:
@@ -215,6 +223,21 @@ fn debug_assert[
     ```mojo
     debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
+
+    For compile-time assertions, see
+    [`constrained()`](/mojo/stdlib/builtin/constrained/constrained).
+
+    Parameters:
+        assert_mode: Determines when the assert is turned on.
+            - default ("none"): Turned on when compiled with `-D ASSERT=all`.
+            - "safe": Turned on by default.
+        cpu_only: If true, only run the assert on CPU.
+        Ts: The element types for the message arguments.
+
+    Args:
+        cond: The bool value to assert.
+        messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
+            arguments to convert to a `String` message.
     """
 
     @parameter

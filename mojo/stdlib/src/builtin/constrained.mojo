@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements compile time constraints.
+"""Implements compile-time constraints.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -19,37 +19,38 @@ from collections.string.string_slice import _get_kgen_string
 
 @always_inline("nodebug")
 fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
-    """Compile time checks that the condition is true.
+    """Asserts that the condition must be true at compile time.
 
-    The `constrained` is similar to `static_assert` in C++ and is used to
-    introduce constraints on the enclosing function. In Mojo, the assert places
-    a constraint on the function. The message is displayed when the assertion
-    fails.
+    The `constrained()` function introduces a compile-time constraint on the
+    enclosing function. If the condition is true at compile time, the constraint
+    has no effect. If the condition is false, compilation fails and the message
+    is displayed.
+
+    This is similar to `static_assert` in C++. It differs from
+    [`debug_assert()`](/mojo/stdlib/builtin/debug_assert/debug_assert), which
+    is a run-time assertion.
+
+    Example:
+
+    ```mojo
+    fn half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
+        constrained[
+            dtype.is_numeric(),
+            "dtype must be numeric."
+        ]()
+        return a / 2
+
+    def main():
+        print(half(UInt8(5)))  # prints 2
+        print(half(Scalar[DType.bool](True)))  # constraint failed:
+                                               #     dtype must be numeric.
+    ```
 
     Parameters:
         cond: The bool value to assert.
         msg: The message to display on failure.
         extra: Additional messages to concatenate to msg.
 
-    Example:
-
-    ```mojo
-    from sys.info import num_physical_cores
-
-    def main():
-        alias cores_to_use = 2
-        multicore_check[cores_to_use]()
-
-    def multicore_check[cores: Int]():
-        constrained[
-            cores <= num_physical_cores(),
-            "build failed: not enough cores"
-        ]()
-        constrained[
-            cores >= 2,
-            "at least two cores are required"
-        ]()
-    ```
     """
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(),
@@ -59,27 +60,21 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
 @always_inline("nodebug")
 fn constrained[cond: Bool]():
-    """Compile time checks that the condition is true.
+    """Asserts that the condition must be true at compile time.
 
-    The `constrained` is similar to `static_assert` in C++ and is used to
-    introduce constraints on the enclosing function. In Mojo, the assert places
-    a constraint on the function.
+    The `constrained()` function introduces a compile-time constraint on the
+    enclosing function. If the condition is true at compile time, the constraint
+    has no effect. If the condition is false, compilation fails and a generic
+    message is displayed.
+
+    This is similar to `static_assert` in C++. It differs from
+    [`debug_assert()`](/mojo/stdlib/builtin/debug_assert/debug_assert), which
+    is a run-time assertion.
+
+    For an example, see the
+    [first overload](/mojo/stdlib/builtin/constrained/constrained).
 
     Parameters:
         cond: The bool value to assert.
-
-    Example:
-
-    ```mojo
-    from sys.info import num_physical_cores
-
-    def main():
-        alias cores_to_use = 2
-        multicore_check[cores_to_use]()
-
-    def multicore_check[cores: Int]():
-        constrained[cores <= num_physical_cores()]()
-        constrained[cores >= 2]()
-    ```
     """
     constrained[cond, "param assertion failed"]()
