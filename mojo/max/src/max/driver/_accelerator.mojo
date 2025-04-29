@@ -87,7 +87,7 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
         )
         # need to call _enqueue function, not enqueue_function, otherwise the whole
         # pack is passed as a single argument
-        device_context[]._enqueue_function(
+        device_context[]._enqueue_function_unchecked(
             self._compiled_func,
             args,
             grid_dim=grid_dim[Dim],
