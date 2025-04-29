@@ -67,7 +67,8 @@ keyword at the beginning of an argument declaration:
 
 * `read`: The function receives an **immutable reference**. This means the
   function can read the original value (it is *not* a copy), but it cannot
-  mutate (modify) it. `def` functions treat this differently, as described below.
+  mutate (modify) it. Functions defined with `def` treat this differently, as
+  described below in [Borrowed arguments](#borrowed-arguments-read).
 
 * `mut`: The function receives a **mutable reference**. This means the
   function can read and mutate the original value (it is *not* a copy).
@@ -82,11 +83,11 @@ keyword at the beginning of an argument declaration:
   the reference can be either mutable or immutable. You can think of `ref`
   arguments as a generalization of the `read` and `mut` conventions.
   `ref` arguments are an advanced topic, and they're described in more detail in
-  [Lifetimes and references](/mojo/manual/values/lifetimes).
+  [Lifetimes, origins, and references](/mojo/manual/values/lifetimes).
 
 * `out`: A special convention used for the `self` argument in
   [constructors](/mojo/manual/lifecycle/life#constructor) and for
-  [named results](/mojo/manual/functions#named-function-results). An `out`
+  [named results](/mojo/manual/functions#named-results). An `out`
   argument is uninitialized at the beginning of the function, and must be
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
@@ -96,34 +97,38 @@ reference and one that's immutable:
 
 ```mojo
 fn add(mut x: Int, read y: Int):
-    x += y
+    var x += y
 
 fn main():
     var a = 1
     var b = 2
     add(a, b)
-    print(a)  # Prints 3
+    print(a)
+```
+
+```output
+3
 ```
 
 You've probably already seen some function arguments that don't declare a
-convention. by default, all arguments are `read`.
+convention. By default, all arguments are `read`.
 In the following sections, we'll explain each of these argument conventions in
 more detail.
 
 ## Borrowed arguments (`read`)
 
-The `read` convention is the default for all arguments. But `def` and `fn`
-functions treat `read` arguments somewhat differently:
+The `read` convention is the default for all arguments. But as is described in
+[`def` and `fn` comparison](/mojo/manual/functions#def-and-fn-comparison),
+functions treat `read` arguments somewhat differently depending on whether the
+function is defined with `def` or `fn`:
 
-* In a [`def` function](/mojo/manual/functions#def-functions), if you mutate
-  the value in the body of the function, the function receives a mutable copy of
-  the  argument. Otherwise, it receives an immutable reference. This allows you
-  to treat arguments as mutable, but avoid the overhead of making extra copies when
-  they're not needed.
+* When using `def`, if you mutate the value in the body of the function, the
+  function receives a mutable copy of the argument. Otherwise, it receives an
+  immutable reference. This allows you to treat arguments as mutable, but avoid
+  the overhead of making extra copies when they're not needed.
 
-* In an [`fn` function](/mojo/manual/functions#fn-functions), the function
-  always receives an immutable reference. If you want a mutable copy, you can
-  assign it to a local variable:
+* When using `fn`, the function always receives an immutable reference. If you
+  want a mutable copy, you can assign it to a local variable:
 
   ```mojo
   var my_copy = read_arg
@@ -135,14 +140,12 @@ callee.
 For example:
 
 ```mojo
-from collections import List
-
 def print_list(list: List[Int]):
     print(list.__str__())
 
-var list = List(1, 2, 3, 4)
-print_list(list)
-
+def main():
+    var values = List(1, 2, 3, 4)
+    print_list(values)
 ```
 
 ```output
@@ -191,15 +194,17 @@ function.
 For example, this `mutate()` function updates the original `list` value:
 
 ```mojo
-from collections import List
+def print_list(list: List[Int]):
+    print(list.__str__())
 
 def mutate(mut l: List[Int]):
     l.append(5)
 
-var list = List(1, 2, 3, 4)
+def main():
+    var values = List(1, 2, 3, 4)
 
-mutate(list)
-print_list(list)
+    mutate(values)
+    print_list(values)
 ```
 
 ```output
@@ -209,15 +214,19 @@ print_list(list)
 That behaves like an optimized replacement for this:
 
 ```mojo
-from collections import List
+def print_list(list: List[Int]):
+    print(list.__str__())
 
 def mutate_copy(l: List[Int]) -> List[Int]:
+    # def creates an implicit copy of the list because it's mutated
     l.append(5)
     return l
 
-var list = List(1, 2, 3, 4)
-list = mutate_copy(list)
-print_list(list)
+def main():
+    var values = List(1, 2, 3, 4)
+
+    values = mutate_copy(values)
+    print_list(values)
 ```
 
 ```output
@@ -256,7 +265,7 @@ fn append_twice(mut s: String, other: String):
    s += other
 
 fn invalid_access():
-  var my_string = String("o")
+  var my_string = String("o")  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it is also passed
   # read.
@@ -274,8 +283,8 @@ reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
 fn valid_access():
-  var my_string = String("o")
-  var other_string = String(my_string)
+  var my_string = String("o")           # Create a run-time String value
+  var other_string = String(my_string)  # Create a copy of the String value
   append_twice(my_string, other_string)
   print(my_string)
 ```
@@ -314,7 +323,8 @@ three ways:
   def take(owned s: String):
       pass
 
-  take(String("A brand-new String!"))
+  def main():
+      take(String("A brand-new String!"))
   ```
 
 The following code works by making a copy of the string, because `take_text()`
@@ -325,12 +335,10 @@ fn take_text(owned text: String):
     text += "!"
     print(text)
 
-fn my_function():
-    var message: String = "Hello"
+fn main():
+    var message = String("Hello")  # Create a run-time String value
     take_text(message)
     print(message)
-
-my_function()
 ```
 
 ```output
@@ -343,10 +351,10 @@ compiler complains about `print(message)`, because at that point, the `message`
 variable is no longer initialized. That is, this version does not compile:
 
 ```mojo
-fn my_function():
-    var message: String = "Hello"
+fn main():
+    var message = String("Hello")  # Create a run-time String value
     take_text(message^)
-    print(message)  # ERROR: The `message` variable is uninitialized
+    print(message)  # error: use of uninitialized value 'message'
 ```
 
 This is a critical feature of Mojo's lifetime checker, because it ensures that no
@@ -355,12 +363,13 @@ not use the `message` variable after you end its lifetime with the `^` transfer
 operator. So here is the corrected code:
 
 ```mojo
+fn take_text(owned text: String):
+    text += "!"
+    print(text)
 
-fn my_function():
-    var message: String = "Hello"
+fn main():
+    var message = String("Hello")  # Create a run-time String value
     take_text(message^)
-
-my_function()
 ```
 
 ```output
@@ -379,8 +388,6 @@ it's not destroyed when the function exits. On the other hand,
 destroyed at the end of the function.
 
 ```mojo
-from collections import List
-
 def add_to_list(owned name: String, mut list: List[String]):
     list.append(name^)
     # name is uninitialized, nothing to destroy
@@ -418,34 +425,23 @@ sigil, the value type must be copyable (via `__copyinit__()`).
 
 ## Comparing `def` and `fn` argument conventions
 
-As mentioned in the section about
-[functions](/mojo/manual/functions), `def` and `fn` functions
-are interchangeable, as far as a caller is concerned, and they can both
-accomplish the same things. It's only the inside that differs, and Mojo's `def`
-function is essentially just sugaring for the `fn` function:
-
-* A `def` argument without a type annotation defaults to
-  [`object`](/mojo/stdlib/builtin/object/object) type (whereas as `fn`
-  requires all types be explicitly declared).
-
-* A `def` function can treat a `read` argument as mutable (in which case it
-  receives a mutable copy). An `fn` function must make this copy explicitly.
-
-For example, these two functions have the exact same behavior.
+As mentioned in [Functions](/mojo/manual/functions), a function defined with
+`def` can treat a `read` argument as mutable, in which case it receives a
+mutable copy. An equivalent function defined with `fn` would need to make this
+copy explicit. For example, these two functions have the exact same behavior.
 
 ```mojo
-def def_example(a: Int, mut b: Int, owned c):
+def def_example(a: Int, mut b: Int):
     pass
 
-fn fn_example(a_in: Int, mut b: Int, owned c: object):
+fn fn_example(a_in: Int, mut b: Int):
     var a = a_in
     pass
 ```
 
-This shadow copy typically adds no overhead, because small types
-like `object` are cheap to copy. However, copying large types that allocate heap
-storage can be expensive. (For example, copying `List` or `Dict` types, or
-copying large numbers of strings.)
+This shadow copy typically adds little overhead, for small types. However,
+copying large types that allocate heap storage can be expensive. (For example,
+copying `List` or `Dict` types, or copying large numbers of strings.)
 
 ### `read` versus `owned` in `def` functions
 

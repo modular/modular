@@ -3298,7 +3298,7 @@ Big themes for this release:
               print("all elements are truthy")
     ```
 
-  - [`object`](/mojo/stdlib/builtin/object/) now implements all the bitwise
+  - `object` now implements all the bitwise
     operators.
     ([PR #2324](https://github.com/modular/max/pull/2324))
 
@@ -4082,7 +4082,7 @@ Special thanks to our community contributors:
   and [`math.isclose()`](/mojo/stdlib/math/math/isclose) functions now have an
   `equal_nan` flag. When set to `True`, then NaNs are considered equal.
 
-- The [`object`](/mojo/stdlib/builtin/object/object) type now supports the
+- The `object` type now supports the
   division, modulo, and left and right shift operators, including the in-place
   and reverse variants.
   (@LJ-9801, fixes

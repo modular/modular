@@ -43,7 +43,7 @@ methods to call at runtime. So `make_it_quack_python()` doesn't care what types
 you're passing it, only the fact that they implement the `quack()` method.
 
 In a statically-typed environment, this approach doesn't work:
-[`fn` functions](/mojo/manual/functions#fn-functions) require you to
+Mojo functions require you to
 specify the type of each argument. If you wanted to write this example in Mojo
 *without* traits, you'd need to write a function overload for each input type.
 All of the examples from here on are in Mojo, so we'll just call the function

@@ -131,69 +131,18 @@ For more information on loops and conditional statements, see
 
 ## Functions
 
-Mojo functions can be declared with either the `def` or `fn` keyword.
-
-There are only a few differences between the two styles. For example, the
-following function works with either `def` or `fn`:
+You can define a Mojo function using either the `def` or `fn` keyword. For
+example, the following uses the `def` keyword to define a function named
+`greet` that requires a single `String` argument and returns a `String`:
 
 ```mojo
 def greet(name: String) -> String:
     return "Hello, " + name + "!"
 ```
 
-The `fn` declaration has a few restrictions that a `def` declaration doesn't:
-
-- The argument type and return types are _optional_ in a `def` function but
-  required in a `fn` function. So the previous function could also be written
-  as:
-
-  ```mojo
-  def greet(name):
-      return "Hello, " + name + "!"
-  ```
-
-  Generally, specifying types is good practice, so most examples in this
-  manual include types, regardless of whether they're declared with `def` or
-  `fn`.
-
-- If an `fn` function can raise an error, it needs to be declared with the
-  `raises` keyword:
-
-  ```mojo
-  fn greet(name: String) raises:
-      if (name == ""):
-          raise Error("Name is empty")
-      return "Hello, " + name + "!"
-  ```
-  Any `def` function can raise an error.
-
-If you don't specify a type for an argument or return value, it's assigned the
-`object` type, a special type that can represent different types of values.
-This allows for some runtime dynamism, but also means that
-the function might fail at runtime if it receives the wrong type.
-
-For more details, see the page about
-[functions](/mojo/manual/functions).
-
-### Value ownership and argument mutability
-
-If you're wondering whether function arguments are passed by value or passed by
-reference, the short answer is: by default, arguments are passed by
-immutable reference.
-
-The longer short answer is that Mojo allows you to specify for each argument
-whether it should be passed by value (as `owned`), or whether it should be
-passed by reference (as `read` for an immutable reference, or as `mut`
-for a mutable reference).
-
-This feature is entwined with Mojo's value ownership model, which protects you
-from memory errors by ensuring that only one variable "owns" a value at any
-given time (but allowing other variables to receive a reference to it).
-Ownership then ensures that the value is destroyed when the lifetime of the
-owner ends (and there are no outstanding references).
-
-For a more complete answer, see the section on
-[value ownership](/mojo/manual/values/).
+Where `def` and `fn` differ is error handling and argument mutability defaults.
+Refer to the [Functions](/mojo/manual/functions) page for more details on
+defining and calling functions.
 
 ## Code comments
 
