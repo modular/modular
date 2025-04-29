@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Callable
 
 from max.dtype import DType
-from max.graph import TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 
 from ..attention import NaiveAttentionWithRope
 from ..embedding import Embedding, EmbeddingV1
@@ -52,7 +52,9 @@ class NaiveTransformerBlock(Module):
         start_pos: TensorValue,
         layer_index: int,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        residual_multiplier = ops.constant(self.residual_multiplier, x.dtype)
+        residual_multiplier = ops.constant(
+            self.residual_multiplier, x.dtype, device=DeviceRef.CPU()
+        )
         attn_out = self.self_attn(
             self.input_layernorm(x),
             attention_mask,
@@ -130,7 +132,9 @@ class NaiveTransformer(Module):
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(self.embedding_multiplier, h.dtype)
+            h = h * ops.constant(
+                self.embedding_multiplier, h.dtype, device=DeviceRef.CPU()
+            )
 
         for i in range(len(self.layers)):
             h = self.layers[i](

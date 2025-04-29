@@ -16,12 +16,14 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import TensorType, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 
 
 def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
     """Computes the L2 norm of the input."""
-    weight = ops.constant(1, DType.float32).broadcast_to([x.shape[-1]])
+    weight = ops.constant(
+        1, DType.float32, device=DeviceRef.CPU()
+    ).broadcast_to([x.shape[-1]])
     if x.device:
         weight = weight.to(x.device)
     original_dtype = x.dtype
@@ -31,8 +33,10 @@ def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
         [
             x,
             weight,
-            ops.constant(eps, x.dtype),
-            ops.constant(0.0, x.dtype),  # weight_offset = 0.0
+            ops.constant(eps, x.dtype, device=DeviceRef.CPU()),
+            ops.constant(
+                0.0, x.dtype, device=DeviceRef.CPU()
+            ),  # weight_offset = 0.0
         ],
         [TensorType(dtype=DType.float32, shape=x.shape, device=x.device)],
     )[0].tensor.cast(original_dtype)

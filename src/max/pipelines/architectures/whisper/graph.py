@@ -165,8 +165,7 @@ def attention(
         dtype, [huggingface_config.d_model]
     )
     bias_k = ops.constant(
-        np.zeros(huggingface_config.d_model),
-        dtype,
+        np.zeros(huggingface_config.d_model), dtype, DeviceRef.CPU()
     )
 
     wo = weights.attn_output.weight.allocate(

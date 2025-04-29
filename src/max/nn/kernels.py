@@ -461,7 +461,7 @@ def matmul_kv_cache_ragged(
             input_row_offsets,
             weight,
             kv_collection,
-            ops.constant(layer_idx, DType.uint32),
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         ],
         parameters=parameters,
     )
@@ -525,7 +525,7 @@ def matmul_k_cache_ragged(
             input_row_offsets,
             weight,
             kv_collection,
-            ops.constant(layer_idx, DType.uint32),
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         ],
         parameters=parameters,
     )
@@ -710,7 +710,7 @@ def flash_attention(
             valid_lengths,
             # NOTE: The scale argument to the flash attention kernel is
             # constrained to float32.
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -772,7 +772,7 @@ def flash_attention_with_causal_mask(
             layer_idx,
             valid_lengths,
             # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -990,7 +990,7 @@ def flash_attention_ragged(
             kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -1066,7 +1066,7 @@ def flare_mla_decode_ragged(
             kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -1144,7 +1144,7 @@ def flare_mla_prefill_ragged(
             input_row_offsets,
             kv_collection,
             layer_idx,
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -1201,7 +1201,9 @@ def flare_mla_prefill_plan(
         "page_size": kv_params.page_size,
     }
 
-    buffer_size_tensor = ops.constant(buffer_size, DType.uint32)
+    buffer_size_tensor = ops.constant(
+        buffer_size, DType.uint32, device=DeviceRef.CPU()
+    )
 
     results = ops.inplace_custom(
         "mo.mla.prefill.ragged.plan",
@@ -1401,7 +1403,7 @@ def cross_attention_ragged(
             kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32).to(DeviceRef.CPU()),
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -1530,8 +1532,8 @@ def rms_norm_key_cache(
         values=[
             kv_collection,
             gamma,
-            ops.constant(epsilon, gamma.dtype),
-            ops.constant(layer_idx, DType.uint32),
+            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
             ops.cast(TensorValue(total_seq_len), DType.uint32),
             input_row_offsets,
         ],

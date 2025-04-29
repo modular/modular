@@ -25,16 +25,16 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
     height = Dim(height)
     width = Dim(width)
     row_indices = ops.range(
-        ops.constant(0, DType.int64),
+        ops.constant(0, DType.int64, device=DeviceRef.CPU()),
         TensorValue(height),
-        ops.constant(1, DType.int64),
+        ops.constant(1, DType.int64, device=DeviceRef.CPU()),
         out_dim=height,
         device=DeviceRef.GPU(),
     )
     col_indices = ops.range(
-        ops.constant(0, DType.int64),
+        ops.constant(0, DType.int64, device=DeviceRef.CPU()),
         TensorValue(width),
-        ops.constant(1, DType.int64),
+        ops.constant(1, DType.int64, device=DeviceRef.CPU()),
         out_dim=width,
         device=DeviceRef.GPU(),
     )
@@ -111,9 +111,9 @@ class RotaryEmbedding2D(Layer):
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # 1D tensor of length head_dim // 2 = 32
         iota = ops.range(
-            ops.constant(0, DType.float64),
-            ops.constant(head_dim, DType.float64),  # type: ignore
-            ops.constant(2, DType.float64),
+            ops.constant(0, DType.float64, device=DeviceRef.CPU()),
+            ops.constant(head_dim, DType.float64, device=DeviceRef.CPU()),  # type: ignore
+            ops.constant(2, DType.float64, device=DeviceRef.CPU()),
             out_dim=head_dim // 2,
             device=DeviceRef.GPU(),
         )
@@ -123,17 +123,21 @@ class RotaryEmbedding2D(Layer):
         # Indices of patches in each side (height and width) of image.
         # 1D tensor of length max_patches_per_side = 64
         h = ops.range(
-            ops.constant(0, DType.float32),
-            ops.constant(self.max_patches_per_side, DType.float32),
-            ops.constant(1, DType.float32),
+            ops.constant(0, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(
+                self.max_patches_per_side, DType.float32, device=DeviceRef.CPU()
+            ),
+            ops.constant(1, DType.float32, device=DeviceRef.CPU()),
             out_dim=self.max_patches_per_side,
             device=DeviceRef.GPU(),
         )
         # 1D tensor of length max_patches_per_side = 64
         w = ops.range(
-            ops.constant(0, DType.float32),
-            ops.constant(self.max_patches_per_side, DType.float32),
-            ops.constant(1, DType.float32),
+            ops.constant(0, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(
+                self.max_patches_per_side, DType.float32, device=DeviceRef.CPU()
+            ),
+            ops.constant(1, DType.float32, device=DeviceRef.CPU()),
             out_dim=self.max_patches_per_side,
             device=DeviceRef.GPU(),
         )

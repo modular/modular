@@ -166,9 +166,11 @@ class FetchPagedKVCacheCollectionFA3Fallback:
         # expand our lookup table to fit to num_blocks
         # we need a different lookup table for each layer
         # TODO(austin) move this to a unified location, right now it's split across the codebase.
-        num_layers = ops.constant(self.num_layers, DType.uint32)
-        start_constant = ops.constant(0, DType.uint32)
-        step_constant = ops.constant(1, DType.uint32)
+        num_layers = ops.constant(
+            self.num_layers, DType.uint32, device=DeviceRef.CPU()
+        )
+        start_constant = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+        step_constant = ops.constant(1, DType.uint32, device=DeviceRef.CPU())
         layers_arange = ops.range(
             start_constant,
             num_layers,

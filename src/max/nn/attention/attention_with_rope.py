@@ -316,7 +316,9 @@ class AttentionWithRope(Module):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
         # Call into fused qkv ragged matmul.
         wqkv = self.wqkv
         xq = fused_qkv_ragged_matmul(
@@ -555,7 +557,9 @@ class LatentAttentionWithRope(AttentionWithRope):
                     self.kv_params,
                     input_row_offsets,
                     kv_collection,
-                    ops.constant(layer_idx, DType.uint32),
+                    ops.constant(
+                        layer_idx, DType.uint32, device=DeviceRef.CPU()
+                    ),
                     self.BUFFER_TOK_SIZE,
                 )
             )
@@ -568,7 +572,7 @@ class LatentAttentionWithRope(AttentionWithRope):
                 buffer_lengths_host[0],
                 self.kv_b_proj,
                 kv_collection,
-                ops.constant(layer_idx, DType.uint32),
+                ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
                 self.BUFFER_TOK_SIZE,
             )
 
@@ -588,7 +592,7 @@ class LatentAttentionWithRope(AttentionWithRope):
                 buffer_row_offsets[0, :],  # Process first chunk only
                 cache_offsets[0, :],
                 kv_collection,
-                ops.constant(layer_idx, DType.uint32),
+                ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
                 MHAMaskVariant.CAUSAL_MASK,
                 self.scale,
                 self.qk_rope_head_dim,
@@ -609,7 +613,9 @@ class LatentAttentionWithRope(AttentionWithRope):
                 self.kv_params,
                 input=xq,
                 kv_collection=kv_collection,
-                layer_idx=ops.constant(layer_idx, DType.uint32),
+                layer_idx=ops.constant(
+                    layer_idx, DType.uint32, device=DeviceRef.CPU()
+                ),
                 input_row_offsets=input_row_offsets,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=self.scale,
@@ -705,7 +711,7 @@ class LatentAttentionWithRope(AttentionWithRope):
             kwargs["input_row_offsets"],
             kv_collection,
             freqs_cis,
-            ops.constant(layer_idx, DType.uint32),
+            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
             interleaved=True,
         )
 
@@ -863,7 +869,9 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         assert self.k_proj.quantization_encoding is not None
         assert self.v_proj.quantization_encoding is not None
 
-        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
 
         # Call into unfused qkv ragged matmul.
         xq = unfused_qkv_ragged_matmul_gguf_quantized(
@@ -1046,7 +1054,9 @@ class GPTQAttentionWithRope(AttentionWithRope):
         ],
         **kwargs,
     ) -> TensorValue:
-        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
 
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -1212,7 +1222,9 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             wqkv=wqkv,
             input_row_offsets=kwargs["input_row_offsets"],
             kv_collection=kv_collection,
-            layer_idx=ops.constant(self.layer_idx, DType.uint32),
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
             n_heads=self.n_heads,
         )
 
@@ -1228,7 +1240,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             kwargs["input_row_offsets"],
             kv_collection,
             freqs_cis,
-            ops.constant(self.layer_idx, DType.uint32),
+            ops.constant(self.layer_idx, DType.uint32, device=DeviceRef.CPU()),
             interleaved=self.rope.interleaved,
         )
 
@@ -1237,7 +1249,9 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(self.layer_idx, DType.uint32),
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,

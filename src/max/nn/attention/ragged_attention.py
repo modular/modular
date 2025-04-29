@@ -191,7 +191,9 @@ class RaggedAttention(Module):
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
-        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
 
         # Call into fused qkv ragged matmul.
         xq = fused_qkv_ragged_matmul(

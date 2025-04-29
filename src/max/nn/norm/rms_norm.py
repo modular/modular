@@ -46,7 +46,9 @@ class RMSNormV1(Layer):
                 x,
                 ops.cast(self.weight, x.dtype),
                 ops.cast(self.eps, x.dtype),
-                ops.constant(self.weight_offset, dtype=x.dtype),
+                ops.constant(
+                    self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
+                ),
             ],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor
@@ -85,8 +87,10 @@ class RMSNorm(Module):
             [
                 x,
                 weight,
-                ops.constant(self.eps, dtype=x.dtype),
-                ops.constant(self.weight_offset, dtype=x.dtype),
+                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
+                ops.constant(
+                    self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
+                ),
             ],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor

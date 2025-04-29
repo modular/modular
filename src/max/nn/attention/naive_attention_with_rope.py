@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 from max.dtype import DType
-from max.graph import BufferValue, TensorValue, TensorValueLike, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 
 from ..kv_cache import KVCacheParams
 from ..layer import Module
@@ -111,7 +111,10 @@ class NaiveAttentionWithRope(Module):
         # operator.
         return (
             ops.softmax(
-                scores * ops.constant(self.scale, dtype=DType.float32)
+                scores
+                * ops.constant(
+                    self.scale, dtype=DType.float32, device=DeviceRef.CPU()
+                )
                 + attn_mask
             )
             @ values

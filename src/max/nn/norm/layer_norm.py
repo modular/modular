@@ -42,7 +42,8 @@ class LayerNormV1(Layer):
             if self.bias
             # If bias wasn't passed then use bias-less layer norm (beta = 0).
             else ops.broadcast_to(
-                ops.constant(0.0, input.dtype), shape=(input.shape[-1],)
+                ops.constant(0.0, input.dtype, device=DeviceRef.CPU()),
+                shape=(input.shape[-1],),
             )
         )
 

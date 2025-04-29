@@ -162,8 +162,8 @@ class DistributedTransformer(Module):
         if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = ops.range(
                 return_n_logits[0],
-                ops.constant(0, DType.int64),
-                ops.constant(-1, DType.int64),
+                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+                ops.constant(-1, DType.int64, device=DeviceRef.CPU()),
                 out_dim="return_n_logits_range",
                 device=self.devices[0],
             )
@@ -177,7 +177,7 @@ class DistributedTransformer(Module):
                 axis=0,
             )
             offsets = ops.range(
-                ops.constant(0, DType.int64),
+                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
                 last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",

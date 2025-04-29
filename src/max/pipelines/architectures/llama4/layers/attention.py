@@ -205,7 +205,9 @@ class _Llama4TextAttention(Module):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
         # Call into fused qkv ragged matmul.
         wqkv = self.wqkv
         xq = fused_qkv_ragged_matmul(
@@ -244,7 +246,9 @@ class _Llama4TextAttention(Module):
             rms_norm_key_cache(
                 self.kv_params,
                 kv_collection=kv_collection,
-                gamma=ops.constant(1, self.kv_params.dtype)
+                gamma=ops.constant(
+                    1, self.kv_params.dtype, device=DeviceRef.CPU()
+                )
                 .broadcast_to([self.kv_params.head_dim])
                 .to(self.devices[0]),
                 epsilon=self.qk_norm_eps,

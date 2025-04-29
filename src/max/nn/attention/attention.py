@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Union
 
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 
 from ..kernels import flash_attention, fused_qkv_matmul
 from ..kv_cache import (
@@ -127,7 +127,9 @@ class AttentionQKV(AttentionImplQKV):
             input=x,
             wqkv=wqkv,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(self.layer_idx, DType.uint32),
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
             n_heads=self.n_heads,
         )
 
@@ -146,7 +148,9 @@ class AttentionQKV(AttentionImplQKV):
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(self.layer_idx, DType.uint32),
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
             attention_mask=attention_mask,
             valid_lengths=kwargs["valid_lengths"],
             scale=self.scale,

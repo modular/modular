@@ -140,17 +140,15 @@ class VisionModel(Layer):
         # The snippet below is a workaround for
         # attention_mask[:, :, 0 - pad_patches :] = 0
         valid_mask = attention_mask[:, :, :-pad_patches, :]
-        zero_pad = (
-            ops.constant(0, dtype)
-            .broadcast_to(
-                (
-                    batch_size,
-                    max_num_tiles,
-                    pad_patches,
-                    attention_mask.shape[-1],
-                )
+        zero_pad = ops.constant(
+            0, dtype, device=aspect_ratio_mask.type.device
+        ).broadcast_to(
+            (
+                batch_size,
+                max_num_tiles,
+                pad_patches,
+                attention_mask.shape[-1],
             )
-            .to(aspect_ratio_mask.type.device or DeviceRef.CPU())
         )
         attention_mask = ops.concat((valid_mask, zero_pad), axis=2)
 
@@ -202,7 +200,7 @@ class VisionModel(Layer):
         new_width = width + left + right
 
         padded_tensor = (
-            ops.constant(value, dtype)
+            ops.constant(value, dtype, device=DeviceRef.CPU())
             .broadcast_to((batch_size, channels, new_height, new_width))
             .to(input_tensor.type.device or DeviceRef.CPU())
         )

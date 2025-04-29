@@ -50,9 +50,9 @@ class Qwen2_5VLRotaryEmbedding(Module):
         n = self.dim // self.n_heads
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         iota = ops.range(
-            ops.constant(0, DType.float64),
-            ops.constant(n - 1, DType.float64),
-            ops.constant(2, DType.float64),
+            ops.constant(0, DType.float64, device=DeviceRef.CPU()),
+            ops.constant(n - 1, DType.float64, device=DeviceRef.CPU()),
+            ops.constant(2, DType.float64, device=DeviceRef.CPU()),
             out_dim=n // 2,
             device=DeviceRef.CPU(),
         )
@@ -189,7 +189,9 @@ class Qwen2_5VLDecoderTransformer(Module):
         position_embeddings = self.rotary_emb.freqs_cis_base(position_ids)
         h = inputs_embeds
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(self.embedding_multiplier, h.dtype)
+            h = h * ops.constant(
+                self.embedding_multiplier, h.dtype, device=DeviceRef.CPU()
+            )
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
         cache_lengths = kv_cache_inputs[1]

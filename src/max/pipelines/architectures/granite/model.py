@@ -17,14 +17,10 @@ from typing import Optional
 
 from max.driver import Device
 from max.engine import InferenceSession
-from max.graph import ops
+from max.graph import DeviceRef, ops
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
 from ..llama3.model import Llama3Model
@@ -61,5 +57,5 @@ class GraniteModel(Llama3Model):
 
         if logits_scaling != 1.0:
             self.logits_processor = lambda logits: logits / ops.constant(
-                logits_scaling, logits.dtype
+                logits_scaling, logits.dtype, DeviceRef.CPU()
             )

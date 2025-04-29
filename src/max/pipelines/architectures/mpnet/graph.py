@@ -432,8 +432,8 @@ class MPNetEncoder(Layer):
     def compute_position_bias(self, hidden_states: TensorValue) -> TensorValue:
         shape = hidden_states.shape
         bsz, qlen, klen = shape[0], shape[1], shape[1]
-        start = ops.constant(0, DType.int64)
-        step = ops.constant(1, DType.int64)
+        start = ops.constant(0, DType.int64, device=DeviceRef.CPU())
+        step = ops.constant(1, DType.int64, device=DeviceRef.CPU())
         context_position = ops.range(
             start, qlen, step, qlen, device=DeviceRef.CPU()
         ).cast(DType.int64)[:, None]
@@ -475,7 +475,8 @@ class MPNetEncoder(Layer):
 
         # Roundabout implementation of full_like(val_if_large, num_buckets - 1).
         max_bucket = ops.broadcast_to(
-            ops.constant(num_buckets - 1, DType.int64), val_if_large.shape
+            ops.constant(num_buckets - 1, DType.int64, device=DeviceRef.CPU()),
+            val_if_large.shape,
         )
 
         val_if_large = ops.min(val_if_large, max_bucket)

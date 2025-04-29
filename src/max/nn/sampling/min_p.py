@@ -14,7 +14,7 @@
 
 from max import nn
 from max.dtype import DType
-from max.graph import Shape, ShapeLike, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Shape, ShapeLike, TensorType, TensorValue, ops
 
 
 class MinPSampler(nn.Module):
@@ -41,9 +41,13 @@ class MinPSampler(nn.Module):
         return ops.custom(
             "min_p_sampling",
             [
-                ops.constant(self.min_p, dtype=self.dtype),
+                ops.constant(
+                    self.min_p, dtype=self.dtype, device=DeviceRef.CPU()
+                ),
                 input,
-                ops.constant(self.temperature, dtype=self.dtype),
+                ops.constant(
+                    self.temperature, dtype=self.dtype, device=DeviceRef.CPU()
+                ),
             ],
             [TensorType(self.dtype, self.shape, device=input.device)],
         )[0].tensor

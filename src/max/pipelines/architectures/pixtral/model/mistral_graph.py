@@ -149,7 +149,7 @@ def _attention_opaque(
             weights.self_attn.o_proj,
         ),
         rope=rope,
-        layer_idx=ops.constant(layer_idx, DType.uint32),
+        layer_idx=ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         scale=math.sqrt(1 / kv_params.head_dim),
     )
 

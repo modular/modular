@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from max.dtype import DType
-from max.graph import TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 from max.nn.layer import Layer
 
 if TYPE_CHECKING:
@@ -59,7 +59,9 @@ class TransformerBlock(Layer):
         attention_mask: TensorValueLike,
         position_embeddings: tuple[TensorValue, TensorValue],
     ) -> TensorValue:
-        residual_multiplier = ops.constant(self.residual_multiplier, x.dtype)
+        residual_multiplier = ops.constant(
+            self.residual_multiplier, x.dtype, device=DeviceRef.CPU()
+        )
         attn_out = self.attention(
             self.attention_norm(x),
             attention_mask,
