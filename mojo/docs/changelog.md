@@ -33,6 +33,7 @@ what we publish.
   Packages that are open sourced now include:
   - `register`
   - `layout`
+  - `linalg`
 
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
