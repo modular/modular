@@ -21,18 +21,12 @@ from collections.string.string import (
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
-from math import Ceilable, CeilDivable, Floorable, Truncable
+from math import CeilDivable
 from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
-from builtin.io import _snprintf
-from builtin.math import (
-    Absable,
-    Powable,
-)
-from memory import UnsafePointer
+from builtin.math import Absable, Powable
 from python import Python, PythonObject, PythonConvertible
-from python._cpython import Py_ssize_t
 
 from utils import Writable, Writer
 from utils._select import _select_register_value as select

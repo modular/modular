@@ -515,3 +515,27 @@ struct Python:
             Python.throw_python_exception_if_error_state(cpython)
 
         return long
+
+    @staticmethod
+    fn is_true(obj: PythonObject) raises -> Bool:
+        """Check if the PythonObject is considered true.
+
+        Args:
+            obj: The PythonObject to check.
+
+        Returns:
+            True if the PythonObject is considered true and False otherwise.
+
+        Raises:
+            If the boolean value of the PythonObject cannot be determined.
+        """
+
+        var cpython = Python().cpython()
+        var result = cpython.PyObject_IsTrue(obj.py_object)
+
+        # Disambiguate if this is an error return setinel, or a legitimate
+        # value.
+        if result == -1:
+            Python.throw_python_exception_if_error_state(cpython)
+
+        return result == 1

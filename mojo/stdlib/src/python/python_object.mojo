@@ -28,8 +28,7 @@ from sys.ffi import c_ssize_t
 from builtin.string_literal import StringLiteral
 from memory import UnsafePointer
 
-from ._cpython import CPython, PyObjectPtr, PyMethodDef, PyCFunction
-from ._bindings import py_c_function_wrapper
+from ._cpython import CPython, PyObjectPtr
 from .python import Python
 
 
@@ -681,8 +680,12 @@ struct PythonObject(
         Returns:
             Whether the object evaluates as true.
         """
-        var cpython = Python().cpython()
-        return cpython.PyObject_IsTrue(self.py_object) == 1
+        try:
+            return Python().is_true(self)
+        except Error:
+            # TODO: make this function raise when we can raise parametrically.
+            debug_assert(False, "object cannot be converted to a bool")
+            return False
 
     @always_inline
     fn __as_bool__(self) -> Bool:
@@ -1489,7 +1492,7 @@ struct PythonObject(
             The length of the object.
         """
         var cpython = Python().cpython()
-        var result = cpython.PyObject_Length(self.py_object)
+        var result = cpython.PyObject_Hash(self.py_object)
         # TODO: make this function raise when we can raise parametrically.
         debug_assert(result != -1, "object is not hashable")
         return result
@@ -1503,11 +1506,7 @@ struct PythonObject(
         Args:
             hasher: The hasher instance.
         """
-        var cpython = Python().cpython()
-        var result = cpython.PyObject_Hash(self.py_object)
-        # TODO: make this function raise when we can raise parametrically.
-        debug_assert(result != -1, "object is not hashable")
-        hasher.update(result)
+        hasher.update(self.__hash__())
 
     fn __index__(self) -> __mlir_type.index:
         """Returns an index representation of the object.
@@ -1523,9 +1522,14 @@ struct PythonObject(
         Returns:
             An integral value that represents this object.
         """
-        cpython = Python().cpython()
-        var py_long = cpython.PyNumber_Long(self.py_object)
-        return cpython.PyLong_AsSsize_t(py_long)
+        var p = Python()
+        var py_long = p.cpython().PyNumber_Long(self.py_object)
+        try:
+            return p.py_long_as_ssize_t(py_long)
+        except e:
+            # TODO: make this function raise when we can raise parametrically.
+            debug_assert(False, "object cannot be converted to an integer")
+            return -1
 
     fn __as_int__(self) -> Int:
         """Implicitly convert to an Int.
