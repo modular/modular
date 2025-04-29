@@ -10,7 +10,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import ConvTranspose1d
+from max.nn import ConvTranspose1d, WeightNormConvTranspose1d
 
 ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6
@@ -172,6 +172,113 @@ def test_conv_transpose1d_bias() -> None:
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Tensor)
 
+    np.testing.assert_allclose(
+        max_conv_result.to_numpy(),
+        torch_conv_result.detach().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+def test_weight_norm_conv_transpose1d() -> None:
+    batch_size = 10
+    in_channels = 16
+    length = 3
+    out_channels = 33  # out_channels. Has nothing to do with input size
+    kernel_size = 5
+    stride = 2
+    padding = 3
+    dilation = 1
+    output_padding = 1
+
+    is_gpu = False
+    torch_dtype = torch.float32
+    max_dtype = DType.float32
+
+    # Create input tensor
+    input_sequence = torch.rand(size=(batch_size, in_channels, length)).to(
+        torch_dtype
+    )
+    input_sequence = input_sequence.cuda() if is_gpu else input_sequence.cpu()
+
+    # Create PyTorch model with weight norm
+    torch_conv = nn.ConvTranspose1d(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        output_padding=output_padding,
+    )
+
+    torch_conv = torch.nn.utils.weight_norm(torch_conv)
+
+    # Print shapes to verify
+    print(
+        f"weight_v shape: {torch_conv.weight_v.shape}"
+    )  # Should be (in_channels, out_channels, kernel_size)
+    print(
+        f"weight_g shape: {torch_conv.weight_g.shape}"
+    )  # Actually (in_channels, 1, 1)
+
+    # Create MAX model
+    max_conv = WeightNormConvTranspose1d(
+        length=kernel_size,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        dtype=max_dtype,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        output_padding=output_padding,
+        permute=True,
+        has_bias=True,
+    )
+
+    # load random weights to torch
+    torch_conv.weight_v.data = nn.Parameter(
+        torch.rand(size=torch_conv.weight_v.data.shape)
+    )
+    torch_conv.weight_g.data = nn.Parameter(
+        torch.rand(size=torch_conv.weight_g.data.shape)
+    )
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(size=torch_conv.bias.data.shape)
+    )
+
+    # load weights to max
+    v = torch_conv.weight_v.data
+    g = torch_conv.weight_g.data
+
+    state_dict = {
+        "v": v,  # Permute to MAX format if needed
+        "g": g,  # g shape is already (in_channels, 1, 1)
+        "conv.bias": torch_conv.bias.data,
+    }
+    max_conv.load_state_dict(state_dict)
+
+    # Get PyTorch output
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
+    # Get MAX output
+    session = InferenceSession()
+    graph = Graph(
+        "weight_norm_conv_transpose1d",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, DeviceRef.CPU()),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    max_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(max_conv_result, Tensor)
+
+    # Compare outputs
     np.testing.assert_allclose(
         max_conv_result.to_numpy(),
         torch_conv_result.detach().numpy(),
