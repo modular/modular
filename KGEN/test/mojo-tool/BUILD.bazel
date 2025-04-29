@@ -29,7 +29,7 @@ lit_tests(
         "MODULAR_MOJO_MAX_MBLACK_PATH": "$(location //utils/mblack:shim.py)",
     },
     mojo_deps = [
-        "//Kernels/mojo/layout",
+        "//open-source/max/mojo/kernels/src/layout",
         "//open-source/max/mojo/stdlib/stdlib",
     ],
     tools = [
