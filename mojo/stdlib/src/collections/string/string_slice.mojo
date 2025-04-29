@@ -682,7 +682,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len = self.byte_length()
         var result = String(unsafe_uninit_length=len)
-        memcpy(result.unsafe_ptr(), self.unsafe_ptr(), len)
+        memcpy(result.unsafe_ptr_mut(), self.unsafe_ptr(), len)
         return result^
 
     fn __repr__(self) -> String:
