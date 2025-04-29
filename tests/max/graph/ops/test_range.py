@@ -7,7 +7,7 @@
 
 import pytest
 from max.dtype import DType
-from max.graph import Graph, ops
+from max.graph import DeviceRef, Graph, ops
 
 
 @pytest.mark.parametrize(
@@ -31,7 +31,9 @@ def test_range(start: int, stop: int, step: int) -> None:
         start_val = ops.constant(start, DType.int64)
         stop_val = ops.constant(stop, DType.int64)
         step_val = ops.constant(step, DType.int64)
-        out = ops.range(start_val, stop_val, step_val, dim)
+        out = ops.range(
+            start_val, stop_val, step_val, dim, device=DeviceRef.CPU()
+        )
         graph.output(out)
 
 
@@ -55,5 +57,7 @@ def test_range_exceptions(start: int, stop: int, step: int) -> None:
             start_val = ops.constant(start, DType.int64)
             stop_val = ops.constant(stop, DType.int64)
             step_val = ops.constant(step, DType.int64)
-            out = ops.range(start_val, stop_val, step_val, dim)
+            out = ops.range(
+                start_val, stop_val, step_val, dim, device=DeviceRef.CPU()
+            )
             graph.output(out)

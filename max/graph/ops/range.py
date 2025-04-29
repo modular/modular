@@ -19,7 +19,7 @@ def range(
     stop: TensorValueLike,
     step: TensorValueLike,
     out_dim: DimLike,
-    device: DeviceRef | None = None,
+    device: DeviceRef,
 ) -> TensorValue:
     """Creates a sequence of numbers. The sequence goes from `start` with
     increments of size `step` up to (but not including) `stop`. All arguments
@@ -51,9 +51,7 @@ def range(
 
     return Graph.current._add_op(
         rmo.mo_range,
-        TensorType(
-            start.dtype, shape=[out_dim], device=device or DeviceRef.CPU()
-        ).to_mlir(),
+        TensorType(start.dtype, shape=[out_dim], device=device).to_mlir(),
         start,
         stop,
         step,
