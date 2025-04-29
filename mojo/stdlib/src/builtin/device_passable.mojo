@@ -17,3 +17,34 @@ trait DevicePassable:
 
     alias device_type: AnyTrivialRegType
     """Indicate the type being used on accelerator devices."""
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets the name of the host type (the one implementing this trait).
+        For example, Int would return "Int", DeviceBuffer[DType.float32] would
+        return "DeviceBuffer[DType.float32]". This is used for error messages
+        when passing types to the device.
+        TODO: This method will be retired soon when better kernel call error
+        messages arrive.
+
+        Returns:
+            The host type's name.
+        """
+        ...
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name. For example, because DeviceBuffer's
+        device_type is UnsafePointer, DeviceBuffer[DType.float32]'s
+        get_device_type_name() should return something like
+        "UnsafePointer[Scalar[DType.float32]]". This is used for error messages
+        when passing types to the device.
+        TODO: This method will be retired soon when better kernel call error
+        messages arrive.
+
+        Returns:
+            The device type's name.
+        """
+        ...

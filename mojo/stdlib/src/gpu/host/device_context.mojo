@@ -704,6 +704,32 @@ struct DeviceBuffer[type: DType](
     alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
     """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
 
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        TODO: This will go away soon, when we get better error messages for
+        kernel calls.
+
+        Returns:
+            This type's name.
+        """
+        return "DeviceBuffer[" + repr(type) + "]"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing
+        arguments to kernels.
+        TODO: This will go away soon, when we get better error messages for
+        kernel calls.
+
+        Returns:
+            This type's name.
+        """
+        return "UnsafePointer[Scalar[" + repr(type) + "]]"
+
     alias _DevicePtr = UnsafePointer[Scalar[type]]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
@@ -1968,13 +1994,41 @@ struct DeviceFunction[
                 alias declared_arg_type = declared_arg_types.value()[i]
                 alias actual_arg_type = Ts[i]
 
-                constrained[
-                    _type_is_eq[
-                        declared_arg_type, actual_arg_type.device_type
-                    ](),
-                    "Handed in wrong argument type for argument #",
-                    String(i),
-                ]()
+                # Now we'll check if the given argument's device_type is
+                # what the kernel expects.
+                # TODO: Print out the expected type if possible.
+
+                # First, check if they're handing in a device type, in other
+                # words, a type that can be passed directly and doesn't need to
+                # be mapped. For example, Int, IndexList, etc.
+                @parameter
+                if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
+                    # Now check if they handed in the *correct* device type.
+                    constrained[
+                        _type_is_eq[
+                            declared_arg_type, actual_arg_type.device_type
+                        ](),
+                        "Handed in wrong argument type for argument #",
+                        String(i),
+                        ", received a ",
+                        actual_arg_type.get_type_name(),
+                    ]()
+                else:
+                    # They handed in a host type, in other words, a type that
+                    # needs to be mapped before handing it to the device. In
+                    # this case, we use a more informative error message.
+                    constrained[
+                        _type_is_eq[
+                            declared_arg_type, actual_arg_type.device_type
+                        ](),
+                        "Handed in wrong argument type for argument #",
+                        String(i),
+                        ", received a ",
+                        actual_arg_type.get_type_name(),
+                        " (which became device type ",
+                        actual_arg_type.get_device_type_name(),
+                        ")",
+                    ]()
 
         var num_captures = self._func_impl.num_captures
         alias populate = __type_of(self._func_impl).populate

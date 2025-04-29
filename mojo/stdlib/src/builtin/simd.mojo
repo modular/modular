@@ -290,6 +290,32 @@ struct SIMD[dtype: DType, size: Int](
     alias device_type: AnyTrivialRegType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        TODO: This will go away soon, when we get better error messages for
+        kernel calls.
+
+        Returns:
+            This type's name.
+        """
+        return "SIMD[" + repr(dtype) + ", " + repr(size) + "]"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing
+        arguments to kernels.
+        TODO: This will go away soon, when we get better error messages for
+        kernel calls.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
+
     # Fields
     alias _Mask = SIMD[DType.bool, size]
 
