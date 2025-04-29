@@ -112,8 +112,8 @@ class Graph:
             bias: np.ndarray
 
             def __call__(self, x: TensorValue) -> TensorValue:
-                weight_tensor = ops.constant(self.weight, dtype=DType.float32)
-                bias_tensor = ops.constant(self.bias, dtype=DType.float32)
+                weight_tensor = ops.constant(self.weight, dtype=DType.float32, device=DeviceRef.CPU())
+                bias_tensor = ops.constant(self.bias, dtype=DType.float32, device=DeviceRef.CPU())
                 return ops.matmul(x, weight_tensor) + bias_tensor
 
         linear_graph = Graph(

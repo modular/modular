@@ -7,13 +7,15 @@ import numpy as np
 from hypothesis import assume, given
 from max._core import graph as _graph
 from max.dtype import DType
-from max.graph import Graph, ops
+from max.graph import DeviceRef, Graph, ops
 
 
 def test_constant() -> None:
     with Graph("constants", input_types=()) as graph:
         const = np.array([0, 1, 2, 3, 4, 5]).astype(np.int64).reshape((2, 3))
-        const = ops.constant(const, DType.from_numpy(const.dtype))
+        const = ops.constant(
+            const, DType.from_numpy(const.dtype), device=DeviceRef.CPU()
+        )
 
         graph.output(const)
 
@@ -23,7 +25,9 @@ def test_constant() -> None:
 def test_constant_transpose() -> None:
     with Graph("constants", input_types=()) as graph:
         const = np.array([0, 1, 2, 3, 4, 5]).astype(np.int64).reshape((2, 3)).T
-        const = ops.constant(const, DType.from_numpy(const.dtype))
+        const = ops.constant(
+            const, DType.from_numpy(const.dtype), device=DeviceRef.CPU()
+        )
 
         graph.output(const)
 
@@ -38,7 +42,7 @@ def test_scalar_constant(dtype: DType) -> None:
     assume(dtype != DType.bfloat16)
     with Graph("scalar", input_types=()) as graph:
         const = 7.2
-        const = ops.constant(const, dtype)
+        const = ops.constant(const, dtype, device=DeviceRef.CPU())
 
         graph.output(const)
 

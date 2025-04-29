@@ -10,7 +10,7 @@ import pytest
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, ops
+from max.graph import DeviceRef, Graph, ops
 
 
 # For masked scatter specifically, I am adding execution tests. Generally, we
@@ -52,9 +52,13 @@ def test_masked_scatter(
     session: InferenceSession, input, mask, updates, expected
 ):
     with Graph("masked_scatter", input_types=[]) as graph:
-        input = ops.constant(np.array(input), DType.int32)
-        mask = ops.constant(np.array(mask), DType.bool)
-        updates = ops.constant(np.array(updates), DType.int32)
+        input = ops.constant(
+            np.array(input), DType.int32, device=DeviceRef.CPU()
+        )
+        mask = ops.constant(np.array(mask), DType.bool, device=DeviceRef.CPU())
+        updates = ops.constant(
+            np.array(updates), DType.int32, device=DeviceRef.CPU()
+        )
         out = ops.masked_scatter(input, mask, updates)
         graph.output(out)
 

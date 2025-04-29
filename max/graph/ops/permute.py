@@ -10,6 +10,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 
@@ -55,5 +56,5 @@ def permute(x: TensorValueLike, dims: list[int]) -> TensorValue:
         rmo.mo_transpose,
         TensorType(dtype=x.dtype, shape=new_shape, device=x.device).to_mlir(),
         x,
-        constant(np.array(dims), DType.int64),
+        constant(np.array(dims), DType.int64, DeviceRef.CPU()),
     )[0].tensor

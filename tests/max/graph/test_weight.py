@@ -99,7 +99,9 @@ def test_add_same_weight() -> None:
 def test_weight_is_value_like() -> None:
     with Graph("graph_with_weights", input_types=()) as graph:
         w = Weight("w", dtype=DType.float32, shape=[], device=DeviceRef.CPU())
-        constant = ops.constant(np.array(1), DType.float32)
+        constant = ops.constant(
+            np.array(1), DType.float32, device=DeviceRef.CPU()
+        )
         graph.output(constant + w)
         gen_mlir = str(graph._mlir_op)
         assert re.search(

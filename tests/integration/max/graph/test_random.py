@@ -27,8 +27,8 @@ def test_random_uniform(session: InferenceSession, dtype: DType):
     ) as graph:
         ops.random.set_seed(0)
 
-        lower_bound = ops.constant(0.0, dtype)
-        upper_bound = ops.constant(1.0, dtype)
+        lower_bound = ops.constant(0.0, dtype, device=DeviceRef.CPU())
+        upper_bound = ops.constant(1.0, dtype, device=DeviceRef.CPU())
 
         output = ops.random.uniform(tensor_type, (lower_bound, upper_bound))
 

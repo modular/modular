@@ -9,6 +9,7 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike, _strong_tensor_value_like
 from .constant import constant
 
@@ -26,7 +27,7 @@ def cast(x: TensorValueLike, dtype: DType) -> TensorValue:
     """
     if not isinstance(x, _strong_tensor_value_like):
         # This is a weak value. Cast has an explicit target dtype, just create a constant of that dtype.
-        return constant(x, dtype)
+        return constant(x, dtype, DeviceRef.CPU())
 
     # We have a strong TensorValueLike. Actually load and cast it.
     gv = TensorValue(x)

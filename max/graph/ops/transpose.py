@@ -10,6 +10,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 
@@ -49,5 +50,5 @@ def transpose(x: TensorValueLike, dim_1: int, dim_2: int) -> TensorValue:
         rmo.mo_transpose,
         TensorType(dtype=v.dtype, shape=new_shape, device=v.device).to_mlir(),
         v,
-        constant(indices, DType.int64),
+        constant(indices, DType.int64, DeviceRef.CPU()),
     )[0].tensor

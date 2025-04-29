@@ -18,7 +18,7 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 @dataclass
 class Unity:
     def __call__(self, x: TensorValue) -> TensorValue:
-        return ops.constant(1.0, dtype=DType.float32)
+        return ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU())
 
 
 def test_load_rejects_non_contiguous_weights():

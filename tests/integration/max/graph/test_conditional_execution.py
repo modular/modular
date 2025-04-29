@@ -70,10 +70,10 @@ def test_conditional_execution_with_results(session):
         cond = graph.inputs[0]
 
         def then_fn():
-            return ops.constant(1, DType.int32).to(device_ref)
+            return ops.constant(1, DType.int32, device=device_ref)
 
         def else_fn():
-            return ops.constant(0, DType.int32).to(device_ref)
+            return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
             cond,
@@ -99,10 +99,10 @@ def test_conditional_shape_to_tensor_solo_dim(session):
         shape = graph.inputs[0].shape
 
         def then_fn():
-            return ops.constant(1, DType.int32).to(device_ref)
+            return ops.constant(1, DType.int32, device=device_ref)
 
         def else_fn():
-            return ops.constant(0, DType.int32).to(device_ref)
+            return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
             TensorValue(shape[1]) == 3,

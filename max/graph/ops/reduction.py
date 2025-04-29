@@ -9,7 +9,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Dim, Shape, TensorType
+from ..type import DeviceRef, Dim, Shape, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
@@ -113,7 +113,7 @@ def _reduce(op, x: TensorValueLike, axis=-1, out_dtype=None) -> TensorValue:
     shape[axis] = Dim(1)
     type = TensorType(out_dtype or x.dtype, shape, x.device)
     return Graph.current._add_op(
-        op, type.to_mlir(), x, constant(axis, DType.int64)
+        op, type.to_mlir(), x, constant(axis, DType.int64, DeviceRef.CPU())
     )[0].tensor
 
 

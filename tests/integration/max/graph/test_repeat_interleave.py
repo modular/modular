@@ -26,7 +26,7 @@ def test_repeat_interleave(
         "repeat_interleave",
         input_types=[],
     ) as graph:
-        x = ops.constant(np.array(input), DType.int64).to(device_ref)
+        x = ops.constant(np.array(input), DType.int64, device=device_ref)
 
         output = ops.repeat_interleave(x, repeats)
         graph.output(output)
@@ -63,10 +63,8 @@ def test_repeat_interleave_vector(
         "repeat_interleave_vector",
         input_types=[],
     ) as graph:
-        x = ops.constant(np.array(input), DType.int64).to(device_ref)
-        repeat_vals = ops.constant(np.array(repeats), DType.int64).to(
-            device_ref
-        )
+        x = ops.constant(np.array(input), DType.int64, device_ref)
+        repeat_vals = ops.constant(np.array(repeats), DType.int64, device_ref)
 
         if len(repeats) == 1:
             out_dim = x.shape[axis] * sum(repeats)

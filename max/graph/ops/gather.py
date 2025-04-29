@@ -10,7 +10,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import StaticDim, TensorType
+from ..type import DeviceRef, StaticDim, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
@@ -45,7 +45,7 @@ def gather(
         ).to_mlir(),
         input,
         indices,
-        constant(axis, DType.int64),
+        constant(axis, DType.int64, DeviceRef.CPU()),
     )[0].tensor
 
 

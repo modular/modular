@@ -39,7 +39,7 @@ def while_loop(
         from max.dtype import DType
 
         with Graph("while_loop_example") as g:
-            x = ops.constant(0, dtype=DType.int32)
+            x = ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU())
 
             def pred(x):
                 return x < 10
@@ -58,8 +58,8 @@ def while_loop(
         from max.dtype import DType
 
         with Graph("while_loop_example") as g:
-            x = ops.constant(0, dtype=DType.int32)
-            y = ops.constant(5, dtype=DType.int32)
+            x = ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU())
+            y = ops.constant(5, dtype=DType.int32, device=DeviceRef.CPU())
 
             def pred(x, y):
                 return ops.logical_and(x < 10, y < 15)

@@ -137,7 +137,7 @@ class AllreduceAdd(Module):
         results = self.allreduce(inputs, signal_buffers)
 
         biases = [
-            ops.constant(42, dtype=DType.float32).to(DeviceRef.GPU(id))
+            ops.constant(42, dtype=DType.float32, device=DeviceRef.GPU(id))
             for id in range(self.num_devices)
         ]
 

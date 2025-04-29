@@ -12,7 +12,7 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import Dim, DimLike
+from ..type import DeviceRef, Dim, DimLike
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 
@@ -54,7 +54,7 @@ def split(
         mo.split,
         result_types,
         v,
-        constant(np.array(split_sizes), DType.int64),
-        constant(axis, DType.int64),
+        constant(np.array(split_sizes), DType.int64, DeviceRef.CPU()),
+        constant(axis, DType.int64, DeviceRef.CPU()),
     )
     return [out.tensor for out in outputs]

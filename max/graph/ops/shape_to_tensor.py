@@ -25,7 +25,7 @@ def shape_to_tensor(shape: ShapeLike) -> TensorValue:
         The TensorValue containing the same value as `shape`.
 
     Example:
-        >>> x = ops.constant(np.zeros((1,)), DType.int64)
+        >>> x = ops.constant(np.zeros((1,)), DType.int64, device=DeviceRef.CPU())
         >>> result = ops.stack([
         ...     x,
         ...     ops.shape_to_tensor(x.shape),

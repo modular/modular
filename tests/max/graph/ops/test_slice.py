@@ -38,7 +38,7 @@ def test_slice_with_tensor_value(graph_builder):
             TensorType(DType.int32, [5, "in_dim"], device=DeviceRef.CPU())
         ],
     ) as graph:
-        start = ops.constant(2, DType.int64)
+        start = ops.constant(2, DType.int64, device=DeviceRef.CPU())
         out = graph.inputs[0][
             (slice(start, None), 3), (slice(start, None), "out_dim")
         ]
@@ -137,7 +137,9 @@ def test_slice_valid_tensorvalues(
         out = ops.slice_tensor(
             graph.inputs[0].tensor,
             [
-                ops.constant(i, DType.int64) if isinstance(i, int) else i
+                ops.constant(i, DType.int64, device=DeviceRef.CPU())
+                if isinstance(i, int)
+                else i
                 for i in list(index)
             ],
         )

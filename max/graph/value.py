@@ -62,8 +62,8 @@ class Value:
         # Create a graph context
         with Graph("value_example") as graph:
             # Create input values
-            a = ops.constant(np.array([1, 2, 3]), dtype=DType.float32)
-            b = ops.constant(np.array([4, 5, 6]), dtype=DType.float32)
+            a = ops.constant(np.array([1, 2, 3]), dtype=DType.float32, device=DeviceRef.CPU())
+            b = ops.constant(np.array([4, 5, 6]), dtype=DType.float32, device=DeviceRef.CPU())
 
             # Use values to perform operations
             c = a + b  # c is a Value representing the addition
@@ -308,7 +308,7 @@ class TensorValue(Value):
         # Create a Graph context to work with tensors
         with Graph("tensor_demo") as graph:
             # Create a constant tensor from the matrix
-            tensor = ops.constant(matrix, dtype=DType.float32)
+            tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
             # Access tensor properties
             print(f"Shape: {tensor.shape}")  # Output: [2, 2]
@@ -405,7 +405,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("shape_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Access tensor shape
                 print(f"Shape: {tensor.shape}")  # Shape: [Dim(2), Dim(2)]
@@ -438,7 +438,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("dtype_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Access tensor data type
                 print(f"Data type: {tensor.dtype}")  # Output: DType.float32
@@ -467,7 +467,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("rank_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Access tensor rank (number of dimensions)
                 print(f"Rank: {tensor.rank}")  # Output: 2
@@ -503,7 +503,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("reshape_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Reshape tensor to a 1x4 matrix
                 reshaped_tensor = tensor.reshape((1, 4))
@@ -539,7 +539,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("flatten_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Flatten the tensor to a 1D array
                 flattened_tensor = tensor.flatten()
@@ -573,7 +573,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("broadcast_to_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Broadcast tensor to a 3x2x2 tensor (add a new dimension of size 3)
                 broadcasted_tensor = tensor.broadcast_to((3, 2, 2))
@@ -606,7 +606,7 @@ class TensorValue(Value):
             # Create a Graph context to work with tensors
             with Graph("cast_demo") as graph:
                 # Create a constant tensor from the matrix
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Cast tensor to integer type
                 casted_tensor = tensor.cast(DType.int32)
@@ -660,7 +660,7 @@ class TensorValue(Value):
             matrix = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
 
             with Graph("transpose_demo") as graph:
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Transpose the tensor (swap dimensions 0 and 1)
                 transposed_tensor = tensor.transpose(dim_1=0, dim_2=1)
@@ -693,7 +693,7 @@ class TensorValue(Value):
 
             with Graph("to_device_example") as graph:
                 # Create a tensor on the default device
-                tensor = ops.constant(matrix, dtype=DType.float32)
+                tensor = ops.constant(matrix, dtype=DType.float32, device=DeviceRef.CPU())
 
                 # Move the tensor to a GPU device
                 gpu_tensor = tensor.to(DeviceRef.GPU())

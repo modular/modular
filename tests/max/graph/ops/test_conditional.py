@@ -9,7 +9,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 def test_conditional_no_results() -> None:
     with Graph("conditional", input_types=()) as graph:
-        cond = ops.constant(True, dtype=DType.bool)
+        cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
         def then_fn():
             ops.print("then")
@@ -29,13 +29,13 @@ def test_conditional_no_results() -> None:
 def test_conditional_with_results() -> None:
     # Test conditional with return values
     with Graph("conditional_with_returns", input_types=()) as graph:
-        cond = ops.constant(True, dtype=DType.bool)
+        cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
         def then_fn():
-            return ops.constant(1, DType.int32)
+            return ops.constant(1, DType.int32, device=DeviceRef.CPU())
 
         def else_fn():
-            return ops.constant(0, DType.int32)
+            return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
         result = ops.cond(
             cond,
@@ -52,13 +52,13 @@ def test_conditional_with_results() -> None:
 def test_conditional_type_check() -> None:
     # Test type checking between branches
     with Graph("conditional_type_check", input_types=()) as graph:
-        cond = ops.constant(False, dtype=DType.bool)
+        cond = ops.constant(False, dtype=DType.bool, device=DeviceRef.CPU())
 
         def then_fn():
-            return ops.constant(1.0, DType.float32)
+            return ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
 
         def else_fn():
-            return ops.constant(0, DType.int32)
+            return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
         try:
             ops.cond(
@@ -78,7 +78,7 @@ def test_conditional_type_check() -> None:
 def test_conditional_with_raising() -> None:
     with Graph("conditional_with_chain", input_types=()) as graph:
         chain = graph._current_chain
-        cond = ops.constant(True, dtype=DType.bool)
+        cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
         def then_fn():
             return

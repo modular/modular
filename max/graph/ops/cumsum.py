@@ -10,6 +10,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
@@ -56,7 +57,7 @@ def cumsum(
         rmo.mo_cumsum,
         x.type.to_mlir(),
         x,
-        constant(axis, DType.int64),
+        constant(axis, DType.int64, DeviceRef.CPU()),
         exclusive=mlir.IntegerAttr.get(mlir.IndexType.get(), int(exclusive)),
         reverse=mlir.IntegerAttr.get(mlir.IndexType.get(), int(reverse)),
     )[0].tensor

@@ -22,7 +22,7 @@ from ..value import TensorValue
 def constant(
     value: Union[np.ndarray, int, float, np.integer, np.floating],
     dtype: DType,
-    device: DeviceRef | None = None,
+    device: DeviceRef,
 ) -> TensorValue:
     """Adds a node representing a constant operation.
 
@@ -38,6 +38,7 @@ def constant(
     Args:
         value: The constant's value.
         dtype: The constant tensor's element type.
+        device: The device the constant lives on.
 
     Returns:
         A graph value containing the constant data as an attribute.

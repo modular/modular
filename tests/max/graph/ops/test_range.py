@@ -28,9 +28,9 @@ def test_range(start: int, stop: int, step: int) -> None:
     """Tests ops.range cases that should pass."""
     with Graph("range", input_types=()) as graph:
         dim = (stop - start) // step
-        start_val = ops.constant(start, DType.int64)
-        stop_val = ops.constant(stop, DType.int64)
-        step_val = ops.constant(step, DType.int64)
+        start_val = ops.constant(start, DType.int64, device=DeviceRef.CPU())
+        stop_val = ops.constant(stop, DType.int64, device=DeviceRef.CPU())
+        step_val = ops.constant(step, DType.int64, device=DeviceRef.CPU())
         out = ops.range(
             start_val, stop_val, step_val, dim, device=DeviceRef.CPU()
         )
@@ -54,9 +54,9 @@ def test_range_exceptions(start: int, stop: int, step: int) -> None:
         with Graph("range", input_types=()) as graph:
             # Set dim to 0 as a placeholder when we would divide by zero.
             dim = (stop - start) // step if step != 0 else 0
-            start_val = ops.constant(start, DType.int64)
-            stop_val = ops.constant(stop, DType.int64)
-            step_val = ops.constant(step, DType.int64)
+            start_val = ops.constant(start, DType.int64, device=DeviceRef.CPU())
+            stop_val = ops.constant(stop, DType.int64, device=DeviceRef.CPU())
+            step_val = ops.constant(step, DType.int64, device=DeviceRef.CPU())
             out = ops.range(
                 start_val, stop_val, step_val, dim, device=DeviceRef.CPU()
             )

@@ -9,6 +9,7 @@ from max.mlir.dialects import mo
 
 from .. import dtype_promotion
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
@@ -38,5 +39,5 @@ def layer_norm(
         input,
         gamma,
         beta,
-        constant(epsilon, input.dtype),
+        constant(epsilon, input.dtype, DeviceRef.CPU()),
     )[0].tensor

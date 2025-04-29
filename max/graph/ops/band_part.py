@@ -9,6 +9,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
@@ -54,7 +55,7 @@ def band_part(
         rmo.mo_linalg_band_part,
         x.type.to_mlir(),
         x,
-        constant(num_lower, DType.int64),
-        constant(num_upper, DType.int64),
-        constant(exclude, DType.bool),
+        constant(num_lower, DType.int64, DeviceRef.CPU()),
+        constant(num_upper, DType.int64, DeviceRef.CPU()),
+        constant(exclude, DType.bool, DeviceRef.CPU()),
     )[0].tensor

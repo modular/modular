@@ -26,13 +26,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import (
-    Dim,
-    DimLike,
-    Shape,
-    StaticDim,
-    TensorType,
-)
+from ..type import DeviceRef, Dim, DimLike, Shape, StaticDim, TensorType
 from ..value import BufferValue, TensorValue
 from .constant import constant
 from .select import select
@@ -139,7 +133,11 @@ def _slice_index_and_output(
         return (  # Same as int index.
             slice(
                 index,
-                select(index == -1, int64_max, constant(0, DType.int64)),
+                select(
+                    index == -1,
+                    int64_max,
+                    constant(0, DType.int64, DeviceRef.CPU()),
+                ),
                 1,
             ),
             None,
@@ -170,7 +168,7 @@ def _slice_index_and_output(
         start = index[0].start
         stop = index[0].stop
         step = index[0].step
-        zero = constant(0, DType.int64)
+        zero = constant(0, DType.int64, DeviceRef.CPU())
         if step is None:
             step = 1
         if start is None:
@@ -229,7 +227,9 @@ def _slice_and_output_tensors(
     def value(dim: Union[TensorValue, int]) -> TensorValue:
         assert isinstance(dim, (TensorValue, int))
         return (
-            dim if isinstance(dim, TensorValue) else constant(dim, DType.int64)
+            dim
+            if isinstance(dim, TensorValue)
+            else constant(dim, DType.int64, DeviceRef.CPU())
         )
 
     # Create starts, stops, and steps tensors.

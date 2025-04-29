@@ -36,9 +36,9 @@ def cond(
         .. code-block:: python
 
             def then_fn():
-                return ops.constant(1, DType.int32)
+                return ops.constant(1, DType.int32, device=DeviceRef.CPU())
             def else_fn():
-                return ops.constant(0, DType.int32)
+                return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
             result = ops.cond(
                 pred,

@@ -9,7 +9,7 @@ from typing import Optional, Union
 
 import numpy as np
 
-from ..type import Dim, DType
+from ..type import DeviceRef, Dim, DType
 from ..value import DimLike, Shape, TensorType, TensorValue, TensorValueLike
 from .broadcast_to import broadcast_to
 from .constant import constant
@@ -34,7 +34,9 @@ def _promote_repeats(
             f"repeats_inteleave: repeat value must be positive, given {repeats=}"
         )
 
-    return constant(np.array([repeats]), DType.int64), input_dim * repeats
+    return constant(
+        np.array([repeats]), DType.int64, DeviceRef.CPU()
+    ), input_dim * repeats
 
 
 def repeat_interleave(
@@ -130,7 +132,7 @@ def repeat_interleave(
     # is statically known, otherwise use the provided out_dim.
     result_shape[axis] = inferred_size
 
-    axis_val = constant(np.array([axis]), DType.int64)
+    axis_val = constant(np.array([axis]), DType.int64, DeviceRef.CPU())
 
     output = custom(
         "repeat_interleave",
