@@ -2522,7 +2522,9 @@ fn _flare_mla_prefill_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
 
-    flare_mla_prefill(
+    flare_mla_prefill[
+        softmax_type = DType.float32  # TODO: remove it in next PR
+    ](
         output,
         q,
         k,
