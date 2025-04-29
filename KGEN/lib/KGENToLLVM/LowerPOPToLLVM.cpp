@@ -349,7 +349,6 @@ private:
 
   Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
                        APFloat value) const {
-    assert(value.isIEEE() && "Unsupported float type");
     return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), value);
   }
 
