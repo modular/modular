@@ -28,7 +28,7 @@ from .attention import (
 )
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv1DV1, Conv2DV1, Conv3D, Conv3DV1
-from .conv_transpose import ConvTranspose1d
+from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
 from .kernels import MHAMaskVariant
 from .layer import Layer, Module
@@ -83,6 +83,7 @@ __all__ = [
     "Conv3D",
     "Conv1D",
     "ConvTranspose1d",
+    "WeightNormConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
     "ColumnParallelLinear",
