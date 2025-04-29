@@ -186,9 +186,10 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 
 fn load_incomplete_simd[
     simd_width: Int
-](pointer: UnsafePointer[UInt8], nb_of_elements_to_load: Int) -> SIMD[
-    DType.uint8, simd_width
-]:
+](
+    pointer: UnsafePointer[UInt8, mut=False, origin=_],
+    nb_of_elements_to_load: Int,
+) -> SIMD[DType.uint8, simd_width]:
     var result = SIMD[DType.uint8, simd_width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
     memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
