@@ -13,8 +13,6 @@
 # FIXME: KERN-1377
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections.string.inline_string import _FixedString
-
 from builtin._location import __source_location
 from builtin.io import _printf
 from gpu.host import DeviceContext

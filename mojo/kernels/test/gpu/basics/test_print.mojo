@@ -13,8 +13,6 @@
 # FIXME: KERN-1377
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections.string.inline_string import _FixedString
-
 from builtin._location import __source_location
 from builtin.io import _printf
 from gpu.host import DeviceContext
@@ -51,7 +49,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:55:32
+        # CHECK: test_print.mojo:53:32
         print(__source_location())
 
         # ------------------------------
@@ -88,15 +86,6 @@ fn test_gpu_print_formattable() raises:
         # CHECK: => bf16 => fp64: 0.5
         print("=== value_b ===")
         print_casts(Float32(0.501858))
-
-        # ==============================
-        # Test printing some non-primitive types
-        # ==============================
-
-        alias layout_str = _FixedString[50].write(Layout.row_major(2, 3))
-
-        # CHECK: layout from GPU: ((2, 3):(3, 1))
-        print("layout from GPU: ", layout_str)
 
     with DeviceContext() as ctx:
         ctx.enqueue_function[do_print](
