@@ -546,30 +546,6 @@ struct Bool(
 
 
 # ===----------------------------------------------------------------------=== #
-#  bool
-# ===----------------------------------------------------------------------=== #
-
-
-@deprecated(
-    "the `bool` function is deprecated, use the `Bool` constructor instead"
-)
-@always_inline
-fn bool[T: Boolable, //](value: T) -> Bool:
-    """Get the bool representation of the object.
-
-    Parameters:
-        T: The type of the object.
-
-    Args:
-        value: The object to get the bool representation of.
-
-    Returns:
-        The bool representation of the object.
-    """
-    return value.__bool__()
-
-
-# ===----------------------------------------------------------------------=== #
 #  any
 # ===----------------------------------------------------------------------=== #
 

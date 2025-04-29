@@ -29,7 +29,7 @@ from collections.string import (
 from hashlib.hash import Hashable, hash
 
 from builtin.anytype import AnyType, UnknownDestructibility
-from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any, bool
+from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
 from builtin.comparable import (
@@ -48,7 +48,7 @@ from builtin.error import Error
 from builtin.file import FileHandle, open
 from builtin.file_descriptor import FileDescriptor
 from builtin.float_literal import FloatLiteral
-from builtin.floatable import Floatable, FloatableRaising, float
+from builtin.floatable import Floatable, FloatableRaising
 from builtin.format_int import bin, hex, oct
 from builtin.identifiable import Identifiable
 from builtin.int import (
@@ -110,7 +110,7 @@ from builtin.simd import (
     UInt256,
 )
 from builtin.sort import partition, sort
-from builtin.str import Stringable, StringableRaising, str
+from builtin.str import Stringable, StringableRaising
 from builtin.string_literal import StringLiteral
 from builtin.swap import swap
 from builtin.tuple import Tuple

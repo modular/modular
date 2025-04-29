@@ -290,7 +290,12 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 - `utils.numerics.ulp` has been removed.  Use the same `ulp` function from the
   `math` package instead.
 
-- The `int` free function has been removed.  Use the `Int` constructor instead.
+- Several free functions that were deprecated in the 25.2 release have now been
+  removed.  This includes:
+  - The `str` free function. Use the `String` constructor instead.
+  - The `int` free function. Use the `Int` constructor instead.
+  - The `bool` free function. Use the `Bool` constructor instead.
+  - The `float` free function. Use the `Float64` constructor instead.
 
 ### 🛠️ Fixed
 
