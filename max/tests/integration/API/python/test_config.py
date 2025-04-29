@@ -117,7 +117,6 @@ def test_config__update_cache_strategy(llama_3_1_8b_instruct_local_path):
 
     # Naive is not shown as supported in architecture, as
     # such this should change to a support strategy automatically.
-    # TODO(AITLIB-293): this assert is triggered without a HF call
     assert (
         pipeline_config.model_config.kv_cache_config.cache_strategy
         == KVCacheStrategy.CONTINUOUS
