@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import logging
+
+import hf_repo_lock
 import numpy as np
 import pytest
 import torch
@@ -19,6 +22,7 @@ from max.pipelines.architectures.whisper.encoder import (
     WhisperEncoderLayer,
     WhisperSdpaAttention,
 )
+from max.pipelines.lib import generate_local_model_path
 from transformers import (
     AutoModelForSpeechSeq2Seq,
     AutoProcessor,
@@ -27,14 +31,31 @@ from transformers import (
 ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6
 
+WHISPER_LARGE_V3_HF_REPO_ID = "openai/whisper-large-v3"
+WHISPER_LARGE_V3_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    WHISPER_LARGE_V3_HF_REPO_ID
+)
+
+logger = logging.getLogger("max.pipelines")
+
 
 @pytest.fixture
-def model_id():
-    return "openai/whisper-large-v3"
+def whisper_large_v3_local_path():
+    try:
+        model_path = generate_local_model_path(
+            WHISPER_LARGE_V3_HF_REPO_ID, WHISPER_LARGE_V3_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {WHISPER_LARGE_V3_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = WHISPER_LARGE_V3_HF_REPO_ID
+    return model_path
 
 
 @pytest.fixture
-def torch_inputs(model_id):
+def torch_inputs(whisper_large_v3_local_path):
     """Returns 2 audio files in a tensor of shape = (batch_size=2, n_features=128, seq_length=3000)"""
     ds = load_dataset(
         "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
@@ -44,7 +65,7 @@ def torch_inputs(model_id):
         ds[1]["audio"]["array"],  # type: ignore
     ]
 
-    processor = AutoProcessor.from_pretrained(model_id)
+    processor = AutoProcessor.from_pretrained(whisper_large_v3_local_path)
     inputs = processor(
         audio_samples,
         return_attention_mask=True,
@@ -316,8 +337,12 @@ def graph_api_whisper_encoder(weights_registry, model):
 @pytest.mark.skip(
     reason="We decided to postpone finishing Whisper bring up. Should debug if we come back to it."
 )
-def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+def test_encoder_stem(
+    torch_inputs, graph_api_inputs, whisper_large_v3_local_path
+):
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        whisper_large_v3_local_path
+    )
 
     # inputs = np.load("/home/ubuntu/modular/whisper_sample2.npy")
 
@@ -436,8 +461,12 @@ def test_encoder_stem(torch_inputs, graph_api_inputs, model_id):
 @pytest.mark.skip(
     reason="We decided to postpone finishing Whisper bring up. Should debug if we come back to it."
 )
-def test_whisper_encoder(torch_inputs, graph_api_inputs, model_id):
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+def test_whisper_encoder(
+    torch_inputs, graph_api_inputs, whisper_large_v3_local_path
+):
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        whisper_large_v3_local_path
+    )
 
     torch_outputs = model.model.encoder(torch_inputs).last_hidden_state
 

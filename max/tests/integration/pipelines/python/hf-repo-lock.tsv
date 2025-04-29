@@ -28,5 +28,6 @@ mistralai/Mistral-Small-3.1-24B-Instruct-2503	4b8dd8aae705887db5295fcbff4aedbb92
 modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/llama-3.1	966694508430d1177f6d585de779250e7a34bc3a
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
+openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
 replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
 sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642
