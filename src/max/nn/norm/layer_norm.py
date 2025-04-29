@@ -31,8 +31,8 @@ class LayerNormV1(Layer):
     Deprecated: Use `LayerNorm` instead.
     """
 
-    weight: Weight
-    bias: Weight | None = None
+    weight: TensorValue
+    bias: TensorValue | None = None
     eps: float = 1e-6
 
     def __call__(self, input: TensorValue):

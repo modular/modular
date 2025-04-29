@@ -48,31 +48,33 @@ class MPNetEmbeddings(Layer):
         config = self.config = huggingface_config
         self.word_embeddings = EmbeddingV1(
             weights.word_embeddings.weight.allocate(
-                dtype,
+                DType.float32,
                 [
                     config.vocab_size,
                     config.hidden_size,
                 ],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             device,
         )
         self.position_embeddings = EmbeddingV1(
             weights.position_embeddings.weight.allocate(
-                dtype,
+                DType.float32,
                 [
                     config.max_position_embeddings,
                     config.hidden_size,
                 ],
-            ),
+            ).cast(dtype),
             device,
         )
         self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
-                dtype,
+                DType.float32,
                 [config.hidden_size],
             ),
-            bias=weights.LayerNorm.bias.allocate(dtype, [config.hidden_size]),
+            bias=weights.LayerNorm.bias.allocate(
+                DType.float32, [config.hidden_size]
+            ),
             eps=config.layer_norm_eps,
         )
         self.position_ids = weights.position_ids.allocate(
@@ -123,51 +125,51 @@ class MPNetSelfAttention(Layer):
 
         self.q = LinearV1(
             weights.q.weight.allocate(
-                dtype,
+                DType.float32,
                 [self.all_head_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             bias=weights.q.bias.allocate(
-                dtype,
+                DType.float32,
                 [self.all_head_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
         )
         self.k = LinearV1(
             weights.k.weight.allocate(
-                dtype,
+                DType.float32,
                 [self.all_head_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             bias=weights.k.bias.allocate(
-                dtype,
+                DType.float32,
                 [self.all_head_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
         )
         self.v = LinearV1(
             weights.v.weight.allocate(
-                dtype,
+                DType.float32,
                 [self.all_head_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             bias=weights.v.bias.allocate(
-                dtype,
+                DType.float32,
                 [self.all_head_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
         )
         self.o = LinearV1(
             weights.o.weight.allocate(
-                dtype,
+                DType.float32,
                 [config.hidden_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             bias=weights.o.bias.allocate(
-                dtype,
+                DType.float32,
                 [config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
         )
 
     def transpose_for_scores(self, x: TensorValue) -> TensorValue:
@@ -278,15 +280,15 @@ class MPNetIntermediate(Layer):
         config = huggingface_config
         self.dense = LinearV1(
             weights.dense.weight.allocate(
-                dtype,
+                DType.float32,
                 [config.intermediate_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             bias=weights.dense.bias.allocate(
-                dtype,
+                DType.float32,
                 [config.intermediate_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
         )
         self.intermediate_act_fn = _ACTIVATIONS[config.hidden_act]
 
@@ -309,15 +311,15 @@ class MPNetOutput(Layer):
         config = huggingface_config
         self.dense = LinearV1(
             weights.dense.weight.allocate(
-                dtype,
+                DType.float32,
                 [config.hidden_size, config.intermediate_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
             bias=weights.dense.bias.allocate(
-                dtype,
+                DType.float32,
                 [config.hidden_size],
                 _quantization_encoding(pipeline_config),
-            ),
+            ).cast(dtype),
         )
         self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
@@ -403,12 +405,12 @@ class MPNetEncoder(Layer):
         )
         self.relative_attention_bias = EmbeddingV1(
             weights.relative_attention_bias.weight.allocate(
-                dtype,
+                DType.float32,
                 [
                     config.relative_attention_num_buckets,
                     config.num_attention_heads,
                 ],
-            ),
+            ).cast(dtype),
             device=device,
         )
         self.num_attention_heads = config.num_attention_heads
@@ -540,7 +542,10 @@ class MPNetModel(Layer):
                 ("batch_size", encoded_results.shape[1], "seq_len"),
             )
             input_lengths = ops.max(
-                ops.sum(input_mask_expanded), ops.constant(1e-9, DType.float32)
+                ops.sum(input_mask_expanded),
+                ops.constant(
+                    1e-9, DType.float32, device=input_mask_expanded.device
+                ),
             )
             pooled_output = (
                 ops.sum(encoded_results * input_mask_expanded) / input_lengths
@@ -565,16 +570,22 @@ def build_graph(
         DType.float32, shape=["batch_size", "seq_len"], device=input_device
     )
 
-    mpnet = MPNetModel(
-        pipeline_config, weights, huggingface_config, dtype, device=input_device
-    )
-
-    # Initialize Graph.
-    return Graph(
+    with Graph(
         "mpnet",
-        mpnet,
         input_types=[
             input_ids_type,
             attention_mask_type,
         ],
-    )
+    ) as graph:
+        mpnet = MPNetModel(
+            pipeline_config,
+            weights,
+            huggingface_config,
+            dtype,
+            device=input_device,
+        )
+        input_ids = graph.inputs[0].tensor
+        attention_mask = graph.inputs[1].tensor
+        graph.output(mpnet(input_ids, attention_mask))
+
+    return graph

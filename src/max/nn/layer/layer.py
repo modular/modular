@@ -308,10 +308,11 @@ def _array_from_weight_loader(
         # has the correct shape.
         weight._shape = data.shape
     elif weight.shape != data.shape:
-        raise ValueError(
+        msg = (
             f"Value provided to weight '{name}' had different shape"
             f" (expected={weight.shape}, actual={data.shape})"
         )
+        raise ValueError(msg)
 
     if weight.quantization_encoding != data.quantization_encoding:
         if (
@@ -323,7 +324,15 @@ def _array_from_weight_loader(
         # because in some cases the data is not aware of its own quantization
         # type (e.g. data loaded from GPTQ Safetensors do not have a
         # quantization label)
-    return data.astype(weight.dtype)
+
+    if weight.dtype != data.dtype:
+        msg = (
+            f"Value provided to weight '{name}' had different dtype"
+            f" (expected={weight.dtype}, actual={data.dtype})"
+        )
+        raise ValueError(msg)
+
+    return data
 
 
 def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
