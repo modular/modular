@@ -21,7 +21,6 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.top_k import TopK
-from max.driver import cpu
 from max.tensor import (
     Input,
     InputTensor,
