@@ -17,7 +17,7 @@ modular_py_test(
     srcs = ["test_hf_repo_lock.py"],
     deps = [
         ":hf_repo_lock",
-        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/integration-test/pipelines/python/test_common",
     ],
 )
 
