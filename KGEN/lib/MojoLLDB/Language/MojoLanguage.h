@@ -80,7 +80,7 @@ public:
     return {};
   }
 
-  bool GetFunctionDisplayName(const lldb_private::SymbolContext *sc,
+  bool GetFunctionDisplayName(const lldb_private::SymbolContext &sc,
                               const lldb_private::ExecutionContext *exe_ctx,
                               FunctionNameRepresentation representation,
                               lldb_private::Stream &s) override {
