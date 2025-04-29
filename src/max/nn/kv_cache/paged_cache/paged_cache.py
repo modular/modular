@@ -174,6 +174,7 @@ class FetchPagedKVCacheCollectionFA3Fallback:
             num_layers,
             step_constant,
             out_dim=Dim(self.num_layers),
+            device=DeviceRef.CPU(),
         )
         if blocks.device is not None:
             layers_arange = layers_arange.to(blocks.device)

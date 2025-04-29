@@ -19,7 +19,14 @@ from functools import cached_property
 from typing import Optional
 
 from max.dtype import DType
-from max.graph import Dim, TensorValue, TensorValueLike, dtype_promotion, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    TensorValue,
+    TensorValueLike,
+    dtype_promotion,
+    ops,
+)
 from max.nn import MLPV1, Conv3DV1, LinearV1, RMSNormV1, Sequential
 from max.nn.layer import Module
 
@@ -109,6 +116,7 @@ class VisionRotaryEmbedding(Module):
                 ops.constant(n - 1, DType.float64),
                 ops.constant(2, DType.float64),
                 out_dim=n // 2,
+                device=DeviceRef.CPU(),
             )
             inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
             self._inv_freqs = inv_freq
@@ -142,6 +150,7 @@ class VisionRotaryEmbedding(Module):
             ops.constant(max_grid_size, DType.float64),
             ops.constant(1, DType.float64),
             out_dim=max_grid_size,
+            device=DeviceRef.CPU(),
         )
         rotary_pos_emb_full = ops.outer(t, self.inv_freqs)
         # Retrieve position embeddings for each patch in input images or videos.

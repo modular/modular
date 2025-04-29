@@ -19,7 +19,7 @@ from functools import cached_property
 from typing import Callable, Optional
 
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn import (
     Embedding,
     Module,
@@ -54,6 +54,7 @@ class Qwen2_5VLRotaryEmbedding(Module):
             ops.constant(n - 1, DType.float64),
             ops.constant(2, DType.float64),
             out_dim=n // 2,
+            device=DeviceRef.CPU(),
         )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
         return inv_freq

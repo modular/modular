@@ -165,6 +165,7 @@ class DistributedTransformer(Module):
                 ops.constant(0, DType.int64),
                 ops.constant(-1, DType.int64),
                 out_dim="return_n_logits_range",
+                device=self.devices[0],
             )
             offsets = (
                 ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
@@ -180,6 +181,7 @@ class DistributedTransformer(Module):
                 last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
+                device=self.devices[0],
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)

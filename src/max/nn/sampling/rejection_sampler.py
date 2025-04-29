@@ -41,6 +41,7 @@ class RejectionSampler(nn.Module):
                 ),
                 ops.constant(1, dtype=DType.int64, device=DeviceRef.CPU()),
                 out_dim=Dim("num_steps"),
+                device=self.device,
             ),
             shape=[Dim("batch_size"), Dim("num_steps")],
         )
@@ -100,6 +101,7 @@ class RejectionSampler(nn.Module):
                     ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU()),
                     ops.constant(-1, dtype=DType.int32, device=DeviceRef.CPU()),
                     out_dim="total_num_steps",
+                    device=self.device,
                 ),
                 shape=[rejected_tokens.shape[0], Dim("total_num_steps")],
             )

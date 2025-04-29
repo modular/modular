@@ -432,12 +432,12 @@ class MPNetEncoder(Layer):
         bsz, qlen, klen = shape[0], shape[1], shape[1]
         start = ops.constant(0, DType.int64)
         step = ops.constant(1, DType.int64)
-        context_position = ops.range(start, qlen, step, qlen).cast(DType.int64)[
-            :, None
-        ]
-        memory_position = ops.range(start, klen, step, klen).cast(DType.int64)[
-            None, :
-        ]
+        context_position = ops.range(
+            start, qlen, step, qlen, device=DeviceRef.CPU()
+        ).cast(DType.int64)[:, None]
+        memory_position = ops.range(
+            start, klen, step, klen, device=DeviceRef.CPU()
+        ).cast(DType.int64)[None, :]
         relative_position = memory_position - context_position
         rp_bucket = self.relative_position_bucket(
             relative_position,

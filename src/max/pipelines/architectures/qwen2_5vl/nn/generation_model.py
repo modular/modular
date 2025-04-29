@@ -208,6 +208,7 @@ class GenerationModel(Module):
                 ops.constant(0, DType.int64),
                 ops.constant(-1, DType.int64),
                 out_dim="return_n_logits_range",
+                device=inputs_embeds.device,
             )
             offsets = (
                 ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
@@ -220,6 +221,7 @@ class GenerationModel(Module):
                 TensorValue(last_indices.shape[0]) + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
+                device=inputs_embeds.device,
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(h), DType.float32)
