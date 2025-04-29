@@ -13,7 +13,7 @@
 
 from pathlib import Path
 
-from imageio.v3 import imread, imwrite
+import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
@@ -24,12 +24,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from PIL import Image
 
 
 def main():
     device = CPU() if accelerator_count() == 0 else Accelerator()
-
-    img = imread("dogs.jpg")
+    img = np.array(Image.open(Path(__file__).parent / "dogs.jpg"))
 
     color_tensor_type = TensorType(
         DType.uint8,
@@ -59,19 +59,29 @@ def main():
     def brightness(x: TensorValue, brightness: float) -> TensorValue:
         return ops.custom(
             name="brightness",
-            values=[x, ops.constant(brightness, DType.float32)],
+            values=[
+                x,
+                ops.constant(
+                    brightness, DType.float32, DeviceRef.from_device(device)
+                ),
+            ],
             out_types=[x.type],
         )[0].tensor
 
     def blur(x: TensorValue, blur_size: int) -> TensorValue:
         return ops.custom(
             name="blur",
-            values=[x, ops.constant(blur_size, DType.int64)],
+            values=[
+                x,
+                ops.constant(
+                    blur_size, DType.int64, DeviceRef.from_device(device)
+                ),
+            ],
             out_types=[x.type],
         )[0].tensor
 
     with graph:
-        grayed = grayscale(graph.inputs[0])
+        grayed = grayscale(graph.inputs[0].tensor)
         brightened = brightness(grayed, brightness=1.5)
         blurred = blur(brightened, blur_size=8)
         graph.output(blurred)
@@ -85,7 +95,7 @@ def main():
     assert isinstance(result, Tensor)
     result = result.to(CPU())
 
-    imwrite("dogs_out.jpg", result.to_numpy())
+    Image.fromarray(result.to_numpy()).save("dogs_out.jpg")
 
 
 if __name__ == "__main__":
