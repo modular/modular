@@ -566,7 +566,7 @@ fn sum_reduce_kernel(
     # This allocates memory to be shared between threads in a block prior to the
     # kernel launching. Each kernel gets a pointer to the allocated memory.
     var shared = stack_allocation[
-        threads * sizeof[dtype](),
+        threads,
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
     ]()
