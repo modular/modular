@@ -39,7 +39,12 @@ from modular.utils.yaml import YAML
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import MofNCompleteColumn, Progress
+from rich.progress import (
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -154,6 +159,14 @@ class ProcessOutput:
     stderr: str | None = None
     path: Path | None = None
 
+    def log(self):
+        if self.stdout:
+            logging.debug(self.stdout)
+            logging.debug(LINE)
+        if self.stderr:
+            logging.error(self.stderr)
+            logging.error(LINE)
+
 
 class KBENCH_MODE(Enum):
     RUN = auto()
@@ -183,19 +196,23 @@ class KbenchCache:
 
     def dump(self) -> None:
         """Save cache to file."""
-        store_pickle(self.path, self.data)
+        if self.is_active and self.data:
+            store_pickle(self.path, self.data)
 
     def query(self, key: str) -> str | None:
         """Get cached path for given key if it exists."""
+        if not self.is_active:
+            return None
         obj_path = str(self.data.get(key))
         return obj_path if Path(obj_path).exists() else None
 
     def store(self, key: str, obj_path: Path, tmp_dir: Path) -> Path | None:
         """Store object in cache and return its new path."""
+        if not self.is_active:
+            return None
         obj_cache_path = tmp_dir / "kbench_cache"
         obj_cache_path.mkdir(exist_ok=True)
         obj_path_in_cache = obj_cache_path / obj_path.stem
-
         self.data[key] = str(obj_path_in_cache)
         out = _run_cmdline(["mv", str(obj_path), str(obj_path_in_cache)])
         return obj_path_in_cache if not (out.stdout or out.stderr) else None
@@ -252,7 +269,7 @@ class SpecInstance:
         the executable in 'output_dir'.
         """
 
-        binary_name = self.to_path(with_variables=False)
+        binary_name = self.hash(with_variables=False)
 
         logging.info(f"building [{binary_name}]")
         logging.info(f"defines: {self._get_defines}")
@@ -324,7 +341,7 @@ class SpecInstance:
             tokens.append(f"{param.name}={param.value}")
         return "/".join(tokens)
 
-    def to_path(self, with_variables: bool = True) -> str:
+    def hash(self, with_variables: bool = True) -> str:
         tokens = [self.file_stem]
         for param in self.params:
             name = param.name
@@ -706,12 +723,15 @@ def run(
 
     # Run the code over the mesh of param/values
     t_start_total = time()
-    with Progress(
+    progress = Progress(
         *Progress.get_default_columns(),
         MofNCompleteColumn(),
+        TextColumn("|"),
+        TimeElapsedColumn(),
         console=CONSOLE,
         expand=True,
-    ) as progress:
+    )
+    with progress:
         bench_progress = progress.add_task(
             spec.name,
             total=len(spec.mesh),
@@ -1065,7 +1085,7 @@ def cli(
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
     shape_path_list = (
-        [sh.to_path(with_variables=True) for sh in shape_list]
+        [sh.hash(with_variables=True) for sh in shape_list]
         if shapes
         else [output_path]
     )
