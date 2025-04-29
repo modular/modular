@@ -12,10 +12,10 @@ import math
 import operator
 import os
 import random
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from functools import reduce
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import pytest
@@ -29,6 +29,7 @@ from max.graph import (
     Dim,
     DimLike,
     Graph,
+    KernelLibrary,
     Shape,
     StaticDim,
     SymbolicDim,
@@ -286,7 +287,7 @@ def broadcastable_tensor_types(n: int):
     )
 
 
-def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
+def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim | None]:
     def broadcast_dim(d1: Optional[Dim], d2: Optional[Dim]):
         if d1 is None:
             return d2
@@ -326,10 +327,34 @@ def modular_path() -> Path:
 
 
 @pytest.fixture(scope="module")
-def mlir_context() -> mlir.Context:
+def mlir_context() -> Generator[mlir.Context]:
     """Set up the MLIR context by registering and loading Modular dialects."""
     with mlir.Context() as ctx, mlir.Location.unknown():
         yield ctx
+
+
+@pytest.fixture(scope="module")
+def kernel_library(mlir_context: mlir.Context) -> Generator[KernelLibrary]:
+    """Set up the kernel library for the current system."""
+    yield KernelLibrary(mlir_context)
+
+
+GraphBuilder = Callable[..., Graph]
+
+
+@pytest.fixture(scope="module")
+def graph_builder(
+    request: pytest.FixtureRequest,
+    mlir_context: mlir.Context,
+    kernel_library: KernelLibrary,
+) -> Generator[GraphBuilder]:
+    yield lambda *args, **kwargs: Graph(
+        request.node.name,
+        *args,
+        context=mlir_context,
+        kernel_library=kernel_library,
+        **kwargs,
+    )
 
 
 @pytest.fixture

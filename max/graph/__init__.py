@@ -7,7 +7,7 @@
 
 # Types must be imported first to avoid circular dependencies.
 from . import dtype_promotion, ops
-from .graph import Graph
+from .graph import Graph, KernelLibrary
 from .type import (
     AlgebraicDim,
     BufferType,

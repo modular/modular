@@ -166,6 +166,7 @@ class Graph:
         *args,
         custom_extensions: list[Path] = [],
         context: Optional[mlir.Context] = None,
+        kernel_library: Optional[KernelLibrary] = None,
         **kwargs,
     ) -> None:
         self.name = name
@@ -219,7 +220,7 @@ class Graph:
         self._current_chain = initial_chain
 
         # Initialize the kernel library and load custom extensions paths.
-        self._kernel_library = KernelLibrary(self._context)
+        self._kernel_library = kernel_library or KernelLibrary(self._context)
         with self._context:
             for ext_path in custom_extensions:
                 if is_mojo_binary_package_path(ext_path):
