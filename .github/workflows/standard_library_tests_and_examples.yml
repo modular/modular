@@ -21,10 +21,6 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency: # Only allow a single build/test run at a time for a PR.
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   test-examples:
     name: with ${{ matrix.os }} and assertions=${{ matrix.mojo-enable-assertions }}

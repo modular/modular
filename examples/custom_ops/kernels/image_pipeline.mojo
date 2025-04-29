@@ -53,7 +53,7 @@ struct Grayscale:
 
             return gray_f32.clamp(0, 255).cast[DType.uint8]()
 
-        foreach[color_to_grayscale, target=target](img_out, ctx)
+        foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 
 
 @register("brightness")
