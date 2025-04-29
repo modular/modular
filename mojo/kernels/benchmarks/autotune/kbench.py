@@ -24,6 +24,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import product
+from multiprocessing import Pool
 from pathlib import Path
 from time import time
 from typing import Any
@@ -668,6 +669,242 @@ def _get_tmp_path(file_path):
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
     return Path(tf)
+
+
+@dataclass
+class BuildItem:
+    """
+    To store all necessary details for building a spec item (instance).
+
+    Args:
+        idx: unique index of item in the list of scheduler items
+        spec_instance: the parameter set used as the basis of build
+        output_dir: output directory specific for this build item
+        dryrun: set to True to enable dryrun
+        output_path: path to output file
+        build_output: output message for build
+        build_elapsed_time: elapsed time for build
+        exec_output: output message for exec
+    """
+
+    idx: int
+    spec_instance: SpecInstance
+    output_dir: Path
+    build_opts: list
+    dryrun: bool = False
+    output_path: Path = Path()
+
+    build_output: ProcessOutput = ProcessOutput()
+    build_elapsed_time: int = 0
+    exec_output: ProcessOutput = ProcessOutput()
+
+
+class Scheduler:
+    """
+    Kbench singleton scheduler class to coordinate building and running all items in spec.
+
+    Args:
+        cpu_count: number of cpu's (cores) used for building items
+        build_items: list of spec items to build (BuildItem's)
+        obj_cache: kbench obj-cache
+        output_dir: parent output directory for all results
+        num_specs: total number of spec items added to scheduler (to build+run)
+    """
+
+    cpu_count: int
+    build_items: list[BuildItem]
+    obj_cache: KbenchCache
+    output_dir: Path
+    num_specs: int
+
+    def __init__(
+        self,
+        cpu_count: int,
+        obj_cache: KbenchCache,
+        spec_list: list[SpecInstance],
+        output_dir: Path,
+        build_opts: list[str],
+        dryrun: bool,
+        output_suffix: str = "output.csv",
+        progress: Progress = Progress(),
+    ):
+        self.cpu_pool = Pool(cpu_count)
+        self.obj_cache = obj_cache
+        self.num_specs = len(spec_list)
+        output_dir_list = [
+            Path(f"{output_dir}/out_{i}") for i in range(self.num_specs)
+        ]
+        self.output_dir = output_dir
+
+        self.build_items = [
+            BuildItem(
+                idx=i,
+                spec_instance=spec_list[i],
+                output_dir=output_dir_list[i],
+                build_opts=build_opts,
+                dryrun=dryrun,
+                output_path=output_dir_list[i] / output_suffix,
+            )
+            for i in range(self.num_specs)
+        ]
+
+        self.mk_output_dirs()
+        self.progress = progress
+
+    @staticmethod
+    def kbench_mkdir(output_dir):
+        """Run the following command:
+        `rm -rf {output_dir} && mkdir -p {output_dir}`
+        """
+        # "rm -rf {output_dir} && mkdir -p {output_dir}"
+        if os.path.exists(output_dir) and os.path.isdir(output_dir):
+            shutil.rmtree(output_dir)
+        os.makedirs(output_dir, exist_ok=False)
+        return output_dir
+
+    def mk_output_dirs(self):
+        """
+        Make output directories for kbench results (one per spec-instance)
+        """
+        output_dir_list = [b.output_dir for b in self.build_items]
+        res = self.cpu_pool.imap(self.kbench_mkdir, output_dir_list)
+        [logging.debug(f"mkdir [{r}]") for r in res]
+        logging.debug("Created directories for all instances in spec.")
+        logging.debug(LINE)
+
+    def get_unique_build_items(self) -> list[dict]:
+        unique_build_items = {}
+        unique_build_paths = {}
+        for b in self.build_items:
+            i = b.idx
+            s = b.spec_instance
+            bin_name = s.hash(with_variables=False)
+            logging.info(f"building [{i}][{bin_name}]")
+            logging.debug(f"defines: {s._get_defines}")
+            logging.debug(f"vars   : {s._get_vars}")
+
+            # first, check cache for build from previous rounds
+            bin_path = self.obj_cache.query(bin_name)
+            logging.info(f"in cache: {bool(bin_path)}")
+            if bin_path:
+                unique_build_paths[bin_name] = bin_path
+            else:
+                # Neither found in the cache, nor exists in the unique_build_items
+                if bin_name not in unique_build_items.keys():
+                    unique_build_items[bin_name] = i
+                    logging.debug(f"Added to unique_build_items [ref_idx={i}]")
+                else:
+                    # Already in the unique_build_items list
+                    idx = unique_build_items[bin_name]
+                    logging.debug(
+                        f"Currently in unique_build_items [ref_idx={idx}]"
+                    )
+            logging.debug(LINE)
+        return [unique_build_items, unique_build_paths]
+
+    @staticmethod
+    def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
+        t_start_item = time()
+        build_output = bi.spec_instance.build(
+            obj_cache=None,
+            output_dir=bi.output_dir,
+            build_opts=bi.build_opts,
+            dryrun=bi.dryrun,
+        )
+        build_elapsed_time = int((time() - t_start_item) * 1e3)
+
+        bi.build_output = build_output
+        bi.build_elapsed_time = build_elapsed_time
+        return bi
+
+    def build_all(self):
+        """
+        Build all unique items in the scheduler
+        TODO: rename to build_unique_items
+        """
+
+        unique_build_items, unique_build_paths = self.get_unique_build_items()
+        unique_build_items = [
+            self.build_items[i] for i in list(unique_build_items.values())
+        ]
+
+        logging.info(
+            f"Building {len(unique_build_items)} unique items out of {self.num_specs}"
+        )
+        if unique_build_items:
+            obj_cache = self.obj_cache
+            # NOTE: important to use lazy evaluation `imap` instead of `map`
+            build_result = self.cpu_pool.imap(
+                self._pool_build_wrapper, unique_build_items
+            )
+
+            build_progress = self.progress.add_task(
+                "build",
+                total=len(unique_build_items),
+            )
+
+            for b in build_result:
+                i = b.idx
+                s = b.spec_instance
+
+                build_output = b.build_output
+                # update the data with build_output result
+                self.build_items[i].build_output = build_output
+                self.build_items[i].build_elapsed_time = b.build_elapsed_time
+
+                bin_name = s.hash(with_variables=False)
+                self.progress.update(
+                    build_progress, description=f"building {str(bin_name)}"
+                )
+
+                # print build_output stdout and stderr using log function.
+                build_output.log()
+
+                # Try storing the executable in cache if:
+                # - cache is active
+                # - no error is reported in stderr
+                # - build_output path is found
+                if not build_output.stderr and build_output.path:
+                    binary_path = build_output.path
+                    # TODO: should rework internals of kbench-cache to avoid copying.
+                    # TODO: remove absolute
+                    bin_path_in_cache = obj_cache.store(
+                        bin_name,
+                        binary_path,
+                        self.build_items[i].output_dir.absolute(),
+                    )
+                    if bin_path_in_cache:
+                        binary_path = bin_path_in_cache
+
+                    unique_build_paths[bin_name] = binary_path
+
+                self.progress.update(build_progress, advance=1)
+        return unique_build_paths
+
+    def execute_all(self, unique_build_paths):
+        """Execute all the items in the scheduler"""
+        exec_progress = self.progress.add_task(
+            "run",
+            total=len(self.build_items),
+        )
+
+        for b in self.build_items:
+            s = b.spec_instance
+            bin_name = s.hash(with_variables=False)
+            bin_path = unique_build_paths.get(bin_name, None)
+
+            self.progress.update(exec_progress, description=f"run {str(s)}")
+
+            if bin_path:
+                exec_output = s.execute(
+                    bin_path, b.output_path, dryrun=b.dryrun
+                )
+                b.exec_output = b.exec_output
+                exec_output.log()
+            else:
+                logging.error(f"Could not find binary [{bin_name}]")
+
+            self.progress.update(exec_progress, advance=1)
 
 
 def run(
