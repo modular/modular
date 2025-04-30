@@ -2676,7 +2676,7 @@ struct StaticBroadcastTo:
         var x_view = Self.update_input_view[z._static_shape](x, output_shape)
 
         view_copy_impl[
-            trace_name=_trace_name,
+            _trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](z, x_view, ctx)
@@ -2747,7 +2747,7 @@ struct StaticReshape:
         )
 
         view_copy_impl[
-            trace_name=_trace_name,
+            _trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view_tensor, ctx)
@@ -2856,7 +2856,7 @@ struct Transpose:
         ](input, permutations)
 
         view_copy_impl[
-            trace_name=_trace_name,
+            _trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view, ctx)
@@ -2966,7 +2966,7 @@ struct Slice:
         ](input, starts, stops, steps)
 
         view_copy_impl[
-            trace_name=_trace_name,
+            _trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view_tensor, ctx)
@@ -3126,7 +3126,7 @@ struct SliceDim:
         ](input, starts, stops, steps)
 
         view_copy_impl[
-            trace_name=_trace_name,
+            _trace_name=_trace_name,
             target=target,
             _synchronous=_synchronous,
         ](output, view_tensor, ctx)
