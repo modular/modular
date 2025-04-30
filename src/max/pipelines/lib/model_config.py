@@ -34,6 +34,7 @@ from transformers import AutoConfig
 from .config_enums import (
     _ALTERNATE_ENCODINGS,
     RepoType,
+    RopeType,
     SupportedEncoding,
 )
 from .hf_utils import HuggingFaceRepo, repo_exists_with_retry
@@ -95,6 +96,9 @@ class MAXModelConfig(MAXModelConfigBase):
 
     force_download: bool = False
     """Whether to force download a given file if it's already present in the local cache."""
+
+    rope_type: Optional[RopeType] = None
+    """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     _huggingface_config: Optional[AutoConfig] = None
     """Hugging Face config. This should only be set by internal code."""
@@ -431,6 +435,10 @@ class MAXModelConfig(MAXModelConfigBase):
                 msg = f"encoding not provided, using default encoding of {default_encoding}"
                 logger.debug(msg)
                 self.quantization_encoding = default_encoding
+
+    def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
+        if self.rope_type is None:
+            self.rope_type = arch_rope_type
 
     def validate_and_resolve_with_set_quantization_encoding(
         self,

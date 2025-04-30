@@ -176,7 +176,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         )
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.rope_type == RopeType.normal
+            and pipeline_config.model_config.rope_type == RopeType.normal
         )
         rms_norm_eps = None
         if norm_method == "rms_norm":

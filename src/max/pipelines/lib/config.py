@@ -25,7 +25,7 @@ from typing import Any, Optional, get_type_hints
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
-from .config_enums import PipelineEngine, RopeType
+from .config_enums import PipelineEngine
 from .max_config import (
     KVCacheConfig,
     MAXConfig,
@@ -91,9 +91,6 @@ class PipelineConfig(MAXConfig):
 
     enable_echo: bool = False
     """Whether the model should be built with echo capabilities."""
-
-    rope_type: Optional[RopeType] = None
-    """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
@@ -416,6 +413,10 @@ class PipelineConfig(MAXConfig):
             default_encoding=arch.default_encoding
         )
 
+        model_config.validate_and_resolve_rope_type(
+            arch_rope_type=arch.rope_type
+        )
+
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
             if self.engine == PipelineEngine.MAX:
@@ -432,9 +433,6 @@ class PipelineConfig(MAXConfig):
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
-
-        if self.rope_type is None:
-            self.rope_type = arch.rope_type
 
         devices = load_devices(model_config.device_specs)
         MEMORY_ESTIMATOR.estimate_memory_footprint(

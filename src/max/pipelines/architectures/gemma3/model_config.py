@@ -239,7 +239,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         )
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.rope_type == RopeType.normal
+            and pipeline_config.model_config.rope_type == RopeType.normal
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

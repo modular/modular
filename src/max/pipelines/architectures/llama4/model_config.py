@@ -244,7 +244,9 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
         Returns:
             An initialized :obj:`Llama4Config` instance.
         """
-        interleaved_rope_weights = pipeline_config.rope_type == RopeType.normal
+        interleaved_rope_weights = (
+            pipeline_config.model_config.rope_type == RopeType.normal
+        )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs
