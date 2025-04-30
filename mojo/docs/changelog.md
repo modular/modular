@@ -124,6 +124,13 @@ The following traits have been removed in favor of trait composition:
 `EqualityComparableWritableCollectionElementNew`, `CollectionElementNew`,
 `WritableCollectionElementNew`.
 
+The `PythonObject` type is being reworked in preparation for some improvements
+to Mojo-Python interoperability:
+
+- Since virtually any operation on a `PythonObject` can raise, the
+  `PythonObject` struct no longer implements the following traits:
+  `ImplicitlyBoolable`, `ImplicitlyIntable`.
+
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
 

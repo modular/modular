@@ -445,8 +445,8 @@ fn test_getitem_raises() raises:
 
     with_2d = custom_indexable.With2DGetItem()
     assert_equal("[1, 2, 3]", String(with_2d[0]))
-    assert_equal(2, with_2d[0, 1])
-    assert_equal(6, with_2d[1, 2])
+    assert_equal(2, Int(with_2d[0, 1]))
+    assert_equal(6, Int(with_2d[1, 2]))
 
     with assert_raises(contains="list index out of range"):
         _ = with_2d[0, 4]

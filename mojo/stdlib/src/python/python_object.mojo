@@ -271,8 +271,6 @@ struct TypedPythonObject[type_hint: StaticString](
 
 @register_passable
 struct PythonObject(
-    ImplicitlyBoolable,
-    ImplicitlyIntable,
     Indexer,
     KeyElement,
     SizedRaising,
@@ -687,15 +685,6 @@ struct PythonObject(
             # TODO: make this function raise when we can raise parametrically.
             debug_assert(False, "object cannot be converted to a bool")
             return False
-
-    @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Evaluate the boolean value of the object.
-
-        Returns:
-            Whether the object evaluates as true.
-        """
-        return self.__bool__()
 
     fn __is__(self, other: PythonObject) -> Bool:
         """Test if the PythonObject is the `other` PythonObject, the same as `x is y` in
@@ -1529,14 +1518,6 @@ struct PythonObject(
             # TODO: make this function raise when we can raise parametrically.
             debug_assert(False, "object cannot be converted to an integer")
             return -1
-
-    fn __as_int__(self) -> Int:
-        """Implicitly convert to an Int.
-
-        Returns:
-            An integral value that represents this object.
-        """
-        return self.__int__()
 
     fn __float__(self) -> Float64:
         """Returns a float representation of the object.
