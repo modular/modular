@@ -89,6 +89,14 @@ class ModelGroup(click.Group):
 
 
 @click.command(cls=ModelGroup)
+@click.option(
+    "--version",
+    is_flag=True,
+    callback=lambda ctx, param, value: print_version(ctx, param, value),
+    expose_value=False,
+    is_eager=True,  # Eager ensures this runs before other options/commands
+    help="Show the MAX engine version and exit.",
+)
 def main():
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
@@ -305,6 +313,15 @@ def cli_list(json):
         list_pipelines_to_json()
     else:
         list_pipelines_to_console()
+
+
+def print_version(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    from max import _core
+
+    click.echo(f"\nMAX engine version {_core.__version__}\n")
+    ctx.exit()
 
 
 if __name__ == "__main__":
