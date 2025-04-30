@@ -133,11 +133,7 @@ def _slice_index_and_output(
         return (  # Same as int index.
             slice(
                 index,
-                select(
-                    index == -1,
-                    int64_max,
-                    constant(0, DType.int64, DeviceRef.CPU()),
-                ),
+                select(index == -1, int64_max, index + 1),
                 1,
             ),
             None,
