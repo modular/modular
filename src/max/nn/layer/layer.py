@@ -26,7 +26,7 @@ import numpy as np
 from max._core_types.driver import DLPackArray
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import ShapeLike, Weight
+from max.graph import Shape, ShapeLike, Weight
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
@@ -308,6 +308,12 @@ def _array_from_weight_loader(
         # weight. For now, we trust that the value loaded from the checkpoint
         # has the correct shape.
         weight._shape = data.shape
+    elif (weight.shape == [] and data.shape == [1]) or (
+        weight.shape == [1] and data.shape == []
+    ):
+        # These shapes are actually the same.
+        # Treat the data as if it has the correct shape.
+        data.shape = Shape(weight._shape)
     elif weight.shape != data.shape:
         msg = (
             f"Value provided to weight '{name}' had different shape"

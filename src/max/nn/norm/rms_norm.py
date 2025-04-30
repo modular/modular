@@ -69,11 +69,10 @@ class RMSNorm(Module):
         dim: int,
         eps: float = 1e-6,
         weight_offset: float = 0.0,
+        dtype: DType = DType.float32,
     ):
         super().__init__()
-        self.weight = Weight(
-            "weight", DType.float32, [dim], device=DeviceRef.CPU()
-        )
+        self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
         self.eps = eps
         self.weight_offset = weight_offset
 

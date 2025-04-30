@@ -47,22 +47,25 @@ class ConstantLayerNorm(Module):
     beta: np.ndarray
     eps: float = 1e-5
     device: DeviceRef
+    dtype: DType
 
     def __init__(
         self,
         dims,
         device: DeviceRef,
         eps: float = 1e-5,
+        dtype: DType = DType.float32,
     ):
         super().__init__()
         self.gamma = np.ones(dims)
         self.beta = np.zeros(dims)
         self.eps = eps
         self.device = device
+        self.dtype = dtype
 
     def __call__(self, input: TensorValue):
-        gamma = ops.constant(self.gamma, DType.float32, self.device)
-        beta = ops.constant(self.beta, DType.float32, self.device)
+        gamma = ops.constant(self.gamma, self.dtype, self.device)
+        beta = ops.constant(self.beta, self.dtype, self.device)
         return ops.cast(
             ops.layer_norm(
                 ops.cast(input, DType.float32),
@@ -243,6 +246,7 @@ class StackedMLP(Module):
         feed_forward_length: int,
         devices: Sequence[DeviceRef],
         linear_cls: Callable[..., Linear],
+        has_scale: bool = False,
     ):
         super().__init__()
         self.gate_up_proj = linear_cls(

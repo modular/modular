@@ -65,11 +65,17 @@ class Llama3(Transformer):
                     "rms_norm_eps cannot be None for model that uses RMSNorm."
                 )
             create_norm = functools.partial(
-                RMSNorm, config.hidden_size, config.rms_norm_eps
+                RMSNorm,
+                config.hidden_size,
+                config.rms_norm_eps,
+                dtype=config.norm_dtype or DType.float32,
             )
         else:
             create_norm = functools.partial(
-                ConstantLayerNorm, config.hidden_size, config.devices[0]
+                ConstantLayerNorm,
+                config.hidden_size,
+                config.devices[0],
+                dtype=config.norm_dtype or DType.float32,
             )
 
         # Select linear layer class.
@@ -79,8 +85,17 @@ class Llama3(Transformer):
                 GPTQLinear, quantization_config=config.quantization_config
             )
         else:
-            linear_cls = Linear
-        mlp_cls = StackedMLP if config.stacked_mlp else MLP
+            linear_cls = functools.partial(
+                Linear, float8_config=config.float8_config
+            )
+        if config.stacked_mlp and config.float8_config:
+            msg = "StackedMLP and float8 are not compatible"
+            raise ValueError(msg)
+        mlp_cls = (
+            StackedMLP
+            if config.stacked_mlp
+            else functools.partial(MLP, float8_config=config.float8_config)
+        )
         attention_cls: Callable[..., AttentionWithRope]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             assert config.quantization_config is not None
@@ -108,6 +123,7 @@ class Llama3(Transformer):
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
                 has_bias=config.attention_bias,
+                float8_config=config.float8_config,
             )
 
         layers = [
@@ -144,6 +160,8 @@ class Llama3(Transformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
+        if config.float8_config and config.float8_config.embedding_output_dtype:
+            embedding_output_dtype = config.float8_config.embedding_output_dtype
         embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,

@@ -68,6 +68,7 @@ class SupportedEncoding(str, Enum):
     q4_k = "q4_k"
     q4_0 = "q4_0"
     q6_k = "q6_k"
+    float8_e4m3fn = "float8_e4m3fn"
     gptq = "gptq"
 
     @classmethod
@@ -86,6 +87,9 @@ class SupportedEncoding(str, Enum):
             return SupportedEncoding.q6_k
         elif "gptq" in name:
             return SupportedEncoding.gptq
+        elif "f8" in name or "fp8" in name or "float8" in name:
+            # For now, default float8 to e4m3. It is the dtype is used for inference.
+            return SupportedEncoding.float8_e4m3fn
         else:
             return None
 
@@ -124,6 +128,7 @@ class SupportedEncoding(str, Enum):
 _SUPPORTED_ENCODING_TO_DTYPE = {
     SupportedEncoding.float32: DType.float32,
     SupportedEncoding.bfloat16: DType.bfloat16,
+    SupportedEncoding.float8_e4m3fn: DType.float8_e4m3fn,
     SupportedEncoding.q4_k: DType.uint8,
     SupportedEncoding.q4_0: DType.uint8,
     SupportedEncoding.q6_k: DType.uint8,
@@ -134,6 +139,7 @@ _SUPPORTED_ENCODING_TO_DTYPE = {
 _SUPPORTED_ENCODING_TO_CACHE_DTYPE = {
     SupportedEncoding.float32: DType.float32,
     SupportedEncoding.bfloat16: DType.bfloat16,
+    SupportedEncoding.float8_e4m3fn: DType.bfloat16,
     SupportedEncoding.q4_k: DType.float32,
     SupportedEncoding.q4_0: DType.float32,
     SupportedEncoding.q6_k: DType.float32,
@@ -143,6 +149,7 @@ _SUPPORTED_ENCODING_TO_CACHE_DTYPE = {
 _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {
     SupportedEncoding.float32: None,
     SupportedEncoding.bfloat16: None,
+    SupportedEncoding.float8_e4m3fn: None,
     SupportedEncoding.q4_k: QuantizationEncoding.Q4_K,
     SupportedEncoding.q4_0: QuantizationEncoding.Q4_0,
     SupportedEncoding.q6_k: QuantizationEncoding.Q6_K,
@@ -154,6 +161,7 @@ _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {
 _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     SupportedEncoding.float32: ("cpu", "gpu"),
     SupportedEncoding.bfloat16: ("gpu",),
+    SupportedEncoding.float8_e4m3fn: ("gpu",),
     SupportedEncoding.q4_k: ("cpu",),
     SupportedEncoding.q4_0: ("cpu",),
     SupportedEncoding.q6_k: ("cpu",),

@@ -49,6 +49,8 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
+    input_scale: TensorValue | None = None,
+    weight_scale: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -104,6 +106,8 @@ def fused_qkv_ragged_matmul(
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
 
     if bias:
+        assert input_scale is None
+        assert weight_scale is None
         op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.bias"
 
         return ops.inplace_custom(
@@ -126,6 +130,32 @@ def fused_qkv_ragged_matmul(
             parameters=parameters,
         )[0].tensor
 
+    if input_scale:
+        assert weight_scale is not None
+        op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.scale"
+
+        return ops.inplace_custom(
+            op_name,
+            values=[
+                input,
+                input_row_offsets,
+                wqkv,
+                input_scale,
+                weight_scale,
+                kv_collection,
+                layer_idx,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=input.dtype,
+                    shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                    device=input.device,
+                )
+            ],
+            parameters=parameters,
+        )[0].tensor
+
+    assert weight_scale is None
     op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
 
     return ops.inplace_custom(
@@ -1661,3 +1691,32 @@ def grouped_matmul_ragged(
     )[0].tensor
 
     return output
+
+
+def quantize_static_scaled_float8(
+    x: TensorValue,
+    scale: TensorValue,
+    scale_is_inverted: bool = True,
+) -> TensorValue:
+    if scale.shape not in [[], [1]]:
+        msg = f"expected scale to be a scalar, but got shape of {scale.shape}"
+        raise ValueError(msg)
+
+    if x.dtype not in [DType.float16, DType.bfloat16, DType.float32]:
+        msg = f"expected input dtype to be float16, bfloat16, or float32, but got {x.dtype}"
+        raise ValueError(msg)
+
+    if x.rank != 2:
+        msg = f"expected input rank to be 2, but got {x.rank}"
+        raise ValueError(msg)
+
+    return ops.custom(
+        "mo.quantize_static_scaled_float8",
+        values=[x, scale.reshape([])],
+        parameters={"scale_is_inverted": scale_is_inverted},
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn, shape=x.shape, device=x.device
+            )
+        ],
+    )[0].tensor

@@ -52,7 +52,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import Linear
+from ..linear import Float8Config, Float8Scaling, Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
@@ -172,6 +172,7 @@ class AttentionWithRope(Module):
         stacked_qkv: bool = False,
         scale: float | None = None,
         has_bias: bool = False,
+        float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
     ):
         """Initializes the attention layer.
@@ -279,8 +280,53 @@ class AttentionWithRope(Module):
             in_dim=q_weight_dim,
             out_dim=hidden_size,
             dtype=dtype,
-            device=self.devices[0] if devices else None,
+            device=self.devices[0],
+            float8_config=float8_config,
         )
+
+        self.has_input_scale = False
+        self.has_weight_scale = False
+        if float8_config:
+            if float8_config.input_scaling == Float8Scaling.TENSOR:
+                self.has_input_scale = True
+                self.input_scale_q = Weight(
+                    name="q_proj.input_scale",
+                    dtype=float8_config.input_scale_dtype,
+                    shape=[1],
+                    device=self.devices[0],
+                )
+                self.input_scale_k = Weight(
+                    name="k_proj.input_scale",
+                    dtype=float8_config.input_scale_dtype,
+                    shape=[1],
+                    device=self.devices[0],
+                )
+                self.input_scale_v = Weight(
+                    name="v_proj.input_scale",
+                    dtype=float8_config.input_scale_dtype,
+                    shape=[1],
+                    device=self.devices[0],
+                )
+            if float8_config.weight_scaling == Float8Scaling.TENSOR:
+                self.has_weight_scale = True
+                self.weight_scale_q = Weight(
+                    name="q_proj.weight_scale",
+                    dtype=float8_config.weight_scale_dtype,
+                    shape=[1],
+                    device=self.devices[0],
+                )
+                self.weight_scale_k = Weight(
+                    name="k_proj.weight_scale",
+                    dtype=float8_config.weight_scale_dtype,
+                    shape=[1],
+                    device=self.devices[0],
+                )
+                self.weight_scale_v = Weight(
+                    name="v_proj.weight_scale",
+                    dtype=float8_config.weight_scale_dtype,
+                    shape=[1],
+                    device=self.devices[0],
+                )
 
     @property
     def wqkv(self) -> TensorValue:
@@ -305,6 +351,26 @@ class AttentionWithRope(Module):
 
         return ops.concat((self.bias_q, self.bias_k, self.bias_v))
 
+    @property
+    def wqkv_input_scale(self) -> TensorValue | None:
+        """The concatenation of q, k, and v scale input vectors."""
+        if not self.has_input_scale:
+            return None
+
+        return ops.concat(
+            (self.input_scale_q, self.input_scale_k, self.input_scale_v)
+        )
+
+    @property
+    def wqkv_weight_scale(self) -> TensorValue | None:
+        """The concatenation of q, k, and v scale weight vectors."""
+        if not self.has_weight_scale:
+            return None
+
+        return ops.concat(
+            (self.weight_scale_q, self.weight_scale_k, self.weight_scale_v)
+        )
+
     def __call__(
         self,
         x: TensorValue,
@@ -321,16 +387,20 @@ class AttentionWithRope(Module):
         )
         # Call into fused qkv ragged matmul.
         wqkv = self.wqkv
+        # TODO: correctly handle quantization of x correctly for qkv.
+        # Likely has to be folded into the kernel.
         xq = fused_qkv_ragged_matmul(
             self.kv_params,
-            input=x,
+            input=x.cast(wqkv.dtype),
             wqkv=wqkv,
             bias=self.wqkv_bias,
+            input_scale=self.wqkv_input_scale,
+            weight_scale=self.wqkv_weight_scale,
             input_row_offsets=kwargs["input_row_offsets"],
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        )
+        ).cast(x.dtype)
 
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))

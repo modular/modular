@@ -415,6 +415,10 @@ class HuggingFaceRepo:
                                 supported_encodings.add(
                                     SupportedEncoding.bfloat16
                                 )
+                            elif weight_dtype == "F8_E4M3":
+                                supported_encodings.add(
+                                    SupportedEncoding.float8_e4m3fn
+                                )
                             else:
                                 logger.warning(
                                     f"unknown dtype found in safetensors file: {weight_dtype}"
@@ -423,7 +427,11 @@ class HuggingFaceRepo:
             elif self.repo_type == RepoType.online:
                 if safetensors_info := self.info.safetensors:
                     for params in safetensors_info.parameters:
-                        if "BF16" in params:
+                        if "F8_E4M3" in params:
+                            supported_encodings.add(
+                                SupportedEncoding.float8_e4m3fn
+                            )
+                        elif "BF16" in params:
                             supported_encodings.add(SupportedEncoding.bfloat16)
                         elif "F32" in params:
                             supported_encodings.add(SupportedEncoding.float32)
@@ -475,7 +483,7 @@ class HuggingFaceRepo:
     ) -> dict[WeightsFormat, list[Path]]:
         if (
             WeightsFormat.safetensors in self.weight_files
-            and encoding == self.supported_encodings[0]
+            and encoding in self.supported_encodings
         ):
             return {
                 WeightsFormat.safetensors: [

@@ -27,7 +27,7 @@ from sys.info import _is_sm_9x_or_newer
 
 
 @always_inline
-fn static_scaled_fp8_quantization[
+fn quantize_static_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
     is_scale_inverted: Bool = True,

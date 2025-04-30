@@ -22,7 +22,12 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import Llama3RopeScalingParams, ReturnLogits
+from max.nn import (
+    Float8Config,
+    Float8Scaling,
+    Llama3RopeScalingParams,
+    ReturnLogits,
+)
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -56,6 +61,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     kv_params: KVCacheParams
     return_logits: ReturnLogits
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
+    norm_dtype: DType | None
     attention_bias: bool
     rms_norm_eps: Optional[float]
     tie_word_embeddings: bool
@@ -67,6 +73,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     residual_multiplier: float
     devices: list[DeviceRef]
     clip_qkv: Optional[float]
+    float8_config: Float8Config | None
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -190,6 +197,55 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             for spec in pipeline_config.model_config.device_specs
         ]
 
+        norm_dtype = None
+        float8_config = None
+        if dtype == DType.float8_e4m3fn:
+            input_scale_name = "layers.0.mlp.down_proj.input_scale"
+            weight_scale_name = "layers.0.mlp.down_proj.weight_scale"
+
+            has_static_input_scale = input_scale_name in state_dict
+            input_scale_scalar = False
+            if has_static_input_scale:
+                input_scale_scalar = state_dict[input_scale_name].shape in [
+                    [],
+                    [1],
+                ]
+            weight_scale_scalar = state_dict[weight_scale_name].shape in [
+                [],
+                [1],
+            ]
+
+            attn_float8 = (
+                state_dict["layers.0.self_attn.k_proj.weight"].dtype
+                == DType.float8_e4m3fn
+            )
+
+            if (
+                not has_static_input_scale
+                or not input_scale_scalar
+                or not weight_scale_scalar
+            ):
+                msg = "float8 models only support static scaling input and weight scaling currently"
+                raise ValueError(msg)
+
+            float8_config = Float8Config(
+                input_scaling=Float8Scaling.TENSOR,
+                input_scale_dtype=state_dict[input_scale_name].dtype,
+                weight_scaling=Float8Scaling.TENSOR,
+                weight_scale_dtype=state_dict[weight_scale_name].dtype,
+                attn_in_float8=attn_float8,
+                embedding_output_dtype=(
+                    state_dict["lm_head.weight"].dtype
+                    if "lm_head.weight" in state_dict
+                    else None
+                ),
+            )
+            norm_dtype = (
+                state_dict["layers.0.input_layernorm.weight"].dtype
+                if "layers.0.input_layernorm.weight" in state_dict
+                else None
+            )
+
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
         tie_word_embeddings = (
@@ -256,6 +312,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 cache_dtype=cache_dtype,
             ),
             norm_method=norm_method,
+            norm_dtype=norm_dtype,
             attention_bias=attention_bias,
             tie_word_embeddings=tie_word_embeddings,
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
@@ -271,4 +328,5 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             residual_multiplier=residual_multiplier,
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
+            float8_config=float8_config,
         )

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from functools import partial
 from typing import Callable
 
@@ -35,8 +36,29 @@ from max.graph.weights import Weights
 
 from .clamp import clamp
 from .comm import Allreduce
-from .kernels import swish_glu
+from .kernels import quantize_static_scaled_float8, swish_glu
 from .layer import Layer, Module
+
+
+class Float8Scaling(Enum):
+    """Float8 scaling spec"""
+
+    TENSOR = 1
+    ROW_WISE = 2
+    BLOCK = 3
+    DYNAMIC = 4
+
+
+@dataclass
+class Float8Config:
+    """Configuration for float8 quantization"""
+
+    attn_in_float8: bool
+    input_scaling: Float8Scaling
+    input_scale_dtype: DType
+    weight_scaling: Float8Scaling
+    weight_scale_dtype: DType
+    embedding_output_dtype: DType | None
 
 
 class Linear(Module):
@@ -74,6 +96,14 @@ class Linear(Module):
     """The optional bias vector stored on CPU with shape (out_dim,).
     Model init moves the bias to :obj:`device` if present."""
 
+    input_scale: Weight | None = None
+    """The optional input scale stored on CPU with shape ().
+    Model init moves the input_scale to :obj:`device` if present."""
+
+    weight_scale: Weight | None = None
+    """The optional weight scale stored on CPU with shape ().
+    Model init moves the weight_scale to :obj:`device` if present."""
+
     device: DeviceRef
     """The device where matrix operations are performed."""
 
@@ -85,6 +115,7 @@ class Linear(Module):
         device: DeviceRef,
         has_bias: bool = False,
         quantization_encoding: QuantizationEncoding | None = None,
+        float8_config: Float8Config | None = None,
         name: str | None = None,
         clip_weight: float | None = None,
     ) -> None:
@@ -128,6 +159,24 @@ class Linear(Module):
                     f"Bias is on device {self.bias.device} while weight is on {self.weight.device}."
                 )
 
+        if float8_config:
+            if float8_config.input_scaling == Float8Scaling.TENSOR:
+                self.input_scale = Weight(
+                    name=f"{name}.input_scale" if name else "input_scale",
+                    dtype=float8_config.input_scale_dtype,
+                    shape=[1],
+                    device=device,
+                    quantization_encoding=quantization_encoding,
+                )
+            if float8_config.weight_scaling == Float8Scaling.TENSOR:
+                self.weight_scale = Weight(
+                    name=f"{name}.weight_scale" if name else "weight_scale",
+                    dtype=float8_config.weight_scale_dtype,
+                    shape=[1],
+                    device=device,
+                    quantization_encoding=quantization_encoding,
+                )
+
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
 
@@ -155,7 +204,24 @@ class Linear(Module):
                 weight,
             )
         else:
+            if self.input_scale is not None and x.dtype != weight.dtype:
+                # Quantize the input.
+                x = quantize_static_scaled_float8(x, self.input_scale)
             res = x @ weight.T
+        # TODO: This should be done in the matmul epilog in float32.
+        # Instead, it is done here and will upcast res to float32
+        if self.input_scale is not None:
+            input_scale: TensorValue = self.input_scale
+            if self.device:
+                input_scale = input_scale.to(self.device)
+            res *= input_scale
+        if self.weight_scale is not None:
+            weight_scale: TensorValue = self.weight_scale
+            if self.device:
+                weight_scale = weight_scale.to(self.device)
+            res *= weight_scale
+        if self.input_scale is not None or self.weight_scale is not None:
+            res.cast(weight.dtype)
         if self.bias is not None:
             res += self.bias
         return res
@@ -513,6 +579,7 @@ class GPTQLinear(Linear):
         has_bias: bool = False,
         quantization_encoding: QuantizationEncoding | None = None,
         quantization_config: QuantizationConfig | None = None,
+        float8_config: Float8Config | None = None,
     ) -> None:
         """Initializes the linear layer with weights and optional bias with
         GPTQ quantization.
@@ -531,6 +598,8 @@ class GPTQLinear(Linear):
         del out_dim, dtype  # Unused.
         if has_bias:
             raise ValueError("has_bias=True is not supported in GPTQLinear.")
+        if float8_config:
+            raise ValueError("Float8 is not supported in GPTQLinear.")
 
         # Skip Linear initialization.
         Module.__init__(self)
@@ -663,6 +732,7 @@ class MLP(Module):
         linear_cls: Callable[..., Linear] = Linear,
         has_bias: bool = False,
         activation_function: str = "silu",
+        float8_config: Float8Config | None = None,
     ):
         """
         Args:
@@ -692,6 +762,7 @@ class MLP(Module):
             device=devices[0],
             quantization_encoding=quantization_encoding,
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.down_proj = linear_cls(
             in_dim=feed_forward_length,
@@ -700,6 +771,7 @@ class MLP(Module):
             device=devices[0],
             quantization_encoding=quantization_encoding,
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.up_proj = linear_cls(
             in_dim=hidden_dim,
@@ -708,8 +780,10 @@ class MLP(Module):
             device=devices[0],
             quantization_encoding=quantization_encoding,
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.quantization_encoding = quantization_encoding
+        self.float8_config = float8_config
         assert activation_function in _ACTIVATION_FUNCTIONS.keys()
         self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
 
@@ -729,7 +803,7 @@ class MLP(Module):
                     self.up_proj.weight,
                 )
             )
-        if self.quantization_encoding:
+        if self.quantization_encoding or self.float8_config:
             return self.down_proj(
                 self.activation_function(self.gate_proj(TensorValue(x)))
                 * self.up_proj(TensorValue(x))
