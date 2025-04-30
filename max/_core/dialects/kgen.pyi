@@ -1365,6 +1365,47 @@ class GeneratorType(max._core.Type):
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
 
+class GetWitnessAttr(max._core.Attribute):
+    """
+    The `#kgen.get_witness` attribute is used to lookup a witness entry
+    from a witness table given a type value and a trait conformance.
+
+    Since type value definitions are symbols, this attribute can only be folded
+    when a global symbol table is provided.
+
+    Example:
+
+    ```mlir
+    #kgen.get_witness<#Int, "Boolable", "__bool__">
+      : !kgen.generator<("self": !Int) -> i1>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        trait_name: max._core.dialects.builtin.StringAttr,
+        witness_name: max._core.dialects.builtin.StringAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        trait_name: max._core.dialects.builtin.StringAttr,
+        witness_name: max._core.dialects.builtin.StringAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def trait_name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def witness_name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class GlobalAddressOp(max._core.Operation):
     """
     The `kgen.global.address` operation returns the address of a referenced
