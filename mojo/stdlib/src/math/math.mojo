@@ -1592,41 +1592,43 @@ fn asinh(x: SIMD) -> __type_of(x):
 fn _atanh_float32(x: SIMD) -> __type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
+
+    alias nan_val = __type_of(x)(nan[x.dtype]())
+    alias inf_val = __type_of(x)(inf[x.dtype]())
+    alias neg_inf_val = __type_of(x)(-inf[x.dtype]())
+
     var is_neg = x < 0
     var x_abs = abs(x)
-    var x2 = x_abs * x_abs
-    var x3 = x2 * x_abs
+    var x2 = x * x
+    var x3 = x2 * x
 
     # When x is in the range [0, 0.5], we use a polynomial approximation.
     # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
     var p = polynomial_evaluate[
         List[__type_of(x)](
-            0.1819281280040740966796875,
-            8.2311116158962249755859375e-2,
-            0.14672131836414337158203125,
-            0.1997792422771453857421875,
             0.3333373963832855224609375,
+            0.1997792422771453857421875,
+            0.14672131836414337158203125,
+            8.2311116158962249755859375e-2,
+            0.1819281280040740966796875,
         )
     ](x2)
-    p = x3.fma(p, x_abs)
-    p = is_neg.select(-p, p)
+    p = x3.fma(p, x)
 
-    # For x in the range [0.5, 1), we use the identity:
+    # For |x| in the range [0.5, 1), we use the identity:
     # atanh(x) = 0.5 * log((1 + x) / (1 - x))
-    var r = 0.5 * (log(x_abs + 1) - log(1 - x_abs))
-    r = is_neg.select(-r, r)
+    var r = 0.5 * log((1 + x) / (1 - x))
 
     # If If x is >= 1, NaN is returned.
-    alias nan_val = __type_of(x)(nan[DType.float32]())
-    alias inf_val = __type_of(x)(inf[DType.float32]())
-    alias neg_inf_val = __type_of(x)(-inf[DType.float32]())
-
     # If x is 1, then the result is +infinity if x is negative, and -infinity
     # if x is positive. If x is >= 1, NaN is returned. Otherwise, if x is >= 0.5,
     # we use the r approximation, otherwise we use the p polynomial approximation.
     return (x_abs == 1).select(
         is_neg.select(neg_inf_val, inf_val),
-        (x_abs >= 1).select(nan_val, (x_abs >= 0.5).select(r, p)),
+        (x_abs >= 1).select(
+            is_neg.select(nan_val, -nan_val),
+            (x_abs > 0.5).select(r, p),
+        ),
     )
 
 

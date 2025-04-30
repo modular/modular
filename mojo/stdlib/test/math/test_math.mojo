@@ -486,15 +486,52 @@ def test_atanh():
     assert_true(isnan(atanh(Float32(2))))
     assert_true(isnan(atanh(Float32(-2))))
     assert_almost_equal(
-        atanh(Float32(0.5)), 0.54930614433405489, atol=1e-10, rtol=1e-10
-    )
-    assert_almost_equal(
         atanh(SIMD[DType.float32, 4](0.5, 0.15, 0.9, 0.0)),
         atanh(SIMD[DType.float64, 4](0.5, 0.15, 0.9, 0.0)).cast[
             DType.float32
         ](),
-        atol=1e-3,
-        rtol=1e-3,
+    )
+
+    assert_equal(atanh(Float32(0)), Float32(0), msg="atanh(0)")
+    assert_almost_equal(
+        atanh(Float32(0.1)), Float32(0.1003353477310756), msg="atanh(0.1)"
+    )
+    assert_almost_equal(
+        atanh(Float32(-0.1)), Float32(-0.1003353477310756), msg="atanh(-0.1)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.2)), Float32(0.202732554054082), msg="atanh(0.2)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.3)), Float32(0.3095196042031118), msg="atanh(0.3)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.4)), Float32(0.4236489301936017), msg="atanh(0.4)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.5)), Float32(0.54930614433405489), msg="atanh(0.5)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.6)), Float32(0.6931471805599453), msg="atanh(0.6)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.7)), Float32(0.8673005276940542), msg="atanh(0.7)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.8)), Float32(1.0986122886681098), msg="atanh(0.8)"
+    )
+    assert_almost_equal(
+        atanh(Float32(0.9)), Float32(1.4722194895832204), msg="atanh(0.9)"
+    )
+
+    assert_almost_equal(
+        atanh(Float32(-0.5)), Float32(-0.54930614433405489), msg="atanh(-0.5)"
+    )
+
+    assert_almost_equal(
+        atanh(Float32(-0.9297103072)),
+        Float32(-1.65625),
+        msg="atanh(-0.9297103072)",
     )
 
 
