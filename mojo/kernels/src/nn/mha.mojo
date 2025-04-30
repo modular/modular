@@ -2622,7 +2622,7 @@ fn _scale_and_mask_helper_nvidia[
     p_reg_tile: LayoutTensor[
         p_type, p_layout, address_space = AddressSpace.LOCAL
     ],
-    scale: Float32,
+    scale_log2e: Float32,
     num_keys: UInt,
     bound: UInt,
     lane: UInt,
@@ -2677,22 +2677,27 @@ fn _scale_and_mask_helper_nvidia[
                         Int(score_col),
                     ),
                     p_reg_tile[n_mma, i + i_group * simd_width]
-                    * scale.cast[p_type](),
+                    * scale_log2e.cast[p_type](),
                 )
 
                 @parameter
                 if use_score_mod:
-                    p_reg_tile[
-                        n_mma, i + i_group * simd_width
-                    ] = score_mod.score_mod(
-                        Index(
-                            Int(block_idx.z),
-                            Int(q_head_idx),
-                            Int(score_row),
-                            Int(score_col),
-                        ),
-                        p_reg_tile[n_mma, i + i_group * simd_width],
-                        max_seq_len,
+                    p_reg_tile[n_mma, i + i_group * simd_width] = (
+                        score_mod.score_mod(
+                            Index(
+                                Int(block_idx.z),
+                                Int(q_head_idx),
+                                Int(score_row),
+                                Int(score_col),
+                            ),
+                            p_reg_tile[n_mma, i + i_group * simd_width],
+                            max_seq_len,
+                        )
+                        * log2e
+                    )
+                elif mask_t.apply_log2e_after_mask:
+                    p_reg_tile[n_mma, i + i_group * simd_width] = (
+                        p_reg_tile[n_mma, i + i_group * simd_width] * log2e
                     )
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
@@ -3162,6 +3167,12 @@ fn mha_decoding_single_batch[
 
         q_gmem_iter._incr()
 
+    var scale_log2e: Float32 = scale.cast[
+        DType.float32
+    ]() if use_score_mod or mask_t.apply_log2e_after_mask or not is_nvidia_gpu() else scale.cast[
+        DType.float32
+    ]() * log2e
+
     @always_inline
     @parameter
     fn loop_over_kvcache[
@@ -3249,7 +3260,7 @@ fn mha_decoding_single_batch[
             group=group,
         ](
             p_reg_tile,
-            scale,
+            scale_log2e,
             num_keys,
             kv_tile_num_rows,
             lane,
@@ -3278,6 +3289,7 @@ fn mha_decoding_single_batch[
                 Layout.row_major(num_warps_m, num_warps_n),
                 Layout.row_major(8, 4),
                 warp_split_k=decoding_warp_split_k,
+                use_exp2 = is_nvidia_gpu(),
             ](
                 output_reg_vecs,
                 p_reg_vecs,
@@ -3299,6 +3311,7 @@ fn mha_decoding_single_batch[
                 Layout.row_major(num_warps_m, num_warps_n),
                 Layout.row_major(8, 4),
                 warp_split_k=decoding_warp_split_k,
+                use_exp2 = is_nvidia_gpu(),
             ](
                 output_reg_vecs,
                 p_reg_vecs,
@@ -3446,6 +3459,7 @@ fn mha_decoding_single_batch[
             Layout.row_major(8, 4),
             WM,
             WN,
+            use_exp2 = is_nvidia_gpu(),
         ](
             output_reg_vecs,
             scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
@@ -3765,6 +3779,12 @@ fn mha_decoding_single_batch_pipelined[
         num_keys, num_partitions, block_idx.x
     )
 
+    var scale_log2e: Float32 = scale.cast[
+        DType.float32
+    ]() if use_score_mod or mask_t.apply_log2e_after_mask else scale.cast[
+        DType.float32
+    ]() * log2e
+
     @always_inline
     @parameter
     fn loop_over_kvcache[
@@ -3837,7 +3857,7 @@ fn mha_decoding_single_batch_pipelined[
             group=group,
         ](
             p_reg_tile,
-            scale,
+            scale_log2e,
             num_keys,
             kv_tile_num_rows,
             lane,
@@ -3865,6 +3885,7 @@ fn mha_decoding_single_batch_pipelined[
                 Layout.row_major(num_m_mmas, num_n_mmas),
                 Layout.row_major(num_warps_m, num_warps_n),
                 Layout.row_major(8, 4),
+                use_exp2 = is_nvidia_gpu(),
             ](
                 output_reg_vecs,
                 p_reg_vecs,
@@ -3884,6 +3905,7 @@ fn mha_decoding_single_batch_pipelined[
                 # threads layout by warp
                 Layout.row_major(num_warps_m, num_warps_n),
                 Layout.row_major(4, 16),
+                use_exp2 = is_nvidia_gpu(),
             ](
                 output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                     1, p_frag_simdwidth
