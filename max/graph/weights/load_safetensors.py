@@ -157,6 +157,8 @@ class SafetensorWeights(Weights):
         tensor = self._load_tensor()
         if tensor.dtype == torch.bfloat16:
             np_array = tensor.view(torch.float16).numpy()
+        elif tensor.dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
+            np_array = tensor.view(torch.uint8).numpy()
         else:
             np_array = tensor.numpy()
         return np_array
@@ -166,6 +168,8 @@ class SafetensorWeights(Weights):
         tensor = self._load_tensor()
         if tensor.dtype == torch.bfloat16:
             np_array = tensor.view(torch.float16).numpy()
+        elif tensor.dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
+            np_array = tensor.view(torch.uint8).numpy()
         else:
             np_array = tensor.numpy()
         return WeightData(
