@@ -18,6 +18,11 @@ what we publish.
 
 ### ✨ Highlights
 
+- Parts of the Kernel library continue to be progressively open sourced!
+  Packages that are open sourced now include:
+  - `kv_cache`
+  - `quantization`
+
 ### Language changes
 
 ### Standard library changes
