@@ -8,6 +8,10 @@ listing:
     contents: 'stdlib/*/index.md'
     type: grid
     page-size: 99
+  - id: kernels
+    contents: 'kernels/*/index.md'
+    type: grid
+    page-size: 99
   - id: decorators
     contents: 'manual/decorators/*.md'
     type: grid
@@ -18,8 +22,14 @@ listing:
     page-size: 20
 ---
 
-This section includes the API reference for the Mojo standard library, as well
-as a reference for Mojo decorators and the Mojo CLI.
+This section includes the Mojo API references:
+
+- [Standard library](#standard-library): Common Mojo APIs.
+- [Kernels library](#kernels-library). Mojo APIs for writing high-performance
+  computational kernels and custom operations.
+- [MAX library](#max-library). MAX Mojo APIs, including tensor APIs for custom
+  operations, and legacy MAX APIs.
+- [Decorators](#decorators). Mojo decorators reference.
 
 ## How to read the Mojo API docs
 
@@ -94,7 +104,7 @@ Like arguments, parameters can be positional-only, keyword-or-positional, or
 keyword-only, and they can be required or optional. The `/`, `*`, and `=`
 characters have the same meaning in parameter lists as they do in argument lists.
 
-## Mojo standard library
+## Standard library
 
 The Mojo standard library provides nearly everything you'll need for
 writing Mojo programs, including basic data types like
@@ -104,31 +114,39 @@ writing Mojo programs, including basic data types like
 [algorithms](/mojo/stdlib/algorithm/) and modules to support
 [GPU programming](/mojo/stdlib/gpu).
 
-Here are all the top-level packages:
+Top-level packages:
 
 :::🔥#stdlib
 :::
+
+## Kernels library
+
+The Mojo kernels library provides APIs for writing computational kernels that
+run on CPU and GPU. You can use these APIs when developing
+[MAX custom operations](/max/custom-ops/) or standalone
+[GPU kernels](/mojo/manual/gpu/basics).
+
+Top-level packages:
+
+:::🔥#kernels
+:::
+
 
 ## MAX library
 
 The Mojo MAX library provides APIs to interact with the MAX graph compiler
 and runtime.
 
+Top-level packages:
+
 :::🔥#maxlib
 :::
 
 
-## Mojo decorators
+## Decorators
 
 A Mojo decorator is a higher-order function that modifies or extends the
 behavior of a struct, a function, or some other code.
 
 :::🔥#decorators
 :::
-
-## Mojo CLI reference
-
-The `mojo` CLI provides commands to help you develop, run, build,
-and debug Mojo programs.
-
-[See the `mojo` docs](/mojo/cli/).

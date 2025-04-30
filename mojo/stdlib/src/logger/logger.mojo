@@ -13,28 +13,28 @@
 
 """Provides logging functionality with different severity levels.
 
-This module implements a simple logging system with configurable severity levels:
-NOTSET, DEBUG, INFO, WARNING, ERROR, and CRITICAL. The logging level can be set
-via the LOGGING_LEVEL environment variable.
+This module implements a simple logging system with configurable severity
+levels: `NOTSET`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`. The
+logging level can be set via the LOGGING_LEVEL environment variable.
 
 The main components are:
 
-- Level: An enum-like struct defining the available logging levels
-- Logger: A struct that handles logging messages with different severity levels
+- `Level`: An enum-like struct defining the available logging levels
+- `Logger`: A struct that handles logging messages with different severity levels
 
 Example:
 
-    ```mojo
-    from logger import Logger
+```mojo
+from logger import Logger
 
-    var logger = Logger()  # Uses default level from LOGGING_LEVEL env var
-    logger.info("Starting process")
-    logger.debug("Debug information")
-    logger.error("An error occurred")
-    ```
+var logger = Logger()  # Uses default level from LOGGING_LEVEL env var
+logger.info("Starting process")
+logger.debug("Debug information")
+logger.error("An error occurred")
+```
 
-The logger can be configured to write to different file descriptors (default stdout).
-Messages below the configured level will be silently ignored.
+The logger can be configured to write to different file descriptors (default
+stdout). Messages below the configured level will be silently ignored.
 """
 
 import sys

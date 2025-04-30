@@ -416,7 +416,7 @@ so you don't have to call it separately.
 ## Tensor indexing from threads
 
 Now that we have the data set up, we can wrap the data in a
-[LayoutTensor](/mojo/stdlib/layout/layout_tensor/LayoutTensor/) so that we can
+[LayoutTensor](/mojo/kernels/layout/layout_tensor/LayoutTensor/) so that we can
 reason about how to index into the array, allowing each thread to get its
 corresponding value:
 
@@ -513,10 +513,10 @@ with in_buffer.map_to_host() as host_buffer:
 ```
 
 ```text
-0 2 4 6 
-8 10 12 14 
-16 18 20 22 
-24 26 28 30 
+0 2 4 6
+8 10 12 14
+16 18 20 22
+24 26 28 30
 ```
 
 Congratulations! You've successfully run a kernel that modifies values from your

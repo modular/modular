@@ -533,7 +533,7 @@ kernel function. Add the following code to the end of the `main()` function:
 ## 8. Create `LayoutTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`LayoutTensor`](/mojo/stdlib/layout/layout_tensor/LayoutTensor/) view for each
+[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/) view for each
 of the tensors. `LayoutTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
@@ -583,7 +583,7 @@ fn vector_addition[
 Our `vector_addition()` kernel function accepts the two input tensors and the
 output tensor as arguments. It also accepts compile-time `Layout` parameters for
 each of the tensors. (For example, `lhs_layout` is the inferred layout for the
-`lhs` argument.) A [`Layout`](/mojo/stdlib/layout/layout/Layout) is a
+`lhs` argument.) A [`Layout`](/mojo/kernels/layout/layout/Layout) is a
 representation of memory layouts using shape and stride information, and it maps
 between logical coordinates and linear memory indices. In our kernel function,
 we use only the layout of the `out` tensor to determine the size of the vector.

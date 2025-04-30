@@ -4,20 +4,20 @@ sidebar_position: 1
 description: Using layouts to describe multidimensional data.
 ---
 
-Mojo’s [`layout` package](/mojo/stdlib/layout/) provides a number of APIs for
+Mojo’s [`layout` package](/mojo/kernels/layout/) provides a number of APIs for
 working with dense multidimensional arrays, which simplify writing algorithms
 for handling linear algebra.
 
 This package includes the following main types:
 
-- The [`Layout`](/mojo/stdlib/layout/layout/Layout) struct describes an
+- The [`Layout`](/mojo/kernels/layout/layout/Layout) struct describes an
   arrangement of data in memory. A *layout* is a function that maps a set of
   logical coordinates (like (*x*, *y*) in a two-dimensional array) to a linear
   index value. Layouts can be hierarchical (for example, representing a 2D
   matrix that’s further subdivided into tiles).
-- [`LayoutTensor`](/mojo/stdlib/layout/layout_tensor/LayoutTensor) is a flexible
+- [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) is a flexible
   tensor type that combines a `Layout` and a pointer to data.
-- The [`IntTuple`](/mojo/stdlib/layout/int_tuple/IntTuple) struct is a
+- The [`IntTuple`](/mojo/kernels/layout/int_tuple/IntTuple) struct is a
   hierarchical tuple type, where each element of the tuple can either be an
   integral value or a nested `IntTuple`. The `IntTuple` type is used extensively
   for defining and indexing layouts and layout tensors.
@@ -65,7 +65,7 @@ sub-layouts or *modes*: a row mode and a column mode: 3 rows with a stride of 4
 (3:4, the first numbers from each tuple) and 4 columns with a stride of 1 (4:1,
 the second numbers from each tuple).
 
-The [`print_layout()`](/mojo/stdlib/layout/layout/print_layout) function
+The [`print_layout()`](/mojo/kernels/layout/layout/print_layout) function
 generates an ASCII diagram of any 2D layout, showing the coordinates on the
 outside and the corresponding index values in the grid.
 
@@ -112,7 +112,7 @@ coordinates at index 7: (1, 3)
 
 As this example shows, the layout is a function that takes a set of integer
 coordinates and returns a single integer (the linear index). The `Layout` struct
-also provides an [`idx2crd()`](/mojo/stdlib/layout/layout/Layout#idx2crd) method
+also provides an [`idx2crd()`](/mojo/kernels/layout/layout/Layout#idx2crd) method
 that transforms a linear index into a set of logical coordinates.
 
 :::note Printing layouts
@@ -126,7 +126,7 @@ of the layout in the form of a (*shape*:*stride*) pair.
 ### IntTuple: representing hierarchical shapes and strides
 
 A layout’s shape and stride are represented using the
-[`IntTuple`](/mojo/stdlib/layout/int_tuple/IntTuple) type. Each element of an
+[`IntTuple`](/mojo/kernels/layout/int_tuple/IntTuple) type. Each element of an
 `IntTuple` is either an integer value or a nested `IntTuple`. You can create
 nested `IntTuples` using the `IntTuple` constructor:
 
@@ -139,9 +139,9 @@ have the same hierarchical structure: the tuples must have the same number of
 elements, and any elements that are nested tuples must also have the same number
 of elements.
 
-The [`int_tuple`](/mojo/stdlib/layout/int_tuple/) package provides a number of
+The [`int_tuple`](/mojo/kernels/layout/int_tuple/) package provides a number of
 functions for working with `IntTuple`. For example, it provides a
-[`congruent()`](/mojo/stdlib/layout/int_tuple/congruent) function for testing
+[`congruent()`](/mojo/kernels/layout/int_tuple/congruent) function for testing
 the congruency of two tuples.
 
 ### Modes
@@ -287,8 +287,8 @@ how different 1D and 2D coordinates map to the “natural” coordinates of the 
 ## Making layouts
 
 There are multiple ways to create layouts. The
-[`row_major()`](/mojo/stdlib/layout/layout/Layout/#row_major) and
-[`col_major()`](/mojo/stdlib/layout/layout/Layout/#col_major) static methods are
+[`row_major()`](/mojo/kernels/layout/layout/Layout/#row_major) and
+[`col_major()`](/mojo/kernels/layout/layout/Layout/#col_major) static methods are
 probably the simplest ways to create a layout. The `row_major()` method creates
 a generalized row-major layout: that is, the rightmost coordinate varies the
 fastest. The `col_major()` method creates a generalized column-major layout,
@@ -349,7 +349,7 @@ advance, but calculating the strides for a complicated layout isn’t always
 intuitive.
 
 An easier way to generate this layout is the
-[`tile_to_shape()`](/mojo/stdlib/layout/layout/tile_to_shape) function.
+[`tile_to_shape()`](/mojo/kernels/layout/layout/tile_to_shape) function.
 This takes a layout (representing the tile) and a final shape to tile to:
 
 ```mojo
@@ -378,7 +378,7 @@ Output:
 ```
 
 A variation on `tile_to_shape()` is the
-[`blocked_product()`](/mojo/stdlib/layout/layout/blocked_product) function. The
+[`blocked_product()`](/mojo/kernels/layout/layout/blocked_product) function. The
 main difference is that where `tile_to_shape()` takes an output *shape*,
 `blocked_product()` takes a *tiler* layout: essentially, every element in the
 tiler layout is replaced by a tile. The following example generates the same
@@ -433,7 +433,7 @@ more complex one.
 
 Finally, if you know the *shape* you want and the *order* in which you want to
 iterate through the dimensions, you can use the
-[`make_ordered_layout()`](/mojo/stdlib/layout/layout/make_ordered_layout)
+[`make_ordered_layout()`](/mojo/kernels/layout/layout/make_ordered_layout)
 function. For example, the following example is yet one more way to generate the
 previous tiled layout:
 

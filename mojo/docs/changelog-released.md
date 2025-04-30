@@ -48,7 +48,7 @@ release](/max/packages#nightly-release).
     [`gpu.warp`](/mojo/stdlib/gpu/warp/) to better reflect its purpose.
 
   - The [`gpu`](/mojo/stdlib/gpu) package API documentation has been expanded,
-    and API documentation for the [`layout`](/mojo/stdlib/layout) package is
+    and API documentation for the [`layout`](/mojo/kernels/layout) package is
     underway, beginning with core types, functions, and traits.
 
   See the [Standard library changes](#25-2-standard-library-changes) section of
@@ -408,7 +408,7 @@ release](/max/packages#nightly-release).
 - Several more packages are now documented.
   - [`compile`](/mojo/stdlib/compile) package
   - [`gpu`](/mojo/stdlib/gpu) package
-  - [`layout`](/mojo/stdlib/layout) package is underway, beginning with core
+  - [`layout`](/mojo/kernels/layout) package is underway, beginning with core
     types, functions, and traits
 
 - Added a new
@@ -676,10 +676,10 @@ Special thanks to our community contributors:
   and
   [`top_k.mojo`](https://github.com/modular/max/blob/main/examples/custom_ops/kernels/top_k.mojo).
 
-- The [`layout` package](/mojo/stdlib/layout/) includes APIs for working with
+- The [`layout` package](/mojo/kernels/layout/) includes APIs for working with
   _layouts_, which describe the organization of a tensor (for example, row-major
   or column-major layout), and the
-  [`LayoutTensor`](/mojo/stdlib/layout/layout_tensor/LayoutTensor) type, which
+  [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) type, which
   represents a tensor with a specified layout. The `layout` package can be used
   to build efficient tensor operations that run on a GPU.
 

@@ -10,4 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides APIs for registering MAX Graph operations.
+
+For registering [custom operations](/max/custom-ops/), use the
+[@compiler.register](/mojo/manual/decorators/compiler-register) decorator,
+instead.
+"""
 from .register import *
