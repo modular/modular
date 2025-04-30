@@ -53,6 +53,7 @@ fn test[
     num_keys: Int,
     ctx: DeviceContext,
     is_benchmark: Bool = False,
+    num_partitions: OptionalReg[Int] = None,
 ) raises:
     print("test_mha_causal_mask")
     print(
@@ -188,6 +189,7 @@ fn test[
             IdentityScoreMod(),
             scale,
             ctx,
+            num_partitions=num_partitions,
         )
 
     if is_benchmark:
@@ -393,6 +395,13 @@ def main():
             128,
             1,
         ](1, 11, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+        ](1, 11, ctx, num_partitions=OptionalReg[Int](2))
 
         test[
             DType.bfloat16,
