@@ -29,7 +29,7 @@ from max.pipelines.core import (
     TextResponse,
     TokenGenerator,
 )
-from max.profiler import traced
+from max.profiler import Trace, traced
 from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
@@ -57,34 +57,24 @@ class SchedulerOutput:
         batch_type: BatchType = BatchType.TokenGeneration,
         num_steps: int = 1,
         batch_inputs: dict[str, InputContext] = {},
-        prompt_tokens: Optional[int] = None,
-        tokens_to_encode: Optional[int] = None,
+        input_tokens: Optional[int] = None,
+        cached_tokens: Optional[int] = None,
     ):
         self.batch_type = batch_type
         self.num_steps = num_steps
         self.batch_inputs = batch_inputs
         self.batch_size = len(batch_inputs)
-        self.prompt_tokens = (
-            prompt_tokens if prompt_tokens is not None else len(batch_inputs)
+        self.input_tokens = (
+            input_tokens if input_tokens is not None else self.batch_size
         )
-        self.uncached_prompt_tokens = (
-            tokens_to_encode
-            if tokens_to_encode is not None
-            else len(batch_inputs)
-        )
-        self.cached_prompt_tokens = (
-            self.prompt_tokens - self.uncached_prompt_tokens
-        )
-
-    @property
-    def tokens_to_encode(self) -> int:
-        return self.uncached_prompt_tokens
+        self.cached_tokens = cached_tokens if cached_tokens is not None else 0
 
     @property
     def cache_hit_rate(self) -> float:
-        if self.prompt_tokens == 0:
+        total_tokens = self.input_tokens + self.cached_tokens
+        if total_tokens == 0:
             return 0.0
-        return self.cached_prompt_tokens / self.prompt_tokens
+        return self.cached_tokens / total_tokens
 
     @property
     def num_terminated(self) -> int:
@@ -97,8 +87,9 @@ class SchedulerOutput:
             f"SchedulerOutput("
             f"batch_type={self.batch_type.concise_name()}, "
             f"batch_size={self.batch_size}, "
-            f"tokens_to_encode={self.tokens_to_encode}, "
-            f"cache_hit_rate={self.cache_hit_rate})"
+            f"num_steps={self.num_steps}, "
+            f"input_tokens={self.input_tokens}, "
+            f"cache_hit_rate={self.cache_hit_rate:.2%})"
         )
 
 
@@ -284,7 +275,7 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def _maybe_chunk_prefill_request(
-        self, data: InputContext, tot_tokens_to_encode: int
+        self, data: InputContext, tot_input_tokens: int
     ) -> int:
         """Chunks a prefill request if it exceeds the target tokens per batch."""
         if not (
@@ -293,9 +284,9 @@ class TokenGenerationScheduler(Scheduler):
         ):
             return 0
 
-        tokens_to_encode = data.active_length
+        input_tokens = data.active_length
         if (
-            tot_tokens_to_encode + tokens_to_encode
+            tot_input_tokens + input_tokens
             <= self.scheduler_config.target_tokens_per_batch_ce
         ):
             return 0
@@ -303,12 +294,12 @@ class TokenGenerationScheduler(Scheduler):
         # We can only schedule part of the prompt.
         # We achieve this by decreasing the active_idx of the context class.
         token_num_diff = (
-            tot_tokens_to_encode
-            + tokens_to_encode
+            tot_input_tokens
+            + input_tokens
             - self.scheduler_config.target_tokens_per_batch_ce
         )
-        tokens_to_encode -= token_num_diff
-        assert tokens_to_encode > 0
+        input_tokens -= token_num_diff
+        assert input_tokens > 0
         assert token_num_diff > 0
         data.bump_token_indices(active_idx=-token_num_diff)
         return token_num_diff
@@ -336,15 +327,14 @@ class TokenGenerationScheduler(Scheduler):
             )
 
         ce_batch: dict[str, InputContext] = {}
-        tot_tokens_to_encode = 0
-        tot_prompt_tokens = 0
+        tot_input_tokens = 0
+        tot_cached_tokens = 0
 
         if self.scheduler_config.enable_in_flight_batching:
             if self.active_batch:
                 tg_batch = self._create_tg_batch()
                 ce_batch = tg_batch.batch_inputs
-                tot_tokens_to_encode = tg_batch.tokens_to_encode
-                tot_prompt_tokens = tg_batch.prompt_tokens
+                tot_input_tokens = tg_batch.input_tokens
             for data in ce_batch.values():
                 # active length should be 1 for TG requests
                 assert data.active_length == 1
@@ -352,7 +342,7 @@ class TokenGenerationScheduler(Scheduler):
         for _ in range(max_batch_size_to_create):
             if (
                 self.scheduler_config.target_tokens_per_batch_ce is not None
-                and tot_tokens_to_encode
+                and tot_input_tokens
                 >= self.scheduler_config.target_tokens_per_batch_ce
             ):
                 break
@@ -395,20 +385,21 @@ class TokenGenerationScheduler(Scheduler):
 
             # Chunk the request if it exceeds the token budget
             tokens_trimmed = self._maybe_chunk_prefill_request(
-                data, tot_tokens_to_encode
+                data, tot_input_tokens
             )
             orig_prompt_length -= tokens_trimmed
 
             # Schedule the requests as it fits in KVCache and token limit
-            tot_tokens_to_encode += data.active_length
-            tot_prompt_tokens += orig_prompt_length
+            input_tokens = data.active_length
+            tot_input_tokens += input_tokens
+            tot_cached_tokens += orig_prompt_length - input_tokens
             ce_batch[req_id] = data
 
         return SchedulerOutput(
             batch_type=BatchType.ContextEncoding,
             batch_inputs=ce_batch,
-            prompt_tokens=tot_prompt_tokens,
-            tokens_to_encode=tot_tokens_to_encode,
+            input_tokens=tot_input_tokens,
+            cached_tokens=tot_cached_tokens,
             num_steps=self.scheduler_config.max_forward_steps_ce,
         )
 
@@ -620,9 +611,9 @@ class TokenGenerationScheduler(Scheduler):
             return f"{tps:.1f} tok/s"
 
         # Format latency and throughput metrics
-        num_prompt_tokens = sch_output.prompt_tokens
+        num_input_tokens = sch_output.input_tokens
         prompt_throughput_str = to_human_readable_throughput(
-            num_prompt_tokens / batch_execution_time_s
+            num_input_tokens / batch_execution_time_s
         )
         generation_throughput_str = to_human_readable_throughput(
             num_generated_tokens / batch_execution_time_s
@@ -641,16 +632,16 @@ class TokenGenerationScheduler(Scheduler):
             else self.scheduler_config.target_tokens_per_batch_tg
         )
         target_tokens_str = f"{target_tokens}" if target_tokens else "INF"
-        prompt_tokens = sch_output.prompt_tokens
-        uncached_prompt_tokens = sch_output.uncached_prompt_tokens
+        input_tokens = sch_output.input_tokens
+        cached_tokens = sch_output.cached_tokens
 
         if self.paged_manager is None:
-            assert prompt_tokens == uncached_prompt_tokens
+            assert cached_tokens == 0
             logger.debug(
                 f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
                 f"Terminated: {terminated_reqs} reqs, "
                 f"Pending: {pending_reqs} reqs | "
-                f"Target: {prompt_tokens}/{target_tokens_str} toks | "
+                f"Target: {input_tokens}/{target_tokens_str} toks | "
                 f"Prompt Tput: {prompt_throughput_str}, "
                 f"Generation Tput: {generation_throughput_str} | "
                 f"Batch creation: {batch_creation_latency_str}, "
@@ -683,10 +674,8 @@ class TokenGenerationScheduler(Scheduler):
             self.paged_manager.free_blocks
         )
 
-        cache_hits = sch_output.cached_prompt_tokens
-        cache_misses = (
-            sch_output.prompt_tokens - sch_output.cached_prompt_tokens
-        )
+        cache_hits = sch_output.cached_tokens
+        cache_misses = sch_output.input_tokens
 
         self._fire_cache_metrics(
             used_blocks=used_blocks,
@@ -700,14 +689,14 @@ class TokenGenerationScheduler(Scheduler):
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
             f"Pending: {pending_reqs} reqs | "
-            f"Target: {uncached_prompt_tokens}/{target_tokens_str} toks | "
+            f"Target: {input_tokens}/{target_tokens_str} toks | "
             f"Prompt Tput: {prompt_throughput_str}, "
             f"Generation Tput: {generation_throughput_str} | "
             f"Batch creation: {batch_creation_latency_str}, "
             f"Execution: {batch_execution_latency_str} | "
             f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks, "
             f"{host_kvcache_str}"
-            f"Cache hit rate: {cache_hit_rate:.1%} of {prompt_tokens} toks | "
+            f"Cache hit rate: {cache_hit_rate:.1%} | "
             f"{blocks_copied_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
@@ -840,7 +829,6 @@ class TokenGenerationScheduler(Scheduler):
 
         self.response_q.put_nowait(responses)
 
-    @traced
     def _schedule_ce(self, sch_output: SchedulerOutput):
         batch_to_execute = sch_output.batch_inputs
 
@@ -865,7 +853,6 @@ class TokenGenerationScheduler(Scheduler):
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
 
-    @traced
     def _schedule_tg(self, sch_output: SchedulerOutput):
         batch_to_execute = sch_output.batch_inputs
 
@@ -883,11 +870,13 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, sch_output: SchedulerOutput):
         assert sch_output.batch_size > 0
-        if sch_output.batch_type == BatchType.ContextEncoding:
-            self._schedule_ce(sch_output)
-        else:
-            assert sch_output.batch_type == BatchType.TokenGeneration
-            self._schedule_tg(sch_output)
+
+        with Trace(f"_schedule({sch_output})"):
+            if sch_output.batch_type == BatchType.ContextEncoding:
+                self._schedule_ce(sch_output)
+            else:
+                assert sch_output.batch_type == BatchType.TokenGeneration
+                self._schedule_tg(sch_output)
 
 
 @dataclass
