@@ -1716,6 +1716,12 @@ struct CPython:
         self._inc_total_rc()
         return r
 
+    fn PyBool_Check(self, obj: PyObjectPtr) -> Bool:
+        """[Reference](
+        https://docs.python.org/3/c-api/bool.html#c.PyBool_Check).
+        """
+        return self.lib.call["PyBool_Check", c_int](obj) != 0
+
     # ===-------------------------------------------------------------------===#
     # Integer Objects
     # ===-------------------------------------------------------------------===#

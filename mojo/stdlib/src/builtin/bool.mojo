@@ -18,7 +18,8 @@ These are Mojo built-ins, so you don't need to import them.
 from collections import List, Set
 from hashlib._hasher import _Hasher
 
-from python import PythonObject, PythonConvertible
+from python import PythonObject, PythonConvertible, Python
+from python._bindings import ConvertibleFromPython
 
 from utils._select import _select_register_value
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -111,6 +112,7 @@ struct Bool(
     ImplicitlyIntable,
     Indexer,
     PythonConvertible,
+    ConvertibleFromPython,
     Representable,
     Stringable,
     Writable,
@@ -543,6 +545,19 @@ struct Bool(
             A PythonObject representing the value.
         """
         return PythonObject(self)
+
+    @doc_private
+    fn __init__(out self, obj: PythonObject) raises:
+        """Construct a `Bool` from a PythonObject.
+
+        Args:
+            obj: The Python object to convert from.
+
+        Raises:
+            An error if conversion failed.
+        """
+        # TODO: return obj.__bool__() when it no longer fails silently.
+        return Python.is_true(obj)
 
 
 # ===----------------------------------------------------------------------=== #

@@ -1091,7 +1091,7 @@ struct Int(
 
     @doc_private
     fn __init__(out self, obj: PythonObject) raises:
-        """Construct an `Int` from a Python integer value.
+        """Construct an `Int` from a PythonObject.
 
         Args:
             obj: The Python object to convert from.

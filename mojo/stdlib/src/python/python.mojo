@@ -613,13 +613,13 @@ struct Python:
 
     @staticmethod
     fn is_true(obj: PythonObject) raises -> Bool:
-        """Check if the PythonObject is considered true.
+        """Check if the PythonObject is truthy.
 
         Args:
             obj: The PythonObject to check.
 
         Returns:
-            True if the PythonObject is considered true and False otherwise.
+            True if the PythonObject is truthy and False otherwise.
 
         Raises:
             If the boolean value of the PythonObject cannot be determined.
