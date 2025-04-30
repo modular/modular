@@ -55,7 +55,7 @@ fn numpy_to_tensor[dtype: DType](array: PythonObject) raises -> Tensor[dtype]:
     shape = List[Int]()
     array_shape = array.shape
     for dim in array_shape:
-        shape.append(dim)
+        shape.append(Int(dim))
 
     out = Tensor[dtype](shape)
     memcpy_from_numpy(array, out)
@@ -150,7 +150,7 @@ def main():
 
         predicted = argmax(probs)[0]
 
-        correct += Int(predicted == label)
+        correct += Int(predicted == Int(label))
         total += 1
 
     print(
