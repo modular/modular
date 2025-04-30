@@ -26,6 +26,7 @@ from .attention import (
     NaiveAttentionWithRope,
     RaggedAttention,
 )
+from .clamp import clamp
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv1DV1, Conv2DV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d

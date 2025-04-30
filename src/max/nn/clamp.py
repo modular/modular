@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import TensorValue, ops
 
 
 def clamp(x: TensorValue, min: float, max: float) -> TensorValue:
     """Clamps values in `x` to `[min, max]`"""
     return ops.min(
-        ops.max(x, ops.constant(min, x.dtype, device=DeviceRef.CPU())),
-        ops.constant(max, x.dtype, device=DeviceRef.CPU()),
+        ops.max(x, ops.constant(min, x.dtype, device=x.type.device)),
+        ops.constant(max, x.dtype, device=x.type.device),
     )
