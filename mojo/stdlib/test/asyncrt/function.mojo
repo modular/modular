@@ -19,21 +19,53 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
 
-alias T = DType.float32
+from builtin.device_passable import DevicePassable
+
+alias T = DType.float64
 alias S = Scalar[T]
+
+
+@register_passable("trivial")
+struct TwoS:
+    var s0: S
+    var s1: S
+
+    fn __init__(out self, s: S):
+        self.s0 = 1
+        self.s1 = s
+
+
+struct OneS(DevicePassable):
+    alias device_type: AnyTrivialRegType = TwoS
+
+    fn to_device_type(self) -> Self.device_type:
+        return TwoS(self.s)
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "OneS"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return "TwoS"
+
+    var s: S
+
+    fn __init__(out self, s: S):
+        self.s = s
 
 
 fn vec_func(
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
     out: UnsafePointer[S],
-    s: S,
+    s: TwoS,
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + s
+    out[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
 
 
 fn test_function_unchecked(ctx: DeviceContext) raises:
@@ -44,6 +76,7 @@ fn test_function_unchecked(ctx: DeviceContext) raises:
     alias block_dim = 32
 
     var scalar: S = 2
+    var twos = TwoS(scalar)
 
     # Initialize the input and outputs with known values.
     var in0 = ctx.enqueue_create_buffer[T](length)
@@ -58,7 +91,7 @@ fn test_function_unchecked(ctx: DeviceContext) raises:
         in0,
         in1,
         out,
-        scalar + 1,
+        twos,
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
@@ -88,6 +121,7 @@ fn test_function_checked(ctx: DeviceContext) raises:
     alias block_dim = 32
 
     var scalar: S = 2
+    var ones = OneS(scalar)
 
     # Initialize the input and outputs with known values.
     var in0 = ctx.enqueue_create_buffer[T](length)
@@ -104,7 +138,7 @@ fn test_function_checked(ctx: DeviceContext) raises:
         in0,
         in1,
         out,
-        scalar + 1,
+        ones,
         length,
         grid_dim=(length // block_dim),
         block_dim=(block_dim),

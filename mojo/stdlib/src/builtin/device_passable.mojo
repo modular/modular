@@ -18,6 +18,14 @@ trait DevicePassable:
     alias device_type: AnyTrivialRegType
     """Indicate the type being used on accelerator devices."""
 
+    fn to_device_type(self) -> device_type:
+        """Convert the host type object to a device_type.
+
+        Returns:
+            A `device_type`.
+        """
+        ...
+
     @staticmethod
     fn get_type_name() -> String:
         """

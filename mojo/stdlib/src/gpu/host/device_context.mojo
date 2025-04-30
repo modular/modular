@@ -21,6 +21,7 @@ accelerator, and compile and execute functions on the accelerator."""
 
 from collections import List, Optional
 from collections.string import StaticString, StringSlice
+from math import align_up
 from pathlib import Path
 from sys import env_get_int, env_get_string, external_call, is_defined, sizeof
 from sys.ffi import c_char
@@ -39,7 +40,7 @@ from gpu.host._compile import (
     _ptxas_compile,
     _to_sass,
 )
-from memory import stack_allocation
+from memory import stack_allocation, memcpy
 
 from utils import Variant
 from utils._serialize import _serialize_elements, _serialize_elements_compact
@@ -703,6 +704,16 @@ struct DeviceBuffer[type: DType](
     # Implementation of `DevicePassable`
     alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
     """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
+
+    fn to_device_type(self) -> Self.device_type:
+        """Device type mapping from DeviceBuffer to the device's UnsafePointer.
+
+        Returns:
+            The `UnsafePointer` allocated on the device.
+        """
+        # TODO: Allow the low-level DeviceContext implementation to intercept
+        # these translations.
+        return self._device_ptr
 
     @staticmethod
     fn get_type_name() -> String:
@@ -1978,16 +1989,24 @@ struct DeviceFunction[
     ) raises:
         alias num_args = len(VariadicList(Ts))
 
+        var translated_arg_offsets = stack_allocation[num_args, Int]()
+
+        # Validate that all actual arguments do remap to the declared device
+        # type in the kernel.
         @parameter
         if declared_arg_types:
             alias declared_num_args = len(
                 VariadicList(declared_arg_types.value())
             )
-            alias actual_num_args = len(VariadicList(Ts))
             constrained[
-                declared_num_args == actual_num_args,
+                declared_num_args == num_args,
                 "Wrong number of arguments to enqueue",
             ]()
+
+            # For each argument determine the size of the device type and
+            # calculate the offset into a contiguous memory area which will
+            # be used to remap the passed arguments into the device types.
+            var tmp_arg_offset = 0
 
             @parameter
             for i in range(num_args):
@@ -2029,6 +2048,10 @@ struct DeviceFunction[
                         actual_arg_type.get_device_type_name(),
                         ")",
                     ]()
+                translated_arg_offsets[i] = tmp_arg_offset
+                tmp_arg_offset += align_up(
+                    sizeof[actual_arg_type.device_type](), 8
+                )
 
         var num_captures = self._func_impl.num_captures
         alias populate = __type_of(self._func_impl).populate
@@ -2038,6 +2061,27 @@ struct DeviceFunction[
             num_captures_static + num_args, UnsafePointer[NoneType]
         ]()
 
+        # We need the total byte size of arguments as a compile time constant,
+        # so we break out the calculation into a function executed at compile
+        # time.
+        @parameter
+        fn calculate_args_size() -> Int:
+            var tmp_args_size = 0
+
+            @parameter
+            for i in range(num_args):
+                alias actual_arg_type = Ts[i]
+                tmp_args_size += align_up(
+                    sizeof[actual_arg_type.device_type](), 8
+                )
+            return tmp_args_size
+
+        alias args_size = calculate_args_size()
+
+        # Space to store the arguments to the kernel that have been converted
+        # from host type to device type.
+        var translated_args = stack_allocation[args_size, Byte]()
+
         if num_captures > num_captures_static:
             dense_args_addrs = UnsafePointer[UnsafePointer[NoneType]].alloc(
                 num_captures + num_args
@@ -2045,7 +2089,19 @@ struct DeviceFunction[
 
         @parameter
         for i in range(num_args):
-            var first_word_addr = UnsafePointer(to=args[i])
+            alias actual_arg_type = Ts[i]
+            var translated_arg = args[i].to_device_type()
+            var translated_arg_ptr = UnsafePointer(to=translated_arg).bitcast[
+                Byte
+            ]()
+            var first_word_addr = UnsafePointer(
+                to=translated_args[translated_arg_offsets[i]]
+            )
+            memcpy(
+                first_word_addr,
+                translated_arg_ptr,
+                sizeof[actual_arg_type.device_type](),
+            )
             dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
 
         if cluster_dim:
