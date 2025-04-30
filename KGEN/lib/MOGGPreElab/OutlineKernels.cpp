@@ -394,6 +394,7 @@ public:
       // If this is an elementwise kernel we are expecting to see a call to
       // the elementwise generator.
       KGEN::CallOp elementwiseOp = nullptr;
+      bool isElemwiseOutFuncOverload = false;
 
       // Search for the elementwise kernel.
       for (auto call : kernel.getOps<KGEN::CallOp>()) {
@@ -408,6 +409,9 @@ public:
 
           func->setAttr(outlinedAttrName, builder.getUnitAttr());
           elementwiseOp = call;
+
+          if (func->hasAttr(MOGG_INTRINSIC_FOR_EACH_OUT_FUNC_OVERLOAD))
+            isElemwiseOutFuncOverload = true;
         }
       }
 
@@ -439,13 +443,27 @@ public:
         // If we have 13 params then we using the overload of foreach that
         // accepts out_func as a param.
         // Annotate it so we cane make use of it in fuse-in-out-lambdas pass.
-        if (elementwiseOp.getParamValues().size() == 13) {
-          TypedAttr elemwiseOutLambda = elementwiseOp.getParamValues()[3];
-          ParamDeclRefAttr asOutParam =
-              cast<ParamDeclRefAttr>(elemwiseOutLambda);
+        if (isElemwiseOutFuncOverload) {
+          ParamDeclRefAttr outFuncParam = nullptr;
+          // Find the out_func parameter by name
+          for (TypedAttr paramAttr : elementwiseOp.getParamValues()) {
+            if (auto paramRef = dyn_cast<ParamDeclRefAttr>(paramAttr)) {
+              if (paramRef.getName().strref().starts_with(
+                      MOGG_FOR_EACH_OUT_FUNC_PARAM)) {
+                outFuncParam = paramRef;
+                break;
+              }
+            }
+          }
+
+          ASSERT_STREAM(outFuncParam,
+                        << "Expected to find parameter named '"
+                        << MOGG_FOR_EACH_OUT_FUNC_PARAM
+                        << "' when isElemwiseOutFuncOverload is true");
+
           attrsToAdd.push_back(NamedAttribute{
               builder.getStringAttr(kMOGGElementwiseOutputLambda),
-              asOutParam.getName()});
+              outFuncParam.getName()});
         }
 
         kernel->setAttrs(attrsToAdd);

@@ -51,6 +51,9 @@ constexpr StringLiteral MOGG_INTRINSIC_VIEW_KERNEL = "mogg.view_kernel";
 
 /// MOGG Intrinsic for the for_each function
 constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH = "mogg.for_each";
+constexpr StringLiteral MOGG_INTRINSIC_FOR_EACH_OUT_FUNC_OVERLOAD =
+    "mogg.for_each.out_func";
+constexpr StringLiteral MOGG_FOR_EACH_OUT_FUNC_PARAM = "out_func";
 
 /// MOGG Intrinsic for a singleton for_each function that is used to drive
 /// elemwise kernel execution
