@@ -6567,8 +6567,8 @@ fn copy[
         var dst_frag = dst.distribute[thread_layout, swizzle=swizzle](
             worker_idx
         )
-        alias M = dst_frag.shape[0]()
-        alias N = dst_frag.shape[1]()
+        alias M = product(dst_frag.layout.shape[0])
+        alias N = product(dst_frag.layout.shape[1])
 
         constrained[
             dst_frag.layout.rank() == 2,
