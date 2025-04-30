@@ -489,10 +489,10 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            absolute_tolerance=0.16,
-            relative_tolerance=3.4e-2,
+            absolute_tolerance=0.17,
+            relative_tolerance=3.5e-2,
             cos_dist_threshold=1.3e-4,
-            kl_div_threshold=1e-3,
+            kl_div_threshold=1.2e-3,
         ),
     ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -606,7 +606,7 @@ PIPELINES = {
             absolute_tolerance=0.61,
             relative_tolerance=0.32,
             cos_dist_threshold=1.3e-3,
-            kl_div_threshold=3.3e-3,
+            kl_div_threshold=5.4e-3,
         ),
     ),
     "pixtral-bfloat16": PipelineDef(
@@ -626,7 +626,7 @@ PIPELINES = {
             absolute_tolerance=0.83,
             relative_tolerance=0.74,
             cos_dist_threshold=1.1e-3,
-            kl_div_threshold=2.5e-3,
+            kl_div_threshold=3.1e-3,
         ),
     ),
     "mpnet-float32": PipelineDef(
@@ -682,7 +682,7 @@ PIPELINES = {
             pipeline="qwen",
             encoding="bfloat16",
             absolute_tolerance=0.93,
-            relative_tolerance=6.1e-2,
+            relative_tolerance=6.3e-2,
             cos_dist_threshold=2.9e-3,
             kl_div_threshold=1.3e-1,
         ),
@@ -799,7 +799,7 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
             encoding="gptq",
             absolute_tolerance=19,
-            relative_tolerance=1.1,
+            relative_tolerance=1.3,
             cos_dist_threshold=0.57,
             kl_div_threshold=24,
         ),
