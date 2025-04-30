@@ -120,7 +120,6 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
-        "A100",
         "gpu",
         "no-sandbox",
         "requires-network",
