@@ -524,7 +524,8 @@ getUnboundParametersForDeviceContextPtrList(LIT::StructType structType,
 static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
   Builder builder{funcOp.getContext()};
 
-  if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp))
+  if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
+      !isViewMaterializeFunc(funcOp))
     return;
 
   // Look through ref types to get underlying decl ref type if needed.
