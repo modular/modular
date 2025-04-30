@@ -65,10 +65,7 @@ modular_cc_test(
     size = "small",
     srcs = ["GPUDeviceContextTest.cpp"],
     gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "A100",
-        "gpu",
-    ],
+    tags = ["gpu"],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -84,10 +81,7 @@ modular_cc_test(
     size = "small",
     srcs = ["CUDADeviceContextTest.cpp"],
     gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "A100",
-        "gpu",
-    ],
+    tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//AsyncRT:DeviceContextImpl",
