@@ -210,11 +210,11 @@ struct _StridedRange(Sized, ReversibleRange, _StridedIterable):
 
 
 @always_inline
-fn range[type: Intable](end: type) -> _ZeroStartingRange:
+fn range[T: Indexer, //](end: T) -> _ZeroStartingRange:
     """Constructs a [0; end) Range.
 
     Parameters:
-        type: The type of the end value.
+        T: The type of the end value.
 
     Args:
         end: The end of the range.
@@ -222,15 +222,15 @@ fn range[type: Intable](end: type) -> _ZeroStartingRange:
     Returns:
         The constructed range.
     """
-    return _ZeroStartingRange(Int(end))
+    return _ZeroStartingRange(index(end))
 
 
 @always_inline
-fn range[type: IntableRaising](end: type) raises -> _ZeroStartingRange:
+fn range[T: IntableRaising, //](end: T) raises -> _ZeroStartingRange:
     """Constructs a [0; end) Range.
 
     Parameters:
-        type: The type of the end value.
+        T: The type of the end value.
 
     Args:
         end: The end of the range.
@@ -261,12 +261,12 @@ fn range(end: PythonObject) raises -> _ZeroStartingRange:
 
 
 @always_inline
-fn range[t0: Intable, t1: Intable](start: t0, end: t1) -> _SequentialRange:
+fn range[T0: Indexer, T1: Indexer, //](start: T0, end: T1) -> _SequentialRange:
     """Constructs a [start; end) Range.
 
     Parameters:
-        t0: The type of the start value.
-        t1: The type of the end value.
+        T0: The type of the start value.
+        T1: The type of the end value.
 
     Args:
         start: The start of the range.
@@ -275,18 +275,18 @@ fn range[t0: Intable, t1: Intable](start: t0, end: t1) -> _SequentialRange:
     Returns:
         The constructed range.
     """
-    return _SequentialRange(Int(start), Int(end))
+    return _SequentialRange(index(start), index(end))
 
 
 @always_inline
 fn range[
-    t0: IntableRaising, t1: IntableRaising
-](start: t0, end: t1) raises -> _SequentialRange:
+    T0: IntableRaising, T1: IntableRaising
+](start: T0, end: T1) raises -> _SequentialRange:
     """Constructs a [start; end) Range.
 
     Parameters:
-        t0: The type of the start value.
-        t1: The type of the end value.
+        T0: The type of the start value.
+        T1: The type of the end value.
 
     Args:
         start: The start of the range.
@@ -320,14 +320,14 @@ fn range(start: PythonObject, end: PythonObject) raises -> _SequentialRange:
 
 @always_inline
 fn range[
-    t0: Indexer, t1: Indexer, t2: Indexer
-](start: t0, end: t1, step: t2) -> _StridedRange:
+    T0: Indexer, T1: Indexer, T2: Indexer, //
+](start: T0, end: T1, step: T2) -> _StridedRange:
     """Constructs a [start; end) Range with a given step.
 
     Parameters:
-        t0: The type of the start value.
-        t1: The type of the end value.
-        t2: The type of the step value.
+        T0: The type of the start value.
+        T1: The type of the end value.
+        T2: The type of the step value.
 
     Args:
         start: The start of the range.
@@ -342,14 +342,14 @@ fn range[
 
 @always_inline
 fn range[
-    t0: IntableRaising, t1: IntableRaising, t2: IntableRaising
-](start: t0, end: t1, step: t2) raises -> _StridedRange:
+    T0: IntableRaising, T1: IntableRaising, T2: IntableRaising, //
+](start: T0, end: T1, step: T2) raises -> _StridedRange:
     """Constructs a [start; end) Range with a given step.
 
     Parameters:
-        t0: The type of the start value.
-        t1: The type of the end value.
-        t2: The type of the step value.
+        T0: The type of the start value.
+        T1: The type of the end value.
+        T2: The type of the step value.
 
     Args:
         start: The start of the range.
