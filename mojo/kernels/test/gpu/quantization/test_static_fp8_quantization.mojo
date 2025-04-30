@@ -26,7 +26,7 @@ from internal_utils import (
     zero,
 )
 from testing import assert_equal
-from linalg.fp8_quantization import static_scaled_fp8_quantization
+from linalg.fp8_quantization import quantize_static_scaled_fp8
 
 
 fn test_scaled_fp8_quant[
@@ -53,7 +53,7 @@ fn test_scaled_fp8_quant[
     ctx.enqueue_copy(in_device.buffer, in_host.tensor.data)
     ctx.enqueue_copy(out_device.buffer, out_host.tensor.data)
 
-    static_scaled_fp8_quantization[out_dtype, in_dtype](
+    quantize_static_scaled_fp8[out_dtype, in_dtype](
         out_device.tensor, in_device.tensor, scale, ctx
     )
 
