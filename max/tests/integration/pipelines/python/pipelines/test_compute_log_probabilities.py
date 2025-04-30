@@ -6,15 +6,16 @@
 
 import numpy as np
 from max.pipelines.core import LogProbabilities
-from max.pipelines.lib import (
+from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities,
+    compute_log_probabilities_ragged,
     log_softmax,
 )
 
 
 def _check_log_probabilities_equal(
     actual: LogProbabilities, expected: LogProbabilities
-):
+) -> None:
     assert actual.token_log_probabilities == expected.token_log_probabilities
     assert actual.top_log_probabilities == expected.top_log_probabilities
 
@@ -79,7 +80,7 @@ def test_compute_log_probabilities() -> None:
     _check_log_probabilities_equal(output[0], expected_log_probs)
 
 
-def test_compute_log_probabilities_batch():
+def test_compute_log_probabilities_batch() -> None:
     batch1_logits = np.array(
         [
             [0.5, 0.25, 0.7, 0.3, 1, 0.05],  # top index: 4
@@ -162,3 +163,37 @@ def test_compute_log_probabilities_batch():
             ],
         ),
     )
+
+
+def test_compute_log_probabilities_ragged() -> None:
+    output = compute_log_probabilities_ragged(
+        input_row_offsets=np.array([0, 3, 5, 8]),
+        logits=np.array(
+            [
+                [10, 11],  # batch 0 token 0
+                [11, 12],  # batch 0 token 1
+                [12, 13],  # batch 0 token 2
+                [20, 21],  # batch 1 token 0
+                [21, 22],  # batch 1 token 1
+                [30, 31],  # batch 2 token 0
+                [31, 32],  # batch 2 token 1
+                [32, 33],  # batch 2 token 2
+            ]
+        ),
+        tokens=np.array([1, 1, 0, 1, 0, 1, 0, 1], dtype=np.int32),
+        sampled_tokens=np.array([0, 1, 0], dtype=np.int32),
+        batch_top_n=[1, 0, 1],
+        batch_echo=[True, False, False],
+    )
+    assert len(output) == 3
+    assert output[0] is not None
+    assert len(output[0].token_log_probabilities) == 3
+    assert len(output[0].top_log_probabilities) == 3
+    assert output[0].top_log_probabilities[0].keys() == {1}
+    assert output[0].top_log_probabilities[1].keys() == {0, 1}
+    assert output[0].top_log_probabilities[2].keys() == {0, 1}
+    assert output[1] is None
+    assert output[2] is not None
+    assert len(output[2].token_log_probabilities) == 1
+    assert len(output[2].top_log_probabilities) == 1
+    assert output[2].top_log_probabilities[0].keys() == {0, 1}
