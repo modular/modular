@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoTooling/CodeComplete.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -174,7 +175,10 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
         // TODO: Include information about overloads here and just handle multi
         // decls in general.
-        addCompletionForOp(name, childDecl);
+        addCompletionForOp(name, childDecl, [](Operation *op) {
+          // Witness tables are not user-facing.
+          return !isa<ConformanceOp>(op);
+        });
       }
     };
 

@@ -21,6 +21,7 @@
 
 namespace M::KGEN {
 class ParamDeclAttr;
+class ConformanceOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -256,6 +257,7 @@ private:
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
+  ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a

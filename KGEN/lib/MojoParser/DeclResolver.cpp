@@ -17,6 +17,7 @@
 #include "ParserBase.h"
 #include "Traits.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -577,7 +578,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
           checkEndOfBodyCursor(lexer);
         })
-        .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
+        .Case<PackageOp, ConformanceOp>(
+            [&](auto op) { (void)resolveBody(op, decl); })
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {

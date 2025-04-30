@@ -315,7 +315,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
-    HasParent<"ModuleOp">, Symbol, SingleBlock, NoTerminator,
+    HasParent<"ModuleOp">, Symbol, SymbolTable, SingleBlock, NoTerminator,
     KGEN_InstantiatedOpInterface]> {
   let summary = "Concretized struct instance.";
   let description = [{
@@ -358,6 +358,11 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     Its body contains the conformance table entries the map trait requirements to
     the struct type's definitions.
 
+    The optional `traitRef` parameter is a reference to the trait being
+    conformed to.
+
+    TODO: Support references to parent conformance tables.
+
     Example:
 
     ```mlir
@@ -371,7 +376,8 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name);
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       OptionalAttr<SymbolRefAttr>:$traitRef);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = "$sym_name $body attr-dict-with-keyword";

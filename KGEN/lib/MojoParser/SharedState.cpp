@@ -1640,12 +1640,20 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             if constexpr (std::is_same_v<decltype(op), PackageOp>)
               impl->packageStates[op] = &moduleState;
           })
+          .Case([&](ConformanceOp op) {
+            // Witness tables are considered signature-resolved from the start
+            // since there's nothing else to resolve for its "signature". (see
+            // CALROC for more).
+            ASTDecl &decl = addDeclForOp(op, op.getSymNameAttr());
+            decl.resolvedness = DeclResolvedness::signature;
+          })
           .Default([&](Operation *op) { deferredOps.push_back(op); });
     }
   }
 
   // Resolve references within the deferred operations. These don't have
-  // corresponding decls, so we manually resolve them now.
+  // corresponding decls, so we manually resolve them now. Walk in pre-order so
+  // that nested ops get visited too.
   for (Operation *op : deferredOps)
     if (op->walk(resolveSingleOp).wasInterrupted())
       return failure();

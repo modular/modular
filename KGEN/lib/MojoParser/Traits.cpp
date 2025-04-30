@@ -16,6 +16,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
@@ -72,8 +73,8 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
 }
 
 /// Allow synthesizing default implementations of certain special functions.
-static void synthesizeSpecialFunction(ASTDecl &structDecl,
-                                      SpecialFunctionKind kind) {
+static ASTDecl *synthesizeSpecialFunction(ASTDecl &structDecl,
+                                          SpecialFunctionKind kind) {
   auto &shared = structDecl.getShared();
   StructEmitter gen(structDecl.getShared());
   auto selfRefType =
@@ -85,18 +86,18 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
   // as actually having this method so that destructors et al. are not
   // needlessly emitted.
   FnOp func;
+  ASTDecl *decl = nullptr;
   if (kind == SpecialFunctionKind::kDel) {
     // Synthesize an empty destructor. Don't do anything special, because we
     // want check origins to insert a call to the real destructor here, if it
     // has one.
-    auto [dtor, _] = gen.synthesizeMethodInStruct(
+    std::tie(func, decl) = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedMem,
         PogListAttr::get(ctx, {empty}, {PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
         FnEffects(), "_thunk");
-    if (!dtor)
-      return;
-    func = dtor;
+    if (!func)
+      return nullptr;
   } else {
     // Determine the name and argument conventions of the function.
     ArgConvention existingConv;
@@ -115,16 +116,15 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
     bool isMut = existingConv == ArgConvention::OwnedMem;
     existingType =
         structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
-    auto [ctor, _] = gen.synthesizeMethodInStruct(
+    std::tie(func, decl) = gen.synthesizeMethodInStruct(
         name, {existingType, selfRefType},
         {existingConv, ArgConvention::ByRefResult},
         PogListAttr::get(ctx, {empty, empty},
                          {PassingKind::PosOnly, PassingKind::Implicit}),
         shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
         FnEffects(), "_thunk");
-    if (!ctor)
-      return;
-    func = ctor;
+    if (!func)
+      return nullptr;
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
     Value value;
@@ -138,11 +138,14 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
   auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
   b.create<KGEN::ReturnOp>(
       Value(b.create<ParamConstantOp>(b.getAttr<NoneAttr>())));
+  return decl;
 }
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
-                                     std::optional<InflightDiag> &diag) {
+                                     std::optional<InflightDiag> &diag,
+                                     WitnessTable &witnessTable) {
   auto &shared = structDecl.getShared();
+  MLIRContext *ctx = structDecl.getContext();
   auto structDeclOp = cast<StructDeclOp>(structDecl);
 
   // TODO(MOCO-1468): Pull out into a helper method.
@@ -246,7 +249,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                   : nullptr);
     if (!result && emitError)
       allMatchFound = false;
-
+    if (result)
+      witnessTable.emplace_back(name, result.get());
     return success();
   };
 
@@ -297,6 +301,10 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       return success();
     }
 
+    ValueDest dest(traitAliasType, EC_AliasValue);
+    CValue convertedValue = emitter.emitImplicitConversionToType(
+        {initializerExpr, synthNode}, traitAliasType, dest);
+    witnessTable.emplace_back(name, convertedValue.getIfPValue().get());
     return success();
   };
 
@@ -352,8 +360,20 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
   if (hadErrors)
     return failure();
-  for (SpecialFunctionKind kind : specialFns)
-    synthesizeSpecialFunction(structDecl, kind);
+  for (SpecialFunctionKind kind : specialFns) {
+    if (ASTDecl *decl = synthesizeSpecialFunction(structDecl, kind)) {
+      ASTType selfType = structDecl.getTypeDeclSelf();
+      SmallVector<TypedAttr> bindings(selfType.getParamBindings());
+      FnOp func = cast<FnOp>(decl);
+      for (auto param : func.getInputParams())
+        bindings.push_back(ParamDeclRefAttr::get(param));
+
+      witnessTable.emplace_back(
+          StringAttr::get(ctx, SpecialFunctionInfo::get(kind).name),
+          func.getBoundSymbolRef(ParameterExprArrayAttr::get(ctx, bindings)));
+    }
+  }
+
   return success();
 }
 
@@ -372,15 +392,17 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
     providedCanonTrait = structOp.getCanonicalTrait();
   } else if (auto traitOp = dyn_cast<TraitDeclOp>(*this)) {
     providedCanonTrait = traitOp.getCanonicalTrait();
+    if (providedCanonTrait == trait)
+      return true;
   } else if (TraitType canonTraitType =
                  dyn_cast_or_null<TraitType>(getIfTypeValue())) {
     providedCanonTrait = canonTraitType;
+    if (providedCanonTrait == trait)
+      return true;
   } else {
     llvm_unreachable("Invalid decl kind");
   }
 
-  if (providedCanonTrait == trait)
-    return true;
   ArrayRef<SymbolRefAttr> providedSymbols = providedCanonTrait.getSymbols();
 
   // Check the provided symbols against the required symbols by the target
@@ -391,14 +413,38 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
   for (SymbolRefAttr symbol : providedSymbols)
     requiredSymbols.erase(symbol);
 
-  if (requiredSymbols.empty())
+  if (requiredSymbols.empty()) {
+    // If this is a struct decl, we need to verify explicit conformances by
+    // fully resolving each conformance decl (see CALROC for more).
+    if (auto structOp = dyn_cast<StructDeclOp>(*this)) {
+      SmallVector<SymbolRefAttr> fullRequiredSymbols(trait.getSymbols());
+      canonicalizeTraitCompositionSymbols(shared, fullRequiredSymbols);
+      for (SymbolRefAttr symbol : fullRequiredSymbols) {
+        ArrayRef<ASTDecl *> witnessTables =
+            lookupInCurrentScope(getFlattenedSymbolName(symbol));
+        if (witnessTables.empty()) {
+          // There is only one way this can happen: this conformance check
+          // occurred while parsing the body of the struct (a self-referential
+          // type-value). Treat this as a success, because eventually all
+          // conformances on this struct will be resolved & checked.
+          continue;
+        }
+        assert(witnessTables.size() == 1);
+        if (failed(shared.declResolver->resolveBody(*witnessTables.front(),
+                                                    getLoc())))
+          return false;
+      }
+    }
+
     return true;
+  }
 
   // Only structs can implicitly conform to traits.
   auto structOp = dyn_cast<StructDeclOp>(*this);
   if (!structOp)
     return false;
 
+  // TODO(MOCO-1788): Deprecate the following logic for implicit conformance.
   // Check if the type *implicitly* conforms to the trait.
   DenseSet<SymbolRefAttr> newSymbols;
   newSymbols.insert(providedSymbols.begin(), providedSymbols.end());
@@ -406,16 +452,48 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
   SmallVector<SymbolRefAttr> fullRequiredSymbols(requiredSymbols.begin(),
                                                  requiredSymbols.end());
   canonicalizeTraitCompositionSymbols(shared, fullRequiredSymbols);
-  for (SymbolRefAttr symbol : fullRequiredSymbols) {
-    if (newSymbols.contains(symbol))
-      continue;
 
-    if (failed(verifyConformance(*this, symbol, diag)))
+  // Check each conformance manually, instead of going through ConformanceOp
+  // ASTDecl resolution. This way a conformance failure is not an error.
+  DenseMap<SymbolRefAttr, WitnessTable> witnessTableCollection;
+  for (SymbolRefAttr symbol : fullRequiredSymbols) {
+    if (newSymbols.contains(symbol)) {
+      // This is an already provided symbol. Check explicit conformance.
+      ArrayRef<ASTDecl *> witnessTables =
+          lookupInCurrentScope(getFlattenedSymbolName(symbol));
+      if (witnessTables.empty())
+        continue;
+      assert(witnessTables.size() == 1);
+      if (failed(shared.declResolver->resolveBody(*witnessTables.front(),
+                                                  getLoc())))
+        return false;
+      continue;
+    }
+
+    if (failed(verifyConformance(*this, symbol, diag,
+                                 witnessTableCollection[symbol])))
       return false;
     newSymbols.insert(symbol);
   }
 
-  // If we succeeded, remember this so we don't check again.
+  // If we succeeded, build the fully-populated conformance tables.
+  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
+      structOp.getLoc(), &structOp.getFields().front());
+  for (auto &[symbol, witnesses] : witnessTableCollection) {
+    StringAttr name = b.getStringAttr(getFlattenedSymbolName(symbol));
+    ConformanceOp witnessTable = b.create<ConformanceOp>(name, symbol);
+    witnessTable.getBody().push_back(new Block());
+
+    OpBuilder::InsertionGuard guard(b);
+    b.setInsertionPointToStart(&witnessTable.getBody().front());
+    for (auto &[name, value] : witnesses)
+      b.create<WitnessOp>(name, value);
+
+    shared.declResolver->addFullyResolvedDecl(witnessTable, name, getLoc(),
+                                              this);
+  }
+
+  // Update canonical traits so we never check these again.
   SmallVector<SymbolRefAttr> newSymbolsVec(newSymbols.begin(),
                                            newSymbols.end());
   // No need to pull in ancestors again as `newSymbols` and

@@ -193,6 +193,10 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
         // Mark nested functions as live, which also recurses on them.
         if (auto func = dyn_cast<FnOp>(op); func && func.getParamDeclAttr())
           markLive(func);
+        // Witness tables & witness entries are part of the struct type spec, so
+        // they need to be live for elaboration time generics.
+        if (isa<ConformanceOp, WitnessOp>(op))
+          markLive(op);
         if (op->hasTrait<OpTrait::SymbolTable>())
           return WalkResult::skip();
       }
