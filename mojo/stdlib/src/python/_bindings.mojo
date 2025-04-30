@@ -65,12 +65,6 @@ alias Typed_initproc = fn (
 ) -> c_int
 
 
-trait Pythonable(Defaultable, Representable):
-    """Represents a Mojo type that can be used from Python."""
-
-    pass
-
-
 struct PyMojoObject[T: AnyType]:
     """Storage backing a PyObject* wrapping a Mojo value."""
 
@@ -79,7 +73,7 @@ struct PyMojoObject[T: AnyType]:
 
 
 fn python_type_object[
-    T: Pythonable
+    T: Defaultable & Representable
 ](
     type_name: StaticString,
     owned methods: List[PyMethodDef] = List[PyMethodDef](),
@@ -153,7 +147,7 @@ fn python_type_object[
 # This function creates that wrapper function, and returns a pointer pointer to
 # it.
 fn empty_tp_init_wrapper[
-    T: Pythonable
+    T: Defaultable & Representable
 ](
     py_self: PyObjectPtr,
     args: TypedPythonObject["Tuple"],
@@ -189,7 +183,7 @@ fn empty_tp_init_wrapper[
         return -1
 
 
-fn tp_dealloc_wrapper[T: Pythonable](py_self: PyObjectPtr):
+fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
     var self_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[T]()
 
     # TODO(MSTDL-633):
@@ -199,7 +193,9 @@ fn tp_dealloc_wrapper[T: Pythonable](py_self: PyObjectPtr):
     self_ptr.destroy_pointee()
 
 
-fn tp_repr_wrapper[T: Pythonable](py_self: PyObjectPtr) -> PyObjectPtr:
+fn tp_repr_wrapper[
+    T: Defaultable & Representable
+](py_self: PyObjectPtr) -> PyObjectPtr:
     var self_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[T]()
 
     var repr_str: String = repr(self_ptr[])
@@ -249,7 +245,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Pythonable
+        T: Defaultable & Representable
     ](mut self, type_name: StaticString) -> ref [
         self.type_builders
     ] PythonTypeBuilder:
@@ -370,7 +366,9 @@ struct PythonTypeBuilder:
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__[T: Pythonable](out self, type_name: StaticString):
+    fn __init__[
+        T: Defaultable & Representable
+    ](out self, type_name: StaticString):
         """Construct a new builder for a Python type binding.
 
         Parameters:

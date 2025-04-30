@@ -21,7 +21,6 @@ from python.python_object import PyFunctionRaising
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
-    Pythonable,
     PythonModuleBuilder,
     check_argument_type,
     check_arguments_arity,
@@ -59,7 +58,7 @@ fn fail_initialization(owned err: Error) -> PythonObject:
 
 
 fn gen_pytype_wrapper[
-    T: Pythonable,
+    T: Defaultable & Representable,
     name: StaticString,
 ](module: PythonObject) raises:
     # TODO(MOCO-1301): Add support for member method generation.

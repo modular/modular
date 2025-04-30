@@ -36,7 +36,7 @@ from sys.ffi import (
 )
 
 from memory import UnsafePointer
-from python._bindings import PyMojoObject, Pythonable, Typed_initproc
+from python._bindings import PyMojoObject, Typed_initproc
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
