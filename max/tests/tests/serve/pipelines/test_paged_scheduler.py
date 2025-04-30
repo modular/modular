@@ -238,7 +238,7 @@ class BatchInfo:
     batch_size: int
     terminated: int
     num_steps: int
-    tokens_to_encode: int
+    input_tokens: int
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, BatchInfo):
@@ -251,13 +251,13 @@ class BatchInfo:
             self.batch_size,
             self.terminated,
             self.num_steps,
-            self.tokens_to_encode,
+            self.input_tokens,
         ) == (
             other.batch_type,
             other.batch_size,
             other.terminated,
             other.num_steps,
-            other.tokens_to_encode,
+            other.input_tokens,
         )
 
     @classmethod
@@ -271,7 +271,7 @@ class BatchInfo:
             f"{self.batch_size}, "
             f"{self.terminated}, "
             f"{self.num_steps}, "
-            f"{self.tokens_to_encode})"
+            f"{self.input_tokens})"
         )
 
 
@@ -281,7 +281,7 @@ def create_batch_and_execute(
     batch_to_execute = scheduler._create_batch_to_execute()
     batch_size = batch_to_execute.batch_size
     batch_type = batch_to_execute.batch_type
-    tokens_to_encode = batch_to_execute.tokens_to_encode
+    input_tokens = batch_to_execute.input_tokens
     num_steps = batch_to_execute.num_steps
     if batch_to_execute.batch_size == 0:
         return BatchInfo.empty()
@@ -300,7 +300,7 @@ def create_batch_and_execute(
         batch_size=batch_size,
         terminated=terminated_reqs,
         num_steps=num_steps,
-        tokens_to_encode=tokens_to_encode,
+        input_tokens=input_tokens,
     )
 
 
@@ -382,7 +382,7 @@ def test_tg_request_exceed_max_seq_len(num_reqs):
         enqueue_request(scheduler, prompt_len, max_seq_len=max_seq_len)
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, num_reqs, 0, 1, num_reqs * prompt_len),
         BatchInfo(TG, num_reqs, num_reqs, 8, num_reqs * 1),
         BatchInfo.empty(),
@@ -413,7 +413,7 @@ def test_basic_chunked_prefill():
     )
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         # chunked prefill causes some requests to appear to be "terminated"
         BatchInfo(CE, 1, 1, 1, 1000),
         BatchInfo(CE, 1, 1, 1, 1000),
@@ -456,7 +456,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
     # We will schedule 8192 / 500 = 16.38 CE req per batch due to target_tokens_per_batch_ce.
     # This is rounded up to 17 due to chunked prefill.
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 18, 1, 1, 8192),
@@ -501,7 +501,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
     # Hence, we will schedule approx 8192 / 116 = 70.62 CE req per batch.
     # This is rounded up to 71 due to chunked prefill.
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 71, 1, 1, 8192),
         BatchInfo(CE, 14, 0, 1, 1552),
@@ -543,7 +543,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
     # This is rounded up to 28 due to chunked prefill.
     # The first batch doesn't get cache hits so it is smaller.
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 28, 1, 1, 8192),
         BatchInfo(CE, 28, 1, 1, 8192),
@@ -586,7 +586,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
     # Hence, we will schedule approx 8192 / 436 = 18.79 CE req per batch.
     # This is rounded up to 19 due to chunked prefill.
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 20, 1, 1, 8192),
         BatchInfo(CE, 19, 1, 1, 8192),
@@ -632,7 +632,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_b
         )
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         #
         # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks.
         BatchInfo(CE, 5, 0, 1, 500),
@@ -688,7 +688,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         )
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         #
         # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks
         BatchInfo(CE, 5, 0, 1, 500),
@@ -758,7 +758,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
     # With inflight batching, the CE batches become bigger and bigger since they
     # now include TG requests.
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 33, 1, 1, 8192),
         BatchInfo(CE, 50, 1, 1, 8192),
@@ -796,7 +796,7 @@ def test_tg_preemption_basic():
         )
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 2, 0, 1, 20),  # Schedule req 0 and 1
         BatchInfo(TG, 2, 0, 10, 2),
         BatchInfo(TG, 2, 0, 10, 2),
@@ -850,7 +850,7 @@ def test_oom():
         run_until_completion(scheduler, output_list=actual)
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 2, 0, 1, 20),  # Schedule req 0 and 1
         BatchInfo(TG, 2, 0, 10, 2),
         BatchInfo(TG, 2, 0, 10, 2),
@@ -914,7 +914,7 @@ def test_dont_oom_during_cow():
     actual = run_until_completion(scheduler)
 
     expected = [
-        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 1, 0, 1, 100),
         BatchInfo(TG, 1, 0, 10, 1),
         BatchInfo(TG, 1, 1, 6, 1),
@@ -970,7 +970,7 @@ def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
         # When paging to host is enabled, our effective cache size increases so
         # we can get cache hits on the latter CE iterations.
         expected = [
-            # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+            # batch_type, batch_size, terminated, num_steps, input_tokens
             BatchInfo(CE, 1, 0, 1, 550),
             BatchInfo(TG, 1, 1, 3, 1),
             # d2h copies. device blocks evicted and then offloaded to cpu!
@@ -990,7 +990,7 @@ def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
         # When paging to host is disabled, we can't get cache hits because all
         # of the GPU blocks are evicted and discarded.
         expected = [
-            # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+            # batch_type, batch_size, terminated, num_steps, input_tokens
             BatchInfo(CE, 1, 0, 1, 550),
             BatchInfo(TG, 1, 1, 3, 1),
             # device blocks evicted but not offloaded :(
