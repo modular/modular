@@ -149,7 +149,7 @@ struct PDLLevel:
     @always_inline
     fn __init__(out self):
         """Initialize the PDL level to OFF."""
-        self = PDLLevel(env_get_int["PDL_LEVEL", 1]())
+        self = PDLLevel(env_get_int["PDL_LEVEL", 0]())
 
     @always_inline
     fn __init__(out self, level: Int):
