@@ -51,7 +51,7 @@ from .tokenizer import (
 )
 
 __all__ = [
-    "compute_log_probabilities",
+    "compute_log_probabilities",  # Deprecated: Please import from log_probabilities directly
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",
@@ -60,7 +60,7 @@ __all__ = [
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
-    "log_softmax",
+    "log_softmax",  # Deprecated: Please import from log_probabilities directly
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",

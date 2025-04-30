@@ -47,7 +47,10 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
+)
+from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities,
+    compute_log_probabilities_ragged,
 )
 from max.profiler import traced
 from transformers import AutoConfig
@@ -752,8 +755,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         assert isinstance(model_inputs, Llama3Inputs)
         llama3_inputs: Llama3Inputs = model_inputs
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits.to_numpy()
 
         sampled_tokens = next_tokens.to_numpy()
         tokens = llama3_inputs.tokens
@@ -765,30 +766,22 @@ class LlamaModelBase(PipelineModel[TextContext]):
             if isinstance(input_row_offsets, Tensor):
                 input_row_offsets = input_row_offsets.to_numpy()
 
-            def _get_logits_and_samples(
-                batch_index: int, echo: bool
-            ) -> tuple[np.ndarray, np.ndarray]:
-                if echo:
-                    start_offset = input_row_offsets[batch_index]
-                    end_offset = input_row_offsets[batch_index + 1]
-                    batch_logits = logits[start_offset:end_offset]
-                    samples = np.concatenate(
-                        (
-                            tokens[start_offset + 1 : end_offset],
-                            sampled_tokens[batch_index : batch_index + 1],
-                        )
-                    )
-                else:
-                    batch_logits = next_token_logits[
-                        batch_index : batch_index + 1
-                    ]
-                    samples = sampled_tokens[batch_index : batch_index + 1]
-                return batch_logits, samples
+            return compute_log_probabilities_ragged(
+                input_row_offsets=input_row_offsets,
+                logits=logits,
+                tokens=tokens,
+                sampled_tokens=sampled_tokens,
+                batch_top_n=batch_top_n,
+                batch_echo=batch_echo,
+            )
 
         else:
             # Handle batched inputs. Llama pads them to the right so the seq
             # lengths can be computed by finding the first 0 token.
             seq_lens = np.sum(tokens > 0, axis=1)
+
+            assert model_outputs.next_token_logits is not None
+            next_token_logits = model_outputs.next_token_logits.to_numpy()
 
             def _get_logits_and_samples(
                 batch_index: int, echo: bool
@@ -811,9 +804,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     samples = sampled_tokens[batch_index : batch_index + 1]
                 return batch_logits, samples
 
-        return compute_log_probabilities(
-            _get_logits_and_samples, batch_top_n, batch_echo
-        )
+            return compute_log_probabilities(
+                _get_logits_and_samples, batch_top_n, batch_echo
+            )
 
 
 class Llama3Model(LlamaModelBase):

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Callable
 
 import numpy as np
@@ -55,8 +56,8 @@ def compute_log_probabilities(
     get_logits_and_samples: Callable[
         [int, bool], (tuple[np.ndarray, np.ndarray] | None)
     ],
-    batch_top_n: list[int],
-    batch_echo: list[bool],
+    batch_top_n: Sequence[int],
+    batch_echo: Sequence[bool],
 ) -> list[LogProbabilities | None]:
     """Computes the log probabilities.
 
@@ -130,3 +131,54 @@ def compute_log_probabilities(
         )
 
     return log_probabilities
+
+
+def compute_log_probabilities_ragged(
+    *,
+    input_row_offsets: np.ndarray,
+    logits: np.ndarray,
+    tokens: np.ndarray,
+    sampled_tokens: np.ndarray,
+    batch_top_n: Sequence[int],
+    batch_echo: Sequence[bool],
+) -> list[LogProbabilities | None]:
+    """Computes the log probabilities for ragged model outputs.
+
+    Args:
+        input_row_offsets: Token offsets into token-indexed buffers, by batch
+            index.  Should have 1 more element than there are batches (batch n
+            is token indices [input_row_offsets[n], input_row_offsets[n+1])).
+        logits: (tokens, vocab_dim) tensor full of tensor logits.  Token
+            dimension mapped to batches using input_row_offsets.
+        sampled_tokens: (batch_dim,) tensor of sampled token per batch
+        batch_top_n: Number of top log probabilities to return per input in
+            the batch. For any element where `top_n == 0`, the
+            LogProbabilities is skipped.
+        batch_echo: Whether to include input tokens in the returned log
+            probabilities.
+
+    Returns:
+        Computed log probabilities for each item in the batch.
+    """
+
+    def get_logits_and_samples(
+        batch_index: int, echo: bool
+    ) -> tuple[np.ndarray, np.ndarray]:
+        start_offset = input_row_offsets[batch_index]
+        end_offset = input_row_offsets[batch_index + 1]
+        if echo:
+            batch_logits = logits[start_offset:end_offset]
+            samples = np.concatenate(
+                (
+                    tokens[start_offset + 1 : end_offset],
+                    sampled_tokens[batch_index : batch_index + 1],
+                )
+            )
+        else:
+            batch_logits = logits[end_offset - 1 : end_offset]
+            samples = sampled_tokens[batch_index : batch_index + 1]
+        return batch_logits, samples
+
+    return compute_log_probabilities(
+        get_logits_and_samples, batch_top_n, batch_echo
+    )
