@@ -168,8 +168,8 @@ class TestMojoPythonInterop(unittest.TestCase):
                     "TypeError: add_to_int() expected argument at position"
                     " 1 to be instance of (or convertible to) Mojo 'Int';"
                     " got 'str'."
-                    " (Note: attempted conversion failed due to: an integer"
-                    " is required)"
+                    " (Note: attempted conversion failed due to: invalid"
+                    " literal for int() with base 10: 'foo')"
                 ),
             ),
         )

@@ -114,7 +114,7 @@ fn mojo_block_hasher(
     ] = arg0.unchecked_cast_to_mojo_value[PyArrayObject[DType.int32]]()
 
     # Parse block size
-    var block_size = Int.try_from_python(py_args[1])
+    var block_size = Int(py_args[1])
 
     # Perfoming hashing
     var results = _mojo_block_hasher(py_array_object_ptr, block_size)
