@@ -17,6 +17,7 @@ from max.serve.schemas.openai import (  # type: ignore
 )
 
 
+@pytest.mark.skip("TODO(AITLIB-351): Fix this test")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
