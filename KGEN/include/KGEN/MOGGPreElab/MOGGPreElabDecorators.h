@@ -60,6 +60,11 @@ constexpr StringLiteral MOGG_FOR_EACH_OUT_FUNC_PARAM = "out_func";
 constexpr StringLiteral MOGG_INTRINSIC_ELEMWISE_FOR_EACH =
     "mogg.elemwise_for_each";
 
+/// MOGG Intrinsic for a singleton function that is used to materialize a view
+/// tensor.
+constexpr StringLiteral MOGG_INTRINSIC_VIEW_MATERIALIZE =
+    "mogg.view_materialize";
+
 /// MOGG Instrinsic for the input / output lambda implementations.
 constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
     "mogg.dps_input_fusion_hook";
@@ -197,6 +202,10 @@ inline bool isShapeFunc(Operation *gen) {
 
 inline bool isUpdateViewFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kMOGGUpdateViewFunctionLabel);
+}
+
+inline bool isViewMaterializeFunc(Operation *gen) {
+  return gen != nullptr && gen->hasAttr(MOGG_INTRINSIC_VIEW_MATERIALIZE);
 }
 
 inline bool isElemwiseForeachFunc(Operation *gen) {
