@@ -22,6 +22,7 @@ what we publish.
   Packages that are open sourced now include:
   - `kv_cache`
   - `quantization`
+  - `nvml`
 
 ### Language changes
 
