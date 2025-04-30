@@ -119,11 +119,23 @@ kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> =
     data: typevalue<T>,
     next: typevalue<#kgen.genref<@LinkedList<:type T, :!kgen.param<T> x>>>
   )>
+{
+  kgen.conformance @Boolable {
+    kgen.witness "__bool__" : (!kgen.struct<(T, pointer<none>)>) -> i1 = @"LinkedList::__bool__(::LinkedList)"<:type T, :!kgen.param<T> x>
+  }
+}
+
+kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>(%arg0: !kgen.struct<(T, pointer<none>)>) -> i1 {
+  %index1 = kgen.param.constant : i1 = <1>
+  kgen.return %index1 : i1
+}
 
 
-// CHECK: a = #kgen.genref<@LinkedList<:type index, 3>>
 "some.op"() {
-  a = #kgen.genref<@LinkedList<:type index, 3>>
+  // CHECK: a = #kgen.genref<@LinkedList<:type index, 3>>
+  a = #kgen.genref<@LinkedList<:type index, 3>>,
+  // CHECK-SAME: b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, "Boolable", "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>
+  b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, "Boolable", "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>
 } : () -> ()
 
 

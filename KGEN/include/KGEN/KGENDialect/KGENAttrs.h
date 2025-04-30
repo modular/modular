@@ -35,6 +35,7 @@ class TargetType;
 class VariadicType;
 class VariadicAttr;
 class VTableAttr;
+class ConformanceOp;
 } // namespace KGEN
 } // namespace M
 

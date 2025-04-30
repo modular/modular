@@ -307,6 +307,50 @@ TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue,
 bool UpcastAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// GetWitnessAttr
+//===----------------------------------------------------------------------===//
+
+bool GetWitnessAttr::isConstant() const { return false; }
+
+TypeInstanceRefAttr GetWitnessAttr::getTypeInstanceRef() {
+  if (auto typeRef = ::dyn_cast<TypeInstanceRefAttr>(getTypeValue()))
+    return typeRef;
+
+  auto typeParam = ::dyn_cast<TypeParamAttr>(getTypeValue());
+  if (!typeParam)
+    return {};
+
+  auto typeValueType = ::dyn_cast<TypeValueType>(typeParam.getTypeValue());
+  if (!typeValueType)
+    return {};
+
+  return ::dyn_cast<TypeInstanceRefAttr>(typeValueType.getTypeValue());
+}
+
+TypedAttr GetWitnessAttr::simplify(ConformanceOp witnessTable,
+                                   ArrayRef<ParamDeclAttr> paramDecls,
+                                   ArrayRef<TypedAttr> paramValues) {
+  // If we have param values, we need to run the replacer on the entry type.
+  std::optional<ParameterEvaluator> evaluator;
+  if (!paramDecls.empty())
+    evaluator.emplace(paramDecls, paramValues);
+
+  for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
+    if (entry.getName().getValue() != getWitnessName().getValue())
+      continue;
+
+    Type entryType = entry.getValue().getType();
+    if (evaluator)
+      entryType = evaluator->getReboundType(entryType);
+
+    if (entryType == getType())
+      return evaluator ? evaluator->getReboundAttribute(entry.getValue())
+                       : entry.getValue();
+  }
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
