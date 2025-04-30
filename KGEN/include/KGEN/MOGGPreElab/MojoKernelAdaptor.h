@@ -128,8 +128,7 @@ struct MojoKernelOperandAdaptor {
 
   MojoKernelOperandAdaptor(std::optional<uint64_t> positionInFunction,
                            StringRef typeName, ArrayAttr argumentSourceNames,
-                           ArrayAttr argsIoSpecs, uint64_t offset = 0,
-                           bool isByRefResult = false);
+                           ArrayAttr argsIoSpecs, bool isByRefResult = false);
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
@@ -261,7 +260,7 @@ struct MojoKernelFunctionAdaptor {
         outputResult = MojoKernelOperandAdaptor(
             endOfInputArguments + numberOfArgumentsRelatedToByrefResult - 1,
             argTypeName.strref(), argumentSourceNames, argsIoSpecsAttr,
-            true /* isByRefResult */);
+            /*isByRefResult=*/true);
       }
     } else if (resultTypeName) {
       // Providing no mutable or fused tensor positions because they don't make
