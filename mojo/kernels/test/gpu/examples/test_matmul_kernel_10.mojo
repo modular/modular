@@ -435,6 +435,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host)
 
     var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
         c_device._unsafe_ptr()
@@ -497,6 +498,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
+    ctx.enqueue_copy(c_device, c_host_naive)
 
     @parameter
     @always_inline
