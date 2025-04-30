@@ -266,7 +266,7 @@ struct TypedPythonObject[type_hint: StaticString](
 
         # TODO(MSTDL-911): Avoid unnecessary owned reference counts when
         #   returning read-only PythonObject values.
-        return PythonObject.from_borrowed_ptr(item)
+        return PythonObject(from_borrowed_ptr=item)
 
 
 @register_passable
@@ -316,8 +316,7 @@ struct PythonObject(
         """
         self.py_object = ptr
 
-    @staticmethod
-    fn from_borrowed_ptr(borrowed_ptr: PyObjectPtr) -> Self:
+    fn __init__(out self, *, from_borrowed_ptr: PyObjectPtr):
         """Initialize this object from a read-only reference-counted Python
         object pointer.
 
@@ -336,7 +335,7 @@ struct PythonObject(
         pointer returned by 'Borrowed reference'-type objects.
 
         Args:
-            borrowed_ptr: A read-only reference counted pointer to a Python
+            from_borrowed_ptr: A read-only reference counted pointer to a Python
                 object.
 
         Returns:
@@ -348,9 +347,9 @@ struct PythonObject(
         #   We were passed a Python 'read-only reference', so for it to be
         #   safe to store this reference, we must increment the reference
         #   count to convert this to a 'strong reference'.
-        cpython.Py_IncRef(borrowed_ptr)
+        cpython.Py_IncRef(from_borrowed_ptr)
 
-        return PythonObject(borrowed_ptr)
+        self = PythonObject(from_borrowed_ptr)
 
     @implicit
     fn __init__(out self, owned typed_obj: TypedPythonObject[_]):

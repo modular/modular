@@ -131,6 +131,9 @@ to Mojo-Python interoperability:
   `PythonObject` struct no longer implements the following traits:
   `ImplicitlyBoolable`, `ImplicitlyIntable`.
 
+- `PythonObject.from_borrowed_ptr` has been removed in favor of a constructor
+  with a keyword-only argument.
+
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
 

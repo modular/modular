@@ -136,11 +136,11 @@ struct Python:
         """
         var cpython = Self().cpython()
         # PyImport_AddModule returns a read-only reference.
-        var module = PythonObject.from_borrowed_ptr(
-            cpython.PyImport_AddModule(name)
+        var module = PythonObject(
+            from_borrowed_ptr=cpython.PyImport_AddModule(name)
         )
-        var dict_obj = PythonObject.from_borrowed_ptr(
-            cpython.PyModule_GetDict(module.py_object)
+        var dict_obj = PythonObject(
+            from_borrowed_ptr=cpython.PyModule_GetDict(module.py_object)
         )
         if file:
             # We compile the code as provided and execute in the module
