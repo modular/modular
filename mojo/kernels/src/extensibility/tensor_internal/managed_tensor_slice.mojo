@@ -1174,6 +1174,7 @@ fn foreach[
 
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
+@__mogg_intrinsic_attr("mogg.view_materialize")
 @doc_private
 @no_inline
 fn view_copy_impl[
@@ -1183,7 +1184,7 @@ fn view_copy_impl[
     *,
     target: StaticString,
     _synchronous: Bool,
-    trace_name: StaticString = "mogg.view_copy_impl",
+    _trace_name: StaticString = "mogg.view_copy_impl",
 ](
     z: ManagedTensorSlice[mut=True, type=type, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
@@ -1204,7 +1205,7 @@ fn view_copy_impl[
         func,
         target=target,
         _synchronous=_synchronous,
-        _trace_name=trace_name,
+        _trace_name=_trace_name,
     ](z, ctx)
 
 
