@@ -1105,9 +1105,9 @@ struct Int(
             obj: The Python object to convert from.
 
         Raises:
-            An error if conversion failed.
+            An error if the conversion failed.
         """
-        self = Int(Python.py_long_as_ssize_t(Python.py_number_long(obj)))
+        self = Int(Python.py_long_as_ssize_t(obj.__int__()))
 
     @always_inline
     fn __ceildiv__(self, denominator: Self) -> Self:

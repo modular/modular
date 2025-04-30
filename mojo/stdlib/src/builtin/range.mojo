@@ -25,9 +25,7 @@ from builtin._stubs import (
     _StridedIterable,
     _UIntStridedIterable,
 )
-from python import (
-    PythonObject,
-)  # TODO: remove this and fixup downstream imports
+from python import PythonObject
 
 from utils._select import _select_register_value as select
 
@@ -239,8 +237,27 @@ fn range[type: IntableRaising](end: type) raises -> _ZeroStartingRange:
 
     Returns:
         The constructed range.
+
+    Raises:
+        An error if the conversion to an `Int` failed.
     """
     return _ZeroStartingRange(Int(end))
+
+
+@always_inline
+fn range(end: PythonObject) raises -> _ZeroStartingRange:
+    """Constructs a [0; end) Range from a Python `int`.
+
+    Args:
+        end: The end of the range as a Python `int`.
+
+    Returns:
+        The constructed range.
+
+    Raises:
+        An error if converting `end` to an `Int` failed.
+    """
+    return range(Int(end))
 
 
 @always_inline
@@ -277,8 +294,28 @@ fn range[
 
     Returns:
         The constructed range.
+
+    Raises:
+        An error if converting `start` or `end` to an `Int` failed.
     """
     return _SequentialRange(Int(start), Int(end))
+
+
+@always_inline
+fn range(start: PythonObject, end: PythonObject) raises -> _SequentialRange:
+    """Constructs a [start; end) Range from Python `int` objects.
+
+    Args:
+        start: The start of the range as a Python `int`.
+        end: The end of the range as a Python `int`.
+
+    Returns:
+        The constructed range.
+
+    Raises:
+        An error if converting `start` or `end` to an `Int` failed.
+    """
+    return range(Int(start), Int(end))
 
 
 @always_inline
@@ -321,8 +358,32 @@ fn range[
 
     Returns:
         The constructed range.
+
+    Raises:
+        An error if converting `start`, `end`, or `step` to an `Int` failed.
     """
     return _StridedRange(Int(start), Int(end), Int(step))
+
+
+@always_inline
+fn range(
+    start: PythonObject, end: PythonObject, step: PythonObject
+) raises -> _StridedRange:
+    """Constructs a [start; end) Range from Python `int` objects with a given
+    step.
+
+    Args:
+        start: The start of the range as a Python `int`.
+        end: The end of the range as a Python `int`.
+        step: The step for the range as a Python `int`.
+
+    Returns:
+        The constructed range.
+
+    Raises:
+        An error if converting `start`, `end`, or `step` to an `Int` failed.
+    """
+    return range(Int(start), Int(end), Int(step))
 
 
 # ===----------------------------------------------------------------------=== #

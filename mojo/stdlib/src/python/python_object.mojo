@@ -271,7 +271,6 @@ struct TypedPythonObject[type_hint: StaticString](
 
 @register_passable
 struct PythonObject(
-    Indexer,
     KeyElement,
     SizedRaising,
     Stringable,
@@ -1394,26 +1393,16 @@ struct PythonObject(
         """
         hasher.update(self.__hash__())
 
-    fn __index__(self) -> __mlir_type.index:
-        """Returns an index representation of the object.
+    fn __int__(self) raises -> PythonObject:
+        """Convert the PythonObject to a Python `int`.
 
         Returns:
-            An index value that represents this object.
-        """
-        return self.__int__().value
+            A Python `int` object.
 
-    fn __int__(self) -> Int:
-        """Returns an integral representation of the object.
-
-        Returns:
-            An integral value that represents this object.
+        Raises:
+            An error if the conversion failed.
         """
-        try:
-            return Int(self)
-        except e:
-            # TODO: make this function raise when we can raise parametrically.
-            debug_assert(False, "object cannot be converted to an integer")
-            return -1
+        return Python.py_number_long(self)
 
     fn __float__(self) -> Float64:
         """Returns a float representation of the object.
