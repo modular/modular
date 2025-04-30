@@ -111,7 +111,7 @@ fn case_mojo_raise(
 
 
 @value
-struct Person:
+struct Person(Defaultable, Representable):
     var name: String
     var age: Int
 
@@ -119,7 +119,6 @@ struct Person:
         self.name = "John Smith"
         self.age = 123
 
-    # Required by Pythonable
     fn __repr__(self) -> String:
         return String(
             "Person(",
