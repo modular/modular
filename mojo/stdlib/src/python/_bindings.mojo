@@ -581,6 +581,15 @@ fn check_arguments_arity(
             )
 
 
+fn _get_type_name(obj: PythonObject) -> String:
+    var cpython = Python().cpython()
+
+    var actual_type = cpython.Py_TYPE(obj.unsafe_as_py_object_ptr())
+    var actual_type_name = PythonObject(cpython.PyType_GetName(actual_type))
+
+    return String(actual_type_name)
+
+
 fn check_argument_type[
     T: AnyType
 ](
@@ -602,7 +611,7 @@ fn check_argument_type[
                 "TypeError: {}() expected Mojo '{}' type argument, got '{}'",
                 func_name,
                 type_name_id,
-                obj._get_type_name(),
+                _get_type_name(obj),
             )
         )
 

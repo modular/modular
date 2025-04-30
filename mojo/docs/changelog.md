@@ -137,6 +137,8 @@ to Mojo-Python interoperability:
 - The `list` and `tuple` factory methods have been moved from `PythonObject` to
   the `Python` struct.
 
+- The deprecated `PythonObject.to_float64` method has been removed.
+
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
 

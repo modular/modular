@@ -25,6 +25,7 @@ from python._bindings import (  # Imported for use by the compiler
     check_argument_type,
     check_arguments_arity,
     python_type_object,
+    _get_type_name,
 )
 from python._cpython import (
     CPython,
@@ -149,7 +150,7 @@ fn _try_convert_arg[
                 func_name,
                 argidx,
                 type_name_id,
-                py_args[argidx]._get_type_name(),
+                _get_type_name(py_args[argidx]),
                 convert_err,
             )
         )
