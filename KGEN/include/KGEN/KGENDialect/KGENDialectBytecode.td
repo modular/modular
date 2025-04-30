@@ -239,6 +239,13 @@ def UpcastAttr : DialectAttribute<(attr
   ConcreteAttribute<"VTableAttr">:$vTable
 )>;
 
+def GetWitnessAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  StringAttr:$traitName,
+  StringAttr:$witnessName,
+  Type:$type
+)>;
+
 def VariantAttr : DialectAttribute<(attr
   TypedAttr:$value,
   VarInt:$index,
@@ -282,6 +289,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     WrappedStructExtractAttr,
     PackAttr,
     UpcastAttr,
+    GetWitnessAttr,
     VariantAttr,
     EnvAttr,
     WrappedParamOperatorAttr,

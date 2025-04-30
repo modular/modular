@@ -445,6 +445,60 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
 }
 
 //===----------------------------------------------------------------------===//
+// GetWitnessAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
+    [EvaluatableAttrInterface]> {
+  let summary = "Get a witness entry from a witness table.";
+  let description = [{
+    The `#kgen.get_witness` attribute is used to lookup a witness entry
+    from a witness table given a type value and a trait conformance.
+
+    Since type value definitions are symbols, this attribute can only be folded
+    when a global symbol table is provided.
+
+    Example:
+
+    ```mlir
+    #kgen.get_witness<#Int, "Boolable", "__bool__">
+      : !kgen.generator<("self": !Int) -> i1>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "StringAttr":$traitName,
+    "StringAttr":$witnessName,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+  let assemblyFormat = "`<` $typeValue `,` $traitName `,` $witnessName `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+                                        "StringAttr":$traitName,
+                                        "StringAttr":$witnessName,
+                                        "Type":$type), [{
+      return get(type.getContext(), typeValue, traitName, witnessName, type);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Extract the type instance reference if the type value field is already
+    /// resolved.
+    TypeInstanceRefAttr getTypeInstanceRef();
+
+    /// Fold the attribute given the symbol table of the struct.
+    /// Returns a null attribute if the witness entry was not found.
+    /// An optional list of param decls & values can be provided to concretize
+    /// the witness entry for comparison.
+    TypedAttr simplify(ConformanceOp witnessTable,
+                       ArrayRef<ParamDeclAttr> paramDecls = {},
+                       ArrayRef<TypedAttr> paramValues = {});
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 
