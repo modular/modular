@@ -70,6 +70,7 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.dual_gemm import swishGLU
+from linalg.fp8_quantization import quantize_static_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -154,6 +155,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     k_matmul_ragged_paged,
     kv_matmul_ragged_continuous_batching,
     unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized,
@@ -6485,6 +6487,45 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     )
 
 
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
+    type: DType,
+    weight_type: DType,
+    scale_type: DType,
+    target: StaticString,
+    group_size: OptionalReg[Int] = None,
+    has_zp: OptionalReg[Bool] = None,
+](
+    hidden_state: ManagedTensorSlice[type=type, rank=2],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    weight: ManagedTensorSlice[type=weight_type, rank=2],
+    input_scale: ManagedTensorSlice[type=scale_type, rank=1],
+    weight_scale: ManagedTensorSlice[type=scale_type, rank=1],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        *_,
+    ],
+    layer_idx: UInt32,
+    output: ManagedTensorSlice[type=type, rank=2],
+    ctx: DeviceContextPtr,
+) raises:
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
+        managed_tensor_slice_to_ndbuffer(hidden_state),
+        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        managed_tensor_slice_to_ndbuffer(weight),
+        managed_tensor_slice_to_ndbuffer(input_scale),
+        managed_tensor_slice_to_ndbuffer(weight_scale),
+        kv_collection,
+        layer_idx,
+        managed_tensor_slice_to_ndbuffer(output),
+        ctx,
+    )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged_fa3_fallback")
 struct Struct_fused_qkv_matmul_ragged_paged_fa3_fallback:
     @always_inline
@@ -6637,6 +6678,47 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
             layer_idx,
             output,
             bias,
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale")
+struct Struct_fused_qkv_matmul_padded_ragged_scale:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        scale_type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
+        input_scale: InputTensor[type=scale_type, rank=1],
+        weight_scale: InputTensor[type=scale_type, rank=1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            kv_collection,
+            layer_idx,
+            output,
             ctx,
         )
 
@@ -9126,3 +9208,32 @@ struct ArgSort[*, ascending: Bool]:
             argsort[ascending=ascending, target=target](
                 indecies_ndbuffer, input_ndbuffer, cuda_ctx
             )
+
+
+# ===-----------------------------------------------------------------------===#
+# Float8
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.quantize_static_scaled_float8")
+struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        input_type: DType,
+        scale_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[type = DType.float8_e4m3fn, rank=2],
+        input: InputTensor[type=input_type, rank=2],
+        scale: Scalar[scale_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+        var scale_loaded = scale.cast[DType.float32]()
+        quantize_static_scaled_fp8[is_scale_inverted=is_scale_inverted](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(input),
+            scale_loaded,
+            ctx.get_device_context(),
+        )
