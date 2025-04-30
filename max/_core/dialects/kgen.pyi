@@ -566,6 +566,11 @@ class ConformanceOp(max._core.Operation):
     Its body contains the conformance table entries the map trait requirements to
     the struct type's definitions.
 
+    The optional `traitRef` parameter is a reference to the trait being
+    conformed to.
+
+    TODO: Support references to parent conformance tables.
+
     Example:
 
     ```mlir
@@ -584,12 +589,19 @@ class ConformanceOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
     ) -> None: ...
     @property
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
         self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def trait_ref(self) -> max._core.dialects.builtin.SymbolRefAttr | None: ...
+    @trait_ref.setter
+    def trait_ref(
+        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
     ) -> None: ...
 
 class CostOfOp(max._core.Operation):
