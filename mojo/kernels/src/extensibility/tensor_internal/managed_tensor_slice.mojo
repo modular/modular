@@ -1126,6 +1126,7 @@ fn foreach[
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
+@__mogg_intrinsic_attr("mogg.for_each.out_func")
 @no_inline
 fn foreach[
     type: DType,
