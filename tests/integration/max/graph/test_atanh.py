@@ -47,7 +47,7 @@ def test_atanh(session, dtype):
     np.testing.assert_allclose(
         max_result,
         torch_result,
-        rtol=1e-1,
-        atol=1e-1,
+        rtol=1e-6,
+        atol=1e-6,
         verbose=True,
     )
