@@ -10,15 +10,18 @@ import pytest
 import torch
 from max.driver import Tensor
 from max.dtype import DType
+from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
-def test_atanh(session, dtype):
+def test_atanh(session: InferenceSession, dtype: DType):
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:
         pytest.skip("BF16 is not supported on ARM CPU architecture")
 
-    input_type = TensorType(dtype, [1024], device=DeviceRef.CPU())
+    input_type = TensorType(
+        dtype, [1024], device=DeviceRef.from_device(session.devices[0])
+    )
 
     with Graph(f"atanh_{dtype}", input_types=[input_type]) as graph:
         out = ops.atanh(graph.inputs[0])
