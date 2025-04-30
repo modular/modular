@@ -29,6 +29,10 @@ what we publish.
   - `benchmark`
   - `algorithm`
 
+- Parts of the Kernel library continue to be progressively open sourced!
+  Packages that are open sourced now include:
+  - `register`
+
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
   of the constraint sets of the two original traits.
@@ -244,6 +248,9 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - **Fixed SIMD boolean display in debugger:** SIMD boolean values now display
   correctly with proper bit extraction.
+
+- **Improved language server performance:** The language server now avoids
+  parsing more than it needs to, improving performance across the board.
 
 ### Mojo Compiler
 

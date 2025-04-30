@@ -528,7 +528,13 @@ struct InlineArray[
             direct memory access. The pointer inherits mutability from the array
             reference.
         """
-        return UnsafePointer(to=self._array).bitcast[Self.ElementType]()
+        return (
+            UnsafePointer(to=self._array)
+            .bitcast[Self.ElementType]()
+            .origin_cast[
+                mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
+            ]()
+        )
 
     @always_inline
     fn __contains__[

@@ -234,18 +234,6 @@ trait BoolableCollectionElement(Boolable, CollectionElement):
     pass
 
 
-trait BoolableKeyElement(Boolable, KeyElement):
-    """The BoolableKeyElement trait denotes a trait composition
-    of the `Boolable` and `KeyElement` traits.
-
-    This is useful to have as a named entity since Mojo does not
-    currently support anonymous trait compositions to constrain
-    on `Boolable & KeyElement` in the parameter.
-    """
-
-    pass
-
-
 trait EqualityComparableWritableCollectionElement(
     WritableCollectionElement, EqualityComparable
 ):

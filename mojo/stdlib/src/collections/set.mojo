@@ -15,7 +15,6 @@
 from .dict import (
     Dict,
     KeyElement,
-    RepresentableKeyElement,
     _DictEntryIter,
     _DictKeyIter,
 )
@@ -316,11 +315,12 @@ struct Set[T: KeyElement](
         return hash_value
 
     @no_inline
-    fn __str__[U: RepresentableKeyElement](self: Set[U]) -> String:
+    fn __str__[U: KeyElement & Representable, //](self: Set[U]) -> String:
         """Returns the string representation of the set.
 
         Parameters:
-            U: The type of the List elements. Must have the trait `RepresentableKeyElement`.
+            U: The type of the List elements. Must implement the `Representable`
+                and `KeyElement` traits.
 
         Returns:
             The string representation of the set.
@@ -330,11 +330,12 @@ struct Set[T: KeyElement](
         return output
 
     @no_inline
-    fn __repr__[U: RepresentableKeyElement](self: Set[U]) -> String:
+    fn __repr__[U: KeyElement & Representable, //](self: Set[U]) -> String:
         """Returns the string representation of the set.
 
         Parameters:
-            U: The type of the List elements. Must have the trait `RepresentableKeyElement`.
+            U: The type of the List elements. Must implement the `Representable`
+                and `KeyElement` traits.
 
         Returns:
             The string representation of the set.
@@ -342,14 +343,14 @@ struct Set[T: KeyElement](
         return self.__str__()
 
     fn write_to[
-        W: Writer,
-        U: RepresentableKeyElement,
+        W: Writer, U: KeyElement & Representable, //
     ](self: Set[U], mut writer: W):
         """Write Set string representation to a `Writer`.
 
         Parameters:
-            W: A type conforming to the Writable trait.
-            U: The type of the List elements. Must have the trait `RepresentableKeyElement`.
+            W: A type conforming to the Writer trait.
+            U: The type of the List elements. Must implement the `Representable`
+                and `KeyElement` traits.
 
         Args:
             writer: The object to write to.

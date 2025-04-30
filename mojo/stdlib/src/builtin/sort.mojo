@@ -222,9 +222,10 @@ fn _quicksort[
     stack.append(span)
     while len(stack) > 0:
         var imm_interval = stack.pop()
-        var ptr = imm_interval.unsafe_ptr()
+        var imm_ptr = imm_interval.unsafe_ptr()
+        var mut_ptr = imm_ptr.origin_cast[mut=True, origin=MutableAnyOrigin]()
         var len = len(imm_interval)
-        var interval = Span[T, origin](ptr=ptr, length=len)
+        var interval = Span[T, MutableAnyOrigin](ptr=mut_ptr, length=len)
 
         if len <= 5:
             _delegate_small_sort[cmp_fn](interval)
@@ -235,26 +236,28 @@ fn _quicksort[
             continue
 
         # pick median of 3 as pivot
-        _sort3[T, cmp_fn](ptr, len >> 1, 0, len - 1)
+        _sort3[T, cmp_fn](mut_ptr, len >> 1, 0, len - 1)
 
         # if ptr[-1] == pivot_value, then everything in between will
         # be the same, so no need to recurse that interval
         # already have array[-1] <= array[0]
-        if ptr > array and not cmp_fn(ptr[-1], ptr[0]):
+        if mut_ptr > array and not cmp_fn(imm_ptr[-1], imm_ptr[0]):
             var pivot = _quicksort_partition_left[cmp_fn](interval)
             if len > pivot + 2:
                 stack.append(
-                    ImmSpan(ptr=ptr + pivot + 1, length=len - pivot - 1)
+                    ImmSpan(ptr=imm_ptr + pivot + 1, length=len - pivot - 1)
                 )
             continue
 
         var pivot = _quicksort_partition_right[cmp_fn](interval)
 
         if len > pivot + 2:
-            stack.append(ImmSpan(ptr=ptr + pivot + 1, length=len - pivot - 1))
+            stack.append(
+                ImmSpan(ptr=imm_ptr + pivot + 1, length=len - pivot - 1)
+            )
 
         if pivot > 1:
-            stack.append(ImmSpan(ptr=ptr, length=pivot))
+            stack.append(ImmSpan(ptr=imm_ptr, length=pivot))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -609,7 +612,13 @@ fn sort[
 fn _sort2[
     T: CollectionElement,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](array: UnsafePointer[T], offset0: Int, offset1: Int):
+](
+    array: UnsafePointer[
+        T, address_space = AddressSpace.GENERIC, mut=True, **_
+    ],
+    offset0: Int,
+    offset1: Int,
+):
     var a = array[offset0]
     var b = array[offset1]
     if not cmp_fn(a, b):
@@ -621,7 +630,14 @@ fn _sort2[
 fn _sort3[
     T: CollectionElement,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](array: UnsafePointer[T], offset0: Int, offset1: Int, offset2: Int):
+](
+    array: UnsafePointer[
+        T, address_space = AddressSpace.GENERIC, mut=True, **_
+    ],
+    offset0: Int,
+    offset1: Int,
+    offset2: Int,
+):
     _sort2[T, cmp_fn](array, offset0, offset1)
     _sort2[T, cmp_fn](array, offset1, offset2)
     _sort2[T, cmp_fn](array, offset0, offset1)
@@ -631,7 +647,14 @@ fn _sort3[
 fn _sort_partial_3[
     T: CollectionElement,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](array: UnsafePointer[T], offset0: Int, offset1: Int, offset2: Int):
+](
+    array: UnsafePointer[
+        T, address_space = AddressSpace.GENERIC, mut=True, **_
+    ],
+    offset0: Int,
+    offset1: Int,
+    offset2: Int,
+):
     var a = array[offset0]
     var b = array[offset1]
     var c = array[offset2]
@@ -651,7 +674,7 @@ fn _small_sort[
     n: Int,
     T: CollectionElement,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](array: UnsafePointer[T]):
+](array: UnsafePointer[T, address_space = AddressSpace.GENERIC, mut=True, **_]):
     @parameter
     if n == 2:
         _sort2[T, cmp_fn](array, 0, 1)

@@ -13,10 +13,9 @@
 
 from collections import List
 from collections.string import StaticString
-from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, _OwnedDLHandle, _find_dylib
 
 from .types import Status
 
@@ -24,7 +23,7 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUFFT_LIBRARY_PATHS = List[String](
+alias CUDA_CUFFT_LIBRARY_PATHS = List[Path](
     "/usr/local/cuda/lib64/libcufft.so",
     "/usr/local/cuda/lib64/libcufft.so.11",
 )
@@ -34,23 +33,8 @@ alias CUDA_CUFFT_LIBRARY = _Global[
 ]()
 
 
-fn _get_library_path() -> String:
-    for path in CUDA_CUFFT_LIBRARY_PATHS:
-        if Path(path[]).exists():
-            return path[]
-    return abort[String](
-        String(
-            (
-                "the ROCM rocBLAS library was not found in any of the"
-                " following paths: "
-            ),
-            String(", ").join(CUDA_CUFFT_LIBRARY_PATHS),
-        )
-    )
-
-
 fn _init_dylib() -> _OwnedDLHandle:
-    return _OwnedDLHandle(_get_library_path())
+    return _find_dylib["CUDA cuFFT"](CUDA_CUFFT_LIBRARY_PATHS)
 
 
 @always_inline

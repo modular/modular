@@ -25,7 +25,9 @@ trait _Hasher:
     fn __init__(out self):
         ...
 
-    fn _update_with_bytes(mut self, data: UnsafePointer[UInt8], length: Int):
+    fn _update_with_bytes(
+        mut self, data: UnsafePointer[UInt8, mut=False, **_], length: Int
+    ):
         ...
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):

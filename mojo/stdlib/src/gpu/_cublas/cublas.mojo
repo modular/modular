@@ -16,8 +16,7 @@ from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
-
+from sys.ffi import _Global, _OwnedDLHandle, _find_dylib
 from gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
@@ -29,7 +28,7 @@ alias cublasContext = NoneType
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUBLAS_LIBRARY_PATHS = List[String](
+alias CUDA_CUBLAS_LIBRARY_PATHS = List[Path](
     "/usr/local/cuda-12.8/lib64/libcublas.so",
     "/usr/local/cuda-12.8/lib64/libcublas.so.0",
     "/usr/local/cuda-12.8/lib64/libcublas.so.12",
@@ -44,23 +43,8 @@ alias CUDA_CUBLAS_LIBRARY = _Global[
 ]
 
 
-fn _get_library_path() -> String:
-    for path in CUDA_CUBLAS_LIBRARY_PATHS:
-        if Path(path[]).exists():
-            return path[]
-    return abort[String](
-        String(
-            (
-                "the CUDA cuBLAS library was not found in any of the"
-                " following paths: "
-            ),
-            String(", ").join(CUDA_CUBLAS_LIBRARY_PATHS),
-        )
-    )
-
-
 fn _init_dylib() -> _OwnedDLHandle:
-    return _OwnedDLHandle(_get_library_path())
+    return _find_dylib["CUDA cuBLAS library"](CUDA_CUBLAS_LIBRARY_PATHS)
 
 
 @always_inline

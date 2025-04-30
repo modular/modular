@@ -284,9 +284,12 @@ struct PythonVersion:
         self = PythonVersion(components[0], components[1], components[2])
 
 
-fn _py_get_version(lib: DLHandle) -> StringSlice[StaticConstantOrigin]:
-    return StringSlice[StaticConstantOrigin](
-        unsafe_from_utf8_ptr=lib.call["Py_GetVersion", UnsafePointer[c_char]]()
+fn _py_get_version(lib: DLHandle) -> StaticString:
+    return StaticString(
+        unsafe_from_utf8_ptr=lib.call[
+            "Py_GetVersion",
+            UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
+        ]()
     )
 
 
@@ -309,7 +312,9 @@ struct PyMethodDef(CollectionElement):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var method_name: UnsafePointer[c_char]
+    var method_name: UnsafePointer[
+        c_char, mut=False, origin=StaticConstantOrigin
+    ]
     """A pointer to the name of the method as a C string.
 
     Notes:
@@ -324,7 +329,9 @@ struct PyMethodDef(CollectionElement):
     """Flags indicating how the method should be called. [Reference](
     https://docs.python.org/3/c-api/structures.html#c.PyMethodDef)."""
 
-    var method_docstring: UnsafePointer[c_char]
+    var method_docstring: UnsafePointer[
+        c_char, mut=False, origin=StaticConstantOrigin
+    ]
     """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
@@ -812,9 +819,10 @@ struct CPython:
 
         # TODO(MOCO-772) Allow raises to propagate through function pointers
         # and make this initialization a raising function.
-        self.init_error = StringSlice[StaticConstantOrigin](
+        self.init_error = StaticString(
             unsafe_from_utf8_ptr=external_call[
-                "KGEN_CompilerRT_Python_SetPythonPath", UnsafePointer[c_char]
+                "KGEN_CompilerRT_Python_SetPythonPath",
+                UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin],
             ]()
         )
 
@@ -824,7 +832,12 @@ struct CPython:
             print("PYTHONEXECUTABLE:", getenv("PYTHONEXECUTABLE"))
             print("libpython selected:", python_lib)
 
-        self.lib = DLHandle(python_lib)
+        try:
+            self.lib = DLHandle(python_lib)
+        except e:
+            self.lib = abort[DLHandle](
+                String("Failed to load libpython from", python_lib, ":\n", e)
+            )
         self.total_ref_count = UnsafePointer[Int].alloc(1)
         self.logging_enabled = logging_enabled
         if not self.init_error:
@@ -1175,7 +1188,7 @@ struct CPython:
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, **_],
         value: PyObjectPtr,
     ) -> c_int:
         """[Reference](
@@ -1400,7 +1413,7 @@ struct CPython:
         owned name: String,
     ) -> Int:
         var r = self.lib.get_function[
-            fn (PyObjectPtr, UnsafePointer[c_char]) -> Int
+            fn (PyObjectPtr, __type_of(name.unsafe_cstr_ptr())) -> Int
         ]("PyObject_HasAttrString")(obj, name.unsafe_cstr_ptr())
         return r
 

@@ -10,8 +10,8 @@ authors = ["Modular Inc <hello@modular.com>"]
 max-pipelines = "*"
 
 [tasks]
-llama3 = "max-pipelines llama3"
-replit = "max-pipelines replit"
-mistral = "max-pipelines mistral"
-generate = "max-pipelines generate"
-serve = "max-pipelines serve"
+llama3 = "max llama3"
+replit = "max replit"
+mistral = "max mistral"
+generate = "max generate"
+serve = "max serve"

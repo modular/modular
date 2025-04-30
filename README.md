@@ -1,18 +1,18 @@
-![Modular Logo](https://modular-assets.s3.amazonaws.com/images/modular_github_logo_bg.png)
+![Modular Logo](https://modular-assets.s3.amazonaws.com/images/GitHubBannerModular.png)
 
-# Welcome to MAX
+# Welcome to Modular Platform
 
 > Note: Mojo is included as a subdirectory in this repository
 
-The Modular Accelerated Xecution ([MAX](https://www.modular.com/max)) platform
-is an integrated suite of AI libraries, tools, and technologies that unifies
-commonly fragmented AI deployment workflows. MAX accelerates time to market
-for the latest innovations by giving AI developers a single toolchain that
-unlocks full programmability, unparalleled performance, and seamless hardware portability.
+The Modular platform (previously known as MAX) is an integrated suite of AI
+libraries, tools, and technologies that unifies commonly fragmented AI
+deployment workflows. Modular Platform accelerates time to market for the latest
+innovations by giving AI developers a single toolchain that unlocks full
+programmability, unparalleled performance, and seamless hardware portability.
 
 ![](https://docs.modular.com/images/github/max-stack.png)
 
-[See here to get started with MAX](https://docs.modular.com/max/get-started)
+[See here to get started with the Modular platform](https://docs.modular.com/max/get-started)
 and when you want to report issues or request features,
 [please create a GitHub issue here](https://github.com/modular/max/issues/new/choose).
 
@@ -22,18 +22,18 @@ your experiences and chat with the team and other community members.
 
 In the [examples directory](https://github.com/modular/max/tree/main/examples),
 you will find code examples and Jupyter notebooks that show how to run inference
-with MAX.
+with Modular platform.
 
 ## Getting Started
 
-MAX is available in both stable and nightly builds. To install either version,
-follow the guide to [create a project with
+Modular platform is available in both stable and nightly builds. To install
+either version, follow the guide to [create a project with
 Magic](https://docs.modular.com/max/create-project).
 
 Then clone this repository:
 
 ```bash
-git clone https://github.com/modular/max.git
+git clone https://github.com/modular/modular.git
 ```
 
 If you installed the [stable
@@ -47,9 +47,9 @@ git checkout stable
 
 ## Running
 
-### MAX Pipelines
+### Pipelines
 
-To show off the full power of MAX, a
+To show off the full power of Modular platform, a
 [series of end-to-end pipelines for common AI workloads](./src/max/pipelines/)
 (and more) are ready to run. As one example, this includes everything needed to
 self-host
@@ -60,8 +60,8 @@ learned from.
 ### Examples
 
 In addition to the end-to-end pipelines, there are many [examples](./examples/)
-that exercise various aspects of MAX. You can follow the instructions in the
-README for each example or notebook you want to run.
+that exercise various aspects of Modular platform. You can follow the
+instructions in the README for each example or notebook you want to run.
 
 ### Notebooks
 
@@ -78,9 +78,9 @@ tutorials you can read at
 
 ### Docker Container
 
-The MAX container is our official Docker container for convenient MAX deployment.
-It includes the latest MAX version with GPU support, several AI libraries, and
-integrates with orchestration tools like Kubernetes.
+The MAX container is our official Docker container for convenient deployment.
+It includes the latest Modular platform version with GPU support, several AI
+libraries, and integrates with orchestration tools like Kubernetes.
 
 The MAX container image is available in the
 [Modular Docker Hub repository](https://hub.docker.com/repository/docker/modular/max-nvidia-base/).
@@ -106,8 +106,8 @@ community members.
 
 This repository and its contributions are licensed under the Apache License
 v2.0 with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
-MAX and Mojo usage and distribution are licensed under the
-[MAX & Mojo Community License](https://www.modular.com/legal/max-mojo-license).
+Modular, MAX and Mojo usage and distribution are licensed under the
+[Modular, MAX & Mojo Community License](https://www.modular.com/legal/max-mojo-license).
 
 ### Third Party Licenses
 

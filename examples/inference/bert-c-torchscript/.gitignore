@@ -1,7 +1,0 @@
-# Binaries generated
-inputs
-outputs.bin
-
-# Don't check in / version control the downloaded model
-*.pt
-*.torchscript

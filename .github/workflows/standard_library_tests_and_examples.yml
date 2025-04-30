@@ -66,3 +66,4 @@ jobs:
         run: |
           magic run --frozen tests
           magic run --frozen examples
+          magic run --frozen benchmarks
