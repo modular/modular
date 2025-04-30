@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug --target-accelerator=nvidia:90 %s | FileCheck %s
+# RUN: %mojo-no-debug -D PDL_LEVEL=1 --target-accelerator=nvidia:90 %s | FileCheck %s
 
 
 from gpu.grid_controls import _ENABLE_PDL_LAUNCH as ENABLE_PDL_LAUNCH
