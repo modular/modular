@@ -1,3 +1,4 @@
+#!/bin/bash
 ##===----------------------------------------------------------------------===##
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
@@ -10,7 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-#!/bin/bash
 
 echo $kplot
 shopt -s expand_aliases
