@@ -705,7 +705,7 @@ struct DeviceBuffer[type: DType](
     alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
     """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
 
-    fn to_device_type(self) -> Self.device_type:
+    fn _to_device_type(self) -> Self.device_type:
         """Device type mapping from DeviceBuffer to the device's UnsafePointer.
 
         Returns:
@@ -2090,7 +2090,7 @@ struct DeviceFunction[
         @parameter
         for i in range(num_args):
             alias actual_arg_type = Ts[i]
-            var translated_arg = args[i].to_device_type()
+            var translated_arg = args[i]._to_device_type()
             var translated_arg_ptr = UnsafePointer(to=translated_arg).bitcast[
                 Byte
             ]()

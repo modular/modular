@@ -38,7 +38,7 @@ struct TwoS:
 struct OneS(DevicePassable):
     alias device_type: AnyTrivialRegType = TwoS
 
-    fn to_device_type(self) -> Self.device_type:
+    fn _to_device_type(self) -> Self.device_type:
         return TwoS(self.s)
 
     @staticmethod

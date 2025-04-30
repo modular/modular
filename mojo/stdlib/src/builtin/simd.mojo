@@ -290,7 +290,7 @@ struct SIMD[dtype: DType, size: Int](
     alias device_type: AnyTrivialRegType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
-    fn to_device_type(self) -> Self.device_type:
+    fn _to_device_type(self) -> Self.device_type:
         """Device type mapping is the identity function.
 
         Returns:

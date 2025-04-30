@@ -18,8 +18,12 @@ trait DevicePassable:
     alias device_type: AnyTrivialRegType
     """Indicate the type being used on accelerator devices."""
 
-    fn to_device_type(self) -> device_type:
-        """Convert the host type object to a device_type.
+    fn _to_device_type(self) -> device_type:
+        """
+        Convert the host type object to a device_type.
+
+        NOTE: This should only be called by `DeviceContext` during invocation
+        of accelerator kernels.
 
         Returns:
             A `device_type`.
