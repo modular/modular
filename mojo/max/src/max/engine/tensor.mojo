@@ -215,7 +215,7 @@ struct EngineNumpyView:
             var shape = List[Int, hint_trivial_type=True]()
             var array_shape = self._obj.shape
             for dim in array_shape:
-                shape.append(dim)
+                shape.append(Int(dim))
             return TensorSpec(ty, shape)
 
         if self.dtype() is DType.int8:
