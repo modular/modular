@@ -1090,15 +1090,16 @@ struct Int(
         hasher._update_with_simd(Int64(self))
 
     @doc_private
-    @staticmethod
-    fn try_from_python(obj: PythonObject, out result: Self) raises:
+    fn __init__(out self, obj: PythonObject) raises:
         """Construct an `Int` from a Python integer value.
+
+        Args:
+            obj: The Python object to convert from.
 
         Raises:
             An error if conversion failed.
         """
-
-        result = Python.py_long_as_ssize_t(obj)
+        self = Int(Python.py_long_as_ssize_t(Python.py_number_long(obj)))
 
     @always_inline
     fn __ceildiv__(self, denominator: Self) -> Self:

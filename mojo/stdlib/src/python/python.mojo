@@ -504,17 +504,36 @@ struct Python:
             The value of the `long` object as a `Py_ssize_t`.
         """
         var cpython = Python().cpython()
+        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object)
 
-        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(
-            obj.unsafe_as_py_object_ptr()
-        )
-
-        # Disambiguate if this is an error return setinel, or a legitimate
-        # value.
+        # Check if the result is an error sentinel.
         if long == -1:
             Python.throw_python_exception_if_error_state(cpython)
 
         return long
+
+    @staticmethod
+    fn py_number_long(obj: PythonObject) raises -> PythonObject:
+        """Try to convert a PythonObject to a Python `int` (i.e. arbitrary
+        precision integer).
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Raises:
+            If the conversion to `int` fails.
+
+        Returns:
+            A PythonObject representing the result of the conversion to `int`.
+        """
+        var cpython = Python().cpython()
+        var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
+
+        # Check if the result is an error sentinel.
+        if py_obj_ptr.is_null():
+            Python.throw_python_exception_if_error_state(cpython)
+
+        return PythonObject(py_obj_ptr)
 
     @staticmethod
     fn is_true(obj: PythonObject) raises -> Bool:
@@ -529,12 +548,10 @@ struct Python:
         Raises:
             If the boolean value of the PythonObject cannot be determined.
         """
-
         var cpython = Python().cpython()
         var result = cpython.PyObject_IsTrue(obj.py_object)
 
-        # Disambiguate if this is an error return setinel, or a legitimate
-        # value.
+        # Check if the result is an error sentinel.
         if result == -1:
             Python.throw_python_exception_if_error_state(cpython)
 

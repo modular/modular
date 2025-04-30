@@ -22,6 +22,7 @@ from python import PythonObject
 from collections import Dict
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
+from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 # This apparently redundant import is needed so PythonBindingsGen.cpp can find
 # the StringLiteral declaration.
@@ -1522,10 +1523,8 @@ struct PythonObject(
         Returns:
             An integral value that represents this object.
         """
-        var p = Python()
-        var py_long = p.cpython().PyNumber_Long(self.py_object)
         try:
-            return p.py_long_as_ssize_t(py_long)
+            return Int(self)
         except e:
             # TODO: make this function raise when we can raise parametrically.
             debug_assert(False, "object cannot be converted to an integer")
@@ -1626,12 +1625,13 @@ struct PythonObject(
 
     fn unsafe_get_as_pointer[
         dtype: DType
-    ](self) -> UnsafePointer[Scalar[dtype]]:
-        """Convert a Python-owned and managed pointer into a Mojo pointer.
+    ](self) raises -> UnsafePointer[Scalar[dtype]]:
+        """Reinterpret a Python integer as a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
         compiler assumes the resulting pointer DOES NOT alias any Mojo-derived
-        pointer. This is OK because the pointer originates from Python.
+        pointer. This is OK if the pointer originates from and is owned by
+        Python, e.g. the data underpinning a torch tensor.
 
         Parameters:
             dtype: The desired DType of the pointer.
@@ -1640,9 +1640,7 @@ struct PythonObject(
             An `UnsafePointer` for the underlying Python data.
         """
         var tmp = Int(self)
-        var result = UnsafePointer(to=tmp).bitcast[
-            UnsafePointer[Scalar[dtype]]
-        ]()[]
+        var result = _unsafe_aliasing_address_to_pointer[dtype](tmp)
         _ = tmp
         return result
 

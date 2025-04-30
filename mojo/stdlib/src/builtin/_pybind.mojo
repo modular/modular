@@ -137,7 +137,7 @@ fn _try_convert_arg[
     out result: T,
 ) raises:
     try:
-        result = T.try_from_python(py_args[argidx])
+        result = T(py_args[argidx])
     except convert_err:
         raise Error(
             String.format(

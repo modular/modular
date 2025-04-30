@@ -38,8 +38,7 @@ trait ConvertibleFromPython(CollectionElement):
     object.
     """
 
-    @staticmethod
-    fn try_from_python(obj: PythonObject) raises -> Self:
+    fn __init__(out self, obj: PythonObject) raises:
         """Attempt to construct an instance of this object from a read-only
         Python value.
 
