@@ -368,6 +368,56 @@ struct Python:
         return PythonObject(Dict[PythonObject, PythonObject]())
 
     @staticmethod
+    fn list[
+        T: PythonConvertible & CollectionElement
+    ](values: Span[T]) -> PythonObject:
+        """Initialize the object from a list of values.
+
+        Parameters:
+            T: The span element type.
+
+        Args:
+            values: The values to initialize the list with.
+
+        Returns:
+            A PythonObject representing the list.
+        """
+        var cpython = Python().cpython()
+        var py_object = cpython.PyList_New(len(values))
+
+        for i in range(len(values)):
+            var obj = values[i].to_python_object()
+            cpython.Py_IncRef(obj.py_object)
+            _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
+        return py_object
+
+    @staticmethod
+    fn _list[
+        *Ts: PythonConvertible
+    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> PythonObject:
+        """Initialize the object from a list literal.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the list with.
+
+        Returns:
+            A PythonObject representing the list.
+        """
+        var cpython = Python().cpython()
+        var py_object = cpython.PyList_New(len(values))
+
+        @parameter
+        for i in range(len(VariadicList(Ts))):
+            var obj = values[i].to_python_object()
+            cpython.Py_IncRef(obj.py_object)
+            _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
+        return py_object
+
+    @always_inline
+    @staticmethod
     fn list[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
         """Construct an Python list of objects.
 
@@ -380,8 +430,34 @@ struct Python:
         Returns:
             The constructed Python list.
         """
-        return PythonObject._list(values)
+        return Self._list(values)
 
+    @staticmethod
+    fn _tuple[
+        *Ts: PythonConvertible
+    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> PythonObject:
+        """Initialize the object from a tuple literal.
+
+        Parameters:
+            Ts: The tuple element types.
+
+        Args:
+            values: The values to initialize the tuple with.
+
+        Returns:
+            A PythonObject representing the tuple.
+        """
+        var cpython = Python().cpython()
+        var py_object = cpython.PyTuple_New(len(values))
+
+        @parameter
+        for i in range(len(VariadicList(Ts))):
+            var obj = values[i].to_python_object()
+            cpython.Py_IncRef(obj.py_object)
+            _ = cpython.PyTuple_SetItem(py_object, i, obj.py_object)
+        return py_object
+
+    @always_inline
     @staticmethod
     fn tuple[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
         """Construct an Python tuple of objects.
@@ -395,7 +471,7 @@ struct Python:
         Returns:
             The constructed Python tuple.
         """
-        return PythonObject._tuple(values)
+        return Self._tuple(values)
 
     @no_inline
     fn as_string_slice(

@@ -134,6 +134,9 @@ to Mojo-Python interoperability:
 - `PythonObject.from_borrowed_ptr` has been removed in favor of a constructor
   with a keyword-only argument.
 
+- The `list` and `tuple` factory methods have been moved from `PythonObject` to
+  the `Python` struct.
+
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
 
