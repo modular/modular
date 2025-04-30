@@ -23,6 +23,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
@@ -1296,11 +1297,10 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   if (failed(getDeclResolver().resolveBody(*traitDecl, value.expr->getLoc())))
     return {};
 
-  ArrayRef<ParamDeclAttr> structParamDecls;
-
   // Determine if the conforming value is trivial or register passable.  If so,
-  // this will affect the methods we can synthesize in conformance.  Values of
+  // this will affect the methods we can synthesize in conformance. Values of
   // trait type will already have been erased to a memory type.
+  ArrayRef<ParamDeclAttr> structParamDecls;
   bool rpTrivial = false;
   bool regPassable = false;
   bool implicitlyDestructible = false;
@@ -1538,6 +1538,19 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   ASTType boundWrapper =
       cast<StructDeclOp>(wrapperDecl).bindReference({typeValue});
 
+  // Explicitly check that the wrapper conforms to the trait so that
+  // conformances & special functions may be generated.
+  std::optional<InflightDiag> checkDiag;
+  if (!wrapperDecl->doesNominalTypeConformTo(trait, checkDiag)) {
+    InflightDiag diag =
+        shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
+        << mlirType << " to trait " << ASTType(trait)
+        << " as it is unable to satisfy the following requirements";
+    if (checkDiag)
+      diag.attachNote(wrapperDecl->getLoc()) << std::move(*checkDiag);
+    return {};
+  }
+
   // NOTE: This substantially duplicates emitMetaTypeToTraitConversion because
   // it is doing some crazy manual binding of the type into the parameter list
   // so the vtable entries are specialized on the MLIR type.
@@ -1547,13 +1560,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   // bugs.  We already do this for rp-trivial types which MLIR types are.
   SmallVector<VTableEntryAttr> vtable;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty() || !isa<FnOp>(decls.front())) {
-      InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
-                          << mlirType << " to trait " << ASTType(trait);
-      diag.attachNote(decls.front()->getLoc())
-          << "MLIR type cannot satisfy this requirement";
-      return {};
-    }
+    assert(!decls.empty() && isa<FnOp>(decls.front()));
 
     for (ASTDecl *decl : decls) {
       // MLIR types are movable, copyable, and destructible only.

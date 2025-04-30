@@ -38,7 +38,7 @@ fn test():
 
 # CHECK-LABEL: lit.package @stdlib attributes {postParseModule =
 
-# CHECK-NOT: fn(::Int
+# CHECK-NOT: lit.fn @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_foo
 # CHECK-SAME: postParseModule
@@ -52,6 +52,6 @@ fn test():
 # CHECK: lit.fn @"bar
 # CHECK: kgen.create_closure{{.*}}@"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
-# CHECK-NOT: fn(::Int
+# CHECK-NOT: lit.fn @"fn(::Int, /) -> None|fn(::Int, /) -> None|{{.*}}[fn(::Int, /) -> None](::Int)"
 
 # CHECK-LABEL: dialect_resources

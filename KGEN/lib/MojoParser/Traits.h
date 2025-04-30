@@ -7,6 +7,7 @@
 #ifndef KGEN_MOJOPARSER_TRAITS_H
 #define KGEN_MOJOPARSER_TRAITS_H
 
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M {
@@ -22,8 +23,11 @@ class SharedState;
 /// its full ancestor chain of decls must also be checked here too. This logic
 /// is left for the caller so optimizations is possible when the struct is
 /// already known to conform to certain ancestors.
+/// On success, `witnessTable` will be populated.
+using WitnessTable = SmallVector<std::pair<StringAttr, TypedAttr>>;
 LogicalResult verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
-                                std::optional<InflightDiag> &diag);
+                                std::optional<InflightDiag> &diag,
+                                WitnessTable &witnessTable);
 
 /// Sort & deduplicate the list of symbols deterministically.
 void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);

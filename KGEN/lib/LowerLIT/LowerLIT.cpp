@@ -520,7 +520,7 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
   OpBuilder b(structDecl->getContext());
   auto structGen = b.create<StructGeneratorOp>(info.loc, structName, info.decls,
                                                structInstType, typeType);
-  b.createBlock(&structGen.getRegion());
+  Block *structGenBody = b.createBlock(&structGen.getRegion());
 
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
@@ -528,6 +528,12 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       continue; // Already lowered field.
     if (isa<AliasDeclOp>(member)) {
       member.erase();
+      continue;
+    }
+    if (auto conformance = dyn_cast<ConformanceOp>(member)) {
+      // The trait decl is going away. This reference is no longer necessary.
+      conformance.removeTraitRefAttr();
+      conformance->moveBefore(structGenBody, structGenBody->end());
       continue;
     }
 

@@ -2381,21 +2381,6 @@ static void processRegisterPassableDecorator(
   }
 }
 
-//===----------------------------------------------------------------------===//
-// Trait Conformance Checking
-
-/// Check conformance for struct that implements traits.
-static LogicalResult verifyExplicitConformances(ASTDecl &structDecl) {
-  bool hadErrors = false;
-  auto structDeclOp = cast<StructDeclOp>(structDecl);
-  for (SymbolRefAttr parent : structDeclOp.getCanonicalTrait().getSymbols()) {
-    std::optional<InflightDiag> diag;
-    hadErrors |= failed(verifyConformance(structDecl, parent, diag));
-  }
-
-  return success(!hadErrors);
-}
-
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   // Push the debug scope for this struct if necessary so that nested operations
@@ -2495,8 +2480,20 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (structDecl.isErroneous())
     return success();
 
-  // Finally, verify conformance of inherited traits.
-  return verifyExplicitConformances(structDecl);
+  // Finally, emit empty conformance tables.
+  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
+      structOp.getLoc(), &structOp.getFields().front());
+  for (SymbolRefAttr parent : structOp.getCanonicalTrait().getSymbols()) {
+    StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
+    ConformanceOp witnessTable = b.create<ConformanceOp>(name, parent);
+    witnessTable.getBody().push_back(new Block());
+    ASTDecl &decl = addDecl(witnessTable, structDecl.getLoc(), name,
+                            &structDecl, {}, {}, -1);
+    decl.resolvedness = DeclResolvedness::signature;
+    // Conformances are always created as signature-resolved because there's no
+    // less-resolved state for it (see CALROC for more).
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2909,5 +2906,23 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
       }
     }
   }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// WitnessTable Decl implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
+  // Verify conformance explicitly.
+  std::optional<InflightDiag> diag;
+  WitnessTable witnesses;
+  if (failed(verifyConformance(*decl.getParentDecl(), op.getTraitRefAttr(),
+                               diag, witnesses)))
+    return failure();
+  ImplicitLocOpBuilder b =
+      ImplicitLocOpBuilder::atBlockEnd(op.getLoc(), &op.getBody().front());
+  for (auto &[name, value] : witnesses)
+    b.create<WitnessOp>(name, value);
   return success();
 }
