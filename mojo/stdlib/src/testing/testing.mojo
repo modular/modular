@@ -63,7 +63,7 @@ fn assert_true[
     Args:
         val: The value to assert to be True.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -89,7 +89,7 @@ fn assert_false[
     Args:
         val: The value to assert to be False.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -118,7 +118,7 @@ fn assert_equal[
         lhs: The lhs of the equality.
         rhs: The rhs of the equality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -148,7 +148,7 @@ fn assert_equal(
         lhs: The lhs of the equality.
         rhs: The rhs of the equality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -180,7 +180,7 @@ fn assert_equal[
         lhs: The lhs of the equality.
         rhs: The rhs of the equality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -213,7 +213,7 @@ fn assert_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -252,7 +252,7 @@ fn assert_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -290,7 +290,7 @@ fn assert_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -328,7 +328,7 @@ fn assert_not_equal[
         lhs: The lhs of the inequality.
         rhs: The rhs of the inequality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -357,7 +357,7 @@ fn assert_not_equal(
         lhs: The lhs of the inequality.
         rhs: The rhs of the inequality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -389,7 +389,7 @@ fn assert_not_equal[
         lhs: The lhs of the inequality.
         rhs: The rhs of the inequality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -422,7 +422,7 @@ fn assert_not_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -471,7 +471,7 @@ fn assert_almost_equal[
         atol: The absolute tolerance.
         rtol: The relative tolerance.
         equal_nan: Whether to treat nans as equal.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -518,7 +518,7 @@ fn assert_is[
         lhs: The lhs of the `is` statement.
         rhs: The rhs of the `is` statement.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -552,7 +552,7 @@ fn assert_is_not[
         lhs: The lhs of the `is not` statement.
         rhs: The rhs of the `is not` statement.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -613,7 +613,7 @@ struct assert_raises:
         """Construct a context manager with no message pattern.
 
         Args:
-            location: The location of the error (default to the `__call_location`).
+            location: The location of the error (defaults to `__call_location`).
         """
         self.message_contains = None
         self.call_location = location.or_else(__call_location())
@@ -630,7 +630,7 @@ struct assert_raises:
         Args:
             contains: The test will only pass if the error message
                 includes the literal text passed.
-            location: The location of the error (default to the `__call_location`).
+            location: The location of the error (defaults to `__call_location`).
         """
         self.message_contains = contains
         self.call_location = location.or_else(__call_location())
