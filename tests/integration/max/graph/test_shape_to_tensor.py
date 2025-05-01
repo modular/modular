@@ -16,7 +16,7 @@ def test_shape_to_tensor_static(session):
         dtype=DType.float32, shape=[2, 4], device=DeviceRef.CPU()
     )
     with Graph("input_shape", input_types=(input_type,)) as graph:
-        shape = graph.inputs[0].shape
+        shape = graph.inputs[0].tensor.shape
         graph.output(TensorValue(shape))
 
     compiled = session.load(graph)
@@ -34,7 +34,7 @@ def test_shape_to_tensor_dynamic(session):
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
     with Graph("input_shape", input_types=(input_type,)) as graph:
-        shape = graph.inputs[0].shape
+        shape = graph.inputs[0].tensor.shape
         graph.output(TensorValue(shape))
 
     compiled = session.load(graph)
@@ -52,7 +52,7 @@ def test_shape_to_tensor_solo_dim(session):
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
     with Graph("input_shape", input_types=(input_type,)) as graph:
-        shape = graph.inputs[0].shape
+        shape = graph.inputs[0].tensor.shape
         graph.output(TensorValue(shape[1]))
 
     compiled = session.load(graph)

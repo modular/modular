@@ -25,7 +25,7 @@ def test_gather(session):
     ) as graph:
         input, index = graph.inputs
 
-        output = gather(input, index, axis=axis)
+        output = gather(input.tensor, index.tensor, axis=axis)
         graph.output(output)
 
     model = session.load(graph)

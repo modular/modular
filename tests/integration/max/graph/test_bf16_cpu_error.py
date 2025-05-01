@@ -22,7 +22,7 @@ def test_bf16_cpu_input_error(session):
     )
     output_type = DType.float32
     with Graph("cast", input_types=[input_type]) as graph:
-        graph.output(graph.inputs[0].cast(output_type))
+        graph.output(graph.inputs[0].tensor.cast(output_type))
 
     with pytest.raises(
         ValueError,
@@ -46,7 +46,7 @@ def test_bf16_cpu_output_error(session):
     )
     output_type = DType.bfloat16
     with Graph("cast", input_types=[input_type]) as graph:
-        graph.output(graph.inputs[0].cast(output_type))
+        graph.output(graph.inputs[0].tensor.cast(output_type))
 
     with pytest.raises(
         ValueError,

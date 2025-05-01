@@ -51,7 +51,6 @@ modular_py_test(
     ],
     tags = [
         "gpu",
-        "no-mypy",  # TODO: fix and remove
     ],
     deps = [
         ":modular_graph_test",

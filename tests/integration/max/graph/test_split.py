@@ -29,7 +29,7 @@ def test_split(session, input_shape: Shape, split_sizes: list[int], axis: int):
             TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
         ],
     ) as graph:
-        output = ops.split(graph.inputs[0], split_sizes, axis)
+        output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
         graph.output(*output)
 
     model = session.load(graph)
@@ -60,7 +60,7 @@ def test_invalid_split():
             ValueError,
             match="sum of output shapes along split axis must match input shape",
         ):
-            output = ops.split(graph.inputs[0], split_sizes, axis)
+            output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
 def test_invalid_axis():
@@ -77,4 +77,4 @@ def test_invalid_axis():
             ValueError,
             match="Split axis must be within the input rank",
         ):
-            _ = ops.split(graph.inputs[0], split_sizes, axis)
+            _ = ops.split(graph.inputs[0].tensor, split_sizes, axis)

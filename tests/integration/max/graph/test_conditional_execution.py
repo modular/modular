@@ -45,7 +45,7 @@ def test_conditional_execution_no_results(session, capfd):
         def else_fn():
             ops.print("else")
 
-        ops.cond(graph.inputs[0], None, then_fn, else_fn)
+        ops.cond(graph.inputs[0].tensor, None, then_fn, else_fn)
         graph.output()
 
     compiled = session.load(graph)
@@ -76,7 +76,7 @@ def test_conditional_execution_with_results(session):
             return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
-            cond,
+            cond.tensor,
             [TensorType(DType.int32, [], device=device_ref)],
             then_fn,
             else_fn,
@@ -96,7 +96,7 @@ def test_conditional_shape_to_tensor_solo_dim(session):
         dtype=DType.float32, shape=["batch", "channels"], device=device_ref
     )
     with Graph("input_shape", input_types=(input_type,)) as graph:
-        shape = graph.inputs[0].shape
+        shape = graph.inputs[0].tensor.shape
 
         def then_fn():
             return ops.constant(1, DType.int32, device=device_ref)
@@ -137,7 +137,9 @@ def test_conditional_shape_to_tensor_solo_dim(session):
 def test_conditional_inplace_user_supplied(
     custom_ops_path, session: InferenceSession
 ):
-    bt = BufferType(DType.float32, [2, 2])
+    import torch
+
+    bt = BufferType(DType.float32, [2, 2], device=device_ref)
     bool_type = TensorType(DType.bool, [], device=device_ref)
 
     with Graph(
@@ -145,8 +147,8 @@ def test_conditional_inplace_user_supplied(
         input_types=[bt, bool_type],
         custom_extensions=[custom_ops_path],
     ) as graph:
-        buffer: BufferValue = graph.inputs[0]
-        cond = graph.inputs[1]
+        buffer: BufferValue = graph.inputs[0].buffer
+        cond = graph.inputs[1].tensor
 
         def then_fn():
             # this custom op is equivalent to buffer[0,0] += 1
@@ -166,14 +168,14 @@ def test_conditional_inplace_user_supplied(
 
     model = session.load(graph)
 
-    rawbuffer = torch.ones((2, 2), dtype=np.float32)
+    rawbuffer = torch.ones((2, 2), dtype=torch.float32)
     if accelerator_count() > 0:
         rawbuffer = rawbuffer.cuda()
     model.execute(Tensor.from_dlpack(rawbuffer), True)
     actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
     np.testing.assert_equal(rawbuffer.cpu().numpy(), actual)
 
-    rawbuffer = torch.ones((2, 2), dtype=np.float32)
+    rawbuffer = torch.ones((2, 2), dtype=torch.float32)
     if accelerator_count() > 0:
         rawbuffer = rawbuffer.cuda()
     model.execute(Tensor.from_dlpack(rawbuffer), False)
@@ -189,8 +191,8 @@ def test_conditional_nested_conditionals(session, capfd):
             TensorType(DType.bool, [], device=device_ref),
         ),
     ) as graph:
-        cond_1 = graph.inputs[0]
-        cond_2 = graph.inputs[1]
+        cond_1 = graph.inputs[0].tensor
+        cond_2 = graph.inputs[1].tensor
 
         def true_fn_1():
             ops.print("true_1")
@@ -283,7 +285,7 @@ def test_conditional_with_same_name_weight(session) -> None:
 
         graph.output(
             *ops.cond(
-                graph.inputs[0],
+                graph.inputs[0].tensor,
                 [TensorType(DType.int64, [5, 10], device=device_ref)],
                 true_fn,
                 false_fn,
@@ -331,7 +333,7 @@ def test_conditional_with_diff_names_weights(session) -> None:
 
         graph.output(
             *ops.cond(
-                graph.inputs[0],
+                graph.inputs[0].tensor,
                 [TensorType(DType.int64, [5, 10], device=device_ref)],
                 true_fn,
                 false_fn,
@@ -369,7 +371,7 @@ def test_conditional_with_returned_weights(session) -> None:
 
         graph.output(
             *ops.cond(
-                graph.inputs[0],
+                graph.inputs[0].tensor,
                 [TensorType(DType.int64, [5, 10], device=device_ref)],
                 lambda: w.to(device_ref),
                 lambda: w.to(device_ref),
@@ -415,7 +417,7 @@ def test_cond_returned_diff_weights(session) -> None:
             return w.to(device_ref)
 
         results = ops.cond(
-            graph.inputs[0],
+            graph.inputs[0].tensor,
             [TensorType(DType.int64, [5, 10], device=device_ref)],
             true_fn,
             false_fn,

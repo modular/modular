@@ -36,6 +36,7 @@ def test_while_loop(session: InferenceSession):
 
     compiled = session.load(graph)
     result = compiled.execute(0)
+    assert isinstance(result[0], Tensor)
     assert result[0].to_numpy() == 10
 
 
@@ -50,6 +51,7 @@ def test_while_loop_lambda(session: InferenceSession):
 
     compiled = session.load(graph)
     result = compiled.execute(0)
+    assert isinstance(result[0], Tensor)
     assert result[0].to_numpy() == 10
 
 
@@ -71,7 +73,9 @@ def test_while_loop_body_with_multiple_args(session: InferenceSession):
 
     compiled = session.load(graph)
     result = compiled.execute(0, 0)
+    assert isinstance(result[0], Tensor)
     assert result[0].to_numpy() == 10
+    assert isinstance(result[1], Tensor)
     assert result[1].to_numpy() == 10
 
 
@@ -89,7 +93,7 @@ def test_while_loop_inplace_user_supplied(
     bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 
     with Graph("basic", input_types=[bt]) as graph:
-        buffer: BufferValue = graph.inputs[0]
+        buffer: BufferValue = graph.inputs[0].buffer
 
         def pred_fn(_):
             return buffer[0, 0] < 10

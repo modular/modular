@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from max.dtype import DType
 from max.mlir.dialects import mo
@@ -18,7 +20,7 @@ from .constant import constant
 
 
 def split(
-    x: TensorValueLike, split_sizes: list[DimLike], axis: int = 0
+    x: TensorValueLike, split_sizes: Sequence[DimLike], axis: int = 0
 ) -> list[TensorValue]:
     """Splits the input tensor into multiple tensors along a given dimension.
 

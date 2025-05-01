@@ -30,7 +30,11 @@ def test_qmatmul(session):
 
     with graph:
         graph.output(
-            ops.qmatmul(QuantizationEncoding.Q4_0, None, *graph.inputs)
+            ops.qmatmul(
+                QuantizationEncoding.Q4_0,
+                None,
+                *[x.tensor for x in graph.inputs],
+            )
         )
 
     compiled = session.load(graph)
@@ -61,7 +65,11 @@ def test_dequantize(session):
     )
 
     with graph:
-        graph.output(ops.dequantize(QuantizationEncoding.Q4_0, *graph.inputs))
+        graph.output(
+            ops.dequantize(
+                QuantizationEncoding.Q4_0, *[x.tensor for x in graph.inputs]
+            )
+        )
 
     compiled = session.load(graph)
     # TODO: This is more of a smoke test than anything; we should really add a
@@ -91,7 +99,9 @@ def test_dequantize_nondivisible_error():
                 r"last dimension \(.*19.*\) not divisible by block size \(18\)"
             ),
         ):
-            ops.dequantize(QuantizationEncoding.Q4_0, *graph.inputs)
+            ops.dequantize(
+                QuantizationEncoding.Q4_0, *[x.tensor for x in graph.inputs]
+            )
 
 
 @pytest.mark.skipif(
@@ -116,4 +126,6 @@ def test_dequantize_nonstatic_last_dim_error():
             TypeError,
             match="dequantize only supported with static last dimension",
         ):
-            ops.dequantize(QuantizationEncoding.Q4_0, *graph.inputs)
+            ops.dequantize(
+                QuantizationEncoding.Q4_0, *[x.tensor for x in graph.inputs]
+            )

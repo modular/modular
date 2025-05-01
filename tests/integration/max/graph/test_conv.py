@@ -53,7 +53,7 @@ def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
         padding = (0, 0)
         dilation = (1, 1)
 
-        conv = conv2d(x, filter, stride, dilation, (0, 0, 0, 0))
+        conv = conv2d(x.tensor, filter.tensor, stride, dilation, (0, 0, 0, 0))
         graph.output(conv)
 
         @modular_graph_test(session, graph)

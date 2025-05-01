@@ -100,7 +100,7 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store(n, buffer_graph: Graph, session: InferenceSession):
     with buffer_graph as graph:
-        input_buffer = graph.inputs[0]
+        input_buffer = graph.inputs[0].buffer
         x = buffer_load(input_buffer)
         x = x + n
         buffer_store(input_buffer, x)
@@ -124,7 +124,7 @@ def test_load_mutate_store_ellipsis(
     n, buffer_graph: Graph, session: InferenceSession
 ):
     with buffer_graph as graph:
-        input_buffer = graph.inputs[0]
+        input_buffer = graph.inputs[0].buffer
         input_buffer[...] = input_buffer[...] + n
         graph.output()
         graph._mlir_op.verify()
@@ -146,8 +146,8 @@ def test_store_slice_load_slice(
     n, buffer_tensor_graph: Graph, session: InferenceSession
 ):
     with buffer_tensor_graph as graph:
-        tensor = graph.inputs[0]
-        buffer = graph.inputs[1]
+        tensor = graph.inputs[0].tensor
+        buffer = graph.inputs[1].buffer
 
         buf_idx = [(slice(0, int(d)), d) for d in tensor.shape]
         y = tensor * tensor
@@ -183,7 +183,7 @@ def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
     with Graph(
         "basic", input_types=[bt], custom_extensions=[custom_ops_path]
     ) as graph:
-        buffer: BufferValue = graph.inputs[0]
+        buffer: BufferValue = graph.inputs[0].buffer
 
         # this custom op is equivalent to buffer[0,0] += 1
         ops.inplace_custom("mutable_test_op", values=[buffer])
@@ -249,8 +249,8 @@ def test_inplace_custom(custom_ops_path: Path) -> None:
         input_types=[buffer_type, tensor_type],
         custom_extensions=[custom_ops_path],
     ) as graph:
-        buffer: BufferValue = graph.inputs[0]
-        tensor: TensorValue = graph.inputs[1]
+        buffer: BufferValue = graph.inputs[0].buffer
+        tensor: TensorValue = graph.inputs[1].tensor
 
         chain_0 = graph._current_chain
 

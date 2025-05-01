@@ -151,7 +151,7 @@ def test_advanced_indexing_get_item(
                 else data_generator.max_output_tensor_type_unknown_shape()
             ],
             parameters={"start_axis": start_axis},
-        )[0]
+        )[0].tensor
         graph.output(out.cast(DType.float32))
 
     model = session.load(graph)
@@ -206,7 +206,7 @@ def test_advanced_indexing_set_item(
             values=list(graph.inputs),
             out_types=[data_generator.max_input_tensor_type()],
             parameters={"start_axis": start_axis},
-        )[0]
+        )[0].tensor
         graph.output(out.cast(DType.float32))
 
     model = session.load(graph)

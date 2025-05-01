@@ -7,6 +7,7 @@
 import max.driver as md
 import pytest
 import torch
+import torch.utils.dlpack
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -18,11 +19,11 @@ def max_irfft(session, input_tensor, n, axis, normalization):
             TensorType(DType.float32, input_tensor.shape, DeviceRef.GPU()),
         ),
     ) as graph:
-        output = ops.irfft(graph.inputs[0], n, axis, normalization)
+        output = ops.irfft(graph.inputs[0].tensor, n, axis, normalization)
         graph.output(output)
     model = session.load(graph)
     output = model(input_tensor)
-    output = torch.from_dlpack(output[0])
+    output = torch.utils.dlpack.from_dlpack(output[0])
     return output
 
 

@@ -22,7 +22,7 @@ def test_cumsum(session, dtype):
     input_type = TensorType(dtype, [1024], device=DeviceRef.CPU())
 
     with Graph(f"cumsum_{dtype}", input_types=[input_type]) as graph:
-        out = ops.cumsum(graph.inputs[0], axis=0)
+        out = ops.cumsum(graph.inputs[0].tensor, axis=0)
         graph.output(out.cast(DType.float32))
 
     model = session.load(graph)

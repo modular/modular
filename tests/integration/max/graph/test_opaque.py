@@ -8,8 +8,9 @@ import os
 from pathlib import Path
 
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, _OpaqueType, ops
 
 
@@ -86,9 +87,11 @@ def test_opaque_simple(
     maker_model: Model, bumper_model: Model, reader_model: Model
 ) -> None:
     counter = maker_model.execute()[0]
-    for i in range(5):
+    for _ in range(5):
         bumper_model.execute(counter)
-    result = reader_model.execute(counter)[0].to_numpy()
+    x = reader_model.execute(counter)[0]
+    assert isinstance(x, Tensor)
+    result = x.to_numpy()
 
     assert (result == [5, 15]).all()
 
@@ -127,6 +130,6 @@ def test_pyobject_opaque(
     bumper_compiled = session.load(bumper_graph)
 
     counter = PythonCounter()
-    for i in range(5):
-        counter = bumper_compiled.execute_legacy(input0=counter)["output0"]
+    for _ in range(5):
+        counter = bumper_compiled.execute_legacy(input0=counter)["output0"]  # type: ignore
     assert counter.a == 10 and counter.b == 55

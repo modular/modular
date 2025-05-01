@@ -7,8 +7,9 @@
 import platform
 
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
@@ -40,6 +41,6 @@ def test_random_uniform(session: InferenceSession, dtype: DType):
 
     model = session.load(graph)
     result = model.execute()[0]
-
+    assert isinstance(result, Tensor)
     array = result.to_numpy()
     assert (array >= 0.0).all() and (array <= 1.0).all()

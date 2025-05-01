@@ -36,12 +36,16 @@ def test_compile_config_split_k_reduction_scheme(
 
     session.set_split_k_reduction_precision("ACCUM")
     model = session.load(graph)
-    result = model.execute()[0].to_numpy()
+    output = model.execute()[0]
+    assert isinstance(output, Tensor)
+    result = output.to_numpy()
     assert result == [1]
 
     session.set_split_k_reduction_precision("OUTPUT")
     model = session.load(graph)
-    result = model.execute()[0].to_numpy()
+    output = model.execute()[0]
+    assert isinstance(output, Tensor)
+    result = output.to_numpy()
     assert result == [2]
 
 
@@ -58,7 +62,9 @@ def test_compile_config_use_logger(
 
     session.set_mojo_log_level(LogLevel.DEBUG)
     model = session.load(graph)
-    result = model.execute()[0].to_numpy()
+    output = model.execute()
+    assert isinstance(output[0], Tensor)
+    result = output[0].to_numpy()
 
     # On the Mojo side the logger level is set to DEBUG, so the result should be 10.
     assert result == [10]
@@ -112,7 +118,7 @@ def test_compile_config_dump_asm(
     x = Tensor.from_numpy(x_values).to(Accelerator())
 
     result = model.execute(x)[0]
-
+    assert isinstance(result, Tensor)
     assert (result.to_numpy() == x_values + np.ones_like(x_values)).all()
     assert output_path.exists()
     assert "algorithm_functional" in output_path.read_text()

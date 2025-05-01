@@ -8,6 +8,7 @@
 import numpy as np
 import pytest
 import torch
+import torch.utils.dlpack
 from max.driver import Tensor, accelerator_count
 from max.dtype import DType, max_to_torch_type
 from max.graph import DeviceRef, Graph, TensorType, Weight, ops
@@ -28,7 +29,7 @@ def test_f8_upcast(session, cast_dtype):
             ),
         ],
     ) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         out = x.cast(cast_dtype)
         graph.output(out)
 
@@ -37,9 +38,11 @@ def test_f8_upcast(session, cast_dtype):
     x_torch = (
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
     )
-    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
-    out = model.execute(x)[0]
-    out_torch = torch.from_dlpack(out)
+    x_tensor = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    out = model.execute(x_tensor)[0]
+    out_torch = torch.utils.dlpack.from_dlpack(out)
 
     expected = x_torch.to(torch.float32).cpu()
     np.testing.assert_allclose(
@@ -60,7 +63,7 @@ def test_f8_downcast(session, cast_dtype):
             ),
         ],
     ) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         out = x.cast(DType.float8_e4m3fn)
         graph.output(out)
 
@@ -71,9 +74,10 @@ def test_f8_downcast(session, cast_dtype):
         .to(max_to_torch_type(cast_dtype))
         .cuda()
     )
-    x = Tensor.from_dlpack(x_torch)
-    out = model.execute(x)[0]
-    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+    x_tensor = Tensor.from_dlpack(x_torch)
+    out = model.execute(x_tensor)[0]
+    assert isinstance(out, Tensor)
+    out_torch = torch.utils.dlpack.from_dlpack(out.view(DType.uint8)).view(
         torch.float8_e4m3fn
     )
 
@@ -100,8 +104,8 @@ def test_f8_matmul(session):
             ),
         ],
     ) as graph:
-        x = graph.inputs[0]
-        y = graph.inputs[1]
+        x = graph.inputs[0].tensor
+        y = graph.inputs[1].tensor
         out = x @ y
         graph.output(out)
 
@@ -111,10 +115,15 @@ def test_f8_matmul(session):
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
     )
     y_torch = torch.tensor([5.0, 6.0]).to(torch.float8_e4m3fn).cuda()
-    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
-    y = Tensor.from_dlpack(y_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
-    out = model.execute(x, y)[0]
-    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+    x_tensor = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    y_tensor = Tensor.from_dlpack(y_torch.view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    out = model.execute(x_tensor, y_tensor)[0]
+    assert isinstance(out, Tensor)
+    out_torch = torch.utils.dlpack.from_dlpack(out.view(DType.uint8)).view(
         torch.float8_e4m3fn
     )
 
@@ -145,7 +154,7 @@ def test_f8_constant(session):
             ),
         ],
     ) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         y = ops.constant(
             y_data, dtype=DType.float8_e4m3fn, device=DeviceRef.GPU()
         )
@@ -159,9 +168,12 @@ def test_f8_constant(session):
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
     )
     y_torch = torch.tensor(y_data).to(torch.float8_e4m3fn).cuda()
-    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
-    out = model.execute(x)[0]
-    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+    x_tensor = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    out = model.execute(x_tensor)[0]
+    assert isinstance(out, Tensor)
+    out_torch = torch.utils.dlpack.from_dlpack(out.view(DType.uint8)).view(
         torch.float8_e4m3fn
     )
 
@@ -192,7 +204,7 @@ def test_f8_weight_cpu(session):
             ),
         ],
     ) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         y = Weight(
             "y",
             dtype=DType.float8_e4m3fn,
@@ -211,9 +223,12 @@ def test_f8_weight_cpu(session):
     x_torch = (
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
     )
-    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
-    out = model.execute(x)[0]
-    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+    x_tensor = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    out = model.execute(x_tensor)[0]
+    assert isinstance(out, Tensor)
+    out_torch = torch.utils.dlpack.from_dlpack(out.view(DType.uint8)).view(
         torch.float8_e4m3fn
     )
 
@@ -244,7 +259,7 @@ def test_f8_weight_gpu(session):
             ),
         ],
     ) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         y = Weight(
             "y",
             dtype=DType.float8_e4m3fn,
@@ -263,9 +278,12 @@ def test_f8_weight_gpu(session):
     x_torch = (
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
     )
-    x = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(DType.float8_e4m3fn)
-    out = model.execute(x)[0]
-    out_torch = torch.from_dlpack(out.view(DType.uint8)).view(
+    x_tensor = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(
+        DType.float8_e4m3fn
+    )
+    out = model.execute(x_tensor)[0]
+    assert isinstance(out, Tensor)
+    out_torch = torch.utils.dlpack.from_dlpack(out.view(DType.uint8)).view(
         torch.float8_e4m3fn
     )
 

@@ -24,7 +24,7 @@ def test_atanh(session: InferenceSession, dtype: DType):
     )
 
     with Graph(f"atanh_{dtype}", input_types=[input_type]) as graph:
-        out = ops.atanh(graph.inputs[0])
+        out = ops.atanh(graph.inputs[0].tensor)
         graph.output(out.cast(DType.float32))
 
     model = session.load(graph)
@@ -40,10 +40,9 @@ def test_atanh(session: InferenceSession, dtype: DType):
     input_data = torch.rand(1024, dtype=torch_dtype) * 2.0 - 1.0
     input_data = torch.clamp(input_data, min=-extreme_value, max=extreme_value)
 
-    max_result = model(
-        Tensor.from_dlpack(input_data).to(model.input_devices[0])
-    )[0]
-    max_result = max_result.to_numpy()
+    output = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))[0]
+    assert isinstance(output, Tensor)
+    max_result = output.to_numpy()
 
     torch_result = torch.atanh(input_data).to(dtype=torch.float32).cpu().numpy()
 

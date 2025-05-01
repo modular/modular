@@ -21,7 +21,7 @@ def test_clamp(session, dtype):
     input_type = TensorType(dtype, [10, 10], device=device_ref)
 
     with Graph(f"clamp_{dtype}", input_types=[input_type]) as graph:
-        out = nn.clamp(graph.inputs[0], min=10, max=20)
+        out = nn.clamp(graph.inputs[0].tensor, min=10, max=20)
         graph.output(out.cast(DType.float32))
 
     model = session.load(graph)
