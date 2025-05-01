@@ -53,7 +53,10 @@ def cumsum(
     if not 0 <= axis < x.rank:
         raise ValueError(f"Invalid {axis=} for input {x.rank=}")
 
-    return Graph.current._add_op(
+    # TODO(KERN-1095): Add support for GPU kernel for cumsum and remove manual transfers
+    original_device = x.type.device
+    x = x.to(DeviceRef.CPU())
+    answer = Graph.current._add_op(
         rmo.mo_cumsum,
         x.type.to_mlir(),
         x,
@@ -61,3 +64,4 @@ def cumsum(
         exclusive=mlir.IntegerAttr.get(mlir.IndexType.get(), int(exclusive)),
         reverse=mlir.IntegerAttr.get(mlir.IndexType.get(), int(reverse)),
     )[0].tensor
+    return answer.to(original_device)
