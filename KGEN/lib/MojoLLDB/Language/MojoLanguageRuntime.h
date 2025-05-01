@@ -64,8 +64,8 @@ public:
   lldb::ThreadPlanSP GetStepThroughTrampolinePlan(lldb_private::Thread &thread,
                                                   bool stop_others) override {
 
-    lldb::ThreadPlanSP ret_plan_sp;
-    return ret_plan_sp;
+    lldb::ThreadPlanSP retPlanSp;
+    return retPlanSp;
   }
 
   bool IsAllowedRuntimeValue(lldb_private::ConstString name) override {

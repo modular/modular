@@ -181,8 +181,8 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
       executionResult == lldb::eExpressionHitBreakpoint) {
     const char *errorDesc = nullptr;
     if (userExpressionPlan) {
-      if (auto real_stop_info_sp = userExpressionPlan->GetRealStopInfo())
-        errorDesc = real_stop_info_sp->GetDescription();
+      if (auto realStopInfoSp = userExpressionPlan->GetRealStopInfo())
+        errorDesc = realStopInfoSp->GetDescription();
     }
     if (errorDesc)
       diagnosticManager.Printf(lldb::eSeverityError,
