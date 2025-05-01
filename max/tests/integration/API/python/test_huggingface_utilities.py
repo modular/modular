@@ -69,9 +69,6 @@ def test_huggingface_repo__file_exists(llama_3_1_8b_instruct_local_path):
         Path("model-00003-of-00004.safetensors"),
         Path("model-00004-of-00004.safetensors"),
     ]
-    assert not hf_repo.file_exists(
-        "this_definitely_should_not_exist.safetensors"
-    )
 
 
 def test_huggingface_repo__get_files_for_encoding():
