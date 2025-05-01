@@ -76,58 +76,58 @@ getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
         name == ".data") {
       sectType = lldb::eSectionTypeCode;
     } else if (name.starts_with("__debug_") || name.starts_with(".debug_")) {
-      const uint32_t name_idx = name[0] == '_' ? 8 : 7;
-      StringRef dwarf_name(name.substr(name_idx));
-      switch (dwarf_name[0]) {
+      const uint32_t nameIdx = name[0] == '_' ? 8 : 7;
+      StringRef dwarfName(name.substr(nameIdx));
+      switch (dwarfName[0]) {
       case 'a':
-        if (dwarf_name == "abbrev")
+        if (dwarfName == "abbrev")
           sectType = lldb::eSectionTypeDWARFDebugAbbrev;
-        else if (dwarf_name == "aranges")
+        else if (dwarfName == "aranges")
           sectType = lldb::eSectionTypeDWARFDebugAranges;
-        else if (dwarf_name == "addr")
+        else if (dwarfName == "addr")
           sectType = lldb::eSectionTypeDWARFDebugAddr;
         break;
 
       case 'f':
-        if (dwarf_name == "frame")
+        if (dwarfName == "frame")
           sectType = lldb::eSectionTypeDWARFDebugFrame;
         break;
 
       case 'i':
-        if (dwarf_name == "info")
+        if (dwarfName == "info")
           sectType = lldb::eSectionTypeDWARFDebugInfo;
         break;
 
       case 'l':
-        if (dwarf_name == "line")
+        if (dwarfName == "line")
           sectType = lldb::eSectionTypeDWARFDebugLine;
-        else if (dwarf_name == "loc")
+        else if (dwarfName == "loc")
           sectType = lldb::eSectionTypeDWARFDebugLoc;
-        else if (dwarf_name == "loclists")
+        else if (dwarfName == "loclists")
           sectType = lldb::eSectionTypeDWARFDebugLocLists;
         break;
 
       case 'm':
-        if (dwarf_name == "macinfo")
+        if (dwarfName == "macinfo")
           sectType = lldb::eSectionTypeDWARFDebugMacInfo;
         break;
 
       case 'p':
-        if (dwarf_name == "pubnames")
+        if (dwarfName == "pubnames")
           sectType = lldb::eSectionTypeDWARFDebugPubNames;
-        else if (dwarf_name == "pubtypes")
+        else if (dwarfName == "pubtypes")
           sectType = lldb::eSectionTypeDWARFDebugPubTypes;
         break;
 
       case 's':
-        if (dwarf_name == "str")
+        if (dwarfName == "str")
           sectType = lldb::eSectionTypeDWARFDebugStr;
-        else if (dwarf_name == "str_offsets")
+        else if (dwarfName == "str_offsets")
           sectType = lldb::eSectionTypeDWARFDebugStrOffsets;
         break;
 
       case 'r':
-        if (dwarf_name == "ranges")
+        if (dwarfName == "ranges")
           sectType = lldb::eSectionTypeDWARFDebugRanges;
         break;
 
@@ -430,10 +430,10 @@ public:
       // We found a load address.
       if (loadAddr != LLDB_INVALID_ADDRESS) {
         // If the load address is external, we're done.
-        const bool is_external =
+        const bool isExternal =
             (candidate.function) ||
             (candidate.symbol && candidate.symbol->IsExternal());
-        if (is_external)
+        if (isExternal)
           return loadAddr;
 
         // Otherwise, remember the best internal load address.
@@ -723,11 +723,11 @@ struct IRExecDiagnosticHandler : public llvm::DiagnosticHandler {
   IRExecDiagnosticHandler(Status *err) : err(err) {}
   bool handleDiagnostics(const llvm::DiagnosticInfo &DI) override {
     if (DI.getKind() == llvm::DK_SrcMgr) {
-      const auto &DISM = llvm::cast<llvm::DiagnosticInfoSrcMgr>(DI);
+      const auto &dism = llvm::cast<llvm::DiagnosticInfoSrcMgr>(DI);
       if (err && err->Success()) {
         *err = Status::FromErrorStringWithFormatv(
             "Inline assembly error: %s",
-            DISM.getSMDiag().getMessage().str().c_str());
+            dism.getSMDiag().getMessage().str().c_str());
       }
       return true;
     }
@@ -821,10 +821,10 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   for (std::string &feature : impl->cpuFeatures)
     mAttrs.push_back(feature);
 
-  llvm::TargetMachine *target_machine =
+  llvm::TargetMachine *targetMachine =
       builder.selectTarget(triple, mArch, mCPU, mAttrs);
 
-  impl->executionEngine.reset(builder.create(target_machine));
+  impl->executionEngine.reset(builder.create(targetMachine));
   impl->executionEngine->UnregisterJITEventListener(
       llvm::JITEventListener::createGDBRegistrationListener());
 

@@ -95,40 +95,40 @@ struct ParsedDWARFTypeAttributes {
     DWARFAttributes attributes = die.GetAttributes();
     for (size_t i = 0; i < attributes.Size(); ++i) {
       dw_attr_t attr = attributes.AttributeAtIndex(i);
-      DWARFFormValue form_value;
-      if (!attributes.ExtractFormValueAtIndex(i, form_value))
+      DWARFFormValue formValue;
+      if (!attributes.ExtractFormValueAtIndex(i, formValue))
         continue;
       switch (attr) {
       default:
         break;
 
       case DW_AT_byte_size:
-        byteSize = form_value.Unsigned();
+        byteSize = formValue.Unsigned();
         break;
 
       case DW_AT_alignment:
-        alignment = form_value.Unsigned();
+        alignment = formValue.Unsigned();
         break;
 
       case DW_AT_decl_file:
         decl.SetFile(
-            attributes.CompileUnitAtIndex(i)->GetFile(form_value.Unsigned()));
+            attributes.CompileUnitAtIndex(i)->GetFile(formValue.Unsigned()));
         break;
 
       case DW_AT_decl_line:
-        decl.SetLine(form_value.Unsigned());
+        decl.SetLine(formValue.Unsigned());
         break;
 
       case DW_AT_decl_column:
-        decl.SetColumn(form_value.Unsigned());
+        decl.SetColumn(formValue.Unsigned());
         break;
 
       case DW_AT_encoding:
-        encoding = form_value.Unsigned();
+        encoding = formValue.Unsigned();
         break;
 
       case DW_AT_external:
-        external = form_value.Boolean();
+        external = formValue.Boolean();
         break;
 
       case DW_AT_inline:
@@ -136,15 +136,15 @@ struct ParsedDWARFTypeAttributes {
         break;
 
       case DW_AT_linkage_name:
-        linkageName.SetCString(form_value.AsCString());
+        linkageName.SetCString(formValue.AsCString());
         break;
 
       case DW_AT_name:
-        name.SetCString(form_value.AsCString());
+        name.SetCString(formValue.AsCString());
         break;
 
       case DW_AT_type:
-        type = form_value;
+        type = formValue;
         break;
 
       case DW_AT_GNU_vector:
@@ -172,17 +172,17 @@ struct MemberAttributes {
     DWARFAttributes attributes = die.GetAttributes();
     for (size_t i = 0; i < attributes.Size(); ++i) {
       const dw_attr_t attr = attributes.AttributeAtIndex(i);
-      DWARFFormValue form_value;
-      if (attributes.ExtractFormValueAtIndex(i, form_value)) {
+      DWARFFormValue formValue;
+      if (attributes.ExtractFormValueAtIndex(i, formValue)) {
         switch (attr) {
         case DW_AT_name:
-          name = form_value.AsCString();
+          name = formValue.AsCString();
           break;
         case DW_AT_type:
-          type = form_value;
+          type = formValue;
           break;
         case DW_AT_data_member_location:
-          byteOffset = form_value.Unsigned();
+          byteOffset = formValue.Unsigned();
           break;
         default:
           break;
@@ -615,28 +615,28 @@ DebugInfo::SourceNameAttr
 MojoDWARFParser::extractSourceName(const DWARFDIE &die) {
   for (auto child : die.children()) {
     if (child.Tag() == DW_TAG_LLVM_annotation) {
-      StringRef tag_name, tag_value;
+      StringRef tagName, tagValue;
       DWARFAttributes attributes = child.GetAttributes();
       for (size_t i = 0, e = attributes.Size(); i < e; ++i) {
-        DWARFFormValue form_value;
+        DWARFFormValue formValue;
         const dw_attr_t attr = attributes.AttributeAtIndex(i);
-        if (attributes.ExtractFormValueAtIndex(i, form_value)) {
+        if (attributes.ExtractFormValueAtIndex(i, formValue)) {
           switch (attr) {
           case DW_AT_name:
-            tag_name = form_value.AsCString();
+            tagName = formValue.AsCString();
             break;
           case DW_AT_const_value:
-            tag_value = form_value.AsCString();
+            tagValue = formValue.AsCString();
             break;
           default:
             break;
           }
         }
       }
-      if (tag_name == "mojo_source_name") {
+      if (tagName == "mojo_source_name") {
         ErrorOr<DebugInfo::SourceNameAttr> attrOr =
             DebugInfo::SourceNameAttr::decode(typeSystem.getMLIRContext(),
-                                              tag_value);
+                                              tagValue);
         if (succeeded(attrOr))
           return *attrOr;
       }

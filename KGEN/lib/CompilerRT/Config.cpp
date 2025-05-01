@@ -22,9 +22,9 @@ KGEN_CompilerRT_getMAXConfigValue(const char *key, size_t length) {
   if (configOr.isError())
     return nullptr;
 
-  llvm::Twine configKey =
-      llvm::Twine(STRINGIFY_MAX_CONFIG).concat(StringRef(key, length));
-  StringRef value = configOr->getValue(configKey.str());
+  std::string configKey =
+      (llvm::Twine(STRINGIFY_MAX_CONFIG).concat(StringRef(key, length))).str();
+  StringRef value = configOr->getValue(configKey);
   char *res = (char *)KGEN_CompilerRT_AlignedAlloc(kPreferredMemoryAlignment,
                                                    value.size() + 1);
   strncpy(res, value.str().c_str(), value.size());

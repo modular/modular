@@ -60,8 +60,8 @@ MojoLanguageRuntime::CreateExceptionResolver(const BreakpointSP &bkpt,
     context->exe_ctx_ref.GetThreadSP()->StepOut();
     return true;
   };
-  lldb::BatonSP callback_baton_sp;
-  resolver->GetBreakpoint()->SetCallback(callback, callback_baton_sp);
+  lldb::BatonSP callbackBatonSp;
+  resolver->GetBreakpoint()->SetCallback(callback, callbackBatonSp);
 
   return resolver;
 }
