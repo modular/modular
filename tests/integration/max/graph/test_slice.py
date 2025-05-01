@@ -8,10 +8,12 @@ import operator
 
 import numpy as np
 import pytest
-from max.driver import Tensor
+from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, StaticDim, TensorType
+
+device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
 @pytest.mark.parametrize(
@@ -19,28 +21,28 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType
     [
         # x[1:]
         (
-            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, shape=["dim0"], device=device_ref),
             (slice(1, None),),
         ),
         (
             TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+                DType.float32, shape=["dim0", "dim1"], device=device_ref
             ),
             (slice(1, None),),
         ),
         # x[:-1]
         (
-            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, shape=["dim0"], device=device_ref),
             (slice(None, -1)),
         ),
         # x[-1:]
         (
-            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, shape=["dim0"], device=device_ref),
             (slice(-1, None)),
         ),
         # x[::2]
         (
-            TensorType(DType.float32, shape=["dim0"], device=DeviceRef.CPU()),
+            TensorType(DType.float32, shape=["dim0"], device=device_ref),
             (slice(None, None, 2),),
         ),
         # x[::-1]
@@ -49,14 +51,14 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType
         # x[:, None, :]
         (
             TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+                DType.float32, shape=["dim0", "dim1"], device=device_ref
             ),
             (slice(None), None, slice(None)),
         ),
         # x[..., None]
         (
             TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+                DType.float32, shape=["dim0", "dim1"], device=device_ref
             ),
             (Ellipsis, None),
         ),
@@ -65,14 +67,14 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType
             TensorType(
                 DType.float32,
                 shape=["dim0", "dim1", "dim2"],
-                device=DeviceRef.CPU(),
+                device=device_ref,
             ),
             (Ellipsis, 1),
         ),
         # x[Ellipsis, 1:]
         (
             TensorType(
-                DType.float32, shape=["dim0", "dim1"], device=DeviceRef.CPU()
+                DType.float32, shape=["dim0", "dim1"], device=device_ref
             ),
             (Ellipsis, slice(1, None)),
         ),
@@ -87,7 +89,7 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType
             TensorType(
                 DType.float32,
                 shape=["dim0", "dim1", "dim2"],
-                device=DeviceRef.CPU(),
+                device=device_ref,
             ),
             (slice(None), -1),
         ),
