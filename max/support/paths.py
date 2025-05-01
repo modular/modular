@@ -4,20 +4,37 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import logging
+import shlex
 import subprocess
 import sys
 import tempfile
-from logging import (
-    debug as log_debug,
-)
-from logging import (
-    error as log_error,
-)
+from dataclasses import dataclass
 from pathlib import Path
 
 
 def _eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
+
+
+class Error(Exception):
+    """Base error for max paths."""
+
+
+@dataclass
+class MojoCompilationError(Error):
+    """Error encountered compiling a Mojo source package."""
+
+    path: Path
+    command: list[str]
+    stdout: str
+    stderr: str
+
+    def __str__(self):
+        command = shlex.join(self.command)
+        return (
+            f"error compiling {self.path}. Command: {command}\n\n{self.stderr}"
+        )
 
 
 def is_mojo_source_package_path(path: Path) -> bool:
@@ -58,35 +75,18 @@ def _build_mojo_source_package(path: Path) -> Path:
     # FIXME(GEX-2032): Delete this source package to avoid cluttering
     #   the users temporary directory.
     tmp = tempfile.NamedTemporaryFile(suffix=".mojopkg", delete=False)
+    args = ["mojo", "package", str(path), "-o", tmp.name]
 
     try:
         # TODO(GEX-2033): Either locate `mojo` more robustly, so this still
         #   works when `mojo` is not on the users runtime `PATH`, or call
         #   directly into the lower-level Mojo compiler packaging code.
-        package_result = subprocess.run(
-            ["mojo", "package", str(path), "-o", tmp.name],
-            capture_output=True,
-            check=True,
-        )
+        package_result = subprocess.run(args, capture_output=True, check=True)
     except subprocess.CalledProcessError as e:
-        log_error(
-            "ERROR: `mojo package` invocation failed with exit code",
-            e.returncode,
-            "while building source package at:\n  ",
-            path,
+        error = MojoCompilationError(
+            path, args, e.stdout.decode(), e.stderr.decode()
         )
-        log_debug("\nRaw `mojo package` output follows.")
-        log_debug("\n===== STDERR =====\n")
-        log_debug(e.stderr.decode("utf-8"))
-        log_debug("\n===== STDOUT =====\n")
-        log_debug(e.stdout.decode("utf-8"))
-        log_debug(
-            "\n\nERROR: `mojo package` invocation failed. See above"
-            " output for more information."
-        )
-
-        raise RuntimeError(
-            f"An error occurred compiling the specified Mojo source package at {path}."
-        ) from e
+        logging.error(str(error))
+        raise error from e
 
     return Path(tmp.name)
