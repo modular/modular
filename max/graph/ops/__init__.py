@@ -28,6 +28,7 @@ from .argsort import argsort
 from .band_part import band_part
 from .broadcast_to import broadcast_to
 from .buffer import buffer_load, buffer_store, buffer_store_slice
+from .call import call
 from .cast import cast
 from .chunk import chunk
 from .complex import as_interleaved_complex

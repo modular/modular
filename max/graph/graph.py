@@ -157,6 +157,13 @@ class Graph:
 
     _kernel_library_paths_attr_name = "_kernel_library_paths"
 
+    _subgraphs: dict[str, Graph] = {}
+
+    # This allows us to remap mlir.Value instances to other mlir.Value instances, similar to how
+    # IRMapping works in the C++ MLIR API. It's particularly useful for implementing subgraphs
+    # that need to remap the values of the parent graph to arguments of the subgraph.
+    _mlir_value_map: dict[mlir.Value, mlir.Value] = {}
+
     def __init__(
         self,
         name: str,
@@ -167,6 +174,7 @@ class Graph:
         custom_extensions: list[Path] = [],
         context: Optional[mlir.Context] = None,
         kernel_library: Optional[KernelLibrary] = None,
+        module: Optional[mlir.Module] = None,
         **kwargs,
     ) -> None:
         self.name = name
@@ -189,7 +197,7 @@ class Graph:
 
         with self._context, self._location() as loc:
             # Create the top level module op.
-            self._module = mlir.Module.create()
+            self._module = module or mlir.Module.create()
 
             with mlir.InsertionPoint(self._module.body):
                 # Initially create the function type with blank output types --
@@ -234,6 +242,9 @@ class Graph:
                         + f"Mojo source or binary package: {ext_path}"
                     )
 
+        self._subgraphs = {}
+        self._mlir_value_map = {}
+
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
             # constructor.
@@ -249,6 +260,33 @@ class Graph:
                     else result
                 )
                 self.output(*outputs)
+
+    def add_subgraph(
+        self,
+        name: str,
+        forward: Optional[Callable] = None,
+        input_types: Iterable[Type] = (),
+        path: Optional[Path] = None,
+        custom_extensions: list[Path] = [],
+    ) -> Graph:
+        subgraph = Graph(
+            name=name,
+            forward=forward,
+            input_types=input_types,
+            path=path,
+            # *args,
+            custom_extensions=custom_extensions,
+            context=self._context,
+            module=self._module,
+            # **kwargs,
+        )
+        subgraph._mlir_op.attributes["isSubgraph"] = mlir.UnitAttr.get()
+        subgraph._mlir_op.attributes["inputParams"] = self._mlir_op.attributes[
+            "inputParams"
+        ]
+        subgraph._params = dict.fromkeys(self._params)
+        self._subgraphs[name] = subgraph
+        return subgraph
 
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
@@ -349,8 +387,10 @@ class Graph:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):
             if isinstance(arg, Value):
-                return arg._mlir_value
-            elif isinstance(arg, list):
+                return self._mlir_value_map.get(
+                    arg._mlir_value, arg._mlir_value
+                )
+            if isinstance(arg, list):
                 return [unwrap(elem) for elem in arg]
             elif isinstance(arg, _Type):
                 return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
@@ -525,6 +565,8 @@ class Graph:
             f"[{', '.join(output_names)}]"
         )
 
+        self._mlir_value_map = {}
+        self._subgraphs = {}
         # Outputting means the graph is complete. Verify the entire graph.
         try:
             with self._capturing_mlir_diagnostics():
