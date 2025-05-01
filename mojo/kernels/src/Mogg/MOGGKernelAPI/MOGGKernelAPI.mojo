@@ -3011,9 +3011,9 @@ struct MutableStore:
 
         @parameter
         @always_inline
-        fn out_func[width: Int, rank: Int](index: IndexList[rank]) capturing:
+        fn out_func[width: Int](index: IndexList[buffer.rank]) capturing:
             var val = func[width](rebind[IndexList[buffer.rank]](index))
-            buffer.store(index, val)
+            buffer.store[width=width](index, val)
 
         foreach[
             func,

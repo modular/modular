@@ -1144,19 +1144,21 @@ struct MutableStore:
     ) raises:
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[2]) -> SIMD[DType.float32, width]:
+        fn func[
+            width: Int
+        ](idx: IndexList[tensor.rank]) -> SIMD[DType.float32, width]:
             return rebind[SIMD[tensor.type, width]](
                 tensor._fused_load[width](idx)
             )
 
         @parameter
         @always_inline
-        fn out_func[width: Int, rank: Int](index: IndexList[rank]) capturing:
-            var idx = rebind[IndexList[2]](index)
+        fn out_func[width: Int](index: IndexList[tensor.rank]) capturing:
+            var idx = rebind[IndexList[tensor.rank]](index)
             var val = func[width](idx)
             idx[0] += 1
             idx[1] += 1
-            tw.buffer.store(idx, val)
+            tw.buffer.store[width=width](idx, val)
 
         foreach[
             func,
