@@ -59,7 +59,6 @@ def LIT_FnOp : LITOp<"fn", [
     KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-    UnitAttr:$isInherited,
     UnitAttr:$isSynthetic,
     UnitAttr:$isImplicitConversion,
     KGEN_ExportKindAttr:$exportKind,
@@ -70,6 +69,8 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<StrAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$sourceName,
+    // The trait symbol this function is inherited from. None if self-declared.
+    OptionalAttr<SymbolRefAttr>:$inheritedFrom,
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,

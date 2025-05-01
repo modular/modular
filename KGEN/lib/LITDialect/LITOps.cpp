@@ -873,13 +873,14 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         TypeAttr::get(signature.getBody().getValues()),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/none, /*isDef=*/none,
-        /*isInherited=*/none, /*isSynthetic=*/none,
+        /*isSynthetic=*/none,
         /*isImplicitConversion=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(SpecialFunctionKind::kNormal)),
-        StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
-        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
+        StringAttr(), sourceName, /*inheritedFrom=*/{}, StringAttr(),
+        DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
+        ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
 

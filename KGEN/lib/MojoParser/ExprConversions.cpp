@@ -1494,7 +1494,7 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
       auto traitFn = dyn_cast<FnOp>(*decl);
       // Skip any children that aren't methods or are inherited. This could be
       // an alias.
-      if (!traitFn || traitFn.getIsInherited())
+      if (!traitFn || traitFn.getInheritedFrom())
         continue;
       // MLIR types are movable, copyable, and destructible only.
       if (llvm::is_contained({SpecialFunctionKind::kMoveInit,

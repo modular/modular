@@ -2771,6 +2771,8 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
         if (failed(resolveBody(*decl, traitDecl.getLoc())))
           continue;
         auto func = cast<FnOp>(decl);
+        if (func.getInheritedFrom())
+          continue;
         // Ensure that a function with the same name and signature hasn't
         // already been declared.
         if (!existingFns.insert({name, func.getSymNameAttr()}).second)
@@ -2787,7 +2789,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
 
         // Mark the function as inherited so that conformance checking won't
         // give duplicate errors if it is not provided.
-        func.setIsInherited(true);
+        func.setInheritedFromAttr(parent);
         body.push_back(func);
         ASTDecl &clonedDecl =
             addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
@@ -2871,7 +2873,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
           return failure();
 
         if (auto fn = dyn_cast<FnOp>(decl)) {
-          if (fn.getIsInherited())
+          if (fn.getInheritedFrom())
             continue;
         } else if (auto alias = dyn_cast<AliasDeclOp>(decl)) {
           // Check if the type is mergeable with the existing alias type.

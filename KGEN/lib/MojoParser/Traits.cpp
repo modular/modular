@@ -197,7 +197,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   // Returns failure() to stop the verifyConformance loop.
   auto checkMethod = [&](const mlir::StringAttr &name, ASTDecl *traitFnDecl,
                          FnOp traitFn) -> LogicalResult {
-    if (traitFn.getIsInherited()) {
+    if (traitFn.getInheritedFrom()) {
       // Skip inherited methods, they're checked at a different time.
       return success();
     }
@@ -256,8 +256,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
   auto checkAlias = [&](const mlir::StringAttr &name, ASTDecl *traitAliasDecl,
                         AliasDeclOp traitAlias) -> LogicalResult {
-    // TODO(MOCO-1140): check traitAlias.getIsInherited(); implement inheritance
-    // of alias decls.
+    // TODO(MOCO-1140): check traitAlias.getInheritedFrom(); implement
+    // inheritance of alias decls.
     if (failed(shared.declResolver->resolveSignature(*traitAliasDecl,
                                                      structDecl.getLoc()))) {
       hadErrors = true;
