@@ -148,6 +148,19 @@ def test_call_multi_input(input_type: TensorType):
         assert results[0].type == input_type
 
 
+def test_call_num_inputs_mismatch():
+    """Test calling a graph with a mismatch in the number of inputs."""
+    input_types = [TensorType(DType.float32, [4], DeviceRef.CPU())] * 4
+
+    with Graph(
+        "main",
+        input_types=input_types,
+    ) as main_graph:
+        subgraph = create_multi_input_subgraph(main_graph, input_types)
+        with pytest.raises(ValueError, match="expected 4 arguments, got 1"):
+            ops.call(subgraph, main_graph.inputs[0])
+
+
 def test_call_chain_updates():
     """Test that calling a subgraph with chain input/output updates the chain."""
     buffer_type = BufferType(DType.float32, [4], DeviceRef.CPU())
@@ -161,10 +174,6 @@ def test_call_chain_updates():
         ) as subgraph:
             buffer = subgraph.inputs[1]
             tensor = subgraph.inputs[2]
-            # if not hasattr(buffer, "buffer") or not hasattr(tensor, "tensor"):
-            #     pytest.skip(
-            #         "BufferValue and TensorValue properties not available on subgraph inputs."
-            #     )
             buf_val = buffer.buffer
             ten_val = tensor.tensor
             ops.buffer_store(buf_val, ten_val)
@@ -191,10 +200,6 @@ def test_call_chain_input_output_mismatch():
         ) as subgraph:
             buffer = subgraph.inputs[1]
             tensor = subgraph.inputs[2]
-            # if not hasattr(buffer, "buffer") or not hasattr(tensor, "tensor"):
-            #     pytest.skip(
-            #         "BufferValue and TensorValue properties not available on subgraph inputs."
-            #     )
             buf_val = buffer.buffer
             ten_val = tensor.tensor
             # This will use the chain, but we intentionally do NOT output anything (no chain output)

@@ -70,6 +70,12 @@ def call(graph: Graph, *args: Value | mlir.Value) -> list[Value]:
             "Subgraphs with chain inputs must also have chain outputs, and vice versa"
         )
 
+    data_func_inputs = function_type.inputs[int(has_chain_input) :]
+    if len(args) != len(data_func_inputs):
+        raise ValueError(
+            f"In call to {symbol_name}, expected {len(data_func_inputs)} arguments, got {len(args)}"
+        )
+
     arg_types: Iterable[mlir.Type] = map(
         lambda arg: arg._mlir_value.type
         if isinstance(arg, Value)
@@ -77,7 +83,7 @@ def call(graph: Graph, *args: Value | mlir.Value) -> list[Value]:
         args,
     )
     for idx, (arg_type, operand_type) in enumerate(
-        zip(arg_types, function_type.inputs[int(has_chain_input) :])
+        zip(arg_types, data_func_inputs)
     ):
         if arg_type != operand_type:
             raise ValueError(
