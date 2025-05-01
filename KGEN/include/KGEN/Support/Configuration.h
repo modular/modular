@@ -101,6 +101,9 @@ public:
   /// Return the path to the linker driver to use when linking mojo executables.
   StringRef getLinkerDriver();
 
+  /// Returns the path to lld that should be used for linking shared libraries.
+  StringRef getLLDPath();
+
   /// Return the system libraries to link with Mojo when building a standalone
   /// binary.
   void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
