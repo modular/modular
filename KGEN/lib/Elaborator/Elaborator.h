@@ -221,14 +221,19 @@ public:
   concretizeSymbolsWithin(Attribute value, ImplNode *parent, Location loc);
 
   /// Lookup an existing concrete function.
-  FuncOp lookupConcreteFunction(SymbolRefAttr symbol) {
+  InstantiatedOpInterface lookupInstantiatedOp(SymbolRefAttr symbol) {
     StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-    InstantiatedOpInterface &localResult = (*tlInsts)[name];
+    InstantiatedOpInterface localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
           concreteNodes.read([name](auto &map) { return map.at(name)->inst; });
     }
-    return cast<FuncOp>(*localResult);
+    return localResult;
+  }
+
+  ImplNode *lookupImplNode(SymbolRefAttr symbol) {
+    StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
+    return concreteNodes.read([name](auto &map) { return map.at(name); });
   }
 
   /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,

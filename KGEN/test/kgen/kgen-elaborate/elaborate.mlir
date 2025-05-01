@@ -1984,27 +1984,105 @@ kgen.struct.generator @"LinkedList"<T: type> = struct_inst<
     data: typevalue<T>,
     next: typevalue<#kgen.genref<@LinkedList<:type T>>>
   )>
+{
+  kgen.conformance @Boolable {
+    kgen.witness "__bool__" : (!kgen.struct<(T, pointer<none>)>) -> i1 = @"LinkedList::__bool__(::LinkedList)"<:type T>
+  }
+}
+
+kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type>(%arg0: !kgen.struct<(T, pointer<none>)>) -> i1 {
+  %index1 = kgen.param.constant : i1 = <1>
+  kgen.return %index1 : i1
+}
 
 // CHECK-LABEL: kgen.struct.instance @NonParametric
 // CHECK-SAME:    struct_inst<"NonParametric"(data: index)>
-kgen.struct.generator @NonParametric = struct_inst<"NonParametric"(data: index)>
+kgen.struct.generator @NonParametric = struct_inst<"NonParametric"(data: index)> {
+  kgen.conformance @Boolable {
+    kgen.witness "__bool__" : (!kgen.struct<(index)>) -> i1 = @"NonParametric::__bool__(::NonParametric)"
+  }
+}
 
-kgen.generator @use_type<T: type>() {
+kgen.generator @"NonParametric::__bool__(::NonParametric)"(%arg0: !kgen.struct<(index)>) -> i1 {
+  %index1 = kgen.param.constant : i1 = <1>
+  kgen.return %index1 : i1
+}
+
+// CHECK-LABEL: kgen.func @"use_boolable,T={{.*}}LinkedList,T=index
+// CHECK-NEXT:    kgen.call @"LinkedList::__bool__(::LinkedList),T=index"
+
+// CHECK-LABEL: kgen.func @"use_boolable,T={{.*}}LinkedList,T=none
+// CHECK-NEXT:    kgen.call @"LinkedList::__bool__(::LinkedList),T=none"
+
+// CHECK-LABEL: kgen.func @"use_boolable,T={{.*}}NonParametric
+// CHECK-NEXT:    kgen.call @"NonParametric::__bool__(::NonParametric)"
+kgen.generator @use_boolable<T: type>(%arg: !kgen.param<T>) -> i1 {
+  kgen.param.declare traitMethod: (!kgen.param<T>) -> i1  = <#kgen.get_witness<#kgen.param.decl.ref<"T">, "Boolable", "__bool__">>
+  %result = kgen.call_param[(!kgen.param<T>) -> i1 : traitMethod](%arg)
+  kgen.return %result : i1
+}
+
+#linkedlist_index = #kgen.type<typevalue<:!kgen.type #kgen.genref<@LinkedList<:type index>>>, struct<(index, !kgen.pointer<none>)>> : !kgen.type
+#linkedlist_none = #kgen.type<typevalue<:!kgen.type #kgen.genref<@LinkedList<:type none>>>, struct<(none, !kgen.pointer<none>)>> : !kgen.type
+#nonparametric = #kgen.type<typevalue<:!kgen.type #kgen.genref<@NonParametric>>, struct<(index)>> : !kgen.type
+
+// CHECK-LABEL: kgen.func @gen_structs
+kgen.generator @gen_structs(%arg0: !kgen.struct<(index, !kgen.pointer<none>)>, %arg1: !kgen.struct<(none, !kgen.pointer<none>)>, %arg2: !kgen.struct<(index)>) {
+  // CHECK-NEXT: kgen.call {{.*}}LinkedList,T=index
+  kgen.call @use_boolable<:type #linkedlist_index>(%arg0) : (!kgen.struct<(index, !kgen.pointer<none>)>) -> i1
+  // CHECK-NEXT: kgen.call {{.*}}LinkedList,T=none
+  kgen.call @use_boolable<:type #linkedlist_none>(%arg1) : (!kgen.struct<(none, !kgen.pointer<none>)>) -> i1
+  // CHECK-NEXT: kgen.call {{.*}}NonParametric
+  kgen.call @use_boolable<:type #nonparametric>(%arg2) : (!kgen.struct<(index)>) -> i1
   kgen.return
 }
 
-#linkedlist_index = #kgen.type<typevalue<:() -> !kgen.type #kgen.genref<@LinkedList<:type index>>>, struct<(index, !kgen.none)>> : !kgen.type
-#linkedlist_none = #kgen.type<typevalue<:() -> !kgen.type #kgen.genref<@LinkedList<:type none>>>, struct<(index, !kgen.none)>> : !kgen.type
-#nonparametric = #kgen.type<typevalue<:() -> !kgen.type #kgen.genref<@NonParametric>>, struct<(index)>> : !kgen.type
+// -----
+
+// Non-concrete witness table entries.
+
+// CHECK-LABEL: kgen.struct.instance @"Contrived,n=3"
+// CHECK-LABEL: kgen.struct.instance @"Contrived,n=7"
+kgen.struct.generator @Contrived<n: index> = struct_inst<"Contrived"(data: index)> {
+  kgen.conformance @Fooable {
+    kgen.witness "__foo__" : (!pop.scalar<index>) -> !pop.simd<apply(:(index) -> index @addOne, n), index> = @"Contrived::__foo__(::Int)"<apply(:(index) -> index @addOne, n)>
+  }
+}
+
+kgen.generator @"addOne"(%arg0: index) -> index {
+  %index1 = kgen.param.constant : index = <1>
+  %index2 = index.add %arg0, %index1
+  kgen.return %index2 : index
+}
+
+// CHECK-LABEL: kgen.func @"Contrived::__foo__(::Int),n=4"
+// CHECK-LABEL: kgen.func @"Contrived::__foo__(::Int),n=8"
+kgen.generator @"Contrived::__foo__(::Int)"<n: index>(%arg0: !pop.scalar<index>) -> !pop.simd<n, index> {
+  %result = pop.simd.splat %arg0 : !pop.simd<n, index>
+  kgen.return %result : !pop.simd<n, index>
+}
+
+// CHECK-LABEL: kgen.func @"use_fooable,T={{.*}},n=4"
+// CHECK:    kgen.call @"Contrived::__foo__(::Int),n=4"
+
+// CHECK-LABEL: kgen.func @"use_fooable,T={{.*}},n=8"
+// CHECK:    kgen.call @"Contrived::__foo__(::Int),n=8"
+kgen.generator @use_fooable<T: type, n: index>(%arg: !kgen.param<T>) -> !pop.simd<n, index> {
+  %const = kgen.param.constant : !pop.scalar<index> = <8>
+  kgen.param.declare traitMethod: (!pop.scalar<index>) -> !pop.simd<n, index>  = <#kgen.get_witness<#kgen.param.decl.ref<"T">, "Fooable", "__foo__">>
+  %result = kgen.call_param[(!pop.scalar<index>) -> !pop.simd<n, index> : traitMethod](%const)
+  kgen.return %result : !pop.simd<n, index>
+}
+
+#Contrived3 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@Contrived<:index 3>>>, struct<(index)>> : !kgen.type
+#Contrived7 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@Contrived<:index 7>>>, struct<(index)>> : !kgen.type
 
 // CHECK-LABEL: kgen.func @gen_structs
-kgen.generator @gen_structs() {
-  // CHECK-NEXT: kgen.call {{.*}}LinkedList,T=index
-  kgen.call @use_type<:type #linkedlist_index>() : () -> ()
-  // CHECK-NEXT: kgen.call {{.*}}LinkedList,T=none
-  kgen.call @use_type<:type #linkedlist_none>() : () -> ()
-  // CHECK-NEXT: kgen.call {{.*}}NonParametric
-  kgen.call @use_type<:type #nonparametric>() : () -> ()
+kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
+  // CHECK-NEXT: kgen.call {{.*}}Contrived,n=3
+  kgen.call @use_fooable<:type #Contrived3, 4>(%arg0) : (!kgen.struct<(index)>) -> !pop.simd<4, index>
+  // CHECK-NEXT: kgen.call {{.*}}Contrived,n=7
+  kgen.call @use_fooable<:type #Contrived7, 8>(%arg0) : (!kgen.struct<(index)>) -> !pop.simd<8, index>
   kgen.return
 }
 

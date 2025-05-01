@@ -29,7 +29,8 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  FuncOp func = elaborator->lookupConcreteFunction(symbol);
+  InstantiatedOpInterface inst = elaborator->lookupInstantiatedOp(symbol);
+  FuncOp func = cast<FuncOp>(inst);
 
   // Now we can return the function body.
   return &func.getBodyRegion();
@@ -122,6 +123,45 @@ IREvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
       return failure();
     }
     return cast<TypedAttr>(symOr.takeValue());
+  }
+
+  if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr)) {
+    // Find the node for the instantiated type ref.
+    SymbolRefAttr instanceRef =
+        getWitnessEntry.getTypeInstanceRef().getSymbol();
+    ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
+    // Always look up witness tables from the StructGeneratorOp, since the
+    // StructInstanceOp is undergoing elaboration, and we should not block on
+    // the instance's completion.
+    StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
+    SymbolTable symtab(gen);
+    ConformanceOp witnessTable =
+        symtab.lookup<ConformanceOp>(getWitnessEntry.getTraitName());
+    if (!witnessTable) {
+      emitError({*errorLoc, "instantiated struct type " +
+                                mlir::debugString(instanceRef) +
+                                " does not have witness table for trait " +
+                                getWitnessEntry.getTraitName().getValue()});
+      return failure();
+    }
+
+    IREvaluator nestedEvaluator(*elaborator, parent);
+    nestedEvaluator.setErrorLoc(*errorLoc);
+    // If the struct generator has input params, we need to provide an
+    // IREvaluator for concretizing the witness entries.
+    for (auto [param, value] :
+         llvm::zip(gen.getInputParams(), genNode->inputParams))
+      nestedEvaluator.setParameterValue(param, value);
+    TypedAttr simplified =
+        getWitnessEntry.simplify(witnessTable, &nestedEvaluator);
+    if (!simplified) {
+      emitError(
+          {*errorLoc, "failed to locate witness entry for " + gen.getSymName() +
+                          ", " + getWitnessEntry.getTraitName().getValue() +
+                          ", " + getWitnessEntry.getWitnessName().getValue()});
+      return failure();
+    }
+    return simplified;
   }
 
   // Must be a parameter operator then.

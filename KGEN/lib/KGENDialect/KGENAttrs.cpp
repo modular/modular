@@ -328,13 +328,7 @@ TypeInstanceRefAttr GetWitnessAttr::getTypeInstanceRef() {
 }
 
 TypedAttr GetWitnessAttr::simplify(ConformanceOp witnessTable,
-                                   ArrayRef<ParamDeclAttr> paramDecls,
-                                   ArrayRef<TypedAttr> paramValues) {
-  // If we have param values, we need to run the replacer on the entry type.
-  std::optional<ParameterEvaluator> evaluator;
-  if (!paramDecls.empty())
-    evaluator.emplace(paramDecls, paramValues);
-
+                                   ParameterEvaluator *evaluator) {
   for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
     if (entry.getName().getValue() != getWitnessName().getValue())
       continue;
