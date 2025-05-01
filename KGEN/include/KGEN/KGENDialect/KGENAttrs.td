@@ -490,11 +490,10 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
 
     /// Fold the attribute given the symbol table of the struct.
     /// Returns a null attribute if the witness entry was not found.
-    /// An optional list of param decls & values can be provided to concretize
-    /// the witness entry for comparison.
+    /// An optional ParameterEvaluator can be provided to concretize the witness
+    /// entry for comparison.
     TypedAttr simplify(ConformanceOp witnessTable,
-                       ArrayRef<ParamDeclAttr> paramDecls = {},
-                       ArrayRef<TypedAttr> paramValues = {});
+                       ParameterEvaluator *evaluator = nullptr);
   }];
 }
 

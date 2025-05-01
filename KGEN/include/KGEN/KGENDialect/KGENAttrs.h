@@ -28,14 +28,15 @@ class TargetInfoAttr;
 
 namespace KGEN {
 class BuildInfoType;
+class ConformanceOp;
 class FuncOp;
 class GeneratorOp;
 class KGENDType;
+class ParameterEvaluator;
 class TargetType;
 class VariadicType;
 class VariadicAttr;
 class VTableAttr;
-class ConformanceOp;
 } // namespace KGEN
 } // namespace M
 
