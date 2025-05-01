@@ -408,8 +408,10 @@ fn _matmul_gpu[
                 elif static_N >= 4096 and static_K >= 4096:
                     if m >= 4096:
                         kernel_helper[kernels.mi300x_224x256_1]()
-                    else:
+                    elif m >= 384:
                         kernel_helper[kernels.mi300x_128x128_1]()
+                    else:
+                        kernel_helper[kernels.mi300x_64x64_1]()
                 else:
                     kernel_helper[kernels.mi300x_128x128_1]()
                 return

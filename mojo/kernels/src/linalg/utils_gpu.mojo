@@ -324,6 +324,13 @@ struct MatmulKernels[
     )
 
     # TODO: These will have to be tuned for various shapes
+    alias mi300x_64x64_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(32, 32, _bk_base[a_type, True]()),
+        num_pipeline_stages=1,
+        scheduler_hint=Index(2, 2, 2),
+    )
+
     alias mi300x_128x128_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, 128, _bk_base[a_type, True]()),
         warp_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
