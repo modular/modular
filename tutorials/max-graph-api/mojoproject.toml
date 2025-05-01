@@ -7,10 +7,8 @@ platforms = ["osx-arm64", "linux-64"]
 version = "0.0.0"
 
 [tasks]
-add = "mojo add.mojo"
-matmul = "mojo matmul.mojo"
-mnist = "python mnist.py && mojo mnist.mojo"
-test = { depends-on = ["add", "matmul", "mnist"] }
+mnist = "python mnist.py"
+test = { depends-on = ["mnist"] }
 
 [dependencies]
 max = "~=24.6"
