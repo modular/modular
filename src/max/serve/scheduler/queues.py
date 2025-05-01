@@ -25,7 +25,7 @@ from enum import Enum
 from typing import Generic, Optional, TypeVar
 
 import sentinel
-from max.serve.scheduler import mp_queue, zmq_queue
+from max.serve.scheduler import zmq_queue
 from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
 
@@ -80,8 +80,6 @@ class BatchQueueConfig:
 class QueueType(Enum):
     ZMQ = "zmq"
     """Use ZMQ sockets for multiprocessing."""
-    MP = "mp"
-    """Use Python stdlib multiprocessing queue."""
 
 
 def create_queue(
@@ -90,8 +88,6 @@ def create_queue(
 ) -> MaxQueue:
     if queue_type == QueueType.ZMQ:
         return zmq_queue.ZmqQueue(context)
-    elif queue_type == QueueType.MP:
-        return mp_queue.MpQueue(context)
     else:
         raise ValueError(f"Invalid queue type: {queue_type}")
 
