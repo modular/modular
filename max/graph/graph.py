@@ -635,7 +635,12 @@ class Graph:
         if graph_weight := self._weights.get(weight.name):
             if graph_weight.weight is weight:
                 if force_initial_weight_on_host:
-                    return graph_weight.value.to(weight.device)
+                    transferred_value = graph_weight.value.to(weight.device)
+                    if transferred_value is not graph_weight.value:
+                        transferred_value._mlir_value.owner.move_after(
+                            graph_weight.value._mlir_value.owner
+                        )
+                    return transferred_value
                 else:
                     return graph_weight.value
             else:
@@ -671,6 +676,7 @@ class Graph:
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
         if initial_device != weight.device:
             weight_tensor = weight_tensor.to(weight.device)
+            weight_tensor._mlir_value.owner.move_after(const_external_op)
         return weight_tensor
 
     def __repr__(self) -> str:
