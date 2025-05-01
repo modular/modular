@@ -25,7 +25,7 @@ from typing import Any, Optional, get_type_hints
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
-from .config_enums import PipelineEngine
+from .config_enums import PipelineEngine, PipelineRole
 from .max_config import (
     KVCacheConfig,
     MAXConfig,
@@ -58,6 +58,9 @@ class PipelineConfig(MAXConfig):
 
     max_new_tokens: int = -1
     """Maximum number of new tokens to generate during a single inference pass of the model."""
+
+    pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
+    """Whether the pipeline should serve both a prefill or decode role or both."""
 
     max_batch_size: Optional[int] = None
     """Maximum batch size to execute with the model.
@@ -111,7 +114,7 @@ class PipelineConfig(MAXConfig):
     Ex:
     - `my_module`
     - `folder/path/to/import:my_module`
-    
+
     Each module must expose an `ARCHITECTURES` list of architectures to register.
     """
 
@@ -470,6 +473,7 @@ class PipelineConfig(MAXConfig):
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
             "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 32.",
+            "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
             "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Requires chunked prefill.",
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
