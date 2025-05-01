@@ -30,9 +30,9 @@ from max.pipelines.core import (
     TokenGenerator,
 )
 from max.profiler import Trace, traced
-from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
+from max.serve.scheduler.zmq_queue import ZmqQueue
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -93,12 +93,12 @@ class SchedulerOutput:
         )
 
 
-class RequestDeque(MaxQueue):
+class RequestDeque:
     """A wrapper around the multiprocessing queue that allows us to add
     requests to the front of the queue.
     """
 
-    def __init__(self, queue: MaxQueue):
+    def __init__(self, queue: ZmqQueue):
         self.queue = queue
         self.preempted: list[tuple[str, InputContext]] = []
 
@@ -203,7 +203,7 @@ class TokenGenerationScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
-        queues: Mapping[str, MaxQueue],
+        queues: Mapping[str, ZmqQueue],
         paged_manager: Optional[PagedKVCacheManager] = None,
     ):
         self.scheduler_config = scheduler_config
@@ -897,7 +897,7 @@ class EmbeddingsScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: EmbeddingsSchedulerConfig,
         pipeline: EmbeddingsGenerator,
-        queues: Mapping[str, MaxQueue],
+        queues: Mapping[str, ZmqQueue],
     ):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

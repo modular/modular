@@ -26,7 +26,6 @@ from typing import Generic, Optional, TypeVar
 
 import sentinel
 from max.serve.scheduler import zmq_queue
-from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
 
 logger = logging.getLogger("max.serve")
@@ -85,7 +84,7 @@ class QueueType(Enum):
 def create_queue(
     queue_type: QueueType,
     context: multiprocessing.context.BaseContext,
-) -> MaxQueue:
+) -> zmq_queue.ZmqQueue:
     if queue_type == QueueType.ZMQ:
         return zmq_queue.ZmqQueue(context)
     else:

@@ -26,9 +26,39 @@ import psutil
 import zmq
 import zmq.asyncio
 import zmq.constants
-from max.serve.scheduler.max_queue import AtomicInt, MaxQueue
 
 logger = logging.getLogger("max.serve")
+
+
+class AtomicInt:
+    """A atomic integer counter that can be shared across processes.
+
+    This counter is strictly non-negative.
+    """
+
+    def __init__(self, ctx: multiprocessing.context.BaseContext, x: int = 0):
+        self.counter: Any = ctx.Value("i", x)
+
+    def inc(self) -> int:
+        """Increment the counter by 1 and returns the old value."""
+        with self.counter.get_lock():
+            x = self.counter.value
+            self.counter.value += 1
+            return x
+
+    def dec(self) -> int:
+        """Decrement the counter by 1 if it is greater than 0 and returns the old value.
+        Returns None if the counter is 0."""
+        with self.counter.get_lock():
+            x = self.counter.value
+            if x > 0:
+                self.counter.value -= 1
+            return x
+
+    @property
+    def value(self) -> int:
+        """Return the value of the counter"""
+        return self.counter.value
 
 
 def _generate_zmq_ipc_path() -> str:
@@ -75,7 +105,7 @@ def _open_zmq_socket(
     return socket
 
 
-class ZmqQueue(MaxQueue):
+class ZmqQueue:
     # One zmq context should be created per process AFTER process forks.
     # The Python GC is responsible for cleaning up the zmq context when the
     # process exits. A lock is needed to ensure that the zmq context is only
