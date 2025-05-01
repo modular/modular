@@ -208,12 +208,16 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
         True if masked access is required (any dimension not evenly divisible),
         False if all dimensions are perfectly divisible by their tile sizes.
     """
+
+    @parameter
     if not layout.all_dims_known():
         return True
 
     @parameter
     for axis in range(layout.rank()):
         alias dim = product(layout.shape[axis])
+
+        @parameter
         if dim % tile_sizes[axis] != 0:
             return True
     return False
@@ -255,8 +259,8 @@ fn _distribute_is_masked[
 
     @parameter
     for i in range(layout.rank()):
-        alias layout_dim = Int(layout.shape[i])
-        alias thread_dim = Int(threads_layout.shape[i])
+        alias layout_dim = Int(product(layout.shape[i]))
+        alias thread_dim = Int(product(threads_layout.shape[i]))
 
         @parameter
         if layout_dim % thread_dim != 0:
@@ -2942,8 +2946,13 @@ struct LayoutTensor[
             element_layout=element_layout,
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
-            masked = masked
-            or _distribute_is_masked[layout, threads_layout, axis](),
+            # TODO: This is a workaround as we don't need masking support for AMD GPU
+            # if we use buffer stores and loads. Probably need a better solution
+            # in the long term, if someone ends up using global loads and stores
+            # it may lead to out of bounds access.
+            masked = (
+                masked or _distribute_is_masked[layout, threads_layout, axis]()
+            ) if is_nvidia_gpu() else False,
         ],
     ):
         """Distribute tensor workload across multiple threads in a structured

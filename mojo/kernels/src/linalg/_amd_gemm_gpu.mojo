@@ -352,7 +352,10 @@ fn gemm_kernel[
     alias k_group_size = 16 // simd_width
     alias smem_alignment = alignof[SIMD[a_type, simd_width]]()
     alias swizzle = Swizzle(2, 0, 2)
-    alias thread_layout = Layout.row_major(32, 8)
+    alias thread_layout = Layout(
+        IntTuple(IntTuple(8, 4), IntTuple(4, 2)),
+        IntTuple(IntTuple(4, 64), IntTuple(1, 32)),
+    )
 
     # Warp organization
     alias warps_m = block_m // warp_m
@@ -405,7 +408,10 @@ fn gemm_kernel[
         alias ci_stride = 1
 
         alias stride_dims = IntTuple(IntTuple(ri_stride, ro_stride), ci_stride)
-        return Layout(shape_dims, stride_dims)
+        return Layout(
+            IntTuple(block_size, IntTuple(32, 2)),
+            IntTuple(32, IntTuple(1, block_size * 32)),
+        )
 
     var a_tiles = MMATileBuffers[
         get_smem_layout[mma_m, block_m, simd_width, num_threads](),

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import InlineArray
