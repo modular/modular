@@ -215,14 +215,6 @@ def test_weight_norm_conv_transpose1d() -> None:
 
     torch_conv = torch.nn.utils.weight_norm(torch_conv)
 
-    # Print shapes to verify
-    print(
-        f"weight_v shape: {torch_conv.weight_v.shape}"
-    )  # Should be (in_channels, out_channels, kernel_size)
-    print(
-        f"weight_g shape: {torch_conv.weight_g.shape}"
-    )  # Actually (in_channels, 1, 1)
-
     # Create MAX model
     max_conv = WeightNormConvTranspose1d(
         length=kernel_size,
@@ -249,13 +241,10 @@ def test_weight_norm_conv_transpose1d() -> None:
     )
 
     # load weights to max
-    v = torch_conv.weight_v.data
-    g = torch_conv.weight_g.data
-
     state_dict = {
-        "v": v,  # Permute to MAX format if needed
-        "g": g,  # g shape is already (in_channels, 1, 1)
-        "conv.bias": torch_conv.bias.data,
+        "weight_v": torch_conv.weight_v.data,
+        "weight_g": torch_conv.weight_g.data,
+        "bias": torch_conv.bias.data,
     }
     max_conv.load_state_dict(state_dict)
 
