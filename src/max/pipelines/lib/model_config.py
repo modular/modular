@@ -100,6 +100,9 @@ class MAXModelConfig(MAXModelConfigBase):
     rope_type: Optional[RopeType] = None
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
+    use_subgraphs: bool = False
+    """Whether to use subgraphs for the model."""
+
     _huggingface_config: Optional[AutoConfig] = None
     """Hugging Face config. This should only be set by internal code."""
 
