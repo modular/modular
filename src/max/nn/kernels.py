@@ -1720,3 +1720,53 @@ def quantize_static_scaled_float8(
             )
         ],
     )[0].tensor
+
+
+def matmul_static_scaled_float8(
+    input: TensorValue,
+    weight: TensorValue,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    if input_scale.shape not in [[], [1]]:
+        msg = f"expected input_scale to be a scalar, but got shape of {input_scale.shape}"
+        raise ValueError(msg)
+    if weight_scale.shape not in [[], [1]]:
+        msg = f"expected weight_scale to be a scalar, but got shape of {weight_scale.shape}"
+        raise ValueError(msg)
+
+    if input.dtype != DType.float8_e4m3fn:
+        msg = f"expected input dtype to be float8_e4m3fn, but got {input.dtype}"
+        raise ValueError(msg)
+    if weight.dtype != DType.float8_e4m3fn:
+        msg = (
+            f"expected weight dtype to be float8_e4m3fn, but got {weight.dtype}"
+        )
+        raise ValueError(msg)
+
+    if input.rank != 2:
+        msg = f"expected input rank to be 2, but got {input.rank}"
+        raise ValueError(msg)
+    if weight.rank != 2:
+        msg = f"expected weight rank to be 2, but got {weight.rank}"
+        raise ValueError(msg)
+
+    if input.shape[1] != weight.shape[1]:
+        raise ValueError("K dimension does not match for matmul")
+
+    return ops.custom(
+        "mo.matmul_static_scaled_float8",
+        values=[
+            input,
+            weight,
+            input_scale.reshape([]),
+            weight_scale.reshape([]),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[input.shape[0], weight.shape[0]],
+                device=input.device,
+            )
+        ],
+    )[0].tensor

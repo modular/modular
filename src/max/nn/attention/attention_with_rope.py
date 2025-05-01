@@ -341,6 +341,10 @@ class AttentionWithRope(Module):
                 wq = clamp(wq, min=-self.clip_qkv, max=self.clip_qkv)
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
                 wv = clamp(wv, min=-self.clip_qkv, max=self.clip_qkv)
+            if self.has_weight_scale:
+                wq = wq * self.weight_scale_q
+                wk = wk * self.weight_scale_k
+                wv = wv * self.weight_scale_v
             return ops.concat((wq, wk, wv))
 
     @property
@@ -391,16 +395,17 @@ class AttentionWithRope(Module):
         # Likely has to be folded into the kernel.
         xq = fused_qkv_ragged_matmul(
             self.kv_params,
-            input=x.cast(wqkv.dtype),
+            # input=x.cast(wqkv.dtype),
+            input=x,
             wqkv=wqkv,
             bias=self.wqkv_bias,
-            input_scale=self.wqkv_input_scale,
-            weight_scale=self.wqkv_weight_scale,
+            # input_scale=self.wqkv_input_scale,
+            # weight_scale=self.wqkv_weight_scale,
             input_row_offsets=kwargs["input_row_offsets"],
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        ).cast(x.dtype)
+        )
 
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))

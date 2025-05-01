@@ -36,7 +36,11 @@ from max.graph.weights import Weights
 
 from .clamp import clamp
 from .comm import Allreduce
-from .kernels import quantize_static_scaled_float8, swish_glu
+from .kernels import (
+    matmul_static_scaled_float8,
+    quantize_static_scaled_float8,
+    swish_glu,
+)
 from .layer import Layer, Module
 
 
@@ -136,6 +140,7 @@ class Linear(Module):
 
         self.device = device
         self.clip_weight = clip_weight
+        self.float8_config = float8_config
 
         self.weight = Weight(
             name=f"{name}.weight" if name else "weight",
@@ -203,25 +208,27 @@ class Linear(Module):
                 x,
                 weight,
             )
-        else:
-            if self.input_scale is not None and x.dtype != weight.dtype:
-                # Quantize the input.
-                x = quantize_static_scaled_float8(x, self.input_scale)
-            res = x @ weight.T
-        # TODO: This should be done in the matmul epilog in float32.
-        # Instead, it is done here and will upcast res to float32
-        if self.input_scale is not None:
-            input_scale: TensorValue = self.input_scale
-            if self.device:
-                input_scale = input_scale.to(self.device)
-            res *= input_scale
-        if self.weight_scale is not None:
+        elif self.float8_config:
+            assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
             if self.device:
                 weight_scale = weight_scale.to(self.device)
-            res *= weight_scale
-        if self.input_scale is not None or self.weight_scale is not None:
-            res.cast(weight.dtype)
+
+            if self.input_scale is not None:
+                x = quantize_static_scaled_float8(x, self.input_scale)
+
+                input_scale: TensorValue = self.input_scale
+                if self.device:
+                    input_scale = input_scale.to(self.device)
+                res = matmul_static_scaled_float8(
+                    x, weight, input_scale, weight_scale
+                )
+            else:
+                # Dynamic input matmul
+                raise NotImplementedError("TODO: support dynamic input scaling")
+        else:
+            res = x @ weight.T
+
         if self.bias is not None:
             res += self.bias
         return res
