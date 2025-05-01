@@ -84,3 +84,15 @@ def while_(  # type: ignore[no-redef]
     return _ods_common.get_op_result_or_op_results(
         WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
     )
+
+
+def call_(
+    symbol, results, operands, *, loc=None, ip=None
+) -> _ods_common.VariadicResultValueT:
+    if results is None:
+        results = []
+    return _ods_common.get_op_result_or_op_results(
+        CallOp(
+            symbol=symbol, results_=results, operands_=operands, loc=loc, ip=ip
+        )
+    )
