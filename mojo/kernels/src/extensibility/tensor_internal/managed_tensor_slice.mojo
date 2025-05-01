@@ -1132,14 +1132,14 @@ fn foreach[
     type: DType,
     rank: Int, //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
-    out_func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
+    out_func: fn[width: Int] (IndexList[rank]) capturing [_] -> None,
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
     _trace_name: StaticString = "mogg.for_each",
 ](
-    tensor: ManagedTensorSlice,
+    tensor: ManagedTensorSlice[type=type, rank=rank],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1163,8 +1163,16 @@ fn foreach[
         "Expecting non-null device ctx for GPU kernels",
     )
 
+    @parameter
+    @always_inline
+    fn out_func_shim[
+        _width: Int, _rank: Int
+    ](index: IndexList[_rank]) capturing:
+        idx = rebind[IndexList[rank]](index)
+        out_func[_width](idx)
+
     algorithm.functional.elementwise[
-        out_func,
+        out_func_shim,
         simd_width,
         use_blocking_impl=_synchronous,
         target=target,
