@@ -284,15 +284,15 @@ value that has a more specific bound on one or more of its parameters.
 
 For example, the following code defines a `Container` type that holds an
 instance of `CollectionElement`. It also defines a `__str__()` method that can
-only be called if the stored `ElementType` conforms to
-`WritableCollectionElement`:
+only be called if the stored `ElementType` conforms to `Writable` and
+`CollectionElement`:
 
 ```mojo
 @value
 struct Container[ElementType: CollectionElement]:
     var element: ElementType
 
-    def __str__[StrElementType: WritableCollectionElement, //](
+    def __str__[StrElementType: Writable & CollectionElement, //](
             self: Container[StrElementType]) -> String:
         return String(self.element)
 
@@ -312,16 +312,17 @@ Hello
 
 Note the signature of the `__str__()` method, which declares the `self` argument
 with a more specific type. Specifically, it declares that it takes a `Container`
-with an `ElementType` that conforms to the `WritableCollectionElement` trait.
+with an `ElementType` that conforms to the `Writable` and `CollectionElement`
+traits.
 
 ```mojo
-def __str__[StrElementType: WritableCollectionElement, //](
+def __str__[StrElementType: Writable & CollectionElement, //](
         self: Container[StrElementType]) -> String:
 ```
 
 This trait must be a superset of `ElementType`'s original trait: for example,
-`WritableCollectionElement` inherits from `CollectionElement`, so it includes
-all of requirements of the original trait.
+the trait composition `Writable & CollectionElement` ensures that it includes
+all of the requirements of the original trait.
 
 Note that the `use_container()` function calls the `__str__()` method directly,
 rather than calling `String(float_container)`. One current limitation of
@@ -490,7 +491,7 @@ For example, consider the following struct:
 
 ```mojo
 @value
-struct One[Type: WritableCollectionElement]:
+struct One[Type: Writable & CollectionElement]:
     var value: Type
 
     fn __init__(out self, value: Type):
@@ -508,7 +509,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: WritableCollectionElement]:
+struct Two[Type: Writable & CollectionElement]:
     var val1: Type
     var val2: Type
 
