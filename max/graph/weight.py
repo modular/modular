@@ -84,6 +84,7 @@ class Weight(TensorValue):
             else None
         )
         self.shard_idx = None
+        self._cached_mlir_value: Optional[mlir.Value] = None
 
     @property
     def dtype(self) -> DType:
@@ -113,16 +114,23 @@ class Weight(TensorValue):
 
     @property
     def _mlir_value(self) -> mlir.Value:
-        if self.sharding_strategy and self.shard_idx is not None:
-            host_weight = self.sharding_strategy.host_weight
-            tensor_value = self.sharding_strategy.shard_value(
-                host_weight, self.shard_idx
-            )
-            tensor_value = tensor_value.to(self._device)
-            return tensor_value._mlir_value
-        else:
-            res = _add_weight_to_graph(self)._mlir_value
-            return res
+        # We have to use a closure here because mypy complains about using
+        # @cached_property on a property that has a setter in the parent class.
+        def _get_mlir_value():
+            if self.sharding_strategy and self.shard_idx is not None:
+                host_weight = self.sharding_strategy.host_weight
+                tensor_value = self.sharding_strategy.shard_value(
+                    host_weight, self.shard_idx
+                )
+                tensor_value = tensor_value.to(self._device)
+                return tensor_value._mlir_value
+            else:
+                res = _add_weight_to_graph(self)._mlir_value
+                return res
+
+        if self._cached_mlir_value is None:
+            self._cached_mlir_value = _get_mlir_value()
+        return self._cached_mlir_value
 
     @_mlir_value.setter
     def _mlir_value(self, value: mlir.Value) -> None:
