@@ -120,6 +120,10 @@ StringRef MojoConfig::getLinkerDriver() {
   return getValue(STRINGIFY_MOJO_CONFIG(".linker_driver"));
 }
 
+StringRef MojoConfig::getLLDPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".lld_path"));
+}
+
 void MojoConfig::getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
   StringRef systemLibsArg = getValue(STRINGIFY_MOJO_CONFIG(".system_libs"));
   systemLibsArg.split(libs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);

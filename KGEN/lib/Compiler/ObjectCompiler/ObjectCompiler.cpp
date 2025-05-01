@@ -1205,27 +1205,40 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   else if (triple.getArch() == llvm::Triple::ArchType::x86_64)
     arch = "x86_64";
 
+  // Read the mojo configuration.
+  ErrorOr<MojoConfig> configOr = MojoConfig::open();
+  if (failed(configOr))
+    return Error(Twine("failed to parse 'modular.cfg': ") +
+                 configOr.getError());
+  MojoConfig config = std::move(*configOr);
+
   // Call lld to generate a dynamic library.
   // For ELF:
   //  ld.lld -shared tmp.o -o tmp.so
   // For MACHO (on MacOS)
   //  ld64.lld -platform_version macos 16.0 16.0 -arch arm64
   //           -dylib tmp.o -o tmp.so -undefined dynamic_lookup
+  llvm::ErrorOr<std::string> linker = config.getLLDPath().str();
   StringRef linkerFileName = "ld.lld";
+  StringRef linkerFlavor = "gnu";
   if (llvm::Triple(options.targetTriple).getObjectFormat() ==
       llvm::Triple::MachO) {
     linkerFileName = "ld64.lld";
+    linkerFlavor = "darwin";
   }
-  llvm::ErrorOr<std::string> linker =
-      llvm::sys::findProgramByName(linkerFileName);
-  if (!linker) {
-    return Error("unable to find linker for linking");
+  if (linker->empty()) {
+    linker = llvm::sys::findProgramByName(linkerFileName);
+    if (!linker) {
+      return Error("unable to find linker for linking");
+    }
   }
 
   SmallVector<StringRef> lldArgs = [&]() -> SmallVector<StringRef> {
     if (llvm::Triple(options.targetTriple).getObjectFormat() ==
         llvm::Triple::MachO) {
       return {*linker,
+              "-flavor",
+              linkerFlavor,
               "-platform_version",
               "macos",
               version.c_str(),
@@ -1239,7 +1252,12 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
               "-o",
               sharedObjPath.c_str()};
     }
-    return {*linker, "-shared", objFilePath.c_str(), "-o",
+    return {*linker,
+            "-flavor",
+            linkerFlavor,
+            "-shared",
+            objFilePath.c_str(),
+            "-o",
             sharedObjPath.c_str()};
   }();
 
