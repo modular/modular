@@ -18,8 +18,8 @@ def test_huggingface_repo__formats_available(llama_3_1_8b_instruct_local_path):
         repo_id=llama_3_1_8b_instruct_local_path,
     )
 
-    assert WeightsFormat.gguf in hf_repo.formats_available
-    assert WeightsFormat.safetensors not in hf_repo.formats_available
+    assert WeightsFormat.safetensors in hf_repo.formats_available
+    assert WeightsFormat.gguf not in hf_repo.formats_available
 
     # Test a Safetensors repo
     hf_repo = HuggingFaceRepo(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
@@ -61,29 +61,20 @@ def test_huggingface_repo__encodings_supported(
 def test_huggingface_repo__file_exists(llama_3_1_8b_instruct_local_path):
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
-    assert hf_repo.file_exists("llama-3.1-8b-instruct-bf16.gguf")
+    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    assert len(files[WeightsFormat.safetensors]) == 4
+    assert files[WeightsFormat.safetensors] == [
+        Path("model-00001-of-00004.safetensors"),
+        Path("model-00002-of-00004.safetensors"),
+        Path("model-00003-of-00004.safetensors"),
+        Path("model-00004-of-00004.safetensors"),
+    ]
     assert not hf_repo.file_exists(
         "this_definitely_should_not_exist.safetensors"
     )
 
 
-def test_huggingface_repo__get_files_for_encoding(
-    llama_3_1_8b_instruct_local_path,
-):
-    # Test a llama based gguf repo.
-    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
-    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
-    assert WeightsFormat.gguf in files
-    assert len(files[WeightsFormat.gguf]) == 1
-    assert files[WeightsFormat.gguf][0] == Path(
-        "llama-3.1-8b-instruct-bf16.gguf"
-    )
-
-    files = hf_repo.files_for_encoding(
-        SupportedEncoding.bfloat16, weights_format=WeightsFormat.safetensors
-    )
-    assert len(files) == 0
-
+def test_huggingface_repo__get_files_for_encoding():
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
     hf_repo = HuggingFaceRepo(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
