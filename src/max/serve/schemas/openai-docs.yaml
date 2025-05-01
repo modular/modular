@@ -11,7 +11,7 @@ info:
     ## Get started
 
     With just a few commands, you can start a local endpoint with the GenAI
-    model of your choice using our [`max-pipelines`](/max/max-pipelines) CLI
+    model of your choice using our [`max`](/max/max-cli) CLI
     and start sending requests.
 
     When you want to deploy your model to a cloud-hosted endpoint, you can use
