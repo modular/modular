@@ -251,10 +251,10 @@ class WeightNormConvTranspose1d(Module):
     conv: ConvTranspose1d
     """The underlying ConvTranspose1d layer"""
 
-    g: Weight
+    weight_g: Weight
     """The magnitude parameter g for weight normalization"""
 
-    v: Weight
+    weight_v: Weight
     """The direction parameter v for weight normalization"""
 
     def __init__(
@@ -307,8 +307,8 @@ class WeightNormConvTranspose1d(Module):
         )
 
         # Initialize g parameter (magnitude) - shape matches PyTorch's implementation
-        self.g = Weight(
-            name=f"{name}.g" if name else "g",
+        self.weight_g = Weight(
+            name=f"{name}.weight_g" if name else "weight_g",
             dtype=dtype,
             shape=(in_channels, 1, 1),  # Shape matches PyTorch's weight_g
             device=device or DeviceRef.CPU(),
@@ -320,14 +320,17 @@ class WeightNormConvTranspose1d(Module):
         else:
             v_shape = (length, out_channels, in_channels)
 
-        self.v = Weight(
-            name=f"{name}.v" if name else "v",
+        self.weight_v = Weight(
+            name=f"{name}.weight_v" if name else "weight_v",
             dtype=dtype,
             shape=v_shape,
             device=device or DeviceRef.CPU(),
         )
 
+        self.bias = self.conv.bias
+
         del self.conv.weight
+        del self.conv.bias
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Apply the weight normalized convolution to input x.
@@ -340,14 +343,15 @@ class WeightNormConvTranspose1d(Module):
         """
         if not hasattr(self.conv, "weight"):
             # Compute normalized weight sqrt(sum(x**2))
-            in_channels = self.v.shape[0]
+            in_channels = self.weight_v.shape[0]
             v_norm = ops.sqrt(
-                ops.sum((self.v**2).reshape([in_channels, -1]), axis=1)
+                ops.sum((self.weight_v**2).reshape([in_channels, -1]), axis=1)
             ).reshape([in_channels, 1, 1])
-            w = self.v / v_norm
-            w = w * self.g
+            w = self.weight_v / v_norm
+            w = w * self.weight_g
 
             # Update conv layer weight and apply convolution
             self.conv.weight = w
+            self.conv.bias = self.bias
 
         return self.conv(x)

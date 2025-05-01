@@ -32,7 +32,7 @@ from .conv import Conv1D, Conv1DV1, Conv2DV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
 from .kernels import MHAMaskVariant
-from .layer import Layer, Module
+from .layer import Layer, LayerList, Module
 from .linear import (
     MLP,
     MLPV1,
@@ -114,6 +114,7 @@ __all__ = [
     "MLPV1",
     "MLP",
     "Module",
+    "LayerList",
     "NaiveAttentionWithRope",
     "NaiveTransformer",
     "NaiveTransformerBlock",

@@ -44,6 +44,7 @@ class GroupNorm(Module):
         num_channels: int,
         eps: float = 1e-5,
         affine: bool = True,
+        device: DeviceRef = DeviceRef.CPU(),
     ):
         super().__init__()
         self.num_groups = num_groups
@@ -65,13 +66,13 @@ class GroupNorm(Module):
                 name="weight",
                 shape=(self.num_channels,),
                 dtype=DType.float32,
-                device=DeviceRef.CPU(),
+                device=device,
             )
             self.bias = Weight(
                 name="bias",
                 shape=(self.num_channels,),
                 dtype=DType.float32,
-                device=DeviceRef.CPU(),
+                device=device,
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:

@@ -147,7 +147,6 @@ class Module(Layer, ABC):
         return self._layer_weights
 
     def __delattr__(self, name: str):
-        print(f"Deleting {name}")
         self._sublayers.pop(name, None)
         self._layer_weights.pop(name, None)
         self._shared_weights.pop(name, None)
