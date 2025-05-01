@@ -9237,3 +9237,61 @@ struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
             scale_loaded,
             ctx.get_device_context(),
         )
+
+
+@compiler.register("mo.matmul_static_scaled_float8")
+struct MatmulStaticScaledFloat8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        output_type: DType,
+        scale_type: DType,
+        target: StaticString,
+    ](
+        output_tensor: OutputTensor[type=output_type, rank=2],
+        input_tensor: InputTensor[type = DType.float8_e4m3fn, rank=2],
+        weight_tensor: InputTensor[type = DType.float8_e4m3fn, rank=2],
+        input_scale: Scalar[scale_type],
+        weight_scale: Scalar[scale_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        var output = managed_tensor_slice_to_ndbuffer(output_tensor)
+        var input = managed_tensor_slice_to_ndbuffer(input_tensor)
+        var weight = managed_tensor_slice_to_ndbuffer(weight_tensor)
+
+        @parameter
+        @__copy_capture(output, input_scale, weight_scale)
+        @always_inline
+        fn scaled_output_fn[
+            type_: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[type_, width]):
+            var scale = input_scale.cast[type_]() * weight_scale.cast[type_]()
+            var scaled_val = val * scale
+
+            output.store[width=width, alignment=alignment](
+                idx, scaled_val.cast[output_type]()
+            )
+
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct type
+        alias N = weight.shape.get[0]()
+        var M = input.dim[0]()
+        var output_dummy = NDBuffer[
+            DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+        ](
+            UnsafePointer[Scalar[DType.float32]](),
+            IndexList[2](M, N),
+        )
+
+        matmul[
+            target=target,
+            transpose_b=True,
+            elementwise_lambda_fn=scaled_output_fn,
+        ](
+            output_dummy,
+            input,
+            weight,
+            Optional[DeviceContext](ctx.get_device_context()),
+        )
