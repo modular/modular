@@ -92,7 +92,7 @@ private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(
       RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
-      bool isJIT, MLIRContext &context,
+      bool isJIT, MLIRContext &context, const std::string &linker,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
@@ -150,6 +150,9 @@ private:
   /// Mutex to protect deduplicating TargetMachine to save peak memory
   /// footprint.
   std::mutex tmMutex;
+
+  /// Name of the system linker.
+  std::string linker;
 };
 
 /// Setup the machine properties from the provided target.

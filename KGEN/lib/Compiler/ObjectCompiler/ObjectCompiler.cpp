@@ -80,20 +80,44 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
       std::filesystem::path(basePath.str()) / "transform", getVersionString());
   if (failed(transformCache))
     return transformCache.takeError();
+
+  // Read the mojo configuration.
+  ErrorOr<MojoConfig> configOr = MojoConfig::open();
+  if (failed(configOr))
+    return Error(Twine("failed to parse 'modular.cfg': ") +
+                 configOr.getError());
+  MojoConfig config = std::move(*configOr);
+
+  StringRef linkerFileName = "ld.lld";
+  if (llvm::Triple(options.targetTriple).getObjectFormat() ==
+      llvm::Triple::MachO) {
+    linkerFileName = "ld64.lld";
+  }
+
+  // Find the linker.
+  llvm::ErrorOr<std::string> lldPath = config.getLLDPath().str();
+  if (lldPath->empty()) {
+    lldPath = llvm::sys::findProgramByName(linkerFileName);
+    if (!lldPath) {
+      return Error("unable to find linker for linking");
+    }
+  }
+
   return std::unique_ptr<ObjectCompiler>(
       new ObjectCompiler(std::move(*transformCache), std::move(options), isJIT,
-                         context, std::move(pmOptions)));
+                         context, *lldPath, std::move(pmOptions)));
 }
 
 ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
                                CompilationOptions options, bool isJIT,
-                               MLIRContext &context,
+                               MLIRContext &context, const std::string &linker,
                                PassManagerConfigOptions pmOptions)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
       options(std::move(options)), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context),
-      runtime(*loadContext(&context)->get<AsyncRT::Runtime>()) {}
+      runtime(*loadContext(&context)->get<AsyncRT::Runtime>()), linker(linker) {
+}
 
 //===----------------------------------------------------------------------===//
 // Time Trace Instrumentation
@@ -1178,7 +1202,8 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
 /// (mostly for AMD GPU kernels)
 static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
                                              CompilationOptions options,
-                                             StringRef moduleName) {
+                                             StringRef moduleName,
+                                             std::string &linker) {
   llvm::StringRef libInExt = ".o";
   llvm::StringRef libOutExt = ".so";
   std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
@@ -1205,12 +1230,11 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   else if (triple.getArch() == llvm::Triple::ArchType::x86_64)
     arch = "x86_64";
 
-  // Read the mojo configuration.
-  ErrorOr<MojoConfig> configOr = MojoConfig::open();
-  if (failed(configOr))
-    return Error(Twine("failed to parse 'modular.cfg': ") +
-                 configOr.getError());
-  MojoConfig config = std::move(*configOr);
+  StringRef linkerFlavor = "gnu";
+  if (llvm::Triple(options.targetTriple).getObjectFormat() ==
+      llvm::Triple::MachO) {
+    linkerFlavor = "darwin";
+  }
 
   // Call lld to generate a dynamic library.
   // For ELF:
@@ -1218,25 +1242,10 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   // For MACHO (on MacOS)
   //  ld64.lld -platform_version macos 16.0 16.0 -arch arm64
   //           -dylib tmp.o -o tmp.so -undefined dynamic_lookup
-  llvm::ErrorOr<std::string> linker = config.getLLDPath().str();
-  StringRef linkerFileName = "ld.lld";
-  StringRef linkerFlavor = "gnu";
-  if (llvm::Triple(options.targetTriple).getObjectFormat() ==
-      llvm::Triple::MachO) {
-    linkerFileName = "ld64.lld";
-    linkerFlavor = "darwin";
-  }
-  if (linker->empty()) {
-    linker = llvm::sys::findProgramByName(linkerFileName);
-    if (!linker) {
-      return Error("unable to find linker for linking");
-    }
-  }
-
   SmallVector<StringRef> lldArgs = [&]() -> SmallVector<StringRef> {
     if (llvm::Triple(options.targetTriple).getObjectFormat() ==
         llvm::Triple::MachO) {
-      return {*linker,
+      return {linker,
               "-flavor",
               linkerFlavor,
               "-platform_version",
@@ -1252,7 +1261,7 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
               "-o",
               sharedObjPath.c_str()};
     }
-    return {*linker,
+    return {linker,
             "-flavor",
             linkerFlavor,
             "-shared",
@@ -1314,7 +1323,7 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
 
   // Create shared object in buffer.
   ErrorOr<BufferRef> sharedObjBufOr =
-      createSharedObject(*bufOr, options, moduleName);
+      createSharedObject(*bufOr, options, moduleName, linker);
 
   if (sharedObjBufOr.isError())
     return sharedObjBufOr.takeError();
@@ -1480,12 +1489,11 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
                               getNVGPUName(options.targetAccelerator));
 }
 
-static AnyAsyncValueRef
-lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
-                        RCRef<Cache::TransformCache> transformCache,
-                        size_t moduleIdx, AsyncRT::Runtime &runtime,
-                        CompilationOptions options, bool isJIT,
-                        bool shouldDeserialize, EmitAs emissionKind) {
+static AnyAsyncValueRef lowerLLVMModuleToObject(
+    llvm::Module &inputModule, Location loc,
+    RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
+    AsyncRT::Runtime &runtime, CompilationOptions options, bool isJIT,
+    bool shouldDeserialize, EmitAs emissionKind, std::string &linker) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
   *keyBuf << ")";
@@ -1500,9 +1508,9 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
 
   auto runTransformation = [loc, moduleIdx, isJIT, options, &runtime,
                             emissionKind, keyBuf = keyBuf.copy(), &inputModule,
-                            nonBitcodeKeySize, shouldDeserialize](
-                               WriteableBufferRef buf,
-                               AsyncRT::AnyAsyncValueRef chain) mutable {
+                            nonBitcodeKeySize, shouldDeserialize,
+                            &linker](WriteableBufferRef buf,
+                                     AsyncRT::AnyAsyncValueRef chain) mutable {
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
 #ifdef MODULAR_ENABLE_TELEMETRY
     Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
@@ -1512,7 +1520,7 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
     chain.andThenAsync([loc, &runtime, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
                         isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
-                        shouldDeserialize]() mutable {
+                        shouldDeserialize, &linker]() mutable {
       CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
       LLVMModuleAndContext deserializedModule;
@@ -1647,10 +1655,10 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
           // Emitting as a shared object
           ErrorOr<BufferRef> bufOr = createSharedObject(
               BufferRef::create(codeBuf->Buffer::getBuffer()), options,
-              moduleName);
+              moduleName, linker);
           if (bufOr.isError()) {
-            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                "failed to create shared object file", loc));
+            return std::move(output).setToError(
+                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
           }
           (*buf) << (*bufOr)->getBuffer();
         }
@@ -1681,7 +1689,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     RCRef<Cache::TransformCache> transformCache,
     std::optional<size_t> moduleIdx, AsyncRT::Runtime &runtime,
     CompilationOptions options, bool isJIT,
-    DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds) {
+    DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
+    std::string &linker) {
   auto resultBufs =
       AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
   auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
@@ -1691,7 +1700,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                    produceModule = std::move(produceModule),
                                    loc, isJIT, options, &runtime,
                                    transformCache = transformCache.copy(),
-                                   &kernelEmissionKinds]() mutable {
+                                   &kernelEmissionKinds, &linker]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
     // Materialize the module.
@@ -1727,7 +1736,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, runtime, options, isJIT,
-          shouldDeserialize, kind));
+          shouldDeserialize, kind, linker));
     }
 
     if (shouldRunExtraAsm) {
@@ -1738,7 +1747,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       // codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, runtime, options, isJIT,
-          shouldDeserialize, EmitAs::ASM));
+          shouldDeserialize, EmitAs::ASM, linker));
     }
 
     auto kernelBufs =
@@ -1836,7 +1845,7 @@ ObjectCompiler::emitGPUKernels(
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
         auto result = lowerLLVMModuleToObject(
             std::move(produceModule), moduleLoc, transformCache, idx, runtime,
-            options, isJIT, kernelEmissionKinds);
+            options, isJIT, kernelEmissionKinds, linker);
         cachedResults.push_back(std::move(result.first));
         cachedResults.push_back(std::move(result.second));
       };
