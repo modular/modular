@@ -12,7 +12,7 @@ import pytest
 from max.entrypoints import pipelines
 from max.pipelines.lib import generate_local_model_path
 
-REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+REPO_ID = "HuggingFaceTB/SmolLM-135M"
 REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 logger = logging.getLogger("max.pipelines")

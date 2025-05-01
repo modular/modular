@@ -17,7 +17,7 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-@pytest.mark.skip("AITLIB-341: Failing on H100")
+@pytest.mark.skip("AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16(capsys):
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
@@ -49,7 +49,7 @@ def test_pipelines_cli__smollm_bfloat16(capsys):
     assert "?" in captured.out
 
 
-@pytest.mark.skip("AITLIB-341: Failing on H100")
+@pytest.mark.skip("AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(capsys):
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)

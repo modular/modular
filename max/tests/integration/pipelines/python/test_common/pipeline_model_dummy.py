@@ -298,7 +298,7 @@ DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["modularai/llama-3.1"],
-    default_encoding=SupportedEncoding.float32,
+    default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],

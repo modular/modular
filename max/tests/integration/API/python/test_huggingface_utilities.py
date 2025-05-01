@@ -63,7 +63,7 @@ def test_huggingface_repo__file_exists(llama_3_1_8b_instruct_local_path):
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
     assert len(files[WeightsFormat.safetensors]) == 4
-    assert files[WeightsFormat.safetensors] == [
+    assert sorted(files[WeightsFormat.safetensors]) == [
         Path("model-00001-of-00004.safetensors"),
         Path("model-00002-of-00004.safetensors"),
         Path("model-00003-of-00004.safetensors"),
@@ -89,7 +89,7 @@ def test_huggingface_repo__get_files_for_encoding():
     files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
     assert WeightsFormat.safetensors in files
     assert len(files[WeightsFormat.safetensors]) == 17
-    assert files[WeightsFormat.safetensors] == [
+    assert sorted(files[WeightsFormat.safetensors]) == [
         Path("model-00001-of-00017.safetensors"),
         Path("model-00002-of-00017.safetensors"),
         Path("model-00003-of-00017.safetensors"),

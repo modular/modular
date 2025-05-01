@@ -1,5 +1,6 @@
 hf_repo	revision
 000EXAMPLE-for-unit-test	0123456789abcdef0123456789abcdef01234567
+HuggingFaceTB/SmolLM-135M	1d461723eec654e65efdc40cf49301c89c0c92f4
 HuggingFaceTB/SmolLM2-135M	93efa2f097d58c2a74874c7e644dbc9b0cee75a2
 HuggingFaceTB/SmolLM2-135M-Instruct	e2c3f7557efbdec707ae3a336371d169783f1da1
 HuggingFaceTB/SmolLM2-360M-Instruct	6849e9f43f1a64e4604f0ef9d23adc8af4b4508f
@@ -31,3 +32,4 @@ modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
 replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
 sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642
+trl-internal-testing/tiny-random-LlamaForCausalLM	2c542e4731d42d3bb68324c4eca16df9f93b8b33

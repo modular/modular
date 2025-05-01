@@ -14,6 +14,11 @@ import pytest
 from max.engine import InferenceSession
 from max.pipelines.lib import generate_local_model_path
 
+MODULAR_AI_LLAMA_3_1_HF_REPO_ID = "modularai/llama-3.1"
+MODULAR_AI_LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    MODULAR_AI_LLAMA_3_1_HF_REPO_ID
+)
+
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
 LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 
@@ -38,6 +43,13 @@ DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
 )
 DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
+)
+
+TINY_RANDOM_LLAMA_HF_REPO_ID = (
+    "trl-internal-testing/tiny-random-LlamaForCausalLM"
+)
+TINY_RANDOM_LLAMA_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    TINY_RANDOM_LLAMA_HF_REPO_ID
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -248,4 +260,34 @@ def deepseek_r1_distill_llama_8b_local_path():
             f"Falling back to repo_id: {DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def modular_ai_llama_3_1_local_path():
+    try:
+        model_path = generate_local_model_path(
+            MODULAR_AI_LLAMA_3_1_HF_REPO_ID, MODULAR_AI_LLAMA_3_1_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {MODULAR_AI_LLAMA_3_1_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = MODULAR_AI_LLAMA_3_1_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def tiny_random_llama_local_path():
+    try:
+        model_path = generate_local_model_path(
+            TINY_RANDOM_LLAMA_HF_REPO_ID, TINY_RANDOM_LLAMA_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {TINY_RANDOM_LLAMA_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = TINY_RANDOM_LLAMA_HF_REPO_ID
     return model_path
