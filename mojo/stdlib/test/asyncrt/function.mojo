@@ -38,8 +38,8 @@ struct TwoS:
 struct OneS(DevicePassable):
     alias device_type: AnyTrivialRegType = TwoS
 
-    fn _to_device_type(self) -> Self.device_type:
-        return TwoS(self.s)
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+        target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod
     fn get_type_name() -> String:

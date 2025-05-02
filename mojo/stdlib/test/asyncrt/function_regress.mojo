@@ -36,8 +36,8 @@ trait MaybeZeroSized:
 struct ZeroSized(MaybeZeroSized, DevicePassable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self) -> Self.device_type:
-        return self
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+        target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
@@ -69,8 +69,8 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
 struct NotZeroSized(MaybeZeroSized, DevicePassable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self) -> Self.device_type:
-        return self
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+        target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:

@@ -706,15 +706,12 @@ struct DeviceBuffer[type: DType](
     alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
     """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
 
-    fn _to_device_type(self) -> Self.device_type:
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
         """Device type mapping from DeviceBuffer to the device's UnsafePointer.
-
-        Returns:
-            The `UnsafePointer` allocated on the device.
         """
         # TODO: Allow the low-level DeviceContext implementation to intercept
         # these translations.
-        return self._device_ptr
+        target.bitcast[Self.device_type]()[] = self._device_ptr
 
     @staticmethod
     fn get_type_name() -> String:
@@ -2105,21 +2102,11 @@ struct DeviceFunction[
             var translated_arg_offset = translated_arg_offsets[i]
             if translated_arg_offset >= 0:
                 alias actual_arg_type = Ts[i]
-                var translated_arg = args[i]._to_device_type()
-                var translated_arg_ptr = UnsafePointer(
-                    to=translated_arg
-                ).bitcast[Byte]()
                 var first_word_addr = UnsafePointer(
                     to=translated_args[translated_arg_offset]
-                )
-                memcpy(
-                    first_word_addr,
-                    translated_arg_ptr,
-                    sizeof[actual_arg_type.device_type](),
-                )
-                dense_args_addrs[translated_arg_idx] = first_word_addr.bitcast[
-                    NoneType
-                ]()
+                ).bitcast[NoneType]()
+                args[i]._to_device_type(first_word_addr)
+                dense_args_addrs[translated_arg_idx] = first_word_addr
                 translated_arg_idx += 1
 
         if cluster_dim:

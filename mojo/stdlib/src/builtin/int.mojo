@@ -22,6 +22,7 @@ from collections.string.string import (
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
 from math import CeilDivable
+from memory import UnsafePointer
 from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
@@ -228,13 +229,9 @@ struct Int(
     alias device_type: AnyTrivialRegType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self) -> Self.device_type:
-        """Device type mapping is the identity function.
-
-        Returns:
-            `self`
-        """
-        return self
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
