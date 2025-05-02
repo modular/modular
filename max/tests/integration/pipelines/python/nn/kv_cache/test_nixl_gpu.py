@@ -7,22 +7,22 @@ import os
 
 # ignoring import error of private module
 import nixl._utils as nixl_utils  # type: ignore
-import pytest
 import torch
-from nixl._api import nixl_agent
+from nixl._api import nixl_agent, nixl_agent_config
 
 
-# Copied from NIXL python example from v0.1.1 release:
-# https://github.com/ai-dynamo/nixl/blob/e369bd8aaef49a6946d94d4562f910aeaf9eefdc/examples/python/nixl_api_example.py
-@pytest.mark.asyncio
-async def test_nixl_api_example() -> None:
+# Copied from NIXL python example from v0.2.0 release:
+# https://github.com/ai-dynamo/nixl/blob/d247e88c72db75dc00e4e37aa21ed8d99e60c27d/examples/python/nixl_api_example.py
+def test_nixl_api_example() -> None:
     buf_size = 256
     # Allocate memory and register with NIXL
 
     print("Using NIXL Plugins from:")
     print(os.environ["NIXL_PLUGIN_DIR"])
 
-    nixl_agent1 = nixl_agent("target")
+    # Example using nixl_agent_config
+    agent_config = nixl_agent_config(backends=["UCX"])
+    nixl_agent1 = nixl_agent("target", agent_config)
 
     plugin_list = nixl_agent1.get_plugin_list()
     assert "UCX" in plugin_list
@@ -51,11 +51,14 @@ async def test_nixl_api_example() -> None:
 
     # Just for tensor test
     tensors = [torch.zeros(10, dtype=torch.float32) for _ in range(2)]
+
+    # These are intentionally unused
     agent1_tensor_reg_descs = nixl_agent1.get_reg_descs(tensors)
     agent1_tensor_xfer_descs = nixl_agent1.get_xfer_descs(tensors)
 
     assert nixl_agent1.register_memory(agent1_reg_descs) is not None
 
+    # Example using default configs, which is UCX backend only
     nixl_agent2 = nixl_agent("initiator", None)
     addr3 = nixl_utils.malloc_passthru(buf_size * 2)
     addr4 = addr3 + buf_size
@@ -84,7 +87,7 @@ async def test_nixl_api_example() -> None:
 
     # initialize transfer mode
     xfer_handle_1 = nixl_agent2.initialize_xfer(
-        "READ", agent2_xfer_descs, agent1_xfer_descs, remote_name, "UUID1"
+        "READ", agent2_xfer_descs, agent1_xfer_descs, remote_name, b"UUID1"
     )
     if not xfer_handle_1:
         print("Creating transfer failed.")
@@ -130,8 +133,7 @@ async def test_nixl_api_example() -> None:
     # test send_notif
 
     test_notif = str.encode("DESCS: ") + serdes
-    # ignoring type error where method expects `str` but gets `bytes`
-    nixl_agent2.send_notif(remote_name, test_notif)  # type: ignore
+    nixl_agent2.send_notif(remote_name, test_notif)
 
     print("sent notif ")
     print(test_notif)
@@ -149,7 +151,7 @@ async def test_nixl_api_example() -> None:
     print("notif test complete, doing transfer 2\n")
 
     xfer_handle_2 = nixl_agent2.make_prepped_xfer(
-        "WRITE", local_prep_handle, [0, 1], remote_prep_handle, [1, 0], "UUID2"
+        "WRITE", local_prep_handle, [0, 1], remote_prep_handle, [1, 0], b"UUID2"
     )
     if not local_prep_handle or not remote_prep_handle:
         print("Preparing transfer side handles failed.")
