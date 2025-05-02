@@ -11,7 +11,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Dim, DimLike, Shape, StaticDim, TensorType
+from ..type import DeviceRef, Dim, DimLike, Shape, StaticDim, TensorType
 from ..value import TensorValue, TensorValueLike
 
 
@@ -38,9 +38,13 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
 
     output_dims = [dim * count for dim, count in zip(shape, repeats)]
 
-    return Graph.current._add_op(
+    # TODO(GEX-2056): Add support for GPU kernel for tile and remove manual transfers
+    original_device = x.type.device
+    x = x.to(DeviceRef.CPU())
+    answer = Graph.current._add_op(
         rmo.mo_tile,
         TensorType(dtype=x.dtype, shape=output_dims, device=x.device).to_mlir(),
         x,
         TensorValue(Shape(repeats)),
     )[0].tensor
+    return answer.to(original_device)
