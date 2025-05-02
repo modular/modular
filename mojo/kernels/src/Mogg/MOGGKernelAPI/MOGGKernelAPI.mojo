@@ -6495,7 +6495,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
     type: DType,
     weight_type: DType,
-    scale_type: DType,
+    output_type: DType,
+    kv_type: DType,
     target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
@@ -6503,14 +6504,13 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
     hidden_state: ManagedTensorSlice[type=type, rank=2],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     weight: ManagedTensorSlice[type=weight_type, rank=2],
-    input_scale: ManagedTensorSlice[type=scale_type, rank=1],
-    weight_scale: ManagedTensorSlice[type=scale_type, rank=1],
+    scale: Float32,
     kv_collection: PagedKVCacheCollection[
-        type,
+        kv_type,
         *_,
     ],
     layer_idx: UInt32,
-    output: ManagedTensorSlice[type=type, rank=2],
+    output: ManagedTensorSlice[type=output_type, rank=2],
     ctx: DeviceContextPtr,
 ) raises:
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
@@ -6521,8 +6521,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
         managed_tensor_slice_to_ndbuffer(hidden_state),
         managed_tensor_slice_to_ndbuffer(input_row_offsets),
         managed_tensor_slice_to_ndbuffer(weight),
-        managed_tensor_slice_to_ndbuffer(input_scale),
-        managed_tensor_slice_to_ndbuffer(weight_scale),
+        scale,
         kv_collection,
         layer_idx,
         managed_tensor_slice_to_ndbuffer(output),
@@ -6693,33 +6692,37 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
     fn execute[
         type: DType,
         scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
         target: StaticString,
     ](
-        output: OutputTensor[type=type, rank=2],
+        output: OutputTensor[type=output_type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         weight: InputTensor[type=type, rank=2],
-        input_scale: InputTensor[type=scale_type, rank=1],
-        weight_scale: InputTensor[type=scale_type, rank=1],
+        input_scale: Scalar[scale_type],
+        weight_scale: Scalar[scale_type],
         kv_collection: PagedKVCacheCollection[
-            type,
+            kv_type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
             page_size,
         ],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        var scale = input_scale.cast[DType.float32]() * weight_scale.cast[
+            DType.float32
+        ]()
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
             target=target
         ](
             hidden_state,
             input_row_offsets,
             weight,
-            input_scale,
-            weight_scale,
+            scale,
             kv_collection,
             layer_idx,
             output,
