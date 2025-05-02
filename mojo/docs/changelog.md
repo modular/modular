@@ -23,6 +23,7 @@ what we publish.
   - `kv_cache`
   - `quantization`
   - `nvml`
+  - Benchmarks
 
 ### Language changes
 
