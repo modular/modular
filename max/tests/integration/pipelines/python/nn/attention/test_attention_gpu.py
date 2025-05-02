@@ -782,7 +782,7 @@ def test_kv_cache_paged_mla_prefill():
                 MHAMaskVariant.CAUSAL_MASK,
                 1,  # scale
             )
-            g.output(result.cast(DType.float32))
+            g.output(result[0].cast(DType.float32))
         return g
 
     g = construct()

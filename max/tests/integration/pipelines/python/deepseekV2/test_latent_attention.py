@@ -50,6 +50,7 @@ def generate_max_outputs(
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
     use_prefill: bool = True,
+    prefill_buffer_size: int = 16384,
 ) -> torch.Tensor:
     attention_weights = {k: v for k, v in attention_weights.items()}
 
@@ -101,6 +102,7 @@ def generate_max_outputs(
         qk_rope_head_dim=config.qk_rope_head_dim,
         v_head_dim=config.v_head_dim,
         devices=[DeviceRef.GPU()],
+        buffer_size=prefill_buffer_size,
     )
     latent_attention.load_state_dict(attention_weights)
 
@@ -265,4 +267,38 @@ def test_latent_attention_decode(
         max_output,
         rtol=1e-3,
         atol=2e-3,
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
+)
+def test_latent_attention_cascade_prefill(
+    config: DeepseekV2Config,
+    attention_weights: dict[str, torch.Tensor],
+) -> None:
+    long_input_tensor = torch.randn(
+        1,
+        300,
+        config.hidden_size,
+        dtype=torch.bfloat16,
+    )
+
+    max_output = generate_max_outputs(
+        config, long_input_tensor, attention_weights, use_prefill=True
+    )
+
+    max_output_cascade_prefill = generate_max_outputs(
+        config,
+        long_input_tensor,
+        attention_weights,
+        use_prefill=True,
+        prefill_buffer_size=128,
+    )
+
+    torch.testing.assert_close(
+        max_output,
+        max_output_cascade_prefill,
+        rtol=1e-4,
+        atol=1e-4,
     )
