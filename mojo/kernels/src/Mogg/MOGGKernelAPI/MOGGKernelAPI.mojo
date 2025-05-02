@@ -70,7 +70,11 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.dual_gemm import swishGLU
-from linalg.fp8_quantization import quantize_static_scaled_fp8
+from linalg.fp8_quantization import (
+    quantize_dynamic_scaled_fp8,
+    quantize_static_scaled_fp8,
+    matmul_dynamic_scaled_fp8,
+)
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -9235,6 +9239,63 @@ struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(input),
             scale_loaded,
+            ctx.get_device_context(),
+        )
+
+
+@compiler.register("mo.quantize_dynamic_scaled_float8")
+struct QuantizeDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType, //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[type=output_type, rank=2],
+        input: InputTensor[type=input_type, rank=2],
+        scales: InputTensor[type=scales_type, rank=2],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        quantize_dynamic_scaled_fp8[group_size_or_per_token](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(scales),
+            managed_tensor_slice_to_ndbuffer(input),
+            scale_ub,
+            ctx.get_device_context(),
+        )
+
+
+@compiler.register("mo.matmul_dynamic_scaled_fp8")
+struct MatmulDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[type=output_type, rank=2],
+        a: InputTensor[type=input_type, rank=2],
+        b: InputTensor[type=input_type, rank=2],
+        a_scales: InputTensor[type=scales_type, rank=2],
+        b_scales: InputTensor[type=scales_type, rank=2],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        matmul_dynamic_scaled_fp8[transpose_b=True, target=target,](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(a_scales),
+            managed_tensor_slice_to_ndbuffer(b_scales),
             ctx.get_device_context(),
         )
 
