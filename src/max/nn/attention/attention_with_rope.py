@@ -956,6 +956,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             out_dim=1,  # Shape will be overridden at load_state_dict.
             dtype=DType.uint8,
             quantization_encoding=quantization_encoding,  # Shape will be overridden at load_state_dict.
+            device=self.devices[0],
         )
 
     @property
