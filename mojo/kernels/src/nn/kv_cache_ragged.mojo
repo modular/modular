@@ -334,14 +334,14 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     type: DType,
     weight_type: DType,
     output_type: DType,
+    scale_type: DType,
     target: StaticString = "cpu",
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[weight_type, 2, _, _],
-    scale: Float32,
+    input_scale: NDBuffer[scale_type, 2, _, _],
+    weight_scale: NDBuffer[scale_type, 2, _, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[mut=True, output_type, 2, _, _],
@@ -357,7 +357,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads *
             head_size).
-        scale: Scale to be multiplied to the QKV Tensor.
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object from
             kv_collection.
@@ -374,7 +375,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             trace_arg("output", output),
             trace_arg("hidden_state", hidden_state),
             trace_arg("weight", weight),
-            "scale=" + String(scale),
+            trace_arg("input_scale", input_scale),
+            trace_arg("weight_scale", weight_scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -390,13 +392,12 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
             target=target,
-            group_size=group_size,
-            has_zp=has_zp,
         ](
             hidden_state,
             input_row_offsets,
             weight,
-            scale,
+            input_scale,
+            weight_scale,
             kv_collection,
             layer_idx,
             output,
@@ -526,17 +527,17 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     type: DType,
     weight_type: DType,
     output_type: DType,
+    scale_type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[weight_type, 2, _, _],
-    scale: Float32,
+    input_scale: NDBuffer[scale_type, 2, _, _],
+    weight_scale: NDBuffer[scale_type, 2, _, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[mut=True, output_type, 2, _, _],
@@ -553,7 +554,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
             in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads *
             head_size).
-        scale: Input scale to be multiplied to the QKV Tensor.
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object
             from kv_collection.
@@ -570,15 +572,12 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
-        target=target,
-        group_size=group_size,
-        has_zp=has_zp,
-    ](
+    return _fused_qkv_matmul_kv_cache_ragged_impl_scale[target=target,](
         hidden_state,
         input_row_offsets,
         weight,
-        scale,
+        input_scale,
+        weight_scale,
         k_cache,
         v_cache,
         output,
@@ -859,16 +858,16 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     type: DType,
     weight_type: DType,
     output_type: DType,
+    scale_type: DType,
     cache_t: KVCacheT, //,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[weight_type, 2, _, _],
-    scale: Float32,
+    input_scale: NDBuffer[scale_type, 2, _, _],
+    weight_scale: NDBuffer[scale_type, 2, _, _],
     k_cache: cache_t,
     v_cache: cache_t,
     output: NDBuffer[mut=True, output_type, 2, *_],
@@ -883,7 +882,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             denoting the start of each sequence along the seq_len dimension.
         weight: Tensor with shape (num_heads * head_size, (num_heads + 2 *
             num_kv_heads) * head_size).
-        scale: Input scale to be multiplied to the QKV Tensor.
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
         k_cache: The historical KVCacheT for keys, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
         v_cache: The historical KVCacheT for values, with logical shape:
@@ -903,13 +903,43 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
+    # Here we decide the quantization scheme for the QKV Tensor.
+    alias use_per_tensor = (
+        input_scale.shape.get[0]() == 1
+        and input_scale.shape.get[1]() == 1
+        and weight_scale.shape.get[0]() == 1
+        and weight_scale.shape.get[1]() == 1
+    )
+    alias use_per_channel = (
+        input_scale.shape.get[1]() == 1
+        and weight_scale.shape.get[1]() == 1
+        and not use_per_tensor
+    )
+
+    constrained[
+        use_per_tensor or use_per_channel, "Invalid quantization scheme"
+    ]()
+
     @parameter
-    @__copy_capture(scale, q_dim, qk_offset, batch_size)
+    @__copy_capture(input_scale, weight_scale, q_dim, qk_offset, batch_size)
     @always_inline
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
-        var output_val = val.cast[DType.float32]() * scale
+        var output_val: SIMD[type_, width]
+
+        @parameter
+        if use_per_tensor:
+            var scale_a = input_scale[0, 0].cast[type_]()
+            var scale_b = weight_scale[0, 0].cast[type_]()
+            output_val = val * (scale_a * scale_b)
+        else:
+            var scale_a = input_scale.load[width=1](idx[0], 0).cast[type_]()
+            var scale_b = weight_scale.load[width=width](idx[1], 0).cast[
+                type_
+            ]()
+            output_val = val * (scale_a * scale_b)
+
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
                 idx,

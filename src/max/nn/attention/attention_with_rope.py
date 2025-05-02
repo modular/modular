@@ -41,6 +41,7 @@ from ..kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     fused_qkv_ragged_matmul_quantized,
+    fused_qkv_ragged_matmul_scaled_float8,
     kv_cache_get_max_seq_len,
     matmul_k_cache_ragged,
     quantize_static_scaled_float8,
@@ -418,20 +419,33 @@ class AttentionWithRope(Module):
         # Call into fused qkv ragged matmul.
         if self.has_input_scale:
             assert self.max_input_scale is not None
+            assert self.max_weight_scale is not None
+            assert isinstance(kv_collection, PagedKVCacheCollection)
             x = quantize_static_scaled_float8(x, self.max_input_scale)
 
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=self.wqkv,
-            bias=self.wqkv_bias,
-            input_scale=self.max_input_scale,
-            weight_scale=self.max_weight_scale,
-            input_row_offsets=kwargs["input_row_offsets"],
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
-        )
+            xq = fused_qkv_ragged_matmul_scaled_float8(
+                self.kv_params,
+                input=x,
+                wqkv=self.wqkv,
+                bias=self.wqkv_bias,
+                input_row_offsets=kwargs["input_row_offsets"],
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                input_scale=self.max_input_scale,
+                weight_scale=self.max_weight_scale,
+            )
+        else:
+            xq = fused_qkv_ragged_matmul(
+                self.kv_params,
+                input=x,
+                wqkv=self.wqkv,
+                bias=self.wqkv_bias,
+                input_row_offsets=kwargs["input_row_offsets"],
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+            )
 
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))

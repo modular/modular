@@ -49,8 +49,6 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
-    input_scale: TensorValue | None = None,
-    weight_scale: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -104,67 +102,104 @@ def fused_qkv_ragged_matmul(
         parameters["page_size"] = int(kv_params.page_size)
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
+    values = [input, input_row_offsets, wqkv, kv_collection, layer_idx]
 
     if bias:
-        assert input_scale is None
-        assert weight_scale is None
-        op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.bias"
-
-        return ops.inplace_custom(
-            op_name,
-            values=[
-                input,
-                input_row_offsets,
-                wqkv,
-                kv_collection,
-                layer_idx,
-                bias,
-            ],
-            out_types=[
-                TensorType(
-                    dtype=input.dtype,
-                    shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
-                    device=input.device,
-                )
-            ],
-            parameters=parameters,
-        )[0].tensor
-
-    if input_scale:
-        assert weight_scale is not None
-        op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.scale"
-        parameters["kv_type"] = kv_params.dtype
-
-        return ops.inplace_custom(
-            op_name,
-            values=[
-                input,
-                input_row_offsets,
-                wqkv,
-                input_scale,
-                weight_scale,
-                kv_collection,
-                layer_idx,
-            ],
-            out_types=[
-                TensorType(
-                    dtype=DType.bfloat16,
-                    shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
-                    device=input.device,
-                )
-            ],
-            parameters=parameters,
-        )[0].tensor
-
-    assert weight_scale is None
-    op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
+        op_name += ".bias"
+        values.append(bias)
 
     return ops.inplace_custom(
         op_name,
-        values=[input, input_row_offsets, wqkv, kv_collection, layer_idx],
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype,
+                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def fused_qkv_ragged_matmul_scaled_float8(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    n_heads: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with ragged input.
+
+    `input` and `input_row_offsets` are used together to implement the ragged
+    tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.dtype != wqkv.dtype:
+        msg = (
+            "expected input and wqkv to have the same dtype, but got"
+            f" {input.dtype} and {wqkv.dtype}, respectively."
+        )
+        raise ValueError(msg)
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        msg = f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    # for per-tensor quantization, the scale is a scalar. We view it as a 1x1
+    # rank-2 tensor so that we can use the same kernel for per-tensor and
+    # per-channel quantization.
+    if input_scale.shape in [[], [1]]:
+        input_scale = input_scale.reshape([1, 1])
+
+    if weight_scale.shape in [[], [1]]:
+        weight_scale = weight_scale.reshape([1, 1])
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "kv_type": kv_params.dtype,
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": int(kv_params.page_size),
+    }
+
+    op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
+
+    return ops.inplace_custom(
+        op_name,
+        values=[
+            input,
+            input_row_offsets,
+            wqkv,
+            input_scale,
+            weight_scale,
+            kv_collection,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
                 shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
                 device=input.device,
             )
