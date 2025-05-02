@@ -11,7 +11,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Shape
+from ..type import DeviceRef, Shape
 from ..value import TensorValue, TensorValueLike
 
 
@@ -109,6 +109,11 @@ def conv2d_transpose(
             f"output padding must be smaller than either stride or dilation, but got output_padding = {output_paddings}"
         )
 
+    # TODO(GEX-2043): Add support for GPU kernel for conv_transpose and remove manual transfers
+    original_device = x.type.device
+    x = x.to(DeviceRef.CPU())
+    filter = filter.to(DeviceRef.CPU())
+
     out = Graph.current._add_op(
         rmo.conv_transpose,
         input=x,
@@ -118,6 +123,8 @@ def conv2d_transpose(
         paddings=Shape(padding).to_mlir(),
         output_paddings=Shape(output_paddings).to_mlir(),
     )[0].tensor
+
+    out = out.to(original_device)
 
     if bias is not None:
         return Graph.current._add_op(rmo.add, out, bias)[0].tensor
