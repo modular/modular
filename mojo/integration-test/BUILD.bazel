@@ -9,7 +9,7 @@ lit_tests(
     data = glob(["**/*.mojo"]),
     generate_litcfg = False,
     mojo_deps = [
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
     tags = [],
     target_compatible_with = select({
