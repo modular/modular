@@ -7,6 +7,7 @@ import os
 
 # ignoring import error of private module
 import nixl._utils as nixl_utils  # type: ignore
+import pytest
 import torch
 from nixl._api import nixl_agent, nixl_agent_config
 
@@ -196,3 +197,26 @@ def test_nixl_api_example() -> None:
     nixl_utils.free_passthru(addr3)
 
     print("Test Complete.")
+
+
+def test_nixl_api_torch_cpu() -> None:
+    agent_config = nixl_agent_config(backends=["UCX"])
+    nixl_agent1 = nixl_agent("target", agent_config)
+
+    tensor = torch.zeros(10, dtype=torch.float32)
+    agent1_tensor_reg_descs = nixl_agent1.get_reg_descs(tensor)
+
+    assert nixl_agent1.register_memory(agent1_tensor_reg_descs) is not None
+
+
+@pytest.mark.skip(
+    reason="TODO(E2EOPT-209): NIXL fails with NIXL_ERR_BACKEND while registering cuda memory"
+)
+def test_nixl_api_torch_gpu() -> None:
+    agent_config = nixl_agent_config(backends=["UCX"])
+    nixl_agent1 = nixl_agent("target", agent_config)
+
+    tensor = torch.zeros(10, dtype=torch.float32, device="cuda")
+    agent1_tensor_reg_descs = nixl_agent1.get_reg_descs(tensor)
+
+    assert nixl_agent1.register_memory(agent1_tensor_reg_descs) is not None
