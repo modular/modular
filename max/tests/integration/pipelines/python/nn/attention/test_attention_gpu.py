@@ -37,8 +37,8 @@ from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
 from modular_graph_test import are_all_tensor_values
-from nvitop import Device as NVITOPDevice
 from test_common.distance_metrics import is_euclidean_distance_close
+from test_common.graph_utils import is_h100_h200
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
@@ -54,14 +54,6 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
-
-
-def is_h100_h200() -> bool:
-    """Checks if this is an H100 or H200 GPU."""
-    devices = NVITOPDevice.all()
-    return bool(devices) and (
-        "H100" in devices[0].name() or "H200" in devices[0].name()
-    )
 
 
 def _attention_layer(

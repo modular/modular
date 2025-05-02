@@ -129,7 +129,6 @@ modular_py_test(
         requirement("transformers"),
         requirement("hypothesis"),
         requirement("gguf"),
-        requirement("nvitop"),
         requirement("pytest-asyncio"),
     ],
 )

@@ -11,7 +11,16 @@ from collections.abc import Iterable, Sequence
 from max.driver import Tensor
 from max.engine import MojoValue
 from max.graph import BufferValue, TensorValue, Value
+from nvitop import Device as NVITOPDevice
 from typing_extensions import TypeGuard
+
+
+def is_h100_h200() -> bool:
+    """Checks if this is an H100 or H200 GPU."""
+    devices = NVITOPDevice.all()
+    return bool(devices) and (
+        "H100" in devices[0].name() or "H200" in devices[0].name()
+    )
 
 
 def are_all_tensors_iterable(
