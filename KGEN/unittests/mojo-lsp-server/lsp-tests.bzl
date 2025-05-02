@@ -23,7 +23,7 @@ def lsp_test(name, pattern):
             "PRESERVE_LSP_IO_FILES": "1",
         },
         mojo_deps = [
-            "//open-source/max/mojo/stdlib/stdlib",
+            "@mojo//:stdlib",
             "//SDK/lib/API/mojo/max/tensor",
             "//Kernels/mojo/extensibility/compiler_internal",
         ],

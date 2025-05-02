@@ -32,7 +32,7 @@ modular_cc_test(
         "MODULAR_PATH": ".",
     },
     mojo_deps = [
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
     tags = [
         "resources:cpu:4",

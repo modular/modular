@@ -29,8 +29,8 @@ lit_tests(
         "MODULAR_MOJO_MAX_MBLACK_PATH": "$(location //utils/mblack:shim.py)",
     },
     mojo_deps = [
-        "//open-source/max/mojo/kernels/src/layout",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
     ],
     tools = [
         "//KGEN/tools/kgen-opt",

@@ -15,7 +15,7 @@ lit_tests(
         "//utils:lit-lldb-init.in",
     ],
     mojo_deps = [
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
     tools = [
         "//KGEN/tools/mojo",
