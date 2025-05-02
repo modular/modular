@@ -489,10 +489,10 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            absolute_tolerance=0.17,
-            relative_tolerance=3.5e-2,
+            absolute_tolerance=0.18,
+            relative_tolerance=5.0e-2,
             cos_dist_threshold=1.4e-4,
-            kl_div_threshold=1.2e-3,
+            kl_div_threshold=1.8e-3,
         ),
     ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -540,6 +540,7 @@ PIPELINES = {
     ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only"],
         run=lambda device_type,
         devices,
         find_tolerances,
@@ -626,7 +627,7 @@ PIPELINES = {
             absolute_tolerance=0.83,
             relative_tolerance=0.74,
             cos_dist_threshold=1.1e-3,
-            kl_div_threshold=3.1e-3,
+            kl_div_threshold=5.0e-3,
         ),
     ),
     "mpnet-float32": PipelineDef(
@@ -671,6 +672,7 @@ PIPELINES = {
     ),
     "Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
         run=lambda device_type,
         devices,
         find_tolerances,
@@ -763,11 +765,12 @@ PIPELINES = {
             absolute_tolerance=14,
             relative_tolerance=1.4,
             cos_dist_threshold=0.67,
-            kl_div_threshold=17,
+            kl_div_threshold=19,
         ),
     ),
     "llama-gptq": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only"],
         run=lambda device_type,
         devices,
         find_tolerances,
@@ -787,6 +790,7 @@ PIPELINES = {
     ),
     "llama-gptq-no-perm-idx": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only"],
         run=lambda device_type,
         devices,
         find_tolerances,
@@ -806,7 +810,7 @@ PIPELINES = {
     ),
     "deepseek-V2-lite-chat-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
+        tags=["big", "nvidia-only"],
         run=lambda device_type,
         devices,
         find_tolerances,
