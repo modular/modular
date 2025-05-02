@@ -889,6 +889,43 @@ struct CPython:
             error += "\n    https://modul.ar/fix-python\n"
             raise error
 
+    fn unsafe_get_error(self) -> Error:
+        """Get the `Error` object corresponding to the current CPython
+        interpreter error state.
+
+        Safety:
+            The caller MUST be sure that the CPython interpreter is in an error
+            state before calling this function.
+
+        This function will clear the CPython error.
+
+        Returns:
+            `Error` object describing the CPython error.
+        """
+        debug_assert(
+            self.PyErr_Occurred(),
+            "invalid unchecked conversion of Python error to Mojo error",
+        )
+
+        var error: Error = String(PythonObject(self.PyErr_Fetch()))
+        self.PyErr_Clear()
+        return error
+
+    fn get_error(self) -> Error:
+        """Return an `Error` object from the CPython interpreter if it's in an
+        error state, or an internal error if it's not.
+
+        This should be used when you expect CPython to be in an error state,
+        but want to fail gracefully if it's not.
+
+        Returns:
+            An `Error` object from the CPython interpreter if it's in an
+            error state, or an internal error if it's not.
+        """
+        if self.PyErr_Occurred():
+            return self.unsafe_get_error()
+        return Error("internal error: expected CPython exception not found")
+
     # ===-------------------------------------------------------------------===#
     # Logging
     # ===-------------------------------------------------------------------===#

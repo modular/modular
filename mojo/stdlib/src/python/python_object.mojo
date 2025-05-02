@@ -262,7 +262,7 @@ struct TypedPythonObject[type_hint: StaticString](
         )
 
         if item.is_null():
-            raise Python.unsafe_get_python_exception(cpython)
+            raise cpython.get_error()
 
         # TODO(MSTDL-911): Avoid unnecessary owned reference counts when
         #   returning read-only PythonObject values.
@@ -528,9 +528,10 @@ struct PythonObject(
             If the object is not iterable.
         """
         var cpython = Python().cpython()
-        var iter = cpython.PyObject_GetIter(self.py_object)
-        Python.throw_python_exception_if_error_state(cpython)
-        return _PyIter(PythonObject(iter))
+        var iter_ptr = cpython.PyObject_GetIter(self.py_object)
+        if iter_ptr.is_null():
+            raise cpython.get_error()
+        return _PyIter(PythonObject(iter_ptr))
 
     fn __getattr__(self, owned name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
@@ -543,9 +544,8 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_GetAttrString(self.py_object, name^)
-        Python.throw_python_exception_if_error_state(cpython)
         if result.is_null():
-            raise Error("Attribute is not found.")
+            raise cpython.get_error()
         return PythonObject(result)
 
     fn __setattr__(self, owned name: String, new_value: PythonObject) raises:
@@ -559,9 +559,8 @@ struct PythonObject(
         var result = cpython.PyObject_SetAttrString(
             self.py_object, name^, new_value.py_object
         )
-        Python.throw_python_exception_if_error_state(cpython)
-        if result < 0:
-            raise Error("Attribute is not found or could not be set.")
+        if result != 0:
+            raise cpython.get_error()
 
     fn __bool__(self) -> Bool:
         """Evaluate the boolean value of the object.
@@ -627,7 +626,8 @@ struct PythonObject(
         cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self.py_object, key_obj)
         cpython.Py_DecRef(key_obj)
-        Python.throw_python_exception_if_error_state(cpython)
+        if result.is_null():
+            raise cpython.get_error()
         return PythonObject(result)
 
     fn __getitem__(self, *args: Slice) raises -> PythonObject:
@@ -656,7 +656,8 @@ struct PythonObject(
         cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self.py_object, key_obj)
         cpython.Py_DecRef(key_obj)
-        Python.throw_python_exception_if_error_state(cpython)
+        if result.is_null():
+            raise cpython.get_error()
         return PythonObject(result)
 
     fn __setitem__(mut self, *args: PythonObject, value: PythonObject) raises:
@@ -687,7 +688,7 @@ struct PythonObject(
             self.py_object, key_obj, value.py_object
         )
         if result != 0:
-            Python.throw_python_exception_if_error_state(cpython)
+            raise cpython.get_error()
         cpython.Py_DecRef(key_obj)
         cpython.Py_DecRef(value.py_object)
 
@@ -1340,16 +1341,8 @@ struct PythonObject(
         cpython.Py_DecRef(callable_obj)
         cpython.Py_DecRef(tuple_obj)
         cpython.Py_DecRef(dict_obj)
-        Python.throw_python_exception_if_error_state(cpython)
-        # Python always returns non null on success.
-        # A void function returns the singleton None.
-        # If the result is null, something went awry;
-        # an exception should have been thrown above.
         if result.is_null():
-            raise Error(
-                "Call returned null value, indicating failure. Void functions"
-                " return NoneType."
-            )
+            raise cpython.get_error()
         return PythonObject(result)
 
     # ===-------------------------------------------------------------------===#

@@ -120,10 +120,7 @@ fn python_type_object[
     var type_obj = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
 
     if type_obj.is_null():
-        Python.throw_python_exception_if_error_state(cpython)
-        return abort[TypedPythonObject["Type"]](
-            "expected to raise after getting NULL type object"
-        )
+        raise cpython.get_error()
 
     return TypedPythonObject["Type"](
         unsafe_unchecked_from=PythonObject(type_obj)

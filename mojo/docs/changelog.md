@@ -28,6 +28,9 @@ what we publish.
 
 ### Standard library changes
 
+- `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
+  have been removed in favor of `CPython.{unsafe_get_error, get_error}`.
+
 - The `CollectionElement` trait has been removed.
 
 - Since virtually any operation on a `PythonObject` can raise, the

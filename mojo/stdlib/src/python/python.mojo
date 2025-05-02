@@ -151,22 +151,27 @@ struct Python:
             # The Py_file_input is the code passed to the parsed to indicate
             # the initial state: this is essentially whether it is expecting
             # to compile an expression, a file or statements (e.g. repl).
-            var code = PythonObject(
-                cpython.Py_CompileString(expr^, "<evaluate>", Py_file_input)
+            var code_obj_ptr = cpython.Py_CompileString(
+                expr^, "<evaluate>", Py_file_input
             )
+            if code_obj_ptr.is_null():
+                raise cpython.get_error()
+            var code = PythonObject(code_obj_ptr)
+
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
             # dictionary for the module scope, and locals is defined as the
             # dictionary for the *current* scope. Since we are executing at
             # the module scope for this eval, they should be the same object.
-            var result = PythonObject(
-                cpython.PyEval_EvalCode(
-                    code.py_object, dict_obj.py_object, dict_obj.py_object
-                )
+            var result_ptr = cpython.PyEval_EvalCode(
+                code.py_object, dict_obj.py_object, dict_obj.py_object
             )
-            Python.throw_python_exception_if_error_state(cpython)
-            _ = code^
+            if result_ptr.is_null():
+                raise cpython.get_error()
+
+            var result = PythonObject(result_ptr)
             _ = result^
+            _ = code^
             return module
         else:
             # We use the result of evaluating the expression directly, and allow
@@ -175,8 +180,8 @@ struct Python:
             var result = cpython.PyRun_String(
                 expr^, dict_obj.py_object, dict_obj.py_object, Py_eval_input
             )
-            # We no longer need module and dictionary, release them.
-            Python.throw_python_exception_if_error_state(cpython)
+            if result.is_null():
+                raise cpython.get_error()
             return PythonObject(result)
 
     @staticmethod
@@ -235,7 +240,8 @@ struct Python:
         # Throw error if it occurred during initialization
         cpython.check_init_error()
         var module_maybe = cpython.PyImport_ImportModule(module^)
-        Python.throw_python_exception_if_error_state(cpython)
+        if module_maybe.is_null():
+            raise cpython.get_error()
         return PythonObject(module_maybe)
 
     @staticmethod
@@ -261,10 +267,8 @@ struct Python:
         cpython.check_init_error()
 
         var module_obj = cpython.PyModule_Create(name)
-
-        # TODO: investigate when `PyModule_Create` can actually produce an error
-        # This is cargo copy-pasted from other methods in this file essentially.
-        Python.throw_python_exception_if_error_state(cpython)
+        if module_obj.is_null():
+            raise cpython.get_error()
 
         return PythonModule(unsafe_unchecked_from=PythonObject(module_obj))
 
@@ -321,7 +325,7 @@ struct Python:
         )
 
         if result != 0:
-            Python.throw_python_exception_if_error_state(cpython)
+            raise cpython.get_error()
 
     @staticmethod
     fn add_object(
@@ -352,7 +356,7 @@ struct Python:
         )
 
         if result != 0:
-            Python.throw_python_exception_if_error_state(cpython)
+            raise cpython.get_error()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -489,42 +493,6 @@ struct Python:
         return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
 
     @staticmethod
-    fn throw_python_exception_if_error_state(cpython: CPython) raises:
-        """Raise an exception if CPython interpreter is in an error state.
-
-        Args:
-            cpython: The cpython instance we wish to error check.
-        """
-        if cpython.PyErr_Occurred():
-            raise Python.unsafe_get_python_exception(cpython)
-
-    @staticmethod
-    fn unsafe_get_python_exception(cpython: CPython) -> Error:
-        """Get the `Error` object corresponding to the current CPython
-        interpreter error state.
-
-        Safety:
-            The caller MUST be sure that the CPython interpreter is in an error
-            state before calling this function.
-
-        This function will clear the CPython error.
-
-        Args:
-            cpython: The cpython instance we wish to error check.
-
-        Returns:
-            `Error` object describing the CPython error.
-        """
-        debug_assert(
-            cpython.PyErr_Occurred(),
-            "invalid unchecked conversion of Python error to Mojo error",
-        )
-
-        var error: Error = String(PythonObject(cpython.PyErr_Fetch()))
-        cpython.PyErr_Clear()
-        return error
-
-    @staticmethod
     fn is_type(x: PythonObject, y: PythonObject) -> Bool:
         """Test if the `x` object is the `y` object, the same as `x is y` in
         Python.
@@ -582,9 +550,11 @@ struct Python:
         var cpython = Python().cpython()
         var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object)
 
-        # Check if the result is an error sentinel.
         if long == -1:
-            Python.throw_python_exception_if_error_state(cpython)
+            # Note that -1 does not guarantee an error, it just means we need to
+            # check if there was an exception.
+            if cpython.PyErr_Occurred():
+                raise cpython.unsafe_get_error()
 
         return long
 
@@ -604,10 +574,8 @@ struct Python:
         """
         var cpython = Python().cpython()
         var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
-
-        # Check if the result is an error sentinel.
         if py_obj_ptr.is_null():
-            Python.throw_python_exception_if_error_state(cpython)
+            raise cpython.get_error()
 
         return PythonObject(py_obj_ptr)
 
@@ -626,9 +594,7 @@ struct Python:
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_IsTrue(obj.py_object)
-
-        # Check if the result is an error sentinel.
         if result == -1:
-            Python.throw_python_exception_if_error_state(cpython)
+            raise cpython.get_error()
 
         return result == 1
