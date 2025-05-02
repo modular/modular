@@ -691,7 +691,7 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
 
 
 @value
-struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
+struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
     """A space efficient representation of a tensor shape. This struct
     implements value semantics and owns its underlying data."""
 
@@ -711,7 +711,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
     @always_inline
     @implicit
-    fn __init__[*Ts: CollectionElement](out self, shapes: Tuple[*Ts]):
+    fn __init__[*Ts: Copyable & Movable](out self, shapes: Tuple[*Ts]):
         """Initializes a TensorShape from the values provided.
 
         Args:
@@ -720,7 +720,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
         @parameter
         fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, CollectionElement, `>`]
+            x: __mlir_type[`!kgen.variadic<`, Copyable & Movable, `>`]
         ) -> Int:
             return __mlir_op.`pop.variadic.size`(x)
 

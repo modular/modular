@@ -39,7 +39,8 @@ from .tensor_shape import TensorShape, _as_rep16
 struct TensorSpec(
     Stringable,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
     EqualityComparable,
 ):
     """A space efficient representation of a tensor shape and dtype. This struct

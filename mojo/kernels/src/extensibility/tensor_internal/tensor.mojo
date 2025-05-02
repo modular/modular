@@ -40,7 +40,8 @@ from .tensor_spec import TensorSpec
 struct Tensor[type: DType](
     Stringable,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
     EqualityComparable,
 ):
     """A tensor type which owns its underlying data and is parameterized on
