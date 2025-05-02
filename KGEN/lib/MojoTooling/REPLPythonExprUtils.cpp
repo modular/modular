@@ -82,6 +82,8 @@ __lldb_python_serialize_symbols(__lldb_python_extract_symbols())
 
 /// Try to get a python executable from the PATH.
 static std::optional<std::string> getPythonExecutable() {
+  if (auto pythonEnvVar = std::getenv("MODULAR_PYTHON_EXECUTABLE"))
+    return std::string(pythonEnvVar);
   llvm::ErrorOr<std::string> pyOrErr = llvm::sys::findProgramByName("python3");
   if (!pyOrErr)
     pyOrErr = llvm::sys::findProgramByName("python");
