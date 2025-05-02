@@ -43,8 +43,8 @@ lit_tests(
     },
     mojo_deps = [
         "//SDK/lib/API/mojo/max/max",
-        "//open-source/max/mojo/stdlib/stdlib",
-        "//open-source/max/mojo/kernels/src/register",
+        "@mojo//:stdlib",
+        "@mojo//:register",
     ],
     tags = ["gpu"],
     tools = [

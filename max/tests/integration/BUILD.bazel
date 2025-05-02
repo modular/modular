@@ -13,7 +13,7 @@ mojo_library(
     deps = [
         "//SDK/lib/API/mojo/max/compiler",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
 )
 
@@ -24,8 +24,8 @@ mojo_library(
     deps = [
         "//Kernels/mojo/extensibility/compiler_internal",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/mojo/kernels/src/register",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:register",
+        "@mojo//:stdlib",
     ],
 )
 
@@ -37,8 +37,8 @@ mojo_library(
         "//SDK/lib/API/mojo/max/compiler",
         "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/mojo/kernels/src/register",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:register",
+        "@mojo//:stdlib",
     ],
 )
 
@@ -49,7 +49,7 @@ mojo_library(
     deps = [
         "//Kernels/mojo/extensibility/compiler_internal",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/mojo/kernels/src/register",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:register",
+        "@mojo//:stdlib",
     ],
 )
