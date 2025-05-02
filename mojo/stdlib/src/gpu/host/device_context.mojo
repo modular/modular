@@ -1985,9 +1985,12 @@ struct DeviceFunction[
             ConstantMemoryMapping
         ](),
     ) raises:
-        alias num_args = len(VariadicList(Ts))
+        # We need to keep track of both the number of arguments pushed by the
+        # caller and the number of translated arguments expected by the kernel.
+        alias num_passed_args = len(VariadicList(Ts))
+        var num_translated_args = 0
 
-        var translated_arg_offsets = stack_allocation[num_args, Int]()
+        var translated_arg_offsets = stack_allocation[num_passed_args, Int]()
 
         # Validate that all actual arguments do remap to the declared device
         # type in the kernel.
@@ -1997,7 +2000,7 @@ struct DeviceFunction[
                 VariadicList(declared_arg_types.value())
             )
             constrained[
-                declared_num_args == num_args,
+                declared_num_args == num_passed_args,
                 "Wrong number of arguments to enqueue",
             ]()
 
@@ -2007,7 +2010,7 @@ struct DeviceFunction[
             var tmp_arg_offset = 0
 
             @parameter
-            for i in range(num_args):
+            for i in range(num_passed_args):
                 alias declared_arg_type = declared_arg_types.value()[i]
                 alias actual_arg_type = Ts[i]
 
@@ -2046,17 +2049,22 @@ struct DeviceFunction[
                         actual_arg_type.get_device_type_name(),
                         ")",
                     ]()
-                translated_arg_offsets[i] = tmp_arg_offset
-                tmp_arg_offset += align_up(
+                var aligned_type_size = align_up(
                     sizeof[actual_arg_type.device_type](), 8
                 )
+                if aligned_type_size != 0:
+                    num_translated_args += 1
+                    translated_arg_offsets[i] = tmp_arg_offset
+                    tmp_arg_offset += aligned_type_size
+                else:
+                    translated_arg_offsets[i] = -1
 
         var num_captures = self._func_impl.num_captures
         alias populate = __type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         var dense_args_addrs = stack_allocation[
-            num_captures_static + num_args, UnsafePointer[NoneType]
+            num_captures_static + num_passed_args, UnsafePointer[NoneType]
         ]()
 
         # We need the total byte size of arguments as a compile time constant,
@@ -2067,7 +2075,7 @@ struct DeviceFunction[
             var tmp_args_size = 0
 
             @parameter
-            for i in range(num_args):
+            for i in range(num_passed_args):
                 alias actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
                     sizeof[actual_arg_type.device_type](), 8
@@ -2082,25 +2090,36 @@ struct DeviceFunction[
 
         if num_captures > num_captures_static:
             dense_args_addrs = UnsafePointer[UnsafePointer[NoneType]].alloc(
-                num_captures + num_args
+                num_captures + num_passed_args
             )
 
+        # Since we skip over zero sized declared types when passing arguments
+        # we need to know the current count arguments pushed.
+        var translated_arg_idx = 0
+
         @parameter
-        for i in range(num_args):
-            alias actual_arg_type = Ts[i]
-            var translated_arg = args[i]._to_device_type()
-            var translated_arg_ptr = UnsafePointer(to=translated_arg).bitcast[
-                Byte
-            ]()
-            var first_word_addr = UnsafePointer(
-                to=translated_args[translated_arg_offsets[i]]
-            )
-            memcpy(
-                first_word_addr,
-                translated_arg_ptr,
-                sizeof[actual_arg_type.device_type](),
-            )
-            dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
+        for i in range(num_passed_args):
+            # If the arg offset is negative then the corresponding declared
+            # type is zero sized and we do not push the argument to the kernel.
+            var translated_arg_offset = translated_arg_offsets[i]
+            if translated_arg_offset >= 0:
+                alias actual_arg_type = Ts[i]
+                var translated_arg = args[i]._to_device_type()
+                var translated_arg_ptr = UnsafePointer(
+                    to=translated_arg
+                ).bitcast[Byte]()
+                var first_word_addr = UnsafePointer(
+                    to=translated_args[translated_arg_offset]
+                )
+                memcpy(
+                    first_word_addr,
+                    translated_arg_ptr,
+                    sizeof[actual_arg_type.device_type](),
+                )
+                dense_args_addrs[translated_arg_idx] = first_word_addr.bitcast[
+                    NoneType
+                ]()
+                translated_arg_idx += 1
 
         if cluster_dim:
             attributes.append(
@@ -2126,7 +2145,9 @@ struct DeviceFunction[
             # Because this closure uses stack allocated ptrs
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
-            var capture_args_start = dense_args_addrs.offset(num_args)
+            var capture_args_start = dense_args_addrs.offset(
+                num_translated_args
+            )
             populate(
                 rebind[UnsafePointer[NoneType]](
                     capture_args_start.bitcast[NoneType]()
