@@ -1008,7 +1008,7 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
     # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
-alias _CollectionElementMetaType = __type_of(CollectionElement)
+alias _CollectionElementMetaType = __type_of(Copyable & Movable)
 
 struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,

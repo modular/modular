@@ -10,8 +10,9 @@ from utils.variant import Variant
 from collections import List
 
 
-struct MTuple[T: CollectionElement](
-    CollectionElement,
+struct MTuple[T: Copyable & Movable](
+    Copyable,
+    Movable,
     Stringable,
     Writable,
 ):

@@ -92,9 +92,6 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
 # ===----------------------------------------------------------------------=== #
 
 
-alias CollectionElement = Copyable & Movable
-
-
 trait KeyElement:
     pass
 
@@ -301,7 +298,7 @@ alias Byte = UInt8
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: CollectionElement,
+    T: Copyable & Movable,
     origin: Origin[mut],
 ]:
     # Field
@@ -946,7 +943,7 @@ fn _generator[
     return _ParamForIterator(value^, 0, True)
 
 
-struct Optional[T: CollectionElement]:
+struct Optional[T: Copyable & Movable]:
     fn __init__(out self):
         pass
 

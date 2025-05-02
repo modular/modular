@@ -1243,7 +1243,7 @@ fn dependent_callee[dtype: DType](storage: UnsafePointer[Scalar[dtype]],
 # This requires handling of VariadicAttr in parameter inference.
 fn variadic_attr_caller(*inputs: Tuple[Int]):
    variadic_attr_callee[Int](inputs)
-fn variadic_attr_callee[key_type: CollectionElement](
+fn variadic_attr_callee[key_type: Copyable & Movable](
        inputs: VariadicListMem[Tuple[key_type], _]
     ):
   pass

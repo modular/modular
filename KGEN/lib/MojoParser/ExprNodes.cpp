@@ -2118,7 +2118,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Support subscripting a !kgen.variadic value, which are used in parameter
   // lists.  This enables us to work with parameter backs in a more natural way,
-  // e.g. fn thing[*Ts: CollectionElement]():
+  // e.g. fn thing[*Ts: Copyable & Movable]():
   //      type = Ts[123]
   // We should really remove this when going to a better parameter pack rep.
   //

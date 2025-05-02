@@ -1296,7 +1296,7 @@ LogicalResult ParameterInferenceState::infer(
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Pointer` does not
-        // (and in fact cannot) conform to `CollectionElement`.
+        // (and in fact cannot) conform to `Copyable & Movable`.
         if (failed(
                 inferOneOperand(operand, refValType, ArgConvention::OwnedMem)))
           return failure();

@@ -12,7 +12,7 @@ fn test(st: String):
 
 
 @register_passable("trivial")
-struct Point(CollectionElement):
+struct Point(Copyable, Movable):
     var x: Int
     var y: Int
 

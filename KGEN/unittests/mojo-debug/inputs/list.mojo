@@ -8,7 +8,7 @@ from debug_test_utils import keep_alive
 
 
 @register_passable("trivial")
-struct Point(CollectionElement):
+struct Point(Copyable, Movable):
     var x: Int
     var y: Int
 
