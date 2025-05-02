@@ -30,7 +30,7 @@ struct _ShapeElementType(EqualityComparable):
 # N.B.: We do not use @value since that would expose a constructor that takes
 # _type, _static, and _name directly, while we want to keep this representation
 # hidden.
-struct ShapeElement(CollectionElement, EqualityComparable):
+struct ShapeElement(Copyable, Movable, EqualityComparable):
     """A single dimension of a possibly-dynamic shape.
 
     A shape element can be static or dynamic.  If dynamic, it can be named or

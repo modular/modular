@@ -66,7 +66,7 @@ trait DeviceBuffer:
         ...
 
 
-struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
+struct DeviceMemory(DeviceBuffer, StringableRaising, Copyable, Movable):
     """DeviceMemory is an owning buffer allocated on a (possibly non-CPU) Device.
     """
 
@@ -321,7 +321,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         return tmp
 
 
-struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
+struct DeviceTensor(DeviceBuffer, StringableRaising, Copyable, Movable):
     var _storage: DeviceMemory
     var spec: TensorSpec
 

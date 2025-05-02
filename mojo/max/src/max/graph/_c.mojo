@@ -89,7 +89,7 @@ fn graph_new(
 
 
 fn attr_new_tensor[
-    T: CollectionElement
+    T: Copyable & Movable
 ](
     name: String,
     data: List[T],

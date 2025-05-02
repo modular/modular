@@ -35,7 +35,7 @@ from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 
 @value
-struct Symbol(CollectionElement, Stringable, Writable):
+struct Symbol(Copyable, Movable, Stringable, Writable):
     """Represents a symbolic value within a `Graph`.
 
     A `Symbol` can represent the output of a node, the arguments of a `Graph`
@@ -855,7 +855,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
 
 
 @value
-struct SymbolicSlice(CollectionElement):
+struct SymbolicSlice(Copyable, Movable):
     """`Slice`-like struct with `Symbol` fields.
 
     This struct enables the range slice (`start:stop:end`) operator with

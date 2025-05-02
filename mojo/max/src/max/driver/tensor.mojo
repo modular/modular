@@ -36,7 +36,7 @@ from .device import Device, DeviceMemory, DeviceTensor
 
 
 struct Tensor[type: DType, rank: Int](
-    CollectionElement, EqualityComparable, Stringable
+    Copyable, Movable, EqualityComparable, Stringable
 ):
     """An owned, indexible buffer type."""
 

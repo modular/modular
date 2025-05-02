@@ -715,7 +715,7 @@ def _quantize_superblock_params[
 
 
 def _qn_k_quantize[
-    BlockType: CollectionElement,
+    BlockType: Copyable & Movable,
     elems_per_superblock: Int,
     quantize_superblock: fn (UnsafePointer[Float32]) raises -> BlockType,
 ](tensor: Tensor[DType.float32]) -> Tensor[DType.uint8]:

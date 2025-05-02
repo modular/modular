@@ -35,7 +35,7 @@ struct FrameworkFormat:
 
 @value
 @register_passable("trivial")
-struct ModelSource(CollectionElement):
+struct ModelSource(Copyable, Movable):
     """Model source representation that is ABI compatible with the C API's `M_ModelSource`.
     """
 
@@ -101,7 +101,7 @@ struct CCompileConfig:
 
 @value
 @register_passable("trivial")
-struct CTorchInputSpec(CollectionElement):
+struct CTorchInputSpec(Copyable, Movable):
     """C API ABI compatible M_TorchInputSpec."""
 
     alias ptr_type = UnsafePointer[NoneType]

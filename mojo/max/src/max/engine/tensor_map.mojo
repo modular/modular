@@ -23,7 +23,7 @@ from .session import InferenceSession
 from .value import Value
 
 
-struct TensorMap(CollectionElement, SizedRaising, Stringable):
+struct TensorMap(Copyable, Movable, SizedRaising, Stringable):
     """
     Maps inputs and outputs to their respective names and can
     be used to supply and receive data to MAX Engine model.

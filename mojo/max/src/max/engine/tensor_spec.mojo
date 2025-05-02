@@ -19,7 +19,7 @@ from ._tensor_spec_impl import CTensorSpec
 from .session import InferenceSession
 
 
-struct EngineTensorSpec(Stringable, CollectionElement):
+struct EngineTensorSpec(Stringable, Copyable, Movable):
     """
     Describes the input and output tensor specifications of a
     [`Model`](/max/api/mojo/engine/model/Model).

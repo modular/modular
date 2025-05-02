@@ -84,7 +84,7 @@ struct DialectRegistry:
 
 @value
 @register_passable("trivial")
-struct Dialect(CollectionElement):
+struct Dialect(Copyable, Movable):
     alias cType = _c.IR.MlirDialect
     var c: Self.cType
 
@@ -104,7 +104,7 @@ struct Dialect(CollectionElement):
 
 @value
 @register_passable("trivial")
-struct DialectHandle(CollectionElement):
+struct DialectHandle(Copyable, Movable):
     alias cType = _c.IR.MlirDialectHandle
     var c: Self.cType
 
@@ -217,7 +217,7 @@ struct Context:
 
 @value
 @register_passable("trivial")
-struct Location(CollectionElement, Stringable, Writable):
+struct Location(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirLocation
     var c: Self.cType
 
@@ -319,7 +319,7 @@ struct Module(Stringable, Writable):
 
 # Helper class with a bunch of implicit conversions for things that go on
 # Operations.
-struct _OpBuilderList[T: CollectionElement]:
+struct _OpBuilderList[T: Copyable & Movable]:
     var elements: List[T]
 
     fn __init__(out self):
@@ -339,7 +339,7 @@ struct _OpBuilderList[T: CollectionElement]:
 
 
 @value
-struct NamedAttribute(CollectionElement):
+struct NamedAttribute(Copyable, Movable):
     alias cType = _c.IR.MlirNamedAttribute
     var name: Identifier
     var attr: Attribute
@@ -364,7 +364,7 @@ struct _WriteState:
 # TODO: how to correctly destroy "owned" Operations?
 @value
 @register_passable("trivial")
-struct Operation(CollectionElement, Stringable, Writable):
+struct Operation(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirOperation
     var c: Self.cType
 
@@ -605,7 +605,7 @@ struct Operation(CollectionElement, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Identifier(CollectionElement, Stringable):
+struct Identifier(Copyable, Movable, Stringable):
     alias cType = _c.IR.MlirIdentifier
     var c: Self.cType
 
@@ -625,7 +625,7 @@ struct Identifier(CollectionElement, Stringable):
 
 @value
 @register_passable("trivial")
-struct Type(CollectionElement, Stringable, Writable):
+struct Type(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirType
     var c: Self.cType
 
@@ -658,7 +658,7 @@ struct Type(CollectionElement, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Value(CollectionElement, Stringable, Writable):
+struct Value(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirValue
     var c: Self.cType
 
@@ -712,7 +712,7 @@ struct Value(CollectionElement, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Attribute(CollectionElement, Stringable, Writable):
+struct Attribute(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirAttribute
     var c: Self.cType
 
@@ -745,7 +745,7 @@ struct Attribute(CollectionElement, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Block(CollectionElement, Stringable, Writable):
+struct Block(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirBlock
     var c: Self.cType
 
@@ -816,7 +816,7 @@ struct Block(CollectionElement, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Region(CollectionElement):
+struct Region(Copyable, Movable):
     alias cType = _c.IR.MlirRegion
     var c: Self.cType
 

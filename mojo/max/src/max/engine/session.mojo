@@ -226,7 +226,7 @@ struct _InferenceSessionImpl(Movable):
 
 
 @value
-struct InputSpec(CollectionElement):
+struct InputSpec(Copyable, Movable):
     """
     Specifies a model's input shape and data type (required for TorchScript).
 
@@ -334,7 +334,7 @@ struct InputSpec(CollectionElement):
 
 
 @value
-struct _TorchLoadOptions(CollectionElement):
+struct _TorchLoadOptions(Copyable, Movable):
     """
     Configuration options to load PyTorch models with MAX Engine.
 

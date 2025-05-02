@@ -21,7 +21,7 @@ fn _dyn() -> Int64:
 
 
 @value
-struct DynamicDim(CollectionElement):
+struct DynamicDim(Copyable, Movable):
     """A dynamic tensor dimension.
 
     `DynamicDim`s are printed in MO tensor types as `?`, eg.
@@ -39,7 +39,7 @@ struct DynamicDim(CollectionElement):
 
 
 @value
-struct SymbolicDim(CollectionElement):
+struct SymbolicDim(Copyable, Movable):
     """A symbolic tensor dimension.
 
     `SymbolicDims`s have a name and are printed as their name on MO types, eg.
@@ -76,7 +76,7 @@ struct SymbolicDim(CollectionElement):
 
 
 @value
-struct StaticDim(CollectionElement):
+struct StaticDim(Copyable, Movable):
     """A static tensor dimension.
 
     Static tensor dimensions will always have exactly the same value,
@@ -112,7 +112,7 @@ struct StaticDim(CollectionElement):
 
 
 @value
-struct Dim(CollectionElement):
+struct Dim(Copyable, Movable):
     """A tensor dimension.
 
     Tensor dimensions can be
@@ -364,7 +364,7 @@ struct Dim(CollectionElement):
 
 
 @value
-struct TensorType(CollectionElement):
+struct TensorType(Copyable, Movable):
     """A symbolic tensor type.
 
     It is _not_ an eager tensor type!! It contains no actual data, but instead
@@ -586,7 +586,7 @@ struct TensorType(CollectionElement):
 
 
 @value
-struct ListType(CollectionElement):
+struct ListType(Copyable, Movable):
     """A type representing a flat list of tensor values.
 
     This isn't an eager list type! It doesn't contain any data, but represents
@@ -624,7 +624,7 @@ struct ListType(CollectionElement):
 
 
 @value
-struct _OpaqueType(CollectionElement):
+struct _OpaqueType(Copyable, Movable):
     """A type representing an opaque type."""
 
     var name: String
@@ -655,7 +655,7 @@ struct _OpaqueType(CollectionElement):
 
 
 @value
-struct Type(CollectionElement):
+struct Type(Copyable, Movable):
     """Represents any possible type for Graph Symbol values.
 
     Every Symbol has a Type, and that type is represented by an Type.

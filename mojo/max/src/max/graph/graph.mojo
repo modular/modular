@@ -133,7 +133,7 @@ struct _GraphLayerContext:
     "the Mojo max.engine API has been deprecated in favor of the Python API. It"
     " will be open sourced in a future patch prior to being removed."
 )
-struct Graph(CollectionElement, Stringable, Writable):
+struct Graph(Copyable, Movable, Stringable, Writable):
     """Represents a single MAX graph.
 
     A `Graph` is a callable routine in MAX Engine, similar to a
