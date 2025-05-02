@@ -141,14 +141,14 @@ direct programming support for the MLIR intermediate representations.
 ### Is Mojo only for AI or can it be used for other stuff?
 
 Mojo's initial focus is to solve AI programmability challenges. See
-[here](https://github.com/modular/max/tree/main/examples/custom_ops) for examples
+[here](https://github.com/modular/modular/tree/main/examples/custom_ops) for examples
 of how to write custom GPU operations. That being said,
 the goal is to grow Mojo into a general purpose programming language. We use Mojo
 at Modular to develop AI algorithms, but
 you can use it for other things like HPC, data transformations, writing pre/post
 processing operations, and much more. For examples of how Mojo can be used for
 other general programming tasks, see our [Mojo
-examples](https://github.com/modular/max/tree/main/examples/mojo).
+examples](https://github.com/modular/modular/tree/main/examples/mojo).
 
 ### Is Mojo interpreted or compiled?
 
@@ -285,7 +285,7 @@ and does not require login.
   using buttons in the Playground toolbar.
 
 - There might be some bugs. Please [report issues and feedback on
-  GitHub](https://github.com/modular/max/issues/new/choose).
+  GitHub](https://github.com/modular/modular/issues/new/choose).
 
 ### What are the license terms for the SDK?
 

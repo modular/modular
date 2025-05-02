@@ -35,7 +35,7 @@ The [`sync`](/mojo/stdlib/gpu/sync/) module provides functions for synchronizing
 threads.
 
 For an example of launching a GPU kernel from a MAX custom operation, see the
-[vector addition example](https://github.com/modular/max/blob/main/examples/custom_ops/kernels/vector_addition.mojo)
+[vector addition example](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/vector_addition.mojo)
 in the MAX repo.
 """
 

@@ -364,7 +364,7 @@ section below.
 While thinking about something like `2-1` is easy to unpack, how do we think
 about something like `x-2` where we don’t know the value of `x`?  It turns out
 that this all composes, using dependent type support (and now with [improved
-dependent type support](https://github.com/modular/max/blob/main/mojo/proposals/always_inline_builtin.md),
+dependent type support](https://github.com/modular/modular/blob/main/mojo/proposals/always_inline_builtin.md),
 it even works correctly!).  We have to write this function as a type function,
 and we don’t want to utter that MLIR attribute, so we can write it like this:
 

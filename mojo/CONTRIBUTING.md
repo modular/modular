@@ -222,7 +222,7 @@ for more details.
 
 #### Fork and clone the repo
 
-Go to the [MAX repo](https://github.com/modular/max) and click the fork
+Go to the [MAX repo](https://github.com/modular/modular) and click the fork
 button:
 
 ![Create Fork](stdlib/docs/images/create-fork.png)

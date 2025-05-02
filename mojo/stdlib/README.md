@@ -54,6 +54,6 @@ See the license file in the repository for more details.
 ## Support
 
 For any inquiries, bug reports, or feature requests, please [open an
-issue](https://github.com/modular/max/issues) on the GitHub repository. See
+issue](https://github.com/modular/modular/issues) on the GitHub repository. See
 the [Mojo contributor guide](../CONTRIBUTING.md) for guidelines on filing good
 bugs.

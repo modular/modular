@@ -204,7 +204,7 @@ struct LinkedList[
                 self._tail = node
 
         # Do not destroy the elements when their backing storage goes away.
-        # FIXME(https://github.com/modular/max/issues/3969) this is leaking!
+        # FIXME(https://github.com/modular/modular/issues/3969) this is leaking!
         __disable_del elements
 
         self._size = length

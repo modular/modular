@@ -20,9 +20,9 @@ keywords:
   - machine learning
   - inference
 sources:
-  - https://github.com/modular/max
+  - https://github.com/modular/modular
 maintainers:
   - name: Modular team
     email: max-feedback@modular.com
-    url: https://github.com/modular/max
+    url: https://github.com/modular/modular
 version: 0.1.0

@@ -33,7 +33,7 @@ from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 # Check that the dimension is either x, y, or z.
 # TODO: Some day we should use typed string literals or 'requires' clauses to
 #       enforce this at the type system level.
-# https://github.com/modular/max/issues/1278
+# https://github.com/modular/modular/issues/1278
 fn _verify_xyz[dim: StaticString]():
     constrained[
         dim == "x" or dim == "y" or dim == "z",
