@@ -23,9 +23,20 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, _reconcile_weights
-from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    _reconcile_weights,
+)
+from max.graph.weights import (
+    SafetensorWeights,
+    WeightData,
+    Weights,
+    WeightsAdapter,
+)
+from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -43,8 +54,10 @@ from max.pipelines.lib import (
     SupportedEncoding,
     upper_bounded_default,
 )
+from max.profiler import traced
 from transformers import AutoConfig
 
+from .distributed_mistral import DistributedMistral
 from .mistral import Mistral
 from .model_config import MistralConfig
 
@@ -62,22 +75,32 @@ class MistralInputs(ModelInputs):
 
     input_tokens: Tensor
     input_row_offsets: Tensor
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
     return_n_logits: Tensor
 
     def __init__(
         self,
         input_tokens: Tensor,
         input_row_offsets: Tensor,
+        signal_buffers: list[Tensor],
         return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.input_tokens = input_tokens
         self.input_row_offsets = input_row_offsets
+        self.signal_buffers = signal_buffers
         self.return_n_logits = return_n_logits
         self.kv_cache_inputs = kv_cache_inputs
 
 
 class MistralModel(PipelineModel[TextContext]):
+    model: Model
+    """Compiled and initialized model ready for inference."""
+
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -103,17 +126,35 @@ class MistralModel(PipelineModel[TextContext]):
         )
         self.model = self.load_model(session)
 
+        # Initialize state needed for communication collectives.
+        # Contents of signal buffer should be filled with zeros.
+        self.signal_buffers = (
+            [
+                Tensor.zeros(
+                    shape=(Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=dev,
+                )
+                for dev in self.devices
+            ]
+            if len(self.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
+
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Runs the graph."""
-        model_inputs = cast(MistralInputs, model_inputs)
-        assert model_inputs.kv_cache_inputs is not None, (
-            "Mistral has KV cache inputs, but none were provided"
-        )
+        assert isinstance(model_inputs, MistralInputs)
+
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+
         model_outputs = self.model.execute(
             model_inputs.input_tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.signal_buffers,
+            *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -133,8 +174,10 @@ class MistralModel(PipelineModel[TextContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> MistralInputs:
-        # Get tokens and seq ids
-        tokens = [ctx.next_tokens for ctx in context_batch]
+        if not self.kv_cache_config.cache_strategy.uses_opaque():
+            # TODO(MODELS-407): Consider deleting the padded path entirely.
+            msg = "Mistral unsupported for padded token batches"
+            raise ValueError(msg)
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -146,7 +189,9 @@ class MistralModel(PipelineModel[TextContext]):
         ).to(self.devices[0])
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        next_tokens_batch = np.concatenate(tokens)
+        next_tokens_batch = np.concatenate(
+            [ctx.next_tokens for ctx in context_batch]
+        )
         next_tokens_batch = Tensor.from_numpy(next_tokens_batch).to(
             self.devices[0]
         )
@@ -154,6 +199,7 @@ class MistralModel(PipelineModel[TextContext]):
         return MistralInputs(
             input_tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
+            signal_buffers=self.signal_buffers,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
@@ -165,12 +211,20 @@ class MistralModel(PipelineModel[TextContext]):
         next_tokens: Tensor,
         prev_model_inputs: ModelInputs,
     ) -> MistralInputs:
-        prev_model_inputs = cast(MistralInputs, prev_model_inputs)
+        assert isinstance(prev_model_inputs, MistralInputs)
+
+        if not self.kv_cache_config.cache_strategy.uses_opaque():
+            # TODO(MODELS-407): Consider deleting the padded path entirely.
+            msg = "multistep unsupported for padded token batches"
+            raise ValueError(msg)
+
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
+
         return MistralInputs(
             input_tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            signal_buffers=self.signal_buffers,
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
@@ -229,7 +283,9 @@ class MistralModel(PipelineModel[TextContext]):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=self.huggingface_config.num_hidden_layers,
+            num_layers=MistralConfig.get_num_layers(
+                huggingface_config=self.huggingface_config
+            ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.kv_cache_config.kv_cache_page_size,
@@ -260,11 +316,197 @@ class MistralModel(PipelineModel[TextContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
             ),
-            num_layers=huggingface_config.num_hidden_layers,
+            num_layers=MistralConfig.get_num_layers(huggingface_config),
             available_cache_memory=available_cache_memory,
             devices=devices,
         )
 
+    def _get_state_dict(
+        self,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+    ) -> dict[str, WeightData]:
+        pipeline_config = self.pipeline_config
+        huggingface_config = self.huggingface_config
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
+                huggingface_config=huggingface_config,
+                pipeline_config=self.pipeline_config,
+            )
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
+        return state_dict
+
+    def graph_inputs(self) -> tuple[TensorType]:
+        # Generate DeviceRef
+        device_ref = DeviceRef.from_device(self.devices[0])
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64,
+            shape=["return_n_logits"],
+            device=DeviceRef.CPU(),
+        )
+
+        kv_inputs = self.kv_manager.input_symbols()
+
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+
+        if len(self.devices) > 1:
+            # Flatten kv types for each device
+            flattened_kv_types = [
+                kv_type for sublist in kv_inputs for kv_type in sublist
+            ]
+            signals = Signals(
+                devices=(DeviceRef(d.label, d.id) for d in self.devices)
+            )
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *signals.input_types(),
+                *flattened_kv_types,
+            )
+        else:
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *kv_inputs[0],
+            )
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[TensorValue]
+    ) -> list[tuple[TensorValue, ...]]:
+        kv_params = MistralConfig.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        n_devices = kv_params.n_devices
+        fetch_types = self.kv_manager.input_symbols()[0]
+        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_caches_per_dev = [
+            tuple(
+                kv_inputs_flat[
+                    i * len_of_kv_tuple_per_dev : (i + 1)
+                    * len_of_kv_tuple_per_dev
+                ]
+            )
+            for i in range(n_devices)
+        ]
+        return kv_caches_per_dev
+
+    @traced
+    def _build_graph(
+        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+    ) -> Graph:
+        # Retrieve config
+        state_dict = self._get_state_dict(weights, adapter)
+
+        kv_params = MistralConfig.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in self.pipeline_config.model_config.device_specs
+        ]
+        model_config = MistralConfig(
+            hidden_size=self.huggingface_config.hidden_size,
+            num_attention_heads=self.huggingface_config.num_attention_heads,
+            num_key_value_heads=kv_params.n_kv_heads,
+            num_hidden_layers=self.huggingface_config.num_hidden_layers,
+            vocab_size=self.huggingface_config.vocab_size,
+            dtype=self.dtype,
+            kv_params=kv_params,
+            return_logits=self.return_logits,
+            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            head_dim=self.huggingface_config.head_dim,
+            rope_theta=self.huggingface_config.rope_theta,
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config,
+                huggingface_config=self.huggingface_config,
+            ),
+            rms_norm_eps=self.huggingface_config.rms_norm_eps,
+            feed_forward_length=self.huggingface_config.intermediate_size,
+            devices=device_refs,
+        )
+
+        # Get Graph Inputs
+        graph_inputs = self.graph_inputs()
+
+        # Build Graph
+        nn_model: Module
+        if len(self.devices) > 1:
+            nn_model = DistributedMistral(model_config)
+            nn_model.load_state_dict(state_dict, weight_alignment=1)
+            self.state_dict = nn_model.state_dict()
+
+            with Graph(
+                "mistral",
+                input_types=[*graph_inputs],
+            ) as graph:
+                tokens, input_row_offsets, return_n_logits, *variadic_args = (
+                    graph.inputs
+                )
+
+                # Multi-GPU passes a signal buffer per device: unmarshal these.
+                signal_buffers = [
+                    v.buffer for v in variadic_args[: len(self.devices)]
+                ]
+
+                # Unmarshal the remaining arguments, which are for KV cache.
+                kv_cache = [
+                    v.tensor for v in variadic_args[len(self.devices) :]
+                ]
+
+                kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
+
+                outputs = nn_model(
+                    tokens.tensor,
+                    signal_buffers,
+                    kv_caches_per_dev,
+                    input_row_offsets=input_row_offsets,
+                    return_n_logits=return_n_logits.tensor,
+                )
+
+                graph.output(*outputs)
+                return graph
+
+        else:
+            nn_model = Mistral(model_config)
+            nn_model.load_state_dict(state_dict, weight_alignment=1)
+            self.state_dict = nn_model.state_dict()
+
+            with Graph(
+                "mistral",
+                input_types=graph_inputs,
+            ) as graph:
+                tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                    graph.inputs
+                )
+                outputs = nn_model(
+                    tokens.tensor,
+                    [inp.tensor for inp in kv_cache_inputs],
+                    input_row_offsets=input_row_offsets,
+                    return_n_logits=return_n_logits.tensor,
+                )
+                graph.output(*outputs)
+                return graph
+
+    @traced
     def load_model(
         self,
         session: InferenceSession,
@@ -288,94 +530,14 @@ class MistralModel(PipelineModel[TextContext]):
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()
-
-        pipeline_config = self.pipeline_config
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-
-        kv_params = MistralConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
-        ]
-        model_config = MistralConfig(
-            hidden_size=huggingface_config.hidden_size,
-            num_attention_heads=huggingface_config.num_attention_heads,
-            num_key_value_heads=kv_params.n_kv_heads,
-            num_hidden_layers=huggingface_config.num_hidden_layers,
-            vocab_size=huggingface_config.vocab_size,
-            dtype=self.dtype,
-            kv_params=kv_params,
-            return_logits=self.return_logits,
-            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
-            head_dim=huggingface_config.head_dim,
-            rope_theta=huggingface_config.rope_theta,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config,
-                huggingface_config=self.huggingface_config,
-            ),
-            rms_norm_eps=huggingface_config.rms_norm_eps,
-            feed_forward_length=huggingface_config.intermediate_size,
-            devices=device_refs,
-        )
-        nn_model = Mistral(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_refs[0]
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_refs[0]
-        )
-        return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
-        )
-
-        kv_cache_types = self.kv_manager.input_symbols()[0]
-        with Graph(
-            "mistral",
-            input_types=[
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *kv_cache_types,
-            ],
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
-            )
-            # This is just needed for type checking.
-            kv_cache_tensors = [v.tensor for v in kv_cache_inputs]
-            outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=input_row_offsets,
-                return_n_logits=return_n_logits.tensor,
-                kv_cache_inputs=kv_cache_tensors,
-            )
-            graph.output(*outputs)
+        graph = self._build_graph(self.weights, self.adapter)
 
         model = session.load(
-            graph,
-            weights_registry=_reconcile_weights(graph, nn_model.state_dict()),
+            graph, weights_registry=_reconcile_weights(graph, self.state_dict)
         )
         after = time.perf_counter()
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )
+
         return model

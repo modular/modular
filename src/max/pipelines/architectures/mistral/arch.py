@@ -29,6 +29,7 @@ mistral_arch = SupportedArchitecture(
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED]},
+    multi_gpu_supported=True,
     pipeline_model=MistralModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,

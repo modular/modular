@@ -33,6 +33,7 @@ mistral3_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
+    multi_gpu_supported=True,
     pipeline_model=Mistral3Model,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,

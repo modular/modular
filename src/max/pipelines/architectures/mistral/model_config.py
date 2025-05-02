@@ -30,7 +30,7 @@ from transformers import AutoConfig
 
 @dataclass
 class MistralConfigBase(MAXModelConfigBase):
-    """Base configuration for Llama3 models."""
+    """Base configuration for Mistral models."""
 
     # Required fields
     hidden_size: int
