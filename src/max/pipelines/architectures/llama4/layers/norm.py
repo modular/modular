@@ -39,4 +39,5 @@ def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
             ),  # weight_offset = 0.0
         ],
         [TensorType(dtype=DType.float32, shape=x.shape, device=x.device)],
+        parameters={"multiply_before_cast": True},
     )[0].tensor.cast(original_dtype)

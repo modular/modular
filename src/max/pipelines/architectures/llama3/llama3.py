@@ -69,6 +69,7 @@ class Llama3(Transformer):
                 config.hidden_size,
                 config.rms_norm_eps,
                 dtype=config.norm_dtype or DType.float32,
+                multiply_before_cast=False,  # disable Gemma3-style scaling
             )
         else:
             create_norm = functools.partial(
