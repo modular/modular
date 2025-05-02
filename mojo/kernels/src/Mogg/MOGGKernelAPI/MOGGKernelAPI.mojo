@@ -7663,18 +7663,20 @@ struct Struct_mla_decode_ragged_paged_causal_mask_no_pos:
         )
 
 
-@compiler.register("mo.mla.prefill.ragged.paged.causal_mask.no_pos")
-struct Struct_mla_prefill_ragged_paged_causal_mask_no_pos:
+@compiler.register("mo.mla.prefill.init.ragged.paged.causal_mask.no_pos")
+struct Struct_mla_prefill_init_ragged_paged_causal_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
         type: DType,
+        softmax_type: DType,
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
         target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
+        softmax_info: OutputTensor[type=softmax_type, rank=3],
         q: InputTensor[type=type, rank=3],
         k: InputTensor[type=type, rank=3],
         v: InputTensor[type=type, rank=3],
@@ -7691,7 +7693,7 @@ struct Struct_mla_prefill_ragged_paged_causal_mask_no_pos:
         context: DeviceContextPtr,
     ) raises:
         generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
-            target=target
+            write_softmax_info=True, use_cascade_attention=False, target=target
         ](
             managed_tensor_slice_to_ndbuffer(q),
             managed_tensor_slice_to_ndbuffer(k),
@@ -7703,7 +7705,65 @@ struct Struct_mla_prefill_ragged_paged_causal_mask_no_pos:
             layer_idx,
             scale,
             managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(softmax_info),
             context,
+        )
+
+
+@compiler.register("mo.mla.prefill.ragged.paged.causal_mask.no_pos")
+struct Struct_mla_prefill_ragged_paged_causal_mask_no_pos:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        softmax_type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[type=type, rank=3],
+        softmax_info: OutputTensor[type=softmax_type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        k: InputTensor[type=type, rank=3],
+        v: InputTensor[type=type, rank=3],
+        buffer_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        cache_offsets: InputTensor[type = DType.uint32, rank=1],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        scale: Float32,
+        prev_output: InputTensor[type=type, rank=3],
+        prev_softmax_info: InputTensor[type=softmax_type, rank=3],
+        context: DeviceContextPtr,
+    ) raises:
+        var prev_output_nd = managed_tensor_slice_to_ndbuffer(prev_output)
+        var prev_softmax_info_nd = managed_tensor_slice_to_ndbuffer(
+            prev_softmax_info
+        )
+        generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
+            write_softmax_info=True, use_cascade_attention=True, target=target
+        ](
+            managed_tensor_slice_to_ndbuffer(q),
+            managed_tensor_slice_to_ndbuffer(k),
+            managed_tensor_slice_to_ndbuffer(v),
+            managed_tensor_slice_to_ndbuffer(buffer_row_offsets),
+            managed_tensor_slice_to_ndbuffer(cache_offsets),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            kv_collection,
+            layer_idx,
+            scale,
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(softmax_info),
+            context,
+            OptionalReg[NDBuffer[type, 3, MutableAnyOrigin]](prev_output_nd),
+            OptionalReg[NDBuffer[softmax_type, 3, MutableAnyOrigin]](
+                prev_softmax_info_nd
+            ),
         )
 
 
