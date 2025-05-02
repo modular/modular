@@ -1411,21 +1411,26 @@ struct CPython:
         self,
         obj: PyObjectPtr,
         owned name: String,
-    ) -> Int:
-        var r = self.lib.get_function[
-            fn (PyObjectPtr, __type_of(name.unsafe_cstr_ptr())) -> Int
-        ]("PyObject_HasAttrString")(obj, name.unsafe_cstr_ptr())
-        return r
+    ) -> c_int:
+        """Returns `1` if `obj` has the attribute `attr_name`, and `0` otherwise.
+
+        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString).
+        """
+        # int PyObject_HasAttrString(PyObject *o, const char *attr_name)
+        return self.lib.call["PyObject_HasAttrString", c_int](
+            obj, name.unsafe_cstr_ptr()
+        )
 
     fn PyObject_GetAttrString(
         self,
         obj: PyObjectPtr,
         owned name: String,
     ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString).
-        """
+        """Retrieve an attribute named `name` from object `obj`.
 
+        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString).
+        """
+        # PyObject *PyObject_GetAttrString(PyObject *o, const char *attr_name)
         var r = self.lib.call["PyObject_GetAttrString", PyObjectPtr](
             obj, name.unsafe_cstr_ptr()
         )
@@ -1444,12 +1449,16 @@ struct CPython:
         return r
 
     fn PyObject_SetAttrString(
-        self, obj: PyObjectPtr, owned name: String, new_value: PyObjectPtr
+        self,
+        obj: PyObjectPtr,
+        owned name: String,
+        new_value: PyObjectPtr,
     ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString).
-        """
+        """Set the value of the attribute named `name`, for object `obj`, to the value `new_value`.
 
+        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString).
+        """
+        # int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v)
         var r = self.lib.call["PyObject_SetAttrString", c_int](
             obj, name.unsafe_cstr_ptr(), new_value
         )
