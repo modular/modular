@@ -529,6 +529,26 @@ struct Python:
         """
         return PythonObject(None)
 
+    @staticmethod
+    fn str(obj: PythonObject) raises -> PythonObject:
+        """Convert a PythonObject to a Python `str`.
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Returns:
+            A Python `str` object.
+
+        Raises:
+            An error if the conversion failed.
+        """
+        var cpython = Python().cpython()
+        var py_str_ptr = cpython.PyObject_Str(obj.py_object)
+        if py_str_ptr.is_null():
+            raise cpython.get_error()
+
+        return PythonObject(py_str_ptr)
+
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
     # ===-------------------------------------------------------------------===#

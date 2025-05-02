@@ -20,7 +20,7 @@ from collections.string.string import (
 )
 
 from memory import UnsafePointer, memcpy
-from python import Python
+from python import Python, PythonObject
 from testing import (
     assert_equal,
     assert_false,
@@ -1510,6 +1510,17 @@ def test_sso():
     assert_equal(s._capacity_or_data.is_inline(), True)
 
 
+def test_python_object():
+    var s = String(PythonObject("hello"))
+    assert_equal(s, "hello")
+
+    var p = Python()
+    _ = p.eval("class A:\n  def __str__(self): pass")
+    var a = p.evaluate("A()")
+    with assert_raises(contains="__str__ returned non-string"):
+        _ = String(a)
+
+
 def main():
     test_constructors()
     test_copy()
@@ -1557,3 +1568,4 @@ def main():
     test_unsafe_cstr()
     test_variadic_ctors()
     test_sso()
+    test_python_object()

@@ -841,6 +841,28 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return PythonObject(self)
 
+    @doc_private
+    fn __init__(
+        out self: StringSlice[MutableAnyOrigin],
+        *,
+        unsafe_borrowed_obj: PythonObject,
+    ) raises:
+        """Construct a `StringSlice` from a Python `str` object.
+
+        The caller is responsible for keeping the Python `str` object alive
+        until the `StringSlice` is no longer needed.
+
+        Args:
+            unsafe_borrowed_obj: The Python `str` object to convert from.
+
+        Raises:
+            An error if the conversion failed.
+        """
+        var cpython = Python().cpython()
+        self = cpython.PyUnicode_AsUTF8AndSize(unsafe_borrowed_obj.py_object)
+        if Int(self.unsafe_ptr()) == 0:
+            raise cpython.get_error()
+
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#

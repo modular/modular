@@ -578,7 +578,7 @@ fn check_arguments_arity(
             )
 
 
-fn _get_type_name(obj: PythonObject) -> String:
+fn _get_type_name(obj: PythonObject) raises -> String:
     var cpython = Python().cpython()
 
     var actual_type = cpython.Py_TYPE(obj.unsafe_as_py_object_ptr())

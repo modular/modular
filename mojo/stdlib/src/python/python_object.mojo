@@ -19,6 +19,7 @@ from python import PythonObject
 ```
 """
 
+from os import abort
 from collections import Dict
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
@@ -273,7 +274,6 @@ struct TypedPythonObject[type_hint: StaticString](
 struct PythonObject(
     KeyElement,
     SizedRaising,
-    Stringable,
     Writable,
     PythonConvertible,
     _HashableWithHasher,
@@ -1406,23 +1406,17 @@ struct PythonObject(
         cpython = Python().cpython()
         return cpython.PyFloat_AsDouble(self.py_object)
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the object.
-
-        Calls the underlying object's `__str__` method.
+    @always_inline
+    fn __str__(self) raises -> PythonObject:
+        """Convert the PythonObject to a Python `str`.
 
         Returns:
-            A string that represents this object.
+            A Python `str` object.
+
+        Raises:
+            An error if the conversion failed.
         """
-        var cpython = Python().cpython()
-        var python_str: PythonObject = cpython.PyObject_Str(self.py_object)
-        # copy the string
-        var mojo_str = String(
-            cpython.PyUnicode_AsUTF8AndSize(python_str.py_object)
-        )
-        # keep python object alive so the copy can occur
-        _ = python_str
-        return mojo_str
+        return Python.str(self)
 
     fn write_to[W: Writer](self, mut writer: W):
         """
@@ -1435,8 +1429,12 @@ struct PythonObject(
             writer: The object to write to.
         """
 
-        # TODO: Avoid this intermediate String allocation, if possible.
-        writer.write(String(self))
+        try:
+            # TODO: Avoid this intermediate String allocation, if possible.
+            writer.write(String(self))
+        except:
+            # TODO: make this method raising when we can raise parametrically.
+            return abort("failed to write PythonObject to writer")
 
     # ===-------------------------------------------------------------------===#
     # Methods

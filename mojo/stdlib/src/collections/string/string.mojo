@@ -79,6 +79,7 @@ from sys.intrinsics import _type_is_eq
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcpy, memset
 from python import PythonObject, PythonConvertible
+from python._bindings import ConvertibleFromPython
 
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import write_buffered
@@ -274,6 +275,7 @@ struct String(
     PathLike,
     _CurlyEntryFormattable,
     PythonConvertible,
+    ConvertibleFromPython,
 ):
     """Represents a mutable string."""
 
@@ -982,6 +984,20 @@ struct String(
             A PythonObject representing the value.
         """
         return PythonObject(self)
+
+    fn __init__(out self, obj: PythonObject) raises:
+        """Construct a `String` from a PythonObject.
+
+        Args:
+            obj: The PythonObject to convert from.
+
+        Raises:
+            An error if the conversion failed.
+        """
+        var str_obj = obj.__str__()
+        self = String(StringSlice(unsafe_borrowed_obj=str_obj))
+        # keep python object alive so the copy can occur
+        _ = str_obj
 
     # ===------------------------------------------------------------------=== #
     # Methods

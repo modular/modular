@@ -907,7 +907,22 @@ struct CPython:
             "invalid unchecked conversion of Python error to Mojo error",
         )
 
-        var error: Error = String(PythonObject(self.PyErr_Fetch()))
+        # TODO(MSTDL-1479): PyErr_Fetch is deprecated since Python 3.12.
+        var err_ptr = self.PyErr_Fetch()
+        debug_assert(
+            not err_ptr.is_null(),
+            "Python exception occurred but PyErr_Fetch returned null",
+        )
+
+        var error: Error
+        try:
+            error = String(PythonObject(err_ptr))
+        except e:
+            return abort[Error](
+                "internal error: Python exception occurred but cannot be"
+                " converted to String"
+            )
+
         self.PyErr_Clear()
         return error
 
