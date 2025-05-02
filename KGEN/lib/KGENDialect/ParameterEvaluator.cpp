@@ -163,8 +163,6 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   if (auto attr = dyn_cast<EvaluatableAttrInterface>(result))
     if (FailureOr<TypedAttr> expr = evaluateExpression(attr); succeeded(expr))
       result = *expr;
-  if (auto attr = dyn_cast_if_present<DeferredAttr>(result))
-    result = attr.getAttr();
 
   return result;
 }
