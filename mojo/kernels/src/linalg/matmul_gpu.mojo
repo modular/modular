@@ -523,67 +523,35 @@ fn _matmul_gpu[
         else:
             # for gemms with small n and k we fall back the naive kernel
             @parameter
-            if static_N >= 128 and static_K % 128 == 0:
-                if m <= 128:
-                    alias config = MatmulConfig[
-                        a_type,
-                        b_type,
-                        c_type,
-                        transpose_b,
-                        mma_shape = Index(64, 128, 32),
-                    ](
-                        block_tile_shape=Index(64, 128, 128),
-                        cluster_shape=Index(1, 1, 1),
-                        num_pipeline_stages=8,
-                        num_consumer=1,
-                        partitioned_multicast=False,
-                    )
-                    warp_specialize_gemm_with_multicasting[
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        config=config,
-                        schedule = MatmulSchedule.NONE,
-                        use_tma_store=True,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        m,
-                        n,
-                        k,
-                        ctx,
-                    )
-                    return
-                else:
-                    alias default_fp8_config = MatmulConfig[
-                        a_type,
-                        b_type,
-                        c_type,
-                        transpose_b,
-                        mma_shape = Index(64, 128, 32),
-                    ](
-                        block_tile_shape=Index(128, 128, 128),
-                        cluster_shape=Index(1, 1, 1),
-                        num_pipeline_stages=6,
-                        num_consumer=2,
-                        partitioned_multicast=False,
-                    )
-                    warp_specialize_gemm_with_multicasting[
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        config=default_fp8_config,
-                        schedule = MatmulSchedule.NONE,
-                        use_tma_store=True,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        m,
-                        n,
-                        k,
-                        ctx,
-                    )
-                    return
+            if static_N % 128 == 0 and static_K >= 128 and static_K % 32 == 0:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(2, 1, 1),
+                    num_pipeline_stages=6,
+                    num_consumer=2,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.TILE2D,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
 
     @parameter
     if (
