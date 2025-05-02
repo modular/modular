@@ -271,7 +271,6 @@ struct String(
     ExplicitlyCopyable,
     FloatableRaising,
     _HashableWithHasher,
-    CollectionElement,
     PathLike,
     _CurlyEntryFormattable,
     PythonConvertible,
@@ -1017,7 +1016,7 @@ struct String(
         return String(elems, sep=sep)
 
     fn join[
-        T: CollectionElement & Writable, //, buffer_size: Int = 4096
+        T: Copyable & Movable & Writable, //, buffer_size: Int = 4096
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
@@ -1028,8 +1027,8 @@ struct String(
         instead of the heap.
 
         Parameters:
-            T: The type of the elements. Must implement the `CollectionElement`
-                and `Writable` traits.
+            T: The type of the elements. Must implement the `Copyable`,
+                `Movable` and `Writable` traits.
             buffer_size: The max size of the stack buffer.
 
         Args:

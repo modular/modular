@@ -62,7 +62,7 @@ this is legal too:
 ```mojo
 struct MyElement(CollectionElement): pass
 # OR
-struct MyElement(Copyable & Movable): pass
+struct MyElement(Copyable, Movable): pass
 ```
 
 And is equivalent to writing:

@@ -297,7 +297,6 @@ own types. These standard library traits include:
 * [`Absable`](/mojo/stdlib/builtin/math/Absable)
 * [`AnyType`](/mojo/stdlib/builtin/anytype/AnyType)
 * [`Boolable`](/mojo/stdlib/builtin/bool/Boolable)
-* [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
 * [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable)
 * [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
 * [`Defaultable`](/mojo/stdlib/builtin/value/Defaultable)
@@ -499,7 +498,7 @@ for i in range(len(list)):
 You can use traits to define requirements for elements that are stored in a
 container. For example, `List` requires elements that can be moved and
 copied. To store a struct in a `List`, the struct needs to conform to
-the `CollectionElement` trait, which requires a
+the `Copyable` and `Movable` traits, which require a
 [copy constructor](/mojo/manual/lifecycle/life#copy-constructor) and a
 [move constructor](/mojo/manual/lifecycle/life#move-constructor).
 
@@ -543,15 +542,15 @@ can't have the same name as the associated alias.
 
 Associated aliases are most useful for writing traits for generic types. For
 example, imagine that you want to write a trait that describes a generic stack
-data structure that stores elements that conform to the `CollectionElement`
-trait.
+data structure that stores elements that conform to the `Copyable` and `Movable`
+traits.
 
 By adding the element type as an associated alias to the trait, you can specify
 generic methods on the trait:
 
 ```mojo
 trait Stacklike:
-    alias EltType: CollectionElement
+    alias EltType: Copyable & Movable
 
     def push(mut self, owned item: Self.EltType):
         pass
@@ -564,7 +563,7 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[T: CollectionElement](Stacklike):
+struct MyStack[T: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
     alias EltType = T
     alias list_type = List[Self.EltType]
@@ -582,7 +581,7 @@ struct MyStack[T: CollectionElement](Stacklike):
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
-Because a struct that conforms to `CollectionElement` is not necessarily
+Because a struct that conforms to `Copyable & Movable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is

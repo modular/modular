@@ -30,7 +30,7 @@ from memory.unsafe_pointer import _default_alignment
 @value
 struct _SpanIter[
     mut: Bool, //,
-    T: CollectionElement,
+    T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -84,12 +84,12 @@ struct _SpanIter[
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: CollectionElement,
+    T: Copyable & Movable,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[T](),
-](ExplicitlyCopyable, CollectionElement, Sized):
+](ExplicitlyCopyable, Copyable, Movable, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -422,7 +422,7 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparable & CollectionElement, rhs_alignment: Int, //
+        T: EqualityComparable & Copyable & Movable, rhs_alignment: Int, //
     ](
         self: Span[T, origin, alignment=alignment],
         rhs: Span[T, _, alignment=rhs_alignment],
@@ -431,7 +431,7 @@ struct Span[
 
         Parameters:
             T: The type of the elements in the span. Must implement the
-              traits `EqualityComparable` and `CollectionElement`.
+              traits `EqualityComparable`, `Copyable` and `Movable`.
             rhs_alignment: The inferred alignment of the rhs span.
 
         Args:
@@ -455,13 +455,13 @@ struct Span[
 
     @always_inline
     fn __ne__[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Span[T, origin, alignment=alignment], rhs: Span[T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
             T: The type of the elements in the span. Must implement the
-              traits `EqualityComparable` and `CollectionElement`.
+              traits `EqualityComparable`, `Copyable` and `Movable`.
 
         Args:
             rhs: The span to compare against.

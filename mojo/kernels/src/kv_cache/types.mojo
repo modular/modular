@@ -97,7 +97,7 @@ struct KVCacheStaticParams(EqualityComparable):
 
 
 @register_passable("trivial")
-trait KVCacheT(CollectionElement):
+trait KVCacheT(Copyable, Movable):
     """Trait for different KVCache types and implementations.
 
     We have to expose a super-set of constructors to help with genericizing
@@ -701,7 +701,7 @@ struct PagedKVCacheFA3Fallback[
         return ptr
 
 
-trait KVCollectionT(CollectionElement):
+trait KVCollectionT(Copyable, Movable):
     alias CacheType: KVCacheT
     alias type: DType
     alias kv_params: KVCacheStaticParams

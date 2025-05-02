@@ -228,7 +228,7 @@ fn randn[
     return
 
 
-fn shuffle[T: CollectionElement, //](mut list: List[T]):
+fn shuffle[T: Copyable & Movable, //](mut list: List[T]):
     """Shuffles the elements of the list randomly.
 
     Performs an in-place Fisher-Yates shuffle on the provided list.

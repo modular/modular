@@ -20,7 +20,7 @@ from memory import UnsafePointer
 
 @value
 struct Node[
-    ElementType: CollectionElement,
+    ElementType: Copyable & Movable,
 ]:
     """A node in a linked list data structure.
 
@@ -56,7 +56,7 @@ struct Node[
         self.next = next.value() if next else Self._NodePointer()
 
     fn __str__[
-        ElementType: CollectionElement & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: Node[ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -71,7 +71,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        ElementType: CollectionElement & Writable, W: Writer
+        ElementType: Copyable & Movable & Writable, W: Writer
     ](self: Node[ElementType], mut writer: W):
         """Write this node's value to the given writer.
 
@@ -89,7 +89,7 @@ struct Node[
 @value
 struct _LinkedListIter[
     mut: Bool, //,
-    ElementType: CollectionElement,
+    ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
 ]:
@@ -131,13 +131,13 @@ struct _LinkedListIter[
 
 
 struct LinkedList[
-    ElementType: CollectionElement,
+    ElementType: Copyable & Movable,
 ](Sized):
     """A doubly-linked list implementation.
 
     Parameters:
-        ElementType: The type of elements stored in the list. Must implement
-            `CollectionElement`.
+        ElementType: The type of elements stored in the list. Must implement the
+            `Copyable` and `Movable` traits.
 
     A doubly-linked list is a data structure where each element points to both
     the next and previous elements, allowing for efficient insertion and deletion
@@ -558,7 +558,7 @@ struct LinkedList[
         other._tail = Self._NodePointer()
 
     fn count[
-        ElementType: EqualityComparable & CollectionElement, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](self: LinkedList[ElementType], read elem: ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
 
@@ -586,7 +586,7 @@ struct LinkedList[
         return count
 
     fn __contains__[
-        ElementType: EqualityComparable & CollectionElement, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](self: LinkedList[ElementType], value: ElementType) -> Bool:
         """Checks if the list contains `value`.
 
@@ -612,7 +612,7 @@ struct LinkedList[
         return False
 
     fn __eq__[
-        ElementType: EqualityComparable & CollectionElement, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](
         read self: LinkedList[ElementType], read other: LinkedList[ElementType]
     ) -> Bool:
@@ -647,7 +647,7 @@ struct LinkedList[
         return True
 
     fn __ne__[
-        ElementType: EqualityComparable & CollectionElement, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](self: LinkedList[ElementType], other: LinkedList[ElementType]) -> Bool:
         """Checks if the two lists are not equal.
 
@@ -788,7 +788,7 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        ElementType: CollectionElement & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -807,7 +807,7 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        ElementType: CollectionElement & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -826,7 +826,7 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        W: Writer, ElementType: CollectionElement & Writable
+        W: Writer, ElementType: Copyable & Movable & Writable
     ](self: LinkedList[ElementType], mut writer: W):
         """Write the list to the given writer.
 
@@ -845,7 +845,7 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, ElementType: CollectionElement & Writable
+        W: Writer, ElementType: Copyable & Movable & Writable
     ](
         self: LinkedList[ElementType],
         mut writer: W,

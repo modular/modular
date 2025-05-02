@@ -69,7 +69,7 @@ from utils import Variant
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
 @value
-struct _FormatCurlyEntry(CollectionElement, ExplicitlyCopyable):
+struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -467,7 +467,7 @@ will be less constrained.
 
 @value
 @register_passable("trivial")
-struct _FormatSpec(CollectionElement):
+struct _FormatSpec(Copyable, Movable):
     """Store every field of the format specifier in a byte (e.g., ord("+") for
     sign). It is stored in a byte because every [format specifier](
     https://docs.python.org/3/library/string.html#formatspec) is an ASCII

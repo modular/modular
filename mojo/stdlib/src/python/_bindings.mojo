@@ -33,7 +33,7 @@ from python._cpython import (
 )
 
 
-trait ConvertibleFromPython(CollectionElement):
+trait ConvertibleFromPython(Copyable, Movable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """

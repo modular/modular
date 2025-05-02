@@ -163,7 +163,8 @@ struct AddressSpace(
     EqualityComparable,
     Stringable,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
 ):
     """Address space of the pointer."""
 
@@ -303,7 +304,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ExplicitlyCopyable, Stringable, CollectionElement):
+](ExplicitlyCopyable, Stringable, Copyable, Movable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to

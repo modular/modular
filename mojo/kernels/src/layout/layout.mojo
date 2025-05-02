@@ -309,7 +309,7 @@ struct Layout(
     Sized,
     Stringable,
     Writable,
-    CollectionElement,
+    Movable,
     EqualityComparable,
 ):
     """Represents a memory layout for multi-dimensional data.

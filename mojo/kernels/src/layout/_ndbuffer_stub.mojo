@@ -320,7 +320,8 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 #
 @value
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    CollectionElement,
+    Copyable,
+    Movable,
     Stringable,
     Writable,
 ):

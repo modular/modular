@@ -22,7 +22,7 @@ from memory import Pointer, UnsafePointer
 # ===-----------------------------------------------------------------------===#
 
 
-struct ListLiteral[*Ts: CollectionElement](Sized, CollectionElement):
+struct ListLiteral[*Ts: Copyable & Movable](Sized, Copyable, Movable):
     """The type of a literal heterogeneous list expression.
 
     A list consists of zero or more values, separated by commas.
@@ -93,7 +93,7 @@ struct ListLiteral[*Ts: CollectionElement](Sized, CollectionElement):
 
     # FIXME: This should have a getitem like Tuple does, not a "get" method.
     @always_inline
-    fn get[i: Int, T: CollectionElement](self) -> ref [self.storage] T:
+    fn get[i: Int, T: Copyable & Movable](self) -> ref [self.storage] T:
         """Get a list element at the given index.
 
         Parameters:
@@ -111,7 +111,7 @@ struct ListLiteral[*Ts: CollectionElement](Sized, CollectionElement):
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & CollectionElement
+        T: EqualityComparable & Copyable & Movable
     ](self, value: T) -> Bool:
         """Determines if a given value exists in the ListLiteral.
 

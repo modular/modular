@@ -194,7 +194,7 @@ has an associated `origin`:
 ```mojo
 struct Span[
     is_mutable: Bool, //,
-    T: CollectionElement,
+    T: Copyable & Movable,
     origin: Origin[is_mutable],
 ](CollectionElementNew):
     """A non owning view of contiguous data.

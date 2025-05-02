@@ -289,8 +289,8 @@ fn use_trait_function():
 
 You'll see traits used in a lot of APIs provided by Mojo's standard library. For
 example, Mojo's collection types like `List` and `Dict` can store any type that
-conforms to the `CollectionElement` trait. You can specify the type when you
-create a collection:
+conforms to the `Copyable` and `Movable` traits. You can specify the type when
+you create a collection:
 
 ```mojo
 my_list = List[Float64]()

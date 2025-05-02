@@ -28,6 +28,8 @@ what we publish.
 
 ### Standard library changes
 
+- The `CollectionElement` trait has been removed.
+
 - Since virtually any operation on a `PythonObject` can raise, the
   `PythonObject` struct no longer implements the following traits: `Indexer`,
   `Intable`. Instead, it now conforms to `IntableRaising`, and users should

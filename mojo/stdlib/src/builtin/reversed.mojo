@@ -80,7 +80,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
 
 fn reversed[
-    T: CollectionElement
+    T: Copyable & Movable
 ](ref value: List[T, *_]) -> _ListIter[
     T, __type_of(value).hint_trivial_type, __origin_of(value), False
 ]:
@@ -101,7 +101,7 @@ fn reversed[
 
 
 fn reversed[
-    T: CollectionElement
+    T: Copyable & Movable
 ](ref value: Deque[T]) -> _DequeIter[T, __origin_of(value), False]:
     """Get a reversed iterator of the deque.
 
@@ -121,7 +121,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: CollectionElement,
+    V: Copyable & Movable,
 ](ref value: Dict[K, V],) -> _DictKeyIter[K, V, __origin_of(value), False]:
     """Get a reversed iterator of the input dict.
 
@@ -142,7 +142,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: CollectionElement,
+    V: Copyable & Movable,
     dict_mutability: Bool,
     dict_origin: Origin[dict_mutability],
 ](ref value: _DictValueIter[K, V, dict_origin]) -> _DictValueIter[
@@ -169,7 +169,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: CollectionElement,
+    V: Copyable & Movable,
     dict_mutability: Bool,
     dict_origin: Origin[dict_mutability],
 ](ref value: _DictEntryIter[K, V, dict_origin]) -> _DictEntryIter[
@@ -199,7 +199,7 @@ fn reversed[
 
 @always_inline
 fn reversed[
-    T: CollectionElement
+    T: Copyable & Movable
 ](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 

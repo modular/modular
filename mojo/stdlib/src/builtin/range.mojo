@@ -48,9 +48,7 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(
-    Sized, ReversibleRange, _IntIterable, CollectionElement
-):
+struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
     var curr: Int
     var end: Int
 
@@ -90,9 +88,7 @@ struct _ZeroStartingRange(
 
 @value
 @register_passable("trivial")
-struct _SequentialRange(
-    Sized, ReversibleRange, _IntIterable, CollectionElement
-):
+struct _SequentialRange(Sized, ReversibleRange, _IntIterable, Movable):
     var start: Int
     var end: Int
 

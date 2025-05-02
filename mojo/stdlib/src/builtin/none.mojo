@@ -19,7 +19,8 @@ These are Mojo built-ins, so you don't need to import them.
 @value
 @register_passable("trivial")
 struct NoneType(
-    CollectionElement,
+    Copyable,
+    Movable,
     ExplicitlyCopyable,
     Writable,
     Representable,

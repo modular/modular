@@ -193,7 +193,7 @@ like this:
 ```mojo
 from memory import UnsafePointer
 
-struct GenericArray[ElementType: CollectionElement]:
+struct GenericArray[ElementType: Copyable & Movable]:
     var data: UnsafePointer[ElementType]
     var size: Int
 
@@ -217,9 +217,9 @@ struct GenericArray[ElementType: CollectionElement]:
 
 This struct has a single parameter, `ElementType`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
-parameter*. `ElementType` is typed as
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement), which is a
-[trait](/mojo/manual/traits) representing any type that can be copied and moved.
+parameter*. `ElementType` conforms to the
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
@@ -250,7 +250,7 @@ could add a static factory method to `GenericArray` with the following
 signature:
 
 ```mojo
-struct GenericArray[ElementType: CollectionElement]:
+struct GenericArray[ElementType: Copyable & Movable]:
     ...
 
     @staticmethod
@@ -271,8 +271,9 @@ The method returns an instance of `GenericArray[Float64]`.
 
 When creating a generic struct, you might want to define some methods that
 require extra features. For example, consider a collection like `GenericArray`
-that holds instances of `CollectionElement`. The `CollectionElement` trait only
-requires that the stored data type be copyable and movable. This imposes a lot
+that holds instances of a type that conforms to the
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
 write a useful `__str__()` or `__repr__()` dunder method because you can't
@@ -283,16 +284,16 @@ method that requires additional features. You do this by defining the `self`
 value that has a more specific bound on one or more of its parameters.
 
 For example, the following code defines a `Container` type that holds an
-instance of `CollectionElement`. It also defines a `__str__()` method that can
-only be called if the stored `ElementType` conforms to `Writable` and
-`CollectionElement`:
+instance of a type conforming to `Copyable` and `Movable`. It also defines a
+`__str__()` method that can only be called if the stored `ElementType` conforms
+to `Writable`, `Copyable` and `Movable`:
 
 ```mojo
 @value
-struct Container[ElementType: CollectionElement]:
+struct Container[ElementType: Copyable & Movable]:
     var element: ElementType
 
-    def __str__[StrElementType: Writable & CollectionElement, //](
+    def __str__[StrElementType: Writable & Copyable & Movable, //](
             self: Container[StrElementType]) -> String:
         return String(self.element)
 
@@ -312,16 +313,16 @@ Hello
 
 Note the signature of the `__str__()` method, which declares the `self` argument
 with a more specific type. Specifically, it declares that it takes a `Container`
-with an `ElementType` that conforms to the `Writable` and `CollectionElement`
+with an `ElementType` that conforms to the `Writable`, `Copyable` and `Movable`
 traits.
 
 ```mojo
-def __str__[StrElementType: Writable & CollectionElement, //](
+def __str__[StrElementType: Writable & Copyable & Movable, //](
         self: Container[StrElementType]) -> String:
 ```
 
 This trait must be a superset of `ElementType`'s original trait: for example,
-the trait composition `Writable & CollectionElement` ensures that it includes
+the trait composition `Writable & Copyable & Movable` ensures that it includes
 all of the requirements of the original trait.
 
 Note that the `use_container()` function calls the `__str__()` method directly,
@@ -491,7 +492,7 @@ For example, consider the following struct:
 
 ```mojo
 @value
-struct One[Type: Writable & CollectionElement]:
+struct One[Type: Writable & Copyable & Movable]:
     var value: Type
 
     fn __init__(out self, value: Type):
@@ -509,7 +510,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: Writable & CollectionElement]:
+struct Two[Type: Writable & Copyable & Movable]:
     var val1: Type
     var val2: Type
 
@@ -650,7 +651,7 @@ inferred from context or specified by keyword. Infer-only parameters are placed 
 **beginning** of the parameter list, set off from other parameters by the `//` sigil:
 
 ```mojo
-fn example[type: CollectionElement, //, list: List[type]]()
+fn example[type: Copyable & Movable, //, list: List[type]]()
 ```
 
 Transforming `dtype` into an infer-only parameter solves this problem:

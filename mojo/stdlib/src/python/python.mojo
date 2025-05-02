@@ -369,7 +369,7 @@ struct Python:
 
     @staticmethod
     fn list[
-        T: PythonConvertible & CollectionElement
+        T: PythonConvertible & Copyable & Movable
     ](values: Span[T]) -> PythonObject:
         """Initialize the object from a list of values.
 

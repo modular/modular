@@ -1009,7 +1009,7 @@ In the simple case of a one-dimensional sequence, the `__getitem__()` and
 `__setitem__()` methods should have signatures similar to this:
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     fn __getitem__(self, idx: Int) -> type:
         # Return element at the given index
         ...
@@ -1023,7 +1023,7 @@ multiple index arguments—or even variadic index arguments for
 arbitrary—dimension collections.
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     # 2-dimension support
     fn __getitem__(self, x_idx: Int, y_idx: Int) -> type:
         ...
@@ -1042,7 +1042,7 @@ collection) you implement to methods to accept a
 the case of a multi-dimensional collection).
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     # Return a new MySeq with a subset of elements
     fn __getitem__(self, span: Slice) -> Self:
         ...
@@ -1065,7 +1065,7 @@ non-negative values. You can then use these normalized values to determine the
 corresponding elements of your collection being referenced.
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     var size: Int
 
     # Return a new MySeq with a subset of elements

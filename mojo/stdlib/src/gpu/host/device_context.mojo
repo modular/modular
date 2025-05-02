@@ -687,7 +687,8 @@ struct DeviceBuffer[type: DType](
     Sized,
     Stringable,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
     DevicePassable,
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
@@ -2544,7 +2545,7 @@ struct DeviceExternalFunction:
 
 
 @register_passable
-struct DeviceContext(CollectionElement):
+struct DeviceContext(Copyable, Movable):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 

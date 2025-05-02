@@ -454,7 +454,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Representable,
     Sized,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
     ExplicitlyCopyable,
     EqualityComparable,
     Hashable,
@@ -2130,13 +2131,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: CollectionElement & Writable
+        T: Copyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            T: The type of the elements, must implement the `CollectionElement`
-                and `Writable` traits.
+            T: The type of the elements, must implement the `Copyable`,
+                `Movable` and `Writable` traits.
 
         Args:
             elems: The input values.
@@ -2235,7 +2236,7 @@ fn get_static_string[
 
 fn _to_string_list[
     O: ImmutableOrigin, //,
-    T: CollectionElement,  # TODO(MOCO-1446): Make `T` parameter inferred
+    T: Copyable & Movable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, mut=False, origin=O],
 ](items: List[T]) -> List[String]:

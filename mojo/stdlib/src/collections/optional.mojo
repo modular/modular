@@ -59,7 +59,7 @@ struct _NoneType(
 
 
 @value
-struct Optional[T: CollectionElement](
+struct Optional[T: Copyable & Movable](
     Copyable,
     ExplicitlyCopyable,
     Movable,
@@ -71,7 +71,7 @@ struct Optional[T: CollectionElement](
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
 
-    Currently T is required to be a `CollectionElement` so we can implement
+    Currently T is required to be a `Copyable & Movable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
 
     ```mojo
@@ -187,14 +187,14 @@ struct Optional[T: CollectionElement](
         return self is None
 
     fn __eq__[
-        T: EqualityComparable & CollectionElement
+        T: EqualityComparable & Copyable & Movable
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `True` if this is the same as another optional value, meaning
         both are absent, or both are present and have the same underlying value.
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-              traits `CollectionElement` and `EqualityComparable`.
+              traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -220,14 +220,14 @@ struct Optional[T: CollectionElement](
         return self is not None
 
     fn __ne__[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `False` if this is the same as another optional value, meaning
         both are absent, or both are present and have the same underlying value.
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-              traits `CollectionElement` and `EqualityComparable`.
+              traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -258,13 +258,13 @@ struct Optional[T: CollectionElement](
         return not self
 
     fn __str__[
-        U: CollectionElement & Representable, //
+        U: Copyable & Movable & Representable, //
     ](self: Optional[U]) -> String:
         """Return the string representation of the value of the Optional.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable` and `CollectionElement`.
+              traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A string representation of the Optional.
@@ -275,13 +275,13 @@ struct Optional[T: CollectionElement](
 
     # TODO: Include the Parameter type in the string as well.
     fn __repr__[
-        U: Representable & CollectionElement, //
+        U: Representable & Copyable & Movable, //
     ](self: Optional[U]) -> String:
         """Returns the verbose string representation of the Optional.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable` and `CollectionElement`.
+              traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A verbose string representation of the Optional.
@@ -293,14 +293,14 @@ struct Optional[T: CollectionElement](
         return output
 
     fn write_to[
-        W: Writer, U: Representable & CollectionElement, //
+        W: Writer, U: Representable & Copyable & Movable, //
     ](self: Optional[U], mut writer: W):
         """Write Optional string representation to a `Writer`.
 
         Parameters:
             W: A type conforming to the Writable trait.
             U: The type of the elements in the list. Must implement the
-              traits `Representable` and `CollectionElement`.
+              traits `Representable`, `Copyable` and `Movable`.
 
         Args:
             writer: The object to write to.
@@ -398,7 +398,7 @@ struct Optional[T: CollectionElement](
     fn copied[
         mut: Bool,
         origin: Origin[mut], //,
-        T: CollectionElement,
+        T: Copyable & Movable,
     ](self: Optional[Pointer[T, origin]]) -> Optional[T]:
         """Converts an Optional containing a Pointer to an Optional of an owned
         value by copying.
