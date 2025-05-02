@@ -8292,6 +8292,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight_offset: Scalar[dtype=type],
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[
@@ -8300,7 +8301,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
-            Scalar[type](0.0),  # weight_offset
+            weight_offset,
             layer_idx,
             total_seq_len,
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -8329,6 +8330,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight_offset: Scalar[type],
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_paged[
@@ -8337,7 +8339,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
-            Scalar[type](0.0),  # weight_offset
+            weight_offset,
             layer_idx,
             total_seq_len,
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
