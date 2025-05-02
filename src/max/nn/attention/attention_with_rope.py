@@ -508,6 +508,7 @@ class LatentAttentionWithRope(AttentionWithRope):
         qk_nope_head_dim: int = 128,
         qk_rope_head_dim: int = 64,
         v_head_dim: int = 128,
+        buffer_size: int = 16384,
     ):
         """Initializes the attention layer.
 
@@ -529,6 +530,8 @@ class LatentAttentionWithRope(AttentionWithRope):
             has_bias: Whether to use an attention bias.
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`
+            buffer_size: Buffer size for storing the temporal results during prefill,
+                in unit of tokens.
         """
         # Skip AttentionWithRope.__init__ because the weights are created
         # differently.
@@ -562,7 +565,7 @@ class LatentAttentionWithRope(AttentionWithRope):
         self.v_head_dim = v_head_dim
         self.cache_head_dim = kv_lora_rank + qk_rope_head_dim
 
-        self.BUFFER_TOK_SIZE = 16 * 1024
+        self.BUFFER_TOK_SIZE = buffer_size
 
         self.scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
         self.devices = devices or [DeviceRef.CPU()]
@@ -661,10 +664,6 @@ class LatentAttentionWithRope(AttentionWithRope):
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         def _mla_prefill() -> TensorValue:
-            # TODO (E2EOPT-170): currently we only support prefill the first chunk
-            # we won't get correct results if the total cache lengths of this batch
-            # is larger than BUFFER_TOK_SIZE
-
             xq = ops.concat([xq_nope, xq_rope], axis=2)
 
             (buffer_row_offsets, cache_offsets, buffer_lengths) = (
@@ -682,8 +681,8 @@ class LatentAttentionWithRope(AttentionWithRope):
 
             kv_buffer = flare_mla_decompress_k_cache(
                 self.kv_params,
-                buffer_row_offsets[0, :],  # Process first chunk only
-                cache_offsets[0, :],
+                buffer_row_offsets[0],
+                cache_offsets[0],
                 buffer_lengths_host[0],
                 self.kv_b_proj,
                 kv_collection,
@@ -698,20 +697,77 @@ class LatentAttentionWithRope(AttentionWithRope):
                 kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
             )
 
-            return flare_mla_prefill_ragged(
+            result, softmax_info = flare_mla_prefill_ragged(
                 self.kv_params,
                 xq,
                 k_nope,
                 v,
                 input_row_offsets,
-                buffer_row_offsets[0, :],  # Process first chunk only
-                cache_offsets[0, :],
+                buffer_row_offsets[0],
+                cache_offsets[0],
                 kv_collection,
                 ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
                 MHAMaskVariant.CAUSAL_MASK,
                 self.scale,
                 self.qk_rope_head_dim,
             )
+
+            iter_i = ops.constant(1, DType.int64, device=DeviceRef.CPU())
+
+            def cond_fn(iter_i, prev_result, prev_softmax_info):
+                return buffer_lengths_host[iter_i] > 0
+
+            def body_fn(iter_i, prev_result, prev_softmax_info):
+                kv_buffer = flare_mla_decompress_k_cache(
+                    self.kv_params,
+                    buffer_row_offsets[iter_i],
+                    cache_offsets[iter_i],
+                    buffer_lengths_host[iter_i],
+                    self.kv_b_proj,
+                    kv_collection,
+                    ops.constant(
+                        layer_idx, DType.uint32, device=DeviceRef.CPU()
+                    ),
+                    self.BUFFER_TOK_SIZE,
+                )
+
+                kv_buffer = kv_buffer.reshape(
+                    (-1, self.n_heads, self.qk_nope_head_dim + self.v_head_dim)
+                )
+                k_nope, v = ops.split(
+                    kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
+                )
+
+                new_result, new_softmax_info = flare_mla_prefill_ragged(
+                    self.kv_params,
+                    xq,
+                    k_nope,
+                    v,
+                    input_row_offsets,
+                    buffer_row_offsets[iter_i],
+                    cache_offsets[iter_i],
+                    kv_collection,
+                    ops.constant(
+                        layer_idx, DType.uint32, device=DeviceRef.CPU()
+                    ),
+                    MHAMaskVariant.CAUSAL_MASK,
+                    self.scale,
+                    self.qk_rope_head_dim,
+                    prev_output=prev_result,
+                    prev_softmax_info=prev_softmax_info,
+                )
+
+                iter_i = iter_i + 1
+
+                return [iter_i, new_result, new_softmax_info]
+
+            loop_result = ops.while_loop(
+                (iter_i, result, softmax_info),
+                cond_fn,
+                body_fn,
+            )
+
+            return loop_result[1]
 
         def _mla_decode() -> TensorValue:
             w_uk, w_uv = self.w_uk_uv

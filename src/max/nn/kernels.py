@@ -1162,8 +1162,41 @@ def flare_mla_prefill_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     qk_rope_dim: int = 64,
-) -> TensorValue:
-    """Performs MLA prefill."""
+    prev_output: Optional[TensorValue] = None,
+    prev_softmax_info: Optional[TensorValue] = None,
+) -> tuple[TensorValue, TensorValue]:
+    """Performs MLA prefill. In the MLA prefill, we need to decompress
+    the KV tensors, as we store the latent representations in the KV cache.
+    We will decompress the KV tensors into a fixed size buffer to avoid
+    out-of-memory errors. In case the total cache length is greater than
+    the buffer size, we will process the attention calculation in chunks.
+
+    This MLA prefill kernel will return the output tensor for this iteration
+    and the softmax info tensor for this iteration. Such tensors will be used
+    by the next iteration of the MLA prefill kernel to continue the attention
+    calculation.
+
+    Args:
+        kv_params: KVCacheParams
+        input: Input tensor
+        k: Key tensor
+        v: Value tensor
+        input_row_offsets: Indicates where each batch starts and ends in `input`
+        buffer_row_offsets: Indicates where each batch starts and ends in the buffer
+        cache_offsets: Indicates where each batch starts and ends in the KV cache
+        kv_collection: KV collection
+        layer_idx: Layer index tensor
+        mask_variant: Mask variant
+        scale: Scale
+        qk_rope_dim: QK rope dimension
+        prev_output: Optional. Previous output tensor
+        prev_softmax_info: Optional. Previous softmax info tensor
+
+    Returns:
+        A tuple of two tensors:
+            - The first tensor is the output tensor for this iteration
+            - The second tensor is the softmax info tensor for this iteration
+    """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
         msg = (
@@ -1197,21 +1230,28 @@ def flare_mla_prefill_ragged(
     }
 
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.mla.prefill.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    is_init_str = ".init" if prev_output is None else ""
+    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
 
-    return ops.inplace_custom(
+    input_values = [
+        input,
+        k,
+        v,
+        buffer_row_offsets,
+        cache_offsets,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    if prev_output is not None:
+        input_values.append(prev_output)
+    if prev_softmax_info is not None:
+        input_values.append(prev_softmax_info)
+
+    results = ops.inplace_custom(
         op_name,
-        values=[
-            input,
-            k,
-            v,
-            buffer_row_offsets,
-            cache_offsets,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=input_values,
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -1221,10 +1261,21 @@ def flare_mla_prefill_ragged(
                     input.shape[2] - qk_rope_dim,
                 ],
                 device=input.device,
-            )
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    2,
+                ],
+                device=input.device,
+            ),
         ],
         parameters=parameters,
-    )[0].tensor
+    )
+
+    return results[0].tensor, results[1].tensor
 
 
 def flare_mla_prefill_plan(

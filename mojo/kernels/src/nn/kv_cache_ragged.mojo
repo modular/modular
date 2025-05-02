@@ -2703,7 +2703,11 @@ fn _flare_mla_decode_kv_cache_ragged[
 
 @always_inline
 fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
-    target: StaticString, type: DType
+    type: DType,
+    softmax_type: DType,
+    write_softmax_info: Bool,
+    use_cascade_attention: Bool,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     k: NDBuffer[type, 3, *_],
@@ -2715,7 +2719,12 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
+    softmax_info: NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin],
     context: DeviceContextPtr,
+    prev_output: OptionalReg[NDBuffer[type, 3, MutableAnyOrigin]] = None,
+    prev_softmax_info: OptionalReg[
+        NDBuffer[softmax_type, 3, MutableAnyOrigin]
+    ] = None,
 ) raises:
     @always_inline
     @parameter
@@ -2741,7 +2750,10 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
-            kv_collection.CacheType, target=target
+            kv_collection.CacheType,
+            write_softmax_info=write_softmax_info,
+            use_cascade_attention=use_cascade_attention,
+            target=target,
         ](
             q,
             k,
@@ -2754,16 +2766,22 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
             CausalMask(),
             scale,
             output,
+            softmax_info,
             context,
+            prev_output,
+            prev_softmax_info,
         )
 
 
 @always_inline
 fn _flare_mla_prefill_kv_cache_ragged[
     type: DType,
+    softmax_type: DType,
     collection_t: KVCollectionT,
     mask_t: MHAMask, //,
     cache_t: KVCacheT,
+    write_softmax_info: Bool,
+    use_cascade_attention: Bool,
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
@@ -2777,7 +2795,12 @@ fn _flare_mla_prefill_kv_cache_ragged[
     mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
+    softmax_info: NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin],
     context: DeviceContextPtr,
+    prev_output: OptionalReg[NDBuffer[type, 3, MutableAnyOrigin]] = None,
+    prev_softmax_info: OptionalReg[
+        NDBuffer[softmax_type, 3, MutableAnyOrigin]
+    ] = None,
 ) raises:
     """Performs MLA prefill.
 
@@ -2794,7 +2817,12 @@ fn _flare_mla_prefill_kv_cache_ragged[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
+        softmax_info: NDBuffer with shape (total_seq_len, num_heads, 2).
         context: Pointer containing the runtime context for the target device.
+        prev_output: Optional tensor that stores the temporal results for the previous
+            prefill iteration.
+        prev_softmax_info: Optional tensor that stores the temporal softmax info for the
+            previous prefill iteration.
     """
     constrained[is_gpu[target](), "MLA is only supported on GPU"]()
 
@@ -2804,7 +2832,8 @@ fn _flare_mla_prefill_kv_cache_ragged[
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
 
     flare_mla_prefill[
-        softmax_type = DType.float32  # TODO: remove it in next PR
+        write_softmax_info=write_softmax_info,
+        use_cascade_attention=use_cascade_attention,
     ](
         output,
         q,
@@ -2817,6 +2846,14 @@ fn _flare_mla_prefill_kv_cache_ragged[
         buffer_row_offsets,
         scale,
         cuda_ctx,
+        softmax_info=OptionalReg[NDBuffer[softmax_type, 3, MutableAnyOrigin]](
+            softmax_info
+        ),
+        cache_offsets=OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+            cache_offsets
+        ),
+        prev_output=prev_output,
+        prev_softmax_info=prev_softmax_info,
     )
 
 
