@@ -29,6 +29,11 @@ static void sliceDependenciesFrom(AttrOrType value, SymbolTable &sliceSymtab,
 
   // Check if this is a symbol reference.
   if constexpr (std::is_same_v<AttrOrType, Attribute>) {
+    // Decorators are currently hacky and won't appear in the symbol table, so
+    // we skip them.
+    if (isa<KGEN::DecoratorsAttr>(value))
+      return;
+
     if (auto ref = dyn_cast<FlatSymbolRefAttr>(value)) {
       // We know this is a new symbol because this is the first time we've
       // visited this attribute.
