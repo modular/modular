@@ -6503,44 +6503,6 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     )
 
 
-@always_inline
-fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
-    type: DType,
-    weight_type: DType,
-    output_type: DType,
-    kv_type: DType,
-    target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
-](
-    hidden_state: ManagedTensorSlice[type=type, rank=2],
-    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-    weight: ManagedTensorSlice[type=weight_type, rank=2],
-    scale: Float32,
-    kv_collection: PagedKVCacheCollection[
-        kv_type,
-        *_,
-    ],
-    layer_idx: UInt32,
-    output: ManagedTensorSlice[type=output_type, rank=2],
-    ctx: DeviceContextPtr,
-) raises:
-    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-        target=target,
-        group_size=group_size,
-        has_zp=has_zp,
-    ](
-        managed_tensor_slice_to_ndbuffer(hidden_state),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
-        managed_tensor_slice_to_ndbuffer(weight),
-        scale,
-        kv_collection,
-        layer_idx,
-        managed_tensor_slice_to_ndbuffer(output),
-        ctx,
-    )
-
-
 @compiler.register("mo.fused_qkv_matmul.ragged.paged_fa3_fallback")
 struct Struct_fused_qkv_matmul_ragged_paged_fa3_fallback:
     @always_inline
@@ -6715,8 +6677,8 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         hidden_state: InputTensor[type=type, rank=2],
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         weight: InputTensor[type=type, rank=2],
-        input_scale: Scalar[scale_type],
-        weight_scale: Scalar[scale_type],
+        input_scale: InputTensor[type=scale_type, rank=2],
+        weight_scale: InputTensor[type=scale_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             kv_type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -6725,19 +6687,17 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
-        var scale = input_scale.cast[DType.float32]() * weight_scale.cast[
-            DType.float32
-        ]()
-        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_scale[
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             target=target
         ](
-            hidden_state,
-            input_row_offsets,
-            weight,
-            scale,
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            managed_tensor_slice_to_ndbuffer(input_scale),
+            managed_tensor_slice_to_ndbuffer(weight_scale),
             kv_collection,
             layer_idx,
-            output,
+            managed_tensor_slice_to_ndbuffer(output),
             ctx,
         )
 
