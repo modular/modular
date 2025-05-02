@@ -385,14 +385,14 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         ["input_row_offsets_len"],
         device=DeviceRef.CPU(),
     )
-
+    num_layers = 1
     kv_manager = PagedKVCacheManager(
         kv_params,
         cache_memory=1024 * 1024 * 1024,
         page_size=page_size,
         max_batch_size=2,
         max_seq_len=100,
-        num_layers=1,
+        num_layers=num_layers,
         devices=[CPU()],
         session=session,
     )
@@ -479,6 +479,16 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
                 ).all()
 
             batch_start += page_size
+
+    for ctx in batch:
+        ctx.update(999)
+        k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
+        assert k_cache.shape == (
+            ctx.start_idx,
+            num_layers,
+            kv_params.n_kv_heads,
+            kv_params.head_dim,
+        )
 
 
 @pytest.mark.parametrize(

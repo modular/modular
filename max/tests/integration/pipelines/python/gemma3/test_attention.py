@@ -20,6 +20,7 @@ from max.nn.kv_cache import (
     KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines import KVCacheConfig
@@ -32,9 +33,7 @@ from max.pipelines.architectures.gemma3.model_config import (
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
-from transformers.models.gemma3.modeling_gemma3 import (
-    Gemma3Attention,
-)
+from transformers.models.gemma3.modeling_gemma3 import Gemma3Attention
 
 MAX_SEQ_LEN = 1152
 
@@ -170,6 +169,7 @@ def generate_max_outputs(
         page_size=kv_cache_config.kv_cache_page_size,
         session=session,
     )
+    assert isinstance(kv_manager, PagedKVCacheManager)
 
     # Construct input types.
     input_type = TensorType(
@@ -223,9 +223,16 @@ def generate_max_outputs(
     seq_id = 0
     kv_manager.external_claim(seq_ids=[seq_id])
     batch = [create_text_context(seq_id, np.empty(input_seq_len))]
+    ctx = batch[0]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
     )
+
+    k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
+    print("---- before ----")
+    print(f"k cache has shape {k_cache.shape}")
+    print(f"k cache has contents {k_cache}")
+
     cache_positions_input = np.arange(input_seq_len, dtype=np.uint32)
     output = compiled.execute(
         Tensor.from_dlpack(input_tensor[0]).to(device),
@@ -238,6 +245,13 @@ def generate_max_outputs(
         lookup_table_tensor.to(device),
         is_cache_empty_buf,
     )[0]
+
+    ctx.update(999)  # this is needed to bump the ctx.start_idx / seq_len
+    k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
+    print("---- after ----")
+    print(f"k cache has shape {k_cache.shape}")
+    print(f"k cache has contents {k_cache}")
+
     return output
 
 
