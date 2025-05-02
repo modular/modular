@@ -146,7 +146,7 @@ def generate_max_outputs(
             text_config.num_attention_heads,
             text_config.rope_theta,
             MAX_SEQ_LEN,
-            interleaved=True,
+            interleaved=False,
             head_dim=text_config.head_dim,
             device=device_ref,
         ),
