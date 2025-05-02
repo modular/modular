@@ -1,0 +1,39 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_stencil
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_stencil.mojo
+
+params:
+
+# llama3 shapes
+- dtype: [DType.bfloat16, DType.float32]
+  batch_size: 128
+  input_height: 1024
+  input_width: 1024
+  num_channels: 3
+  pool_window_h: 3
+  pool_window_w: 3
+  method: [avg_pool, max_pool]
+
+# random shapes
+- dtype: [DType.bfloat16, DType.float32]
+  batch_size: 64
+  input_height: 512
+  input_width: 512
+  num_channels: 3
+  pool_window_h: 3
+  pool_window_w: 3
+  pad_h: 2
+  pad_w: 2
+  method: avg_pool_padded

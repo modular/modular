@@ -1,0 +1,33 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_normalization
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_normalization.mojo
+
+params:
+
+# layer_norm_gpu
+- shape: 256x256
+- shape: 1024x1024
+- shape: 8192x8192
+- shape: 1x3072
+- shape: 512x3072
+- shape: 1024x3072
+- shape: 4096x3072
+- shape: 5072x256
+
+# rms_norm_gpu
+- shape: 1x1x4096
+- shape: 1x512x4096
+- shape: 1x1024x4096
+- shape: 1x4096x4096

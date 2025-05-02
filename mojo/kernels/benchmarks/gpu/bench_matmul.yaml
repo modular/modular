@@ -1,0 +1,60 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+
+params:
+
+# llama3 shapes
+- $M: [16, 64, 100, 200, 500, 1000, 2048, 4096, 8192, 352366]
+  N: 6144
+  K: 4096
+
+- $M: [16, 64, 100, 200, 500, 1000, 2048, 4096, 8192, 352366]
+  N: 4096
+  K: 4096
+
+- $M: [16, 64, 100, 200, 500, 1000, 2048, 4096, 8192, 352366]
+  N: 28672
+  K: 4096
+
+- $M: [16, 64, 100, 200, 500, 1000, 2048, 4096, 8192, 352366]
+  N: 4096
+  K: 14336
+
+- $M: [16, 64, 100, 200, 500, 1000, 2048, 4096, 8192, 352366]
+  N: 128256
+  K: 4096
+
+# Replit
+
+- $M: 500
+  N: 12288
+  K: 3072
+
+- $M: 500
+  N: 3072
+  K: 12288
+
+- $M: 500
+  N: 5120
+  K: 3072
+
+- $M: 500
+  N: 3072
+  K: 3072
+
+- $M: 500
+  N: 3072
+  K: 32768
