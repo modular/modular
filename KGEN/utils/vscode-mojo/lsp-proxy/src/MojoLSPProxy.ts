@@ -97,7 +97,7 @@ export class MojoLSPProxy {
     }
     errorMessage +=
       ' Please report this issue in ' +
-      'https://github.com/modular/max/issues along with all the ' +
+      'https://github.com/modular/modular/issues along with all the ' +
       'relevant source codes with their current contents.';
     return errorMessage;
   }

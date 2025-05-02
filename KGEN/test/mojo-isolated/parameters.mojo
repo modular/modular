@@ -542,7 +542,7 @@ fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
     var wrapper : IntBoxParam[res]
     takeIntBoxParam[res](wrapper)
 
-# https://github.com/modular/max/issues/4362 + MOCO-187
+# https://github.com/modular/modular/issues/4362 + MOCO-187
 # Function call with IntLiteral incorrectly eliminated despite side-effects
 fn take_nonmat(x: IntLiteral):
     _ = x
