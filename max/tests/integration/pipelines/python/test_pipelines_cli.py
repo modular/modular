@@ -18,7 +18,6 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-@pytest.mark.skip("AITLIB-340: The final output assert seems to be failing")
 def test_pipelines_cli__smollm_float32(capsys):
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
