@@ -1040,7 +1040,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not
-        // (and in fact cannot) conform to `CollectionElement`.
+        // (and in fact cannot) conform to `Copyable & Movable`.
         ssize_t operandIdx = -1;
         auto [kind, ty] = checkAnOperand(operand, operandIdx,
                                          ArgConvention::OwnedMem, refExpType);

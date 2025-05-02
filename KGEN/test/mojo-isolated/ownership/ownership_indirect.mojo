@@ -10,7 +10,7 @@
 
 # RUN: %parse-mojo-isolated %s | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 
-struct MyList[T: CollectionElement]:
+struct MyList[T: Copyable & Movable]:
     var data: UnsafePointer[T]
 
     fn __init__(out self):

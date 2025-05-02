@@ -102,7 +102,7 @@ fn test_takes_mem_type():
     takes_type(SomeType)
 
 # MOCO-56: Mojo produces weird error when mut function is used in non mutating function
-struct SomethingWithInferredParam[T: CollectionElement]:
+struct SomethingWithInferredParam[T: Copyable & Movable]:
   pass
 # expected-note @+1 {{function declared here}}
 fn SomethingWithInferredParamCallee(mut v: SomethingWithInferredParam):

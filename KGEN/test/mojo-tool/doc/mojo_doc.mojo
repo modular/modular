@@ -642,13 +642,13 @@ struct HMyUnsafePointer[
 # CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace(0)]",
 
 
-struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
+struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]:
     # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
     fn __getitem__(ref self, idx: Int) -> ref [self] T:
         pass
 
 
-# FIXME(MOTO-692): This should say `T: CollectionElement`.
+# FIXME(MOTO-692): This should say `T: Copyable & Movable`.
 # CHECK: "signature": "struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]",
 
 

@@ -552,7 +552,7 @@ fn call_take_nonmat():
   alias a = 1
   # CHECK: lit.call {{.*}}take_nonmat
   take_nonmat(a)
-    
+
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
 ##===----------------------------------------------------------------------===##
@@ -1592,7 +1592,7 @@ fn call_variadic_pack_with_function():
 @value
 struct MOCO1065[
     mut: Bool, //,
-    T: CollectionElement,
+    T: Copyable & Movable,
     o: Origin[mut]._mlir_type,
 ]:
     fn __init__(out self: MOCO1065[UInt8, o], ref [o] string: Empty):

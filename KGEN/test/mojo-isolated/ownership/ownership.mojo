@@ -1013,7 +1013,7 @@ fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegEx
     return a if x else b
 
 
-struct MyStructWithMarkDestroyed[T: CollectionElement]:
+struct MyStructWithMarkDestroyed[T: Copyable & Movable]:
     var a: T
     var b: T
 
@@ -1369,7 +1369,7 @@ def origin_of_def_arg(a: String):
 
 # MOCO-1542: Need to rebind field type when checking size.
 @value
-struct MyParameterizedField[T: CollectionElement]:
+struct MyParameterizedField[T: Copyable & Movable]:
   var a: T
   var b: T
 
@@ -1410,7 +1410,7 @@ struct SomeStruct:
     fn __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
-struct SomeValue[T: CollectionElement]:
+struct SomeValue[T: Copyable & Movable]:
     var value: T
     var name: String
     var tmp: Int

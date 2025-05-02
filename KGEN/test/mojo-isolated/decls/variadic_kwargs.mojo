@@ -61,7 +61,7 @@ fn test_variadic_kwargs():
     takes_int_variadic_kwargs(x=`9`, stuff=`8`)
 
 
-trait SomeTrait(CollectionElement):
+trait SomeTrait(Copyable, Movable):
     pass
 
 
