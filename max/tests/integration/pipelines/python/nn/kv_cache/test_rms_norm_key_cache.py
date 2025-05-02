@@ -63,6 +63,7 @@ class RMSNormKeyCacheModel:
             total_seq_len=Dim(self.total_seq_len),
             input_row_offsets=input_row_offsets,
             rms_norm_cols=self.rms_norm_cols,
+            weight_offset=0.0,
         )
 
 
