@@ -385,8 +385,8 @@ def test_truthy():
     @parameter
     fn test_dtype[dtype: DType]() raises:
         # Scalars of 0-values are false-y, 1-values are truth-y
-        assert_false(Scalar[dtype](False))
-        assert_true(Scalar[dtype](True))
+        assert_false(Scalar[dtype](0))
+        assert_true(Scalar[dtype](1))
 
     @parameter
     for i in range(dtypes.__len__()):
