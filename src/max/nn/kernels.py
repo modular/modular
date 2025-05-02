@@ -133,6 +133,7 @@ def fused_qkv_ragged_matmul(
     if input_scale:
         assert weight_scale is not None
         op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.scale"
+        parameters["kv_type"] = kv_params.dtype
 
         return ops.inplace_custom(
             op_name,
@@ -147,7 +148,7 @@ def fused_qkv_ragged_matmul(
             ],
             out_types=[
                 TensorType(
-                    dtype=input.dtype,
+                    dtype=DType.bfloat16,
                     shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
                     device=input.device,
                 )

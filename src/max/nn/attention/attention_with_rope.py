@@ -43,6 +43,7 @@ from ..kernels import (
     fused_qkv_ragged_matmul_quantized,
     kv_cache_get_max_seq_len,
     matmul_k_cache_ragged,
+    quantize_static_scaled_float8,
     rms_norm_key_cache,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
@@ -341,11 +342,26 @@ class AttentionWithRope(Module):
                 wq = clamp(wq, min=-self.clip_qkv, max=self.clip_qkv)
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
                 wv = clamp(wv, min=-self.clip_qkv, max=self.clip_qkv)
+
+            # Here we are rescaling the weights to be based on the max scale.
+            # This feels super fishy and like it could greatly hurt accuracy.
+            # That said, for these float8 models, all models run with vllm
+            # (not supported by torch/transformers). As such, vllm is the
+            # canonical implementation for correctness. This rescaling is what
+            # vllm does.
+            # https://github.com/vllm-project/vllm/blob/9b1769dd9ad13a5688d1e2b1b5f00b07b3716969/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_fp8.py#L35
             if self.has_weight_scale:
                 wq = wq * self.weight_scale_q
                 wk = wk * self.weight_scale_k
                 wv = wv * self.weight_scale_v
-            return ops.concat((wq, wk, wv))
+
+            wqkv = ops.concat((wq, wk, wv))
+            if self.has_weight_scale:
+                assert self.max_weight_scale is not None
+                wqkv = quantize_static_scaled_float8(
+                    wqkv, self.max_weight_scale
+                )
+            return wqkv
 
     @property
     def wqkv_bias(self) -> TensorValue | None:
@@ -356,24 +372,28 @@ class AttentionWithRope(Module):
         return ops.concat((self.bias_q, self.bias_k, self.bias_v))
 
     @property
-    def wqkv_input_scale(self) -> TensorValue | None:
-        """The concatenation of q, k, and v scale input vectors."""
+    def max_input_scale(self) -> TensorValue | None:
+        """The max of q, k, and v scale input vectors."""
         if not self.has_input_scale:
             return None
 
-        return ops.concat(
-            (self.input_scale_q, self.input_scale_k, self.input_scale_v)
-        )
+        return ops.max(
+            ops.concat(
+                (self.input_scale_q, self.input_scale_k, self.input_scale_v)
+            )
+        ).reshape([])
 
     @property
-    def wqkv_weight_scale(self) -> TensorValue | None:
-        """The concatenation of q, k, and v scale weight vectors."""
+    def max_weight_scale(self) -> TensorValue | None:
+        """The max of q, k, and v scale weight vectors."""
         if not self.has_weight_scale:
             return None
 
-        return ops.concat(
-            (self.weight_scale_q, self.weight_scale_k, self.weight_scale_v)
-        )
+        return ops.max(
+            ops.concat(
+                (self.weight_scale_q, self.weight_scale_k, self.weight_scale_v)
+            )
+        ).reshape([])
 
     def __call__(
         self,
@@ -390,17 +410,17 @@ class AttentionWithRope(Module):
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
         # Call into fused qkv ragged matmul.
-        wqkv = self.wqkv
-        # TODO: correctly handle quantization of x correctly for qkv.
-        # Likely has to be folded into the kernel.
+        if self.has_input_scale:
+            assert self.max_input_scale is not None
+            x = quantize_static_scaled_float8(x, self.max_input_scale)
+
         xq = fused_qkv_ragged_matmul(
             self.kv_params,
-            # input=x.cast(wqkv.dtype),
             input=x,
-            wqkv=wqkv,
+            wqkv=self.wqkv,
             bias=self.wqkv_bias,
-            # input_scale=self.wqkv_input_scale,
-            # weight_scale=self.wqkv_weight_scale,
+            input_scale=self.max_input_scale,
+            weight_scale=self.max_weight_scale,
             input_row_offsets=kwargs["input_row_offsets"],
             kv_collection=kv_collection,
             layer_idx=layer_idx,
