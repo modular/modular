@@ -1,9 +1,9 @@
 """Helper functions for creating Mojo LSP Server tests targets."""
 
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_python_binding_library_test")
 
 def lsp_test(name, pattern):
-    modular_cc_test(
+    modular_python_binding_library_test(
         name = name,
         size = "large",
         srcs = native.glob(
@@ -27,6 +27,7 @@ def lsp_test(name, pattern):
             "//SDK/lib/API/mojo/max/tensor",
             "//Kernels/mojo/extensibility/compiler_internal",
         ],
+        py_deps = [],
         tags = [
             "no-sandbox",  # The LSP server currently has issues with symlinks and non-canonical paths
         ],
