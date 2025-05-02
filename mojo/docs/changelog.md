@@ -98,6 +98,12 @@ Changes to Python-Mojo interoperability:
   Similarly, a new `def_method` API is added to `PythonTypeBuilder` to allow
   declaring Python bindings for methods that take and return `PythonObject`s.
 
+- `Span` now implements a generic `.count()` method which can be passed a
+  function that returns a boolean SIMD vector. The function counts how many
+  times it returns `True` evaluating it in a vectorized manner. This works for
+  any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
+  [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
