@@ -24,7 +24,10 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import (
     Float8Config,
-    Float8Scaling,
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
     Llama3RopeScalingParams,
     ReturnLogits,
 )
@@ -229,10 +232,15 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 raise ValueError(msg)
 
             float8_config = Float8Config(
-                input_scaling=Float8Scaling.TENSOR,
-                input_scale_dtype=state_dict[input_scale_name].dtype,
-                weight_scaling=Float8Scaling.TENSOR,
-                weight_scale_dtype=state_dict[weight_scale_name].dtype,
+                input_scale=Float8InputScaleSpec(
+                    granularity=Float8ScaleGranularity.TENSOR,
+                    origin=Float8ScaleOrigin.STATIC,
+                    dtype=state_dict[input_scale_name].dtype,
+                ),
+                weight_scale=Float8WeightScaleSpec(
+                    granularity=Float8ScaleGranularity.TENSOR,
+                    dtype=state_dict[weight_scale_name].dtype,
+                ),
                 attn_in_float8=attn_float8,
                 embedding_output_dtype=(
                     state_dict["lm_head.weight"].dtype

@@ -53,7 +53,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import Float8Config, Float8Scaling, Linear
+from ..linear import Float8Config, Float8ScaleGranularity, Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
@@ -288,43 +288,49 @@ class AttentionWithRope(Module):
         self.has_input_scale = False
         self.has_weight_scale = False
         if float8_config:
-            if float8_config.input_scaling == Float8Scaling.TENSOR:
+            if (
+                float8_config.input_scale.granularity
+                == Float8ScaleGranularity.TENSOR
+            ):
                 self.has_input_scale = True
                 self.input_scale_q = Weight(
                     name="q_proj.input_scale",
-                    dtype=float8_config.input_scale_dtype,
+                    dtype=float8_config.input_scale.dtype,
                     shape=[1],
                     device=self.devices[0],
                 )
                 self.input_scale_k = Weight(
                     name="k_proj.input_scale",
-                    dtype=float8_config.input_scale_dtype,
+                    dtype=float8_config.input_scale.dtype,
                     shape=[1],
                     device=self.devices[0],
                 )
                 self.input_scale_v = Weight(
                     name="v_proj.input_scale",
-                    dtype=float8_config.input_scale_dtype,
+                    dtype=float8_config.input_scale.dtype,
                     shape=[1],
                     device=self.devices[0],
                 )
-            if float8_config.weight_scaling == Float8Scaling.TENSOR:
+            if (
+                float8_config.weight_scale.granularity
+                == Float8ScaleGranularity.TENSOR
+            ):
                 self.has_weight_scale = True
                 self.weight_scale_q = Weight(
                     name="q_proj.weight_scale",
-                    dtype=float8_config.weight_scale_dtype,
+                    dtype=float8_config.weight_scale.dtype,
                     shape=[1],
                     device=self.devices[0],
                 )
                 self.weight_scale_k = Weight(
                     name="k_proj.weight_scale",
-                    dtype=float8_config.weight_scale_dtype,
+                    dtype=float8_config.weight_scale.dtype,
                     shape=[1],
                     device=self.devices[0],
                 )
                 self.weight_scale_v = Weight(
                     name="v_proj.weight_scale",
-                    dtype=float8_config.weight_scale_dtype,
+                    dtype=float8_config.weight_scale.dtype,
                     shape=[1],
                     device=self.devices[0],
                 )
