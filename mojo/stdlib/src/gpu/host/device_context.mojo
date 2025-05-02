@@ -1224,7 +1224,7 @@ struct DeviceBuffer[type: DType](
 
     fn map_to_host(
         self,
-        out mapped_buffer: _HostMappedBuffer[type, __origin_of(self)],
+        out mapped_buffer: _HostMappedBuffer[type],
     ) raises:
         """Maps this device buffer to host memory for CPU access.
 
@@ -1264,9 +1264,7 @@ struct DeviceBuffer[type: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        mapped_buffer = _HostMappedBuffer[type, __origin_of(self)](
-            self.context(), self
-        )
+        mapped_buffer = _HostMappedBuffer[type](self.context(), self)
 
     fn write_to[W: Writer](self, mut writer: W):
         """Writes a string representation of this buffer to the provided writer.
@@ -5152,34 +5150,26 @@ struct DeviceMulticastBuffer[type: DType]:
         return DeviceBuffer[type](buf_handle, buf_ptr)
 
 
-struct _HostMappedBuffer[
-    mut: Bool, //,
-    type: DType,
-    origin: Origin[mut],
-]:
+struct _HostMappedBuffer[type: DType]:
     var _ctx: DeviceContext
-    var _dev_buf: Pointer[DeviceBuffer[type], origin]
+    var _dev_buf: DeviceBuffer[type]
     var _cpu_buf: HostBuffer[type]
 
-    fn __init__(
-        out self,
-        ctx: DeviceContext,
-        ref [origin]buf: DeviceBuffer[type],
-    ) raises:
+    fn __init__(out self, ctx: DeviceContext, buf: DeviceBuffer[type]) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[type](len(buf))
         self._ctx = ctx
-        self._dev_buf = Pointer(to=buf)
+        self._dev_buf = buf
         self._cpu_buf = cpu_buf
 
     fn __del__(owned self):
         pass
 
     fn __enter__(mut self) raises -> HostBuffer[type]:
-        self._dev_buf[].enqueue_copy_to(self._cpu_buf)
+        self._dev_buf.enqueue_copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf
 
     fn __exit__(mut self) raises:
         self._ctx.synchronize()
-        self._cpu_buf.enqueue_copy_to(self._dev_buf[])
+        self._cpu_buf.enqueue_copy_to(self._dev_buf)
         self._ctx.synchronize()
