@@ -9,7 +9,7 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import DimLike, TensorType
+from ..type import DeviceRef, DimLike, TensorType
 from ..value import TensorValue, TensorValueLike
 
 
@@ -35,10 +35,14 @@ def nonzero(x: TensorValueLike, out_dim: DimLike) -> TensorValue:
     if x.rank == 0:
         raise ValueError("Scalar inputs not supported")
 
-    return Graph.current._add_op(
+    # TODO(GEX-2041): Add support for GPU kernel for nonzero and remove manual transfers
+    original_device = x.type.device
+    x = x.to(DeviceRef.CPU())
+    answer = Graph.current._add_op(
         rmo.mo_arg_nonzero,
         TensorType(
             dtype=DType.int64, shape=[out_dim, x.rank], device=x.device
         ).to_mlir(),
         TensorValue(x),
     )[0].tensor
+    return answer.to(original_device)
