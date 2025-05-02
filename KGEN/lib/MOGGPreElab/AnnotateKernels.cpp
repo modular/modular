@@ -525,7 +525,7 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
   Builder builder{funcOp.getContext()};
 
   if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
-      !isViewMaterializeFunc(funcOp))
+      !isViewMaterializeFunc(funcOp) && !isKernel(funcOp))
     return;
 
   // Look through ref types to get underlying decl ref type if needed.
