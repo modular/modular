@@ -33,19 +33,12 @@ from max.pipelines.architectures.gemma3.model_config import (
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
-from transformers.models.gemma3.modeling_gemma3 import Gemma3Attention
+from transformers.models.gemma3.modeling_gemma3 import (
+    Gemma3Attention,
+    Gemma3RotaryEmbedding,
+)
 
 MAX_SEQ_LEN = 1152
-
-
-@pytest.fixture
-def position_embeddings(
-    text_config: Gemma3TextConfig,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    return (
-        torch.randn(1, 11, 256).to(torch.bfloat16).to("cuda") * 0.7,
-        torch.randn(1, 11, 256).to(torch.bfloat16).to("cuda") * 0.5,
-    )
 
 
 @pytest.fixture
@@ -53,11 +46,24 @@ def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
     return torch.randn(1, 11, 1152).to(torch.bfloat16).to("cuda")
 
 
+def _get_position_embeddings(
+    text_config: Gemma3TextConfig,
+    input_tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Generates rotary position embeddings based on the input tensor shape."""
+    seq_len = input_tensor.shape[1]
+    rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+    position_ids = torch.arange(
+        seq_len, dtype=torch.long, device="cuda"
+    ).unsqueeze(0)
+    cos, sin = rotary_emb(input_tensor, position_ids)
+    return cos.to(torch.bfloat16).to("cuda"), sin.to(torch.bfloat16).to("cuda")
+
+
 def generate_torch_outputs(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
-    position_embeddings: tuple[torch.Tensor, torch.Tensor],
 ) -> torch.Tensor:
     layer = (
         Gemma3Attention(
@@ -72,6 +78,7 @@ def generate_torch_outputs(
         param.data = attention_weights[name].to(torch.bfloat16).to("cuda")
 
     attention_mask = torch.zeros(1, 1, 1, 60).to(torch.bfloat16).to("cuda")
+    position_embeddings = _get_position_embeddings(text_config, input_tensor)
 
     return layer(input_tensor, position_embeddings, attention_mask)[0]
 
@@ -99,7 +106,6 @@ def generate_max_outputs(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
-    position_embeddings: tuple[torch.Tensor, torch.Tensor],
     dtype: DType,
     device: Device,
 ) -> torch.Tensor:
@@ -260,17 +266,15 @@ def test_attention(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
-    position_embeddings: tuple[torch.Tensor, torch.Tensor],
 ) -> None:
     torch_output = generate_torch_outputs(
-        text_config, input_tensor, attention_weights, position_embeddings
+        text_config, input_tensor, attention_weights
     )
 
     max_output = generate_max_outputs(
         text_config,
         input_tensor,
         attention_weights,
-        position_embeddings,
         DType.bfloat16,
         Accelerator(),
     )
