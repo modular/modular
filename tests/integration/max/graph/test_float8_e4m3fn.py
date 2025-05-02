@@ -9,14 +9,13 @@ import numpy as np
 import pytest
 import torch
 import torch.utils.dlpack
-from max.driver import Tensor, accelerator_count
+from max.driver import Tensor
 from max.dtype import DType, max_to_torch_type
 from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+from test_common.graph_utils import is_h100_h200
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="float8 requires accelerator"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
 def test_f8_upcast(session, cast_dtype):
     with Graph(
@@ -50,9 +49,7 @@ def test_f8_upcast(session, cast_dtype):
     )
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="float8 requires accelerator"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
 def test_f8_downcast(session, cast_dtype):
     with Graph(
@@ -87,9 +84,7 @@ def test_f8_downcast(session, cast_dtype):
     )
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="float8 requires accelerator"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 def test_f8_matmul(session):
     with Graph(
         "f8",
@@ -98,14 +93,15 @@ def test_f8_matmul(session):
                 dtype=DType.float8_e4m3fn,
                 shape=["x", 2],
                 device=DeviceRef.GPU(),
-            ),
-            TensorType(
-                dtype=DType.float8_e4m3fn, shape=[2], device=DeviceRef.GPU()
-            ),
+            )
         ],
     ) as graph:
         x = graph.inputs[0].tensor
-        y = graph.inputs[1].tensor
+        y = ops.constant(
+            np.array([[1.0, 2.0], [3.0, 4.0]]),
+            dtype=DType.float8_e4m3fn,
+            device=DeviceRef.GPU(),
+        )
         out = x @ y
         graph.output(out)
 
@@ -114,14 +110,13 @@ def test_f8_matmul(session):
     x_torch = (
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
     )
-    y_torch = torch.tensor([5.0, 6.0]).to(torch.float8_e4m3fn).cuda()
+    y_torch = (
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(torch.float8_e4m3fn).cuda()
+    )
     x_tensor = Tensor.from_dlpack(x_torch.view(torch.uint8)).view(
         DType.float8_e4m3fn
     )
-    y_tensor = Tensor.from_dlpack(y_torch.view(torch.uint8)).view(
-        DType.float8_e4m3fn
-    )
-    out = model.execute(x_tensor, y_tensor)[0]
+    out = model.execute(x_tensor)[0]
     assert isinstance(out, Tensor)
     out_torch = torch.utils.dlpack.from_dlpack(out.view(DType.uint8)).view(
         torch.float8_e4m3fn
@@ -139,9 +134,7 @@ def test_f8_matmul(session):
     )
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="float8 requires accelerator"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 def test_f8_constant(session):
     y_data = np.array([5.0, 6.0])
     with Graph(
@@ -189,9 +182,7 @@ def test_f8_constant(session):
     )
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="float8 requires accelerator"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 def test_f8_weight_cpu(session):
     y_data = np.array([5.0, 6.0])
     with Graph(
@@ -244,9 +235,7 @@ def test_f8_weight_cpu(session):
     )
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="float8 requires accelerator"
-)
+@pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 def test_f8_weight_gpu(session):
     y_data = np.array([5.0, 6.0])
     with Graph(
