@@ -107,6 +107,7 @@ class CrossSdpaAttention(Layer):
             # Use the total sequence length of the cross attention states.
             total_seq_len=cross_attention_states.shape[0],
             input_row_offsets=cross_input_row_offsets,
+            weight_offset=0.0,
         )
 
         # Calculate Flash Attention.

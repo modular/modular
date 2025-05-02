@@ -1541,6 +1541,7 @@ def rms_norm_key_cache(
     layer_idx: int | np.integer,
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
+    weight_offset: float | np.floating,
     rms_norm_cols: Optional[int] = None,
 ) -> None:
     """Computes RMSNorm on the _new_ entries in the KVCache.
@@ -1602,6 +1603,7 @@ def rms_norm_key_cache(
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
             ops.cast(TensorValue(total_seq_len), DType.uint32),
             input_row_offsets,
+            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
         ],
         parameters=parameters,
     )

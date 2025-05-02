@@ -255,6 +255,7 @@ class _Llama4TextAttention(Module):
                 layer_idx=self.layer_idx,
                 total_seq_len=total_seq_len,
                 input_row_offsets=kwargs["input_row_offsets"],
+                weight_offset=0.0,
             )
 
         if self.attn_temperature_tuning and not self.use_rope:

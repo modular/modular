@@ -806,6 +806,7 @@ class LatentAttentionWithRope(AttentionWithRope):
             total_seq_len=total_seq_len,
             input_row_offsets=kwargs["input_row_offsets"],
             rms_norm_cols=self.kv_lora_rank,
+            weight_offset=0.0,
         )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
