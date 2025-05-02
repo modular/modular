@@ -616,7 +616,7 @@ alias MI300X = Info(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx942",
-    compile_options="amdhsa-code-object-version=5",
+    compile_options="",
     compute=9.4,
     version="CDNA3",
     sm_count=304,
