@@ -212,23 +212,6 @@ class _Gemma3Attention(Module):
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if self.use_rope:
-            if xq.device is not None:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
-                    xq.device
-                )
-            else:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
-            xq = fused_qk_ragged_rope(
-                self.kv_params,
-                xq,
-                kwargs["input_row_offsets"],
-                kv_collection,
-                freqs_cis,
-                layer_idx,
-                interleaved=self.rope.interleaved,
-            )
-
         if self.use_qk_norm:
             # Apply QK norm to query and key states.
 
@@ -247,6 +230,23 @@ class _Gemma3Attention(Module):
                 total_seq_len=total_seq_len,
                 input_row_offsets=kwargs["input_row_offsets"],
                 weight_offset=1.0,
+            )
+
+        if self.use_rope:
+            if xq.device is not None:
+                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
+                    xq.device
+                )
+            else:
+                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            xq = fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                kwargs["input_row_offsets"],
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=self.rope.interleaved,
             )
 
         # Calculate Flash Attention.
