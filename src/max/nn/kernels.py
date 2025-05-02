@@ -1722,6 +1722,120 @@ def quantize_static_scaled_float8(
     )[0].tensor
 
 
+def quantize_dynamic_scaled_float8(
+    input: TensorValue,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.bfloat16,
+) -> tuple[TensorValue, TensorValue]:
+    """
+    Dynamically quantize the input tensor to fp8.
+
+    Args:
+        input: The input tensor to quantize.
+        scale_ub: The upper bound of the scale factor.
+        group_size_or_per_token: The group size for quantization. When set to -1,
+            the quantization is column-wise.
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor and the scales.
+    """
+
+    if input.rank != 2:
+        msg = "input must be rank 2 tensor"
+        raise ValueError(msg)
+
+    if out_type == DType.float8_e4m3fn:
+        msg = "out_type must be float8_e4m3fn"
+        raise ValueError(msg)
+
+    group_size = (
+        group_size_or_per_token
+        if group_size_or_per_token != -1
+        else input.shape[1]
+    )
+
+    result = ops.custom(
+        "mo.quantize_dynamic_scaled_float8",
+        values=[
+            input,
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1]],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[input.shape[0], input.shape[1] // group_size],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group_size_or_per_token": group_size_or_per_token,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def dynamic_scaled_matmul(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """
+    Perform a matmul of two tensors with scaling factors. Currently only
+    supports channel-wise scaling for weights and per-token scaling for inputs.
+
+    Args:
+        a: The first tensor to multiply.
+        b: The second tensor to multiply, must be transposed.
+        a_scales: The scaling factors for the first tensor.
+        b_scales: The scaling factors for the second tensor.
+
+    Returns:
+        The result of the matmul operation.
+    """
+
+    if a.rank != 2 or b.rank != 2 or a_scales.rank != 2 or b_scales.rank != 2:
+        msg = "All arguments must be rank 2 tensors"
+        raise ValueError(msg)
+
+    if a.shape[1] != b.shape[1]:
+        msg = "The second dimension of b must match the second dimension of a"
+        raise ValueError(msg)
+
+    if a_scales.shape[1] != 1:
+        msg = "only per-token scaling is supported for a"
+        raise ValueError(msg)
+
+    if b_scales.shape[1] != 1:
+        msg = "only channel-wise scaling is supported for b"
+        raise ValueError(msg)
+
+    result = ops.custom(
+        "mo.matmul_dynamic_scaled_fp8",
+        values=[a, b, a_scales, b_scales],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[a.shape[0], b.shape[0]],
+                device=a.device,
+            )
+        ],
+    )[0].tensor
+
+    return result
+
+
 def matmul_static_scaled_float8(
     input: TensorValue,
     weight: TensorValue,
