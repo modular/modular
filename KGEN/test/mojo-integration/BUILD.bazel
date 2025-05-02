@@ -15,7 +15,6 @@ lit_tests(
         exclude = _DATA,
     ),
     data = glob(["inputs/**/*.mojo"]),
-    gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
         "//Kernels/mojo/_mlir",
         "@mojo//:stdlib",
