@@ -12,7 +12,7 @@ lit_tests(
         "//utils:lit-lldb-init.in",
     ],
     mojo_deps = [
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],  # __jit_debug_descriptor exists in liblldb and libMojoLLDB
