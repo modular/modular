@@ -43,6 +43,7 @@ MAX_SEQ_LEN = 1152
 
 @pytest.fixture
 def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
+    torch.manual_seed(42)
     return torch.randn(1, 11, 1152).to(torch.bfloat16).to("cuda")
 
 
@@ -58,6 +59,20 @@ def _get_position_embeddings(
     ).unsqueeze(0)
     cos, sin = rotary_emb(input_tensor, position_ids)
     return cos.to(torch.bfloat16).to("cuda"), sin.to(torch.bfloat16).to("cuda")
+
+
+def _causal_attention_mask(seq_len: int) -> torch.Tensor:
+    causal_mask = torch.triu(
+        torch.ones(seq_len, seq_len, dtype=torch.bool, device="cuda"),
+        diagonal=1,
+    )
+    attention_mask = torch.zeros(
+        1, 1, seq_len, seq_len, dtype=torch.bfloat16, device="cuda"
+    )
+    attention_mask = attention_mask.masked_fill(
+        causal_mask[None, None, :, :], torch.finfo(torch.bfloat16).min
+    )
+    return attention_mask
 
 
 def generate_torch_outputs(
@@ -77,7 +92,7 @@ def generate_torch_outputs(
     for name, param in layer.named_parameters():
         param.data = attention_weights[name].to(torch.bfloat16).to("cuda")
 
-    attention_mask = torch.zeros(1, 1, 1, 60).to(torch.bfloat16).to("cuda")
+    attention_mask = _causal_attention_mask(input_tensor.shape[1])
     position_embeddings = _get_position_embeddings(text_config, input_tensor)
 
     return layer(input_tensor, position_embeddings, attention_mask)[0]
