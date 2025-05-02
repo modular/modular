@@ -44,10 +44,10 @@ modular_py_test(
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
         "//PyTorch/test/utils/custom_ops",
-        "//open-source/max/mojo/kernels/src/register",
+        "@mojo//:register",
         "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
     tags = [
         "gpu",
