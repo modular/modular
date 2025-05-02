@@ -21,7 +21,7 @@
     lldb_private::Debugger::ReportError(                                       \
         llvm::formatv(                                                         \
             format "\nPlease submit a bug report to "                          \
-                   "https://github.com/modular/max/issues and include "        \
+                   "https://github.com/modular/modular/issues and include "    \
                    "steps for reproduction and all relevant source code.\n",   \
             __VA_ARGS__)                                                       \
             .str());                                                           \

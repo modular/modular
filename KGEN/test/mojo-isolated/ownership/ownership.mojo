@@ -1403,7 +1403,7 @@ struct RefResultStruct:
 
 fn use(a: String): pass
 
-# https://github.com/modular/max/issues/4163
+# https://github.com/modular/modular/issues/4163
 #  BUG] Mojo compiler error when two instance variables of type PythonObject are initialized by Python.import_module in a struct's __init__()
 struct SomeStruct:
     var test_agent: SomeValue[Int]

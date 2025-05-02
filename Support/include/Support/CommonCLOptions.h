@@ -59,7 +59,7 @@ public:
 
     static constexpr StringLiteral bugReportMsg =
         "PLEASE submit a bug report to "
-        "https://github.com/modular/max/issues and include the crash "
+        "https://github.com/modular/modular/issues and include the crash "
         "backtrace.\n";
 
     llvm::setBugReportMsg(bugReportMsg.data());
