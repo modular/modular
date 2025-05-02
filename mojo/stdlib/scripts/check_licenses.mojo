@@ -35,7 +35,16 @@ def main():
             # this is the current file
             continue
         file_path = Path(target_paths[i])
-        if not file_path.read_text().startswith(LICENSE):
+        file_text = file_path.read_text()
+
+        # Ignore #! in scripts
+        has_license = False
+        if file_text.startswith("#!"):
+            has_license = String("\n").join(file_text.splitlines()[1:]).startswith(LICENSE)
+        else:
+            has_license = file_text.startswith(LICENSE)
+
+        if not has_license:
             files_without_license.append(file_path)
 
     if len(files_without_license) > 0:
