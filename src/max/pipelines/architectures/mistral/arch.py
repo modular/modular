@@ -28,9 +28,7 @@ mistral_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
     default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS]
-    },
+    supported_encodings={SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED]},
     pipeline_model=MistralModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
