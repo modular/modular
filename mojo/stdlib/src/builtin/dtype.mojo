@@ -18,6 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof, os_is_windows, sizeof
+from os import abort
 
 alias _mIsSigned = UInt8(1)
 alias _mIsInteger = UInt8(1 << 7)
@@ -749,6 +750,67 @@ struct DType(
             self.dispatch_integral[func]()
         else:
             raise Error("only arithmetic types are supported")
+
+    # ===-------------------------------------------------------------------===#
+    # __mlir_type
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline("nodebug")
+    fn __mlir_type(self) -> __mlir_type.`!kgen.deferred`:
+        """Returns the MLIR type of the current DType as an MLIR type.
+
+        Returns:
+            The MLIR type of the current DType.
+        """
+
+        if self is DType.bool:
+            return __mlir_attr.i1
+        if self is DType.index:
+            return __mlir_attr.index
+        if self is DType.uint8:
+            return __mlir_attr.ui8
+        if self is DType.int8:
+            return __mlir_attr.si8
+        if self is DType.uint16:
+            return __mlir_attr.ui16
+        if self is DType.int16:
+            return __mlir_attr.si16
+        if self is DType.uint32:
+            return __mlir_attr.ui32
+        if self is DType.int32:
+            return __mlir_attr.si32
+        if self is DType.uint64:
+            return __mlir_attr.ui64
+        if self is DType.int64:
+            return __mlir_attr.si64
+        if self is DType.uint128:
+            return __mlir_attr.ui128
+        if self is DType.int128:
+            return __mlir_attr.si128
+        if self is DType.uint256:
+            return __mlir_attr.ui256
+        if self is DType.int256:
+            return __mlir_attr.si256
+        if self is DType.tensor_float32:
+            return __mlir_attr.tf32
+        if self is DType.float32:
+            return __mlir_attr.f32
+        if self is DType.bfloat16:
+            return __mlir_attr.bf16
+        if self is DType.float16:
+            return __mlir_attr.f16
+        if self is DType.float8_e4m3fn:
+            return __mlir_attr.f8E4M3
+        if self is DType.float8_e5m2:
+            return __mlir_attr.f8E5M2
+        if self is DType.float8_e3m4:
+            return __mlir_attr.f8E3M4
+        if self is DType.float8_e5m2fnuz:
+            return __mlir_attr.f8E5M2FNUZ
+        if self is DType.float8_e4m3fnuz:
+            return __mlir_attr.f8E4M3FNUZ
+
+        return abort[__mlir_type.`!kgen.deferred`]("invalid dtype")
 
 
 # ===-------------------------------------------------------------------===#
