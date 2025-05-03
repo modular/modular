@@ -51,6 +51,10 @@ Changes to Python-Mojo interoperability:
 
 - `String` now implements `ConvertibleFromPython`.
 
+- The `bitset` datastructure was added to the `collections` package. This is a
+  fixed `bitset` that simplifies working with a set of bits and perform bit
+  operations.
+
 ### Tooling changes
 
 ### ❌ Removed

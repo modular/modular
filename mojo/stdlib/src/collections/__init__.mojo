@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the collections package."""
 
+from .bitset import BitSet
 from .counter import Counter
 from .deque import Deque
 from .dict import Dict, KeyElement
