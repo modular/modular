@@ -1143,7 +1143,7 @@ alias block_idx = _BlockIdx()
 
 
 @always_inline
-fn _get_gcn_idx[offset: Int, dtype: DType = DType.int16]() -> UInt:
+fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
         UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
@@ -1193,7 +1193,7 @@ struct _BlockDim:
                     constrained[dim == "z"]()
                     return 8
 
-            return _get_gcn_idx[_get_offset()]()
+            return _get_gcn_idx[_get_offset(), DType.uint16]()
 
 
 alias block_dim = _BlockDim()
@@ -1244,7 +1244,7 @@ struct _GridDim:
                     constrained[dim == "z"]()
                     return 2
 
-            return _get_gcn_idx[_get_offset(), DType.int32]()
+            return _get_gcn_idx[_get_offset(), DType.uint32]()
 
 
 alias grid_dim = _GridDim()
