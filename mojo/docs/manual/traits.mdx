@@ -16,8 +16,7 @@ the same basic problem.
 In dynamically-typed languages like Python, you don't need to explicitly declare
 that two classes are similar. This is easiest to show by example:
 
-```mojo
-%%python
+```python
 class Duck:
     def quack(self):
         print("Quack.")
@@ -26,28 +25,26 @@ class StealthCow:
     def quack(self):
         print("Moo!")
 
-def make_it_quack_python(maybe_a_duck):
+def make_it_quack(maybe_a_duck):
     try:
         maybe_a_duck.quack()
     except:
         print("Not a duck.")
 
-make_it_quack_python(Duck())
-make_it_quack_python(StealthCow())
+make_it_quack(Duck())
+make_it_quack(StealthCow())
 ```
 
 The `Duck` and `StealthCow` classes aren't related in any way, but they both
 define a `quack()` method, so they work the same in the `make_it_quack()`
 function. This works because Python uses dynamic dispatch—it identifies the
-methods to call at runtime. So `make_it_quack_python()` doesn't care what types
+methods to call at runtime. So `make_it_quack()` doesn't care what types
 you're passing it, only the fact that they implement the `quack()` method.
 
 In a statically-typed environment, this approach doesn't work:
 Mojo functions require you to
 specify the type of each argument. If you wanted to write this example in Mojo
 *without* traits, you'd need to write a function overload for each input type.
-All of the examples from here on are in Mojo, so we'll just call the function
-`make_it_quack()` going forward.
 
 ```mojo
 @value
@@ -138,15 +135,14 @@ implement everything required by the trait or the code won't compile.
 Finally, you can define a function that takes a `Quackable` like this:
 
 ```mojo
-fn make_it_quack[T: Quackable](maybe_a_duck: T):
+fn make_it_quack[type: Quackable](maybe_a_duck: type):
     maybe_a_duck.quack()
 ```
 
 This syntax may look a little unfamiliar if you haven't dealt with Mojo
 [parameters](/mojo/manual/parameters/) before. What this signature
-means is that `maybe_a_duck` is an argument of type `T`, where `T` is a type
-that must conform to the `Quackable` trait. TODO: This syntax is a little
-verbose, and we hope to make it more ergonomic in a future release.
+means is that `maybe_a_duck` is an argument of type `type`, where `type` is a
+type that must conform to the `Quackable` trait.
 
 Using the method is simple enough:
 
@@ -167,7 +163,7 @@ required trait.
 One limitation of traits is that you can't add traits to existing types. For
 example, if you define a new `Numeric` trait, you can't add it to the standard
 library `Float64` and `Int` types. However, the standard library already
-includes a few traits, and we'll be adding more over time.
+includes quite a few traits, and we'll be adding more over time.
 
 ### Traits can require static methods
 
@@ -179,36 +175,76 @@ trait HasStaticMethod:
     @staticmethod
     fn do_stuff(): ...
 
-fn fun_with_traits[T: HasStaticMethod]():
-    T.do_stuff()
+fn fun_with_traits[type: HasStaticMethod]():
+    type.do_stuff()
 ```
 
-## Implicit trait conformance
+## Trait compositions
 
-Mojo also supports *implicit* trait conformance. That is, if a type implements
-all of the methods required for a trait, it's treated as conforming to the
-trait, even if it doesn't explicitly include the trait in its declaration:
+You can compose traits using the `&` sigil. This lets you define new traits
+that are simple combinations of other traits. You can use a trait composition
+anywhere that you'd use a single trait:
 
 ```mojo
-struct RubberDucky:
-    fn quack(self):
-        print("Squeak!")
+trait Flyable:
+    fn fly(): ...
 
-make_it_quack(RubberDucky())
+fn quack_and_go[type: Quackable & Flyable](quacker: type):
+    quacker.quack()
+    quacker.fly()
+
+@value
+struct FlyingDuck(Quackable & Flyable):
+    fn quack(self):
+        print("quack")
+
+    fn fly(self):
+        print("whoosh!")
+
+quack_and_go(FlyingDuck())
 ```
 
-Implicit conformance can be handy if you're defining a trait and you want it to
-work with types that you don't control—such as types from the standard library,
-or a third-party library.
+You can also use the `alias` keyword to create a shorthand name for a
+trait composition:
 
-However, we still strongly recommend explicit trait conformance wherever
-possible. This has two advantages:
+```mojo
+alias DuckLike = Quackable & Flyable
 
-* Documentation. It makes it clear that the type conforms to the trait, without
-  having to scan all of its methods.
+struct ToyDuck(DuckLike):
+    # ... implementation omitted
+```
 
-* Future feature support. When default method implementations are added to
-  traits, they'll only work for types that explicitly conform to traits.
+Previously, you could only compose traits using
+[inheritance](#trait-inheritance), by defining a new, empty trait like this:
+
+```mojo
+trait DuckTrait(Quackable, Flyable):
+    pass
+```
+
+The difference is that using the `trait` keyword defines a new, named
+trait. For a struct to *explictly* conform to this trait, you need to include
+it in the struct's signature. On the other hand, the `DuckLike` alias represents
+a composition of two separate traits, `Quackable` and `Flyable`, and anything
+that conforms to those two traits conforms to `DuckLike`. For example, our
+earlier `FlyingDuck` type:
+
+```mojo
+struct FlyingDuck(Quackable & Flyable):
+    # ... etc
+```
+
+Because `FlyingDuck` conforms to both `Quackable` and `Flyable`, it also
+conforms to the `DuckLike` trait composition. But it *doesn't* explicitly
+conform to `DuckTrait`, since it doesn't include `DuckTrait` in its list of
+traits.
+
+Currently this distinction doesn't make much difference, because Mojo supports
+[implicit trait conformance](#implicit-trait-conformance), which means that
+`FlyingDuck` is treated as if it conforms to `DuckTrait`, since it meets all of
+the requirements. However, implicit conformance is due to be phased out in the
+future, so we recommend replacing empty traits like `DuckTrait` with more
+flexible trait compositions.
 
 ## Trait inheritance
 
@@ -231,17 +267,26 @@ needs to implement **both** `make_sound()` and `fly()`. And since every `Bird`
 conforms to `Animal`, a struct that conforms to `Bird` can be passed to any
 function that requires an `Animal`.
 
-To inherit from multiple traits, add a comma-separated list of traits inside the
-parenthesis. For example, you could define a `NamedAnimal` trait that combines the
-requirements of the `Animal` trait and a new `Named` trait:
+To inherit from multiple traits, add a comma-separated list of traits or
+trait compositions inside the parenthesis. For example, you could define a
+`NamedAnimal` trait that combines the requirements of the `Animal` trait and a
+new `Named` trait:
 
 ```mojo
 trait Named:
     fn get_name(self) -> String:
         ...
 
-trait NamedAnimal(Animal, Named):
-    pass
+trait NamedAnimal(Animal & Named):
+    # ...
+```
+
+Inheritance is useful when you're creating a new trait that adds its own
+requirements. If you simply want to express the union of two or more traits,
+you can use a simple trait composition instead:
+
+```mojo
+alias NamedAnimal = Animal & Named
 ```
 
 ## Traits and lifecycle methods
@@ -263,11 +308,10 @@ The `factory[]()` function returns a newly-constructed instance of a
 trait DefaultConstructible:
     fn __init__(out self): ...
 
-trait MassProducible(DefaultConstructible, Movable):
-    pass
+alias MassProducible = DefaultConstructible & Movable
 
-fn factory[T: MassProducible]() -> T:
-    return T()
+fn factory[type: MassProducible]() -> type:
+    return type()
 
 struct Thing(MassProducible):
     var id: Int
@@ -287,6 +331,29 @@ move constructors, because they don't require any custom logic.
 
 For the purpose of trait conformance, the compiler treats trivial types as
 copyable and movable.
+
+## Implicit trait conformance
+
+Mojo currently supports *implicit* trait conformance, but this will be
+deprecated in a future release.
+
+Implicit conformance means that if a type implements
+all of the methods required for a trait, it's treated as conforming to the
+trait, even if it doesn't explicitly include the trait in its declaration:
+
+```mojo
+struct RubberDucky:
+    fn quack(self):
+        print("Squeak!")
+
+make_it_quack(RubberDucky())
+```
+
+Implicit conformance can be convenient, but supporting it prevents us from
+adding future trait features like default function implementations.
+
+We strongly recommend using explicit trait conformance for all new code and
+phasing out dependence on implicit trait conformance.
 
 ## Built-in traits
 
@@ -552,10 +619,10 @@ generic methods on the trait:
 trait Stacklike:
     alias EltType: Copyable & Movable
 
-    def push(mut self, owned item: Self.EltType):
+    fn push(mut self, owned item: Self.EltType):
         pass
 
-    def pop(mut self) -> Self.EltType:
+    fn pop(mut self) -> Self.EltType:
         pass
 ```
 
@@ -563,9 +630,9 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[T: Copyable & Movable](Stacklike):
+struct MyStack[type: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
-    alias EltType = T
+    alias EltType = type
     alias list_type = List[Self.EltType]
 
     var list: Self.list_type
@@ -573,19 +640,23 @@ struct MyStack[T: Copyable & Movable](Stacklike):
     fn __init__(out self):
         self.list = Self.list_type()
 
-    def push(mut self, owned item: Self.EltType):
+    fn push(mut self, owned item: Self.EltType):
         self.list.append(item)
 
-    def pop(mut self) -> Self.EltType:
+    fn pop(mut self) -> Self.EltType:
         return self.list.pop()
+
+    fn dump[WritableEltType: Writable & Copyable & Movable](self: MyStack[WritableEltType]):
+        for item in self.list:
+            print(item[])
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.
-Because a struct that conforms to `Copyable & Movable` is not necessarily
+Because a struct that conforms to `Copyable` and `Movable` is not necessarily
 printable, `MyStack` uses
 [conditional conformance](/mojo/manual/parameters/#conditional-conformance) to
 define a `dump()` method that works as long as the element type is
-_representable_.
+[writable](/mojo/stdlib/utils/write/Writable/).
 
 The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.
