@@ -587,6 +587,60 @@ alias RTX5090 = Info(
     max_thread_block_size=1024,
 )
 
+
+# ===-----------------------------------------------------------------------===#
+# RTX2060
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_rtx2060_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
+
+    Returns:
+        MLIR target configuration for RTX 2060.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_75", `,
+        `features = "+ptx63,+sm_75", `,
+        `tune_cpu = "sm_75", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias RTX2060 = Info(
+    name="RTX2060",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="turing",
+    compile_options="nvptx-short-ptr=true",
+    compute=7.5,
+    version="sm_75",
+    sm_count=30,
+    warp_size=32,
+    threads_per_sm=2048,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=16,
+    shared_memory_per_multiprocessor=64 * _KB,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=32768,
+    max_blocks_per_multiprocessor=16,
+    shared_memory_allocation_unit_size=32,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+
 # ===-----------------------------------------------------------------------===#
 # MI300X
 # ===-----------------------------------------------------------------------===#
@@ -734,6 +788,8 @@ struct Info(Writable):
         Returns:
             MLIR target configuration for the GPU.
         """
+        if self.name == "RTX2060":
+            return _get_rtx2060_target()
         if self.name == "A100":
             return _get_a100_target()
         if self.name == "A10":
@@ -1209,14 +1265,16 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         Info instance for the specified compute capability.
     """
     constrained[
-        compute_capability in (0, 80, 86, 87, 89, 90, 94, 100, 120),
+        compute_capability in (0, 75, 80, 86, 87, 89, 90, 94, 100, 120),
         "invalid compute capability",
     ]()
 
     @parameter
     if compute_capability == 0:
         return NoGPU
-    if compute_capability == 80:
+    if compute_capability == 75:
+        return RTX2060
+    elif compute_capability == 80:
         return A100
     elif compute_capability == 86:
         return A10
@@ -1251,6 +1309,8 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
     """
     if compute_capability == 0:
         return _get_info_from_compute_capability[0]()
+    if compute_capability == 75:
+        return _get_info_from_compute_capability[75]()
     if compute_capability == 80:
         return _get_info_from_compute_capability[80]()
     if compute_capability == 86:
@@ -1291,6 +1351,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
         StaticString(target_arch)
         in (
             StaticString("cuda"),
+            StaticString("75"),
             StaticString("80"),
             StaticString("86"),
             StaticString("87"),
@@ -1312,7 +1373,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     ]()
 
     @parameter
-    if target_arch == "80":
+    if target_arch == "75":
+        return RTX2060
+    elif target_arch == "80":
         return A100
     elif target_arch == "86":
         return A10

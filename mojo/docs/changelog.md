@@ -31,6 +31,9 @@ what we publish.
 
 - The `CollectionElement` trait has been removed.
 
+- Added support for NVIDIA RTX 2060 GPUs, enabling Mojo programs to run
+  on a wider range of consumer-grade hardware.
+
 Changes to Python-Mojo interoperability:
 
 - `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
