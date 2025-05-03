@@ -38,6 +38,7 @@ from bit import count_leading_zeros, count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
+from algorithm import vectorize
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -1161,12 +1162,14 @@ fn iota[
         len: The length of the buffer to fill.
         offset: The value to fill at index 0.
     """
-    alias simd_width = simdwidthof[dtype]()
-    var vector_end = align_down(len, simd_width)
-    for i in range(0, vector_end, simd_width):
-        buff.store(i, iota[dtype, simd_width](i + offset))
-    for i in range(vector_end, len):
-        buff.store(i, i + offset)
+
+    @always_inline
+    @__copy_capture(offset, buff)
+    @parameter
+    fn fill[simd_width: Int](i: Int):
+        buff.store(i, iota[dtype, simd_width](offset + i))
+
+    vectorize[fill, simdwidthof[dtype]()](len)
 
 
 fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
