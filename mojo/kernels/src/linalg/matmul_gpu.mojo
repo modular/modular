@@ -107,6 +107,22 @@ alias tile_shapes_256X128X64 = _get_block_warp_tile_shape[256, 128, 64]()
 alias tile_shapes_256X256X64 = _get_block_warp_tile_shape[256, 256, 64]()
 
 
+fn _find_largest_bn_for_sm90_matmul[N: Int]() -> Int:
+    @parameter
+    if N % 8 != 0:
+        return -1
+
+    fn _get_max_bn() capturing -> Int:
+        var BN = 256
+        while BN >= 8:
+            if N % BN == 0:
+                return BN
+            BN -= 8
+        return 8
+
+    return _get_max_bn()
+
+
 @always_inline
 fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
     # Load a register variable from global state space via non-coherent cache.
@@ -345,9 +361,12 @@ fn _matmul_gpu[
 
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
+    var h100_matmul_cond = (
+        ctx.device_info is H100 and n % 8 == 0 and a_type is DType.bfloat16
+    )
     var multi_gemm_cond = (
         (m > 1 or (has_amd_gpu_accelerator() and transpose_b == False))
-        and n % 128 == 0
+        and (n % 128 == 0 or h100_matmul_cond)
         and k % 32 == 0
         and k >= 128
     )
@@ -986,34 +1005,69 @@ fn _matmul_gpu[
                         )
                         return
 
-                alias default_bf16_config = MatmulConfig[
-                    a_type,
-                    b_type,
-                    c_type,
-                    transpose_b,
-                    mma_shape = Index(64, 256, 16),
-                ](
-                    block_tile_shape=Index(128, 256, 64),
-                    cluster_shape=Index(1, 1, 1),
-                    num_pipeline_stages=4,
-                    num_consumer=2,
-                    partitioned_multicast=False,
-                )
-                warp_specialize_gemm_with_multicasting[
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    config=default_bf16_config,
-                    schedule = MatmulSchedule.NONE,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
-                    ctx,
-                )
-                return
+                alias BN = _find_largest_bn_for_sm90_matmul[static_N]()
+                alias BK = 64
+
+                @parameter
+                if a_type is DType.bfloat16 and BN != -1 and static_K % BK == 0:
+                    if m <= 128:
+                        alias default_bf16_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, BN, 16),
+                        ](
+                            block_tile_shape=Index(64, BN, BK),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=1,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=default_bf16_config,
+                            schedule = MatmulSchedule.NONE,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+                    else:
+                        alias default_bf16_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, BN, 16),
+                        ](
+                            block_tile_shape=Index(128, BN, BK),
+                            cluster_shape=Index(1, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=default_bf16_config,
+                            schedule = MatmulSchedule.NONE,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
 
             alias use_A100_kenrels = ctx.device_info is A100 or (
                 ctx.device_info is H100 and use_A100_kernels_on_H100 != 0
@@ -2204,53 +2258,51 @@ fn _matmul_gpu[
                         )
                         return
 
-            @parameter
-            if a_type != DType.float8_e4m3fn:
-                var best_config = select_config[
-                    a_type, b_type, c_type, transpose_b
-                ](m, n, k, ctx)
+            var best_config = select_config[
+                a_type, b_type, c_type, transpose_b
+            ](m, n, k, ctx)
 
-                if best_config == kernels.ampere_256x64_4:
-                    alias config = kernels.ampere_256x64_4
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config=config,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        best_config,
-                        ctx,
-                    )
+            if best_config == kernels.ampere_256x64_4:
+                alias config = kernels.ampere_256x64_4
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    best_config,
+                    ctx,
+                )
 
-                elif best_config == kernels.ampere_256x128_3:
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config = kernels.ampere_256x128_3,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        best_config,
-                        ctx,
-                    )
+            elif best_config == kernels.ampere_256x128_3:
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = kernels.ampere_256x128_3,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    best_config,
+                    ctx,
+                )
 
-                else:  # Default kernel 128x128_4
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config = kernels.ampere_128x128_4,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        best_config,
-                        ctx,
-                    )
+            else:  # Default kernel 128x128_4
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = kernels.ampere_128x128_4,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    best_config,
+                    ctx,
+                )
 
-                return
+            return
 
     @parameter
     if not a_type.is_float8():
