@@ -34,6 +34,7 @@ from sys import (
     simdwidthof,
     sizeof,
 )
+from algorithm import vectorize
 
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -176,13 +177,13 @@ fn _memcpy_impl(
     """
 
     @parameter
+    fn copy[width: Int](offset: Int):
+        dest_data.store(offset, src_data.load[width=width](offset))
+
+    @parameter
     if is_gpu():
-        alias chunk_size = simdbitwidth()
-        var vector_end = align_down(n, chunk_size)
-        for i in range(0, vector_end, chunk_size):
-            dest_data.store(i, src_data.load[width=chunk_size](i))
-        for i in range(vector_end, n):
-            dest_data.store(i, src_data.load(i))
+        vectorize[copy, simdbitwidth()](n)
+
         return
 
     if n < 5:
@@ -237,12 +238,7 @@ fn _memcpy_impl(
     #    return
 
     # Copy in 32-byte chunks.
-    alias chunk_size = 32
-    var vector_end = align_down(n, chunk_size)
-    for i in range(0, vector_end, chunk_size):
-        dest_data.store(i, src_data.load[width=chunk_size](i))
-    for i in range(vector_end, n):
-        dest_data.store(i, src_data.load(i))
+    vectorize[copy, 32](n)
 
 
 @always_inline
@@ -294,14 +290,12 @@ fn _memset_impl[
     value: Byte,
     count: Int,
 ):
+    @parameter
+    fn fill[width: Int](offset: Int):
+        ptr.store(offset, SIMD[DType.uint8, width](value))
+
     alias simd_width = simdwidthof[Byte]()
-    var vector_end = align_down(count, simd_width)
-
-    for i in range(0, vector_end, simd_width):
-        ptr.store(i, SIMD[DType.uint8, simd_width](value))
-
-    for i in range(vector_end, count):
-        ptr.store(i, value)
+    vectorize[fill, simd_width](count)
 
 
 @always_inline
@@ -362,20 +356,16 @@ fn memset_zero[
     Args:
         ptr: UnsafePointer to the beginning of the memory block to fill.
     """
-    alias simd_width = simdwidthof[dtype]()
-    alias vector_end = align_down(count, simd_width)
 
     @parameter
     if count > 128:
         return memset_zero(ptr, count)
 
     @parameter
-    for i in range(0, vector_end, simd_width):
-        ptr.store(i, SIMD[dtype, simd_width](0))
+    fn fill[width: Int](offset: Int):
+        ptr.store(offset, SIMD[dtype, width](0))
 
-    @parameter
-    for i in range(vector_end, count):
-        ptr.store(i, 0)
+    vectorize[fill, simdwidthof[dtype](), size=count]()
 
 
 # ===-----------------------------------------------------------------------===#
