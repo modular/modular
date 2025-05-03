@@ -93,8 +93,8 @@ The `is_mutable` parameter here is an [infer-only
 parameter](/mojo/manual/parameters/#infer-only-parameters). The `origin` value
 is often inferred, as well. For example, the following code creates a
 [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to an existing value, but
-doesn't need to specify an origin—the `origin` is inferred from the variable
-passed in to the `address_of()` method.
+doesn't need to specify an origin—the `origin` is inferred from the existing
+value.
 
 ```mojo
 from memory import Pointer
