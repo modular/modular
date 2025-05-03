@@ -1020,7 +1020,7 @@ struct UnsafePointer[
         """Free the memory referenced by the pointer."""
         _free(self)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn bitcast[
         T: AnyType = Self.type,
     ](self) -> UnsafePointer[
@@ -1045,7 +1045,7 @@ struct UnsafePointer[
             ]._mlir_type,
         ](self.address)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn static_alignment_cast[
         alignment: Int = Self.alignment
     ](self) -> UnsafePointer[
@@ -1080,7 +1080,7 @@ struct UnsafePointer[
             ]._mlir_type,
         ](self.address)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn origin_cast[
         mut: Bool = Self.mut,
         origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
@@ -1107,7 +1107,7 @@ struct UnsafePointer[
             ]._mlir_type,
         ](self.address)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn address_space_cast[
         address_space: AddressSpace = Self.address_space,
     ](self) -> UnsafePointer[
