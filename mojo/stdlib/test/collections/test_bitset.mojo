@@ -260,6 +260,17 @@ def test_bitset_large_indices():
     )
 
 
+def test_bitset_simd_init():
+    var bs1 = BitSet(SIMD[DType.bool, 128](True))
+    assert_equal(bs1.count(), 128, msg="BitSet count should be 128")
+
+    var bs2 = BitSet(SIMD[DType.bool, 128](False))
+    assert_equal(bs2.count(), 0, msg="BitSet count should be 0")
+
+    var bs3 = BitSet(SIMD[DType.bool, 4](True, False, True, False))
+    assert_equal(bs3.count(), 2, msg="BitSet count should be 2")
+
+
 def main():
     test_bitset_init()
     test_bitset_set_test_clear()
@@ -271,3 +282,4 @@ def main():
     test_bitset_consecutive_operations()
     test_bitset_word_boundaries()
     test_bitset_large_indices()
+    test_bitset_simd_init()

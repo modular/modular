@@ -87,6 +87,20 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         self._words = __type_of(self._words)(0)
         self._size_bits = 0
 
+    fn __init__(out self, init: SIMD[DType.bool, size]):
+        """Initializes a BitSet with the given SIMD vector of booleans.
+
+        Args:
+            init: A SIMD vector of booleans to initialize the bitset with.
+        """
+        self._words = __type_of(self._words)(0)
+        self._size_bits = 0
+
+        @parameter
+        for i in range(size):
+            if init[i]:
+                self.set(i)
+
     # --------------------------------------------------------------------- #
     # Capacity queries
     # --------------------------------------------------------------------- #
