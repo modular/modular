@@ -11,9 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import abc
+import functools
 import logging
 import time
+from collections.abc import AsyncGenerator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Union, get_args
 
@@ -218,10 +223,38 @@ class MetricClient(abc.ABC):
     ) -> None:
         pass
 
+    @abc.abstractmethod
+    def cross_process_factory(
+        self,
+    ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Get a copier for use of this client in another process.
+
+        To use a MetricClient across processes, call cross_process_factory in
+        the parent process and pass the result across the process boundary.
+        Then in the child process, use an 'async with' to get a semantically
+        identical MetricClient that can be used.
+
+        This is needed because some metric clients require reinitialization on
+        the other side of a process boundary before they can be safely used.
+        """
+        ...
+
+
+@asynccontextmanager
+async def _trivially_picklable_xprocess_factory(
+    client: MetricClient,
+) -> AsyncGenerator[MetricClient, None]:
+    yield client
+
 
 class NoopClient(MetricClient):
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
         pass
+
+    def cross_process_factory(
+        self,
+    ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class SyncClient(MetricClient):
@@ -232,6 +265,11 @@ class SyncClient(MetricClient):
         if level > self.level:
             return
         m.commit()
+
+    def cross_process_factory(
+        self,
+    ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class _AsyncMetrics:

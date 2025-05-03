@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import functools
 import logging
 import multiprocessing
 import multiprocessing.queues
 import queue
 import threading
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
@@ -59,6 +60,9 @@ class ProcessMetricClient(MetricClient):
         self.queue = q
         # buffer detailed metrics observations until it is safe to flush
         self.detailed_buffer: list[MaxMeasurement] = []
+        # Important: If any other items of settings are pulled out here in
+        # __init__, please make sure they are put back into the reconstructed
+        # Settings object inside of cross_process_factory.
         self.metric_detail_level = settings.metric_level
 
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
@@ -87,6 +91,12 @@ class ProcessMetricClient(MetricClient):
             if self.detailed_buffer:
                 self.detailed_buffer.clear()
 
+    def cross_process_factory(
+        self,
+    ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        settings = Settings(metric_level=self.metric_detail_level)
+        return functools.partial(_reconstruct_client, settings, self.queue)
+
     def __del__(self):
         try:
             if self.detailed_buffer:
@@ -97,6 +107,13 @@ class ProcessMetricClient(MetricClient):
         finally:
             if self.detailed_buffer:
                 self.detailed_buffer.clear()
+
+
+@asynccontextmanager
+async def _reconstruct_client(
+    settings: Settings, q: multiprocessing.queues.Queue
+) -> AsyncGenerator[MetricClient, None]:
+    yield ProcessMetricClient(settings, q)
 
 
 @dataclass
