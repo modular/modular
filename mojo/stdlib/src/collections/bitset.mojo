@@ -76,7 +76,6 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
 
     alias _words_size = ceildiv(size, _WORD_BITS)
     var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
-    var _size_bits: Int  # Highest observed bit index + 1.
 
     # --------------------------------------------------------------------- #
     # Constructors
@@ -85,7 +84,6 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
         self._words = __type_of(self._words)(0)
-        self._size_bits = 0
 
     fn __init__(out self, init: SIMD[DType.bool, size]):
         """Initializes a BitSet with the given SIMD vector of booleans.
@@ -94,7 +92,6 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
             init: A SIMD vector of booleans to initialize the bitset with.
         """
         self._words = __type_of(self._words)(0)
-        self._size_bits = 0
 
         @parameter
         for i in range(size):
@@ -107,15 +104,23 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
 
     @always_inline
     fn __len__(self) -> Int:
-        """Returns the logical size of the bitset.
+        """Counts the total number of bits that are set to 1 in the bitset.
 
-        This is defined as the index of the highest bit ever set plus one.
-        Returns 0 if the bitset is empty or has never had any bits set.
+        Uses the efficient `pop_count` intrinsic for each underlying word.
+        The complexity is proportional to the number of words used by the
+        bitset's capacity (`_words_size`), not the logical size (`len`).
 
         Returns:
-            The logical size (highest set bit index + 1).
+            The total count of set bits (population count).
         """
-        return self._size_bits
+        var total: UInt = 0
+
+        @parameter
+        for i in range(self._words_size):
+            # TODO (MSTDL-1485): remove the cast to Int
+            total += UInt(Int(pop_count(self._words[i])))
+
+        return total
 
     @always_inline
     fn is_empty(self) -> Bool:
@@ -166,8 +171,6 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         )
         var w = _word_index(idx)
         self._words[w] |= _bit_mask(idx)
-        if idx + 1 > len(self):
-            self._size_bits = idx + 1
 
     @always_inline
     fn clear(mut self, idx: UInt):
@@ -214,8 +217,6 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         var w = _word_index(idx)
         var mask = _bit_mask(idx)
         self._words[w] ^= mask
-        if (self._words[w] & mask) != 0 and idx + 1 > len(self):
-            self._size_bits = idx + 1
 
     @always_inline
     fn test(self, idx: UInt) -> Bool:
@@ -250,25 +251,6 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         """
         self = Self()
 
-    fn count(self) -> UInt:
-        """Counts the total number of bits that are set to 1 in the bitset.
-
-        Uses the efficient `pop_count` intrinsic for each underlying word.
-        The complexity is proportional to the number of words used by the
-        bitset's capacity (`_words_size`), not the logical size (`len`).
-
-        Returns:
-            The total count of set bits (population count).
-        """
-        var total: UInt = 0
-
-        @parameter
-        for i in range(self._words_size):
-            # TODO (MSTDL-1485): remove the cast to Int
-            total += UInt(Int(pop_count(self._words[i])))
-
-        return total
-
     # --------------------------------------------------------------------- #
     # Representation helpers
     # --------------------------------------------------------------------- #
@@ -289,7 +271,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         """
         writer.write("{")
         var first = True
-        for idx in range(len(self)):
+        for idx in range(size):
             if not self.test(idx):
                 continue
             if not first:

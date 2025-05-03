@@ -33,7 +33,7 @@ def test_bitset_set_test_clear():
     # Test setting bits
     bs.set(42)
     assert_equal(
-        len(bs), 43, msg="BitSet length should be 43 after setting bit 42"
+        len(bs), 1, msg="BitSet length should be 43 after setting bit 42"
     )
     assert_true(bs.test(42), msg="Bit 42 should be set")
     assert_false(bs.test(41), msg="Bit 41 should not be set")
@@ -42,7 +42,7 @@ def test_bitset_set_test_clear():
     bs.set(10)
     bs.set(100)
     assert_equal(
-        len(bs), 101, msg="BitSet length should be 101 after setting bit 100"
+        len(bs), 3, msg="BitSet length should be 101 after setting bit 100"
     )
     assert_true(bs.test(10), msg="Bit 10 should be set")
     assert_true(bs.test(42), msg="Bit 42 should still be set")
@@ -79,34 +79,32 @@ def test_bitset_toggle():
     assert_true(bs.test(10), msg="Bit 10 should be set")
     assert_true(bs.test(20), msg="Bit 20 should be set")
     assert_true(bs.test(30), msg="Bit 30 should be set")
-    assert_equal(len(bs), 31, msg="BitSet length should be 31")
+    assert_equal(len(bs), 3, msg="BitSet length should be 31")
 
 
 def test_bitset_count():
     var bs = BitSet[256]()
 
     # Empty set should have count 0
-    assert_equal(bs.count(), 0, msg="Empty BitSet should have count 0")
+    assert_equal(len(bs), 0, msg="Empty BitSet should have count 0")
 
     # Set some bits and check count
     bs.set(1)
     bs.set(10)
     bs.set(100)
     assert_equal(
-        bs.count(), 3, msg="BitSet should have count 3 after setting 3 bits"
+        len(bs), 3, msg="BitSet should have count 3 after setting 3 bits"
     )
 
     # Clear a bit and check count
     bs.clear(10)
     assert_equal(
-        bs.count(), 2, msg="BitSet should have count 2 after clearing 1 bit"
+        len(bs), 2, msg="BitSet should have count 2 after clearing 1 bit"
     )
 
     # Clear all and check count
     bs.clear_all()
-    assert_equal(
-        bs.count(), 0, msg="BitSet should have count 0 after clear_all"
-    )
+    assert_equal(len(bs), 0, msg="BitSet should have count 0 after clear_all")
 
 
 def test_bitset_bounds():
@@ -156,7 +154,7 @@ def test_bitset_edge_cases():
         bs_min.test(0), msg="Bit 0 should be set in minimum size BitSet"
     )
     assert_equal(
-        bs_min.count(),
+        len(bs_min),
         1,
         msg="Count should be 1 for minimum size BitSet with one bit set",
     )
@@ -172,7 +170,7 @@ def test_bitset_edge_cases():
         bs_multi.test(64), msg="Bit 64 should be set (first bit in second word)"
     )
     assert_equal(
-        bs_multi.count(), 2, msg="Count should be 2 for bits in different words"
+        len(bs_multi), 2, msg="Count should be 2 for bits in different words"
     )
 
 
@@ -197,11 +195,11 @@ def test_bitset_consecutive_operations():
     # Set multiple bits and check count
     for i in range(0, 10):
         bs.set(i)
-    assert_equal(bs.count(), 10, msg="Count should be 10 after setting 10 bits")
+    assert_equal(len(bs), 10, msg="Count should be 10 after setting 10 bits")
 
     # Clear all and verify
     bs.clear_all()
-    assert_equal(bs.count(), 0, msg="Count should be 0 after clear_all")
+    assert_equal(len(bs), 0, msg="Count should be 0 after clear_all")
     assert_true(bs.is_empty(), msg="BitSet should be empty after clear_all")
 
 
@@ -231,7 +229,7 @@ def test_bitset_word_boundaries():
         bs.set(i)
 
     assert_equal(
-        bs.count(),
+        len(bs),
         10,
         msg="Count should be 10 after setting bits across word boundary",
     )
@@ -247,7 +245,7 @@ def test_bitset_large_indices():
     assert_true(bs.test(200), msg="Bit 200 should be set")
     assert_true(bs.test(250), msg="Bit 250 should be set")
     assert_equal(
-        bs.count(), 2, msg="Count should be 2 after setting 2 high-index bits"
+        len(bs), 2, msg="Count should be 2 after setting 2 high-index bits"
     )
 
     # Test string representation with large indices
@@ -262,13 +260,42 @@ def test_bitset_large_indices():
 
 def test_bitset_simd_init():
     var bs1 = BitSet(SIMD[DType.bool, 128](True))
-    assert_equal(bs1.count(), 128, msg="BitSet count should be 128")
+    assert_equal(len(bs1), 128, msg="BitSet count should be 128")
 
     var bs2 = BitSet(SIMD[DType.bool, 128](False))
-    assert_equal(bs2.count(), 0, msg="BitSet count should be 0")
+    assert_equal(len(bs2), 0, msg="BitSet count should be 0")
 
     var bs3 = BitSet(SIMD[DType.bool, 4](True, False, True, False))
-    assert_equal(bs3.count(), 2, msg="BitSet count should be 2")
+    assert_equal(len(bs3), 2, msg="BitSet count should be 2")
+
+
+def test_bitset_len():
+    # 1. Empty BitSet
+    var bs = BitSet[128]()
+    assert_equal(len(bs), 0, msg="Len: Empty BitSet should be 0")
+
+    # 2. Single insertion
+    bs.set(7)
+    assert_equal(len(bs), 1, msg="Len: After setting one bit")
+
+    # 3. Insertion across a word boundary (index 64)
+    bs.set(64)
+    assert_equal(len(bs), 2, msg="Len: Two bits set across word boundary")
+
+    # 4. Toggle a set bit off
+    bs.toggle(7)
+    assert_equal(len(bs), 1, msg="Len: After toggling a bit off")
+
+    # 5. Clear the remaining bit
+    bs.clear(64)
+    assert_equal(len(bs), 0, msg="Len: After clearing all bits")
+
+    # 6. Bulk pattern insertion (every 3rd index)
+    for i in range(128):
+        if i % 3 == 0:
+            bs.set(i)
+    expected = 43  # floor(128 / 3) + 1
+    assert_equal(len(bs), expected, msg="Len: Pattern insertion")
 
 
 def main():
@@ -283,3 +310,4 @@ def main():
     test_bitset_word_boundaries()
     test_bitset_large_indices()
     test_bitset_simd_init()
+    test_bitset_len()
