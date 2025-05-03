@@ -2341,7 +2341,7 @@ fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
         The length of the null terminated string without the null terminator.
     """
     var len = 0
-    while ptr.load(len):
+    while ptr[len]:
         len += 1
     return len
 
