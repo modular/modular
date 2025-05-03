@@ -32,6 +32,7 @@ from testing import assert_almost_equal
 
 from utils import Index, IndexList
 
+
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
@@ -304,11 +305,19 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             ](tg_seq_lens, 1500, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
+    print("CE", 1, DType.bfloat16)
     var short_ce_seq_len = List[Int](2)
     var short_ce_cache_size = List[Int](0)
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
     ](short_ce_seq_len, 110, short_ce_cache_size, 2, 1, ctx)
+
+    print("TG", 2, DType.bfloat16)
+    tg_seq_lens = List[Int](1, 1)
+    tg_variable_cache_lens = List[Int](1024, 11)
+    execute_ragged_flash_attention[
+        llama_num_q_heads, DType.bfloat16, kv_params_llama3
+    ](tg_seq_lens, 1500, tg_variable_cache_lens, 2, 0, ctx)
 
 
 def main():

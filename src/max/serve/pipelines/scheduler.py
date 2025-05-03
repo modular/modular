@@ -30,9 +30,9 @@ from max.pipelines.core import (
     TokenGenerator,
 )
 from max.profiler import Trace, traced
-from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
+from max.serve.scheduler.zmq_queue import ZmqQueue
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -93,12 +93,12 @@ class SchedulerOutput:
         )
 
 
-class RequestDeque(MaxQueue):
+class RequestDeque:
     """A wrapper around the multiprocessing queue that allows us to add
     requests to the front of the queue.
     """
 
-    def __init__(self, queue: MaxQueue):
+    def __init__(self, queue: ZmqQueue):
         self.queue = queue
         self.preempted: list[tuple[str, InputContext]] = []
 
@@ -149,30 +149,34 @@ class Scheduler(ABC):
 class TokenGenerationSchedulerConfig:
     """Scheduler configuration."""
 
-    # The maximum number of requests that can be in the token generation batch.
     max_batch_size_tg: int
-    # The number of tokens to generate for each request in the token generation iteration.
+    """The maximum number of requests that can be in the token generation batch."""
+
     max_forward_steps_tg: int
-    # The target total number of tokens to generate in the token generation batch.
+    """The number of tokens to generate for each request in the token generation iteration."""
+
     target_tokens_per_batch_tg: Optional[int]
+    """The target total number of tokens to generate in the token generation batch."""
 
-    # The maximum number of requests that can be in the context encoding batch.
     max_batch_size_ce: int
-    # The number of tokens to encode for each request in the context encoding iteration.
+    """The maximum number of requests that can be in the context encoding batch."""
+
     max_forward_steps_ce: int
-    # The target total number of tokens to encode in the context encoding batch.
+    """The number of tokens to encode for each request in the context encoding iteration."""
+
     target_tokens_per_batch_ce: Optional[int]
+    """The target total number of tokens to encode in the context encoding batch."""
 
-    # The maximum amount of time to wait before creating a context encoding batch.
     batch_timeout: Optional[float]
+    """The maximum amount of time to wait before creating a context encoding batch."""
 
-    # Enables chunked prefill, where the scheduler splits requests into chunks to
-    # ensure each batch contains exactly `target_tokens_per_batch_ce` tokens.
     enable_chunked_prefill: bool = True
+    """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
+    each batch contains exactly `target_tokens_per_batch_ce` tokens."""
 
-    # When enabled, prioritizes token generation by batching it with context
-    # encoding requests. Requires chunked prefill.
     enable_in_flight_batching: bool = False
+    """When enabled, prioritizes token generation by batching it with context encoding requests.
+    Requires chunked prefill."""
 
     def __post_init__(self) -> None:
         if (
@@ -199,7 +203,7 @@ class TokenGenerationScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
-        queues: Mapping[str, MaxQueue],
+        queues: Mapping[str, ZmqQueue],
         paged_manager: Optional[PagedKVCacheManager] = None,
     ):
         self.scheduler_config = scheduler_config
@@ -893,7 +897,7 @@ class EmbeddingsScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: EmbeddingsSchedulerConfig,
         pipeline: EmbeddingsGenerator,
-        queues: Mapping[str, MaxQueue],
+        queues: Mapping[str, ZmqQueue],
     ):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

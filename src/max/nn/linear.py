@@ -36,29 +36,82 @@ from max.graph.weights import Weights
 
 from .clamp import clamp
 from .comm import Allreduce
-from .kernels import quantize_static_scaled_float8, swish_glu
+from .kernels import (
+    matmul_static_scaled_float8,
+    quantize_static_scaled_float8,
+    swish_glu,
+)
 from .layer import Layer, Module
 
 
-class Float8Scaling(Enum):
-    """Float8 scaling spec"""
+class Float8ScaleGranularity(Enum):
+    """Specifies the granularity of the quantization scale factor.
 
-    TENSOR = 1
-    ROW_WISE = 2
-    BLOCK = 3
-    DYNAMIC = 4
+    Determines whether a scale factor applies per-tensor, per-row (often for
+    weights), per-column, or per-block within a tensor.
+    """
+
+    TENSOR = "tensor"
+    ROWWISE = "rowwise"
+    COLWISE = "colwise"
+    BLOCK = "block"
+
+
+class Float8ScaleOrigin(Enum):
+    """Specifies whether the quantization scale is determined statically or dynamically.
+
+    STATIC scales are pre-computed and loaded with the model weights.
+    DYNAMIC scales are computed at runtime based on the input data.
+    """
+
+    STATIC = "static"
+    DYNAMIC = "dynamic"
+
+
+@dataclass
+class Float8WeightScaleSpec:
+    """Specifies how weights are scaled for float8 quantization."""
+
+    granularity: Float8ScaleGranularity
+    """The granularity of the weight scale factor application."""
+
+    dtype: DType
+    """The data type of the weight scale factor(s)."""
+
+
+@dataclass
+class Float8InputScaleSpec:
+    """Specifies how input activations are scaled for float8 quantization."""
+
+    granularity: Float8ScaleGranularity
+    """The granularity of the input scale factor application."""
+
+    origin: Float8ScaleOrigin
+    """The origin (static or dynamic) of the input scale factor."""
+
+    dtype: DType
+    """The data type of the input scale factor(s). Must be provided if
+    :obj:`origin` is :obj:`Float8ScaleOrigin.STATIC`."""
+
+    activation_scale_ub: float | None = None
+    """An optional upper bound for dynamic activation scaling."""
 
 
 @dataclass
 class Float8Config:
-    """Configuration for float8 quantization"""
+    """Configures float8 quantization settings for a layer or model section."""
+
+    input_scale: Float8InputScaleSpec
+    """Specification for input activation scaling."""
+
+    weight_scale: Float8WeightScaleSpec
+    """Specification for weight scaling."""
 
     attn_in_float8: bool
-    input_scaling: Float8Scaling
-    input_scale_dtype: DType
-    weight_scaling: Float8Scaling
-    weight_scale_dtype: DType
-    embedding_output_dtype: DType | None
+    """Whether attention projection inputs are in float8."""
+
+    embedding_output_dtype: DType | None = None
+    """The data type of the output from the embedding layer."""
 
 
 class Linear(Module):
@@ -136,6 +189,7 @@ class Linear(Module):
 
         self.device = device
         self.clip_weight = clip_weight
+        self.float8_config = float8_config
 
         self.weight = Weight(
             name=f"{name}.weight" if name else "weight",
@@ -160,18 +214,24 @@ class Linear(Module):
                 )
 
         if float8_config:
-            if float8_config.input_scaling == Float8Scaling.TENSOR:
+            if (
+                float8_config.input_scale.granularity
+                == Float8ScaleGranularity.TENSOR
+            ):
                 self.input_scale = Weight(
                     name=f"{name}.input_scale" if name else "input_scale",
-                    dtype=float8_config.input_scale_dtype,
+                    dtype=float8_config.input_scale.dtype,
                     shape=[1],
                     device=device,
                     quantization_encoding=quantization_encoding,
                 )
-            if float8_config.weight_scaling == Float8Scaling.TENSOR:
+            if (
+                float8_config.weight_scale.granularity
+                == Float8ScaleGranularity.TENSOR
+            ):
                 self.weight_scale = Weight(
                     name=f"{name}.weight_scale" if name else "weight_scale",
-                    dtype=float8_config.weight_scale_dtype,
+                    dtype=float8_config.weight_scale.dtype,
                     shape=[1],
                     device=device,
                     quantization_encoding=quantization_encoding,
@@ -203,25 +263,27 @@ class Linear(Module):
                 x,
                 weight,
             )
-        else:
-            if self.input_scale is not None and x.dtype != weight.dtype:
-                # Quantize the input.
-                x = quantize_static_scaled_float8(x, self.input_scale)
-            res = x @ weight.T
-        # TODO: This should be done in the matmul epilog in float32.
-        # Instead, it is done here and will upcast res to float32
-        if self.input_scale is not None:
-            input_scale: TensorValue = self.input_scale
-            if self.device:
-                input_scale = input_scale.to(self.device)
-            res *= input_scale
-        if self.weight_scale is not None:
+        elif self.float8_config:
+            assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
             if self.device:
                 weight_scale = weight_scale.to(self.device)
-            res *= weight_scale
-        if self.input_scale is not None or self.weight_scale is not None:
-            res.cast(weight.dtype)
+
+            if self.input_scale is not None:
+                x = quantize_static_scaled_float8(x, self.input_scale)
+
+                input_scale: TensorValue = self.input_scale
+                if self.device:
+                    input_scale = input_scale.to(self.device)
+                res = matmul_static_scaled_float8(
+                    x, weight, input_scale, weight_scale
+                )
+            else:
+                # Dynamic input matmul
+                raise NotImplementedError("TODO: support dynamic input scaling")
+        else:
+            res = x @ weight.T
+
         if self.bias is not None:
             res += self.bias
         return res

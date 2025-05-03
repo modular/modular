@@ -43,9 +43,9 @@ from max.serve.pipelines.scheduler import (
     TokenGenerationSchedulerConfig,
 )
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler.queues import EngineQueue
+from max.serve.scheduler.zmq_queue import ZmqQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
@@ -68,7 +68,7 @@ def _model_worker_process_fn(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     batch_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, MaxQueue],
+    queues: Mapping[str, ZmqQueue],
     settings: Settings,
     metric_client: MetricClient,
 ) -> None:
@@ -239,7 +239,7 @@ async def model_worker_run_v3(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, MaxQueue],
+    queues: Mapping[str, ZmqQueue],
     settings: Settings,
     metric_client: MetricClient,
 ):
@@ -280,7 +280,7 @@ def _create_token_generation_scheduler(
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, MaxQueue],
+    queues: Mapping[str, ZmqQueue],
 ) -> TokenGenerationScheduler:
     config = pipeline_config
     max_batch_size_tg = config.token_generation.size
@@ -345,7 +345,7 @@ def _create_embeddings_scheduler(
     pipeline: EmbeddingsGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, MaxQueue],
+    queues: Mapping[str, ZmqQueue],
 ) -> EmbeddingsScheduler:
     config = pipeline_config
     max_batch_size = config.token_generation.size

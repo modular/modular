@@ -53,6 +53,7 @@ from utils.numerics import get_accum_type
 
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
+from gpu.mma import mma as mma_simd
 
 
 struct MMATileBuffers[
@@ -270,11 +271,44 @@ struct AMD_MMA[
                 k_group, 0, k, elements_per_thread
             ]()
 
-            Self.mma_op.mma(
+            Self.mma_alt(
                 a_reg_tile.vectorize[1, elements_per_thread](),
                 b_reg_tile.vectorize[1, elements_per_thread](),
                 c_reg_tile.vectorize[1, 4](),
             )
+
+    @staticmethod
+    @always_inline
+    fn mma_alt(
+        a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+    ):
+        # TODO: Hack for hackathon, merge this with
+        # TODO: Assume that fragments are all vectorized layout tensor with
+        # dims num_vectors x 1. Consider using TensorCore to allocate fragments
+        # so the caller don't explicitly maintain the shape.
+        alias num_m_mmas = a_frag.shape[0]()
+        alias num_n_mmas = b_frag.shape[0]()
+
+        constrained[
+            c_frag.shape[0]() == num_m_mmas * num_n_mmas,
+            "Fragments size mismatch. Expected c_frag shape[0] to be num_m_mmas"
+            " * num_n_mmas = "
+            + String(num_m_mmas * num_n_mmas)
+            + ", got "
+            + String(c_frag.shape[0]()),
+        ]()
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                mma_simd(
+                    c_frag[m_mma * num_n_mmas + n_mma, 0],
+                    a_frag[m_mma, 0],
+                    b_frag[n_mma, 0],
+                    c_frag[m_mma * num_n_mmas + n_mma, 0],
+                )
 
 
 @__llvm_metadata(
@@ -557,7 +591,7 @@ fn gemm_kernel[
         for k_group in range(1, k_tiles_count):
             mma.load_tiles[k_group](a_tiles, b_tiles)
 
-        mma.mma[0](a_tiles, b_tiles, c_reg_tile)
+        mma.mma[0](b_tiles, a_tiles, c_reg_tile)
 
         barrier()
 
@@ -566,7 +600,7 @@ fn gemm_kernel[
 
         @parameter
         for k_group in range(1, k_tiles_count):
-            mma.mma[k_group](a_tiles, b_tiles, c_reg_tile)
+            mma.mma[k_group](b_tiles, a_tiles, c_reg_tile)
 
         barrier()
 
@@ -586,7 +620,7 @@ fn gemm_kernel[
 
     @parameter
     for k_group in range(0, k_tiles_count):
-        mma.mma[k_group](a_tiles, b_tiles, c_reg_tile)
+        mma.mma[k_group](b_tiles, a_tiles, c_reg_tile)
 
     amd_schedule_barrier()
 
@@ -598,7 +632,7 @@ fn gemm_kernel[
 
     @parameter
     for k_group in range(0, k_tiles_count):
-        mma.mma[k_group](a_tiles, b_tiles, c_reg_tile)
+        mma.mma[k_group](b_tiles, a_tiles, c_reg_tile)
 
     amd_schedule_barrier()
 
@@ -609,7 +643,7 @@ fn gemm_kernel[
         warp_id // warps_n, warp_id % warps_n
     )
 
-    alias output_thread_layout = Layout.row_major(4, 16)
+    alias output_thread_layout = Layout.col_major(16, 4)
 
     @parameter
     if elementwise_lambda_fn:
@@ -620,7 +654,7 @@ fn gemm_kernel[
         ]()
         alias epilogue_fn = elementwise_lambda_fn.value()
 
-        var c_gmem_fragment = c_warp_tile.vectorize[4, 1]().distribute[
+        var c_gmem_fragment = c_warp_tile.vectorize[1, 4]().distribute[
             output_thread_layout
         ](lane_id())
         var c_reg_fragment = c_reg_tile.vectorize[1, 4]()
@@ -649,14 +683,11 @@ fn gemm_kernel[
                     alignment = alignof[SIMD[c_type, 4]](),
                 ]()
 
-                @parameter
-                for j in range(4):
-                    if m + j < m_dim:
-                        epilogue_fn[alignment = alignof[SIMD[c_type, 1]]()](
-                            (m + j, n), result_vec[j].cast[c_type]()
-                        )
+                epilogue_fn[alignment = alignof[SIMD[c_type, 4]]()](
+                    (m, n), result_vec.cast[c_type]()
+                )
     else:
         # Direct copy to global memory
         copy_local_to_dram[
             output_thread_layout, thread_scope = ThreadScope.WARP
-        ](c_warp_tile.vectorize[4, 1](), c_reg_tile.vectorize[1, 4](), c)
+        ](c_warp_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), c)

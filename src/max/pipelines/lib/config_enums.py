@@ -60,6 +60,14 @@ class PipelineEngine(str, Enum):
     HUGGINGFACE = "huggingface"
 
 
+class PipelineRole(str, Enum):
+    """Indicates whether the pipeline should do prefill and/or decode."""
+
+    PrefillAndDecode = "prefill_and_decode"
+    PrefillOnly = "prefill_only"
+    DecodeOnly = "decode_only"
+
+
 class SupportedEncoding(str, Enum):
     """All possible encodings which may be supported by a particular model."""
 

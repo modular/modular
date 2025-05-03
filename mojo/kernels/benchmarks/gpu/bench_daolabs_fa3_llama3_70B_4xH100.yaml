@@ -1,0 +1,39 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_daolabs_fa3_llama3_70B_4xH100
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_daolabs_fa3.mojo
+
+params:
+
+# llama3.3 70B shapes at TP=4
+# token gen
+- $seq_len: 1
+  $cache_len: [8192, 16384]
+  $batch_size: 1
+  num_q_heads: 16
+  num_kv_heads: 2
+  head_dim: 128
+  metadata:
+    MODEL: llama3.3
+
+
+# context encoding
+- $seq_len: [8192, 16384]
+  $cache_len: 0
+  $batch_size: 1
+  num_q_heads: 16
+  num_kv_heads: 2
+  head_dim: 128
+  metadata:
+    MODEL: llama3.3
