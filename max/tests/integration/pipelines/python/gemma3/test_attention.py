@@ -75,6 +75,7 @@ def _causal_attention_mask(seq_len: int) -> torch.Tensor:
     return attention_mask
 
 
+@torch.no_grad()
 def generate_torch_outputs(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
@@ -186,7 +187,7 @@ def generate_max_outputs(
             huggingface_config=text_config
         ),
         devices=[device],
-        available_cache_memory=10 * 1024 * 1024,
+        available_cache_memory=30 * 1024 * 1024,
         page_size=kv_cache_config.kv_cache_page_size,
         session=session,
     )
@@ -244,15 +245,9 @@ def generate_max_outputs(
     seq_id = 0
     kv_manager.external_claim(seq_ids=[seq_id])
     batch = [create_text_context(seq_id, np.empty(input_seq_len))]
-    ctx = batch[0]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(batch)[0]
     )
-
-    k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
-    print("---- before ----")
-    print(f"k cache has shape {k_cache.shape}")
-    print(f"k cache has contents {k_cache}")
 
     cache_positions_input = np.arange(input_seq_len, dtype=np.uint32)
     output = compiled.execute(
@@ -267,16 +262,9 @@ def generate_max_outputs(
         is_cache_empty_buf,
     )[0]
 
-    ctx.update(999)  # this is needed to bump the ctx.start_idx / seq_len
-    k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
-    print("---- after ----")
-    print(f"k cache has shape {k_cache.shape}")
-    print(f"k cache has contents {k_cache}")
-
     return output
 
 
-@pytest.mark.skip(reason="Accuracy debugging in progress.")
 def test_attention(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
