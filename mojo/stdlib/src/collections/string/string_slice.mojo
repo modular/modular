@@ -860,7 +860,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var cpython = Python().cpython()
         self = cpython.PyUnicode_AsUTF8AndSize(unsafe_borrowed_obj.py_object)
-        if Int(self.unsafe_ptr()) == 0:
+        if not self.unsafe_ptr():
             raise cpython.get_error()
 
     # ===------------------------------------------------------------------===#

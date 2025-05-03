@@ -549,6 +549,27 @@ struct Python:
 
         return PythonObject(py_str_ptr)
 
+    @staticmethod
+    fn int(obj: PythonObject) raises -> PythonObject:
+        """Try to convert a PythonObject to a Python `int` (i.e. arbitrary
+        precision integer).
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Raises:
+            If the conversion to `int` fails.
+
+        Returns:
+            A PythonObject representing the result of the conversion to `int`.
+        """
+        var cpython = Python().cpython()
+        var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
+        if py_obj_ptr.is_null():
+            raise cpython.get_error()
+
+        return PythonObject(py_obj_ptr)
+
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
     # ===-------------------------------------------------------------------===#
@@ -579,27 +600,6 @@ struct Python:
         return long
 
     @staticmethod
-    fn py_number_long(obj: PythonObject) raises -> PythonObject:
-        """Try to convert a PythonObject to a Python `int` (i.e. arbitrary
-        precision integer).
-
-        Args:
-            obj: The PythonObject to convert.
-
-        Raises:
-            If the conversion to `int` fails.
-
-        Returns:
-            A PythonObject representing the result of the conversion to `int`.
-        """
-        var cpython = Python().cpython()
-        var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
-        if py_obj_ptr.is_null():
-            raise cpython.get_error()
-
-        return PythonObject(py_obj_ptr)
-
-    @staticmethod
     fn is_true(obj: PythonObject) raises -> Bool:
         """Check if the PythonObject is truthy.
 
@@ -612,6 +612,8 @@ struct Python:
         Raises:
             If the boolean value of the PythonObject cannot be determined.
         """
+        # TODO: decide if this method should be actually exposed as public,
+        # and add tests if so.
         var cpython = Python().cpython()
         var result = cpython.PyObject_IsTrue(obj.py_object)
         if result == -1:

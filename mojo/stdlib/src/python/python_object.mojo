@@ -1395,7 +1395,7 @@ struct PythonObject(
         Raises:
             An error if the conversion failed.
         """
-        return Python.py_number_long(self)
+        return Python.int(self)
 
     fn __float__(self) -> Float64:
         """Returns a float representation of the object.
