@@ -258,6 +258,242 @@ def test_bitset_large_indices():
     )
 
 
+def test_bitset_union():
+    # Basic case
+    var bs1 = BitSet[128]()
+    bs1.set(1)
+    bs1.set(2)
+    bs1.set(3)
+
+    var bs2 = BitSet[128]()
+    bs2.set(3)
+    bs2.set(4)
+    bs2.set(5)
+
+    var bs3 = bs1.union(bs2)
+    assert_equal(len(bs3), 5, msg="Union: Basic case count")
+    assert_true(bs3.test(1), msg="Union: Basic case bit 1")
+    assert_true(bs3.test(2), msg="Union: Basic case bit 2")
+    assert_true(bs3.test(3), msg="Union: Basic case bit 3")
+    assert_true(bs3.test(4), msg="Union: Basic case bit 4")
+    assert_true(bs3.test(5), msg="Union: Basic case bit 5")
+
+    # Union with empty set
+    var bs_empty = BitSet[128]()
+    var bs4 = bs1.union(bs_empty)
+    assert_equal(len(bs4), 3, msg="Union: With empty set count")
+    assert_true(bs4.test(1), msg="Union: With empty set bit 1")
+    assert_true(bs4.test(2), msg="Union: With empty set bit 2")
+    assert_true(bs4.test(3), msg="Union: With empty set bit 3")
+    assert_false(bs4.test(4), msg="Union: With empty set bit 4")
+
+    var bs5 = bs_empty.union(bs1)
+    assert_equal(len(bs5), 3, msg="Union: Empty with non-empty set count")
+    assert_true(bs5.test(1), msg="Union: Empty with non-empty set bit 1")
+    assert_true(bs5.test(2), msg="Union: Empty with non-empty set bit 2")
+    assert_true(bs5.test(3), msg="Union: Empty with non-empty set bit 3")
+
+    # Union of identical sets
+    var bs6 = bs1.union(bs1)
+    assert_equal(len(bs6), 3, msg="Union: Identical sets count")
+    assert_true(bs6.test(1), msg="Union: Identical sets bit 1")
+    assert_true(bs6.test(2), msg="Union: Identical sets bit 2")
+    assert_true(bs6.test(3), msg="Union: Identical sets bit 3")
+
+    # Union of disjoint sets
+    var bs7 = BitSet[128]()
+    bs7.set(10)
+    bs7.set(20)
+    var bs8 = bs1.union(bs7)
+    assert_equal(len(bs8), 5, msg="Union: Disjoint sets count")
+    assert_true(bs8.test(1), msg="Union: Disjoint sets bit 1")
+    assert_true(bs8.test(2), msg="Union: Disjoint sets bit 2")
+    assert_true(bs8.test(3), msg="Union: Disjoint sets bit 3")
+    assert_true(bs8.test(10), msg="Union: Disjoint sets bit 10")
+    assert_true(bs8.test(20), msg="Union: Disjoint sets bit 20")
+
+    # Union across word boundaries
+    var bs9 = BitSet[128]()
+    bs9.set(60)
+    bs9.set(65)
+    var bs10 = BitSet[128]()
+    bs10.set(63)
+    bs10.set(70)
+    var bs11 = bs9.union(bs10)
+    assert_equal(len(bs11), 4, msg="Union: Across words count")
+    assert_true(bs11.test(60), msg="Union: Across words bit 60")
+    assert_true(bs11.test(63), msg="Union: Across words bit 63")
+    assert_true(bs11.test(65), msg="Union: Across words bit 65")
+    assert_true(bs11.test(70), msg="Union: Across words bit 70")
+
+
+def test_bitset_intersection():
+    # Basic case
+    var bs1 = BitSet[128]()
+    bs1.set(1)
+    bs1.set(2)
+    bs1.set(3)
+
+    var bs2 = BitSet[128]()
+    bs2.set(3)
+    bs2.set(4)
+    bs2.set(5)
+
+    var bs3 = bs1.intersection(bs2)
+    assert_equal(len(bs3), 1, msg="Intersection: Basic case count")
+    assert_true(bs3.test(3), msg="Intersection: Basic case bit 3")
+    assert_false(bs3.test(1), msg="Intersection: Basic case bit 1")
+    assert_false(bs3.test(2), msg="Intersection: Basic case bit 2")
+    assert_false(bs3.test(4), msg="Intersection: Basic case bit 4")
+    assert_false(bs3.test(5), msg="Intersection: Basic case bit 5")
+
+    # Intersection with empty set
+    var bs_empty = BitSet[128]()
+    var bs4 = bs1.intersection(bs_empty)
+    assert_equal(len(bs4), 0, msg="Intersection: With empty set count")
+
+    var bs5 = bs_empty.intersection(bs1)
+    assert_equal(
+        len(bs5), 0, msg="Intersection: Empty with non-empty set count"
+    )
+
+    # Intersection of identical sets
+    var bs6 = bs1.intersection(bs1)
+    assert_equal(len(bs6), 3, msg="Intersection: Identical sets count")
+    assert_true(bs6.test(1), msg="Intersection: Identical sets bit 1")
+    assert_true(bs6.test(2), msg="Intersection: Identical sets bit 2")
+    assert_true(bs6.test(3), msg="Intersection: Identical sets bit 3")
+
+    # Intersection of disjoint sets
+    var bs7 = BitSet[128]()
+    bs7.set(10)
+    bs7.set(20)
+    var bs8 = bs1.intersection(bs7)
+    assert_equal(len(bs8), 0, msg="Intersection: Disjoint sets count")
+
+    # Intersection across word boundaries
+    var bs9 = BitSet[128]()
+    bs9.set(60)
+    bs9.set(65)
+    bs9.set(70)
+    var bs10 = BitSet[128]()
+    bs10.set(63)
+    bs10.set(65)
+    bs10.set(75)
+    var bs11 = bs9.intersection(bs10)
+    assert_equal(len(bs11), 1, msg="Intersection: Across words count")
+    assert_true(bs11.test(65), msg="Intersection: Across words bit 65")
+    assert_false(bs11.test(60), msg="Intersection: Across words bit 60")
+    assert_false(bs11.test(63), msg="Intersection: Across words bit 63")
+    assert_false(bs11.test(70), msg="Intersection: Across words bit 70")
+    assert_false(bs11.test(75), msg="Intersection: Across words bit 75")
+
+
+def test_bitset_difference():
+    # Basic case (bs1 - bs2)
+    var bs1 = BitSet[128]()
+    bs1.set(1)
+    bs1.set(2)
+    bs1.set(3)
+
+    var bs2 = BitSet[128]()
+    bs2.set(3)
+    bs2.set(4)
+    bs2.set(5)
+
+    var bs3 = bs1.difference(bs2)
+    assert_equal(len(bs3), 2, msg="Difference: Basic case (bs1-bs2) count")
+    assert_true(bs3.test(1), msg="Difference: Basic case (bs1-bs2) bit 1")
+    assert_true(bs3.test(2), msg="Difference: Basic case (bs1-bs2) bit 2")
+    assert_false(bs3.test(3), msg="Difference: Basic case (bs1-bs2) bit 3")
+    assert_false(bs3.test(4), msg="Difference: Basic case (bs1-bs2) bit 4")
+
+    # Basic case (bs2 - bs1)
+    var bs4 = bs2.difference(bs1)
+    assert_equal(len(bs4), 2, msg="Difference: Basic case (bs2-bs1) count")
+    assert_true(bs4.test(4), msg="Difference: Basic case (bs2-bs1) bit 4")
+    assert_true(bs4.test(5), msg="Difference: Basic case (bs2-bs1) bit 5")
+    assert_false(bs4.test(1), msg="Difference: Basic case (bs2-bs1) bit 1")
+    assert_false(bs4.test(3), msg="Difference: Basic case (bs2-bs1) bit 3")
+
+    # Difference with empty set
+    var bs_empty = BitSet[128]()
+    var bs5 = bs1.difference(bs_empty)
+    assert_equal(len(bs5), 3, msg="Difference: With empty set count")
+    assert_true(bs5.test(1), msg="Difference: With empty set bit 1")
+    assert_true(bs5.test(2), msg="Difference: With empty set bit 2")
+    assert_true(bs5.test(3), msg="Difference: With empty set bit 3")
+
+    var bs6 = bs_empty.difference(bs1)
+    assert_equal(len(bs6), 0, msg="Difference: Empty with non-empty set count")
+
+    # Difference of identical sets
+    var bs7 = bs1.difference(bs1)
+    assert_equal(len(bs7), 0, msg="Difference: Identical sets count")
+
+    # Difference of disjoint sets
+    var bs8 = BitSet[128]()
+    bs8.set(10)
+    bs8.set(20)
+    var bs9 = bs1.difference(bs8)  # bs1 - bs8
+    assert_equal(len(bs9), 3, msg="Difference: Disjoint sets (bs1-bs8) count")
+    assert_true(bs9.test(1), msg="Difference: Disjoint sets (bs1-bs8) bit 1")
+    assert_true(bs9.test(2), msg="Difference: Disjoint sets (bs1-bs8) bit 2")
+    assert_true(bs9.test(3), msg="Difference: Disjoint sets (bs1-bs8) bit 3")
+    assert_false(bs9.test(10), msg="Difference: Disjoint sets (bs1-bs8) bit 10")
+
+    var bs10 = bs8.difference(bs1)  # bs8 - bs1
+    assert_equal(len(bs10), 2, msg="Difference: Disjoint sets (bs8-bs1) count")
+    assert_true(bs10.test(10), msg="Difference: Disjoint sets (bs8-bs1) bit 10")
+    assert_true(bs10.test(20), msg="Difference: Disjoint sets (bs8-bs1) bit 20")
+    assert_false(bs10.test(1), msg="Difference: Disjoint sets (bs8-bs1) bit 1")
+
+    # Difference across word boundaries
+    var bs11 = BitSet[128]()
+    bs11.set(60)
+    bs11.set(65)
+    bs11.set(70)
+    var bs12 = BitSet[128]()
+    bs12.set(63)
+    bs12.set(65)
+    bs12.set(75)
+    var bs13 = bs11.difference(bs12)  # bs11 - bs12
+    assert_equal(len(bs13), 2, msg="Difference: Across words (bs11-bs12) count")
+    assert_true(
+        bs13.test(60), msg="Difference: Across words (bs11-bs12) bit 60"
+    )
+    assert_true(
+        bs13.test(70), msg="Difference: Across words (bs11-bs12) bit 70"
+    )
+    assert_false(
+        bs13.test(63), msg="Difference: Across words (bs11-bs12) bit 63"
+    )
+    assert_false(
+        bs13.test(65), msg="Difference: Across words (bs11-bs12) bit 65"
+    )
+    assert_false(
+        bs13.test(75), msg="Difference: Across words (bs11-bs12) bit 75"
+    )
+
+    var bs14 = bs12.difference(bs11)  # bs12 - bs11
+    assert_equal(len(bs14), 2, msg="Difference: Across words (bs12-bs11) count")
+    assert_true(
+        bs14.test(63), msg="Difference: Across words (bs12-bs11) bit 63"
+    )
+    assert_true(
+        bs14.test(75), msg="Difference: Across words (bs12-bs11) bit 75"
+    )
+    assert_false(
+        bs14.test(60), msg="Difference: Across words (bs12-bs11) bit 60"
+    )
+    assert_false(
+        bs14.test(65), msg="Difference: Across words (bs12-bs11) bit 65"
+    )
+    assert_false(
+        bs14.test(70), msg="Difference: Across words (bs12-bs11) bit 70"
+    )
+
+
 def test_bitset_simd_init():
     var bs1 = BitSet(SIMD[DType.bool, 128](True))
     assert_equal(len(bs1), 128, msg="BitSet count should be 128")
@@ -309,5 +545,8 @@ def main():
     test_bitset_consecutive_operations()
     test_bitset_word_boundaries()
     test_bitset_large_indices()
+    test_bitset_union()
+    test_bitset_intersection()
+    test_bitset_difference()
     test_bitset_simd_init()
     test_bitset_len()

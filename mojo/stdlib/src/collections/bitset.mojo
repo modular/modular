@@ -252,6 +252,61 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         self = Self()
 
     # --------------------------------------------------------------------- #
+    # Set operations
+    # --------------------------------------------------------------------- #
+
+    fn union(self, other: Self) -> Self:
+        """Returns a new bitset that is the union of `self` and `other`.
+
+        Args:
+            other: The bitset to union with.
+
+        Returns:
+            A new bitset containing all elements from both sets.
+        """
+        var res = Self()
+
+        @parameter
+        for i in range(self._words_size):
+            res._words[i] = self._words[i] | other._words[i]
+
+        return res
+
+    fn intersection(self, other: Self) -> Self:
+        """Returns a new bitset that is the intersection of `self` and `other`.
+
+        Args:
+            other: The bitset to intersect with.
+
+        Returns:
+            A new bitset containing only the elements present in both sets.
+        """
+        var res = Self()
+
+        @parameter
+        for i in range(self._words_size):
+            res._words[i] = self._words[i] & other._words[i]
+
+        return res
+
+    fn difference(self, other: Self) -> Self:
+        """Returns a new bitset that is the difference of `self` and `other`.
+
+        Args:
+            other: The bitset to subtract from `self`.
+
+        Returns:
+            A new bitset containing elements from `self` that are not in `other`.
+        """
+        var res = Self()
+
+        @parameter
+        for i in range(self._words_size):
+            res._words[i] = self._words[i] & ~other._words[i]
+
+        return res
+
+    # --------------------------------------------------------------------- #
     # Representation helpers
     # --------------------------------------------------------------------- #
 
