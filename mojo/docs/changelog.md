@@ -30,6 +30,7 @@ what we publish.
 ### Standard library changes
 
 - The `CollectionElement` trait has been removed.
+- Added support for RTX2060 GPUs.
 
 Changes to Python-Mojo interoperability:
 
