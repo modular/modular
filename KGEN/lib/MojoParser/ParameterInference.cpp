@@ -277,8 +277,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
 
     // Now assemble the kgen.variadic parameter value and match it against the
     // expected one.
-    auto varType =
-        VariadicType::get(variadicElType, refPackType.getVariadicConvention());
+    auto varType = VariadicType::get(variadicElType, ArgConvention::ReadReg);
     auto variadicAttr = VariadicAttr::get(elements, varType);
     if (failed(matchParams(variadicAttr, variadic))) {
       return failure();
