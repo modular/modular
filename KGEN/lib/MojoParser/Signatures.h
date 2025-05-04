@@ -165,7 +165,7 @@ public:
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
-  SmallVector<bool> variadicKind;
+  SmallVector<VariadicKind> variadicKinds;
 
   /// Default values for positional and positionalOrKeyword params.
   SmallVector<TypedAttr> defaultPosParams;

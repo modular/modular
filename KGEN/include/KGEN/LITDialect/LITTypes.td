@@ -120,8 +120,6 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 
     /// Get the number of input parameters.
     size_t getNumParams() { return getParamTypes().size(); }
-    /// Return true if the parameter at the given index is variadic.
-    bool isVarParam(size_t idx) const;
 
     /// Construct a type signature from parameter declarations and corresponding
     /// metadata. This helper is used to convert between a named signature
@@ -129,10 +127,6 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     static TypeSignatureType remapToSignature(
       function_ref<InFlightDiagnostic()> emitError,
       ParamDeclArrayAttr paramDecls, PogListAttr paramListAttrs);
-
-    /// Return true if the signature has a variadic parameter.
-    /// TODO: remove this when migration to variadic indices is complete.
-    bool hasVariadicParam() const;
 
     /// Bind parameter values to the signature, returning a new one.
     TypeSignatureType bind(ArrayRef<TypedAttr> values) const;

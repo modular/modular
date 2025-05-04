@@ -347,7 +347,7 @@ fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
-# CHECK-SAME: <[""]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> var>
+# CHECK-SAME: <[""]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> pos_vararg>
 fn autoparam_param_vararg[f: fn () [_] -> None, *x: Index]():
     pass
 
@@ -702,11 +702,11 @@ struct UnqualAliasLookup[param: Int]:
 # Variadic parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.fn @"fnWithVariadics{{.*}}"<b: variadic<!Int> var>
+# CHECK-LABEL: lit.fn @"fnWithVariadics{{.*}}"<b: variadic<!Int> pos_vararg>
 fn fnWithVariadics[*b: Int]():
   pass
 
-# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> var>
+# CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> pos_vararg>
 struct StructWithVariadics[*b: Int]:
     @implicit
     fn __init__(out self, i: Int):
@@ -723,7 +723,7 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.generator<<"b": variadic<!Int> var>() -> !kgen.none>
+  # CHECK-NEXT: lit.alias.decl *"fnAlias{{.*}}": !lit.generator<<"b": variadic<!Int> pos_vararg>() -> !kgen.none>
   # CHECK-SAME: = <@parameters::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 

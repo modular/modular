@@ -118,14 +118,12 @@ ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 /// Parse an optional passing convention and variadicness. The the given index
 /// will be added to the appropriate index array if a variadicness is present.
 ParseResult parseConventionAndVariadicness(
-    AsmParser &p, ArgConvention &convention, bool &isVariadic,
-    ssize_t &argPackIndex, std::optional<ArgConvention> &origArgPackConvention,
-    size_t idx);
+    AsmParser &p, ArgConvention &convention, VariadicKind &variadic,
+    std::optional<ArgConvention> &origArgPackConvention, size_t idx);
 
-enum class Variadicness : uint8_t;
 /// Print an optional passing convention and variadicness.
 void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,
-                                    Variadicness variadicness);
+                                    VariadicKind variadicness);
 
 /// Parse and print a origin set.
 ParseResult parseOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
@@ -157,13 +155,6 @@ size_t countNumPositional(PogListAttr pogListAttr);
 /// Count the number of implicit passing kinds.
 size_t countNumImplicitKinds(ArrayRef<PogMetadataAttr> pogs);
 size_t countNumImplicitKinds(PogListAttr pogListAttr);
-
-/// Helper enum to make printing of variadicness easier.
-enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
-
-/// Return an array of enums representing the variadicness of each
-/// argument/parameter in the given list.
-SmallVector<Variadicness> getVariadicness(PogListAttr pogListAttr);
 
 //===----------------------------------------------------------------------===//
 // PassingKindParser / PassingKindPrinter

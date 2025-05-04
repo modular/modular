@@ -21,6 +21,7 @@ class FnMetadataAttr;
 class RefPackType;
 class SymbolAttr;
 enum class PassingKind : uint32_t;
+enum class VariadicKind : uint32_t;
 } // namespace LIT
 } // namespace M::KGEN
 
@@ -103,7 +104,7 @@ public:
   bool isKwVarArg(size_t index);
 
   /// Returns true if the argument at this index is a pack vararg.
-  bool isPackVarArg(size_t index);
+  bool isPack(size_t index);
 
   /// For a PackVarArg, return the declared ArgConvention of the elements. For
   /// example: fn x[*Ts: AnyType](mut *pack: *Ts) is declared 'mut'.
@@ -162,14 +163,12 @@ public:
   /// Return the name for the parameter at the specified index.
   StringAttr getParamName(size_t idx);
 
-  /// Reconstruct the generator using a list of named input parameters and
-  /// indices indicating which one of them are variadic. These parameters are
-  /// prepended to the current signature and references are remapped to index
-  /// references. An additional array of indices corresponding to variadic
-  /// parameters of the prepended parameters is also required.
-  static FnTypeGeneratorType prependParams(FnTypeGeneratorType sig,
-                                           ArrayRef<ParamDeclAttr> parentParams,
-                                           ArrayRef<bool> parentVariadicMask);
+  /// Reconstruct the generator using a list of named input parameters and info
+  /// about what kind of variadic they are. These parameters are prepended to
+  /// the current signature and references are remapped to index references.
+  static FnTypeGeneratorType
+  prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
+                ArrayRef<VariadicKind> parentVariadics);
 
   //===--------------------------------------------------------------------===//
   // Acting as a FnType
@@ -248,7 +247,7 @@ public:
   bool isKwVarArg(size_t index);
 
   /// Returns true if the argument at this index is a pack vararg.
-  bool isPackVarArg(size_t index);
+  bool isPack(size_t index);
 
   /// For a PackVarArg, return the declared ArgConvention of the elements. For
   /// example: fn x[*Ts: AnyType](inout *pack: *Ts) is declared 'inout'.

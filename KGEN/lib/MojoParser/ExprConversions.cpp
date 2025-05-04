@@ -240,6 +240,9 @@ static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
   SmallVector<PassingKind> passingKinds(sig.getNumArguments(),
                                         PassingKind::PosOnly);
   SmallVector<StringAttr> names(sig.getNumArguments(), StringAttr::get(ctx));
+  SmallVector<VariadicKind> variadics;
+  for (size_t i = 0; i < sig.getNumArguments(); i++)
+    variadics.push_back(origPogListAttr.getVariadicKind(i));
 
   // The passing kinds for results slots must be implicit;
   if (sig.hasMemoryOnlyResult())
@@ -247,11 +250,9 @@ static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
   if (sig.isThrows())
     passingKinds.end()[-2] = PassingKind::Implicit;
 
-  auto newPogListAttr = PogListAttr::get(
-      ctx, names, passingKinds, {}, {}, {},
-      // Preserve the pack index and pack convention, so the reduced function
-      // can have a variadic pack in the same place.
-      origPogListAttr.getPackIndex(), origPogListAttr.getOrigPackConvention());
+  auto newPogListAttr =
+      PogListAttr::get(ctx, names, passingKinds, {}, {}, variadics,
+                       origPogListAttr.getOrigPackConvention());
 
   auto metadata = FnMetadataAttr::get(
       newPogListAttr, sig.getNumImplicitOriginDecls(),

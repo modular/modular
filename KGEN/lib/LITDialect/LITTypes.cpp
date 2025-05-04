@@ -89,14 +89,6 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                             paramTypes, "parameter");
 }
 
-bool TypeSignatureType::isVarParam(size_t idx) const {
-  return getParamListAttrs().isVariadic(idx);
-}
-
-bool TypeSignatureType::hasVariadicParam() const {
-  return getParamListAttrs().hasVariadic();
-}
-
 TypeSignatureType TypeSignatureType::remapToSignature(
     function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
     PogListAttr paramListAttrs) {
@@ -107,11 +99,11 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       });
 
   MLIRContext *ctx = paramDecls.getContext();
-  paramListAttrs = PogListAttr::get(
-      ctx, paramListAttrs.getPogs(),
-      remapper.replace(paramListAttrs.getDefaultPos()),
-      remapper.replace(paramListAttrs.getDefaultKwOnly()),
-      paramListAttrs.getPackIndex(), paramListAttrs.getOrigPackConvention());
+  paramListAttrs =
+      PogListAttr::get(ctx, paramListAttrs.getPogs(),
+                       remapper.replace(paramListAttrs.getDefaultPos()),
+                       remapper.replace(paramListAttrs.getDefaultKwOnly()),
+                       paramListAttrs.getOrigPackConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -915,8 +907,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
-  SmallVector<bool> argVariadics;
-  ssize_t argPackIndex = -1;
+  SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origArgPackConvention;
 
   PassingKindParser passingKindParser(p);
@@ -932,10 +923,10 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
 
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
-    if (p.parseType(type) ||
-        parseConventionAndVariadicness(
-            p, argConventions.emplace_back(), argVariadics.emplace_back(),
-            argPackIndex, origArgPackConvention, idx++))
+    if (p.parseType(type) || parseConventionAndVariadicness(
+                                 p, argConventions.emplace_back(),
+                                 argVariadics.emplace_back(VariadicKind::None),
+                                 origArgPackConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -969,8 +960,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                       defaultKwOnlyArgs, argVariadics, argPackIndex,
-                       origArgPackConvention),
+                       defaultKwOnlyArgs, argVariadics, origArgPackConvention),
       numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature =
@@ -1168,13 +1158,11 @@ bool FnType::isKwVarArg(size_t index) {
   return getMetadata().isKwVarArg(index);
 }
 
-bool FnType::isPackVarArg(size_t index) {
-  return getMetadata().isPackVarArg(index);
-}
+bool FnType::isPack(size_t index) { return getMetadata().isPack(index); }
 
 /// If the specified argument is a variadic pack, return the VariadicPack.
 Type FnType::getIfVariadicPack(size_t index) {
-  if (!isPackVarArg(index))
+  if (!isPack(index))
     return {};
 
   // Look through references to the VariadicPack type.
@@ -1184,11 +1172,11 @@ Type FnType::getIfVariadicPack(size_t index) {
   return type;
 }
 
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
+/// For a vararg, return the declared ArgConvention of the elements. For
+/// example: fn x(mut *args: Int) is declared 'mut'.
 ArgConvention FnType::getPackVarArgConvention(size_t index) {
-  assert(getMetadata().isPackVarArg(index));
-  return *getArgListAttrs().getOrigPackConvention();
+  assert(getMetadata().isPack(index));
+  return getArgListAttrs().getOrigPackConvention();
 }
 
 bool FnType::hasPackVarArgs() { return getMetadata().hasPackVarArgs(); }
@@ -1324,8 +1312,8 @@ bool FnTypeGeneratorType::isKwVarArg(size_t index) {
   return getBody().isKwVarArg(index);
 }
 
-bool FnTypeGeneratorType::isPackVarArg(size_t index) {
-  return getBody().isPackVarArg(index);
+bool FnTypeGeneratorType::isPack(size_t index) {
+  return getBody().isPack(index);
 }
 
 /// If the specified argument is a variadic pack, return the VariadicPack.
@@ -1348,7 +1336,7 @@ std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {
   if (numUserArgs == 0)
     return std::nullopt;
   size_t lastUserArgIndex = numUserArgs - 1;
-  if (isPackVarArg(lastUserArgIndex))
+  if (isPack(lastUserArgIndex))
     return std::make_optional(lastUserArgIndex);
   return std::nullopt;
 }
@@ -1419,7 +1407,7 @@ FnTypeGeneratorType FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
 FnTypeGeneratorType
 FnTypeGeneratorType::prependParams(FnTypeGeneratorType sigGen,
                                    ArrayRef<ParamDeclAttr> parentParams,
-                                   ArrayRef<bool> parentVariadicMask) {
+                                   ArrayRef<VariadicKind> parentVariadics) {
   IndexRefRemapper remapper(parentParams, parentParams.size());
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : parentParams)
@@ -1431,7 +1419,7 @@ FnTypeGeneratorType::prependParams(FnTypeGeneratorType sigGen,
   FnMetadataAttrInterface fnMetadata = remapper.replace(sig.getMetadata());
   GeneratorMetadataAttrInterface genMetadata =
       remapper.replace(sigGen.getMetadata().prependPosParams(
-          parentParams.size(), parentVariadicMask));
+          parentParams.size(), parentVariadics));
 
   return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(sig.getValues()),

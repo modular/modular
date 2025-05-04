@@ -67,19 +67,6 @@ static ArgConvention refineConventionForType(Type type,
   return convention;
 }
 
-/// Helper to return the variadic kind of a parameter/argument.
-static VariadicKind getVariadicKind(PogListAttr pogListAttr, size_t idx) {
-  if (pogListAttr.isPack(idx))
-    return VariadicKind::kPack;
-  if (!pogListAttr.isVariadic(idx))
-    return VariadicKind::kNone;
-  PassingKind passingKind = pogListAttr.getPassingKind(idx);
-  if (passingKind == PassingKind::KwOnly)
-    return VariadicKind::kKwVar;
-  assert(passingKind == PassingKind::PosOrKw);
-  return VariadicKind::kPosVar;
-}
-
 /// Generate a user-readable representation of the given pvalue.
 static std::string generatePValueString(SharedState &shared, PValue value) {
   std::string typeName;
@@ -177,9 +164,9 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
   llvm::raw_string_ostream os(typeName);
   ASTType astType(type);
 
-  if (varKind == VariadicKind::kPosVar) {
+  if (varKind == VariadicKind::PosVarArg) {
     astType = astType.getVariadicElementType();
-  } else if (varKind == VariadicKind::kPack && !isa<PackType>(type)) {
+  } else if (varKind == VariadicKind::PackVarArg && !isa<PackType>(type)) {
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
     if (convention && hasAddress(*convention))
@@ -200,7 +187,7 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
   }
 
   // Get the value type in a kwargs dictionary.
-  if (varKind == VariadicKind::kKwVar)
+  if (varKind == VariadicKind::KwVarArg)
     astType = astType.getKwargsDictValueType();
 
   // If this type is the same as the self type, use the "Self" keyword.
@@ -217,10 +204,10 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
 static Twine prependVariadicIdentifiers(const Twine &identifier,
                                         VariadicKind varKind) {
   switch (varKind) {
-  case VariadicKind::kPosVar:
-  case VariadicKind::kPack:
+  case VariadicKind::PosVarArg:
+  case VariadicKind::PackVarArg:
     return "*" + identifier;
-  case VariadicKind::kKwVar:
+  case VariadicKind::KwVarArg:
     return "**" + identifier;
   default:
     return identifier;
@@ -231,7 +218,7 @@ static Twine prependVariadicIdentifiers(const Twine &identifier,
 // type. It also takes care of varargs that need to encode * in the name.
 static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
                                    StringRef type,
-                                   VariadicKind varKind = VariadicKind::kNone,
+                                   VariadicKind varKind = VariadicKind::None,
                                    bool elideType = false) {
   os << prependVariadicIdentifiers(identifier, varKind);
   if (!type.empty() && !elideType)
@@ -935,7 +922,7 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
 }
 
 PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef,
-                                       KGEN::LIT::FnTypeGeneratorType signature)
+                                       FnTypeGeneratorType signature)
     : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl,
                  /*name=*/StringRef()) {
   initFromSignature(declRef, signature, signature.getArguments(),
@@ -993,7 +980,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       defaultValue = generatePValueString(shared, reboundDefaultAttr);
     }
     VariadicKind variadicKind =
-        getVariadicKind(signature.getParamListAttrs(), parIdx);
+        signature.getParamListAttrs().getVariadicKind(parIdx);
     parameters.push_back(PublicParameterDecl(
         paramName,
         generateTypeString(shared, reboundType, variadicKind, selfType),
@@ -1051,7 +1038,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       break;
     }
     VariadicKind variadicKind =
-        getVariadicKind(signature.getArgListAttrs(), argIdx);
+        signature.getArgListAttrs().getVariadicKind(argIdx);
 
     bool isSelf = false;
     if (selfType) {
@@ -1091,8 +1078,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
                                           signature, /*isRefResult*/ true);
     }
     Type reboundUserResultType = evaluator.getReboundType(userResultType);
-    str += generateTypeString(shared, reboundUserResultType,
-                              VariadicKind::kNone, selfType, convention);
+    str += generateTypeString(shared, reboundUserResultType, VariadicKind::None,
+                              selfType, convention);
     returnType = str;
   }
 
@@ -1382,7 +1369,7 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
       defaultValue = generatePValueString(shared, reboundDefaultAttr);
     }
     VariadicKind variadicKind =
-        getVariadicKind(signature.getParamListAttrs(), idx);
+        signature.getParamListAttrs().getVariadicKind(idx);
     StringRef paramName = demangleIfNeeded(param).getName().getValue();
     Type reboundType = evaluator.getReboundType(param.getType());
     parameters.push_back(PublicParameterDecl(

@@ -54,9 +54,8 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
 
   // Test Signature with metadata
   {
-    auto posOnly =
-        PogMetadataAttr::get(StringAttr::get(&ctx), PassingKind::PosOnly,
-                             /*isVariadic=*/false);
+    auto posOnly = PogMetadataAttr::get(
+        StringAttr::get(&ctx), PassingKind::PosOnly, VariadicKind::None);
     PogListAttr pogs =
         PogListAttr::get(&ctx, SmallVector<PogMetadataAttr>{posOnly});
     FnMetadataAttr fnMetadata = FnMetadataAttr::get(

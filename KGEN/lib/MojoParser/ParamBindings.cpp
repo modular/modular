@@ -396,7 +396,7 @@ ParamBindings::verifyBindingsImpl(
     // This is the expected type of a value satisfying this parameter.
     ASTType expectedType = requestedType;
     // If this is a vararg parameter, infer using the element type.
-    if (paramListAttr.isVariadic(idx))
+    if (paramListAttr.isPosVarArg(idx))
       if (auto varType = dyn_cast<VariadicType>(expectedType))
         expectedType = ASTType(varType.getElementType());
 
@@ -590,7 +590,7 @@ ParamBindings::verifyBindingsImpl(
     };
 
     // Scalar parameter values are installed directly.
-    if (!paramListAttr.isVariadic(idx)) {
+    if (!paramListAttr.isPosVarArg(idx)) {
       PValue paramValue = handlePosBinding(idx, binding, expectedType);
       if (!paramValue)
         return {{}, fitness};

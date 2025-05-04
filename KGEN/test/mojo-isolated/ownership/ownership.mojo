@@ -734,7 +734,7 @@ fn test_or(a: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.fn @"variadic_mems
 # CHECK-SAME: [imm *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, read_mem> var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, read_mem> pos_vararg)
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
@@ -794,7 +794,7 @@ fn variadic_field_sensitivity():
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, mut> var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, mut> pos_vararg)
 fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0

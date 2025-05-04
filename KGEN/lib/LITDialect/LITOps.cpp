@@ -111,7 +111,7 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
   if (params.empty())
     return signature;
   return FnTypeGeneratorType::prependParams(
-      signature, params, getContextualVariadicMask(ancestors));
+      signature, params, getContextualVariadicParams(ancestors));
 }
 
 //===----------------------------------------------------------------------===//
@@ -513,8 +513,7 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
-  SmallVector<bool> argVariadics;
-  ssize_t argPackIndex = -1;
+  SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origArgPackConvention;
 
   PassingKindParser passingKindParser(p);
@@ -545,9 +544,9 @@ static ParseResult parseLITFunctionSignature(
     // input convention, and variadicness.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseConventionAndVariadicness(
-            p, argConventions.emplace_back(), argVariadics.emplace_back(),
-            argPackIndex, origArgPackConvention, idx++))
+        parseConventionAndVariadicness(p, argConventions.emplace_back(),
+                                       argVariadics.emplace_back(),
+                                       origArgPackConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -577,7 +576,7 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadics,
-                       argPackIndex, origArgPackConvention),
+                       origArgPackConvention),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
@@ -628,7 +627,6 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   }
 
   PogListAttr argListAttr = signature.getArgListAttrs();
-  SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
   DefaultValueHandler defaultHandler(argListAttr);
   PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
   auto printElt = [&](unsigned i) {
@@ -659,13 +657,13 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     p.printOptionalLocationSpecifier(arg.getLoc());
     auto argConv = signature.getArgConvention(i);
 
-    if (variadicness[i] == Variadicness::kPack) {
+    if (argListAttr.isPack(i)) {
       assert(argConv == ArgConvention::ReadMem ||
              argConv == ArgConvention::OwnedMem ||
              argConv == ArgConvention::OwnedReg);
       argConv = signature.getPackVarArgConvention(i);
     }
-    printConventionAndVariadicness(p, argConv, variadicness[i]);
+    printConventionAndVariadicness(p, argConv, argListAttr.getVariadicKind(i));
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
@@ -1926,10 +1924,13 @@ static ParseResult parseClosureInitOpValue(
                   llvm::to_vector(llvm::map_range(
                       paramValues.getValue(), [&](TypedAttr param) {
                         StringAttr name = StringAttr::get(p.getContext(), "");
-                        return PogMetadataAttr::get(
-                            name, PassingKind::PosOnly,
-                            isa<VariadicType>(param.getType()));
-                        ;
+
+                        // TODO: Likely not handling variadics right.
+                        VariadicKind vk = VariadicKind::None;
+                        if (isa<VariadicType>(param.getType()))
+                          vk = VariadicKind::PosVarArg;
+                        return PogMetadataAttr::get(name, PassingKind::PosOnly,
+                                                    vk);
                       }))));
           copyOrMoveSymbols.push_back(
               SymbolConstantAttr::get(callee, signatureType, paramValues));

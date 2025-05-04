@@ -153,7 +153,7 @@ lit.fn @test_consumed() -> index {
 } loc(fused<#sp>["test.mlir":10:10])
 
 // CHECK-LABEL: lit.fn @test_arg(%x: {{.*}}, %ys: {{.*}}, %z:
-lit.fn @test_arg(%x: !lit.ref<@S, mut xlife> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, read_mem> loc(#locY) read|var, %z: index loc(#locZ) owned) -> index {
+lit.fn @test_arg(%x: !lit.ref<@S, mut xlife> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, read_mem> loc(#locY) read|pos_vararg, %z: index loc(#locZ) owned) -> index {
   // CHECK: debuginfo.value #[[DIARG_X]] #[[DIEXPR_DEREF_X]] = %x
   // CHECK-NOT: debuginfo.value {{.*}} = %ys
   // CHECK-NOT: debuginfo.value {{.*}} = %z

@@ -261,7 +261,7 @@ struct LITLowerer {
   LogicalResult lowerLITFunc(FnOp func, Block::iterator symTableIt,
                              const Twine &parentPrefix,
                              ArrayRef<ParamDeclAttr> parentInputParams,
-                             ArrayRef<bool> parentVariadicMask);
+                             ArrayRef<VariadicKind> parentVariadics);
   /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator symTableIt);
@@ -379,7 +379,7 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
 LogicalResult LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
                                        const Twine &parentPrefix) {
   return lowerLITFunc(func, symTableIt, parentPrefix, /*parentInputParams=*/{},
-                      /*parentVariadicMask=*/{});
+                      /*parentVariadics=*/{});
 }
 
 /// This lowers a top level (not nested function) lit.fn to a kgen.generator.
@@ -389,7 +389,7 @@ LogicalResult
 LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
                          const Twine &parentPrefix,
                          ArrayRef<ParamDeclAttr> parentInputParams,
-                         ArrayRef<bool> parentVariadicMask) {
+                         ArrayRef<VariadicKind> parentVariadics) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
     StringAttr newName = flattenAndRenameSymbol(func, symbolTable, symTableIt);
@@ -412,7 +412,7 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
     signature = FnTypeGeneratorType::prependParams(signature, parentInputParams,
-                                                   parentVariadicMask);
+                                                   parentVariadics);
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
@@ -542,12 +542,12 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       return member.emitError("unsupported op in lit lowering");
 
     // Lower renamed function as usual.
-    SmallVector<bool> variadicMask = llvm::map_to_vector(
+    SmallVector<VariadicKind> variadics = llvm::map_to_vector(
         structDecl.getSignature().getParamListAttrs().getPogs(),
-        [](PogMetadataAttr pogAttr) { return pogAttr.isVariadic(); });
+        [](PogMetadataAttr pogAttr) { return pogAttr.getVariadic(); });
     if (failed(lowerLITFunc(func, structDecl->getIterator(),
                             structName.getValue() + "::",
-                            structDecl.getInputParams(), variadicMask)))
+                            structDecl.getInputParams(), variadics)))
       return failure();
   }
 

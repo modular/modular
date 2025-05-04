@@ -1113,10 +1113,10 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       if (!sig.getInputParamTypes().empty()) {
         auto printFn = [&](auto p) {
           auto [i, type] = p;
-          if (sig.getParamListAttrs().isVariadic(i)) {
+          if (sig.getParamListAttrs().isPosVarArg(i)) {
             os << '*';
-            ASTType(cast<VariadicType>(type).getElementType())
-                .print(os, diagShared, demangleParams);
+            ASTType(type).getVariadicElementType().print(os, diagShared,
+                                                         demangleParams);
           } else {
             ASTType(type).print(os, diagShared, demangleParams);
           }
@@ -1154,7 +1154,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       // attribute, not a type.
       StringAttr name = sig.getArgName(idx);
       hadAnyNames |= !name.empty();
-      if (sig.isPackVarArg(idx)) {
+      if (sig.isPack(idx)) {
         convention = sig.getPackVarArgConvention(idx);
         printConvention(convention);
         os << '*';

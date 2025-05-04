@@ -826,7 +826,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     } else if (sig.isKwVarArg(idx)) {
       // Don't need to unpack anything. We treat the whole dictionary as the
       // value type.
-    } else if (sig.isPackVarArg(idx)) {
+    } else if (sig.isPack(idx)) {
       // For variadic packs, we don't have a type instance but we have the
       // metatype.
       Type metatype = ASTType(type)
@@ -964,13 +964,13 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   // Unbind the N capture parameters, creating a FuncType with N new input
   // parameters prepended.
   // TODO: what if we capture a variadic?
-  SmallVector<bool> isVariadic(captured.size(), false);
+  SmallVector<VariadicKind> variadicKinds(captured.size(), VariadicKind::None);
   auto unbound = FnTypeGeneratorType::prependParams(
       original,
       llvm::map_to_vector(
           captured,
           [](ParamDeclRefAttr ref) { return ParamDeclAttr::get(ref); }),
-      isVariadic);
+      variadicKinds);
   return {std::move(captured), unbound};
 }
 

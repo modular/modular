@@ -361,12 +361,12 @@ static void getCallOpEffects(
     // TODO(field-sensitive origins): remove this hack.
     // TODO: This should be removed. This is disabled for packs passed by-ref
     // when they are owned.
-    if (signature.isPackVarArg(idx)) {
+    if (signature.isPack(idx)) {
       auto packVal = RefPackCreateOp::findRefPackCreate(arg);
       assert(packVal && "couldn't decode variadic pack information!");
 
       if (auto pack = packVal.getDefiningOp<RefPackCreateOp>()) {
-        if (signature.isPackVarArg(idx + argIdxOffset)) {
+        if (signature.isPack(idx + argIdxOffset)) {
           auto argConvention =
               signature.getPackVarArgConvention(idx + argIdxOffset);
           for (auto packOperand : pack.getOperands())

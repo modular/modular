@@ -99,20 +99,14 @@ def SymbolAttr : DialectAttribute<(attr
 def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
   EnumAttr<"PassingKind">:$passingKind,
-  Bool:$isVariadic
+  EnumAttr<"VariadicKind">:$variadic
 )>;
-
-def OptionalArgConvention :
-  WithParser<"succeeded(readOptional($_reader, $_var, &readIntegral<ArgConvention>))",
-  WithPrinter<"writeOptional($_writer, $_getter, &writeIntegral<ArgConvention>)",
-  WithType<"std::optional<ArgConvention>">>>;
 
 def PogListAttr : DialectAttribute<(attr
   ConcreteAttrArray<"PogMetadataAttr">:$pogs,
   TypedAttrArray:$defaultPos,
   TypedAttrArray:$defaultKwOnly,
-  VarInt:$packIndex,
-  OptionalArgConvention:$origPackConvention
+  EnumAttr<"ArgConvention">:$origPackConvention
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr

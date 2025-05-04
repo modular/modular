@@ -69,25 +69,28 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
   }];
 
   let parameters = (ins
-    "StringAttr":$name, "PassingKind":$passingKind, "bool":$isVariadic
+    "StringAttr":$name, "PassingKind":$passingKind, "VariadicKind":$variadic
   );
 
-  let assemblyFormat = "`<` $name `,` $passingKind `,` $isVariadic `>`";
+  let assemblyFormat = "`<` $name `,` $passingKind `,` $variadic `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-      "PassingKind":$passingKind, CArg<"bool", "false">:$isVariadic
+      "PassingKind":$passingKind,
+      CArg<"VariadicKind", "VariadicKind::None">:$variadic
     ), [{
-      return $_get(name.getContext(), name, passingKind, isVariadic);
+      return $_get(name.getContext(), name, passingKind, variadic);
     }]>,
     AttrBuilder<(ins), [{
-      return $_get($_ctxt, StringAttr::get($_ctxt), PassingKind::PosOrKw,
-                   /*isVariadic=*/false);
+      return get(StringAttr::get($_ctxt), PassingKind::PosOrKw);
     }]>
   ];
 
   let extraClassDeclaration = [{
-    bool isVariadic() const { return getIsVariadic(); }
+    bool isAnyVarArg() const { return getVariadic() != VariadicKind::None; }
+    bool isPosVarArg() const { return getVariadic() == VariadicKind::PosVarArg; }
+    bool isPack() const { return getVariadic() == VariadicKind::PackVarArg; }
+    bool isKwVarArg() const { return getVariadic() == VariadicKind::KwVarArg; }
   }];
 }
 
@@ -95,8 +98,9 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
 // PogListAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_PackIndexParameter : OptionalParameter<"ssize_t"> {
-  let defaultValue = "ssize_t(-1)";
+def LIT_OptionalConventionParameter : OptionalParameter<"ArgConvention"> {
+  // Use ByRefError as a sentinel, since it is obviously invalid.
+  let defaultValue = "ArgConvention::ByRefError";
 }
 
 def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
@@ -134,15 +138,14 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
-    LIT_PackIndexParameter:$packIndex,
-    OptionalParameter<"std::optional<ArgConvention>">:$origPackConvention
+    LIT_OptionalConventionParameter:$origPackConvention
   );
 
   let assemblyFormat = [{
     `<` `[` (`]`) : ($pogs^            `]`)? `,`
         `[` (`]`) : ($defaultPos^      `]`)? `,`
         `[` (`]`) : ($defaultKwOnly^   `]`)?
-        (`,` custom<PackInfo>($packIndex, $origPackConvention)^)?
+        (`,` custom<ArgConvention>($origPackConvention)^)?
     `>`
   }];
 
@@ -159,8 +162,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
-                     "ArrayRef<bool>":$isVariadic,
-                     "ssize_t":$packIndex,
+                     "ArrayRef<VariadicKind>":$variadics,
                      "std::optional<ArgConvention>":$origPackConvention)>
   ];
 
@@ -172,20 +174,23 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     /// Return the number of parameter entries.
     size_t size() const { return getPogs().size(); }
 
+    /// Return the variadic kind for the argument/parameter at the given index.
+    VariadicKind getVariadicKind(size_t idx) const;
+
     /// Return true if the argument/param at `idx` is a variadic.
-    bool isVariadic(size_t idx) const;
+    bool isAnyVarArg(size_t idx) const;
     /// Return true if the argument/param at `idx` is a pack.
     bool isPack(size_t idx) const;
     /// Return true if the argument/param at `idx` is a positional variadic.
-    bool isPosVariadic(size_t idx) const;
+    bool isPosVarArg(size_t idx) const;
     /// Return true if the argument/param at `idx` is a keyword variadic.
-    bool isKwVariadic(size_t idx) const;
+    bool isKwVarArg(size_t idx) const;
     /// Return true if there is a variadic (pos or keyword) argument/param.
-    bool hasVariadic() const;
+    bool hasAnyVarArg() const;
     /// Return true if there is a variadic pack argument/param.
-    bool hasPack() const;
+    bool hasPackVarArg() const;
     /// Return true if there is a variadic keyword argument/param.
-    bool hasKwVariadics() const;
+    bool hasKwVarArg() const;
     /// Return true if there are inferred parameters.
     bool hasInferredParams() const;
 
@@ -201,14 +206,14 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     /// and variadic indices.
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
-      ArrayRef<bool> isVariadic);
+      ArrayRef<VariadicKind> variadics);
 
     /// Get a new metadata attribute for a generator with the given number of
     /// positional input parameters prepended to the generator. An additional
     /// array of bool corresponding to the variadic mask of the prepended
     /// parameters is also required.
     PogListAttr prependPosParams(size_t numNewParams,
-                                 ArrayRef<bool> variadicMask) const;
+                                 ArrayRef<VariadicKind> variadics) const;
   }];
 
   let genVerifyDecl = 1;
@@ -280,8 +285,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     /// with the new capture origins.
     FnMetadataAttr addCaptureOrigins(TypedAttr origins);
 
-    /// Return true if the signature has a variadic argument.
-    bool hasVarArgs() const;
+    /// Return true if the signature has any variadic argument.
+    bool hasAnyVarArg() const;
     /// Return true if the signature has a variadic pack argument.
     bool hasPackVarArgs() const;
     /// Return true if the signature has a keyword variadic argument.
@@ -293,7 +298,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     /// Return true if the argument at `idx` is a keyword variadic argument.
     bool isKwVarArg(size_t idx) const;
     /// Return true if the argument at `idx` is a variadic pack argument.
-    bool isPackVarArg(size_t idx) const;
+    bool isPack(size_t idx) const;
   }];
 }
 

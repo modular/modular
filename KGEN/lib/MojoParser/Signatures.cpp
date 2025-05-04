@@ -202,7 +202,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       paramList.names.push_back(StringAttr::get(type.getContext()));
       paramList.passingKinds.push_back(PassingKind::Implicit);
       paramList.paramDeclAttrs.push_back(paramDecl);
-      paramList.variadicKind.push_back(false);
+      paramList.variadicKinds.push_back(VariadicKind::None);
       return ParamDeclRefAttr::get(paramDecl);
     };
 
@@ -705,7 +705,7 @@ static ASTType addImplicitTypeParams(ASTType type,
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
-  SmallVector<bool> variadicKind;
+  SmallVector<VariadicKind> variadicKinds;
 
   // Functor to insert the pending vectors into paramList, either at the front
   // or back.
@@ -719,7 +719,7 @@ static ASTType addImplicitTypeParams(ASTType type,
     insertFn(paramList.paramDeclAttrs, paramDeclAttrs);
     insertFn(paramList.names, names);
     insertFn(paramList.passingKinds, passingKinds);
-    insertFn(paramList.variadicKind, variadicKind);
+    insertFn(paramList.variadicKinds, variadicKinds);
   });
 
   // The parameter decl references that will be used to fully bind the type,
@@ -739,7 +739,7 @@ static ASTType addImplicitTypeParams(ASTType type,
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
 
     // FIXME: Autoparam of variadics looks broken?
-    variadicKind.push_back(false);
+    variadicKinds.push_back(VariadicKind::None);
     evaluator.addInputValue(paramValues.back());
   };
 
@@ -789,6 +789,8 @@ TypeCheckedParamList::TypeCheckedParamList(
     if (!type)
       type = emitter.shared.getTypeCheckErrorType();
 
+    VariadicKind varargKind = VariadicKind::None;
+
     VarArgKind vararg = arg.vararg;
     if (vararg == VarArgKind::PackVarArg)
       emitter.emitError(arg.loc, "parameters may not be variadic packs");
@@ -796,6 +798,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
       type = VariadicType::get(type, ArgConvention::ReadReg);
+      varargKind = VariadicKind::PosVarArg;
     }
 
     if (failed(emitDefaultIfPossible(arg, type, defaultPosParams,
@@ -833,7 +836,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     // The unmangled names are also collected to aid keyword parameter binding.
     passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     names.push_back(arg.name);
-    variadicKind.push_back(vararg == VarArgKind::VarArg);
+    variadicKinds.push_back(varargKind);
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
@@ -844,7 +847,7 @@ TypeCheckedParamList::TypeCheckedParamList(
 PogListAttr TypeCheckedParamList::getParamListAttr() {
   return PogListAttr::get(
       shared.getContext(),
-      PogListAttr::toPogs(names, passingKinds, variadicKind), defaultPosParams,
+      PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
       defaultKwOnlyParams);
 }
 
@@ -1974,24 +1977,25 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   SmallVector<ArgConvention> argConventions;
   argConventions.reserve(numArgs);
 
-  ssize_t argPackIndex = -1;
-  std::optional<ArgConvention> argPackOrigConvention;
+  ArgConvention argPackOrigConvention = ArgConvention::ByRefError;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
-    bool isVariadic =
-        arg.vararg == VarArgKind::VarArg || arg.vararg == VarArgKind::KWVarArg;
+    VariadicKind varargKind = VariadicKind::None;
+    if (arg.vararg == VarArgKind::VarArg)
+      varargKind = VariadicKind::PosVarArg;
+    else if (arg.vararg == VarArgKind::KWVarArg)
+      varargKind = VariadicKind::KwVarArg;
+    else if (arg.vararg == VarArgKind::PackVarArg)
+      varargKind = VariadicKind::PackVarArg;
     argPogs.emplace_back(PogMetadataAttr::get(
-        arg.name, arg.getKWArgHandlingAsPassingKind(), isVariadic));
+        arg.name, arg.getKWArgHandlingAsPassingKind(), varargKind));
     argConventions.push_back(arg.kgenConvention);
-    if (arg.vararg == VarArgKind::PackVarArg) {
-      assert(argPackIndex == -1 && "only one argument pack is possible");
-      argPackIndex = idx;
+    if (arg.vararg == VarArgKind::PackVarArg)
       argPackOrigConvention = arg.kgenVariadicConvention;
-    }
   }
 
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
-                       argPackIndex, argPackOrigConvention),
+                       argPackOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,

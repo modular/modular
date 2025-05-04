@@ -28,6 +28,7 @@ class ASTDecl;
 class SharedState;
 class FnTypeGeneratorType;
 enum class PassingKind : uint32_t;
+enum class VariadicKind : uint32_t;
 } // namespace KGEN::LIT
 
 class MojoASTDeclRef;
@@ -199,9 +200,6 @@ private:
   KGEN::LIT::ASTType type;
 };
 
-/// Helper enum to make stringifying of variadic types easier.
-enum class VariadicKind : uint8_t { kNone, kPack, kPosVar, kKwVar };
-
 //===----------------------------------------------------------------------===//
 // PublicDecls
 //
@@ -318,7 +316,7 @@ class PublicParameterDecl : public PublicDecl {
 public:
   PublicParameterDecl(StringRef name, StringRef type,
                       KGEN::LIT::PassingKind passingKind,
-                      VariadicKind variadicKind,
+                      KGEN::LIT::VariadicKind variadicKind,
                       std::optional<std::string> defaultValue)
       : PublicDecl(PublicDeclKind::DK_PublicParameterDecl, name), type(type),
         passingKind(passingKind), variadicKind(variadicKind),
@@ -364,7 +362,7 @@ public:
 private:
   std::string type;
   KGEN::LIT::PassingKind passingKind;
-  VariadicKind variadicKind;
+  KGEN::LIT::VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
 
   //===----------------------------------------------------------------------===//
@@ -387,7 +385,7 @@ public:
   };
   PublicArgumentDecl(StringRef name, std::string prefix, std::string type,
                      KGEN::LIT::PassingKind passingKind,
-                     VariadicKind variadicKind,
+                     KGEN::LIT::VariadicKind variadicKind,
                      std::optional<std::string> defaultValue,
                      Convention convention, bool isSelf)
       : PublicDecl(PublicDeclKind::DK_PublicArgumentDecl, name),
@@ -443,7 +441,7 @@ private:
   std::string prefix;
   std::string type;
   KGEN::LIT::PassingKind passingKind;
-  VariadicKind variadicKind;
+  KGEN::LIT::VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
   Convention convention;
   bool isSelf; // self argument of a method.

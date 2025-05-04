@@ -56,14 +56,14 @@ fn default_args(a: Index, b: Index = `8`, *, c: Index, d: Index = `9`):
 
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
-# CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> var, *, %c: index, %d: index = 9)
+# CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index = 9)
 fn variadic_and_kw_only(a: Index, b: Index, *args: Index, c: Index, d: Index = `9`):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
-# CHECK-SAME: (%a: index, %b: index = 0, %args: !kgen.variadic<index> var = *?,
-# CHECK-SAME:  *, %c: index, %d: index = 1, %kwargs: {{.*}}|var = *?)
+# CHECK-SAME: (%a: index, %b: index = 0, %args: !kgen.variadic<index> pos_vararg = *?,
+# CHECK-SAME:  *, %c: index, %d: index = 1, %kwargs: {{.*}}|kw_vararg = *?)
 fn variadic_arg_after_default(
     a: Index, b: Index = `0`, *args: Index, c: Index, d: Index = `1`, **kwargs: Index
 ):
@@ -71,7 +71,7 @@ fn variadic_arg_after_default(
 
 
 # CHECK-LABEL: lit.fn @"variadic_param_after_default
-# CHECK-SAME: <a, b = 0, args: {{.*}} var = *?, *, c, d = 1>()
+# CHECK-SAME: <a, b = 0, args: {{.*}} pos_vararg = *?, *, c, d = 1>()
 fn variadic_param_after_default[
     a: Index, b: Index = `0`, *args: Index, c: Index, d: Index = `1`
 ]():

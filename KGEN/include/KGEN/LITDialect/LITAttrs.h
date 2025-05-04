@@ -37,7 +37,8 @@ namespace M::KGEN::LIT {
 /// Given a list of operations, create an array of bools (as a mask) indicating
 /// variadic parameters in their concatenated list of parameter declarations.
 /// The given operations must all implement DeclInterface.
-SmallVector<bool> getContextualVariadicMask(ArrayRef<Operation *> ops);
+SmallVector<VariadicKind>
+getContextualVariadicParams(ArrayRef<Operation *> ops);
 
 /// This digs in and unpacks all of the origin references in the specified
 /// TypedAttr unpacking unions, but maintaining mutability.  This typically

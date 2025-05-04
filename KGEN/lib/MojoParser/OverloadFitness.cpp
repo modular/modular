@@ -1069,7 +1069,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
       if (signature.isPosVarArg(expectedArgIdx) ||
-          signature.isPackVarArg(expectedArgIdx)) {
+          signature.isPack(expectedArgIdx)) {
         // We consider an empty varargs list to be an implicit conversion,
         // so an exact signature match takes precedence.
         ++result.payload.numImplicitConversions;

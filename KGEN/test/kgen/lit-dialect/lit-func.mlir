@@ -106,11 +106,11 @@ lit.fn @signature_type<dt: dtype, w: scalar<dt>>(%a: index owned = 1) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.fn @variadic<x: variadic<index> var, y: dtype pack>[mut lt](
-lit.fn @variadic<x: variadic<index> var, y: dtype pack>[mut lt](
-  // CHECK-SAME: %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> owned|var,
-  // CHECK-SAME: %c: !lit.ref<!kgen.pack<[index, index]>, mut lt> read_mem|pack)
-  %a: !kgen.variadic<index> var, %b: !kgen.variadic<index> owned|var, %c: !lit.ref<!kgen.pack<[index, index]>, mut lt> read_mem|pack
+// CHECK-LABEL: lit.fn @variadic<x: variadic<index> pos_vararg, y: dtype pack_vararg>[mut lt](
+lit.fn @variadic<x: variadic<index> pos_vararg, y: dtype pack_vararg>[mut lt](
+  // CHECK-SAME: %a: !kgen.variadic<index> pos_vararg, %b: !kgen.variadic<index> owned|kw_vararg,
+  // CHECK-SAME: %c: !lit.ref<!kgen.pack<[index, index]>, mut lt> read_mem|pack_vararg)
+  %a: !kgen.variadic<index> pos_vararg, %b: !kgen.variadic<index> owned|kw_vararg, %c: !lit.ref<!kgen.pack<[index, index]>, mut lt> read_mem|pack_vararg
 ) {
   kgen.return
 }
