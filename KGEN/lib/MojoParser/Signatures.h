@@ -57,18 +57,6 @@ enum class ArgListKind {
   kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
 };
 
-/// Specify variadic argument kind, e.g. `*x` or `**x`.
-enum VarArgKind {
-  /// Not a variadic argument, e.g. `x` or `x: Int`.
-  None,
-  /// A homogeneously typed variadic argument, e.g. `*x` or `*x: Int`.
-  VarArg,
-  /// A heterogeneously typed variadic argument, e.g. `*x: *Ts`.
-  PackVarArg,
-  /// A variadic keywords argument, e.g. `**x`.
-  KWVarArg
-};
-
 /// Parsing support for a function argument and parameter:
 ///
 /// argument_list      ::= argument ("," argument)*
@@ -102,7 +90,7 @@ struct ParsedArgument {
   // those the variadic type is passed another way.
   ArgConvention kgenVariadicConvention = ArgConvention(128);
 
-  VarArgKind vararg = VarArgKind::None;
+  VariadicKind variadicKind = VariadicKind::None;
   StringAttr name;
   ExprNode *typeExpr = nullptr;
   ExprNode *initExpr = nullptr;

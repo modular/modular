@@ -297,17 +297,17 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       markerInfo = KWArgMarkerInfo::kStar;
       return success();
     }
-    vararg = VarArgKind::VarArg;
+    variadicKind = VariadicKind::PosVarArg;
   } else if (p.consumeIf(Token::star_star)) {
-    vararg = VarArgKind::KWVarArg;
+    variadicKind = VariadicKind::KwVarArg;
     kwArgHandling = KWArgHandling::kKeywordOnly;
   }
 
   // Reject attempts to make variadic output arguments.
-  if (vararg != VarArgKind::None && convention == kConventionOut) {
+  if (variadicKind != VariadicKind::None && convention == kConventionOut) {
     p.emitError(loc, "'out' convention may not be variadic");
     isErroneous = true;
-    vararg = VarArgKind::None;
+    variadicKind = VariadicKind::None;
   }
 
   // Parse the argument name if present.
@@ -335,17 +335,24 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   if (kind != ArgListKind::kBareLambdaArgList) {
     if (!name || p.consumeIf(Token::colon)) {
       SMLoc starLoc = p.getToken().getLoc();
-      if (p.getToken().getKind() == Token::star) {
-        if (vararg != VarArgKind::VarArg) {
+      if (p.consumeIf(Token::star)) {
+        if (variadicKind != VariadicKind::PosVarArg) {
           InflightDiag diag = p.emitError(
               starLoc, "only variadic arguments' types can be unpacked");
           if (name) {
             diag.attachNote(loc)
                 << "'" << name.getValue() << "' is not a variadic argument";
           }
+          return failure();
         }
-        vararg = VarArgKind::PackVarArg;
-        p.consumeToken(Token::star);
+
+        if (kind == ArgListKind::kParamList ||
+            kind == ArgListKind::kFnTypeParamList) {
+          p.emitError(starLoc, "parameters may not be variadic packs");
+          return failure();
+        }
+
+        variadicKind = VariadicKind::PackVarArg;
       }
       ExprNode *typeExprNode;
       if (p.parseStarredItem(typeExprNode))
@@ -372,7 +379,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
 
     // Default args and varargs don't mix.
-    if (vararg != VarArgKind::None) {
+    if (variadicKind != VariadicKind::None) {
       p.emitError(equalLoc, "variadic arguments may not have defaults")
           << initExpr->getRange();
       initExpr = nullptr;
@@ -573,12 +580,12 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
     // Otherwise, if this is a varargs marker, handle it as a marker and an
     // argument.
-    if (arg.vararg == VarArgKind::VarArg ||
-        arg.vararg == VarArgKind::PackVarArg)
+    if (arg.variadicKind == VariadicKind::PosVarArg ||
+        arg.variadicKind == VariadicKind::PackVarArg)
       if (failed(handleStarMarker(arg.loc, /*isMarker=*/false)))
         return failure();
 
-    if (arg.vararg == VarArgKind::KWVarArg) {
+    if (arg.variadicKind == VariadicKind::KwVarArg) {
       foundKwargs = true;
 
       if (kind == ArgListKind::kParamList ||
@@ -622,7 +629,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   for (ParsedArgument &arg : parsedArgs) {
     if (!arg.name.empty() ||
         arg.kwArgHandling == KWArgHandling::kPositionalOnly ||
-        arg.kwArgHandling == KWArgHandling::kInferred || arg.vararg)
+        arg.kwArgHandling == KWArgHandling::kInferred ||
+        arg.variadicKind != VariadicKind::None)
       continue;
     if (!allUnnamedPosOnly)
       return p.emitError(arg.loc, "unnamed ")
@@ -673,7 +681,7 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
     // If we have a variadic argument, we add a placeholder default value so
     // that invariants about default values always correspond to the trailing
     // arguments. This allows us the have default values before a variadic.
-    if (arg.vararg != VarArgKind::None && !defaults.empty())
+    if (arg.variadicKind != VariadicKind::None && !defaults.empty())
       return UnknownAttr::get(mlir::NoneType::get(type.mlirType.getContext()));
     return {};
   };
@@ -789,16 +797,16 @@ TypeCheckedParamList::TypeCheckedParamList(
     if (!type)
       type = emitter.shared.getTypeCheckErrorType();
 
-    VariadicKind varargKind = VariadicKind::None;
+    // We type check variadicKind and may need to change it, so copy it.
+    auto variadicKind = arg.variadicKind;
+    assert(variadicKind != VariadicKind::PackVarArg &&
+           "parameters may not be variadic packs");
 
-    VarArgKind vararg = arg.vararg;
-    if (vararg == VarArgKind::PackVarArg)
-      emitter.emitError(arg.loc, "parameters may not be variadic packs");
-
-    if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
-      // TODO: What convention should we use for parameter varargs?
-      type = VariadicType::get(type, ArgConvention::ReadReg);
-      varargKind = VariadicKind::PosVarArg;
+    if (variadicKind == VariadicKind::PosVarArg) {
+      if (!type.isTypeCheckErrorType())
+        type = VariadicType::get(type, ArgConvention::ReadReg);
+      else
+        variadicKind = VariadicKind::None;
     }
 
     if (failed(emitDefaultIfPossible(arg, type, defaultPosParams,
@@ -836,7 +844,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     // The unmangled names are also collected to aid keyword parameter binding.
     passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     names.push_back(arg.name);
-    variadicKinds.push_back(varargKind);
+    variadicKinds.push_back(variadicKind);
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
@@ -1013,7 +1021,7 @@ static ASTType
 typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
                                    ExprEmitter &emitter,
                                    TypeCheckedFnSignature &tcSignature) {
-  assert(arg.vararg == VarArgKind::PackVarArg &&
+  assert(arg.variadicKind == VariadicKind::PackVarArg &&
          "this applies to pack arguments");
 
   PValue param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
@@ -1160,7 +1168,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // Start by computing the declared type of the argument.
   ASTType type;
   if (arg.typeExpr) {
-    if (arg.vararg != VarArgKind::PackVarArg) {
+    if (arg.variadicKind != VariadicKind::PackVarArg) {
       // Emit the argument type. Allow argument types to be "automatically"
       // parameterized: if the type is fully unbound, its parameters are
       // appended to the function parameters.
@@ -1179,7 +1187,8 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     if (!type) {
       type = shared.getTypeCheckErrorType();
       arg.isErroneous = true;
-      arg.vararg = VarArgKind::None; // Don't break invariants on errors.
+      arg.variadicKind =
+          VariadicKind::None; // Don't break invariants on errors.
     }
     type = addImplicitTypeParams(type, tcSignature.paramList, /*append=*/true);
   } else if (idx == 0 && tcSignature.selfType &&
@@ -1213,7 +1222,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // If no convention was explicitly specified, default to 'read'.
   if (arg.convention == ParsedArgument::kConventionUnspec) {
     // TODO: enable other conventions for **kwargs.
-    arg.convention = arg.vararg == VarArgKind::KWVarArg
+    arg.convention = arg.variadicKind == VariadicKind::KwVarArg
                          ? ParsedArgument::kConventionOwned
                          : ParsedArgument::kConventionRead;
   }
@@ -1253,11 +1262,11 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     arg.kgenConvention = ArgConvention::OwnedMem;
     break;
   case ParsedArgument::kConventionRef: {
-    if (arg.vararg != VarArgKind::None) {
+    if (arg.variadicKind != VariadicKind::None) {
       // There should be no reason this isn't supportable.
       shared.emitError(
           arg.loc, "TODO: variadic isn't supported with 'ref' convention yet");
-      arg.vararg = VarArgKind::None;
+      arg.variadicKind = VariadicKind::None;
     }
     auto refType =
         processRefOriginSpecifier(arg.refOriginExpr, type, arg.name,
@@ -1278,7 +1287,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
     // have origins and can't be correctly tracked if captured in an async
     // function. Emit an error to avoid a footgun.
-    if (arg.vararg != VarArgKind::PackVarArg &&
+    if (arg.variadicKind != VariadicKind::PackVarArg &&
         conv == TypeConvention::RegisterPassable &&
         tcSignature.argList.effects.isAsync()) {
       shared.emitError(
@@ -1303,7 +1312,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
 
   // For packs, we figure out the declared arg convention and adjust passed
   // convention.
-  if (arg.vararg == VarArgKind::PackVarArg) {
+  if (arg.variadicKind == VariadicKind::PackVarArg) {
     // Remember the original declared convention, forcing to memory convention.
     // The VariadicPack itself is passed as borrowed except for owned
     // convention: this allows the callee to consume the pack.
@@ -1332,7 +1341,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
   if (hasImplicitOrigin(arg.kgenConvention) &&
-      arg.vararg != VarArgKind::KWVarArg) {
+      arg.variadicKind != VariadicKind::KwVarArg) {
     bool isMutable = arg.kgenConvention != ArgConvention::ReadMem;
     fullType =
         makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
@@ -1343,10 +1352,10 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // If this is a valid vararg argument, then we pass it as a variadic type.
   // The convention is to pass as a register value, in the case of a memory
   // value, we're passing the array of pointers by value.
-  if (arg.vararg == VarArgKind::VarArg) {
+  if (arg.variadicKind == VariadicKind::PosVarArg) {
     fullType = VariadicType::get(fullType, arg.kgenConvention);
     arg.kgenConvention = ArgConvention::ReadReg;
-  } else if (arg.vararg == VarArgKind::KWVarArg) {
+  } else if (arg.variadicKind == VariadicKind::KwVarArg) {
     // We build OwnedKwargsDict[ValType].
     ASTType dictType = shared.getOwnedKwargsDictType(arg.loc);
 
@@ -1979,17 +1988,10 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
 
   ArgConvention argPackOrigConvention = ArgConvention::ByRefError;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
-    VariadicKind varargKind = VariadicKind::None;
-    if (arg.vararg == VarArgKind::VarArg)
-      varargKind = VariadicKind::PosVarArg;
-    else if (arg.vararg == VarArgKind::KWVarArg)
-      varargKind = VariadicKind::KwVarArg;
-    else if (arg.vararg == VarArgKind::PackVarArg)
-      varargKind = VariadicKind::PackVarArg;
     argPogs.emplace_back(PogMetadataAttr::get(
-        arg.name, arg.getKWArgHandlingAsPassingKind(), varargKind));
+        arg.name, arg.getKWArgHandlingAsPassingKind(), arg.variadicKind));
     argConventions.push_back(arg.kgenConvention);
-    if (arg.vararg == VarArgKind::PackVarArg)
+    if (arg.variadicKind == VariadicKind::PackVarArg)
       argPackOrigConvention = arg.kgenVariadicConvention;
   }
 

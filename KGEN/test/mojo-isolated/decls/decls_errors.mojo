@@ -244,7 +244,6 @@ fn invalidPackType(*x: *Int): pass
 
 fn invalidParameterPack[*Ts: AnyType]():
   @parameter
-  # expected-error @+2 {{expected a type, not a value}}
   # expected-error @+1 {{parameters may not be variadic packs}}
   fn invalid[*Us: *Ts](): pass
 

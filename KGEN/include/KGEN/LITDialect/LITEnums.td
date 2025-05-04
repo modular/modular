@@ -19,9 +19,13 @@ include "mlir/IR/EnumAttr.td"
 
 def LIT_VariadicKind : I32EnumAttr<"VariadicKind",
     "Whether an argument is a homogenous variadic or pack", [
+  /// Not a variadic argument, e.g. `x: Int`.
   I32EnumAttrCase<"None", 0, "not_vararg">,
+  /// A homogeneously typed variadic argument, e.g. `*x` or `*x: Int`.
   I32EnumAttrCase<"PosVarArg", 1, "pos_vararg">,
+  /// A heterogeneously typed variadic argument, e.g. `*x: *Ts`.
   I32EnumAttrCase<"PackVarArg", 2, "pack_vararg">,
+  /// A variadic keywords argument, e.g. `**x: Int`.
   I32EnumAttrCase<"KwVarArg", 3, "kw_vararg">
 ]> {
   let cppNamespace = "M::KGEN::LIT";
