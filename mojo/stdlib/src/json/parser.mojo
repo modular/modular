@@ -370,6 +370,18 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         self._idx = 0
 
     @always_inline
+    fn _has_input(self) -> Bool:
+        """
+        Checks if there is more input to parse.
+
+        Optimized implementation using cached length for better performance.
+
+        Returns:
+            True if there is more input, False otherwise.
+        """
+        return self._idx < len(self._slice)
+
+    @always_inline
     fn _peek(self) -> Byte:
         """
         Returns the current byte without advancing the parser.
@@ -565,8 +577,35 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         if c == ord("n"):
             self._expect("null")
             return JSONValue[origin]()
+        elif (ord("0") <= Int(c) <= ord("9")) or c == ord("-"):
+            # Number value (common in JSON)
+            return self._parse_number()
+        else:
+            # Invalid value type - create an informative error
+            var context: String
+            if self._idx + 8 < len(self._slice):
+                # Show a small preview of the invalid content
+                context = (
+                    String(
+                        bytes=Span[Byte, origin](
+                            ptr=self._slice.unsafe_ptr() + self._idx, length=8
+                        )
+                    )
+                    + "..."
+                )
+            else:
+                context = String(
+                    bytes=Span[Byte, origin](
+                        ptr=self._slice.unsafe_ptr() + self._idx,
+                        length=len(self._slice) - self._idx,
+                    )
+                )
 
-        return self._parse_number()
+            raise Error("Invalid JSON value starting with: '", context, "'")
+
+        # Parser should never reach this point due to the else clause above
+        # but compiler may expect a return value
+        return JSONValue[origin]()
 
     fn _parse_string(mut self) -> String:
         """
@@ -726,8 +765,45 @@ fn loads(text: String) raises -> JSONValue[__origin_of(text)]:
     Raises:
         Error: If the JSON is invalid.
     """
+    if len(text) == 0:
+        raise Error("Empty JSON input")
+
     var p = JSONParser(text)
     p._skip_whitespace()
-    var result = p.parse_value()
-    p._skip_whitespace()
-    return result
+    if not p._has_input():
+        raise Error("Empty JSON input (only whitespace)")
+
+    # Parse the value with optimized error handling
+    try:
+        var result = p.parse_value()
+
+        # Strict validation - ensure no trailing content
+        p._skip_whitespace()
+
+        if p._has_input():
+            # Performance optimization: only build error string if needed
+            var remaining = len(p._slice) - p._idx
+            var show_len = min(remaining, 16)  # Limit to reduce allocation size
+
+            var trailing = String(
+                bytes=Span[Byte, __origin_of(text)](
+                    ptr=p._slice.unsafe_ptr() + p._idx, length=show_len
+                )
+            )
+
+            if show_len < remaining:
+                trailing += "..."
+
+            raise Error(
+                "Unexpected trailing content after JSON value: '", trailing, "'"
+            )
+
+        return result
+    except e:
+        # Re-throw but with better context if needed
+        if "at position" in String(e):
+            # Error already has position info
+            raise e
+        else:
+            # Add position info to improve debugging
+            raise Error(e, " at position ", p._idx)

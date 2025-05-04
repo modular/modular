@@ -15,7 +15,7 @@
 
 from json import loads
 from json.parser import JSONValue
-from testing import assert_equal, assert_true, assert_false
+from testing import assert_equal, assert_true, assert_false, assert_raises
 
 
 def test_loads():
@@ -139,9 +139,33 @@ def test_nested_structures():
     assert_equal(String(reparsed), serialized)
 
 
+def test_invalid_json():
+    with assert_raises(contains="Empty JSON input"):
+        _ = loads("")
+
+    with assert_raises(contains="Empty JSON input (only whitespace)"):
+        _ = loads(" ")
+
+    with assert_raises(
+        contains="Invalid JSON value starting with: 'a' at position 0"
+    ):
+        _ = loads("a")
+
+    with assert_raises(
+        contains=(
+            "Unexpected trailing content after JSON value: 'a' at position 3"
+        )
+    ):
+        _ = loads("123a")
+
+    with assert_raises(contains="Invalid JSON value"):
+        _ = loads("[")
+
+
 def main():
     test_loads()
     test_primitive_serialization()
     test_array_serialization()
     test_object_serialization()
     test_nested_structures()
+    test_invalid_json()
