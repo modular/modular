@@ -12,8 +12,11 @@
 #define KGEN_KGENDIALECT_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/Dialect.h"
 #include "llvm/ADT/StringMap.h"
+
+#include <filesystem>
 
 // Pull in the dialect definition.
 #include "KGEN/KGENDialect/KGENDialect.h.inc"

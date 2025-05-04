@@ -7,8 +7,8 @@
 #ifndef SUPPORT_COMPILER_TIMEPROFILERTIMINGMANAGER_H
 #define SUPPORT_COMPILER_TIMEPROFILERTIMINGMANAGER_H
 
-#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 namespace M {
 
@@ -37,7 +37,7 @@ protected:
   void startTimer(void *handle) override;
   void stopTimer(void *handle) override;
   void *nestTimer(void *handle, const void *id,
-                  function_ref<std::string()> nameBuilder) override;
+                  llvm::function_ref<std::string()> nameBuilder) override;
   void hideTimer(void *handle) override;
 
   /// The internal implementation of the `TimeProfilerTimingManager`.

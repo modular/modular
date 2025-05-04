@@ -12,6 +12,7 @@
 #include "Support/ErrorOr.h"
 
 #include <filesystem>
+#include <variant>
 
 namespace M {
 class Config;

@@ -6,6 +6,7 @@
 
 #include "Support/Process.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"

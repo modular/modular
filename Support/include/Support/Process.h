@@ -8,6 +8,8 @@
 #define SUPPORT_PROCESS_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+
 #include <vector>
 
 namespace M {

@@ -15,6 +15,6 @@ M::ErrorOr<size_t> M::getAvailableDiskSpace(const std::filesystem::path &path) {
   std::error_code ec;
   std::filesystem::space_info info = std::filesystem::space(path, ec);
   if (ec)
-    return Error(Twine(ec.message()));
+    return Error(llvm::Twine(ec.message()));
   return info.available;
 }

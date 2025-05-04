@@ -24,7 +24,9 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
+
 #include <cmath>
+#include <thread>
 
 #define DEBUG_TYPE "asyncrt"
 

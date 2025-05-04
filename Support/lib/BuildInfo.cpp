@@ -7,7 +7,6 @@
 #include "Support/BuildInfo.h"
 #include "Config/Version.h"
 #include "Support/AlignedAlloc.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 

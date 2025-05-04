@@ -215,7 +215,6 @@ modular_cc_library(
     srcs = ["lib/Configuration.cpp"],
     hdrs = ["include/Support/Configuration.h"],
     deps = [
-        ":ADT",
         ":Base",
         ":Filesystem",
     ],
@@ -296,8 +295,6 @@ modular_cc_library(
     hdrs = glob(["include/Support/HTTP/*.h"]),
     deps = [
         ":Base",
-        ":Base64",
-        ":Buffer",
         ":Configuration",
         ":Threading",
         ":UI",
@@ -446,6 +443,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Base",
+        ":Base64",
         ":Configuration",
         ":Filesystem",
         ":HTTP",

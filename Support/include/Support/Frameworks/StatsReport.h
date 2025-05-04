@@ -7,14 +7,11 @@
 #ifndef SUPPORT_FRAMEWORKS_STATSREPORT_H
 #define SUPPORT_FRAMEWORKS_STATSREPORT_H
 
-#include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/StringMap.h"
 
-#include <memory>
 #include <string>
-#include <unordered_map>
 
 namespace M::Frameworks {
 

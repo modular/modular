@@ -6,6 +6,7 @@
 
 #include "KGEN/Support/Configuration.h"
 #include "Support/Configuration.h"
+#include <variant> // IWYU pragma: keep (std::visit)
 
 using namespace M;
 using namespace M::KGEN;

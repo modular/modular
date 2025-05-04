@@ -11,6 +11,8 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 
+#include <thread>
+
 #define DEBUG_TYPE "asyncrt"
 
 using namespace M;

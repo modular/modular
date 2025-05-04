@@ -6,6 +6,8 @@
 
 #include "Support/Threading/SpinWaiter.h"
 
+#include <thread>
+
 using namespace M;
 
 bool Detail::SpinWaiterBase::yieldToOS() {

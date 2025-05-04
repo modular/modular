@@ -8,6 +8,7 @@
 #define KGEN_CODIALECT_COUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 
 namespace M {
 class TypeArrayAttr;

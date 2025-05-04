@@ -16,6 +16,7 @@
 #include "llvm/Support/Threading.h"
 
 #include "gtest/gtest.h"
+#include <thread>
 
 using namespace M::AsyncRT;
 

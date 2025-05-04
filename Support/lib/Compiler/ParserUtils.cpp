@@ -6,6 +6,7 @@
 
 #include "Support/Compiler/ParserUtils.h"
 
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 
 using namespace M;
@@ -94,7 +95,7 @@ ParseResult M::parseParenOperandListWithShadowing(
                                      parseOperandFn, "in operand list"))
     return failure();
 
-  StringSet<> argumentNames;
+  llvm::StringSet<> argumentNames;
   for (auto arg : argumentInfo) {
     argumentNames.insert(
         (Twine(arg.ssaName.name) + "#" + Twine(arg.ssaName.number)).str());

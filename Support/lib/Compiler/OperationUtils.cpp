@@ -5,9 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/OperationUtils.h"
-#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/SymbolTable.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 
 std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,

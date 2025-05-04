@@ -12,7 +12,6 @@
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter.h"
 #include "opentelemetry/sdk/metrics/push_metric_exporter.h"
-#include <filesystem>
 
 #endif // MODULAR_ENABLE_TELEMETRY
 

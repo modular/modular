@@ -8,12 +8,10 @@
 #define SUPPORT_TELEMETRY_INSTRUMENTS_H
 
 #include "Support/Telemetry/ForwardDecls.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 #include <chrono>
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/metrics/sync_instruments.h"
-#include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry {

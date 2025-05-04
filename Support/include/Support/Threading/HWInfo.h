@@ -47,16 +47,16 @@ struct CPUSystemInfo {
 
   /// A 'physical' core, generally with its own dedicated cache levels.
   struct PhysicalCore {
-    SmallVector<VirtualCore, 2> virtualCores;
+    llvm::SmallVector<VirtualCore, 2> virtualCores;
   };
 
   /// A 'socket', generally with its own NUMA memory area and dedicated cache
   /// levels.
   struct Socket {
-    SmallVector<PhysicalCore, 16> physicalCores;
+    llvm::SmallVector<PhysicalCore, 16> physicalCores;
   };
 
-  SmallVector<Socket, 1> sockets;
+  llvm::SmallVector<Socket, 1> sockets;
 
   /// Returns system info if it can be determined. Fidelity with respect to
   /// actual hardware may vary depending on host OS. Returns an error if system

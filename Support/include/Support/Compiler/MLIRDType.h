@@ -8,7 +8,6 @@
 #define SUPPORT_COMPILER_MLIRDTYPE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/BuiltinTypes.h"
 
 namespace M {
 class DType;

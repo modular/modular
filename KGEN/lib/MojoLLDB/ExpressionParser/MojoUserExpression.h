@@ -9,6 +9,7 @@
 
 #include "JITUserExpression.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "lldb/Expression/LLVMUserExpression.h"
 
 namespace M::KGEN::Mojo {

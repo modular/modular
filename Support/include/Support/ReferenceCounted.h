@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <cassert>
-#include <cstddef>
 
 namespace M {
 template <typename T>

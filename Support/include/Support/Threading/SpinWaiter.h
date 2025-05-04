@@ -7,10 +7,8 @@
 #ifndef SUPPORT_THREADING_SPINWAITER_H
 #define SUPPORT_THREADING_SPINWAITER_H
 
-#include <optional>
-
 #include <chrono>
-#include <thread>
+#include <optional>
 
 #ifdef _MSC_VER
 #include <immintrin.h> // _mm_pause

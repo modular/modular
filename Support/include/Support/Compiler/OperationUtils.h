@@ -9,10 +9,8 @@
 
 #include <utility>
 
-#include "Support/Compiler/MLIRToString.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Operation.h"
-#include "llvm/ADT/SetVector.h"
 
 namespace M {
 /// Generate a unique flat symbol name with respect to the provided symbol table

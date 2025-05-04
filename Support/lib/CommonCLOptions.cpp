@@ -6,6 +6,7 @@
 
 #include "Support/CommonCLOptions.h"
 #include "mlir/Support/FileUtilities.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <filesystem>
 

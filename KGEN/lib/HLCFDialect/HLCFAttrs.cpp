@@ -7,6 +7,7 @@
 #include "KGEN/HLCFDialect/HLCFAttrs.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"

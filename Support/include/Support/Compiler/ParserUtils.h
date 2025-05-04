@@ -10,8 +10,6 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/Operation.h"
-#include "llvm/ADT/StringExtras.h"
 
 namespace M {
 

@@ -6,11 +6,9 @@
 
 #include "Support/HTTP/HTTPClient.h"
 
-#include "Support/Base64.h"
-#include "Support/Configuration.h"
 #include "Support/Threading/Shared.h"
-#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include "curl/curl.h"

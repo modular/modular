@@ -14,7 +14,6 @@
 
 #include "Support/ErrorOr.h"
 
-#include <chrono>
 #include <cmath>
 #include <string>
 #include <vector>

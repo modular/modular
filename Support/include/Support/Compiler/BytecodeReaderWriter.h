@@ -8,9 +8,8 @@
 #define SUPPORT_COMPILER_BYTECODEREADERWRITER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Bytecode/BytecodeReader.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "llvm/Support/MemoryBufferRef.h"
 

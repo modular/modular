@@ -10,13 +10,12 @@
 #include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 
-#include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 
 #include "client/crash_report_database.h"
 #include "client/crashpad_client.h"
 #include "client/settings.h"
-#include "client/simulate_crash.h"
+#include "client/simulate_crash.h" // IWYU pragma: keep (CRASHPAD_SIMULATE_CRASH)
 
 using namespace M;
 

@@ -8,13 +8,11 @@
 #define SUPPORT_BUFFER_H
 
 #include "Support/ADT/SmartVariant.h"
-#include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/STLExtras.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"

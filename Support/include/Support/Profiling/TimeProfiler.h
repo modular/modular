@@ -61,7 +61,6 @@
 #ifndef SUPPORT_PROFILING_TIMEPROFILER_H
 #define SUPPORT_PROFILING_TIMEPROFILER_H
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -809,7 +808,7 @@ struct GlobalProfilerContext {
   uint16_t nextThreadIndex = 0;
 
   /// A set of active thread profiler contexts.
-  DenseSet<ThreadProfilerContext *> threadProfilerContexts;
+  llvm::DenseSet<ThreadProfilerContext *> threadProfilerContexts;
 
   SmallVector<std::string> inputShapes;
 

@@ -14,7 +14,6 @@
 #include "Support/Threading/SpinWaiter.h"
 
 #include <atomic>
-#include <new>
 #include <type_traits>
 
 namespace M {
