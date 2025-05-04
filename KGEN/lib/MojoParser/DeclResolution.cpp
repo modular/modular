@@ -1342,6 +1342,38 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
       emitter.shared.getBuiltinVariadicListType(parentDecl, loc, (bool)refType);
   if (varListType.isTypeCheckErrorType())
     return {};
+  auto varListStruct =
+      dyn_cast_if_present<StructDeclOp>(varListType.getDecl(emitter.shared));
+  if (!varListStruct) {
+    emitter.emitError(loc, "malformed VariadicListInMem");
+    return {};
+  }
+
+  // Bind the "is_owned" parameter, start by filling the parameter list with ?.
+  if (refType) {
+    SmallVector<TypedAttr> typeParams;
+    ParameterEvaluator evaluator;
+    for (Type type : varListStruct.getSignature().getParamTypes()) {
+      typeParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
+      evaluator.addInputValue(typeParams.back());
+    }
+
+    // The last parameter is the "is_owned" parameter.
+    // Emit the "is_owned" parameter.
+    auto isOwnedAttr =
+        BoolAttr::get(emitter.getContext(),
+                      variadicType.getConvention() == ArgConvention::OwnedMem);
+    SyntheticNode locExpr(loc);
+    PValue isOwnedVal = // Convert to Bool.
+        emitter.emitPValue({isOwnedAttr, &locExpr}, EC_Type,
+                           typeParams.back().getType());
+    if (!isOwnedVal)
+      return {};
+    typeParams.back() = isOwnedVal;
+
+    varListType = varListStruct.bindReference(typeParams);
+    assert(varListType && "Failed to bind type params");
+  }
 
   // Emit a VarDeclOp: VaridicListMem needs a origin for its self accesses.
   // This also provides a user name for the argument.
