@@ -560,6 +560,7 @@ struct _VariadicListMemIter[
     elt_type: AnyType,
     elt_origin: Origin[elt_is_mutable],
     list_origin: ImmutableOrigin,
+    is_owned: Bool,
 ]:
     """Iterator for VariadicListMem.
 
@@ -570,7 +571,7 @@ struct _VariadicListMemIter[
         list_origin: The origin of the VariadicListMem.
     """
 
-    alias variadic_list_type = VariadicListMem[elt_type, elt_origin]
+    alias variadic_list_type = VariadicListMem[elt_type, elt_origin, is_owned]
 
     var index: Int
     var src: Pointer[Self.variadic_list_type, list_origin]
@@ -587,6 +588,7 @@ struct VariadicListMem[
     elt_is_mutable: Bool, //,
     element_type: AnyType,
     origin: Origin[elt_is_mutable],
+    is_owned: Bool,
 ]:
     alias reference_type = Pointer[element_type, origin]
     alias _mlir_ref_type = Self.reference_type._mlir_type
@@ -632,17 +634,16 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, origin, __origin_of(self)]:
+        out result: _VariadicListMemIter[
+            element_type, origin, __origin_of(self), is_owned
+        ],
+    ):
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return _VariadicListMemIter[
-            element_type,
-            origin,
-            __origin_of(self),
-        ](0, Pointer(to=self))
+        return __type_of(result)(0, Pointer(to=self))
 
 
 alias _AnyTypeMetaType = __type_of(AnyType)
