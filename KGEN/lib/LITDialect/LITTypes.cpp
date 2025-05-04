@@ -871,11 +871,6 @@ Type RefPackType::getVariadicElementType() {
   return ::cast<VariadicType>(getVariadic().getType()).getElementType();
 }
 
-/// This returns the arg convention of the variadic list parameter.
-ArgConvention RefPackType::getVariadicConvention() {
-  return ::cast<VariadicType>(getVariadic().getType()).getConvention();
-}
-
 //===----------------------------------------------------------------------===//
 // REPLResultRefType
 //===----------------------------------------------------------------------===//
