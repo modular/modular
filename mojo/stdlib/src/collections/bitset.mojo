@@ -103,7 +103,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
     lookup speed are critical.
     """
 
-    alias _words_size = ceildiv(size, _WORD_BITS)
+    alias _words_size = max(1, ceildiv(size, _WORD_BITS))
     var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #

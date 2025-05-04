@@ -534,6 +534,136 @@ def test_bitset_len():
     assert_equal(len(bs), expected, msg="Len: Pattern insertion")
 
 
+def test_bitset_small_size():
+    # Test BitSet with size less than 64 (word size)
+    var bs = BitSet[32]()
+    assert_equal(len(bs), 0, msg="Small BitSet: Empty should have length 0")
+
+    # Set a few bits
+    bs.set(0)
+    bs.set(15)
+    bs.set(31)  # Edge of the small bitset
+    assert_equal(len(bs), 3, msg="Small BitSet: Should have 3 bits set")
+
+    # Test individual bits
+    assert_true(bs.test(0), msg="Small BitSet: Bit 0 should be set")
+    assert_true(bs.test(15), msg="Small BitSet: Bit 15 should be set")
+    assert_true(bs.test(31), msg="Small BitSet: Bit 31 should be set")
+    assert_false(bs.test(16), msg="Small BitSet: Bit 16 should not be set")
+
+    # Test clear
+    bs.clear(15)
+    assert_equal(
+        len(bs), 2, msg="Small BitSet: Should have 2 bits after clearing"
+    )
+    assert_false(bs.test(15), msg="Small BitSet: Bit 15 should be cleared")
+
+    # Test toggle
+    bs.toggle(16)
+    assert_equal(
+        len(bs), 3, msg="Small BitSet: Should have 3 bits after toggle"
+    )
+    assert_true(
+        bs.test(16), msg="Small BitSet: Bit 16 should be set after toggle"
+    )
+
+    # Test clear_all
+    bs.clear_all()
+    assert_equal(
+        len(bs), 0, msg="Small BitSet: Should be empty after clear_all"
+    )
+    assert_true(
+        bs.is_empty(), msg="Small BitSet: Should be empty after clear_all"
+    )
+
+    # Test very small BitSet (size 1)
+    var bs1 = BitSet[1]()
+    assert_equal(len(bs1), 0, msg="BitSet[1]: Empty should have length 0")
+    bs1.set(0)
+    assert_equal(len(bs1), 1, msg="BitSet[1]: Should have 1 bit set")
+    assert_true(bs1.test(0), msg="BitSet[1]: Bit 0 should be set")
+
+    # Test BitSet with size 2
+    var bs2 = BitSet[2]()
+    bs2.set(0)
+    bs2.set(1)
+    assert_equal(len(bs2), 2, msg="BitSet[2]: Should have 2 bits set")
+    bs2.toggle(0)
+    assert_equal(len(bs2), 1, msg="BitSet[2]: Should have 1 bit after toggle")
+    assert_false(bs2.test(0), msg="BitSet[2]: Bit 0 should be toggled off")
+
+    # Test BitSet with size 3 (odd size)
+    var bs3 = BitSet[3]()
+    bs3.set(0)
+    bs3.set(1)
+    bs3.set(2)
+    assert_equal(len(bs3), 3, msg="BitSet[3]: Should have all 3 bits set")
+    assert_true(bs3.test(2), msg="BitSet[3]: Bit 2 should be set")
+
+    # Test BitSet with size 8 (byte boundary)
+    var bs8 = BitSet[8]()
+    for i in range(8):
+        bs8.set(i)
+    assert_equal(len(bs8), 8, msg="BitSet[8]: Should have all 8 bits set")
+    bs8.clear_all()
+    assert_equal(len(bs8), 0, msg="BitSet[8]: Should be empty after clear_all")
+
+    # Test BitSet with size 63 (just under word size)
+    var bs63 = BitSet[63]()
+    bs63.set(62)  # Last valid bit
+    assert_equal(len(bs63), 1, msg="BitSet[63]: Should have 1 bit set")
+    assert_true(bs63.test(62), msg="BitSet[63]: Bit 62 should be set")
+
+    # Test operations on small BitSets
+    var bsA = BitSet[16]()
+    var bsB = BitSet[16]()
+    bsA.set(1)
+    bsA.set(3)
+    bsA.set(5)
+    bsB.set(3)
+    bsB.set(7)
+
+    # Test union
+    var bsUnion = bsA.union(bsB)
+    assert_equal(
+        len(bsUnion), 4, msg="Small BitSet union: Should have 4 bits set"
+    )
+    assert_true(bsUnion.test(1), msg="Small BitSet union: Bit 1 should be set")
+    assert_true(bsUnion.test(3), msg="Small BitSet union: Bit 3 should be set")
+    assert_true(bsUnion.test(5), msg="Small BitSet union: Bit 5 should be set")
+    assert_true(bsUnion.test(7), msg="Small BitSet union: Bit 7 should be set")
+
+    # Test intersection
+    var bsIntersection = bsA.intersection(bsB)
+    assert_equal(
+        len(bsIntersection),
+        1,
+        msg="Small BitSet intersection: Should have 1 bit set",
+    )
+    assert_true(
+        bsIntersection.test(3),
+        msg="Small BitSet intersection: Bit 3 should be set",
+    )
+
+    # Test difference
+    var bsDifference = bsA.difference(bsB)
+    assert_equal(
+        len(bsDifference),
+        2,
+        msg="Small BitSet difference: Should have 2 bits set",
+    )
+    assert_true(
+        bsDifference.test(1), msg="Small BitSet difference: Bit 1 should be set"
+    )
+    assert_true(
+        bsDifference.test(5), msg="Small BitSet difference: Bit 5 should be set"
+    )
+    assert_false(
+        bsDifference.test(3),
+        msg="Small BitSet difference: Bit 3 should not be set",
+    )
+
+
 def main():
     test_bitset_init()
     test_bitset_set_test_clear()
@@ -550,3 +680,4 @@ def main():
     test_bitset_difference()
     test_bitset_simd_init()
     test_bitset_len()
+    test_bitset_small_size()
