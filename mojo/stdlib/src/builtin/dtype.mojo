@@ -765,8 +765,10 @@ struct DType(
 
         if self is DType.bool:
             return __mlir_attr.i1
+
         if self is DType.index:
             return __mlir_attr.index
+
         if self is DType.uint8:
             return __mlir_attr.ui8
         if self is DType.int8:
@@ -791,24 +793,30 @@ struct DType(
             return __mlir_attr.ui256
         if self is DType.int256:
             return __mlir_attr.si256
-        if self is DType.tensor_float32:
-            return __mlir_attr.tf32
-        if self is DType.float32:
-            return __mlir_attr.f32
+
+        if self is DType.float8_e3m4:
+            return __mlir_attr.f8E3M4
+        if self is DType.float8_e4m3fn:
+            return __mlir_attr.f8E4M3
+        if self is DType.float8_e4m3fnuz:
+            return __mlir_attr.f8E4M3FNUZ
+        if self is DType.float8_e5m2:
+            return __mlir_attr.f8E5M2
+        if self is DType.float8_e5m2fnuz:
+            return __mlir_attr.f8E5M2FNUZ
+
         if self is DType.bfloat16:
             return __mlir_attr.bf16
         if self is DType.float16:
             return __mlir_attr.f16
-        if self is DType.float8_e4m3fn:
-            return __mlir_attr.f8E4M3
-        if self is DType.float8_e5m2:
-            return __mlir_attr.f8E5M2
-        if self is DType.float8_e3m4:
-            return __mlir_attr.f8E3M4
-        if self is DType.float8_e5m2fnuz:
-            return __mlir_attr.f8E5M2FNUZ
-        if self is DType.float8_e4m3fnuz:
-            return __mlir_attr.f8E4M3FNUZ
+
+        if self is DType.float32:
+            return __mlir_attr.f32
+        if self is DType.tensor_float32:
+            return __mlir_attr.tf32
+
+        if self is DType.float64:
+            return __mlir_attr.f64
 
         return abort[__mlir_type.`!kgen.deferred`]("invalid dtype")
 
