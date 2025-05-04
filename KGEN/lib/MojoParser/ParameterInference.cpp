@@ -1165,7 +1165,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.
   if (paramTypes.empty() || (!paramListAttr.hasInferredParams() &&
-                             !paramListAttr.isVariadic(paramTypes.size() - 1)))
+                             !paramListAttr.isPosVarArg(paramTypes.size() - 1)))
     return;
 
   auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
@@ -1192,7 +1192,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
-    if (paramListAttr.isVariadic(idx)) {
+    if (paramListAttr.isPosVarArg(idx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
       Type varArgsEltType = expectedVariadic.getElementType();
       while (posIdx != numParams) {
@@ -1231,7 +1231,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   // infer it from, it must be because of an empty variadic list.
   if (!hasArguments) {
     size_t nextParamNo = evaluator.getNumInputParams();
-    if (nextParamNo < types.size() && paramListAttr.isVariadic(nextParamNo)) {
+    if (nextParamNo < types.size() && paramListAttr.isPosVarArg(nextParamNo)) {
       // If we didn't already have a slot for this, make space.
       if (inferredParams.size() <= nextParamNo)
         inferredParams.resize(nextParamNo + 1);
@@ -1419,14 +1419,14 @@ LogicalResult ParameterInferenceState::infer(
   }
 
   // If we have left over operands, then this signature cannot match.
-  if (posOperandIdx != numOperands && !signature.getMetadata().hasVariadic())
+  if (posOperandIdx != numOperands && !signature.getMetadata().hasAnyVarArg())
     return failure();
 
   // If we had a variadic parameter that is unspecified, it must be because of
   // an empty variadic list.
   size_t nextParamNo = evaluator.getNumInputParams();
   if (nextParamNo < signature.getInputParamTypes().size() &&
-      signature.getParamListAttrs().isVariadic(nextParamNo)) {
+      signature.getParamListAttrs().isPosVarArg(nextParamNo)) {
     // If we didn't already have a slot for this, make space.
     if (inferredParams.size() <= nextParamNo)
       inferredParams.resize(nextParamNo + 1);

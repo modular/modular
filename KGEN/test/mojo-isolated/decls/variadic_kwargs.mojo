@@ -17,8 +17,8 @@
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: "[mut [[LT:.*]]](
-# CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> var, *, %c: index, %d: index,
-# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
+# CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index,
+# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|kw_vararg)
 fn variadic_kwargs(a: Index, b: Index, *args: Index, c: Index, d: Index, **kwargs: Index):
     pass
 
@@ -28,7 +28,7 @@ def variadic_kwargs_def_with_type(**kwargs: Index):
     pass
 
 
-# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var,
+# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|kw_vararg,
 fn takes_int_variadic_kwargs(**kwargs: Index):
     pass
 

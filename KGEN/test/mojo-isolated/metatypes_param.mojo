@@ -115,7 +115,7 @@ fn partial_autoparam(value: TwoParam[y=`1`]):
     alias second = value.y
 
 
-# CHECK-LABEL: lit.struct.decl @ParamVarArg<F, I: variadic<index> var>
+# CHECK-LABEL: lit.struct.decl @ParamVarArg<F, I: variadic<index> pos_vararg>
 @value
 @register_passable("trivial")
 struct ParamVarArg[F: Index, *I: Index]:
@@ -123,7 +123,7 @@ struct ParamVarArg[F: Index, *I: Index]:
     # CHECK-SAME: #ParamVarArg <F, :variadic<index> I>
     @staticmethod
     fn self_type() -> Self:
-        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <?, :variadic<index> ?>, <"F": index, "I": variadic<index> var>>
+        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <?, :variadic<index> ?>, <"F": index, "I": variadic<index> pos_vararg>>
         alias Unbound = ParamVarArg
         # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <1, :variadic<index> ?>
         alias BoundSome = Unbound[`1`]

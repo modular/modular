@@ -72,7 +72,7 @@ fn variadic_trait_elt[T: Copyable](*xs: T):
 
 # CHECK-LABEL: lit.fn @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> read_mem|pack)
+# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> read_mem|pack_vararg)
 fn trait_pack[T: Copyable, *Ts: Copyable](first: T, *rest: *Ts):
     pass
 
@@ -609,7 +609,7 @@ struct Outer[X: Int]:
         pass
 
 
-# CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"(%a: !kgen.variadic<!Int> var)
+# CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"(%a: !kgen.variadic<!Int> pos_vararg)
 fn variadics(*a: Int):
     # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
     pass
@@ -676,7 +676,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -1070,7 +1070,7 @@ struct Foo:
 # CHECK: lit.fn @"__init__{{.*}}(%a: !Int, %self: !Int, ?, %self_0[self]: !lit.ref<!Foo, mut {{.*}}> byref_result)
 
 
-# CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> var>
+# CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> pos_vararg>
 @value
 @register_passable("trivial")
 struct ParamVarArg[*I: Int]:
@@ -1105,7 +1105,7 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.fn @"__init__(decls::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> var
+    # CHECK: lit.fn @"__init__(decls::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> pos_vararg
     # The argument is intentionally memory-only.
     @implicit
     fn __init__(out self, *values: ValueMem):

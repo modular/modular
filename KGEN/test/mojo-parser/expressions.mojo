@@ -1074,7 +1074,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
@@ -1098,7 +1098,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   float6: async fn(Int) capturing -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> var, ?, {{.*}}) throws -> i1
+  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> pos_vararg, ?, {{.*}}) throws -> i1
   float7: def(*Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
@@ -1126,7 +1126,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
     fn __copyinit__(out self, other: Self):
         pass
 
-# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
+# CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.var.decl "b"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)

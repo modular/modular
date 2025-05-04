@@ -895,7 +895,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
 
     // Remember that another parameter was passed positionally, if the current
     // parameter isn't variadic.
-    posIdx += !paramList.isVariadic(paramIdx);
+    posIdx += !paramList.isPosVarArg(paramIdx);
   } else {
     // This parameter is passed with a keyword. Find a matching keyword
     // parameter on the parameter list.
@@ -928,7 +928,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   nextType = evaluator.getReboundType(nextType);
 
   // Unwrap the variadic element type.
-  if (paramList.isVariadic(paramIdx))
+  if (paramList.isPosVarArg(paramIdx))
     nextType = nextType.getVariadicElementType();
 
   // HACK: The type could depend on an infer-only parameter for which a value

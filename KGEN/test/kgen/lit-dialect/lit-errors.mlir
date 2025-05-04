@@ -106,7 +106,7 @@ lit.fn @slashAfterStar(%a: index, *, |, %b: index) {
 
 // -----
 
-// expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
+// expected-error @+1 {{expected variadic kind, got: stuff}}
 lit.fn @incorrect_arg_variadicness(%a: index read|stuff) {
   kgen.return
 }
@@ -120,7 +120,7 @@ lit.fn @incorrect_arg_conv_and_variadicness(%a: index stuff) {
 
 // -----
 
-// expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
+// expected-error @+1 {{expected variadic kind, got: stuff}}
 lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
   kgen.return
 }

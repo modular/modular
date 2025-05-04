@@ -916,7 +916,7 @@ fn test_anytrait_subtyping[ty: __type_of(AnyType)]():
 
 # CHECK-LABEL: lit.fn @"take_many_things_of_specified_trait
 # CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
-# CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> var>()
+# CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> pos_vararg>()
 fn take_many_things_of_specified_trait[element_type: __type_of(AnyType),
                                        *element_types: element_type]():
     pass

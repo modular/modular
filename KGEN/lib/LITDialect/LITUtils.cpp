@@ -145,19 +145,16 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 /// Helper to parse sigils that indicate that an argument/parameter is variadic
 /// or a pack. The given index is emplaced in the appropriate list of indices,
 /// if a `var` or `pack` sigil is parsed.
-static ParseResult parseVariadicness(AsmParser &p, bool &isVariadic,
-                                     ssize_t &packIndex, size_t idx) {
+static ParseResult parseVariadicness(AsmParser &p, VariadicKind &variadic,
+                                     size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef sigil;
   if (succeeded(p.parseOptionalKeyword(&sigil))) {
-    if (sigil == "var")
-      isVariadic = true;
-    else if (sigil == "pack") {
-      if (packIndex != -1)
-        return p.emitError(loc, "multiple packs not supported");
-      packIndex = idx;
-    } else
-      return p.emitError(loc, "expected 'var' or 'pack', got: ") << sigil;
+    if (std::optional<VariadicKind> kind = symbolizeVariadicKind(sigil)) {
+      variadic = *kind;
+    } else {
+      return p.emitError(loc, "expected variadic kind, got: ") << sigil;
+    }
   }
   return success();
 }
@@ -176,8 +173,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<bool> argsVariadic;
-  ssize_t packIndex = -1;
+  SmallVector<VariadicKind> argsVariadic;
   std::optional<ArgConvention> origPackConvention;
 
   bool foundPosDefault = false;
@@ -214,12 +210,12 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
     }
     paramNames.emplace_back(paramName);
 
-    if (failed(parseVariadicness(p, argsVariadic.emplace_back(), packIndex,
-                                 idx++)))
+    if (failed(parseVariadicness(
+            p, argsVariadic.emplace_back(VariadicKind::None), idx++)))
       return failure();
 
     // Parameters don't really have ArgConvention's.
-    if (packIndex == ssize_t(idx - 1))
+    if (argsVariadic.back() == VariadicKind::PackVarArg)
       origPackConvention = ArgConvention::ReadReg;
 
     TypedAttr defaultVal;
@@ -255,16 +251,15 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogListAttr::get(
-      ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
-      argsVariadic, packIndex, std::move(origPackConvention));
+  paramListAttr = PogListAttr::get(ctx, paramNames, paramPassingKinds,
+                                   defaultPosParams, defaultKwOnlyParams,
+                                   argsVariadic, std::move(origPackConvention));
   return success();
 }
 
 ParseResult LIT::parseConventionAndVariadicness(
-    AsmParser &p, ArgConvention &convention, bool &isVariadic,
-    ssize_t &argPackIndex, std::optional<ArgConvention> &origArgPackConvention,
-    size_t idx) {
+    AsmParser &p, ArgConvention &convention, VariadicKind &variadic,
+    std::optional<ArgConvention> &origArgPackConvention, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
   convention = ArgConvention::ReadReg;
@@ -275,70 +270,46 @@ ParseResult LIT::parseConventionAndVariadicness(
       if (failed(p.parseOptionalVerticalBar()))
         return success();
       // Otherwise we also parse a variadicness
-      if (parseVariadicness(p, isVariadic, argPackIndex, idx))
+      if (parseVariadicness(p, variadic, idx))
         return failure();
 
-      if (argPackIndex == ssize_t(idx)) {
-        argPackIndex = idx;
+      if (variadic == VariadicKind::PackVarArg) {
         origArgPackConvention = convention;
         if (convention != ArgConvention::OwnedMem)
           convention = ArgConvention::ReadMem;
       }
       return success();
     }
-    if (str == "var") {
-      isVariadic = true;
-    } else if (str == "pack") {
-      if (argPackIndex != -1)
-        return p.emitError(loc, "multiple packs not supported");
-      argPackIndex = idx;
+
+    std::optional<VariadicKind> kind = symbolizeVariadicKind(str);
+    if (!kind.has_value())
+      return p.emitError(loc, "expected convention|variadicness, got: ") << str;
+    variadic = *kind;
+
+    if (variadic == VariadicKind::PackVarArg) {
       origArgPackConvention = convention;
       if (convention != ArgConvention::OwnedMem)
         convention = ArgConvention::ReadMem;
-    } else
-      return p.emitError(loc, "expected convention|variadicness, got: ") << str;
+    }
   }
   return success();
 }
 
 /// Print the variadicness as a strings.
-static void printVariadicness(AsmPrinter &p, Variadicness variadicness,
+static void printVariadicness(AsmPrinter &p, VariadicKind variadicness,
                               char separator = ' ') {
-  if (variadicness == Variadicness::kNone)
-    return;
-
-  p << separator;
-  if (variadicness == Variadicness::kVariadic)
-    p << "var";
-  else if (variadicness == Variadicness::kPack) {
-    p << "pack";
-  } else
-    llvm_unreachable("unknown Variadicness");
+  if (variadicness != VariadicKind::None)
+    p << separator << stringifyVariadicKind(variadicness);
 }
 
 void LIT::printConventionAndVariadicness(AsmPrinter &p,
                                          ArgConvention convention,
-                                         Variadicness variadicness) {
+                                         VariadicKind variadicness) {
   if (convention == ArgConvention::ReadReg)
     return printVariadicness(p, variadicness);
 
   p << ' ' << stringifyArgConvention(convention);
   printVariadicness(p, variadicness, '|');
-}
-
-/// Return an array of enums representing the variadicness of each
-/// argument/parameter in the given list.
-SmallVector<Variadicness> LIT::getVariadicness(PogListAttr pogListAttr) {
-  size_t numPogs = pogListAttr.size();
-  SmallVector<Variadicness> res;
-  res.reserve(numPogs);
-  for (size_t idx = 0; idx < numPogs; ++idx) {
-    res.push_back(pogListAttr.isVariadic(idx) ? Variadicness::kVariadic
-                                              : Variadicness::kNone);
-  }
-  if (pogListAttr.hasPack())
-    res[pogListAttr.getPackIndex()] = Variadicness::kPack;
-  return res;
 }
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
@@ -350,7 +321,6 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     evaluator.addInputValue(ParamDeclRefAttr::get(param));
 
   DefaultValueHandler defaultHandler(paramListAttr);
-  SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
@@ -363,7 +333,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
         name != demangleParameterName(decl.getName()))
       p << '[' << name << ']';
     printParamDecl(p, decl);
-    printVariadicness(p, variadicness[idx]);
+    printVariadicness(p, paramListAttr.getVariadicKind(idx));
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
@@ -385,8 +355,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<bool> argVariadics;
-  ssize_t packIndex = -1;
+  SmallVector<VariadicKind> argVariadics;
 
   // Parse the input parameter types and optional default values.
   llvm::SMLoc startLoc = p.getCurrentLocation();
@@ -405,9 +374,12 @@ LIT::parseOptionalParamSignature(AsmParser &p,
     if (failed(parseKGENType(p, type)))
       return failure();
 
-    if (failed(parseVariadicness(p, argVariadics.emplace_back(), packIndex,
-                                 idx++)))
+    if (failed(parseVariadicness(
+            p, argVariadics.emplace_back(VariadicKind::None), idx++)))
       return failure();
+
+    if (argVariadics.back() == VariadicKind::PackVarArg)
+      return p.emitError(startLoc, "pack not supported in parameter list");
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
@@ -427,12 +399,9 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  if (packIndex != -1)
-    return p.emitError(startLoc, "pack not supported in parameter list");
-
   paramListAttr = PogListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, argVariadics, packIndex, std::nullopt);
+      defaultKwOnlyParams, argVariadics, std::nullopt);
   return success();
 }
 
@@ -440,7 +409,6 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> inputParamTypes,
                                       PogListAttr paramListAttr) {
   DefaultValueHandler defaultHandler(paramListAttr);
-  SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   auto printWithDefault = [&](Type type) {
@@ -451,7 +419,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
       p << ": ";
     }
     printKGENType(p, type);
-    printVariadicness(p, variadicness[idx]);
+    printVariadicness(p, paramListAttr.getVariadicKind(idx));
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       p << " = ";
@@ -545,7 +513,6 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
     p << "no_nested_origin_exclusivity";
 
   PogListAttr argListAttr = signature.getArgListAttrs();
-  SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
   DefaultValueHandler defaultHandler(argListAttr);
   PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
   auto printElt = [&](unsigned i) {
@@ -559,13 +526,13 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
 
     p << signature.getArguments()[i];
     ArgConvention argConv = signature.getArgConvention(i);
-    if (variadicness[i] == Variadicness::kPack) {
+    if (argListAttr.isPack(i)) {
       assert(argConv == ArgConvention::ReadMem ||
              argConv == ArgConvention::OwnedMem ||
              argConv == ArgConvention::OwnedReg);
       argConv = signature.getPackVarArgConvention(i);
     }
-    printConventionAndVariadicness(p, argConv, variadicness[i]);
+    printConventionAndVariadicness(p, argConv, argListAttr.getVariadicKind(i));
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
@@ -1014,7 +981,7 @@ LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
   DefaultValueHandler defaultHandler(pogListAttr);
   for (size_t idx = 0; idx < pogListAttr.size(); ++idx) {
     TypedAttr defaultOr = defaultHandler.getDefault(idx);
-    if (!defaultOr || pogListAttr.isPack(idx) || pogListAttr.isVariadic(idx))
+    if (!defaultOr || pogListAttr.isAnyVarArg(idx))
       continue;
 
     Type expectedType = types[idx];

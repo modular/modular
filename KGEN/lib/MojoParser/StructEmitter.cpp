@@ -642,7 +642,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
       continue;
     // Skip any kind of var-args.
     FnMetadataAttr fnMetadata = signature.getBody().getMetadata();
-    if (fnMetadata.hasVarArgs() || fnMetadata.hasPackVarArgs())
+    if (fnMetadata.hasAnyVarArg())
       continue;
 
     bool isMatch = true;

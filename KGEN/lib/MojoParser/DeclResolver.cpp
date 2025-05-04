@@ -941,7 +941,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
         [&](auto typeAndIdx) {
           auto [idx, implType] = typeAndIdx;
           ASTType type = implType;
-          if (fullSig.getMetadata().isVariadic(idx + numSkipped)) {
+          if (fullSig.getMetadata().isPosVarArg(idx + numSkipped)) {
             os << "*";
             type = type.getVariadicElementType();
           }

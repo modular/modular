@@ -508,7 +508,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (posOperandIdx < operands.size()) {
       // For a normal (not a vararg or a pack) positional argument, we just emit
       // it and add it to our list.
-      if (!calleeSig.isPosVarArg(argIdx) && !calleeSig.isPackVarArg(argIdx)) {
+      if (!calleeSig.isPosVarArg(argIdx) && !calleeSig.isPack(argIdx)) {
         ASTExprAnd<AnyValue> operand = operands[posOperandIdx++];
         AnyValue argVal =
             emitOneArgVal(operand, argIdx, convention, expectedType);
@@ -1327,7 +1327,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   }
 
   // Normal arguments.
-  if (!signature.isPackVarArg(argIdx)) {
+  if (!signature.isPack(argIdx)) {
     checkArg(argVal, signature.getArgConvention(argIdx));
     return;
   }
@@ -1553,7 +1553,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
 
     // Owned and borrowed packs are passed as expected, but mut and read
     // are passed borrowed.
-    if (calleeSig.isPackVarArg(argIdx) && convention != ArgConvention::OwnedMem)
+    if (calleeSig.isPack(argIdx) && convention != ArgConvention::OwnedMem)
       convention = ArgConvention::ReadMem;
 
     if (isResultSlot(convention)) {

@@ -70,7 +70,7 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     // to verify them here.  Inferred parameters can be bound by name.
     if (passingKind == PassingKind::Implicit)
       continue;
-    if (pogListAttr.isPack(argIdx) || pogListAttr.isVariadic(argIdx))
+    if (pogListAttr.isAnyVarArg(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.
     if (passingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) && !findKwArg(name)) {
@@ -112,7 +112,7 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
   }
 
   // If the function doesn't accept variadic kwargs, this is an error.
-  if (!pogListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
+  if (!pogListAttr.hasKwVarArg() && !variadicKwOperands.empty()) {
     SmallVector<StringAttr> unknownKwOperands;
     for (auto &operand : variadicKwOperands)
       unknownKwOperands.push_back(operand.keyword);
@@ -143,7 +143,7 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
   // This loop is walking 'idx' in order of posListAttr, checking just the
   // positional arguments, not walking the operands list.
   for (size_t idx = numPosMinimum; idx != numPosMaximum; ++idx) {
-    if (pogListAttr.isPosVariadic(idx) || pogListAttr.isPack(idx)) {
+    if (pogListAttr.isPosVarArg(idx) || pogListAttr.isPack(idx)) {
       // Positional variadics and packs don't require any operands. But we
       // remember this because it lifts the limit on the maximum number.
       hasVariadicOrPack = true;

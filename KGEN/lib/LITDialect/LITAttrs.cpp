@@ -39,28 +39,6 @@ void LITDialect::registerAttributes() {
 // PogListAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parsePackInfo(AsmParser &p, ssize_t &idx,
-                                 std::optional<ArgConvention> &conv) {
-  conv.emplace();
-  FailureOr<ssize_t> idxResult = mlir::FieldParser<ssize_t>::parse(p);
-  if (failed(idxResult))
-    return failure();
-  idx = *idxResult;
-  if (p.parseComma())
-    return failure();
-  FailureOr<ArgConvention> convResult =
-      mlir::FieldParser<ArgConvention>::parse(p);
-  if (failed(convResult))
-    return failure();
-  conv = *convResult;
-  return success();
-}
-
-static void printPackInfo(AsmPrinter &p, ssize_t idx,
-                          const std::optional<ArgConvention> &conv) {
-  p << idx << ", " << *conv;
-}
-
 PogListAttr PogListAttr::get(MLIRContext *context) {
   return PogListAttr::get(context, {}, {});
 }
@@ -81,8 +59,8 @@ PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs,
                              ArrayRef<TypedAttr> defaultPos,
                              ArrayRef<TypedAttr> defaultKwOnly) {
-  return PogListAttr::get(context, pogs, defaultPos, defaultKwOnly, -1,
-                          std::nullopt);
+  return PogListAttr::get(context, pogs, defaultPos, defaultKwOnly,
+                          ArgConvention::ByRefError);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -98,19 +76,18 @@ PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                              ArrayRef<PassingKind> passingKinds,
                              ArrayRef<TypedAttr> defaultPos,
                              ArrayRef<TypedAttr> defaultKwOnly,
-                             ArrayRef<bool> argVariadics, ssize_t packIndex,
+                             ArrayRef<VariadicKind> argVariadics,
                              std::optional<ArgConvention> origPackConvention) {
-  return PogListAttr::get(context, toPogs(names, passingKinds, argVariadics),
-                          defaultPos, defaultKwOnly, packIndex,
-                          std::move(origPackConvention));
+  return PogListAttr::get(
+      context, toPogs(names, passingKinds, argVariadics), defaultPos,
+      defaultKwOnly, origPackConvention.value_or(ArgConvention::ByRefError));
 }
 
-LogicalResult
-PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                    ArrayRef<PogMetadataAttr> pogs,
-                    ArrayRef<TypedAttr> defaultPos,
-                    ArrayRef<TypedAttr> defaultKwOnly, ssize_t packIndex,
-                    std::optional<ArgConvention> origPackConvention) {
+LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<PogMetadataAttr> pogs,
+                                  ArrayRef<TypedAttr> defaultPos,
+                                  ArrayRef<TypedAttr> defaultKwOnly,
+                                  ArgConvention origPackConvention) {
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
     if (!pogAttr.getName())
@@ -124,7 +101,15 @@ PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   // We verified the passing kinds' order and number, so we can use a handler.
   DefaultValueHandler defaultHandler(pogs, defaultPos, defaultKwOnly);
-  auto verifyVariadicIdx = [&](size_t idx, bool isPack) -> LogicalResult {
+  bool sawPack = false;
+  auto verifyVariadicIdx = [&](size_t idx, VariadicKind kind) -> LogicalResult {
+    bool isPack = kind == VariadicKind::PackVarArg;
+    if (isPack) {
+      sawPack = true;
+      if (origPackConvention == ArgConvention::ByRefError)
+        return emitError() << "pack convention not specified";
+    }
+
     if (idx >= numEl) {
       return emitError() << "variadic " << (isPack ? "pack " : "")
                          << "index must be less than the number of elements: "
@@ -139,64 +124,60 @@ PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     return success();
   };
 
-  if (packIndex != -1) {
-    if (failed(verifyVariadicIdx(packIndex, /*isPack=*/true)))
-      return failure();
-    if (!origPackConvention)
-      return emitError() << "pack convention not specified";
-  } else {
-    if (origPackConvention)
-      return emitError() << "pack convention specified without pack";
-  }
-
   for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
     if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
         pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
       return emitError()
              << "'inferred' parameter follows non-inferred parameter";
     }
-    if (pogAttr.isVariadic() &&
-        failed(verifyVariadicIdx(idx, /*isPack=*/false)))
+    if (pogAttr.isAnyVarArg() &&
+        failed(verifyVariadicIdx(idx, pogAttr.getVariadic())))
       return failure();
   }
+
+  if (origPackConvention != ArgConvention::ByRefError && !sawPack)
+    return emitError() << "pack convention specified without pack";
 
   return success();
 }
 
 PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
   return PogListAttr::get(getContext(), pogs, getDefaultPos(),
-                          getDefaultKwOnly(), getPackIndex(),
-                          getOrigPackConvention());
+                          getDefaultKwOnly(), getOrigPackConvention());
 }
 
-bool PogListAttr::isVariadic(size_t idx) const {
-  return getPogs()[idx].isVariadic();
+VariadicKind PogListAttr::getVariadicKind(size_t idx) const {
+  return getPogs()[idx].getVariadic();
 }
 
-bool PogListAttr::isPack(size_t idx) const {
-  return getPackIndex() == ssize_t(idx);
+bool PogListAttr::isAnyVarArg(size_t idx) const {
+  return getPogs()[idx].isAnyVarArg();
 }
 
-bool PogListAttr::isPosVariadic(size_t idx) const {
-  return llvm::is_contained({PassingKind::PosOnly, PassingKind::PosOrKw},
-                            getPassingKind(idx)) &&
-         isVariadic(idx);
+bool PogListAttr::isPack(size_t idx) const { return getPogs()[idx].isPack(); }
+
+bool PogListAttr::isPosVarArg(size_t idx) const {
+  return getPogs()[idx].isPosVarArg();
 }
 
-bool PogListAttr::isKwVariadic(size_t idx) const {
-  return isVariadic(idx) && getPassingKind(idx) == PassingKind::KwOnly;
+bool PogListAttr::isKwVarArg(size_t idx) const {
+  return getPogs()[idx].isKwVarArg();
 }
 
-bool PogListAttr::hasVariadic() const {
+bool PogListAttr::hasAnyVarArg() const {
   return llvm::any_of(
-      getPogs(), [](PogMetadataAttr pogAttr) { return pogAttr.isVariadic(); });
+      getPogs(), [](PogMetadataAttr pogAttr) { return pogAttr.isAnyVarArg(); });
 }
 
-bool PogListAttr::hasPack() const { return getPackIndex() != -1; }
+bool PogListAttr::hasPackVarArg() const {
+  return llvm::any_of(getPogs(), [](PogMetadataAttr pogAttr) {
+    return pogAttr.isPack() || pogAttr.isPack();
+  });
+}
 
-bool PogListAttr::hasKwVariadics() const {
+bool PogListAttr::hasKwVarArg() const {
   for (size_t idx = 0, e = size(); idx != e; ++idx)
-    if (isKwVariadic(idx))
+    if (isKwVarArg(idx))
       return true;
   return false;
 }
@@ -230,18 +211,18 @@ size_t PogListAttr::getNumImplicit() const {
 SmallVector<PogMetadataAttr>
 PogListAttr::toPogs(ArrayRef<StringAttr> names,
                     ArrayRef<PassingKind> passingKinds,
-                    ArrayRef<bool> isVariadic) {
-  SmallVector<bool> variadicTmp;
+                    ArrayRef<VariadicKind> variadics) {
+  SmallVector<VariadicKind> variadicTmp;
   // If no variadicness is specified, assume all args are non-variadic.
-  if (isVariadic.empty()) {
-    variadicTmp.resize(names.size(), false);
-    isVariadic = variadicTmp;
+  if (variadics.empty()) {
+    variadicTmp.resize(names.size(), VariadicKind::None);
+    variadics = variadicTmp;
   }
 
   SmallVector<PogMetadataAttr> pogs;
-  for (auto [name, passingKind, isVariadic] :
-       llvm::zip(names, passingKinds, isVariadic))
-    pogs.push_back(PogMetadataAttr::get(name, passingKind, isVariadic));
+  for (auto [name, passingKind, variadic] :
+       llvm::zip(names, passingKinds, variadics))
+    pogs.push_back(PogMetadataAttr::get(name, passingKind, variadic));
   return pogs;
 }
 
@@ -305,16 +286,18 @@ PogListAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
 /// positional input parameters prepended to the generator. An additional
 /// array of bool corresponding to the variadic mask of the prepended
 /// parameters is also required.
-PogListAttr PogListAttr::prependPosParams(size_t numNewParams,
-                                          ArrayRef<bool> variadicMask) const {
-  assert(variadicMask.size() == numNewParams);
+PogListAttr
+PogListAttr::prependPosParams(size_t numNewParams,
+                              ArrayRef<VariadicKind> variadic) const {
+  assert(variadic.size() == numNewParams);
   if (numNewParams == 0)
     return *this;
 
   auto emptyStr = StringAttr::get(getContext());
   SmallVector<PogMetadataAttr> newPogs =
-      llvm::map_to_vector(variadicMask, [&](bool isVariadic) {
-        return PogMetadataAttr::get(emptyStr, PassingKind::PosOnly, isVariadic);
+      llvm::map_to_vector(variadic, [&](VariadicKind variadic) {
+        assert(variadic != VariadicKind::PackVarArg && "no param packs");
+        return PogMetadataAttr::get(emptyStr, PassingKind::PosOnly, variadic);
       });
 
   SmallVector<PogMetadataAttr> mergedPogs;
@@ -333,14 +316,13 @@ PogListAttr PogListAttr::prependPosParams(size_t numNewParams,
     }
   }
 
-  assert(getPackIndex() && "no param packs");
   return PogListAttr::get(getContext(), mergedPogs, getDefaultPos(),
                           getDefaultKwOnly());
 }
 
 GeneratorMetadataAttrInterface
 PogListAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
-  SmallVector<bool> variadicMask = getContextualVariadicMask(ops);
+  SmallVector<VariadicKind> variadicMask = getContextualVariadicParams(ops);
   return prependPosParams(variadicMask.size(), variadicMask);
 }
 
@@ -375,7 +357,7 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
                                    size_t numImplicitOriginDecls) {
   SmallVector<PogMetadataAttr> args;
   auto normal = PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly,
-                                     /*isVariadic=*/false);
+                                     VariadicKind::None);
   args.resize(numArgs, normal);
   return FnMetadataAttr::get(
       PogListAttr::get(ctx, args), numImplicitOriginDecls,
@@ -415,20 +397,16 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   if (numArgs < newDefaultPosArgs.size())
     newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
-  /// If needed, we adjust the pack index.
-  ssize_t packIdx = argListAttrs.getPackIndex();
-  if (argListAttrs.hasPack() && packIdx >= ssize_t(numBound))
-    packIdx -= numBound;
-
   auto newArgListAttrs = PogListAttr::get(
-      getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(), packIdx,
+      getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(),
       argListAttrs.getOrigPackConvention());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled());
 }
 
-SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
-  SmallVector<bool> variadicMask;
+SmallVector<VariadicKind>
+LIT::getContextualVariadicParams(ArrayRef<Operation *> ops) {
+  SmallVector<VariadicKind> variadics;
   for (Operation *op : ops) {
     // If we are dealing with a struct or trait, we concatenate their variadic
     // masks.
@@ -441,9 +419,9 @@ SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
       continue;
 
     for (PogMetadataAttr pogAttr : paramListAttr.getPogs())
-      variadicMask.emplace_back(pogAttr.isVariadic());
+      variadics.emplace_back(pogAttr.getVariadic());
   }
-  return variadicMask;
+  return variadics;
 }
 
 LogicalResult FnMetadataAttr::verifyFuncType(
@@ -512,31 +490,31 @@ size_t FnMetadataAttr::getNumArgs() const {
   return getArgListAttrs().getPogs().size();
 }
 
-bool FnMetadataAttr::hasVarArgs() const {
-  return getArgListAttrs().hasVariadic();
+bool FnMetadataAttr::hasAnyVarArg() const {
+  return getArgListAttrs().hasAnyVarArg();
 }
 
 bool FnMetadataAttr::hasPackVarArgs() const {
-  return getArgListAttrs().getPackIndex() != -1;
+  return getArgListAttrs().hasPackVarArg();
 }
 
 bool FnMetadataAttr::hasKwVarArgs() const {
-  return getArgListAttrs().hasKwVariadics();
+  return getArgListAttrs().hasKwVarArg();
 }
 
 bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
-  return getArgListAttrs().isVariadic(idx) || isPackVarArg(idx);
+  return getArgListAttrs().isAnyVarArg(idx);
 }
 
 bool FnMetadataAttr::isPosVarArg(size_t idx) const {
-  return getArgListAttrs().isPosVariadic(idx);
+  return getArgListAttrs().isPosVarArg(idx);
 }
 
 bool FnMetadataAttr::isKwVarArg(size_t idx) const {
-  return getArgListAttrs().isKwVariadic(idx);
+  return getArgListAttrs().isKwVarArg(idx);
 }
 
-bool FnMetadataAttr::isPackVarArg(size_t idx) const {
+bool FnMetadataAttr::isPack(size_t idx) const {
   return getArgListAttrs().isPack(idx);
 }
 

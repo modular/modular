@@ -2,29 +2,29 @@
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: "pog.metadata"
-// CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, false>,
-// CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
+// CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
+// CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
 "pog.metadata"() {
-  pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, false>,
-  pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
+  pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
+  pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
 } : () -> ()
 
 // CHECK-LABEL: "pogs.with_defaults"
 // CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
+// CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, not_vararg>],
 // CHECK-SAME: [4.200000e+00 : f32], [1 : i64]>}
 "pogs.with_defaults"() {pogs = #lit.pog_list<
-  [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
+  [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, not_vararg>],
   [4.2 : f32], [1: i64]
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.with_variadics"
 // CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, true>],
-// CHECK-SAME: [], [], 1, owned_in_mem>}
+// CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>],
+// CHECK-SAME: [], [], owned_in_mem>}
 "pogs.with_variadics"() {pogs = #lit.pog_list<
-  [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, true>],
-  [], [], 1, owned_in_mem
+  [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>],
+  [], [], owned_in_mem
 >} : () -> ()
 
 // CHECK-LABEL: "empty.pogs"
@@ -33,10 +33,10 @@
 
 // CHECK-LABEL: "some.metadata"
 // CHECK-SAME: #lit.fn_metadata
-// CHECK-SAME: <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64]>,
+// CHECK-SAME: <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
 // CHECK-SAME: 2, {mut lt}>
 "some.metadata"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
   2, {mut lt}
 >} : () -> ()
 
