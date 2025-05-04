@@ -317,10 +317,10 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
     @no_inline
     fn write_to[W: Writer, //](self, mut writer: W):
         """Writes a string representation of the set bits to the given writer.
-
         Outputs the indices of the set bits in ascending order, enclosed in
-        curly braces and separated by commas (e.g., "{1, 5, 42}"). Only
-        checks bits up to `len(self) - 1`.
+        curly braces and separated by commas (e.g., "{1, 5, 42}"). Uses
+        efficient bitwise operations to find set bits without iterating
+        through every possible bit.
 
         Parameters:
             W: The type of the writer, conforming to the `Writer` trait.
@@ -330,13 +330,41 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         """
         writer.write("{")
         var first = True
-        for idx in range(size):
-            if not self.test(idx):
+
+        # Iterate through words rather than individual bits
+        for word_idx in range(self._words_size):
+            var word = self._words[word_idx]
+
+            # Skip empty words entirely
+            if word == 0:
                 continue
-            if not first:
-                writer.write(", ")
-            writer.write(idx)
-            first = False
+
+            var bit_idx_base = word_idx << _WORD_BITS_LOG2
+
+            # Process bits efficiently using bit manipulation
+            while word != 0:
+                # Find position of rightmost 1-bit using binary tricks
+                # (x & -x) isolates the rightmost 1-bit
+                var rightmost_bit = word & (~word + 1)
+
+                # Calculate the position of the bit within the word
+                var bit_pos = pop_count(rightmost_bit - 1)
+
+                # Write the absolute bit index
+                var abs_idx = bit_idx_base + bit_pos
+
+                # Skip bits that would be beyond the maximum size
+                if abs_idx >= size:
+                    break
+
+                if not first:
+                    writer.write(", ")
+                writer.write(abs_idx)
+                first = False
+
+                # Clear the rightmost bit
+                word &= ~rightmost_bit
+
         writer.write("}")
 
     fn __repr__(self) -> String:
