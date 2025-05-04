@@ -31,9 +31,10 @@ Example:
 
 
 from .inline_array import InlineArray
-from sys import bitwidthof
+from sys import bitwidthof, simdwidthof
 from math import ceildiv
 from bit import pop_count, log2_floor
+from algorithm import vectorize
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -189,15 +190,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        debug_assert(
-            idx < size,
-            String(
-                "BitSet index out of bounds when setting bit: ",
-                idx,
-                " >= ",
-                size,
-            ),
-        )
+        _check_index_bounds["set"](idx, size)
         var w = _word_index(idx)
         self._words[w] |= _bit_mask(idx)
 
@@ -258,6 +251,78 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
     # --------------------------------------------------------------------- #
     # Set operations
     # --------------------------------------------------------------------- #
+    @always_inline
+    @staticmethod
+    fn _vectorize_apply[
+        func: fn[simd_width: Int] (
+            SIMD[DType.uint64, simd_width],
+            SIMD[DType.uint64, simd_width],
+        ) capturing -> SIMD[DType.uint64, simd_width],
+    ](left: Self, right: Self) -> Self:
+        """Applies a vectorized binary operation between two bitsets.
+
+        This internal utility function optimizes set operations by processing
+        multiple words in parallel using SIMD instructions when possible. It
+        applies the provided function to corresponding words from both bitsets
+        and returns a new bitset with the results.
+
+        The vectorized operation is applied to each word in the bitsets but only
+        if the number of words in the bitsets is greater than or equal to the
+        SIMD width.
+
+        Parameters:
+            func: A function that takes two SIMD vectors of UInt64 values and
+                returns a SIMD vector with the result of the operation. The
+                function should implement the desired set operation (e.g.,
+                union, intersection).
+
+        Args:
+            left: The first bitset operand.
+            right: The second bitset operand.
+
+        Returns:
+            A new bitset containing the result of applying the function to each
+            corresponding pair of words from the input bitsets.
+        """
+        alias simd_width = simdwidthof[UInt64]()
+        var res = Self()
+
+        # Define a vectorized operation that processes multiple words at once
+        @parameter
+        @always_inline
+        fn _intersect[simd_width: Int](offset: Int):
+            # Initialize SIMD vectors to hold multiple words from each bitset
+            var left_vec = SIMD[DType.uint64, simd_width]()
+            var right_vec = SIMD[DType.uint64, simd_width]()
+
+            # Load a batch of words from both bitsets into SIMD vectors
+            @parameter
+            for i in range(simd_width):
+                left_vec[i] = left._words[offset + i]
+                right_vec[i] = right._words[offset + i]
+
+            # Apply the provided operation (union, intersection, etc.) to the
+            # vectors
+            var result_vec = func(left_vec, right_vec)
+
+            # Store the results back into the result bitset
+            @parameter
+            for i in range(simd_width):
+                res._words[offset + i] = result_vec[i]
+
+        # Choose between vectorized or scalar implementation based on word count
+        @parameter
+        if Self._words_size >= simd_width:
+            # If we have enough words, use SIMD vectorization for better
+            # performance
+            vectorize[_intersect, simd_width, size = Self._words_size]()
+        else:
+            # For small bitsets, use a simple scalar implementation
+            @parameter
+            for i in range(Self._words_size):
+                res._words[i] = func(left._words[i], right._words[i])
+
+        return res
 
     fn union(self, other: Self) -> Self:
         """Returns a new bitset that is the union of `self` and `other`.
@@ -268,13 +333,18 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Returns:
             A new bitset containing all elements from both sets.
         """
-        var res = Self()
 
         @parameter
-        for i in range(self._words_size):
-            res._words[i] = self._words[i] | other._words[i]
+        @always_inline
+        fn _union[
+            simd_width: Int
+        ](
+            left: SIMD[DType.uint64, simd_width],
+            right: SIMD[DType.uint64, simd_width],
+        ) -> SIMD[DType.uint64, simd_width]:
+            return left | right
 
-        return res
+        return Self._vectorize_apply[_union](self, other)
 
     fn intersection(self, other: Self) -> Self:
         """Returns a new bitset that is the intersection of `self` and `other`.
@@ -285,13 +355,18 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Returns:
             A new bitset containing only the elements present in both sets.
         """
-        var res = Self()
 
         @parameter
-        for i in range(self._words_size):
-            res._words[i] = self._words[i] & other._words[i]
+        @always_inline
+        fn _intersection[
+            simd_width: Int
+        ](
+            left: SIMD[DType.uint64, simd_width],
+            right: SIMD[DType.uint64, simd_width],
+        ) -> SIMD[DType.uint64, simd_width]:
+            return left & right
 
-        return res
+        return Self._vectorize_apply[_intersection](self, other)
 
     fn difference(self, other: Self) -> Self:
         """Returns a new bitset that is the difference of `self` and `other`.
@@ -302,13 +377,18 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Returns:
             A new bitset containing elements from `self` that are not in `other`.
         """
-        var res = Self()
 
         @parameter
-        for i in range(self._words_size):
-            res._words[i] = self._words[i] & ~other._words[i]
+        @always_inline
+        fn _difference[
+            simd_width: Int
+        ](
+            left: SIMD[DType.uint64, simd_width],
+            right: SIMD[DType.uint64, simd_width],
+        ) -> SIMD[DType.uint64, simd_width]:
+            return left & ~right
 
-        return res
+        return Self._vectorize_apply[_difference](self, other)
 
     # --------------------------------------------------------------------- #
     # Representation helpers
