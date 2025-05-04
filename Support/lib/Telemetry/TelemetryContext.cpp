@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Telemetry/Exporters/UDSLogExporter.h"
-#include "Support/Telemetry/Exporters/UDSMetricExporter.h"
 #include "Support/Telemetry/Telemetry.h"
 
 #include "Config/Version.h"
@@ -22,10 +20,8 @@
 #include "llvm/Support/Threading.h"
 
 #ifdef MODULAR_ENABLE_TELEMETRY
-#include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_factory.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_options.h"
-#include "opentelemetry/exporters/otlp/otlp_http_metric_exporter.h"
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_factory.h"
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_options.h"
 #include "opentelemetry/metrics/provider.h"
@@ -34,12 +30,10 @@
 #include "opentelemetry/sdk/logs/logger_provider.h"
 #include "opentelemetry/sdk/logs/logger_provider_factory.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
-#include "opentelemetry/sdk/metrics/meter_provider_factory.h"
 
 #include "opentelemetry/sdk/logs/processor.h"
 #include "opentelemetry/sdk/logs/simple_log_record_processor_factory.h"
 #include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader.h"
-#include "opentelemetry/sdk/metrics/meter.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY

@@ -9,16 +9,12 @@
 #include "Support/UI/ProgressBar.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <deque>
 #include <iomanip>
-#include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <utility>
 
 using namespace M;

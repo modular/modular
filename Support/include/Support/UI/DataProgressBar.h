@@ -7,15 +7,12 @@
 #ifndef SUPPORT_UI_DATA_PROGRESS_BAR_H
 #define SUPPORT_UI_DATA_PROGRESS_BAR_H
 
-#include "Support/ErrorOr.h"
 #include "Support/UI/ProgressBar.h"
 
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <chrono>
 #include <deque>
-#include <memory>
 
 namespace M {
 

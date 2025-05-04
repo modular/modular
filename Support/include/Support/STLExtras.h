@@ -9,7 +9,6 @@
 
 #include "Support/AlignedAlloc.h"
 #include "Support/LogicalResult.h"
-#include <functional>
 #include <type_traits>
 
 namespace M {

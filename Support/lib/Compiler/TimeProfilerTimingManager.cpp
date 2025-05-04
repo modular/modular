@@ -5,7 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+
 #include <mutex>
 
 using namespace M;
@@ -17,7 +20,8 @@ using namespace M;
 namespace {
 struct Timer {
   /// Nest a timer with the given ID and name.
-  Timer *nestTimer(const void *id, function_ref<std::string()> nameBuilder) {
+  Timer *nestTimer(const void *id,
+                   llvm::function_ref<std::string()> nameBuilder) {
     std::lock_guard<std::mutex> lock(mutex);
     auto &child = children[id];
     if (!child) {
@@ -37,7 +41,7 @@ struct Timer {
   std::mutex mutex;
 
   /// The children of this timer.
-  DenseMap<const void *, std::unique_ptr<Timer>> children;
+  llvm::DenseMap<const void *, std::unique_ptr<Timer>> children;
 };
 } // namespace
 

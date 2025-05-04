@@ -8,8 +8,7 @@
 #define SUPPORT_THREADING_THREADAFFINITY_H
 
 #include "Support/ForwardDecls.h"
-#include "Support/Threading/HWInfo.h"
-#include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 namespace M {
 //===----------------------------------------------------------------------===//

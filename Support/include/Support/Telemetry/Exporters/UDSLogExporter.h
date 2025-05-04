@@ -11,7 +11,6 @@
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/otlp/otlp_http_client.h"
 #include "opentelemetry/sdk/logs/exporter.h"
-#include "opentelemetry/sdk/logs/read_write_log_record.h"
 #include "opentelemetry/sdk/logs/recordable.h"
 
 #endif // MODULAR_ENABLE_TELEMETRY

@@ -6,9 +6,7 @@
 
 #include "Support/DeviceSpecs.h"
 
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SetOperations.h"
-#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "device-specs"

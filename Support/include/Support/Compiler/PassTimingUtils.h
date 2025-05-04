@@ -9,7 +9,6 @@
 
 #include "Support/ErrorOr.h"
 #include "mlir/Pass/PassManager.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace M {
 /// Enables pass timing on the `PassManger` object and dumps the tree structured

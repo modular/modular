@@ -22,12 +22,7 @@
 #include "mlir/Support/LLVM.h"
 
 // Import Error and datatype support directly.
-#include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
-
-// Can not forward declare inline functions with default arguments, so we
-// include the header directly.
-#include "Support/LogicalResult.h"
 
 // Forward declarations of LLVM classes to be imported in to the M (Modular)
 // namespace.

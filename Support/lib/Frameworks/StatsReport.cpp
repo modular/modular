@@ -6,7 +6,6 @@
 
 #include "Support/Frameworks/StatsReport.h"
 
-#include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
@@ -14,7 +13,6 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include <sstream>
 #include <string>
 #include <system_error>
 

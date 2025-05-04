@@ -7,7 +7,6 @@
 #include "Support/Compiler/Diags.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/SourceMgr.h"
 
 using llvm::SMRange;

@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/IPRational.h"
-#include "Support/ErrorOr.h"
 #include "Support/IPInt.h"
 
 using namespace M;

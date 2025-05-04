@@ -48,13 +48,13 @@ ErrorOr<std::filesystem::path> resolveMojoInputFileOrPackage(StringRef path);
 /// Additional driver state that is passed to each of the subcommand functions.
 struct State {
   /// Initializes the driver state with the given program name and arguments.
-  State(const char *programName, ArrayRef<const char *> arguments)
+  State(const char *programName, llvm::ArrayRef<const char *> arguments)
       : programName(programName), subcommand(nullptr), arguments(arguments) {}
 
   /// Initializes the driver state with the given program name, subcommand
   /// name, and arguments.
   State(const char *programName, const char *subcommand,
-        ArrayRef<const char *> arguments)
+        llvm::ArrayRef<const char *> arguments)
       : programName(programName), subcommand(subcommand), arguments(arguments) {
   }
 
@@ -107,7 +107,7 @@ struct State {
 
   /// The command line arguments that the user provided, excluding the program
   /// and subcommand names.
-  const ArrayRef<const char *> arguments;
+  const llvm::ArrayRef<const char *> arguments;
 
   /// The output format for driver errors, as reported by `reportError`.
   DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;

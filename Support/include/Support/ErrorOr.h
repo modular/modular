@@ -13,6 +13,7 @@
 #define SUPPORT_ERROR_OR_H
 
 #include "Support/Error.h"
+#include "Support/LogicalResult.h"
 
 namespace M {
 

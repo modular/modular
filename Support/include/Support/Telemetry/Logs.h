@@ -13,8 +13,6 @@
 #include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Support/raw_ostream.h"
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/logs/event_logger.h"
 #include "opentelemetry/logs/severity.h"

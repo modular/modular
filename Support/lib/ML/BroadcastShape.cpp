@@ -5,8 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/BroadcastShape.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/Twine.h"
+#include "llvm/ADT/ArrayRef.h"
 
 using namespace M;
 

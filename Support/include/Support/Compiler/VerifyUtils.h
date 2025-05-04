@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 
 namespace M {
 

@@ -16,9 +16,6 @@
 #define SUPPORT_DEVICE_SPECS_H
 
 #include "Support/ErrorOr.h"
-#include "Support/ReferenceCounted.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/TargetParser/Triple.h"
 

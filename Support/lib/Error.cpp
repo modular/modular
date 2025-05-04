@@ -15,7 +15,7 @@ using namespace M;
 ///
 /// This is intentionally out of line, because we don't want error handling
 /// logic bloating out libraries that produce the errors.
-Error::Error(const Twine &message) : storageMode(kMallocError) {
+Error::Error(const llvm::Twine &message) : storageMode(kMallocError) {
   llvm::SmallVector<char, 128> tmp;
   llvm::StringRef str = message.toStringRef(tmp);
   assert(!str.empty() && "empty error strings are not allowed");

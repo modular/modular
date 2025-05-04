@@ -26,7 +26,7 @@ public:
 
   /// Parse the version from a string. This follows standard semver parsing
   /// rules.
-  static ErrorOr<Version> parse(StringRef str);
+  static ErrorOr<Version> parse(llvm::StringRef str);
 
   /// Compare two Version objects according to SemVer 2.0.0 section 11. In this
   /// context, "less than" means "lower precedence".

@@ -7,7 +7,6 @@
 #include "Support/ML/DType.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
-#include <algorithm>
 #include <limits>
 using namespace M;
 

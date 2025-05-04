@@ -6,7 +6,6 @@
 
 #include "Support/Compiler/ErrorTree.h"
 #include "mlir/IR/Diagnostics.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 

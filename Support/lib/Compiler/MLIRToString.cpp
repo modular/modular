@@ -7,7 +7,7 @@
 #include "Support/Compiler/MLIRToString.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Support/DebugStringHelper.h"
-#include <sstream>
+#include "llvm/Support/raw_ostream.h"
 
 LLVM_DUMP_METHOD std::string M::mlirToString(mlir::Operation *op) {
   // The implementation of debugString(op) prints a pointer, unhelpful.

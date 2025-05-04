@@ -7,7 +7,6 @@
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinDialect.h"
-#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 
 using namespace M;

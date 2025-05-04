@@ -7,7 +7,6 @@
 #ifndef SUPPORT_CONFIGURATION_H
 #define SUPPORT_CONFIGURATION_H
 
-#include "Support/ADT/SmartVariant.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringMap.h"

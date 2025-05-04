@@ -8,6 +8,7 @@
 #define KGEN_HLCFDIALECT_HLCFINTERFACES_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/OpDefinition.h"
 
 //===----------------------------------------------------------------------===//

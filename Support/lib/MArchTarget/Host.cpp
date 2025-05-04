@@ -22,8 +22,6 @@
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
 
-#include <fstream>
-#include <ios>
 #include <string>
 
 #ifdef __APPLE__

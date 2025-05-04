@@ -7,7 +7,7 @@
 #ifndef SUPPORT_COMPILER_BYTECODE_H
 #define SUPPORT_COMPILER_BYTECODE_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
 
 namespace M {

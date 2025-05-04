@@ -6,10 +6,11 @@
 
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/ML/DType.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 using namespace M;
 
-bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
+bool M::areEquivalentFloatTypes(DType dtype, mlir::FloatType fpType) {
   assert(dtype.isFloat() && "expected a float dtype");
   switch (dtype.getValue()) {
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \

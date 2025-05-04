@@ -37,7 +37,7 @@ public:
 
   /// Get a ContatenationTree with the specified array data, which must be
   /// guaranteed to live beyond the lifetime of this ContatenationTree.
-  static ConcatenationTree getImmortalData(ArrayRef<uint8_t> data);
+  static ConcatenationTree getImmortalData(llvm::ArrayRef<uint8_t> data);
 
   /// Concatenate and return two trees of data.
   static ConcatenationTree concat(ConcatenationTree lhs, ConcatenationTree rhs);

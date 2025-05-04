@@ -16,7 +16,6 @@
 #define SUPPORT_MARCHTARGET_MARCHTARGETMINIMAL_H
 
 #include "Support/DeviceSpecs.h"
-#include "llvm/Support/CodeGen.h"
 
 namespace llvm {
 // Forward declare.

@@ -13,9 +13,6 @@
 
 #include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
-#include "Support/LLVMForwardDecls.h"
-#include "llvm/ADT/FunctionExtras.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/JSON.h"
 
 #include <string>

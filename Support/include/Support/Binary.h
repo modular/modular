@@ -8,7 +8,6 @@
 #define SUPPORT_BINARY_H
 
 #include "Support/Buffer.h"
-#include "llvm/Object/Binary.h"
 #include <memory>
 
 namespace M {

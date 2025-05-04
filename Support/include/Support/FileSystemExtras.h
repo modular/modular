@@ -26,8 +26,8 @@ namespace M {
 /// subdirectory found according to the order of the entries in the PATH like
 /// environment variable. The defaults hold for Unix-like systems but break for
 /// Windows.
-std::optional<std::string> findDirInEnvPath(StringRef subdirName,
-                                            StringRef envName = "PATH",
+std::optional<std::string> findDirInEnvPath(llvm::StringRef subdirName,
+                                            llvm::StringRef envName = "PATH",
                                             char separator = ':');
 
 /// Write to a file (creating if necessary) serialized with any other
