@@ -964,13 +964,13 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   // Unbind the N capture parameters, creating a FuncType with N new input
   // parameters prepended.
   // TODO: what if we capture a variadic?
-  SmallVector<bool> variadicMask(captured.size(), false);
+  SmallVector<bool> isVariadic(captured.size(), false);
   auto unbound = FnTypeGeneratorType::prependParams(
       original,
       llvm::map_to_vector(
           captured,
           [](ParamDeclRefAttr ref) { return ParamDeclAttr::get(ref); }),
-      variadicMask);
+      isVariadic);
   return {std::move(captured), unbound};
 }
 

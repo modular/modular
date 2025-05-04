@@ -915,7 +915,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
-  SmallVector<size_t> argVariadicIndices;
+  SmallVector<bool> argVariadics;
   ssize_t argPackIndex = -1;
   std::optional<ArgConvention> origArgPackConvention;
 
@@ -933,9 +933,9 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
     if (p.parseType(type) ||
-        parseConventionAndVariadicness(p, argConventions.emplace_back(),
-                                       argVariadicIndices, argPackIndex,
-                                       origArgPackConvention, idx++))
+        parseConventionAndVariadicness(
+            p, argConventions.emplace_back(), argVariadics.emplace_back(),
+            argPackIndex, origArgPackConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -969,7 +969,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                       defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
+                       defaultKwOnlyArgs, argVariadics, argPackIndex,
                        origArgPackConvention),
       numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);

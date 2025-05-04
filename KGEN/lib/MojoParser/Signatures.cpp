@@ -202,6 +202,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       paramList.names.push_back(StringAttr::get(type.getContext()));
       paramList.passingKinds.push_back(PassingKind::Implicit);
       paramList.paramDeclAttrs.push_back(paramDecl);
+      paramList.variadicKind.push_back(false);
       return ParamDeclRefAttr::get(paramDecl);
     };
 
@@ -704,6 +705,8 @@ static ASTType addImplicitTypeParams(ASTType type,
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
+  SmallVector<bool> variadicKind;
+
   // Functor to insert the pending vectors into paramList, either at the front
   // or back.
   auto insertFn = [append](auto &dst, auto &src) {
@@ -716,14 +719,7 @@ static ASTType addImplicitTypeParams(ASTType type,
     insertFn(paramList.paramDeclAttrs, paramDeclAttrs);
     insertFn(paramList.names, names);
     insertFn(paramList.passingKinds, passingKinds);
-
-    // If we're inserting a parameter at the start, then any variadics before it
-    // will need to be updated to account for the new parameter, e.g.:
-    //     fn test[*elts: Int, autoparm: StructWithParam]():
-    if (!append) {
-      for (auto &idx : paramList.variadicIndices)
-        idx += paramDeclAttrs.size();
-    }
+    insertFn(paramList.variadicKind, variadicKind);
   });
 
   // The parameter decl references that will be used to fully bind the type,
@@ -741,6 +737,9 @@ static ASTType addImplicitTypeParams(ASTType type,
                                   : PassingKind::Inferred);
     paramDeclAttrs.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
+
+    // FIXME: Autoparam of variadics looks broken?
+    variadicKind.push_back(false);
     evaluator.addInputValue(paramValues.back());
   };
 
@@ -797,10 +796,6 @@ TypeCheckedParamList::TypeCheckedParamList(
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
       type = VariadicType::get(type, ArgConvention::ReadReg);
-      // We add the indices of all parameters to be marked as varargs. Use the
-      // current number of elements in `names`, because it also includes
-      // implicitly added autoparams.
-      variadicIndices.push_back(names.size());
     }
 
     if (failed(emitDefaultIfPossible(arg, type, defaultPosParams,
@@ -838,6 +833,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     // The unmangled names are also collected to aid keyword parameter binding.
     passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     names.push_back(arg.name);
+    variadicKind.push_back(vararg == VarArgKind::VarArg);
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
@@ -848,8 +844,8 @@ TypeCheckedParamList::TypeCheckedParamList(
 PogListAttr TypeCheckedParamList::getParamListAttr() {
   return PogListAttr::get(
       shared.getContext(),
-      PogListAttr::toPogs(names, passingKinds, variadicIndices),
-      defaultPosParams, defaultKwOnlyParams);
+      PogListAttr::toPogs(names, passingKinds, variadicKind), defaultPosParams,
+      defaultKwOnlyParams);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
