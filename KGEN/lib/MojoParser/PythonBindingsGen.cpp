@@ -130,11 +130,6 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
   //
   StringRef moduleName = moduleOp.getSymName();
 
-  // Declare the error and result slots.
-  SmallVector<PogMetadataAttr> argList = PogListAttr::toPogs(
-      {b.getStringAttr("__error__"), b.getStringAttr("__result__")},
-      {PassingKind::Implicit, PassingKind::Implicit}, {});
-
   std::tie(pyInitFunc, pyInitDecl) = createFunction(
       "PyInit_impl_" + moduleName, moduleDecl, /*argTypes=*/{}, /*convs=*/{},
       /*resultType=*/pyObjType, FnEffects().setThrows());
@@ -635,6 +630,7 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
 
   SmallVector<ArgConvention> adjConvs = llvm::to_vector(convs);
   SmallVector<PassingKind> passingKinds(argTypes.size(), PassingKind::PosOrKw);
+  SmallVector<bool> argsVariadic(argTypes.size(), false);
 
   Type resultType = resultRValueType;
   if (effects.isThrows()) {
@@ -642,6 +638,7 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
     argNames.push_back(b.getStringAttr("error"));
     adjConvs.push_back(ArgConvention::ByRefError);
     passingKinds.push_back(PassingKind::Implicit);
+    argsVariadic.push_back(false);
     resultType = b.getI1Type();
   }
 
@@ -651,12 +648,13 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
     argNames.push_back(b.getStringAttr("result"));
     adjConvs.push_back(ArgConvention::ByRefResult);
     passingKinds.push_back(PassingKind::Implicit);
+    argsVariadic.push_back(false);
     if (!effects.isThrows())
       resultType = shared.getNoneType();
   }
 
   SmallVector<PogMetadataAttr> argList =
-      PogListAttr::toPogs(argNames, passingKinds, /*variadicIndices=*/{});
+      PogListAttr::toPogs(argNames, passingKinds, argsVariadic);
 
   StructEmitter emitter(shared);
   return emitter.synthesizeFunction(

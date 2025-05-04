@@ -159,7 +159,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
-                     "ArrayRef<size_t>":$variadicIndices,
+                     "ArrayRef<bool>":$isVariadic,
                      "ssize_t":$packIndex,
                      "std::optional<ArgConvention>":$origPackConvention)>
   ];
@@ -201,7 +201,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     /// and variadic indices.
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
-      ArrayRef<size_t> indices);
+      ArrayRef<bool> isVariadic);
 
     /// Get a new metadata attribute for a generator with the given number of
     /// positional input parameters prepended to the generator. An additional

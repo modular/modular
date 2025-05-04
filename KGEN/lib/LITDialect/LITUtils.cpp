@@ -145,14 +145,13 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 /// Helper to parse sigils that indicate that an argument/parameter is variadic
 /// or a pack. The given index is emplaced in the appropriate list of indices,
 /// if a `var` or `pack` sigil is parsed.
-static ParseResult parseVariadicness(AsmParser &p,
-                                     SmallVectorImpl<size_t> &variadicIndices,
+static ParseResult parseVariadicness(AsmParser &p, bool &isVariadic,
                                      ssize_t &packIndex, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef sigil;
   if (succeeded(p.parseOptionalKeyword(&sigil))) {
     if (sigil == "var")
-      variadicIndices.emplace_back(idx);
+      isVariadic = true;
     else if (sigil == "pack") {
       if (packIndex != -1)
         return p.emitError(loc, "multiple packs not supported");
@@ -163,8 +162,8 @@ static ParseResult parseVariadicness(AsmParser &p,
   return success();
 }
 
-/// Parse a parameter spec if present, including input and result parameter
-/// declarations, and default values.
+/// Parse a parameter spec if present, including input parameter declarations,
+/// and default values.
 /// parameter-decl   ::= identifier (`[` identifier `]`)?
 ///                        (`:` type (`=` expression)? )?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
@@ -177,7 +176,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<size_t> variadicIndices;
+  SmallVector<bool> argsVariadic;
   ssize_t packIndex = -1;
   std::optional<ArgConvention> origPackConvention;
 
@@ -215,7 +214,8 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
     }
     paramNames.emplace_back(paramName);
 
-    if (failed(parseVariadicness(p, variadicIndices, packIndex, idx++)))
+    if (failed(parseVariadicness(p, argsVariadic.emplace_back(), packIndex,
+                                 idx++)))
       return failure();
 
     // Parameters don't really have ArgConvention's.
@@ -257,14 +257,14 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   paramListAttr = PogListAttr::get(
       ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
-      variadicIndices, packIndex, std::move(origPackConvention));
+      argsVariadic, packIndex, std::move(origPackConvention));
   return success();
 }
 
 ParseResult LIT::parseConventionAndVariadicness(
-    AsmParser &p, ArgConvention &convention,
-    SmallVectorImpl<size_t> &variadicIndices, ssize_t &argPackIndex,
-    std::optional<ArgConvention> &origArgPackConvention, size_t idx) {
+    AsmParser &p, ArgConvention &convention, bool &isVariadic,
+    ssize_t &argPackIndex, std::optional<ArgConvention> &origArgPackConvention,
+    size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
   convention = ArgConvention::ReadReg;
@@ -275,7 +275,7 @@ ParseResult LIT::parseConventionAndVariadicness(
       if (failed(p.parseOptionalVerticalBar()))
         return success();
       // Otherwise we also parse a variadicness
-      if (parseVariadicness(p, variadicIndices, argPackIndex, idx))
+      if (parseVariadicness(p, isVariadic, argPackIndex, idx))
         return failure();
 
       if (argPackIndex == ssize_t(idx)) {
@@ -286,9 +286,9 @@ ParseResult LIT::parseConventionAndVariadicness(
       }
       return success();
     }
-    if (str == "var")
-      variadicIndices.push_back(idx);
-    else if (str == "pack") {
+    if (str == "var") {
+      isVariadic = true;
+    } else if (str == "pack") {
       if (argPackIndex != -1)
         return p.emitError(loc, "multiple packs not supported");
       argPackIndex = idx;
@@ -385,7 +385,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
   SmallVector<TypedAttr> defaultKwOnlyParams;
-  SmallVector<size_t> variadicIndices;
+  SmallVector<bool> argVariadics;
   ssize_t packIndex = -1;
 
   // Parse the input parameter types and optional default values.
@@ -405,7 +405,8 @@ LIT::parseOptionalParamSignature(AsmParser &p,
     if (failed(parseKGENType(p, type)))
       return failure();
 
-    if (failed(parseVariadicness(p, variadicIndices, packIndex, idx++)))
+    if (failed(parseVariadicness(p, argVariadics.emplace_back(), packIndex,
+                                 idx++)))
       return failure();
 
     TypedAttr defaultVal;
@@ -431,7 +432,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   paramListAttr = PogListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, variadicIndices, packIndex, std::nullopt);
+      defaultKwOnlyParams, argVariadics, packIndex, std::nullopt);
   return success();
 }
 

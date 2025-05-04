@@ -513,7 +513,7 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaultPosArgs;
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
-  SmallVector<size_t> argVariadicIndices;
+  SmallVector<bool> argVariadics;
   ssize_t argPackIndex = -1;
   std::optional<ArgConvention> origArgPackConvention;
 
@@ -545,9 +545,9 @@ static ParseResult parseLITFunctionSignature(
     // input convention, and variadicness.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseConventionAndVariadicness(p, argConventions.emplace_back(),
-                                       argVariadicIndices, argPackIndex,
-                                       origArgPackConvention, idx++))
+        parseConventionAndVariadicness(
+            p, argConventions.emplace_back(), argVariadics.emplace_back(),
+            argPackIndex, origArgPackConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -576,7 +576,7 @@ static ParseResult parseLITFunctionSignature(
 
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
-                       defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
+                       defaultPosArgs, defaultKwOnlyArgs, argVariadics,
                        argPackIndex, origArgPackConvention),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
