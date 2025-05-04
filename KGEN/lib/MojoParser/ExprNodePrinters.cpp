@@ -419,19 +419,6 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
     }
   };
 
-  auto stringifyVarArgKind = [&] {
-    switch (vararg) {
-    case VarArgKind::None:
-      return "None";
-    case VarArgKind::VarArg:
-      return "VarArg";
-    case VarArgKind::PackVarArg:
-      return "PackVarArg";
-    case VarArgKind::KWVarArg:
-      return "KWVarArg";
-    }
-  };
-
   auto stringifyKWArgHandling = [&] {
     switch (kwArgHandling) {
     case KWArgHandling::kInferred:
@@ -448,7 +435,7 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
   // The argument might not be type checked yet.
   os << "{\n";
   os.indent() << "convention: " << stringifyConvention() << "\n";
-  os << "vararg: " << stringifyVarArgKind() << "\n";
+  os << "vararg: " << stringifyVariadicKind(variadicKind) << "\n";
   os << "name: " << name << "\n";
   os << "typeExpr: ";
   printNullableExpr(os, typeExpr);

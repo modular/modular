@@ -537,9 +537,9 @@ void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
     }
 
     // Drop defaults and varargs so long as they aren't the last argument.
-    if (args.size() > 1 &&
-        (lastArg.initExpr ||                  // arg has a default.
-         lastArg.vararg != VarArgKind::None)) // vararg lists can be empty
+    if (args.size() > 1 && (lastArg.initExpr || // arg has a default.
+                                                // vararg lists can be empty
+                            lastArg.variadicKind != VariadicKind::None))
       args = args.drop_back();
     else
       break;
