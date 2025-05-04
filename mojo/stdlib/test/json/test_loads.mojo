@@ -32,11 +32,11 @@ def test_loads():
 
     assert_equal(String(loads("[1.0, 2.0, 3.0]")), "[1.0, 2.0, 3.0]")
 
-    assert_equal(String(loads("true")), "True")
+    assert_equal(String(loads("true")), "true")
 
-    assert_equal(String(loads("false")), "False")
+    assert_equal(String(loads("false")), "false")
 
-    assert_equal(String(loads("null")), "None")
+    assert_equal(String(loads("null")), "null")
 
     assert_equal(String(loads("123")), "123.0")
 

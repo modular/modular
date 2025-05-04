@@ -283,7 +283,8 @@ struct JSONValue[mut: Bool, //, origin: Origin[mut]](
         """
         Writes a string representation of the JSONValue to the given writer.
 
-        Outputs the JSONValue in its JSON string representation.
+        Outputs the JSONValue in its JSON string representation according to the
+        JSON standard (RFC 8259).
 
         Parameters:
             W: The type of the writer, conforming to the `Writer` trait.
@@ -293,9 +294,12 @@ struct JSONValue[mut: Bool, //, origin: Origin[mut]](
         """
         var kind = self._kind
         if kind == Self.KIND_NULL:
-            writer.write("None")
+            writer.write("null")
         elif kind == Self.KIND_BOOL:
-            writer.write(self._storage[Bool])
+            if self._storage[Bool]:
+                writer.write("true")
+            else:
+                writer.write("false")
         elif kind == Self.KIND_STRING:
             writer.write('"', self._storage[String], '"')
         elif kind == Self.KIND_NUMBER:
