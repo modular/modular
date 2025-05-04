@@ -23,6 +23,7 @@ from collections import Dict, List
 from utils import Writer
 from collections.optional import _NoneType
 from memory import Pointer
+from sys import simdwidthof
 
 
 @value
@@ -407,14 +408,6 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         self._idx += 1
         return c
 
-    @always_inline
-    fn _skip_whitespace(mut self):
-        """
-        Advances the parser past any whitespace characters.
-        """
-        while self._peek_slice().isspace():
-            self._idx += 1
-
     fn _expect(mut self, pat: String) raises:
         """
         Expects the given pattern at the current position and advances past it.
@@ -428,6 +421,10 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         var p = pat.as_bytes()
         var n = pat.byte_length()
 
+        # Fast path - check if we have enough bytes left
+        if self._idx + n > len(self._slice):
+            raise Error("Unexpected end of input, expected '", pat, "'")
+
         for i in range(n):
             if self._next() != p[i]:
                 raise Error(
@@ -438,6 +435,107 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
                         unsafe_from_utf8=self._slice._slice[self._idx :]
                     )
                 )
+
+    @always_inline
+    fn _skip_whitespace(mut self):
+        """Advances the parser past any whitespace characters."""
+        alias simd_width = simdwidthof[DType.uint8]()
+
+        alias SPACE = ord(" ")
+        alias TAB = ord("\t")
+        alias LF = ord("\n")
+        alias CR = ord("\r")
+
+        if self._idx >= len(self._slice):
+            return
+
+        # Quick check for non-whitespace to avoid entering loop (very common case)
+        var c = self._slice._slice[self._idx]
+        if c > SPACE:  # Most non-whitespace characters are > space (32)
+            return
+
+        # Special case: optimize for sequence of spaces (most common whitespace)
+        if c == SPACE:  # Space
+            # Find run of spaces using vectorized approach
+            var end = self._idx + 1
+
+            # Fast bulk processing using SIMD when possible
+            if end + simd_width <= len(self._slice):
+                while end + simd_width - 1 < len(self._slice):
+                    # Create SIMD vector of current chunk
+                    var chunk = SIMD[DType.uint8, simd_width]()
+
+                    @parameter
+                    for i in range(simd_width):
+                        chunk[i] = self._slice._slice[end + i]
+
+                    # Compare entire chunk with space character using SIMD
+                    var is_space = chunk == SPACE
+
+                    # Check if all elements are spaces
+                    if all(is_space):
+                        end += simd_width
+                    else:
+                        # Find first non-space using SIMD
+                        for i in range(simd_width):
+                            if not is_space[i]:
+                                end += i
+                                self._idx = end
+                                return
+                        break
+
+            # Handle remaining bytes individually
+            while end < len(self._slice) and self._slice._slice[end] == SPACE:
+                end += 1
+
+            self._idx = end
+            return
+
+        # General whitespace processing for mixed whitespace characters
+        # Process all standard JSON whitespace: space, tab, CR, LF
+        while self._idx + simd_width <= len(self._slice):
+            # Load chunk into SIMD vector
+            var chunk = SIMD[DType.uint8, simd_width]()
+
+            @parameter
+            for i in range(simd_width):
+                chunk[i] = self._slice._slice[self._idx + i]
+
+            # Check for whitespace characters using SIMD operations
+            var space_mask = chunk == SPACE
+            var tab_mask = chunk == TAB
+            var lf_mask = chunk == LF
+            var cr_mask = chunk == CR
+
+            var ws_mask = space_mask | tab_mask | lf_mask | cr_mask
+
+            # Find first non-whitespace character
+            if all(ws_mask):
+                # All characters are whitespace
+                self._idx += simd_width
+            else:
+                # Find first non-whitespace
+                for i in range(simd_width):
+                    if not ws_mask[i]:
+                        self._idx += i
+                        return
+
+        # Handle remaining bytes individually
+        while self._idx < len(self._slice):
+            c = self._slice._slice[self._idx]
+
+            # Fast case for most common whitespace (space)
+            if c == SPACE:  # Space
+                self._idx += 1
+                continue
+
+            # Check for other whitespace characters: tab (9), LF (10), CR (13)
+            if c <= CR and (c == TAB or c == LF or c == CR):
+                self._idx += 1
+                continue
+
+            # Not whitespace, exit immediately
+            break
 
     fn parse_value(mut self) raises -> JSONValue[origin]:
         """
