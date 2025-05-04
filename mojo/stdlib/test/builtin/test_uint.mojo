@@ -216,6 +216,11 @@ def test_indexer():
     assert_true(987 == index(UInt(987)))
 
 
+def test_simd_conversion():
+    assert_equal(UInt(SIMD[DType.int32, 1](1)), UInt(1))
+    assert_equal(UInt(SIMD[DType.uint32, 1](32)), UInt(32))
+
+
 def test_comparison():
     assert_true(UInt.__lt__(UInt(1), UInt(7)))
     assert_false(UInt.__lt__(UInt(7), UInt(7)))
@@ -273,6 +278,7 @@ def main():
     test_string_conversion()
     test_int_representation()
     test_indexer()
+    test_simd_conversion()
     test_comparison()
     test_pos()
     test_hash()

@@ -147,8 +147,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
 
         @parameter
         for i in range(self._words_size):
-            # TODO (MSTDL-1485): remove the cast to Int
-            total += UInt(Int(pop_count(self._words[i])))
+            total += UInt(pop_count(self._words[i]))
 
         return total
 

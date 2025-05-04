@@ -1149,7 +1149,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
         UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
         has_side_effect=False,
     ]()
-    return UInt(Int(ptr.load[alignment=4](offset)))
+    return UInt(ptr.load[alignment=4](offset))
 
 
 @register_passable("trivial")

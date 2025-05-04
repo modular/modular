@@ -208,8 +208,8 @@ fn producer_main_loop[
     alias a_tma_rows = a_desc_layout.shape[0].value()
     alias b_tma_rows = b_desc_layout.shape[0].value()
 
-    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
-    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+    alias CLUSTER_N = UInt(cluster_shape[0])
+    alias CLUSTER_M = UInt(cluster_shape[1])
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -398,7 +398,7 @@ fn consumer_main_loop[
 
         @parameter
         if cluster_size[cluster_shape]() > 1:
-            if warp_group_thread_idx < UInt(Int(CLUSTER_SIZE)):
+            if warp_group_thread_idx < UInt(CLUSTER_SIZE):
                 _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
         else:
             if warp_group_thread_idx == 0:
@@ -758,8 +758,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
     alias num_consumer = (num_threads // 128) - 1
     alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
-    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+    alias CLUSTER_N = UInt(cluster_shape[0])
+    alias CLUSTER_M = UInt(cluster_shape[1])
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     alias K = b_layout.shape[1].value()
@@ -1063,8 +1063,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     alias num_consumer = (num_threads // 128) - 1
     alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
-    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+    alias CLUSTER_N = UInt(cluster_shape[0])
+    alias CLUSTER_M = UInt(cluster_shape[1])
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     alias K = b_layout.shape[1].value()
@@ -1218,8 +1218,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     a_smem_iter,
                     b_smem_iter,
                     num_k_iters,
-                    UInt(Int(m_coord)),
-                    UInt(Int(n_coord)),
+                    UInt(m_coord),
+                    UInt(n_coord),
                     rank_n,
                     rank_m,
                     write_pipeline_states,
@@ -1291,8 +1291,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 warp_group_thread_idx,
             )
 
-            var block_y = UInt(Int(ceildiv(work_info.m, BM)))
-            var block_x = UInt(Int(ceildiv(work_info.n, BN)))
+            var block_y = UInt(ceildiv(work_info.m, BM))
+            var block_x = UInt(ceildiv(work_info.n, BN))
             var output_reg_tile = final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
 
             warp_specialized_gemm_output[
@@ -1756,8 +1756,8 @@ fn warp_specialize_gemm_with_multicasting[
         config.cluster_shape[2],
     )
 
-    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
-    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+    alias CLUSTER_N = UInt(cluster_shape[0])
+    alias CLUSTER_M = UInt(cluster_shape[1])
 
     alias c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,

@@ -158,7 +158,7 @@ struct TileScheduler[
             ceildiv(self.prob_shape[0], tile_shape[0]),
         )
 
-        by, bx = divmod(UInt(Int(self.idx)), UInt(Int(logical_grid_dim[0])))
+        by, bx = divmod(UInt(self.idx), UInt(logical_grid_dim[0]))
         block_xy_swizzle = block_swizzle(
             Index[dtype = DType.uint32](bx, by), logical_grid_dim
         )
@@ -189,8 +189,8 @@ struct TileScheduler[
         n_in_wave = Int(idx_in_wave) % log_grid_shape
 
         return (
-            UInt(Int(wave_m + m_in_wave * tile_shape[0])),
-            UInt(Int(wave_n + n_in_wave * tile_shape[1])),
+            UInt(wave_m + m_in_wave * tile_shape[0]),
+            UInt(wave_n + n_in_wave * tile_shape[1]),
         )
 
     @always_inline

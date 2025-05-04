@@ -166,7 +166,7 @@ fn naive_grouped_matmul_kernel[
     expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
-    var M: UInt = UInt(Int(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]))
+    var M: UInt = UInt(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
     N = b.dim[1]()
     K = b.dim[2]()
 
@@ -259,8 +259,8 @@ fn grouped_matmul_sm90[
         config.cluster_shape[2],
     )
 
-    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
-    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+    alias CLUSTER_N = UInt(cluster_shape[0])
+    alias CLUSTER_M = UInt(cluster_shape[1])
 
     alias c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
@@ -405,8 +405,8 @@ fn grouped_matmul_kernel[
 
     alias num_consumer = (num_threads // 128) - 1
     alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(Int(cluster_shape[0]))
-    alias CLUSTER_M = UInt(Int(cluster_shape[1]))
+    alias CLUSTER_N = UInt(cluster_shape[0])
+    alias CLUSTER_M = UInt(cluster_shape[1])
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     alias K = b_layout.shape[1].value()
