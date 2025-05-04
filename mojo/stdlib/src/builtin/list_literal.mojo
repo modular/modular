@@ -235,6 +235,7 @@ struct _VariadicListMemIter[
     elt_type: AnyType,
     elt_origin: Origin[elt_is_mutable],
     list_origin: ImmutableOrigin,
+    is_owned: Bool,
 ]:
     """Iterator for VariadicListMem.
 
@@ -243,10 +244,11 @@ struct _VariadicListMemIter[
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
         list_origin: The origin of the VariadicListMem.
+        is_owned: Whether the elements are owned by the list.
     """
 
     alias variadic_list_type = VariadicListMem[
-        elt_type, elt_origin._mlir_origin
+        elt_type, elt_origin._mlir_origin, is_owned
     ]
 
     var index: Int
@@ -281,6 +283,7 @@ struct VariadicListMem[
     elt_is_mutable: Bool, //,
     element_type: AnyType,
     origin: Origin[elt_is_mutable],
+    is_owned: Bool,
 ](Sized):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
@@ -291,6 +294,7 @@ struct VariadicListMem[
                         mut or owned argument.
         element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
+        is_owned: Whether the elements are owned by the list.
     """
 
     alias reference_type = Pointer[element_type, origin]
@@ -302,10 +306,6 @@ struct VariadicListMem[
     var value: Self._mlir_type
     """The underlying storage, a variadic list of references to elements of the
     given type."""
-
-    # This is true when the elements are 'owned' - these are destroyed when
-    # the VariadicListMem is destroyed.
-    var _is_owned: Bool
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -322,7 +322,6 @@ struct VariadicListMem[
             value: The variadic argument to construct the list with.
         """
         self.value = value
-        self._is_owned = False
 
     # Provide support for variadics of *mut* arguments.  The reference will
     # automatically be inferred to be mutable, and the !kgen.variadic will have
@@ -343,7 +342,6 @@ struct VariadicListMem[
         # We need to bitcast different argument conventions to a consistent
         # representation.  This is ugly but effective.
         self.value = UnsafePointer(to=tmp).bitcast[Self._mlir_type]()[]
-        self._is_owned = False
 
     # Provide support for variadics of *owned* arguments.  The reference will
     # automatically be inferred to be mutable, and the !kgen.variadic will have
@@ -364,7 +362,6 @@ struct VariadicListMem[
         # We need to bitcast different argument conventions to a consistent
         # representation.  This is ugly but effective.
         self.value = UnsafePointer(to=tmp).bitcast[Self._mlir_type]()[]
-        self._is_owned = True
 
     @always_inline
     fn __moveinit__(out self, owned existing: Self):
@@ -374,26 +371,16 @@ struct VariadicListMem[
           existing: The existing VariadicListMem.
         """
         self.value = existing.value
-        self._is_owned = existing._is_owned
 
     @always_inline
     fn __del__(owned self):
         """Destructor that releases elements if owned."""
 
-        # Immutable variadics never own the memory underlying them,
-        # microoptimize out a check of _is_owned.
+        # Destroy each element if this variadic has owned elements, destroy
+        # them.  We destroy in backwards order to match how arguments are
+        # normally torn down when CheckLifetimes is left to its own devices.
         @parameter
-        if not elt_is_mutable:
-            return
-
-        else:
-            # If the elements are unowned, just return.
-            if not self._is_owned:
-                return
-
-            # Otherwise this is a variadic of owned elements, destroy them.  We
-            # destroy in backwards order to match how arguments are normally torn
-            # down when CheckLifetimes is left to its own devices.
+        if is_owned:
             for i in reversed(range(len(self))):
                 UnsafePointer(to=self[i]).destroy_pointee()
 
@@ -440,17 +427,16 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, origin, __origin_of(self)]:
+        out result: _VariadicListMemIter[
+            element_type, origin, __origin_of(self), is_owned
+        ],
+    ):
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return _VariadicListMemIter[
-            element_type,
-            origin,
-            __origin_of(self),
-        ](0, self)
+        return __type_of(result)(0, self)
 
 
 # ===-----------------------------------------------------------------------===#
