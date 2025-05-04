@@ -2187,7 +2187,15 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     return 10, start
 
 
-fn _atof_error(str_ref: StringSlice) -> Error:
+fn _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
+    @parameter
+    if reason:
+        return Error(
+            "String is not convertible to float: '",
+            str_ref,
+            "' because ",
+            reason,
+        )
     return Error("String is not convertible to float: '", str_ref, "'")
 
 
@@ -2208,7 +2216,7 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     """
 
     if not str_slice:
-        raise _atof_error(str_slice)
+        raise _atof_error["empty string"](str_slice)
 
     var result: Float64 = 0.0
     var exponent: Int = 0
@@ -2276,13 +2284,13 @@ fn atof(str_slice: StringSlice) raises -> Float64:
             start += 1
         exponent += sign * shift
         if not has_number:
-            raise _atof_error(str_slice)
+            raise _atof_error["no number after e/E"](str_slice)
     # check for f/F at the end
     if buff[start] == ord_f or buff[start] == ord_F:
         start += 1
     # check if string got fully parsed
     if start != str_len:
-        raise _atof_error(str_slice)
+        raise _atof_error["did not consume all characters"](str_slice)
     # apply shift
     # NOTE: Instead of `var result *= 10.0 ** exponent`, we calculate a positive
     # integer factor as shift and multiply or divide by it based on the shift

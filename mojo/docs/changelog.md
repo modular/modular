@@ -58,6 +58,9 @@ Changes to Python-Mojo interoperability:
   fixed `bitset` that simplifies working with a set of bits and perform bit
   operations.
 
+- A new `json` module was added the provides a way to deserialize JSON objects
+  into Mojo.
+
 ### Tooling changes
 
 ### ❌ Removed

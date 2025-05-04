@@ -1,0 +1,631 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""
+A simple, high‐performance JSON parser in pure Mojo.
+
+This module provides functionality for parsing JSON strings into structured
+data types and serializing them back to JSON format.
+"""
+
+from utils import Variant
+from collections import Dict, List
+from utils import Writer
+from collections.optional import _NoneType
+from memory import Pointer
+
+
+@value
+struct JSONList[mut: Bool, //, origin: Origin[mut]](
+    Representable, Copyable, Movable
+):
+    """
+    Represents a JSON array as a list of JSON values.
+
+    Parameters:
+        mut: Whether the list is mutable.
+        origin: The origin of the list's memory.
+    """
+
+    var _storage: List[JSONValue[origin]]
+
+    @no_inline
+    fn write_to[W: Writer, //](self, mut writer: W):
+        """
+        Writes the JSON list to the given writer in JSON array format.
+
+        Parameters:
+            W: The type of the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("[")
+        var first = True
+        for elem in self._storage:
+            if not first:
+                writer.write(", ")
+            else:
+                first = False
+            writer.write(elem[])
+        writer.write("]")
+
+    fn __str__(self) -> String:
+        """
+        Returns a string representation of the JSON list.
+
+        Returns:
+            A string containing the JSON array representation.
+        """
+        return String.write(self)
+
+    fn __repr__(self) -> String:
+        """
+        Returns a string representation of the JSON list.
+
+        Returns:
+            A string containing the JSON array representation.
+        """
+        return String(self)
+
+
+@value
+struct JSONDict[mut: Bool, //, origin: Origin[mut]](
+    Representable, Copyable, Movable
+):
+    """
+    Represents a JSON object as a dictionary of string keys to JSON values.
+
+    Parameters:
+        mut: Whether the dictionary is mutable.
+        origin: The origin of the dictionary's memory.
+    """
+
+    var _storage: Dict[String, JSONValue[origin]]
+
+    @no_inline
+    fn write_to[W: Writer, //](self, mut writer: W):
+        """
+        Writes the JSON dictionary to the given writer in JSON object format.
+
+        Parameters:
+            W: The type of the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("{")
+        try:
+            var first = True
+            for elem in self._storage:
+                if not first:
+                    writer.write(", ")
+                else:
+                    first = False
+                writer.write('"', elem[], '": ', self._storage[elem[]])
+        except:
+            pass
+        writer.write("}")
+
+    fn __str__(self) -> String:
+        """
+        Returns a string representation of the JSON dictionary.
+
+        Returns:
+            A string containing the JSON object representation.
+        """
+        return String.write(self)
+
+    fn __repr__(self) -> String:
+        """
+        Returns a string representation of the JSON dictionary.
+
+        Returns:
+            A string containing the JSON object representation.
+        """
+        return String(self)
+
+
+struct JSONValue[mut: Bool, //, origin: Origin[mut]](
+    Representable, Copyable, Movable
+):
+    """
+    Represents a JSON value of any type (null, boolean, number, string,
+    array, or object).
+
+    Parameters:
+        mut: Whether the value is mutable.
+        origin: The origin of the value's memory.
+    """
+
+    var _kind: UInt8
+    var _storage: Variant[
+        _NoneType,
+        Bool,
+        String,
+        Float64,
+        JSONList[origin],
+        JSONDict[origin],
+    ]
+
+    alias KIND_NULL: UInt8 = 0
+    alias KIND_BOOL: UInt8 = 1
+    alias KIND_NUMBER: UInt8 = 2
+    alias KIND_STRING: UInt8 = 3
+    alias KIND_ARRAY: UInt8 = 4
+    alias KIND_OBJECT: UInt8 = 5
+
+    @always_inline
+    fn __init__(out self):
+        """
+        Initializes a new JSON value as null.
+        """
+        self = Self(_NoneType())
+
+    @always_inline
+    @implicit
+    fn __init__(out self, v: _NoneType):
+        """
+        Initializes a new JSON value as null.
+
+        Args:
+            v: The null value.
+        """
+        self._kind = Self.KIND_NULL
+        self._storage = v
+
+    @always_inline
+    @implicit
+    fn __init__(out self, v: Bool):
+        """
+        Initializes a new JSON value as a boolean.
+
+        Args:
+            v: The boolean value.
+        """
+        self._kind = Self.KIND_BOOL
+        self._storage = v
+
+    @always_inline
+    @implicit
+    fn __init__(out self, s: Float64):
+        """
+        Initializes a new JSON value as a floating-point number.
+
+        Args:
+            s: The floating-point value.
+        """
+        self._kind = Self.KIND_NUMBER
+        self._storage = s
+
+    @always_inline
+    @implicit
+    fn __init__(out self, s: String):
+        """
+        Initializes a new JSON value as a string.
+
+        Args:
+            s: The string value.
+        """
+        self._kind = Self.KIND_STRING
+        self._storage = s
+
+    @always_inline
+    @implicit
+    fn __init__(out self, a: List[JSONValue[origin]]):
+        """
+        Initializes a new JSON value as an array.
+
+        Args:
+            a: The list of JSON values.
+        """
+        self._kind = Self.KIND_ARRAY
+        self._storage = JSONList(a)
+
+    @always_inline
+    @implicit
+    fn __init__(out self, o: Dict[String, JSONValue[origin]]):
+        """
+        Initializes a new JSON value as an object.
+
+        Args:
+            o: The dictionary of string keys to JSON values.
+        """
+        self._kind = Self.KIND_OBJECT
+        self._storage = JSONDict(o)
+
+    @always_inline
+    @implicit
+    fn __init__(out self, o: JSONDict[origin]):
+        """
+        Initializes a new JSON value as an object.
+
+        Args:
+            o: The JSON dictionary.
+        """
+        self._kind = Self.KIND_OBJECT
+        self._storage = o
+
+    @always_inline
+    fn __copyinit__(out self, other: Self):
+        """
+        Initializes a new JSON value as a copy of another.
+
+        Args:
+            other: The JSON value to copy.
+        """
+        self._kind = other._kind
+        self._storage = other._storage
+
+    @always_inline
+    fn __moveinit__(out self, owned existing: Self):
+        """
+        Initializes a new JSON value by moving another.
+
+        Args:
+            existing: The JSON value to move.
+        """
+        self._kind = existing._kind
+        self._storage = existing._storage^
+
+    @no_inline
+    fn write_to[W: Writer, //](self, mut writer: W):
+        """
+        Writes a string representation of the JSONValue to the given writer.
+
+        Outputs the JSONValue in its JSON string representation.
+
+        Parameters:
+            W: The type of the writer, conforming to the `Writer` trait.
+
+        Args:
+            writer: The writer instance to output the representation to.
+        """
+        var kind = self._kind
+        if kind == Self.KIND_NULL:
+            writer.write("None")
+        elif kind == Self.KIND_BOOL:
+            writer.write(self._storage[Bool])
+        elif kind == Self.KIND_STRING:
+            writer.write('"', self._storage[String], '"')
+        elif kind == Self.KIND_NUMBER:
+            writer.write(self._storage[Float64])
+        elif kind == Self.KIND_ARRAY:
+            writer.write(self._storage[JSONList[origin]])
+        elif kind == Self.KIND_OBJECT:
+            writer.write(self._storage[JSONDict[origin]])
+
+    fn __str__(self) -> String:
+        """
+        Returns a string representation of the JSON value.
+
+        Returns:
+            A string containing the JSON representation.
+        """
+        return String.write(self)
+
+    @always_inline
+    fn __repr__(self) -> String:
+        """
+        Returns a string representation of the JSON value.
+
+        Returns:
+            A string containing the JSON representation.
+        """
+        return String(self)
+
+
+struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
+    """
+    A parser for JSON text.
+
+    This struct provides methods to parse JSON text into structured JSONValue
+    objects. It works directly on the UTF-8 bytes of the source string.
+
+    Parameters:
+        mut: Whether the parser is mutable.
+        origin: The origin of the parser's memory.
+    """
+
+    # We'll work over the raw UTF-8 bytes of the source.
+    var _slice: StringSlice[origin]
+    """
+    The string slice containing the JSON text to be parsed.
+
+    This field stores the UTF-8 encoded input text that the parser will process
+    character by character to construct JSON values.
+    """
+
+    var _idx: Int
+    """
+    The current position in the string slice.
+
+    This index tracks the parser's current position within the _slice field as
+    it processes the JSON text. It's incremented as characters are consumed.
+    """
+
+    fn __init__(out self, span: StringSlice[origin]):
+        """
+        Initializes a new JSON parser with the given string slice.
+
+        Args:
+            span: The string slice to parse.
+        """
+        self._slice = span
+        self._idx = 0
+
+    @always_inline
+    fn _peek(self) -> Byte:
+        """
+        Returns the current byte without advancing the parser.
+
+        Returns:
+            The current byte, or 0 if at the end of the input.
+        """
+        if self._idx >= len(self._slice):
+            return 0
+        return self._slice._slice[self._idx]
+
+    @always_inline
+    fn _peek_slice(self) -> StringSlice[origin=origin]:
+        """
+        Returns a string slice of the current byte without advancing the parser.
+
+        Returns:
+            A string slice containing the current byte, or an empty slice if at
+            the end of the input.
+        """
+        if self._idx >= len(self._slice):
+            return StringSlice[origin=origin]()
+        return StringSlice(
+            unsafe_from_utf8=self._slice._slice[self._idx : self._idx + 1]
+        )
+
+    @always_inline
+    fn _next(mut self) -> Byte:
+        """
+        Returns the current byte and advances the parser.
+
+        Returns:
+            The current byte, or 0 if at the end of the input.
+        """
+        var c = self._peek()
+        self._idx += 1
+        return c
+
+    @always_inline
+    fn _skip_whitespace(mut self):
+        """
+        Advances the parser past any whitespace characters.
+        """
+        while self._peek_slice().isspace():
+            self._idx += 1
+
+    fn _expect(mut self, pat: String) raises:
+        """
+        Expects the given pattern at the current position and advances past it.
+
+        Args:
+            pat: The pattern to expect.
+
+        Raises:
+            Error: If the pattern is not found at the current position.
+        """
+        var p = pat.as_bytes()
+        var n = pat.byte_length()
+
+        for i in range(n):
+            if self._next() != p[i]:
+                raise Error(
+                    "Expected "
+                    + pat
+                    + " but got "
+                    + StringSlice(
+                        unsafe_from_utf8=self._slice._slice[self._idx :]
+                    )
+                )
+
+    fn parse_value(mut self) raises -> JSONValue[origin]:
+        """
+        Parses a JSON value at the current position.
+
+        Returns:
+            The parsed JSON value.
+
+        Raises:
+            Error: If the JSON is invalid.
+        """
+        self._skip_whitespace()
+        var c = self._peek()
+
+        if c == ord('"'):
+            return JSONValue[origin](self._parse_string())
+        if c == ord("{"):
+            return self._parse_object()
+        if c == ord("["):
+            return self._parse_array()
+        if c == ord("t"):
+            self._expect("true")
+            return True
+        if c == ord("f"):
+            self._expect("false")
+            return False
+        if c == ord("n"):
+            self._expect("null")
+            return JSONValue[origin]()
+
+        return self._parse_number()
+
+    fn _parse_string(mut self) -> String:
+        """
+        Parses a JSON string at the current position.
+
+        Returns:
+            The parsed string.
+        """
+        _ = self._next()  # skip opening '"'
+        var start = self._idx
+        var escaped = False
+        var end = start
+
+        while True:
+            var b = self._slice._slice[end]
+            if not escaped and b == ord('"'):  # closing '"'
+                break
+            escaped = b == ord("\\") and not escaped  # backslash '\'
+            end += 1
+
+        # slice out [start, end)
+        var slice = Span[Byte, __origin_of(self._slice)](
+            ptr=self._slice.unsafe_ptr() + start,
+            length=end - start,
+        )
+        self._idx = end + 1  # skip closing quote
+        return String(bytes=slice)
+
+    fn _parse_number(mut self) raises -> Float64:
+        """
+        Parses a JSON number at the current position.
+
+        Returns:
+            The parsed number as a Float64.
+
+        Raises:
+            Error: If the number is invalid.
+        """
+        var start = self._idx
+
+        # optional leading '-'
+        if self._peek() == ord("-"):
+            self._idx += 1
+
+        # integer part
+        while self._peek_slice().is_ascii_digit():
+            self._idx += 1
+
+        # optional fraction
+        if self._peek() == ord("."):
+            self._idx += 1
+            while self._peek_slice().is_ascii_digit():
+                self._idx += 1
+
+        # optional exponent
+        if self._peek() == ord("e") or self._peek() == ord("E"):
+            self._idx += 1
+            if self._peek() == ord("+") or self._peek() == ord("-"):
+                self._idx += 1
+            while self._peek_slice().is_ascii_digit():
+                self._idx += 1
+
+        var sl = Span[Byte, __origin_of(self._slice)](
+            ptr=self._slice.unsafe_ptr() + start,
+            length=self._idx - start,
+        )
+
+        return atof(String(bytes=sl))
+
+    fn _parse_array(mut self) raises -> List[JSONValue[origin]]:
+        """
+        Parses a JSON array at the current position.
+
+        Returns:
+            A list of JSON values.
+
+        Raises:
+            Error: If the array is invalid.
+        """
+        _ = self._next()  # skip '['
+        self._skip_whitespace()
+        var arr = List[JSONValue[origin]]()
+
+        if self._peek() == ord("]"):
+            self._idx += 1
+            return arr
+
+        while True:
+            self._skip_whitespace()
+            arr.append(self.parse_value())
+            self._skip_whitespace()
+
+            var c = self._next()
+            if c == ord(","):
+                continue
+            elif c == ord("]"):
+                break
+            else:
+                raise Error("Expected ',' or ']'")
+
+        return arr
+
+    fn _parse_object(mut self) raises -> JSONDict[origin]:
+        """
+        Parses a JSON object at the current position.
+
+        Returns:
+            A JSON dictionary.
+
+        Raises:
+            Error: If the object is invalid.
+        """
+        _ = self._next()  # skip '{'
+        self._skip_whitespace()
+        var obj = Dict[String, JSONValue[origin]]()
+
+        if self._peek() == ord("}"):  # '}'
+            self._idx += 1
+            return JSONDict[origin](obj)
+
+        while True:
+            self._skip_whitespace()
+            var key = self._parse_string()
+            self._skip_whitespace()
+
+            if self._next() != ord(":"):  # ':'
+                raise Error("Expected ':'")
+
+            self._skip_whitespace()
+            var val = self.parse_value()
+            obj[key] = val
+            self._skip_whitespace()
+
+            var c = self._next()
+            if c == ord(","):  # ','
+                continue
+            if c == ord("}"):  # '}'
+                break
+            raise Error("Expected ',' or '}'")
+
+        return JSONDict[origin](obj)
+
+
+fn loads(text: String) raises -> JSONValue[__origin_of(text)]:
+    """
+    Parses the given JSON text into a JSONValue.
+
+    This function takes a JSON string and returns a structured representation
+    as a JSONValue object.
+
+    Args:
+        text: The JSON text to parse.
+
+    Returns:
+        A JSONValue representing the parsed JSON.
+
+    Raises:
+        Error: If the JSON is invalid.
+    """
+    var p = JSONParser(text)
+    p._skip_whitespace()
+    var result = p.parse_value()
+    p._skip_whitespace()
+    return result
