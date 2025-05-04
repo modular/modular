@@ -29,6 +29,8 @@ from testing import (
     assert_true,
 )
 
+from math import isinf, isnan
+
 
 @value
 struct AString(Stringable):
@@ -471,6 +473,33 @@ def test_atof():
     assert_equal(FloatLiteral.infinity, atof(" inf "))
     assert_equal(FloatLiteral.negative_infinity, atof("-inf  "))
 
+    # Tests for scientific notation bug fix (using buff[pos] instead of buff[start])
+    assert_equal(
+        1.23e-2, atof("1.23e-2")
+    )  # Previously failed due to wrong buffer indexing
+    assert_equal(
+        4.56e2, atof("4.56e+2")
+    )  # Previously failed due to wrong buffer indexing
+
+    # Tests for case-insensitive NaN and infinity
+    assert_true(isnan(atof("NaN")))
+    assert_true(isnan(atof("nan")))
+    assert_true(isinf(atof("Inf")))
+    assert_true(isinf(atof("INFINITY")))
+    assert_true(isinf(atof("infinity")))
+    assert_true(isinf(atof("-INFINITY")))
+
+    # Tests for leading decimal point (no digits before decimal)
+    assert_equal(0.123, atof(".123"))
+    assert_equal(-0.123, atof("-.123"))
+    assert_equal(0.123, atof("+.123"))
+
+    # Tests for large exponents (overflow handling)
+    assert_equal(
+        FloatLiteral.infinity, atof("1e309")
+    )  # Overflows double precision
+    assert_equal(0.0, atof("1e-309"))  # Underflows to zero
+
     # Negative cases
     with assert_raises(contains="String is not convertible to float: ''"):
         _ = atof("")
@@ -509,6 +538,12 @@ def test_atof():
         contains="String is not convertible to float: ' ++94. '"
     ):
         _ = atof(" ++94. ")
+
+    with assert_raises(contains="String is not convertible to float"):
+        _ = atof(".")  # Just a decimal point with no digits
+
+    with assert_raises(contains="String is not convertible to float"):
+        _ = atof("e5")  # Exponent with no mantissa
 
 
 def test_calc_initial_buffer_size_int32():

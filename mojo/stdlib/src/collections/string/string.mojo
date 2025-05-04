@@ -2216,7 +2216,7 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     """
 
     if not str_slice:
-        raise _atof_error["empty string"](str_slice)
+        raise _atof_error["string was empty"](str_slice)
 
     var result: Float64 = 0.0
     var exponent: Int = 0
@@ -2243,64 +2243,109 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     elif buff[start] == ord_minus:
         start += 1
         sign = -1
+
+    # Check for NaN and infinity
     if (str_len - start) >= 3:
-        if StringSlice[buff.origin](ptr=buff + start, length=3) == "nan":
+        var nan_check = StringSlice[buff.origin](
+            ptr=buff + start, length=3
+        ).lower()
+        if nan_check == "nan":
             return FloatLiteral.nan
-        if StringSlice[buff.origin](ptr=buff + start, length=3) == "inf":
+
+        # Check for both "inf" and "infinity"
+        if nan_check == "inf":
             return FloatLiteral.infinity * sign
+        if (str_len - start) >= 8:
+            var inf_check = StringSlice[buff.origin](
+                ptr=buff + start, length=8
+            ).lower()
+            if inf_check == "infinity":
+                return FloatLiteral.infinity * sign
+
+    # Allow leading decimal point
+    var found_digit = False
+
     # read before dot
     for pos in range(start, str_len):
         if ord_0 <= buff[pos] <= ord_9:
             result = result * 10.0 + Int(buff[pos] - ord_0)
+            found_digit = True
             start += 1
         else:
             break
+
     # if dot -> read after dot
-    if buff[start] == ord_dot:
+    if start < str_len and buff[start] == ord_dot:
         start += 1
         for pos in range(start, str_len):
             if ord_0 <= buff[pos] <= ord_9:
                 result = result * 10.0 + Int(buff[pos] - ord_0)
                 exponent -= 1
+                found_digit = True
             else:
                 break
             start += 1
+
+    # Must have at least one digit before or after decimal point
+    if not found_digit:
+        raise _atof_error["no digit found before or after decimal point"](
+            str_slice
+        )
+
     # if e/E -> read scientific notation
-    if buff[start] == ord_e or buff[start] == ord_E:
+    if start < str_len and (buff[start] == ord_e or buff[start] == ord_E):
         start += 1
-        var sign: Int = 1
-        var shift: Int = 0
+        var exp_sign: Int = 1
+        var exp_shift: Int = 0
         var has_number: Bool = False
-        for pos in range(start, str_len):
+
+        # Handle sign in exponent
+        if start < str_len:
             if buff[start] == ord_plus:
-                pass
-            elif buff[pos] == ord_minus:
-                sign = -1
-            elif ord_0 <= buff[start] <= ord_9:
+                start += 1
+            elif buff[start] == ord_minus:
+                exp_sign = -1
+                start += 1
+
+        # Parse exponent digits
+        for pos in range(start, str_len):
+            if ord_0 <= buff[pos] <= ord_9:
                 has_number = True
-                shift = shift * 10 + Int(buff[pos] - ord_0)
+                exp_shift = exp_shift * 10 + Int(buff[pos] - ord_0)
             else:
                 break
             start += 1
-        exponent += sign * shift
+
+        exponent += exp_sign * exp_shift
         if not has_number:
-            raise _atof_error["no number after e/E"](str_slice)
+            raise _atof_error["the exponent was not a number"](str_slice)
+
     # check for f/F at the end
-    if buff[start] == ord_f or buff[start] == ord_F:
+    if start < str_len and (buff[start] == ord_f or buff[start] == ord_F):
         start += 1
+
     # check if string got fully parsed
     if start != str_len:
-        raise _atof_error["did not consume all characters"](str_slice)
+        raise _atof_error["string was not fully parsed"](str_slice)
+
     # apply shift
     # NOTE: Instead of `var result *= 10.0 ** exponent`, we calculate a positive
     # integer factor as shift and multiply or divide by it based on the shift
     # direction. This allows for better precision.
-    # TODO: investigate if there is a floating point arithmetic problem.
+
+    # Prevent integer overflow for large exponents
+    if abs(exponent) > 308:  # Double precision limit
+        if exponent > 0:
+            return FloatLiteral.infinity * sign
+        else:
+            return 0.0 * sign
+
     var shift: Int = 10 ** abs(exponent)
     if exponent > 0:
         result *= shift
     if exponent < 0:
         result /= shift
+
     # apply sign
     return result * sign
 
