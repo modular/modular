@@ -32,7 +32,7 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
-from sys.info import _current_arch
+from sys.info import _is_sm_9x_or_newer
 
 from bit import count_leading_zeros, count_trailing_zeros
 from builtin.dtype import _integral_type_of
@@ -390,7 +390,7 @@ fn exp2[
         if dtype is DType.float16:
 
             @parameter
-            if _current_arch() == "sm_90a":
+            if _is_sm_9x_or_newer():
                 return _call_ptx_intrinsic[
                     scalar_instruction="ex2.approx.f16",
                     vector2_instruction="ex2.approx.f16x2",
@@ -401,7 +401,7 @@ fn exp2[
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif dtype is DType.bfloat16 and _current_arch() == "sm_90a":
+        elif dtype is DType.bfloat16 and _is_sm_9x_or_newer():
             return _call_ptx_intrinsic[
                 scalar_instruction="ex2.approx.ftz.bf16",
                 vector2_instruction="ex2.approx.ftz.bf16x2",
