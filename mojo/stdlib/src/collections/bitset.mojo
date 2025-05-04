@@ -36,7 +36,7 @@ from math import ceildiv
 from bit import pop_count, log2_floor
 
 # ===-----------------------------------------------------------------------===#
-# BitSet
+# Utilities
 # ===-----------------------------------------------------------------------===#
 
 alias _WORD_BITS = bitwidthof[UInt64]()
@@ -53,6 +53,35 @@ fn _word_index(idx: UInt) -> UInt:
 fn _bit_mask(idx: UInt) -> UInt64:
     """Returns a UInt64 mask with only the bit corresponding to `idx` set."""
     return UInt64(1) << (idx & (_WORD_BITS - 1))
+
+
+@always_inline
+fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
+    """Checks if the index is within bounds for a BitSet operation.
+
+    Parameters:
+        operation_name: The name of the operation for error reporting.
+
+    Args:
+        idx: The index to check.
+        max_size: The maximum size of the BitSet.
+    """
+    debug_assert(
+        idx < max_size,
+        String(
+            "BitSet index out of bounds when ",
+            operation_name,
+            " bit: ",
+            idx,
+            " >= ",
+            max_size,
+        ),
+    )
+
+
+# ===-----------------------------------------------------------------------===#
+# BitSet
+# ===-----------------------------------------------------------------------===#
 
 
 @value
@@ -182,15 +211,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        debug_assert(
-            idx < size,
-            String(
-                "BitSet index out of bounds when clearing bit: ",
-                idx,
-                " >= ",
-                size,
-            ),
-        )
+        _check_index_bounds["clearing"](idx, size)
         var w = _word_index(idx)
         self._words[w] &= ~_bit_mask(idx)
 
@@ -205,18 +226,9 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        debug_assert(
-            idx < size,
-            String(
-                "BitSet index out of bounds when toggling bit: ",
-                idx,
-                " >= ",
-                size,
-            ),
-        )
+        _check_index_bounds["toggling"](idx, size)
         var w = _word_index(idx)
-        var mask = _bit_mask(idx)
-        self._words[w] ^= mask
+        self._words[w] ^= _bit_mask(idx)
 
     @always_inline
     fn test(self, idx: UInt) -> Bool:
@@ -231,15 +243,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        debug_assert(
-            idx < size,
-            String(
-                "BitSet index out of bounds when testing bit: ",
-                idx,
-                " >= ",
-                size,
-            ),
-        )
+        _check_index_bounds["testing"](idx, size)
         var w = _word_index(idx)
         return (self._words[w] & _bit_mask(idx)) != 0
 
