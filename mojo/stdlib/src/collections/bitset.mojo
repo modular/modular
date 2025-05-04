@@ -46,7 +46,7 @@ alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 @always_inline
 fn _word_index(idx: UInt) -> UInt:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
-    return Int(idx) >> _WORD_BITS_LOG2
+    return Int(idx >> _WORD_BITS_LOG2)
 
 
 @always_inline
