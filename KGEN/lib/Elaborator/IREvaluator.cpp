@@ -152,9 +152,9 @@ IREvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
     for (auto [param, value] :
          llvm::zip(gen.getInputParams(), genNode->inputParams))
       nestedEvaluator.setParameterValue(param, value);
-    TypedAttr simplified =
+    FailureOr<TypedAttr> simplified =
         getWitnessEntry.simplify(witnessTable, &nestedEvaluator);
-    if (!simplified) {
+    if (failed(simplified)) {
       emitError(
           {*errorLoc, "failed to locate witness entry for " + gen.getSymName() +
                           ", " + getWitnessEntry.getTraitName().getValue() +
