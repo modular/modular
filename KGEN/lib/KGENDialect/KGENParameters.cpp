@@ -184,7 +184,7 @@ void ParameterCollector::collectUsesFromAttr(
   // in the future.
   if (oldSize == uses.size()) {
     // Check whether this is a parameterless expression.
-    hasNestedConstExpr |= isa<EvaluatableAttrInterface>(attr);
+    hasNestedConstExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
     cache.parameterLess.try_emplace(attr.getAsOpaquePointer(),
                                     hasNestedConstExpr);
     hasConstExpr |= hasNestedConstExpr;

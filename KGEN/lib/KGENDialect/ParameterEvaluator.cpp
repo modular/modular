@@ -70,8 +70,8 @@ ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> paramValues) {
 
 // NOTE: This is out of line to provide a home for the ParameterEvaluator
 // vtable.
-FailureOr<TypedAttr>
-ParameterEvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
+FailureOr<TypedAttr> ParameterEvaluator::evaluateExpression(
+    ContextuallyEvaluatedAttrInterface attr) {
   return failure();
 }
 
@@ -160,7 +160,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
 
   // If an evaluatable parameter persisted, try to simplify it with additional
   // context.
-  if (auto attr = dyn_cast<EvaluatableAttrInterface>(result))
+  if (auto attr = dyn_cast<ContextuallyEvaluatedAttrInterface>(result))
     if (FailureOr<TypedAttr> expr = evaluateExpression(attr); succeeded(expr))
       result = *expr;
 

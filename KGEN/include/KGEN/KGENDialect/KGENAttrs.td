@@ -449,7 +449,7 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
-    [EvaluatableAttrInterface]> {
+    [ContextuallyEvaluatedAttrInterface]> {
   let summary = "Get a witness entry from a witness table.";
   let description = [{
     The `#kgen.get_witness` attribute is used to lookup a witness entry
@@ -551,7 +551,7 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_TypeGeneratorRefAttr : KGEN_ExprAttr<"TypeGeneratorRef", "genref", [
-    EvaluatableAttrInterface,
+    ContextuallyEvaluatedAttrInterface,
     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "type generator reference";
   let description = [{
@@ -971,7 +971,7 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
-    EvaluatableAttrInterface,
+    ContextuallyEvaluatedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface,
                                 ["isLessThan", "validateForElaborator"]>
   ]> {

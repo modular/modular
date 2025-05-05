@@ -58,14 +58,14 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
 }
 
 //===----------------------------------------------------------------------===//
-// EvaluatableAttrInterface
+// ContextuallyEvaluatedAttrInterface
 //===----------------------------------------------------------------------===//
 
-def EvaluatableAttrInterface : AttrInterface<"EvaluatableAttrInterface"> {
+def ContextuallyEvaluatedAttrInterface :
+    AttrInterface<"ContextuallyEvaluatedAttrInterface"> {
   let description = [{
-    This interface describes parameter attributes that can be evaluated
-    contextually during ParameterEvaluator by calling out to
-    evaluateExpression. This is in contrast to "simple" parameter attributes
+    This interface describes parameter attributes whose evaluation may require
+    additional context. This is in contrast to "simple" parameter attributes
     that can be simplified context-free at construction time.
   }];
 }
