@@ -48,7 +48,7 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
   // Ask Clang to create the target info for the architecture and CPU. This will
   // populate `opts` with the full target triple and feature set.
   auto targetInfo = std::unique_ptr<clang::TargetInfo>(
-      clang::TargetInfo::CreateTargetInfo(diags, opts));
+      clang::TargetInfo::CreateTargetInfo(diags, *opts.get()));
   if (!targetInfo)
     return Error("failed to create target info: " + interceptor.msg);
 

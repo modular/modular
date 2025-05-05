@@ -464,7 +464,8 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
 void Canonicalizer::runOnOperation() {
   // Run the canonicalization patterns
   mlir::GreedyRewriteConfig config;
-  config.enableRegionSimplification = mlir::GreedySimplifyRegionLevel::Disabled;
+  config.setRegionSimplificationLevel(
+      mlir::GreedySimplifyRegionLevel::Disabled);
   (void)applyPatternsGreedily(getOperation(), patterns, config);
 }
 

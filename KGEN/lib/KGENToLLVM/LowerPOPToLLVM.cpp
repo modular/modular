@@ -349,7 +349,6 @@ private:
 
   Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
                        APFloat value) const {
-    assert(value.isIEEE() && "Unsupported float type");
     return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), value);
   }
 
@@ -925,8 +924,10 @@ struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
     }
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, /*resultType=*/adaptor.getPtr().getType(),
-        /*basePtrType=*/elementType,
-        /*basePtr=*/adaptor.getPtr(), offset, /*inbounds=*/true);
+        /*elementType=*/elementType,
+        /*basePtr=*/adaptor.getPtr(),
+        /*indices=*/ValueRange{offset},
+        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
     return success();
   }
 };

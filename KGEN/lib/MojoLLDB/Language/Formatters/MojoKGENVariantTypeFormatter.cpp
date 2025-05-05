@@ -76,11 +76,12 @@ MojoKGENVariantTypeSyntheticFrontEnd::parseKGENVariant(
 
 bool MojoKGENVariantTypeSyntheticFrontEnd::MightHaveChildren() { return true; }
 
-size_t MojoKGENVariantTypeSyntheticFrontEnd::GetIndexOfChildWithName(
+llvm::Expected<size_t>
+MojoKGENVariantTypeSyntheticFrontEnd::GetIndexOfChildWithName(
     lldb_private::ConstString targetName) {
   if (content->GetName() == targetName)
     return 0;
-  return UINT32_MAX;
+  return llvm::createStringError("Child not found");
 }
 
 SyntheticChildrenFrontEnd *

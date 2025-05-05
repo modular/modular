@@ -26,7 +26,8 @@ public:
 
   bool MightHaveChildren() override;
 
-  size_t GetIndexOfChildWithName(lldb_private::ConstString name) override;
+  llvm::Expected<size_t>
+  GetIndexOfChildWithName(lldb_private::ConstString name) override;
 
   /// Parse the given `ValueObject` representing a List.
   ///

@@ -109,11 +109,20 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
 
 bool MojoListSyntheticFrontEnd::MightHaveChildren() { return true; }
 
-size_t MojoListSyntheticFrontEnd::GetIndexOfChildWithName(
+llvm::Expected<size_t> MojoListSyntheticFrontEnd::GetIndexOfChildWithName(
     lldb_private::ConstString name) {
   if (size == 0)
-    return 0;
-  return ExtractIndexFromString(name.GetCString());
+    return llvm::createStringError("List is empty");
+
+  const char *nameStr = name.GetCString();
+  if (!nameStr)
+    return llvm::createStringError("Invalid name");
+
+  size_t idx = ExtractIndexFromString(nameStr);
+  if (idx >= size)
+    return llvm::createStringError("Index out of bounds");
+
+  return idx;
 }
 
 SyntheticChildrenFrontEnd *
