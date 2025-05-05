@@ -164,8 +164,8 @@ fn memcmp[
 
 @always_inline
 fn _memcpy_impl(
-    dest_data: UnsafePointer[Byte, mut=True, **_],
-    src_data: __type_of(dest_data),
+    dest_data: UnsafePointer[Byte, mut=True, *_, **_],
+    src_data: UnsafePointer[Byte, mut=False, *_, **_],
     n: Int,
 ):
     """Copies a memory area.
@@ -272,7 +272,7 @@ fn memcpy[
     else:
         _memcpy_impl(
             dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+            src.bitcast[Byte]().origin_cast[mut=False](),
             n,
         )
 
