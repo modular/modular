@@ -10,7 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from abc import ABC, abstractmethod
 
-from .base import Scheduler
 
-__all__ = ["Scheduler"]
+class Scheduler(ABC):
+    """Abstract base class defining the interface for schedulers."""
+
+    @abstractmethod
+    def run(self):
+        """The main scheduler loop that creates and executes batches.
+
+        This method should implement the core scheduling logic including:
+        - Batch creation and management
+        - Request scheduling
+        - Error handling
+        """
+        pass
