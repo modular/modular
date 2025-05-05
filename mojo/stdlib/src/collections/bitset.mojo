@@ -86,7 +86,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
 
 
 @value
-struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
+struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
     """A grow-only set storing non-negative integers efficiently using bits.
 
     Parameters:
@@ -115,7 +115,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         """Initializes an empty BitSet with zero capacity and size."""
         self._words = __type_of(self._words)(0)
 
-    fn __init__(out self, init: SIMD[DType.bool, size]):
+    fn __init__(init: SIMD[DType.bool], out self: BitSet[UInt(init.size)]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
@@ -124,7 +124,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         self._words = __type_of(self._words)(0)
 
         @parameter
-        for i in range(size):
+        for i in range(Int(size)):
             if init[i]:
                 self.set(i)
 
@@ -146,7 +146,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         var total: UInt = 0
 
         @parameter
-        for i in range(self._words_size):
+        for i in range(Int(self._words_size)):
             total += UInt(pop_count(self._words[i]))
 
         return total
@@ -318,7 +318,7 @@ struct BitSet[size: Int](Stringable, Writable, Boolable, Sized):
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter
-            for i in range(Self._words_size):
+            for i in range(Int(Self._words_size)):
                 res._words[i] = func(left._words[i], right._words[i])
 
         return res
