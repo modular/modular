@@ -14,10 +14,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import md5
 from typing import cast
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorValue,
+    TensorValueLike,
+    _ChainType,
+    ops,
+)
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
@@ -50,6 +59,7 @@ class DistributedTransformerBlock(Module):
         attention_norm: DistributedRMSNorm,
         mlp_norm: DistributedRMSNorm,
         devices: list[DeviceRef],
+        use_subgraph: bool = False,
     ):
         super().__init__()
         self.self_attn = attention
@@ -57,6 +67,125 @@ class DistributedTransformerBlock(Module):
         self.input_layernorm = attention_norm
         self.post_attention_layernorm = mlp_norm
         self.devices = devices
+        self.use_subgraph = use_subgraph
+
+    def build_subgraph(
+        self,
+        name: str,
+    ) -> Module:
+        num_devices = len(self.devices)
+
+        raw_state_dict = self.raw_state_dict()
+        weights = [
+            value
+            for _, value in sorted(raw_state_dict.items(), key=lambda x: x[0])
+        ]
+        weight_mlir_values = [w._mlir_value for w in weights]
+
+        outer_self = self
+
+        class DistributedTransformerBlockSubgraph(Module):
+            def __call__(
+                self,
+                xs: list[TensorValue],
+                signal_buffers: list[BufferValue],
+                kv_collections: list[
+                    ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
+                ],
+                input_row_offsets: TensorValue,
+                context_lengths: TensorValue | None = None,
+            ) -> list[TensorValue]:
+                input_row_offsets_type = input_row_offsets.type
+                misc_input_types = [input_row_offsets_type]
+                context_lengths_type = (
+                    context_lengths.type if context_lengths else None
+                )
+                if context_lengths_type:
+                    misc_input_types.append(context_lengths_type)
+
+                name_suffix = md5(
+                    str(tuple(t.to_mlir() for t in misc_input_types)).encode()
+                ).hexdigest()
+                subgraph = Graph.current._subgraphs.get(f"{name}_{name_suffix}")
+
+                if subgraph is None:
+                    x_types = [x.type for x in xs]
+                    signal_buffers_types = [
+                        signal_buffer.type for signal_buffer in signal_buffers
+                    ]
+                    kv_collection_types = [
+                        kv_collection.type for kv_collection in kv_collections
+                    ]
+                    graph_inputs = [
+                        _ChainType(),
+                        *x_types,
+                        *signal_buffers_types,
+                        *kv_collection_types,
+                        *misc_input_types,
+                    ] + [w.type for w in weights]
+
+                    with Graph.current.add_subgraph(
+                        f"{name}_{name_suffix}", input_types=graph_inputs
+                    ) as subgraph:
+                        subgraph._current_chain._mlir_value = subgraph.inputs[
+                            0
+                        ]._mlir_value
+                        arg_xs = subgraph.inputs[1 : 1 + num_devices]
+                        arg_signal_buffers = subgraph.inputs[
+                            1 + num_devices : 1 + 2 * num_devices
+                        ]
+                        arg_kv_collections = subgraph.inputs[
+                            1 + 2 * num_devices : 1 + 3 * num_devices
+                        ]
+                        arg_input_row_offsets = subgraph.inputs[
+                            1 + 3 * num_devices
+                        ]
+                        arg_context_lengths = (
+                            subgraph.inputs[1 + 3 * num_devices + 1]
+                            if context_lengths
+                            else None
+                        )
+                        subgraph._mlir_value_map.update(
+                            {
+                                w: subgraph_input._mlir_value
+                                for w, subgraph_input in zip(
+                                    weight_mlir_values,
+                                    subgraph.inputs[
+                                        1
+                                        + 3 * num_devices
+                                        + 1
+                                        + (1 if context_lengths else 0) :
+                                    ],
+                                )
+                            }
+                        )
+
+                        # prevent re-entry
+                        outer_self.use_subgraph = False
+                        subgraph.output(
+                            subgraph._current_chain,
+                            *outer_self(
+                                arg_xs,
+                                arg_signal_buffers,
+                                arg_kv_collections,
+                                input_row_offsets=arg_input_row_offsets,
+                                context_lengths=arg_context_lengths,
+                            ),
+                        )
+                        outer_self.use_subgraph = True
+
+                call_args = [
+                    *xs,
+                    *signal_buffers,
+                    *kv_collections,
+                    input_row_offsets,
+                ]
+                if context_lengths:
+                    call_args.append(context_lengths)
+                call_args.extend([w.tensor for w in weights])
+                return [res.tensor for res in ops.call(subgraph, *call_args)]
+
+        return DistributedTransformerBlockSubgraph()
 
     def __call__(
         self,
@@ -67,6 +196,11 @@ class DistributedTransformerBlock(Module):
         ],
         **kwargs,
     ) -> list[TensorValue]:
+        if self.use_subgraph:
+            return self.build_subgraph(
+                "dist_transformer_block",
+            )(xs, signal_buffers, kv_collections, **kwargs)
+
         attn_outs = self.self_attn(
             self.input_layernorm(xs), signal_buffers, kv_collections, **kwargs
         )

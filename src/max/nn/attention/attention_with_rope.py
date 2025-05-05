@@ -16,15 +16,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from hashlib import md5
 from typing import Callable, Optional, Union
 
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Graph,
     TensorType,
     TensorValue,
     Weight,
+    _ChainType,
+    _OpaqueType,
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -401,6 +405,104 @@ class AttentionWithRope(Module):
                 (self.weight_scale_q, self.weight_scale_k, self.weight_scale_v)
             )
         ).reshape([])
+
+    def build_subgraph(
+        self,
+        name: str,
+        x_type: TensorType,
+        kv_collection_type: _OpaqueType,
+    ) -> Module:
+        raw_state_dict = self.raw_state_dict()
+        weights = [
+            value
+            for _, value in sorted(raw_state_dict.items(), key=lambda x: x[0])
+        ]
+        weight_mlir_values = [w._mlir_value for w in weights]
+        freqs_cis = self.rope.freqs_cis
+        freqs_cis_mlir_value = freqs_cis._mlir_value
+        freqs_cis_type = freqs_cis.type
+
+        outer_self = self
+
+        class AttentionWithRopeSubgraph(Module):
+            def __call__(
+                self,
+                x: TensorValue,
+                kv_collection: Union[
+                    ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
+                ],
+                input_row_offsets: TensorValue,
+                context_lengths: TensorValue | None = None,
+            ) -> TensorValue:
+                input_row_offsets_type = input_row_offsets.type
+                misc_input_types = [input_row_offsets_type]
+                context_lengths_type = (
+                    context_lengths.type if context_lengths else None
+                )
+                if context_lengths_type:
+                    misc_input_types.append(context_lengths_type)
+
+                graph_inputs = (
+                    [
+                        _ChainType(),
+                        x_type,
+                        kv_collection_type,
+                        *misc_input_types,
+                    ]
+                    + [w.type for w in weights]
+                    + [freqs_cis_type]
+                )
+
+                name_suffix = md5(
+                    str(tuple(t.to_mlir() for t in misc_input_types)).encode()
+                ).hexdigest()
+                subgraph = Graph.current._subgraphs.get(f"{name}_{name_suffix}")
+
+                if subgraph is None:
+                    with Graph.current.add_subgraph(
+                        f"{name}_{name_suffix}", input_types=graph_inputs
+                    ) as subgraph:
+                        subgraph._current_chain._mlir_value = subgraph.inputs[
+                            0
+                        ]._mlir_value
+                        arg_x = subgraph.inputs[1]
+                        arg_kv_collection = subgraph.inputs[2]
+                        arg_input_row_offsets_arg = subgraph.inputs[3]
+                        arg_context_lengths_arg = (
+                            subgraph.inputs[4] if context_lengths else None
+                        )
+                        subgraph._mlir_value_map.update(
+                            {
+                                w: subgraph_input._mlir_value
+                                for w, subgraph_input in zip(
+                                    weight_mlir_values,
+                                    subgraph.inputs[
+                                        4 + (1 if context_lengths else 0) : -1
+                                    ],
+                                )
+                            }
+                        )
+                        subgraph._mlir_value_map[freqs_cis_mlir_value] = (
+                            subgraph.inputs[-1]._mlir_value
+                        )
+                        subgraph.output(
+                            subgraph._current_chain,
+                            outer_self(
+                                arg_x,
+                                arg_kv_collection,
+                                context_lengths=arg_context_lengths_arg,
+                                input_row_offsets=arg_input_row_offsets_arg,
+                            ),
+                        )
+
+                call_args = [x, kv_collection, input_row_offsets]
+                if context_lengths:
+                    call_args.append(context_lengths)
+                call_args.extend([w.tensor for w in weights])
+                call_args.append(freqs_cis)
+                return ops.call(subgraph, *call_args)[0].tensor
+
+        return AttentionWithRopeSubgraph()
 
     def __call__(
         self,
@@ -1331,6 +1433,58 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                 layer.v_proj = self.v_proj.shard(n, device)
             layer.o_proj.weight = self.o_proj.weight.shard(n, device)
             self.list_of_attentions.append(layer)
+
+    def build_subgraph(
+        self,
+        name,
+        x_type: list[TensorType],  # type: ignore[override]
+        kv_collection_type: list[_OpaqueType],  # type: ignore[override]
+    ) -> Module:
+        attn_subgraphs = []
+        for i, attn in enumerate(self.list_of_attentions):
+            attn_subgraphs.append(
+                attn.build_subgraph(
+                    f"{name}_attn_{i}", x_type[i], kv_collection_type[i]
+                )
+            )
+        outer_self = self
+
+        class DistributedAttentionWithRopeSubgraph(Module):
+            def __call__(
+                self,
+                x: list[TensorValue],
+                signal_buffers: list[BufferValue],
+                kv_collections: list[
+                    ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
+                ],
+                input_row_offsets: TensorValue,
+                context_lengths: TensorValue | None,
+            ) -> list[TensorValue]:
+                input_row_offsets_ = distribute_value(
+                    input_row_offsets, outer_self.devices
+                )
+                if context_lengths:
+                    context_lengths_ = distribute_value(
+                        context_lengths, outer_self.devices
+                    )
+                else:
+                    context_lengths_ = None
+                return outer_self.allreduce(
+                    inputs=[
+                        attn_subgraphs[i](
+                            x[i],
+                            kv_collections[i],
+                            input_row_offsets=input_row_offsets_[i],
+                            context_lengths=context_lengths_[i]
+                            if context_lengths_
+                            else None,
+                        )
+                        for i in range(len(outer_self.devices))
+                    ],
+                    signal_buffers=signal_buffers,
+                )
+
+        return DistributedAttentionWithRopeSubgraph()
 
     def __call__(  # type: ignore[override]
         self,

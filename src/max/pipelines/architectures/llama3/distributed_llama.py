@@ -144,6 +144,7 @@ class DistributedLlama3(DistributedTransformer):
                 attention_norm=create_distributed_norm(),
                 mlp_norm=create_distributed_norm(),
                 devices=config.devices,
+                use_subgraph=config.use_subgraphs,
                 # TODO: Support residual_multiplier
                 # residual_multiplier=config.residual_multiplier,
             )
