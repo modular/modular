@@ -80,7 +80,7 @@ private:
 /// In debug builds we keep track of the number of reference counted objects,
 /// which enables clients to check that none are alive at key moments.  This is
 /// a low-tech way to find certain classes of memory leaks.
-extern std::atomic<size_t> currentReferenceCountedObjects;
+extern std::atomic<std::size_t> currentReferenceCountedObjects;
 #endif // MODULAR_DEBUG
 
 /// Verify that there are no live ReferenceCounted objects that are currently
