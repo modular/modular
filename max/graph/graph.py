@@ -387,9 +387,7 @@ class Graph:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):
             if isinstance(arg, Value):
-                return self._mlir_value_map.get(
-                    arg._mlir_value, arg._mlir_value
-                )
+                return arg._mlir_value
             if isinstance(arg, list):
                 return [unwrap(elem) for elem in arg]
             elif isinstance(arg, _Type):
@@ -397,8 +395,16 @@ class Graph:
             else:
                 return arg
 
-        unwrapped_args = tuple(unwrap(arg) for arg in args)
-        unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
+        # Remap mlir.Value instances to other mlir.Value instances, useful for executing logic
+        # that needs to remap the values of the parent graph to arguments of the subgraph.
+        def remap(arg):
+            if isinstance(arg, mlir.Value):
+                return self._mlir_value_map.get(arg, arg)
+            else:
+                return arg
+
+        unwrapped_args = tuple(remap(unwrap(arg)) for arg in args)
+        unwrapped_kwargs = {k: remap(unwrap(arg)) for k, arg in kwargs.items()}
 
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
