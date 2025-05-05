@@ -23,7 +23,7 @@ ENCODING=float32
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional, TypedDict, TypeVar
+from typing import Literal, Optional, TypeVar
 
 import click
 import numpy as np
@@ -32,32 +32,8 @@ from model.utils.custom_args import CommaSeparatedList
 from model.utils.exceptions import AccuracyError
 from model.utils.logging import CONSOLE
 from test_common.distance_metrics import kl_divergence_from_logits
-from test_common.evaluate import compare_values
+from test_common.evaluate import ModelOutput, TokenInfo, compare_values
 from test_common.numpy_encoder import NumpyDecoder
-from typing_extensions import NotRequired
-
-
-class TokenInfo(TypedDict):
-    """Information about a token in the output."""
-
-    next_token: int
-    """The next token in the output."""
-    next_token_logits: float
-    """The logits for the next token."""
-    logits: np.ndarray
-    """The logits for the token."""
-
-
-class ModelOutput(TypedDict):
-    """The prompt and the output of a model run."""
-
-    prompt: str
-    """The prompt that was used to generate the output."""
-    values: NotRequired[list[TokenInfo]]
-    """Outputs from a text generation model."""
-    embeddings: NotRequired[np.ndarray]
-    """Outputs from a text embedding model."""
-
 
 # Shared defaults between CLI and verify function
 DEFAULT_EVAL_METRIC = ["tol"]
@@ -465,10 +441,6 @@ def calculate_logit_discrepancies(
         )
         steps += 1
 
-        # If the tokens diverge, stop computing the discrepancies
-        if res_token["next_token"] != ref_token["next_token"]:
-            break
-
     mae_average = total_mae / steps
     rmse_average = total_rmse / steps
     kl_div_average = total_kl_div / steps
@@ -515,11 +487,6 @@ def print_discrepancy_report(report: DiscrepancyReport) -> None:
     CONSOLE.print(
         f"They measure how close the {report.model_modality}s are between the two frameworks."
     )
-
-    if report.kl_div_per_prompt is not None:
-        CONSOLE.print(
-            "The numbers are computed until the first token mismatch, if any."
-        )
 
     CONSOLE.print("\n===== end discrepancy report =====\n")
 

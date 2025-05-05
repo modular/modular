@@ -21,6 +21,8 @@ import click
 from generate_llm_logits import Flake, generate_llm_logits
 from llama3.verify import DiscrepancyReport, verify
 from max.entrypoints.cli import DevicesOptionType
+from test_common.evaluate import ModelOutput
+from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
 
 # This is far from a universal standard, but this is the closest to a standard
@@ -164,6 +166,7 @@ def generate_llm_logits_nonretrying(
     pipeline: str,
     encoding: str,
     output_path: Path,
+    reference: list[ModelOutput] | None = None,
 ) -> None:
     """Run :generate_llm_logits to generate logits for a model.
 
@@ -181,6 +184,7 @@ def generate_llm_logits_nonretrying(
             encoding_name=encoding,
             output_path=output_path,
             print_output=False,
+            reference=reference,
         ),
         timeout=600,
     )
@@ -193,6 +197,7 @@ def generate_llm_logits_with_retry(
     pipeline: str,
     encoding: str,
     output_path: Path,
+    reference: list[ModelOutput] | None = None,
 ) -> None:
     """Generate logits with retry capability.
 
@@ -208,6 +213,7 @@ def generate_llm_logits_with_retry(
             pipeline=pipeline,
             encoding=encoding,
             output_path=output_path,
+            reference=reference,
         )
 
     try:
@@ -251,26 +257,7 @@ def run_llm_verification(
     for details on acceptable flags.
     """
 
-    # When find_tolerances is enabled, we set all tolerances to a lower bound and enable print_suggested_tolerances.
-    # This ensures we find the suggested lower bound tolerances for a model.
-    if find_tolerances:
-        print_suggested_tolerances = True
-        kl_div_threshold = 1e-10
-        cos_dist_threshold = 1e-10
-        absolute_tolerance = 1e-4
-        relative_tolerance = 1e-4
-
-    max_golden_path = Path(
-        f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
-    )
-    generate_llm_logits_with_retry(
-        framework="max",
-        device=devices,
-        pipeline=pipeline,
-        encoding=encoding,
-        output_path=max_golden_path,
-    )
-
+    # Run the torch baseline or load it from golden.
     if pregenerated_torch_goldens_rlocation is not None:
         # This workflow runs on an A10. The Torch reference runs out of memory
         # on an A10, so it was run manually on an A100 and the result goldens
@@ -289,6 +276,31 @@ def run_llm_verification(
             encoding=encoding,
             output_path=torch_golden_path,
         )
+
+    torch_results: list[ModelOutput] = NumpyDecoder().decode(
+        torch_golden_path.read_text()
+    )
+
+    # When find_tolerances is enabled, we set all tolerances to a lower bound and enable print_suggested_tolerances.
+    # This ensures we find the suggested lower bound tolerances for a model.
+    if find_tolerances:
+        print_suggested_tolerances = True
+        kl_div_threshold = 1e-10
+        cos_dist_threshold = 1e-10
+        absolute_tolerance = 1e-4
+        relative_tolerance = 1e-4
+
+    max_golden_path = Path(
+        f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
+    )
+    generate_llm_logits_with_retry(
+        framework="max",
+        device=devices,
+        pipeline=pipeline,
+        encoding=encoding,
+        output_path=max_golden_path,
+        reference=torch_results,
+    )
 
     eval_metrics = []
     if absolute_tolerance is not None and relative_tolerance is not None:
@@ -390,10 +402,10 @@ PIPELINES = {
             # pipeline.  We only pass with these sky-high tolerances --
             # something is very wrong but at least we will be able to detect
             # further regressions with this.
-            absolute_tolerance=27,
-            relative_tolerance=1e-4,
-            cos_dist_threshold=0.95,
-            kl_div_threshold=21,
+            absolute_tolerance=13,
+            relative_tolerance=0.69,
+            cos_dist_threshold=0.39,
+            kl_div_threshold=6.5,
         ),
     ),
     "Llama-3-8B-Instruct-float32": PipelineDef(
@@ -427,10 +439,10 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3-8b",
             encoding="bfloat16",
-            absolute_tolerance=34,
-            relative_tolerance=1.1,
-            cos_dist_threshold=1.5,
-            kl_div_threshold=33,
+            absolute_tolerance=0.35,
+            relative_tolerance=0.15,
+            cos_dist_threshold=3.0e-4,
+            kl_div_threshold=2.3e-3,
         ),
     ),
     "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
@@ -449,10 +461,10 @@ PIPELINES = {
             # pipeline.  We only pass with these sky-high tolerances --
             # something is very wrong but at least we will be able to detect
             # further regressions with this.
-            absolute_tolerance=21,
-            relative_tolerance=1e-4,
-            cos_dist_threshold=0.68,
-            kl_div_threshold=16,
+            absolute_tolerance=14,
+            relative_tolerance=0.75,
+            cos_dist_threshold=0.62,
+            kl_div_threshold=6.8,
         ),
     ),
     "Llama-3.1-8B-Instruct-float32": PipelineDef(
@@ -486,13 +498,10 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3.1-8b",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation=(
-                "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
-            ),
-            absolute_tolerance=0.18,
-            relative_tolerance=5.0e-2,
-            cos_dist_threshold=1.4e-4,
-            kl_div_threshold=1.8e-3,
+            absolute_tolerance=0.25,
+            relative_tolerance=0.11,
+            cos_dist_threshold=3.3e-4,
+            kl_div_threshold=2.2e-3,
         ),
     ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -511,7 +520,7 @@ PIPELINES = {
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
             absolute_tolerance=0.39,
             relative_tolerance=0.35,
-            cos_dist_threshold=5.3e-4,
+            cos_dist_threshold=2.8e-4,
             kl_div_threshold=1.9e-3,
         ),
     ),
@@ -532,10 +541,10 @@ PIPELINES = {
             pipeline="llama4-scout",
             encoding="bfloat16",
             # TODO (MODELS-480): Debug Llama4 Accuracy.
-            absolute_tolerance=43,
-            relative_tolerance=0.88,
-            cos_dist_threshold=1.1,
-            kl_div_threshold=float("inf"),
+            absolute_tolerance=33,
+            relative_tolerance=0.75,
+            cos_dist_threshold=7.2e-1,
+            kl_div_threshold=6.5,
         ),
     ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
@@ -557,9 +566,9 @@ PIPELINES = {
             # somewhere, so these thresholds are extremely high.  Once the
             # deviation has been fixed, these thresholds should be adjusted
             # down to be more reasonable.
-            absolute_tolerance=63,
-            relative_tolerance=1.0,
-            cos_dist_threshold=0.9,
+            absolute_tolerance=1.1,
+            relative_tolerance=0.19,
+            cos_dist_threshold=9.3e-4,
             kl_div_threshold=float("inf"),
         ),
     ),
@@ -581,7 +590,7 @@ PIPELINES = {
             absolute_tolerance=2.2,
             relative_tolerance=1.4,
             cos_dist_threshold=1.5e-2,
-            kl_div_threshold=2.2e-2,
+            kl_div_threshold=2.8e-2,
         ),
     ),
     "mistral-small-3.1-24b-instruct-bfloat16": PipelineDef(
@@ -623,9 +632,9 @@ PIPELINES = {
             # small values near zero.
             # We should account for this since otherwise relative elementwise
             # tolerance isn't useful.
-            absolute_tolerance=0.61,
-            relative_tolerance=0.32,
-            cos_dist_threshold=1.3e-3,
+            absolute_tolerance=0.60,
+            relative_tolerance=0.17,
+            cos_dist_threshold=1.2e-3,
             kl_div_threshold=5.4e-3,
         ),
     ),
@@ -643,10 +652,10 @@ PIPELINES = {
             pipeline="pixtral",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
-            absolute_tolerance=0.83,
+            absolute_tolerance=0.66,
             relative_tolerance=0.74,
-            cos_dist_threshold=1.8e-3,
-            kl_div_threshold=5.0e-3,
+            cos_dist_threshold=2.2e-3,
+            kl_div_threshold=5.2e-3,
         ),
     ),
     "mpnet-float32": PipelineDef(
@@ -702,9 +711,9 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="qwen",
             encoding="bfloat16",
-            absolute_tolerance=0.93,
-            relative_tolerance=6.3e-2,
-            cos_dist_threshold=2.9e-3,
+            absolute_tolerance=0.5,
+            relative_tolerance=8.1e-2,
+            cos_dist_threshold=2.7e-3,
             kl_div_threshold=1.3e-1,
         ),
     ),
@@ -723,6 +732,8 @@ PIPELINES = {
             encoding="float32",
             # TODO: Investigate why this is inf here.
             # Response text looks semantically close.
+            # Part of this is likely an nvidia kernel bug.
+            # Accuracy is much better on AMD.
             absolute_tolerance=3.0,
             relative_tolerance=0.24,
             cos_dist_threshold=2.4e-2,
@@ -762,10 +773,10 @@ PIPELINES = {
             pipeline="phi-3.5-mini",
             encoding="bfloat16",
             # TODO(MODELS-458): This model seems broken based on the thresholds
-            absolute_tolerance=9.8,
-            relative_tolerance=0.27,
+            absolute_tolerance=6.8,
+            relative_tolerance=0.66,
             cos_dist_threshold=1.2e-1,
-            kl_div_threshold=8.0,
+            kl_div_threshold=1.1,
         ),
     ),
     "Phi-4-bfloat16": PipelineDef(
@@ -781,10 +792,10 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="phi-4",
             encoding="bfloat16",
-            absolute_tolerance=14,
-            relative_tolerance=1.4,
-            cos_dist_threshold=0.67,
-            kl_div_threshold=19,
+            absolute_tolerance=0.19,
+            relative_tolerance=1.7,
+            cos_dist_threshold=9.8e-5,
+            kl_div_threshold=7.0e-3,
         ),
     ),
     "llama-gptq": PipelineDef(
@@ -801,10 +812,10 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
             pipeline="llama-gptq",
             encoding="gptq",
-            absolute_tolerance=15,
-            relative_tolerance=1.3,
-            cos_dist_threshold=0.8,
-            kl_div_threshold=13,
+            absolute_tolerance=0.20,
+            relative_tolerance=0.24,
+            cos_dist_threshold=3.3e-4,
+            kl_div_threshold=2.8e-3,
         ),
     ),
     "llama-gptq-no-perm-idx": PipelineDef(
@@ -821,10 +832,10 @@ PIPELINES = {
             pipeline="llama-gptq-no-perm-idx",
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
             encoding="gptq",
-            absolute_tolerance=19,
-            relative_tolerance=1.3,
-            cos_dist_threshold=0.57,
-            kl_div_threshold=24,
+            absolute_tolerance=0.34,
+            relative_tolerance=0.29,
+            cos_dist_threshold=3.6e-4,
+            kl_div_threshold=1.5e-3,
         ),
     ),
     "deepseek-V2-lite-chat-bfloat16": PipelineDef(
@@ -844,10 +855,10 @@ PIPELINES = {
                 "torch_deepseek_golden/torch_V2_lite_chat_bfloat16_golden.json"
             ),
             # TODO(MODELS-516): Investigate need for high tolerances here.
-            kl_div_threshold=45,
-            cos_dist_threshold=1.5,
-            absolute_tolerance=70,
-            relative_tolerance=3,
+            absolute_tolerance=22,
+            relative_tolerance=0.76,
+            cos_dist_threshold=4.0e-1,
+            kl_div_threshold=18,
         ),
     ),
 }

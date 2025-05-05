@@ -5,16 +5,42 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for evaluating models and comparing the logits."""
 
+from __future__ import annotations
+
 import asyncio
 import uuid
 from collections.abc import Iterable
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
 import numpy as np
 import requests
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines import PipelineModel
 from max.pipelines.core import PipelineTokenizer, TokenGeneratorRequest
+from typing_extensions import NotRequired
+
+
+class TokenInfo(TypedDict):
+    """Information about a token in the output."""
+
+    next_token: int
+    """The next token in the output."""
+    next_token_logits: float
+    """The logits for the next token."""
+    logits: np.ndarray
+    """The logits for the token."""
+
+
+class ModelOutput(TypedDict):
+    """The prompt and the output of a model run."""
+
+    prompt: str
+    """The prompt that was used to generate the output."""
+    values: NotRequired[list[TokenInfo]]
+    """Outputs from a text generation model."""
+    embeddings: NotRequired[np.ndarray]
+    """Outputs from a text embedding model."""
+
 
 NUM_STEPS = 10
 PROMPTS = (
@@ -57,6 +83,7 @@ def run_model(
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
+    reference: list[ModelOutput] | None = None,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
     return asyncio.run(
@@ -68,6 +95,7 @@ def run_model(
             num_steps=num_steps,
             print_outputs=print_outputs,
             batch_size=batch_size,
+            reference=reference,
         )
     )
 
@@ -80,6 +108,7 @@ async def run_model_async(
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
+    reference: list[ModelOutput] | None = None,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
     assert batch_size >= 1
@@ -94,12 +123,14 @@ async def run_model_async(
     results = []
 
     async def _evaluate_batch(
-        batch_prompts: dict[str, str], batch_contexts: dict[str, Any]
+        batch_prompts: dict[str, str],
+        batch_contexts: dict[str, Any],
+        batch_reference: dict[str, ModelOutput],
     ) -> None:
         values: dict[str, list[Any]] = {req_id: [] for req_id in batch_contexts}
         for _ in range(num_steps):
             is_eos = next_token_with_logits(
-                model, batch_contexts, values, tokenizer.eos
+                model, batch_contexts, values, tokenizer.eos, batch_reference
             )
             if is_eos:
                 break
@@ -126,7 +157,8 @@ async def run_model_async(
     # Evaluate prompts.
     batch_contexts: dict[str, Any] = {}
     batch_prompts: dict[str, str] = {}
-    for prompt in prompts:
+    batch_reference: dict[str, ModelOutput] = {}
+    for i, prompt in enumerate(prompts):
         curr_req_id = str(uuid.uuid4())
         context = await tokenizer.new_context(
             TokenGeneratorRequest(
@@ -139,12 +171,17 @@ async def run_model_async(
         )
         batch_prompts[curr_req_id] = prompt
         batch_contexts[curr_req_id] = context
+        if reference:
+            batch_reference[curr_req_id] = reference[i]
         if len(batch_contexts) == batch_size:
-            await _evaluate_batch(batch_prompts, batch_contexts)
+            await _evaluate_batch(
+                batch_prompts, batch_contexts, batch_reference
+            )
             batch_prompts.clear()
             batch_contexts.clear()
+            batch_reference.clear()
     if batch_contexts:
-        await _evaluate_batch(batch_prompts, batch_contexts)
+        await _evaluate_batch(batch_prompts, batch_contexts, batch_reference)
 
     return results
 
@@ -154,6 +191,7 @@ def next_token_with_logits(
     req_to_context_dict: dict[str, Any],
     update_values: dict[str, list[Any]],
     eos_token: Optional[int] = None,
+    req_to_reference_dict: dict[str, ModelOutput] = {},
 ) -> bool:
     """Generates the next token and stores the logits.
 
@@ -165,7 +203,12 @@ def next_token_with_logits(
         req_to_context_dict: Dictionary of request ids to Llama3Context.
         update_values: Dictionary of request ids to lists of next_token &
             logits. These lists are updated in this method.
-        eos_token: Encoded end-of-sequence token used to signal the early stopping of token generation. If not provided, generation may continue past EOS token.
+        eos_token: Encoded end-of-sequence token used to signal the early
+            stopping of token generation. If not provided, generation may
+            continue past EOS token.
+        req_to_reference_dict: Dictionary of request ids to ModelOutput.
+            If there is a reference for a request, next token will select the
+            same tokens as the reference.
 
     Returns:
         bool: True if the token is an end-of-sentence token, otherwise False.
@@ -200,12 +243,23 @@ def next_token_with_logits(
     ):
         update_values[req_id].append(
             {
+                # We record the base next_token here.
+                # If it deviates from the reference, we want to see that.
                 "next_token": next_token,
                 "next_token_logits": req_logits[next_token],
                 "logits": req_logits,
             }
         )
         # Update the context for the next input.
+        # If we have a reference, always select the reference's next token.
+        if req_id in req_to_reference_dict:
+            ref = req_to_reference_dict[req_id]["values"]
+            ref_next_token = ref[0]["next_token"]
+            next_token = ref_next_token
+
+            # Drop token now that it is generated.
+            req_to_reference_dict[req_id]["values"] = ref[1:]
+
         req_to_context_dict[req_id].update(int(next_token))
         if next_token == eos_token:
             has_eos = True

@@ -41,6 +41,7 @@ from test_common import (
     numpy_encoder,
     torch_utils,
 )
+from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
 
 # This is far from a universal standard, but this is the closest to a standard
@@ -771,6 +772,7 @@ def generate_llm_logits(
     output_path: Path,
     print_output: bool,
     max_batch_size: int = 1,
+    reference: list[ModelOutput] | None = None,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -812,6 +814,7 @@ def generate_llm_logits(
                 else None,
                 print_outputs=True,
                 batch_size=max_batch_size,
+                reference=reference,
             )
         elif (
             pipeline_oracle.task
