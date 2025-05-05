@@ -74,8 +74,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   httpCtx->setUserAgent("modular-" + std::string(programName) + "/" +
                         std::string(getModularVersionString()));
 
-  // Create the settings object. This will refresh the underlying entitlement
-  // store if required by the provided policy.
+  // Create the settings object.
   auto settingsOr = Config::open();
   if (settingsOr.isError())
     return settingsOr.takeError();
