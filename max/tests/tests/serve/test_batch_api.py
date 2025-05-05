@@ -16,7 +16,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
-from max.serve.scheduler.process_control import ProcessControl
+from max.serve.process_control import ProcessControl
 from max.serve.scheduler.queues import EngineQueue
 
 

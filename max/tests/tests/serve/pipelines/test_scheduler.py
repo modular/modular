@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock
 import numpy as np
 import pytest
 from max.pipelines.core import InputContext, TextContext
-from max.serve.pipelines.scheduler import (
+from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
     SchedulerOutput,
     TextGenerationResponse,

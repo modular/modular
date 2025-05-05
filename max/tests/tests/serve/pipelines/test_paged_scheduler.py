@@ -29,8 +29,8 @@ from max.pipelines.core import (
     TextResponse,
     TokenGenerator,
 )
-from max.serve.pipelines.model_worker import ProcessControl
-from max.serve.pipelines.scheduler import (
+from max.serve.process_control import ProcessControl
+from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,

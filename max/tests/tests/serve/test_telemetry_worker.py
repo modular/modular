@@ -12,7 +12,7 @@ from unittest import mock
 import pytest
 from max.serve.config import MetricLevel, Settings
 from max.serve.pipelines import telemetry_worker
-from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
+from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry import process_controller
 from max.serve.telemetry.asyncio_controller import AsyncioMetricClient
 from max.serve.telemetry.metrics import MaxMeasurement

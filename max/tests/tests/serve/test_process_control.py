@@ -9,7 +9,7 @@ import threading
 import time
 
 import pytest
-from max.serve.scheduler import process_control
+from max.serve import process_control
 
 
 def test_heartbeat():
