@@ -16,14 +16,54 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import click
-from max.driver import DeviceSpec, accelerator_count
+from max.driver import DeviceSpec, scan_available_devices
+
+logger = logging.getLogger("max.pipelines")
 
 
 class DevicesOptionType(click.ParamType):
     name = "devices"
+
+    @staticmethod
+    def _get_requested_gpu_ids(devices: str | list[int]) -> list[int]:
+        """Helper function to get requested GPU IDs from devices input.
+
+        Args:
+            devices: The devices input, either "gpu" or a list of GPU IDs
+
+        Returns:
+            List of requested GPU IDs
+        """
+        if devices == "gpu":
+            return [0]
+        elif isinstance(devices, list):
+            return devices if devices else [0]
+        return []
+
+    @staticmethod
+    def _validate_gpu_ids(
+        gpu_ids: list[int], available_gpu_ids: list[int]
+    ) -> None:
+        """Helper function to validate requested GPU IDs against available ones.
+
+        Args:
+            gpu_ids: List of requested GPU IDs
+            available_gpu_ids: List of available GPU IDs
+
+        Raises:
+            ValueError: If a requested GPU ID is not available
+        """
+        for gpu_id in gpu_ids:
+            if gpu_id not in available_gpu_ids:
+                msg = (
+                    f"GPU {gpu_id} requested but only GPU IDs {available_gpu_ids} are "
+                    f"available. Use valid device IDs or '--devices=cpu'."
+                )
+                raise ValueError(msg)
 
     @staticmethod
     def device_specs(devices: str | list[int]) -> list[DeviceSpec]:
@@ -42,30 +82,22 @@ class DevicesOptionType(click.ParamType):
         Returns:
             A list of DeviceSpec objects.
         """
-        num_available_gpus = accelerator_count()
-        if devices == "cpu" or num_available_gpus == 0:
-            return [DeviceSpec.cpu()]
+        available_devices = scan_available_devices()
+        available_gpu_ids = [
+            d.id for d in available_devices if d.device_type == "gpu"
+        ]
+        if devices == "cpu" or len(available_gpu_ids) == 0:
+            logger.info("No GPUs available, falling back to CPU")
+            # This should return CPU device spec.
+            return available_devices
 
-        requested_ids: list[int] = []
-        if devices == "gpu":
-            requested_ids = [0]
-        elif isinstance(devices, list):
-            requested_ids = devices
+        requested_gpu_ids = DevicesOptionType._get_requested_gpu_ids(devices)
 
-        if not requested_ids:
-            # Return device 0 when no specific IDs are requested.
-            return [DeviceSpec.accelerator(id=0)]
+        DevicesOptionType._validate_gpu_ids(
+            requested_gpu_ids, available_gpu_ids
+        )
 
-        # Validate requested GPU IDs.
-        for gpu_id in requested_ids:
-            if gpu_id >= num_available_gpus:
-                msg = (
-                    f"GPU {gpu_id} requested but only {num_available_gpus} "
-                    "available. Use valid device IDs or '--devices=cpu'."
-                )
-                raise ValueError(msg)
-
-        return [DeviceSpec.accelerator(id=id) for id in requested_ids]
+        return [DeviceSpec.accelerator(id=id) for id in requested_gpu_ids]
 
     @staticmethod
     def parse_from_str(value: str) -> str | list[int]:
@@ -75,7 +107,7 @@ class DevicesOptionType(click.ParamType):
             value: The value provided as a string (e.g., "cpu", "gpu", "gpu:0,1,2")
 
         Returns:
-            Either "cpu", "gpu", or a list of GPU IDs as integers
+            Either "cpu", "gpu", or a list of GPU IDs as integers.
 
         Raises:
             ValueError: If the format is invalid
