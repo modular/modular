@@ -151,6 +151,10 @@ enum class OutputType {
   //
   // Produced when `--emit shared-lib` is specified.
   sharedLibrary,
+  // Produce an object file(.o) containing machine code.
+  //
+  // Produced when `--emit object` is specified.
+  object,
   // Also a shared library, but with extra code generated and special file ext
   // and linker options.
   //
@@ -233,6 +237,7 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
   SymbolTable symtab(*module);
   switch (outputType) {
   case OutputType::executable:
+  case OutputType::object: // NOTE: This isn't a required limitation
     if (!symtab.lookup("main"))
       return state.reportError("module does not contain a 'main' function");
     break;
@@ -337,13 +342,6 @@ static int linkOutput(OutputType outputType, const State &state,
   }
   MojoConfig config = std::move(*configOr);
 
-  // Resolve the path to the CompilerRT library.
-  std::error_code ec;
-  StringRef compilerRTPath = config.getCompilerRTPath();
-
-  if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
-    return state.reportError("unable to locate Mojo CompilerRT library");
-
   // Build a default output name based on the input file and the current working
   // directory.
   StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
@@ -364,11 +362,14 @@ static int linkOutput(OutputType outputType, const State &state,
     // Python modules require a .so suffix on all platforms.
     case OutputType::pythonExtensionModule:
       return (inputBaseName + ".so").str();
+    case OutputType::object:
+      return (inputBaseName + ".o").str();
     }
   }();
   // Validate this is a valid filename using the `path` ctor.
   defaultOutputName = std::filesystem::path(defaultOutputName).filename();
 
+  std::error_code ec;
   std::filesystem::path cwd = std::filesystem::current_path(ec);
   if (!ec)
     defaultOutputName = cwd.append(defaultOutputName);
@@ -401,6 +402,18 @@ static int linkOutput(OutputType outputType, const State &state,
     }
   }
 
+  if (outputType == OutputType::object) {
+    if (llvm::Error err = llvm::writeToOutput(outputName, [&](raw_ostream &os) {
+          os << archive->getBuffer();
+          return llvm::Error::success();
+        })) {
+      return state.reportError("unable to write object file: " +
+                               llvm::toString(std::move(err)));
+    }
+
+    return EXIT_SUCCESS;
+  }
+
   // Write the archive to a temporary file.
   auto archiveFileOr =
       writeTempFile("mojo_archive-%%%%%%%" + libExt, archive->getBuffer());
@@ -409,6 +422,12 @@ static int linkOutput(OutputType outputType, const State &state,
                              Twine(archiveFileOr.getError()));
   }
   std::string archivePath = archiveFileOr->getPath().string();
+
+  // Resolve the path to the CompilerRT library.
+  StringRef compilerRTPath = config.getCompilerRTPath();
+
+  if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
+    return state.reportError("unable to locate Mojo CompilerRT library");
 
   // Invoke the linker command.
   SmallVector<StringRef> linkerArgs = [&] {
@@ -589,6 +608,8 @@ static int build(const State &subcommandState) {
     // We have a static archive at this point, go ahead and turn it into a
     // dynamic library.
     outputType = OutputType::sharedLibrary;
+  } else if (emitFileType == "object") {
+    outputType = OutputType::object;
   } else {
     // FIXME: Report this error better, by showing the valid values.
     return state.reportError("Unrecognized value for `--emit`.");
