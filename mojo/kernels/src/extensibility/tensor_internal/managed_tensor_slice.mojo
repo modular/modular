@@ -41,6 +41,7 @@ from utils._serialize import _serialize
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .io_spec import IO, IOSpec
+from runtime.tracing import trace_arg
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives
@@ -997,6 +998,22 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
             return False
 
     return True
+
+
+# TODO: Move to open-source/max/mojo/stdlib/stdlib/runtime/tracing.mojo and
+# rename to trace_arg
+@always_inline
+fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+
+    Args:
+        name: The name of the argument.
+        buf: The NDBuffer to trace.
+
+    Returns:
+        A string representation of the buffer with its shape and data type.
+    """
+    return trace_arg(name, buf._runtime_strides, buf.type)
 
 
 # ===----------------------------------------------------------------------=== #

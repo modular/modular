@@ -27,6 +27,7 @@ from .managed_tensor_slice import (
     InputTensor,
     InputVariadicTensors,
     ManagedTensorSlice,
+    trace_slice_arg,
     OutputTensor,
     OutputVariadicTensors,
     StaticTensorSpec,
