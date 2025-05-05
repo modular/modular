@@ -40,7 +40,7 @@ public:
 
   /// Evaluate symbolic expressions using the symbol table.
   FailureOr<TypedAttr>
-  evaluateExpression(EvaluatableAttrInterface attr) override;
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
 
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an

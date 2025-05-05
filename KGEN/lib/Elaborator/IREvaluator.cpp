@@ -93,7 +93,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr>
-IREvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
+IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
   struct IndexRefFinder : IndexParameterReplacer<IndexRefFinder> {
@@ -166,7 +166,7 @@ IREvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
-  assert(op && "unknown attribute with EvaluatableAttrInterface");
+  assert(op && "unknown attribute with ContextuallyEvaluatedAttrInterface");
 
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.

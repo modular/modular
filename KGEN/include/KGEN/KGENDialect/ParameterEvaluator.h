@@ -98,7 +98,7 @@ public:
   /// to process symbol expressions using some global state, including a symbol
   /// table.
   virtual FailureOr<TypedAttr>
-  evaluateExpression(EvaluatableAttrInterface attr);
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr);
 
   /// Dump the parameter evaluator state.
   void dump() const;
