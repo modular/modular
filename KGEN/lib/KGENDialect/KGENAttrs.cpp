@@ -327,21 +327,27 @@ TypeInstanceRefAttr GetWitnessAttr::getTypeInstanceRef() {
   return ::dyn_cast<TypeInstanceRefAttr>(typeValueType.getTypeValue());
 }
 
-TypedAttr GetWitnessAttr::simplify(ConformanceOp witnessTable,
-                                   ParameterEvaluator *evaluator) {
+FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
+                                              ParameterEvaluator *evaluator) {
   for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
     if (entry.getName().getValue() != getWitnessName().getValue())
       continue;
 
     Type entryType = entry.getValue().getType();
-    if (evaluator)
+    if (evaluator) {
       entryType = evaluator->getReboundType(entryType);
+      // If the type is not resolved, evaluation was skipped by the evaluator
+      // due to a blocking dependency. Also return an empty attribute to skip
+      // this evaluation too.
+      if (!entryType)
+        return TypedAttr();
+    }
 
     if (entryType == getType())
       return evaluator ? evaluator->getReboundAttribute(entry.getValue())
                        : entry.getValue();
   }
-  return {};
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
