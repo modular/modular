@@ -942,7 +942,7 @@ class MemRefLayoutAttrInterface(Protocol):
     Note: the MemRef type's layout is assumed to represent simple strided buffer
     layout. For more complicated case, like sparse storage buffers,
     it is preferable to use separate type with more specic layout, rather then
-    introducing extra complexity to the builin MemRef type.
+    introducing extra complexity to the builtin MemRef type.
     """
 
     @property
