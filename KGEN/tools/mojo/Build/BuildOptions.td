@@ -31,8 +31,9 @@ defm emitted_file_type: CommandOptionWithValues<
   HelpText<"The type of output file to generate."
             "\n\n"
             "* `exe` (default): emit an executable binary file.\n"
-            "* `shared-lib`: emit a shared (dynamic) library.">,
-  Values<"exe,shared-lib">
+            "* `shared-lib`: emit a shared (dynamic) library.\n"
+            "* `object`: (EXPERIMENTAL) emit a single object file.">,
+  Values<"exe,shared-lib,object">
 >;
 
 def emit_llvm : Flag<["--"], "emit-llvm">, Group<OutputOptionGroup>, Index<2>,
