@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+# The hook lib does not import torch, since the caller may be using
+# the GPU or CPU version of torch.
+modular_py_library(
+    name = "hooks",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/nn",
+        requirement("torch"),
+    ],
+)

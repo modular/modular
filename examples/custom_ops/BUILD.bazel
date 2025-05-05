@@ -1,0 +1,107 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_library", "requirement")
+load(":custom_op_example.bzl", "custom_op_example_py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "kernel_sources",
+    srcs = glob(["kernels/*.mojo"]),
+)
+
+custom_op_example_py_binary(
+    name = "addition",
+    srcs = ["addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "parametric_addition",
+    srcs = ["parametric_addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "mandelbrot",
+    srcs = ["mandelbrot.py"],
+)
+
+custom_op_example_py_binary(
+    name = "image_pipeline",
+    srcs = ["image_pipeline.py"],
+    extra_data = [":dogs.jpg"],
+    extra_deps = [
+        requirement("pillow"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "vector_addition",
+    srcs = ["vector_addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "top_k",
+    srcs = ["top_k.py"],
+)
+
+custom_op_example_py_binary(
+    name = "fused_attention",
+    srcs = ["fused_attention.py"],
+)
+
+custom_op_example_py_binary(
+    name = "whisper",
+    srcs = ["whisper.py"],
+    extra_data = [
+        ":kernels",
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "//PyTorch:TorchRuntimePlugins",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    extra_deps = [
+        "//PyTorch:max_torch",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("datasets"),
+        requirement("librosa"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "matrix_multiplication",
+    srcs = ["matrix_multiplication.py"],
+)
+
+custom_op_example_py_binary(
+    name = "histogram",
+    srcs = ["histogram.py"],
+    # TODO(DEVA-433): Fix failing histogram test
+    create_test = False,
+)
+
+mojo_binary(
+    name = "benchmarks",
+    srcs = ["benchmarks.mojo"],
+    data = [
+        "//GenericML:DeviceDriver",
+    ],
+    deps = [
+        ":kernels",
+        "//SDK/lib/API/mojo/max/compiler",
+        "//SDK/lib/API/mojo/max/max",
+        "//SDK/lib/API/mojo/max/tensor",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_library(
+    name = "kernels",
+    srcs = [":kernel_sources"],
+    deps = [
+        "//SDK/lib/API/mojo/max/compiler",
+        "//SDK/lib/API/mojo/max/max",
+        "//SDK/lib/API/mojo/max/tensor",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+    ],
+)

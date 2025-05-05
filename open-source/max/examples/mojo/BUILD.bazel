@@ -1,0 +1,51 @@
+load("//bazel:api.bzl", "lit_tests", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "lib",
+    srcs = glob(
+        ["public/*.py"],
+        exclude = ["public/lit.cfg.py"],
+    ),
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+lit_tests(
+    name = "test",
+    size = "large",
+    srcs = glob(
+        [
+            "**/*.mojo",
+            "**/*.🔥",
+        ],
+        exclude = [
+            "public/lit.cfg.py",
+        ],
+    ),
+    data = [
+        "mojo_jupyter_runner.py",
+        "//utils:lit-lldb-init.in",
+    ],
+    env = {
+        "MPLCONFIGDIR": ".",
+    },
+    generate_litcfg = False,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//KGEN:mojo-lldb",
+        "//KGEN/tools/mojo",
+        "//KGEN/tools/mojo-jupyter-executor",
+        "//KGEN/tools/mojo-repl-entry-point",
+    ],
+    deps = [
+        ":lib",
+        requirement("matplotlib"),
+    ],
+)

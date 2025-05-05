@@ -693,65 +693,10 @@ struct PythonObject(
         cpython.Py_DecRef(value.py_object)
 
     @doc_private
-    fn __call_zero_arg_method__(
-        self, owned method_name: String
-    ) raises -> PythonObject:
-        var cpython = Python().cpython()
-        var tuple_obj = cpython.PyTuple_New(0)
-        var callable_obj = cpython.PyObject_GetAttrString(
-            self.py_object, method_name^
-        )
-        if callable_obj.is_null():
-            raise Error("internal error: PyObject_GetAttrString failed")
-        var result = cpython.PyObject_CallObject(callable_obj, tuple_obj)
-        cpython.Py_DecRef(tuple_obj)
-        cpython.Py_DecRef(callable_obj)
-        return PythonObject(result)
-
-    @doc_private
-    fn __call_single_arg_method__(
-        self, owned method_name: String, rhs: PythonObject
-    ) raises -> PythonObject:
-        var cpython = Python().cpython()
-        var tuple_obj = cpython.PyTuple_New(1)
-        var result = cpython.PyTuple_SetItem(tuple_obj, 0, rhs.py_object)
-        if result != 0:
-            raise Error("internal error: PyTuple_SetItem failed")
-        cpython.Py_IncRef(rhs.py_object)
-        var callable_obj = cpython.PyObject_GetAttrString(
-            self.py_object, method_name^
-        )
-        if callable_obj.is_null():
-            raise Error("internal error: PyObject_GetAttrString failed")
-        var result_obj = cpython.PyObject_CallObject(callable_obj, tuple_obj)
-        cpython.Py_DecRef(tuple_obj)
-        cpython.Py_DecRef(callable_obj)
-        return PythonObject(result_obj)
-
-    @doc_private
     fn __call_single_arg_inplace_method__(
         mut self, owned method_name: String, rhs: PythonObject
     ) raises:
-        var cpython = Python().cpython()
-        var tuple_obj = cpython.PyTuple_New(1)
-        var result = cpython.PyTuple_SetItem(tuple_obj, 0, rhs.py_object)
-        if result != 0:
-            raise Error("internal error: PyTuple_SetItem failed")
-
-        cpython.Py_IncRef(rhs.py_object)
-        var callable_obj = cpython.PyObject_GetAttrString(
-            self.py_object, method_name^
-        )
-        if callable_obj.is_null():
-            raise Error("internal error: PyObject_GetAttrString failed")
-
-        # Destroy previously stored pyobject
-        if not self.py_object.is_null():
-            cpython.Py_DecRef(self.py_object)
-
-        self.py_object = cpython.PyObject_CallObject(callable_obj, tuple_obj)
-        cpython.Py_DecRef(tuple_obj)
-        cpython.Py_DecRef(callable_obj)
+        self = self.__getattr__(method_name^)(rhs)
 
     fn __mul__(self, rhs: PythonObject) raises -> PythonObject:
         """Multiplication.
@@ -764,7 +709,7 @@ struct PythonObject(
         Returns:
             The product.
         """
-        return self.__call_single_arg_method__("__mul__", rhs)
+        return self.__getattr__("__mul__")(rhs)
 
     fn __rmul__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse multiplication.
@@ -777,7 +722,7 @@ struct PythonObject(
         Returns:
             The product of the multiplication.
         """
-        return self.__call_single_arg_method__("__rmul__", lhs)
+        return self.__getattr__("__rmul__")(lhs)
 
     fn __imul__(mut self, rhs: PythonObject) raises:
         """In-place multiplication.
@@ -800,7 +745,7 @@ struct PythonObject(
         Returns:
             The sum or concatenated values.
         """
-        return self.__call_single_arg_method__("__add__", rhs)
+        return self.__getattr__("__add__")(rhs)
 
     fn __radd__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse addition and concatenation.
@@ -814,7 +759,7 @@ struct PythonObject(
         Returns:
             The sum.
         """
-        return self.__call_single_arg_method__("__radd__", lhs)
+        return self.__getattr__("__radd__")(lhs)
 
     fn __iadd__(mut self, rhs: PythonObject) raises:
         """Immediate addition and concatenation.
@@ -835,7 +780,7 @@ struct PythonObject(
         Returns:
             The difference.
         """
-        return self.__call_single_arg_method__("__sub__", rhs)
+        return self.__getattr__("__sub__")(rhs)
 
     fn __rsub__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse subtraction.
@@ -848,7 +793,7 @@ struct PythonObject(
         Returns:
             The result of subtracting this from the given value.
         """
-        return self.__call_single_arg_method__("__rsub__", lhs)
+        return self.__getattr__("__rsub__")(lhs)
 
     fn __isub__(mut self, rhs: PythonObject) raises:
         """Immediate subtraction.
@@ -871,7 +816,7 @@ struct PythonObject(
             The result of dividing this by the right-hand-side value, modulo any
             remainder.
         """
-        return self.__call_single_arg_method__("__floordiv__", rhs)
+        return self.__getattr__("__floordiv__")(rhs)
 
     fn __rfloordiv__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse floor division.
@@ -885,7 +830,7 @@ struct PythonObject(
             The result of dividing the given value by this, modulo any
             remainder.
         """
-        return self.__call_single_arg_method__("__rfloordiv__", lhs)
+        return self.__getattr__("__rfloordiv__")(lhs)
 
     fn __ifloordiv__(mut self, rhs: PythonObject) raises:
         """Immediate floor division.
@@ -906,7 +851,7 @@ struct PythonObject(
         Returns:
             The result of dividing the right-hand-side value by this.
         """
-        return self.__call_single_arg_method__("__truediv__", rhs)
+        return self.__getattr__("__truediv__")(rhs)
 
     fn __rtruediv__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse division.
@@ -919,7 +864,7 @@ struct PythonObject(
         Returns:
             The result of dividing the given value by this.
         """
-        return self.__call_single_arg_method__("__rtruediv__", lhs)
+        return self.__getattr__("__rtruediv__")(lhs)
 
     fn __itruediv__(mut self, rhs: PythonObject) raises:
         """Immediate division.
@@ -940,7 +885,7 @@ struct PythonObject(
         Returns:
             The remainder of dividing self by rhs.
         """
-        return self.__call_single_arg_method__("__mod__", rhs)
+        return self.__getattr__("__mod__")(rhs)
 
     fn __rmod__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse modulo.
@@ -953,7 +898,7 @@ struct PythonObject(
         Returns:
             The remainder from dividing the given value by this.
         """
-        return self.__call_single_arg_method__("__rmod__", lhs)
+        return self.__getattr__("__rmod__")(lhs)
 
     fn __imod__(mut self, rhs: PythonObject) raises:
         """Immediate modulo.
@@ -973,7 +918,7 @@ struct PythonObject(
         Returns:
             The exclusive OR result of this and the given value.
         """
-        return self.__call_single_arg_method__("__xor__", rhs)
+        return self.__getattr__("__xor__")(rhs)
 
     fn __rxor__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse exclusive OR.
@@ -985,7 +930,7 @@ struct PythonObject(
         Returns:
             The exclusive OR result of the given value and this.
         """
-        return self.__call_single_arg_method__("__rxor__", lhs)
+        return self.__getattr__("__rxor__")(lhs)
 
     fn __ixor__(mut self, rhs: PythonObject) raises:
         """Immediate exclusive OR.
@@ -1006,7 +951,7 @@ struct PythonObject(
         Returns:
             The bitwise OR result of this and the given value.
         """
-        return self.__call_single_arg_method__("__or__", rhs)
+        return self.__getattr__("__or__")(rhs)
 
     fn __ror__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise OR.
@@ -1018,7 +963,7 @@ struct PythonObject(
         Returns:
             The bitwise OR result of the given value and this.
         """
-        return self.__call_single_arg_method__("__ror__", lhs)
+        return self.__getattr__("__ror__")(lhs)
 
     fn __ior__(mut self, rhs: PythonObject) raises:
         """Immediate bitwise OR.
@@ -1039,7 +984,7 @@ struct PythonObject(
         Returns:
             The bitwise AND result of this and the given value.
         """
-        return self.__call_single_arg_method__("__and__", rhs)
+        return self.__getattr__("__and__")(rhs)
 
     fn __rand__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise and.
@@ -1051,7 +996,7 @@ struct PythonObject(
         Returns:
             The bitwise AND result of the given value and this.
         """
-        return self.__call_single_arg_method__("__rand__", lhs)
+        return self.__getattr__("__rand__")(lhs)
 
     fn __iand__(mut self, rhs: PythonObject) raises:
         """Immediate bitwise AND.
@@ -1072,7 +1017,7 @@ struct PythonObject(
         Returns:
             This value, shifted right by the given value.
         """
-        return self.__call_single_arg_method__("__rshift__", rhs)
+        return self.__getattr__("__rshift__")(rhs)
 
     fn __rrshift__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise right shift.
@@ -1084,7 +1029,7 @@ struct PythonObject(
         Returns:
             The given value, shifted right by this.
         """
-        return self.__call_single_arg_method__("__rrshift__", lhs)
+        return self.__getattr__("__rrshift__")(lhs)
 
     fn __irshift__(mut self, rhs: PythonObject) raises:
         """Immediate bitwise right shift.
@@ -1105,7 +1050,7 @@ struct PythonObject(
         Returns:
             This value, shifted left by the given value.
         """
-        return self.__call_single_arg_method__("__lshift__", rhs)
+        return self.__getattr__("__lshift__")(rhs)
 
     fn __rlshift__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise left shift.
@@ -1117,7 +1062,7 @@ struct PythonObject(
         Returns:
             The given value, shifted left by this.
         """
-        return self.__call_single_arg_method__("__rlshift__", lhs)
+        return self.__getattr__("__rlshift__")(lhs)
 
     fn __ilshift__(mut self, rhs: PythonObject) raises:
         """Immediate bitwise left shift.
@@ -1137,7 +1082,7 @@ struct PythonObject(
         Returns:
             The result of raising this by the given exponent.
         """
-        return self.__call_single_arg_method__("__pow__", exp)
+        return self.__getattr__("__pow__")(exp)
 
     fn __rpow__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse power of.
@@ -1148,7 +1093,7 @@ struct PythonObject(
         Returns:
             The result of raising the given value by this exponent.
         """
-        return self.__call_single_arg_method__("__rpow__", lhs)
+        return self.__getattr__("__rpow__")(lhs)
 
     fn __ipow__(mut self, rhs: PythonObject) raises:
         """Immediate power of.
@@ -1168,7 +1113,7 @@ struct PythonObject(
         Returns:
             True if the object is less than the right hard argument.
         """
-        return self.__call_single_arg_method__("__lt__", rhs)
+        return self.__getattr__("__lt__")(rhs)
 
     fn __le__(self, rhs: PythonObject) raises -> PythonObject:
         """Less than or equal to comparator. This lexicographically compares
@@ -1180,7 +1125,7 @@ struct PythonObject(
         Returns:
             True if the object is less than or equal to the right hard argument.
         """
-        return self.__call_single_arg_method__("__le__", rhs)
+        return self.__getattr__("__le__")(rhs)
 
     fn __gt__(self, rhs: PythonObject) raises -> PythonObject:
         """Greater than comparator. This lexicographically compares the elements
@@ -1192,7 +1137,7 @@ struct PythonObject(
         Returns:
             True if the left hand value is greater.
         """
-        return self.__call_single_arg_method__("__gt__", rhs)
+        return self.__getattr__("__gt__")(rhs)
 
     fn __ge__(self, rhs: PythonObject) raises -> PythonObject:
         """Greater than or equal to comparator. This lexicographically compares
@@ -1205,7 +1150,7 @@ struct PythonObject(
             True if the left hand value is greater than or equal to the right
             hand value.
         """
-        return self.__call_single_arg_method__("__ge__", rhs)
+        return self.__getattr__("__ge__")(rhs)
 
     fn __eq__(self, rhs: PythonObject) -> Bool:
         """Equality comparator. This compares the elements of strings and lists.
@@ -1218,7 +1163,7 @@ struct PythonObject(
         """
         # TODO: make this function raise when we can raise parametrically.
         try:
-            return self.__call_single_arg_method__("__eq__", rhs).__bool__()
+            return self.__getattr__("__eq__")(rhs).__bool__()
         except e:
             debug_assert(False, "object doesn't implement __eq__")
             return False
@@ -1235,7 +1180,7 @@ struct PythonObject(
         """
         # TODO: make this function raise when we can raise parametrically.
         try:
-            return self.__call_single_arg_method__("__ne__", rhs).__bool__()
+            return self.__getattr__("__ne__")(rhs).__bool__()
         except e:
             debug_assert(False, "object doesn't implement __eq__")
             return False
@@ -1249,7 +1194,7 @@ struct PythonObject(
             The result of prefixing this object with a `+` operator. For most
             numerical objects, this does nothing.
         """
-        return self.__call_zero_arg_method__("__pos__")
+        return self.__getattr__("__pos__")()
 
     fn __neg__(self) raises -> PythonObject:
         """Negative.
@@ -1260,7 +1205,7 @@ struct PythonObject(
             The result of prefixing this object with a `-` operator. For most
             numerical objects, this returns the negative.
         """
-        return self.__call_zero_arg_method__("__neg__")
+        return self.__getattr__("__neg__")()
 
     fn __invert__(self) raises -> PythonObject:
         """Inversion.
@@ -1271,7 +1216,7 @@ struct PythonObject(
             The logical inverse of this object: a bitwise representation where
             all bits are flipped, from zero to one, and from one to zero.
         """
-        return self.__call_zero_arg_method__("__invert__")
+        return self.__getattr__("__invert__")()
 
     fn __contains__(self, rhs: PythonObject) raises -> Bool:
         """Contains dunder.
@@ -1288,9 +1233,7 @@ struct PythonObject(
         # TODO: implement __getitem__ step for cpython membership test operator.
         var cpython = Python().cpython()
         if cpython.PyObject_HasAttrString(self.py_object, "__contains__"):
-            return self.__call_single_arg_method__(
-                "__contains__", rhs
-            ).__bool__()
+            return self.__getattr__("__contains__")(rhs).__bool__()
         for v in self:
             if v == rhs:
                 return True

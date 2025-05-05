@@ -1,0 +1,35 @@
+load("//bazel:api.bzl", "lit_tests")
+
+filegroup(
+    name = "common_test_sources",
+    srcs = [
+        "asyncrt_test_utils.mojo",
+    ],
+)
+
+lit_tests(
+    name = "test",
+    srcs = [
+        "capture.mojo",
+        "copies.mojo",
+        "cuda.mojo",
+        "elementwise.mojo",
+        "function.mojo",
+        "function_regress.mojo",
+        "hip.mojo",
+        "host_mapped.mojo",
+        "memset.mojo",
+        "multi_context.mojo",
+        "multi_stream.mojo",
+        "multicast_memory.mojo",
+        "smoke.mojo",
+        "timing.mojo",
+    ],
+    data = [":common_test_sources"],
+    gpu_constraints = ["//:has_gpu"],
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    tags = ["gpu"],
+    tools = ["//KGEN/tools/mojo"],
+)

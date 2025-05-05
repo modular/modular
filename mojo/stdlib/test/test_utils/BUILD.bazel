@@ -1,0 +1,5 @@
+filegroup(
+    name = "test_utils_srcs",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "telemetry",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//SDK/lib/API/python/max/serve:config",
+        "//SDK/lib/API/python/max/serve/scheduler",
+        requirement("opentelemetry-sdk"),
+        requirement("opentelemetry-exporter-otlp-proto-http"),
+        requirement("opentelemetry-exporter-prometheus"),
+        requirement("python-json-logger"),
+        requirement("uvicorn"),  # to host /metrics endpoint as it runs in a different process
+    ],
+)

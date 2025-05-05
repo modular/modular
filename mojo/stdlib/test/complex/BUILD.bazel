@@ -1,0 +1,21 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "lit",
+    srcs = glob(["**/*.mojo"]),
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+)
+
+pkg_files(
+    name = "test_mandelbrot",
+    srcs = [
+        "test_mandelbrot.mojo",
+    ],
+    visibility = ["//visibility:public"],
+)

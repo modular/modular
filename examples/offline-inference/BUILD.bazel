@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
+
+modular_py_binary(
+    name = "basic",
+    srcs = ["basic.py"],
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        requirement("tqdm"),
+    ],
+)

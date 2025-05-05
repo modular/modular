@@ -1,0 +1,45 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library")
+load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "kvcache_agent",
+    srcs = [
+        "__init__.py",
+        "kvcache_agent.py",
+    ],
+    imports = ["../../.."],
+    deps = [
+        ":kvcache_agent_service_v1_grpc_py",
+        ":kvcache_agent_service_v1_py",
+        requirement("grpcio"),
+        requirement("grpcio-tools"),
+        requirement("grpcio-reflection"),
+    ],
+)
+
+proto_library(
+    name = "kvcache_agent_service_v1",
+    srcs = [
+        "kvcache_agent_service_v1.proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_proto_library(
+    name = "kvcache_agent_service_v1_py",
+    visibility = ["//visibility:public"],
+    deps = [":kvcache_agent_service_v1"],
+)
+
+py_grpc_library(
+    name = "kvcache_agent_service_v1_grpc_py",
+    srcs = [":kvcache_agent_service_v1"],
+    # By default, the generated stubs use the fully-qualified names
+    # We need to strip the prefix from the generated stubs, so that
+    # it works with the modular_py_library and the imports above.
+    strip_prefixes = ["SDK.lib.API.python."],
+    visibility = ["//visibility:public"],
+    deps = [":kvcache_agent_service_v1_py"],
+)

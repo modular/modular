@@ -1,0 +1,29 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "nn",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    deps = [
+        requirement("numpy"),
+        requirement("gguf"),
+        requirement("torch"),
+        requirement("transformers"),
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
+        "//SDK/lib/API/python/max/support",
+    ],
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob([
+        "**/*.py",
+    ]),
+    prefix = "nn",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)

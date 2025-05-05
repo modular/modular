@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "lit",
+    srcs = glob(["**/*.mojo"]),
+    mojo_deps = [
+        "@mojo//:stdlib",
+        "@mojo//:quantization",
+    ],
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+)

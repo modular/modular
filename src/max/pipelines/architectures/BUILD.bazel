@@ -1,0 +1,36 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "architectures",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    deps = [
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("pillow"),
+        # TODO: These are required for the llama3.1 model. Remove them if
+        # possible.
+        requirement("torch"),
+        requirement("transformers"),
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        "//SDK/lib/API/python/max/pipelines/core",
+        "//SDK/lib/API/python/max/pipelines/dataprocessing",
+        "//SDK/lib/API/python/max/nn",
+        # Hooks added for convenience for when we want to print the model layers
+        "//SDK/lib/API/python/max/nn/hooks",
+        "//SDK/lib/API/python/max/profiler",
+        "//SDK/lib/API/python/max/serve",
+    ],
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(["**/*.py"]),
+    prefix = "architectures",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)

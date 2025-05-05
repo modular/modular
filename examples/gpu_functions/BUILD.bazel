@@ -1,0 +1,43 @@
+load("//bazel:api.bzl", "mojo_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+mojo_binary(
+    name = "vector_addition",
+    srcs = ["vector_addition.mojo"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//SDK/lib/API/mojo/max/max",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "grayscale",
+    srcs = ["grayscale.mojo"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//SDK/lib/API/mojo/max/max",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "naive_matrix_multiplication",
+    srcs = ["naive_matrix_multiplication.mojo"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//SDK/lib/API/mojo/max/max",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "mandelbrot",
+    srcs = ["mandelbrot.mojo"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//SDK/lib/API/mojo/max/max",
+        "@mojo//:stdlib",
+    ],
+)

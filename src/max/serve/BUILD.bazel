@@ -1,0 +1,66 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pydantic"),
+        requirement("pydantic-settings"),
+    ],
+)
+
+modular_py_library(
+    name = "serve",
+    srcs = glob(["*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":debug",
+        "//SDK/lib/API/python/max/serve/mocks",
+        "//SDK/lib/API/python/max/serve/pipelines",
+        "//SDK/lib/API/python/max/serve/recordreplay",
+        "//SDK/lib/API/python/max/serve/router",
+        "//SDK/lib/API/python/max/serve/scheduler",
+        "//SDK/lib/API/python/max/serve/schemas",
+        "//SDK/lib/API/python/max/serve/telemetry",
+        requirement("fastapi"),
+        requirement("opentelemetry-api"),
+        requirement("prometheus-async"),
+        requirement("prometheus-client"),
+        requirement("pydantic-settings"),
+        requirement("pyinstrument"),
+        requirement("sse-starlette"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+        requirement("uvloop"),
+    ],
+)
+
+modular_py_binary(
+    name = "api_server",
+    srcs = ["api_server.py"],
+    main = "api_server.py",
+    deps = [
+        ":serve",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/serve/recordreplay",
+        "//SDK/lib/API/python/max/serve/telemetry",
+        requirement("fastapi"),
+        requirement("prometheus-client"),
+        requirement("pydantic-settings"),
+        requirement("uvicorn"),
+        requirement("uvloop"),
+    ],
+)
+
+modular_py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    deps = [
+        requirement("fastapi"),
+        requirement("pydantic"),
+        requirement("pydantic-settings"),
+        requirement("pyinstrument"),
+    ],
+)

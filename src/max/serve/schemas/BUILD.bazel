@@ -1,0 +1,20 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "schemas",
+    srcs = glob(["*.py"]),
+    deps = [
+        requirement("pydantic"),
+    ],
+)
+
+pkg_files(
+    name = "docs-schema",
+    srcs = [
+        "openai-docs.yaml",
+    ],
+    prefix = "max/api",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)

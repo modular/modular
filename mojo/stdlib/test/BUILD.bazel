@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "test",
+    size = "large",
+    srcs = glob(["**/*.mojo"]),
+    data = [
+        "builtin/test_file_dummy_input.txt",
+        "python/custom_indexable.py",
+        "python/module_for_test_python_object_dunder_contains.py",
+        "python/my_module.py",
+        "//open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs",
+    ],
+    env = {
+        "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs)",
+    },
+    generate_litcfg = False,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    tags = [
+        "resources:cpu:4",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+)

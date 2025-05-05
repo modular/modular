@@ -1,0 +1,48 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "pipelines",
+    srcs = [
+        "__init__.py",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        requirement("aiohttp"),
+        requirement("gguf"),
+        requirement("hf-transfer"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("torch"),
+        requirement("transformers"),
+    ] + select({
+        "//:has_gpu": [requirement("xgrammar")],
+        "//conditions:default": [],
+    }),
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(
+        [
+            "*.py",
+        ],
+    ) + ["requirements.txt"],
+)
+
+pkg_filegroup(
+    name = "pipelines_python",
+    srcs = [
+        ":python_files",
+        "//SDK/lib/API/python/max/pipelines/architectures:python_files",
+        "//SDK/lib/API/python/max/pipelines/core:python_files",
+        "//SDK/lib/API/python/max/pipelines/dataprocessing:python_files",
+        "//SDK/lib/API/python/max/pipelines/lib:python_files",
+    ],
+)

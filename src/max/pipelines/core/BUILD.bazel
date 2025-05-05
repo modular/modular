@@ -1,0 +1,23 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "core",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(
+        [
+            "**/*.py",
+        ],
+    ),
+    prefix = "context",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)
