@@ -562,9 +562,9 @@ public:
       bool &childIsDerefOfParent, lldb_private::ValueObject *valobj,
       uint64_t &languageFlags) override;
 
-  uint32_t GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
-                                   StringRef name,
-                                   bool omitEmptyBaseClasses) override;
+  llvm::Expected<uint32_t>
+  GetIndexOfChildWithName(lldb::opaque_compiler_type_t type, StringRef name,
+                          bool omitEmptyBaseClasses) override;
 
   // GetIndexOfChildMemberWithName returns a path of child indices towards
   // a member, including descending into child structs.

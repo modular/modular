@@ -49,7 +49,7 @@ MojoLanguageRuntime::CreateExceptionResolver(const BreakpointSP &bkpt,
   std::vector<const char *> exceptionNames;
   exceptionNames.push_back("__mojo_debugger_raise_hook");
   BreakpointResolverSP resolver(new BreakpointResolverName(
-      bkpt, exceptionNames.data(), exceptionNames.size(), eFunctionNameTypeAuto,
+      bkpt, exceptionNames.data(), exceptionNames.size(), eFunctionNameTypeBase,
       eLanguageTypeMojo, 0, eLazyBoolNo));
   BreakpointHitCallback callback =
       [](void *baton, StoppointCallbackContext *context,

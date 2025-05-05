@@ -527,7 +527,8 @@ Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
                      cast<LLVM::GlobalOp>(cast<Operation *>(value))));
   }
   return b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                               LLVM::GEPArg(offset), /*inbounds=*/true);
+                               LLVM::GEPArg(offset),
+                               LLVM::GEPNoWrapFlags::inbounds);
 }
 
 Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
@@ -575,8 +576,9 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
     return;
 
   // GEP to the current offset.
-  Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                                    LLVM::GEPArg(idx), /*inbounds=*/true);
+  Value gep =
+      b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr, LLVM::GEPArg(idx),
+                            LLVM::GEPNoWrapFlags::inbounds);
   // Emit a scalar store.
   if (size == 1) {
     b.create<LLVM::StoreOp>(
@@ -680,9 +682,9 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
         return;
       }
       // Emit a memset.
-      Value gep =
-          b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                                LLVM::GEPArg(startIdx), /*inbounds=*/true);
+      Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
+                                        LLVM::GEPArg(startIdx),
+                                        LLVM::GEPNoWrapFlags::inbounds);
       b.create<LLVM::MemsetOp>(
           gep, b.create<LLVM::ConstantOp>(b.getI8Type(), value),
           b.create<LLVM::ConstantOp>(b.getI64Type(), numReps),
@@ -724,8 +726,9 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
 
         // Store the pointer value to the current offset.
         commitCompressedStores();
-        Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                                          LLVM::GEPArg(i), /*inbounds=*/true);
+        Value gep =
+            b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr, LLVM::GEPArg(i),
+                                  LLVM::GEPNoWrapFlags::inbounds);
         auto [_, index, offset] = *ptrIt++;
         b.create<LLVM::StoreOp>(
             getBlobPointer(b, ptrType, materialized, index, offset), gep,

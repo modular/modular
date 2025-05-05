@@ -786,18 +786,26 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
   return lldb_private::CompilerType();
 }
 
-uint32_t
+llvm::Expected<uint32_t>
 MojoTypeSystem::GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                         StringRef name,
                                         bool omitEmptyBaseClasses) {
-  // Default value based on CompilerType::GetIndexOfChildWithName.
-  uint32_t errorValue = UINT32_MAX;
-  if (!type || name.empty())
-    return errorValue;
+  if (!type)
+    return llvm::createStringError("Invalid type");
+
+  if (name.empty())
+    return llvm::createStringError("Empty child name");
+
   std::vector<uint32_t> childIndices;
   GetIndexOfChildMemberWithName(type, name, omitEmptyBaseClasses, childIndices);
-  if (childIndices.size() != 1)
-    return errorValue;
+
+  if (childIndices.empty())
+    return llvm::createStringError("Child not found");
+
+  if (childIndices.size() > 1)
+    return llvm::createStringError(
+        "Ambiguous child name, multiple matches found");
+
   return childIndices[0];
 }
 

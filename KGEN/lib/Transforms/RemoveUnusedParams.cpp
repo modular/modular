@@ -509,7 +509,12 @@ void RemoveUnusedParams::runOnOperation() {
       }
     }
 
-    newFunc.eraseArguments(unusedArgs);
+    auto eraseResult = newFunc.eraseArguments(unusedArgs);
+    if (failed(eraseResult)) {
+      newFunc.emitError() << "Failed to erase unused arguments";
+      return;
+    }
+
     auto functionType = FunctionType::get(
         ctx, inputTypes, oldFunction.getFunctionType().getResults());
 
