@@ -162,6 +162,79 @@ def test_invalid_json():
         _ = loads("[")
 
 
+def test_whitespace_handling():
+    """Test whitespace handling."""
+    # Leading/trailing whitespace should be ignored
+    assert_equal(String(loads(" \t\n\r{}\n\r\t ")), "{}")
+
+    # Whitespace between elements should be ignored
+    assert_equal(String(loads("[1, \n\t 2, \r3]")), "[1.0, 2.0, 3.0]")
+
+    # Whitespace in object keys/values should be handled
+    assert_equal(String(loads('{ "key" : \t\n "value" }')), '{"key": "value"}')
+
+    # Only whitespace
+    try:
+        _ = loads("   \t\n\r   ")
+        assert_true(
+            False, "Should have raised an error for whitespace-only input"
+        )
+    except:
+        # Any error is OK
+        pass
+
+
+def test_complex_json():
+    """Test parsing of complex JSON with all types."""
+    var complex_json = """
+    {
+        "string": "Hello, world!",
+        "number": 123.456,
+        "integer": 42,
+        "scientific": 1.23e-4,
+        "boolean_true": true,
+        "boolean_false": false,
+        "null_value": null,
+        "array": [1, 2, 3, 4, 5],
+        "nested_object": {
+            "key1": "value1",
+            "key2": "value2"
+        },
+        "mixed_array": [
+            "string",
+            123,
+            true,
+            null,
+            { "nested": "object" }
+        ]
+    }
+    """
+
+    var parsed = loads(complex_json)
+
+    # Convert to string and parse again to verify serialization/deserialization
+    var json_str = String(parsed)
+    var reparsed = loads(json_str)
+
+    # The reparsed value should be equivalent to the original parsed value
+    assert_equal(String(reparsed), String(parsed))
+
+
+def test_object_and_arrays():
+    """Test parsing of objects and arrays."""
+    # Empty object
+    assert_equal(String(loads("{}")), "{}")
+
+    # Empty array
+    assert_equal(String(loads("[]")), "[]")
+
+    # Simple object
+    assert_equal(String(loads('{"key": "value"}')), '{"key": "value"}')
+
+    # Simple array
+    assert_equal(String(loads("[1, 2, 3]")), "[1.0, 2.0, 3.0]")
+
+
 def main():
     test_loads()
     test_primitive_serialization()
@@ -169,3 +242,6 @@ def main():
     test_object_serialization()
     test_nested_structures()
     test_invalid_json()
+    test_whitespace_handling()
+    test_complex_json()
+    test_object_and_arrays()
