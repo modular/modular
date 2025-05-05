@@ -88,21 +88,6 @@ public:
     return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L2,
                      attributes);
   }
-  virtual void
-  emitL0Error(StringRef eventName, const CodedErrorOrSuccess &codedError,
-              const llvm::StringMap<AttributeValue> &attributes = {}) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (codedError.isError()) {
-      llvm::StringMap<AttributeValue> attributesWithError{attributes};
-      attributesWithError["error_component"] =
-          StringRef(codedError.getComponentAsString());
-      attributesWithError["error_id"] = StringRef(codedError.getIdAsString());
-      attributesWithError["error"] = StringRef(codedError.getErrorAsString());
-      return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L0,
-                       attributesWithError);
-    }
-#endif
-  }
 
   /// Returns true if an event will be emitted based on its level and the
   /// configured telemetry level.
