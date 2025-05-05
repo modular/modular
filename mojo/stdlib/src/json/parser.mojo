@@ -620,6 +620,16 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         if self._idx >= len(self._slice):
             raise Error("Unexpected end of input while parsing string")
 
+        # Define character code constants for better readability and performance
+        alias QUOTE = ord('"')
+        alias BACKSLASH = ord("\\")
+        alias SLASH = ord("/")
+        alias B = ord("b")
+        alias F = ord("f")
+        alias N = ord("n")
+        alias R = ord("r")
+        alias T = ord("t")
+
         # Skip opening quote
         self._idx += 1
 
@@ -632,11 +642,11 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
             var b = self._slice._slice[end]
 
             # Check for end of string (unescaped quote)
-            if b == ord('"'):
+            if b == QUOTE:
                 break
 
             # Check for escape sequence
-            if b == ord("\\"):
+            if b == BACKSLASH:
                 has_escapes = True
                 # Skip the backslash and the following character
                 end += 2
@@ -660,28 +670,42 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
             self._idx = end + 1  # skip the closing quote
             return result
 
-        # Complex case - handle escape sequences
+        # For strings with escapes, we need to process them character by character
+        var result = String()
+        var i = start
         var escaped = False
-        var start_idx = self._idx
-        var end_idx = end
 
-        # Reset for second pass
-        self._idx = start_idx
+        while i < end:
+            var c = self._slice._slice[i]
+            i += 1
 
-        while self._idx < end_idx:
-            if not escaped and self._slice._slice[self._idx] == ord("\\"):
+            if escaped:
+                # Handle escape sequences according to JSON spec
+                if c == QUOTE or c == BACKSLASH or c == SLASH:
+                    result += String(c)
+                elif c == B:
+                    result += "\b"
+                elif c == F:
+                    result += "\f"
+                elif c == N:
+                    result += "\n"
+                elif c == R:
+                    result += "\r"
+                elif c == T:
+                    result += "\t"
+                else:
+                    # Invalid escape sequence
+                    raise Error(
+                        "Invalid escape sequence: '\\" + String(c) + "'"
+                    )
+                escaped = False
+            elif c == BACKSLASH:
                 escaped = True
             else:
-                escaped = False
-            self._idx += 1
+                # Regular character
+                result += String(c)
 
-        var result = String(
-            bytes=Span[Byte, origin](
-                ptr=self._slice.unsafe_ptr() + start_idx,
-                length=end_idx - start_idx,
-            )
-        )
-        self._idx = end_idx + 1  # skip the closing quote
+        self._idx = end + 1  # skip the closing quote
         return result
 
     fn _parse_number(mut self) raises -> Float64:
