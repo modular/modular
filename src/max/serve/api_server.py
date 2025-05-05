@@ -114,7 +114,7 @@ async def lifespan(
             app.state.pipeline = pipeline
             await exit_stack.enter_async_context(pipeline)
             logger.info(
-                f"Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)"
+                f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
             )
             yield
     except KeyboardInterrupt as e:
