@@ -1,7 +1,7 @@
 ---
-title: Get started with GPU programming with Mojo and the MAX Driver
+title: Get started with GPU programming
 sidebar_label: Get started with GPU programming
-description: Learn the basics of GPU programming with Mojo and the MAX driver
+description: Learn the basics of GPU programming with Mojo
 image: /images/artwork/mojo-motorcycle.jpg
 ---
 
@@ -9,31 +9,21 @@ import GetMagic from '@site/src/includes/get_magic.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '@site/docs/max/requirements';
 
-This tutorial introduces you to GPU programming using Mojo and the MAX Driver.
-You'll learn how to write a simple program that performs vector addition on a
-GPU, exploring fundamental concepts of GPU programming along the way.
+This tutorial introduces you to GPU programming with Mojo. You'll learn how to
+write a simple program that performs vector addition on a GPU, exploring
+fundamental concepts of GPU programming along the way.
 
 By the end of this tutorial, you will:
 
-- Understand basic GPU programming concepts like grids and thread blocks
-- Learn how to move data between CPU and GPU memory
-- Write and compile a simple GPU kernel function
-- Execute parallel computations on the GPU
+- Understand basic GPU programming concepts like grids and thread blocks.
+- Learn how to move data between CPU and GPU memory.
+- Write and compile a simple GPU kernel function.
+- Execute parallel computations on the GPU.
+- Understand the asynchronous nature of GPU programming.
 
 We'll build everything step-by-step, starting with the basics and gradually
 adding more complexity. The concepts you learn here will serve as a foundation
 for more advanced GPU programming with Mojo.
-
-:::note
-
-Mojo's `gpu` package provides a low-level API for GPU programming. In contrast,
-the MAX Driver provides a higher-level API for GPU programming with easy-to-use
-abstractions for managing devices and memory. We're using the MAX Driver in this
-tutorial because it's easier to use and more convenient for many tasks. If
-you're interested in learning more about the `gpu` package, see the [GPU
-basics](/mojo/manual/gpu/basics) section of the Mojo Manual.
-
-:::
 
 System requirements:
 
@@ -80,33 +70,36 @@ and generate our initial project directory.
     ```
     Later on, when you want to exit the virtual environment, just type `exit`.
 
-## 2. Get references to the CPU and GPU
+## 2. Get a reference to the GPU device
 
-When using the MAX Driver, the [`Device`](/max/api/mojo/driver/device/Device)
-class represents a logical instance of a device, for example, a CPU or GPU. The
-[`cpu()`](/max/api/mojo/driver/device/cpu) and `accelerator()` functions return
-a `Device` reference to the CPU and GPU, respectively. If no GPU is available,
-the `accelerator()` function raises an error. You can use the
+The [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) type
+represents a logical instance of a GPU device. It provides methods for
+allocating memory on the device, copying data between the host CPU and the GPU,
+and compiling and running functions (also known as *kernels*) on the device.
+
+Use the
+[`DeviceContext()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#__init__)
+constructor to get a reference to the GPU device. The constructor raises an
+error if no compatible GPU is available. You can use the
 [`has_accelerator()`](/mojo/stdlib/sys/info/has_accelerator/) function to check
-if a GPU is available.
+if a compatible GPU is available.
+
 
 So let's start by writing a program that checks if a GPU is available and then
-creates a CPU and GPU device. Using any editor, create a file named
+obtains a reference to the GPU device. Using any editor, create a file named
 `vector_addition.mojo` with the following code:
 
 ```mojo title="vector_addition.mojo"
-from max.driver import accelerator, cpu
-from sys import exit, has_accelerator
+from gpu.host import DeviceContext
+from sys import has_accelerator
 
 def main():
+    @parameter
     if not has_accelerator():
-        print("A GPU is required to run this program")
-        exit()
-
-    host_device = cpu()
-    print("Found the CPU device")
-    gpu_device = accelerator()
-    print("Found the GPU device")
+        print("No compatible GPU found")
+    else:
+        ctx = DeviceContext()
+        print("Found GPU:", ctx.name())
 ```
 
 Save the file and run it using the `mojo` CLI:
@@ -115,19 +108,26 @@ Save the file and run it using the `mojo` CLI:
 mojo vector_addition.mojo
 ```
 
-You should see the following output:
+You should see output like the following (depending on the type of GPU you
+have):
 
 ```output
-Found the CPU device
-Found the GPU device
+Found GPU: NVIDIA A10G
 ```
 
 :::note
 
-If you don't have a GPU, you'll see the following message:
+Mojo requires a [compatible GPU development
+environment](/max/faq/#gpu-requirements) to compile kernel functions, otherwise
+it raises a compile-time error. In our code, we're using the
+[`@parameter`](/mojo/manual/decorators/parameter) decorator to evaluate the
+`has_accelerator()` function at compile time and compile only the corresponding
+branch of the `if` statement. As a result, if you don't have a compatible GPU
+development environment, you'll see the following message when you run the
+program:
 
 ```output
-A GPU is required to run this program
+No compatible GPU found
 ```
 
 In that case, you need to find a system that has a supported GPU to continue
@@ -150,7 +150,7 @@ When you run a kernel, you need to specify the number of threads you want to
 use. The number of threads you specify depends on the size of the data you want
 to process and the amount of parallelism you want to achieve. A common strategy
 is to use one thread per element of data in the result. So if you're performing
-an elementwise addition of two 1,024-element vectors, you'd use 1,024 threads.
+an element-wise addition of two 1,024-element vectors, you'd use 1,024 threads.
 
 A *grid* is the top-level organizational structure for the threads executing a
 kernel function. A grid consists of multiple *thread blocks*, which are further
@@ -162,7 +162,7 @@ they cannot directly communicate with threads in other blocks. For this
 tutorial, we won't get in the details of why or how to do this, but it's an
 important concept to keep in mind when you're writing more complex kernels.
 
-To better understand how grids, thread blocks, and threads work together, let's
+To better understand how grids, thread blocks, and threads are organized, let's
 write a simple kernel function that prints the thread block and thread indices.
 Add the following code to your `vector_addition.mojo` file:
 
@@ -171,6 +171,7 @@ from gpu.id import block_idx, thread_idx
 
 fn print_threads():
     """Print thread IDs."""
+
     print("Block index: [",
         block_idx.x,
         "]\tThread index: [",
@@ -195,14 +196,13 @@ to define functions in Mojo.
 Next, we need to update the `main()` function to compile the kernel function for
 our GPU and then run it, specifying the number of thread blocks in the grid and
 the number of threads per thread block. For this initial example, let's define a
-grid consisting of 2 thread blocks, each with 64 threads. Update the imports and
-modify the `main()` function so that your program looks like this:
+grid consisting of 2 thread blocks, each with 64 threads. Modify the `main()`
+function so that your program looks like this:
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import Dim
+from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
-from max.driver import Accelerator, Device, accelerator, cpu
-from sys import exit, has_accelerator
+from sys import has_accelerator
 
 fn print_threads():
     """Print thread IDs."""
@@ -214,22 +214,14 @@ fn print_threads():
     )
 
 def main():
+    @parameter
     if not has_accelerator():
-        print("A GPU is required to run this program")
-        exit()
-
-    host_device = cpu()
-    print("Found the CPU device")
-    gpu_device = accelerator()
-    print("Found the GPU device")
-
-    print_threads_gpu = Accelerator.compile[print_threads](gpu_device)
-
-    print_threads_gpu(gpu_device, grid_dim=Dim(2), block_dim=Dim(64))
-
-    # Required for now to keep the main thread alive until the GPU is done
-    Device.wait_for(gpu_device)
-    print("Program finished")
+        print("No compatible GPU found")
+    else:
+        ctx = DeviceContext()
+        ctx.enqueue_function[print_threads](grid_dim=2, block_dim=64)
+        ctx.synchronize()
+        print("Program finished")
 ```
 
 Save the file and run it:
@@ -241,34 +233,35 @@ mojo vector_addition.mojo
 You should see something like the following output (which is abbreviated here):
 
 ```output
-Found the CPU device
-Found the GPU device
-Block index: [ 1 ]	Thread index: [ 0 ]
-Block index: [ 1 ]	Thread index: [ 1 ]
-Block index: [ 1 ]	Thread index: [ 2 ]
+Block index: [ 1 ]	Thread index: [ 32 ]
+Block index: [ 1 ]	Thread index: [ 33 ]
+Block index: [ 1 ]	Thread index: [ 34 ]
 ...
 Block index: [ 0 ]	Thread index: [ 30 ]
 Block index: [ 0 ]	Thread index: [ 31 ]
 Program finished
 ```
 
-The `Accelerator.compile()` function compiles a kernel function so that it can
-run on a particular GPU architecture. You specify the name of the kernel
-function as a compile-time Mojo *parameter* and the target GPU device as a
-run-time Mojo argument. (See the [Functions](/mojo/manual/functions) section of
-the Mojo Manual for more information on Mojo function arguments and the
+Typical CPU-GPU interaction is asynchronous, allowing the GPU to process tasks
+while the CPU is busy with other work. Each `DeviceContext` has an associated
+stream of queued operations to execute on the GPU. Operations within a stream
+execute in the order they are issued.
+
+The
+[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_function)
+method compiles a kernel function and enqueues it to run on the given device.
+You must provide the name of the kernel function as a compile-time Mojo
+parameter, and the following arguments:
+
+- Any additional arguments specified by the kernel function definition (none, in
+  this case).
+- The grid dimensions using the `grid_dim` keyword argument.
+- The thread block dimensions using the `block_dim` keyword argument.
+
+(See the [Functions](/mojo/manual/functions) section of the Mojo Manual for more
+information on Mojo function arguments and the
 [Parameters](/mojo/manual/parameters) section for more information on Mojo
 compile-time parameters and metaprogramming.)
-
-When you invoke the compiled kernel function, the MAX Driver executes it
-asynchronously on the GPU. You must provide the following arguments in this
-order:
-
-- The target GPU device
-- Any additional arguments specified by the kernel function definition (none, in
-  this case)
-- The grid dimensions, using the `grid_dim` keyword argument
-- The thread block dimensions, using the `block_dim` keyword argument
 
 :::note
 
@@ -279,9 +272,9 @@ soon.
 
 :::
 
-We're invoking the compiled kernel function with `grid_dim=Dim(2)` and
-`block_dim=Dim(64)`, which means we're using a grid of 2 thread blocks,
-with 64 threads each for a total of 128 threads in the grid.
+We're invoking the compiled kernel function with `grid_dim=2` and
+`block_dim=64`, which means we're using a grid of 2 thread blocks, with 64
+threads each for a total of 128 threads in the grid.
 
 When you run a kernel, the GPU assigns each thread block within the grid to a
 *streaming multiprocessor* for execution. A streaming multiprocessor (SM) is the
@@ -309,22 +302,11 @@ For example, if the threads of a particular warp are blocked waiting for data
 from memory, the warp scheduler can immediately switch execution to another warp
 that's ready to run.
 
-:::note
-
-When you invoke the compiled kernel function, the MAX Driver executes it
-asynchronously on the GPU. In a typical program, the kernel generates some
-result that you then copy back to the CPU. That copy operation, which we'll see
-later in this tutorial, blocks until the kernel is done and the result is ready
-to copy.
-
-In this kernel, we're just printing the thread IDs and there is no result to
-return. That's why we're using the
-[`Device.wait_for()`](/max/api/mojo/driver/device/Device#wait_for) call in this
-example to block the main thread of the CPU until the GPU is done executing the
-kernel function. Otherwise, the program would exit before the GPU could finish
-executing the kernel.
-
-:::
+After enqueuing the kernel function, we want to ensure that the CPU waits for it
+to finish execution before exiting the program. We do this by calling the
+[`synchronize()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#synchronize)
+method of the `DeviceContext` object, which blocks until the device completes
+all operations in its queue.
 
 ## 5. Manage grid dimensions
 
@@ -345,6 +327,7 @@ components of the thread block and thread indices for each thread.
 ```mojo title="vector_addition.mojo"
 fn print_threads():
     """Print thread IDs."""
+
     print("Block index: [",
         block_idx.x, block_idx.y, block_idx.z,
         "]\tThread index: [",
@@ -353,16 +336,14 @@ fn print_threads():
     )
 ```
 
-Then, update the `main()` function to invoke the compiled kernel function with a
-2x2x1 grid of thread blocks and a 16x4x2 arrangement of threads within each
-thread block:
+Then, update `main()` to enqueue the kernel function with a 2x2x1 grid of
+thread blocks and a 16x4x2 arrangement of threads within each thread block:
 
 ```mojo title="vector_addition.mojo"
-    print_threads_gpu(
-        gpu_device,
-        grid_dim=Dim(2, 2, 1),
-        block_dim=Dim(16, 4, 2)
-    )
+        ctx.enqueue_function[print_threads](
+            grid_dim=(2, 2, 1),
+            block_dim=(16, 4, 2)
+        )
 ```
 
 Save the file and run it again:
@@ -374,14 +355,12 @@ mojo vector_addition.mojo
 You should see something like the following output (which is abbreviated here):
 
 ```output
-Found the CPU device
-Found the GPU device
-Block index: [ 0 1 0 ]	Thread index: [ 0 2 0 ]
-Block index: [ 0 1 0 ]	Thread index: [ 1 2 0 ]
-Block index: [ 0 1 0 ]	Thread index: [ 2 2 0 ]
+Block index: [ 1 1 0 ]	Thread index: [ 0 2 0 ]
+Block index: [ 1 1 0 ]	Thread index: [ 1 2 0 ]
+Block index: [ 1 1 0 ]	Thread index: [ 2 2 0 ]
 ...
-Block index: [ 1 1 0 ]	Thread index: [ 14 3 0 ]
-Block index: [ 1 1 0 ]	Thread index: [ 15 3 0 ]
+Block index: [ 0 0 0 ]	Thread index: [ 14 1 0 ]
+Block index: [ 0 0 0 ]	Thread index: [ 15 1 0 ]
 Program finished
 ```
 
@@ -405,87 +384,77 @@ multiple warps.
 
 :::
 
-
-## 6. Model our data using `Tensor`
-
 Now that you understand how to manage grid dimensions, let's get ready to create
-a kernel that performs a simple elementwise addition of two vectors of floating
+a kernel that performs a simple element-wise addition of two vectors of floating
 point numbers.
 
-We'll start by determining how to represent our data. Although we're going to be
-using one-dimensional data, we'll use a data type called a *tensor* that's
-capable of representing multi-dimensional data — basically, a multi-dimensional
-array. Because we have only a single dimension of data, this will be a *rank-1*
-tensor.
+## 6. Allocate host memory for the input vectors
 
-We'll use the [`Tensor`](/max/api/mojo/driver/tensor/Tensor) class from the
-`max.driver` package to represent our data. This `Tensor` class is a convenience
-class that can allocate memory for the tensor on either the CPU or the GPU. It
-also includes methods for moving and copying the data between the CPU and the
-GPU.
+Before creating the two input vectors for our kernel function, we need to
+understand the distinction between *host memory* and *device memory*. Host
+memory is dynamic random-access memory (DRAM) accessible by the CPU, whereas
+device memory is DRAM accessible by the GPU. If you have data in host memory,
+you must explicitly copy it to device memory before you can use it in a kernel
+function. Similarly, if your kernel function produces data that you want the CPU
+to use later, you must explicitly copy it back to host memory.
 
-Let's add `Tensor` to the list of imports and then update `main()` to create two
-input tensors on the CPU. We won't need the `print_threads()` kernel function
-anymore, so we can remove it and the code to compile and invoke it. So after all
-that, your `vector_addition.mojo` file should look like this:
+For this tutorial, we'll use the
+[`HostBuffer`](/mojo/stdlib/gpu/host/device_context/HostBuffer) type to
+represent our vectors on the host. A `HostBuffer` is a block of host memory
+associated with a particular `DeviceContext`. It supports methods for
+transferring data between host and device memory, as well as a basic set of
+methods for accessing data elements by index and for printing the buffer.
+
+Let's update `main()` to create two `HostBuffer`s for our input vectors and
+initialize them with values. You won't need the `print_threads()` kernel
+function anymore, so you can remove it and the code to compile and invoke it. So
+after all that, your `vector_addition.mojo` file should look like this:
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import Dim
+from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
-from max.driver import Accelerator, Tensor, accelerator, cpu
-from sys import exit, has_accelerator
+from sys import has_accelerator
 
+# Vector data type and size
 alias float_dtype = DType.float32
-alias tensor_rank = 1
-alias vector_size = 100
+alias vector_size = 1000
+
 
 def main():
+    @parameter
     if not has_accelerator():
-        print("A GPU is required to run this program")
-        exit()
+        print("No compatible GPU found")
+    else:
+        # Get the context for the attached GPU
+        ctx = DeviceContext()
 
-    host_device = cpu()
-    gpu_device = accelerator()
+        # Create HostBuffers for input vectors
+        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        ctx.synchronize()
 
-    # Allocate the two input tensors on the host.
-    lhs_tensor = Tensor[float_dtype, tensor_rank](vector_size, host_device)
-    rhs_tensor = Tensor[float_dtype, tensor_rank](vector_size, host_device)
+        # Initialize the input vectors
+        for i in range(vector_size):
+            lhs_host_buffer[i] = Float32(i)
+            rhs_host_buffer[i] = Float32(i * 0.5)
 
-    # Fill them with initial values.
-    for i in range(vector_size):
-        lhs_tensor[i] = Float32(i)
-        rhs_tensor[i] = Float32(i * 0.5)
-
-    print("lhs_tensor:", lhs_tensor)
-    print("rhs_tensor:", rhs_tensor)
+        print("LHS buffer: ", lhs_host_buffer)
+        print("RHS buffer: ", rhs_host_buffer)
 ```
 
-The program starts by defining some compile-time aliases for the data type and
-the size of the vector we're going to process. Then, the `main()` function
-initializes two input tensors on the CPU.
-
-The `Tensor` constructor has two compile-time parameters:
-
-- `type`: The element data type. We're specifying `float_dtype`, our alias for
-  `DType.float32`.
-
-- `rank`: The rank of the tensor. We're specifying `tensor_rank`, our alias for
-  1.
-
-We're also passing two run-time arguments to the constructor:
-
-- `shape`: The *shape* of the tensor, which is the size of each dimension of the
-  tensor. You can provide an instance of the
-  [`TensorShape`](/max/api/mojo/tensor/tensor_shape/TensorShape/) struct, a Mojo
-  tuple of integers, or for a rank-1 tensor a single integer. Here, we're
-  providing a single integer, `vector_size`, which is our alias for 100.
-
-- `device`: The device on which to allocate the tensor. If you omit this
-  argument, the tensor is allocated on the host by default. Here, we're
-  explicitly specifying `host_device` to make our intent clear.
-
-After allocating the tensors, we fill them with initial values and then print
-them.
+The
+[`enqueue_create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
+method accepts the data type as a compile-time parameter and the size of the
+buffer as a run-time argument and returns a `HostBuffer`. As with all
+`DeviceContext` methods whose name starts with `enqueue_`, the method is
+asynchronous and returns immediately, adding the operation to the queue to be
+executed by the `DeviceContext`. Therefore, we need to call the `synchronize()`
+method to ensure that the operation has completed before we use the `HostBuffer`
+object. Then we can initialize the input vectors with values and print them.
 
 Now let's run the program to verify that everything is working so far.
 
@@ -496,103 +465,170 @@ mojo vector_addition.mojo
 You should see the following output:
 
 ```output
-lhs_tensor: Tensor([[0.0, 1.0, 2.0, ..., 97.0, 98.0, 99.0]], dtype=float32, shape=100)
-rhs_tensor: Tensor([[0.0, 0.5, 1.0, ..., 48.5, 49.0, 49.5]], dtype=float32, shape=100)
+LHS buffer:  HostBuffer([0.0, 1.0, 2.0, ..., 997.0, 998.0, 999.0])
+RHS buffer:  HostBuffer([0.0, 0.5, 1.0, ..., 498.5, 499.0, 499.5])
 ```
 
-## 7. Move the input tensors to the GPU and allocate an output tensor
+:::note
 
-Now that we have our input tensors allocated and initialized on the CPU, let's
-move them to the GPU so that they'll be available for the kernel function to
-use.
+You might notice that we don't explicitly call any methods to free the host
+memory allocated by our `HostBuffer`s. That's because a `HostBuffer` is subject
+to Mojo's standard ownership and lifecycle mechanisms. The Mojo compiler
+analyzes our program to determine the last point that the owner of or a
+reference to an object is used and automatically adds a call to the object's
+destructor. In our program, we last reference the buffers at the end of our
+program's `main()` method. However in a more complex program, the `HostBuffer`
+could persist across calls to multiple kernel functions if it is referenced at
+later points in the program. See the [Ownership](/mojo/manual/values/ownership)
+and [Intro to value lifecycle](/mojo/manual/lifecycle) sections of the Mojo
+Manual for more information on Mojo value ownership and value lifecycle
+management.
+
+:::
+
+## 7. Copy the input vectors to GPU memory and allocate an output vector
+
+Now that we have our input vectors allocated and initialized on the CPU, let's
+copy them to the GPU so that they'll be available for the kernel function to
+use. While we're at it, we'll also allocate memory on the GPU for the output
+vector that will hold the result of the kernel function.
 
 Add the following code to the end of the `main()` function:
 
 ```mojo title="vector_addition.mojo"
-    # Move the input tensors to the accelerator.
-    lhs_tensor = lhs_tensor.move_to(gpu_device)
-    rhs_tensor = rhs_tensor.move_to(gpu_device)
+        # Create DeviceBuffers for the input vectors
+        lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
+        rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
+
+        # Copy the input vectors from the HostBuffers to the DeviceBuffers
+        ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
+        ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
+
+        # Create a DeviceBuffer for the result vector
+        result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+            vector_size
+        )
 ```
 
-The [`move_to()`](/max/api/mojo/driver/tensor/Tensor#move_to) method returns a
-new `Tensor` object that is allocated on the specified device. It also
-implicitly calls the destructor on the original `Tensor` object, freeing the
-memory associated with it. The Mojo compiler would report an error if you tried
-to use the original `Tensor` object after moving it to the GPU. We could declare
-new variables to hold the moved tensors, but in this example we'll just reuse
-the original names.
+The [`DeviceBuffer`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer) type is
+analogous to the `HostBuffer` type, but represents a block of device memory
+associated with a particular `DeviceContext`. Specifically, the buffer is
+located in the device's *global memory* space, which is accessible by all
+threads executing on the device. As with a `HostBuffer`, a `DeviceBuffer` is
+subject to Mojo's standard ownership and lifecycle mechanisms. It persists until
+it is no longer referenced in the program or until the `DeviceContext` itself
+is destroyed.
 
-Next, let's allocate an output tensor on the GPU to hold the result of the
-kernel function. Add the following code to the end of the `main()` function:
+The
+[`enqueue_create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
+method accepts the data type as a compile-time parameter and the size of the
+buffer as a run-time argument and returns a `DeviceBuffer`. The operation is
+asynchronous, but we don't need to call the `synchronize()` method yet because
+we have more operations to add to the queue.
 
-```mojo title="vector_addition.mojo"
-    # Allocate the output tensor on the accelerator.
-    out_tensor = Tensor[float_dtype, tensor_rank](vector_size, gpu_device)
+The [`enqueue_copy()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_copy)
+method is overloaded to support copying from host to device, device to host, or
+even device to device for systems that have multiple GPUs. In this example, we
+use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
+
+:::note
+
+Both `DeviceBuffer` and `HostBuffer` also include
+[`enqueue_copy_to()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
+and
+[`enqueue_copy_from()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
+methods. These are simply convenience methods that call the `enqueue_copy()`
+method on their corresponding `DeviceContext`. Therefore, we could have written
+the copy operations in the previous example with the following equivalent code:
+
+```mojo
+    lhs_host_buffer.enqueue_copy_to(dst=lhs_device_buffer)
+    rhs_host_buffer.enqueue_copy_to(dst=rhs_device_buffer)
 ```
+
+:::
 
 ## 8. Create `LayoutTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/) view for each
-of the tensors. `LayoutTensor` provides a powerful abstraction for
+[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) view for each
+of the vectors. `LayoutTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
-hardware-specific optimizations, and efficient parallel access patterns. We
-won't go into the details of using `LayoutTensor` in this tutorial, but in more
-complex kernels it's a useful tool for manipulating your data.
+hardware-specific optimizations, and efficient parallel access patterns.
+We don't need all of these features for this tutorial, but in more
+complex kernels it's a useful tool for manipulating data. So even though it
+isn't strictly necessary for this example, we'll use `LayoutTensor` because
+you'll see it in more complex examples and it's good to get familiar with it.
 
-All we need to do is add the following code to the end of the `main()` function:
+First add the following import to the top of the file:
 
 ```mojo title="vector_addition.mojo"
-    # Create a LayoutTensor for each tensor.
-    lhs_layout_tensor = lhs_tensor.to_layout_tensor()
-    rhs_layout_tensor = rhs_tensor.to_layout_tensor()
-    out_layout_tensor = out_tensor.to_layout_tensor()
+from layout import Layout, LayoutTensor
 ```
 
-## 9. Define and compile the vector addition kernel function
+A [`Layout`](/mojo/kernels/layout/layout/Layout) is a representation of memory
+layouts using shape and stride information, and it maps between logical
+coordinates and linear memory indices. We'll need to use the same `Layout`
+definition multiple times, so add the following alias to the top of the file
+after the other aliases:
 
-Now we're ready to write the kernel function. Add the following code to
-`vector_addition.mojo`:
+```mojo title="vector_addition.mojo"
+alias layout = Layout.row_major(vector_size)
+```
+
+And finally add the following code to the end of the `main()` function
+to create `LayoutTensor` views for each of the vectors:
+
+```mojo title="vector_addition.mojo"
+        # Wrap the DeviceBuffers in LayoutTensors
+        lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)
+        rhs_tensor = LayoutTensor[float_dtype, layout](rhs_device_buffer)
+        result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
+```
+
+## 9. Define the vector addition kernel function
+
+Now we're ready to write the kernel function. First add the following imports
+(note that we've added `block_dim` to the list of imports from `gpu.id`):
 
 ```mojo title="vector_addition.mojo"
 from gpu.id import block_dim, block_idx, thread_idx
-from layout import LayoutTensor, Layout
+from math import ceildiv
+```
 
-...
+Then, add the following code to `vector_addition.mojo` just before the
+`main()` function:
 
-alias block_size = 32
+```mojo title="vector_addition.mojo"
+# Calculate the number of thread blocks needed by dividing the vector size
+# by the block size and rounding up.
+alias block_size = 256
+alias num_blocks = ceildiv(vector_size, block_size)
 
-fn vector_addition[
-    lhs_layout: Layout,
-    rhs_layout: Layout,
-    out_layout: Layout,
-](
-    lhs: LayoutTensor[float_dtype, lhs_layout, MutableAnyOrigin],
-    rhs: LayoutTensor[float_dtype, rhs_layout, MutableAnyOrigin],
-    out: LayoutTensor[float_dtype, out_layout, MutableAnyOrigin],
+
+fn vector_addition(
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
 ):
-    """The calculation to perform across the vector on the GPU."""
+    """Calculate the element-wise sum of two vectors on the GPU."""
 
-    alias size = out_layout.size()  # Force compile-time evaluation.
-    tid = block_dim.x * block_idx.x + thread_idx.x
-    if tid < size:
-        out[tid] = lhs[tid] + rhs[tid]
+    # Calculate the index of the vector element for the thread to process
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+
+    # Don't process out of bounds elements
+    if tid < vector_size:
+        out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
 ```
 
 Our `vector_addition()` kernel function accepts the two input tensors and the
-output tensor as arguments. It also accepts compile-time `Layout` parameters for
-each of the tensors. (For example, `lhs_layout` is the inferred layout for the
-`lhs` argument.) A [`Layout`](/mojo/kernels/layout/layout/Layout) is a
-representation of memory layouts using shape and stride information, and it maps
-between logical coordinates and linear memory indices. In our kernel function,
-we use only the layout of the `out` tensor to determine the size of the vector.
-
-It's important to know the size of the vector because it might not be a multiple
-of the block size. In fact in this example, the size of the vector is 100, which
-is not a multiple of our block size of 32. So as we assign our threads to read
-elements from the tensor, we need to make sure we don't overrun the bounds of
-the tensor.
+output tensor as arguments. We also need to know the size of the vector (which
+we've defined with the alias `vector_size`) because it might not be a multiple
+of the block size. In fact in this example, the size of the vector is 1,000,
+which is not a multiple of our block size of 256. So as we assign our threads to
+read elements from the tensor, we need to make sure we don't overrun the bounds
+of the tensor.
 
 The body of the kernel function starts by calculating linear index of the tensor
 element that a particular thread is responsible for. The `block_dim` object
@@ -601,170 +637,179 @@ blocks as `x`, `y`, and `z` values. Because we're going to use a one-dimensional
 grid of thread blocks, we need only the `x` dimension. We can then calculate
 `tid`, the unique "global" index of the thread within the output tensor as
 `block_dim.x * block_idx.x + thread_idx.x`. For example, the `tid` values for
-the threads in the first thread block range from 0 to 31. The `tid` values for
-the threads in the second thread block range from 32 to 63, and so on.
+the threads in the first thread block range from 0 to 255, the `tid` values for
+the threads in the second thread block range from 256 to 511, and so on.
+
+:::note
+
+As a convenience, the [`gpu.id`](/mojo/stdlib/gpu/id) module includes a
+`global_idx` alias that contains the unique "global" `x`, `y`, and `z` indices
+of the thread within the grid of thread blocks. So for our one-dimensional grid
+of one-dimensional thread blocks, `global_idx.x` is equivalent to the value of
+`tid` that we calculated above. However for this tutorial, it's best that you
+learn how to calculate `tid` manually so that you understand how the grid and
+thread block dimensions work.
+
+:::
 
 The function then checks if the calculated `tid` is less than the size of the
 output tensor. If it is, the thread reads the corresponding elements from the
-`lhs` and `rhs` tensors, adds them together, and stores the result in the
-corresponding element of the `out` tensor.
+`lhs_tensor` and `rhs_tensor` tensors, adds them together, and stores the result
+in the corresponding element of the `out_tensor` tensor.
 
-Now that we've written the kernel function, we can compile it by adding the
-following code to the end of the `main()` function:
+## 10. Invoke the kernel function and copy the output back to the CPU
 
-```mojo title="vector_addition.mojo"
-    # Compile the kernel function to run on the GPU.
-    gpu_function = Accelerator.compile[
-        vector_addition[
-            lhs_layout_tensor.layout,
-            rhs_layout_tensor.layout,
-            out_layout_tensor.layout,
-        ]
-    ](gpu_device)
-```
-
-## 10. Invoke the kernel function and move the output back to the CPU
-
-The last step is to invoke the kernel function and move the output back to the
-CPU. Add this line to the list of imports at the top of the file:
+The last step is to compile and invoke the kernel function, then copy the output
+back to the CPU. To do so, add the following code to the end of the `main()`
+function:
 
 ```mojo title="vector_addition.mojo"
-from math import ceildiv
-```
+        # Compile and enqueue the kernel
+        ctx.enqueue_function[vector_addition](
+            lhs_tensor,
+            rhs_tensor,
+            result_tensor,
+            grid_dim=num_blocks,
+            block_dim=block_size,
+        )
 
-Then, add the following code to the end of the `main()` function:
+        # Create a HostBuffer for the result vector
+        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
 
-```mojo title="vector_addition.mojo"
-    # Calculate the number of thread blocks needed by dividing the vector size
-    # by the block size and rounding up.
-    num_blocks = ceildiv(vector_size, block_size)
+        # Copy the result vector from the DeviceBuffer to the HostBuffer
+        ctx.enqueue_copy(
+            dst_buf=result_host_buffer, src_buf=result_device_buffer
+        )
 
-    # Invoke the kernel function.
-    gpu_function(
-        gpu_device,
-        lhs_layout_tensor,
-        rhs_layout_tensor,
-        out_layout_tensor,
-        grid_dim=Dim(num_blocks),
-        block_dim=Dim(block_size),
-    )
+        # Finally, synchronize the DeviceContext to run all enqueued operations
+        ctx.synchronize()
 
-    # Move the output tensor back onto the CPU so that we can read the results.
-    out_tensor = out_tensor.move_to(host_device)
-
-    print("out_tensor:", out_tensor)
+        print("Result vector:", result_host_buffer)
 ```
 
 <details>
-  <summary>Click here to see the complete version of`vector_addition.mojo`.</summary>
+  <summary>Click here to see the complete version of `vector_addition.mojo`.</summary>
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import Dim
+from gpu.host import DeviceContext
 from gpu.id import block_dim, block_idx, thread_idx
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from math import ceildiv
-from max.driver import Accelerator, Tensor, accelerator, cpu
-from sys import exit, has_accelerator
+from sys import has_accelerator
 
-
+# Vector data type and size
 alias float_dtype = DType.float32
-alias tensor_rank = 1
-alias vector_size = 100
-alias block_size = 32
+alias vector_size = 1000
+alias layout = Layout.row_major(vector_size)
+
+# Calculate the number of thread blocks needed by dividing the vector size
+# by the block size and rounding up.
+alias block_size = 256
+alias num_blocks = ceildiv(vector_size, block_size)
 
 
-fn vector_addition[
-    lhs_layout: Layout,
-    rhs_layout: Layout,
-    out_layout: Layout,
-](
-    lhs: LayoutTensor[float_dtype, lhs_layout, MutableAnyOrigin],
-    rhs: LayoutTensor[float_dtype, rhs_layout, MutableAnyOrigin],
-    out: LayoutTensor[float_dtype, out_layout, MutableAnyOrigin],
+fn vector_addition(
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
 ):
-    """The calculation to perform across the vector on the GPU."""
+    """Calculate the element-wise sum of two vectors on the GPU."""
 
-    alias size = out_layout.size()  # Force compile-time evaluation.
-    tid = block_dim.x * block_idx.x + thread_idx.x
-    if tid < size:
-        out[tid] = lhs[tid] + rhs[tid]
+    # Calculate the index of the vector element for the thread to process
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+
+    # Don't process out of bounds elements
+    if tid < vector_size:
+        out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
 
 
 def main():
+    @parameter
     if not has_accelerator():
-        print("A GPU is required to run this program")
-        exit()
+        print("No compatible GPU found")
+    else:
+        # Get the context for the attached GPU
+        ctx = DeviceContext()
 
-    host_device = cpu()
-    gpu_device = accelerator()
+        # Create HostBuffers for input vectors
+        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
+        ctx.synchronize()
 
-    # Allocate the two input tensors on the host.
-    lhs_tensor = Tensor[float_dtype, tensor_rank](vector_size, host_device)
-    rhs_tensor = Tensor[float_dtype, tensor_rank](vector_size, host_device)
+        # Initialize the input vectors
+        for i in range(vector_size):
+            lhs_host_buffer[i] = Float32(i)
+            rhs_host_buffer[i] = Float32(i * 0.5)
 
-    # Fill them with initial values.
-    for i in range(vector_size):
-        lhs_tensor[i] = Float32(i)
-        rhs_tensor[i] = Float32(i * 0.5)
+        print("LHS buffer: ", lhs_host_buffer)
+        print("RHS buffer: ", rhs_host_buffer)
 
-    print("lhs_tensor:", lhs_tensor)
-    print("rhs_tensor:", rhs_tensor)
+        # Create DeviceBuffers for the input vectors
+        lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
+        rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
 
-    # Move the input tensors to the accelerator.
-    lhs_tensor = lhs_tensor.move_to(gpu_device)
-    rhs_tensor = rhs_tensor.move_to(gpu_device)
+        # Copy the input vectors from the HostBuffers to the DeviceBuffers
+        ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
+        ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
 
-    # Allocate the output tensor on the accelerator.
-    out_tensor = Tensor[float_dtype, tensor_rank](vector_size, gpu_device)
+        # Create a DeviceBuffer for the result vector
+        result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+            vector_size
+        )
 
-    # Create a LayoutTensor for each tensor.
-    lhs_layout_tensor = lhs_tensor.to_layout_tensor()
-    rhs_layout_tensor = rhs_tensor.to_layout_tensor()
-    out_layout_tensor = out_tensor.to_layout_tensor()
+        # Wrap the DeviceBuffers in LayoutTensors
+        lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)
+        rhs_tensor = LayoutTensor[float_dtype, layout](rhs_device_buffer)
+        result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
 
-    # Compile the kernel function to run on the GPU.
-    gpu_function = Accelerator.compile[
-        vector_addition[
-            lhs_layout_tensor.layout,
-            rhs_layout_tensor.layout,
-            out_layout_tensor.layout,
-        ]
-    ](gpu_device)
+        # Compile and enqueue the kernel
+        ctx.enqueue_function[vector_addition](
+            lhs_tensor,
+            rhs_tensor,
+            result_tensor,
+            grid_dim=num_blocks,
+            block_dim=block_size,
+        )
 
-    # Calculate the number of thread blocks needed by dividing the vector size
-    # by the block size and rounding up.
-    num_blocks = ceildiv(vector_size, block_size)
+        # Create a HostBuffer for the result vector
+        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+            vector_size
+        )
 
-    # Invoke the kernel function.
-    gpu_function(
-        gpu_device,
-        lhs_layout_tensor,
-        rhs_layout_tensor,
-        out_layout_tensor,
-        grid_dim=Dim(num_blocks),
-        block_dim=Dim(block_size),
-    )
+        # Copy the result vector from the DeviceBuffer to the HostBuffer
+        ctx.enqueue_copy(
+            dst_buf=result_host_buffer, src_buf=result_device_buffer
+        )
 
-    # Move the output tensor back onto the CPU so that we can read the results.
-    out_tensor = out_tensor.move_to(host_device)
+        # Finally, synchronize the DeviceContext to run all enqueued operations
+        ctx.synchronize()
 
-    print("out_tensor:", out_tensor)
+        print("Result vector:", result_host_buffer)
 ```
 </details>
 
-First we calculate the number of thread blocks needed by dividing the vector
-size by the block size and rounding up. Then we can invoke the kernel function.
+The `enqueue_function()` method enqueues the compilation and invocation of the
+`vector_addition()` kernel function, passing the input and output tensors as
+arguments. The `grid_dim` and `block_dim` arguments use the `num_blocks` and
+`block_size` aliases we defined in the previous step.
 
-After that, we move the output tensor back onto the CPU so that we can read the
-results. This call blocks on the CPU until the kernel function has populated the
-output tensor and returned. The move also has the side effect of invoking the
-destructor for the original `out_tensor` object and freeing its allocated memory
-on the GPU. As for the input tensors, we don't need to move them back to the
-CPU. Also, the Mojo compiler determines that the `lhs_tensor` and `rhs_tensor`
-objects are no longer needed after the kernel function has returned, and so it
-automatically invokes their destructors to free their allocated memory on the
-GPU. (For a detailed explanation of object lifetime and destruction in Mojo, see
-the [Death of a value](/mojo/manual/lifecycle/death) section of the Mojo
+After the kernel function has been compiled and enqueued, we create a
+`HostBuffer` to hold the result vector. Then we copy the result vector from the
+`DeviceBuffer` to the `HostBuffer`. Finally, we synchronize the `DeviceContext`
+to run all enqueued operations. After synchronizing, we can print the result
+vector to the console.
+
+At this point, the Mojo compiler determines that the `DeviceContext`, the
+`DeviceBuffer`s, the `HostBuffer`s, and the `LayoutTensor`s are no longer used
+and so it automatically invokes their destructors to free their allocated
+memory. (For a detailed explanation of object lifetime and destruction in Mojo,
+see the [Death of a value](/mojo/manual/lifecycle/death) section of the Mojo
 Manual.)
 
 So it's finally time to run the program to see the results of our hard work.
@@ -776,9 +821,9 @@ mojo vector_addition.mojo
 You should see the following output:
 
 ```output
-lhs_tensor:  Tensor([[0.0, 1.0, 2.0, ..., 97.0, 98.0, 99.0]], dtype=float32, shape=100)
-rhs_tensor:  Tensor([[0.0, 0.5, 1.0, ..., 48.5, 49.0, 49.5]], dtype=float32, shape=100)
-out_tensor:  Tensor([[0.0, 1.5, 3.0, ..., 145.5, 147.0, 148.5]], dtype=float32, shape=100)
+LHS buffer:  HostBuffer([0.0, 1.0, 2.0, ..., 997.0, 998.0, 999.0])
+RHS buffer:  HostBuffer([0.0, 0.5, 1.0, ..., 498.5, 499.0, 499.5])
+Result vector: HostBuffer([0.0, 1.5, 3.0, ..., 1495.5, 1497.0, 1498.5])
 ```
 
 And now that you're done with the tutorial, exit your project's virtual
@@ -790,15 +835,14 @@ exit
 
 ## Summary
 
-In this tutorial, we've learned how to use the MAX Driver to write a simple
-kernel function that performs an elementwise addition of two vectors. We
+In this tutorial, we've learned how to use Mojo's `gpu.host` package to write a
+simple kernel function that performs an element-wise addition of two vectors. We
 covered:
 
-- Understanding basic GPU concepts like devices, grids, and thread blocks
-- Moving data between CPU and GPU memory using tensors
-- Writing and compiling a GPU kernel function
-- Executing parallel computations on the GPU
-- Managing memory and object lifetimes across devices
+- Understanding basic GPU concepts like devices, grids, and thread blocks.
+- Moving data between CPU and GPU memory.
+- Writing and compiling a GPU kernel function.
+- Executing parallel computations on the GPU.
 
 ## Next steps
 
@@ -807,25 +851,20 @@ suggested next steps:
 
 - Check out more
   [examples](https://github.com/modular/modular/tree/main/examples/gpu_functions)
-  of GPU programming with Mojo and the MAX Driver in the public [MAX GitHub
+  of GPU programming with Mojo in the public [Modular GitHub
   repository](https://github.com/modular/modular).
 
-- Try implementing other parallel algorithms like matrix multiplication or
-  convolutions.
-
-- Explore the [MAX Driver API](/max/api/mojo/driver/) documentation to discover
-  more advanced GPU programming features.
-
-- Learn more about other features of the [MAX
-  platform](/max/intro) for building and deploying
-  high-performance AI endpoints.
-
 - Read the [GPU basics](/mojo/manual/gpu/basics) section of the Mojo Manual
-  to get a taste of the low-level GPU programming APIs available in the
-  [`gpu`](/mojo/stdlib/gpu/) package.
+  to find out more about GPU programming in Mojo.
+
+- Read the [Introduction to layouts](/mojo/manual/layout/layouts) section of the
+  Mojo Manual to learn more about the `layout` package and managing layouts.
 
 - Check out the [Mojo Manual](/mojo/manual) for more information on the Mojo
   language.
+
+- Learn more about other features of the [Modular platform](/max/intro) for
+  building and deploying high-performance AI endpoints.
 
 import TutorialStack from '@site/src/components/TutorialStack';
 
