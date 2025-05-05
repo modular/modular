@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "../mojo-lsp-test-client/LSPBatchClient.h"
+#include "Support/ErrorOr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
-#include <Support/ErrorOr.h>
 
 using namespace M;
 namespace lsp = mlir::lsp;

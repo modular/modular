@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/DomainAwareReplacer.h"
+#include "Support/LogicalResult.h"
 #include "mlir/IR/Operation.h"
-#include <Support/LogicalResult.h>
 
 using namespace M;
 
