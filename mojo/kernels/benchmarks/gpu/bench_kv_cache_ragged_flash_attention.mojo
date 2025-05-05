@@ -31,6 +31,10 @@ from nn.mha_score_mod import IdentityScoreMod
 
 from utils import IndexList
 
+from tensor_internal import ManagedTensorSlice
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
+
 
 fn _get_run_name[
     type: DType,
@@ -223,7 +227,12 @@ def execute_kv_cache_ragged_flash_attention[
                 v_cache_device,
                 CausalMask(),
                 IdentityScoreMod(),
-                input_row_offsets_device.tensor,
+                ManagedTensorSlice[
+                    io_spec=IOUnknown,
+                    static_spec = StaticTensorSpec[
+                        DType.uint32, 1
+                    ].create_unknown(),
+                ](input_row_offsets_device.tensor),
                 isqrt(Float32(head_dim)),
                 ctx,
             )

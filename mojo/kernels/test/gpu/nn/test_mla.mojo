@@ -36,6 +36,10 @@ from testing import assert_almost_equal
 from utils.index import Index
 from utils.numerics import get_accum_type
 
+from tensor_internal import ManagedTensorSlice
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
+
 
 fn is_benchmark() -> Bool:
     for arg in argv():
@@ -289,7 +293,12 @@ fn test[
                 k_operand,
                 CausalMask(),
                 output_ref_device,
-                null_valid_length,
+                ManagedTensorSlice[
+                    io_spec=IOUnknown,
+                    static_spec = StaticTensorSpec[
+                        DType.uint32, 1
+                    ].create_unknown(),
+                ](null_valid_length),
                 scale,
                 batch_size,
                 seq_len,
@@ -646,7 +655,10 @@ fn test_prefill[
         v_ref_operand,
         CausalMask(),
         output_ref_device,
-        null_valid_length,
+        ManagedTensorSlice[
+            io_spec=IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ](null_valid_length),
         scale,
         batch_size,
         seq_len,

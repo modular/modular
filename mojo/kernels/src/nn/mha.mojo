@@ -120,6 +120,10 @@ from .mha_tile_scheduler import (
     TileScheduler,
     QueuedTileScheduler,
 )
+from tensor_internal import ManagedTensorSlice
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from layout import Layout
 
 # ===-----------------------------------------------------------------------===#
 # Flash attention
@@ -230,7 +234,7 @@ fn flash_attention[
     v: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
@@ -390,7 +394,7 @@ fn flash_attention_dispatch[
     v: v_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
@@ -415,7 +419,7 @@ fn flash_attention_dispatch[
 
     @parameter
     if ragged:
-        batch_size = valid_length.dim[0]() - 1
+        batch_size = valid_length.shape()[0] - 1
     # This branch holds for both KVCache and NDBuffer inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
     else:
@@ -850,9 +854,10 @@ fn flash_attention[
     var k_operand = NDBufferMHAOperand(k)
     var v_operand = NDBufferMHAOperand(v)
 
-    var valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[UInt32](), Index(0)
-    )
+    var null_valid_length = ManagedTensorSlice[
+        IOUnknown,
+        static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+    ](UnsafePointer[UInt32](), IndexList[1](0), IndexList[1](0))
 
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
@@ -870,7 +875,7 @@ fn flash_attention[
         v_operand,
         mask_functor,
         score_mod_functor,
-        valid_length,
+        null_valid_length,
         q.dim[1](),
         num_keys,
         scale,
@@ -4214,7 +4219,7 @@ fn mha_gpu_naive[
     v: v_t,
     mask_functor: mask_t,
     output: NDBuffer[output_type, rank, *_],
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4253,7 +4258,7 @@ fn mha_gpu_naive[
         p_device,
         q_ptr,
         k,
-        valid_length,
+        managed_tensor_slice_to_ndbuffer(valid_length),
         scale,
         batch_size,
         max_prompt_len,
@@ -4547,9 +4552,10 @@ fn mha_gpu_naive[
 ) raises:
     var k_operand = NDBufferMHAOperand(k)
     var v_operand = NDBufferMHAOperand(v)
-    var null_valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[UInt32](), Index(0)
-    )
+    var null_valid_length = ManagedTensorSlice[
+        IOUnknown,
+        static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+    ](UnsafePointer[UInt32](), IndexList[1](0), IndexList[1](0))
 
     mha_gpu_naive[_is_cache_length_accurate=True](
         q,
@@ -4582,7 +4588,7 @@ fn mha_gpu_naive[
     v: cache_t,
     mask_functor: mask_t,
     output: NDBuffer[mut=True, output_type, rank, *_],
-    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4764,3 +4770,29 @@ fn _naive_attention[
     batched_matmul[transpose_b=False](output, score, v)
 
     score_ptr.free()
+
+
+@always_inline
+fn managed_tensor_slice_to_ndbuffer[
+    spec: StaticTensorSpec, //
+](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
+    spec.type,
+    spec.rank,
+    MutableAnyOrigin,
+    spec.shape,
+    spec.strides,
+    alignment = spec.alignment,
+    address_space = spec.address_space,
+    exclusive = spec.exclusive,
+]:
+    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
+    return NDBuffer[
+        spec.type,
+        spec.rank,
+        _,
+        spec.shape,
+        spec.strides,
+        alignment = spec.alignment,
+        address_space = spec.address_space,
+        exclusive = spec.exclusive,
+    ](ptr, tensor.shape(), tensor._runtime_strides)

@@ -99,6 +99,9 @@ from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 from gpu.id import sm_id
+from builtin.device_passable import DevicePassable
+from tensor_internal import ManagedTensorSlice
+from compiler_internal import StaticTensorSpec
 
 
 # The motivationn here is to be able to pass `StaticInt[1]()`
@@ -245,7 +248,7 @@ fn mha_sm90_dispatch[
     v: v_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
     max_prompt_len_arg: max_prompt_len_t,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -341,7 +344,7 @@ fn mha_sm90_dispatch[
                     scale,
                     batch_size,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     partition,
                     mask_functor,
@@ -362,7 +365,7 @@ fn mha_sm90_dispatch[
                     scale,
                     batch_size,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     mask_functor,
                     score_mod_functor,
@@ -387,7 +390,7 @@ fn mha_sm90_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     partition,
                     mask_functor,
@@ -409,7 +412,7 @@ fn mha_sm90_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     mask_functor,
                     score_mod_functor,
@@ -455,7 +458,7 @@ fn mha_sm90_dispatch[
                     scale,
                     batch_size,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     partition,
                     mask_functor,
@@ -477,7 +480,7 @@ fn mha_sm90_dispatch[
                     scale,
                     batch_size,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     mask_functor,
                     score_mod_functor,
@@ -502,7 +505,7 @@ fn mha_sm90_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     partition,
                     mask_functor,
@@ -525,7 +528,7 @@ fn mha_sm90_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     kv_input_row_offsets,
                     mask_functor,
                     score_mod_functor,
@@ -581,9 +584,7 @@ fn mha_sm90_dispatch[
                     rebind[Float32](scale),
                     batch_size,
                     max_cache_valid_length,
-                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                        valid_length
-                    ),
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
@@ -607,9 +608,7 @@ fn mha_sm90_dispatch[
                     rebind[Float32](scale),
                     batch_size,
                     max_cache_valid_length,
-                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                        valid_length
-                    ),
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
@@ -636,9 +635,7 @@ fn mha_sm90_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                        valid_length
-                    ),
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
@@ -663,9 +660,7 @@ fn mha_sm90_dispatch[
                     batch_size,
                     max_prompt_len,
                     max_cache_valid_length,
-                    rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                        valid_length
-                    ),
+                    valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
                     rebind[
                         OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
                     ](kv_input_row_offsets),
@@ -2334,3 +2329,14 @@ fn _mha_sm90[
 
         write_output(position, q_pipeline_state.index(), rowsum)
         # don't arrive
+
+
+# TODO: Remove this when we're no longer using NDBuffers.
+@always_inline
+fn valid_length_managed_tensor_slice_to_ndbuffer(
+    tensor: ManagedTensorSlice[type = DType.uint32, rank=1]
+) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
+    var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
+    return NDBuffer[DType.uint32, 1, MutableAnyOrigin](
+        ptr, tensor.shape(), tensor._runtime_strides
+    )

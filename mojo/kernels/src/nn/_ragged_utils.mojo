@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from layout import LayoutTensor, Layout
+from tensor_internal import ManagedTensorSlice
 
 
 @always_inline

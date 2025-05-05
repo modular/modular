@@ -44,6 +44,10 @@ from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import Index, IndexList
+from layout.layout_tensor import LayoutTensor
+from layout.layout import Layout
+from tensor_internal import ManagedTensorSlice, trace_slice_arg
+from compiler_internal import StaticTensorSpec
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (padded)
@@ -376,7 +380,7 @@ fn generic_flash_attention_kv_cache_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     mask: NDBuffer[type, *_],
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -387,7 +391,7 @@ fn generic_flash_attention_kv_cache_continuous_batch[
         return String(";").join(
             trace_arg("q", q),
             trace_arg("mask", mask),
-            trace_arg("valid_lengths", valid_lengths),
+            trace_slice_arg("valid_lengths", valid_lengths),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -426,7 +430,7 @@ fn _flash_attention_kv_cache[
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: NDBuffer[type, *_],
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -473,7 +477,7 @@ fn _flash_attention_kv_cache_impl[
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: NDBuffer[type, *_],
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
@@ -512,7 +516,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
     q: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -522,7 +526,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
     fn description_fn() -> String:
         return String(";").join(
             trace_arg("q", q),
-            trace_arg("valid_lengths", valid_lengths),
+            trace_slice_arg("valid_lengths", valid_lengths),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -551,7 +555,7 @@ fn _flash_attention_kv_cache_causal_mask[
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -589,7 +593,7 @@ fn _flash_attention_kv_cache_causal_mask_impl[
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
@@ -632,7 +636,7 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
     q: NDBuffer[type, 4, *_],
     k: cache_t,
     v: cache_t,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
@@ -661,7 +665,7 @@ fn _flash_attention_kv_cache_gpu[
     k: cache_t,
     v: cache_t,
     mask: NDBuffer[type, *_],
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
@@ -720,7 +724,7 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
     q: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -730,7 +734,7 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
     fn description_fn() -> String:
         return String(";").join(
             trace_arg("q", q),
-            trace_arg("valid_lengths", valid_lengths),
+            trace_slice_arg("valid_lengths", valid_lengths),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -759,7 +763,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask[
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -798,7 +802,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
@@ -842,7 +846,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
     q: NDBuffer[type, 4, *_],
     k: cache_t,
     v: cache_t,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
@@ -1478,3 +1482,29 @@ fn generic_get_paged_cache[
         max_seq_length=max_lengths[Index(0, 0)],
         max_cache_length=max_lengths[Index(0, 1)],
     )
+
+
+@always_inline
+fn managed_tensor_slice_to_ndbuffer[
+    spec: StaticTensorSpec, //
+](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
+    spec.type,
+    spec.rank,
+    MutableAnyOrigin,
+    spec.shape,
+    spec.strides,
+    alignment = spec.alignment,
+    address_space = spec.address_space,
+    exclusive = spec.exclusive,
+]:
+    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
+    return NDBuffer[
+        spec.type,
+        spec.rank,
+        _,
+        spec.shape,
+        spec.strides,
+        alignment = spec.alignment,
+        address_space = spec.address_space,
+        exclusive = spec.exclusive,
+    ](ptr, tensor.shape(), tensor._runtime_strides)
