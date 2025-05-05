@@ -55,7 +55,7 @@ def test_abs():
         ]()
     )
 
-    # Check the AMD CRNA assembly.
+    # Check the AMD CDNA assembly.
 
     # Set the sign bit to zero.
     assert_true(

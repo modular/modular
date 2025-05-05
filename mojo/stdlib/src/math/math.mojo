@@ -307,6 +307,15 @@ fn isqrt(x: SIMD) -> __type_of(x):
             return _isqrt_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
 
         return _isqrt_nvvm(x)
+    elif is_amd_gpu():
+
+        @parameter
+        if x.dtype in (DType.float16, DType.float32, DType.float64):
+            return _call_amdgcn_intrinsic[
+                "llvm.amdgcn.rsq." + _get_amdgcn_type_suffix[x.dtype]()
+            ](x)
+
+        return isqrt(x.cast[DType.float32]()).cast[x.dtype]()
 
     return 1 / sqrt(x)
 
@@ -355,6 +364,15 @@ fn recip(x: SIMD) -> __type_of(x):
             return _recip_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
 
         return _recip_nvvm(x)
+    elif is_amd_gpu():
+
+        @parameter
+        if x.dtype in (DType.float16, DType.float32, DType.float64):
+            return _call_amdgcn_intrinsic[
+                "llvm.amdgcn.rcp." + _get_amdgcn_type_suffix[x.dtype]()
+            ](x)
+
+        return recip(x.cast[DType.float32]()).cast[x.dtype]()
 
     return 1 / x
 
@@ -415,20 +433,9 @@ fn exp2[
 
     @parameter
     if is_amd_gpu() and dtype in (DType.float16, DType.float32):
-        alias asm = StaticString(
-            "llvm.amdgcn.exp2.f16"
-        ) if dtype is DType.float16 else "llvm.amdgcn.exp2.f32"
-        var res = SIMD[dtype, simd_width]()
-
-        @parameter
-        for i in range(simd_width):
-            res[i] = llvm_intrinsic[
-                asm,
-                Scalar[dtype],
-                has_side_effect=False,
-            ](x[i])
-
-        return res
+        return _call_amdgcn_intrinsic[
+            "llvm.amdgcn.exp2." + _get_amdgcn_type_suffix[dtype]()
+        ](x)
 
     @parameter
     if dtype not in (DType.float32, DType.float64):
@@ -2622,6 +2629,32 @@ fn _call_ptx_intrinsic[
         )
 
     return res
+
+
+@always_inline
+fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD) -> __type_of(x):
+    var res = __type_of(x)()
+
+    @parameter
+    for i in range(x.size):
+        res[i] = llvm_intrinsic[intrin, Scalar[x.dtype], has_side_effect=False](
+            x[i]
+        )
+    return res
+
+
+@always_inline
+fn _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
+    @parameter
+    if dtype is DType.float16:
+        return "f16"
+    elif dtype is DType.float32:
+        return "f32"
+    elif dtype is DType.float64:
+        return "f64"
+    else:
+        constrained[False, "Extend to support additional dtypes."]()
+        return ""
 
 
 # ===----------------------------------------------------------------------=== #
