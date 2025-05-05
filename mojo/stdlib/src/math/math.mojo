@@ -1279,7 +1279,7 @@ fn align_down(value: Int, alignment: Int) -> Int:
 
     Returns:
         Closest multiple of the alignment that is less than or equal to the
-        input value. In other words, floor(value / alignment) * alignment.
+        input value. In other words, floor(value // alignment) * alignment.
     """
     debug_assert(alignment != 0, "zero alignment")
     return (value // alignment) * alignment
@@ -1296,7 +1296,7 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
 
     Returns:
         Closest multiple of the alignment that is less than or equal to the
-        input value. In other words, floor(value / alignment) * alignment.
+        input value. In other words, floor(value // alignment) * alignment.
     """
     debug_assert(alignment != 0, "zero alignment")
     return (value // alignment) * alignment

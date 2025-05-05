@@ -127,7 +127,7 @@ fn gather[
     owned base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
-    alignment: Int = 0,
+    alignment: UInt = 0,
 ) -> SIMD[dtype, size]:
     """Reads scalar values from a SIMD vector, and gathers them into one vector.
 
@@ -215,7 +215,7 @@ fn scatter[
     value: SIMD[dtype, size],
     owned base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
-    alignment: Int = 0,
+    alignment: UInt = 0,
 ):
     """Takes scalar values from a SIMD vector and `scatters` them into a
     vector of pointers.
@@ -536,7 +536,7 @@ fn masked_load[
     addr: UnsafePointer[Scalar[dtype], **_],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
-    alignment: Int = 1,
+    alignment: UInt = 1,
 ) -> SIMD[dtype, size]:
     """Loads data from memory and return it, replacing masked lanes with values
     from the passthrough vector.
@@ -582,7 +582,7 @@ fn masked_store[
     value: SIMD,
     addr: UnsafePointer[Scalar[value.dtype], **_],
     mask: SIMD[DType.bool, size],
-    alignment: Int = 1,
+    alignment: UInt = 1,
 ):
     """Stores a value at a memory location, skipping masked lanes.
 
