@@ -26,6 +26,8 @@ import psutil
 import zmq
 import zmq.asyncio
 import zmq.constants
+from max.pipelines.core import InputContext
+from max.profiler import traced
 
 logger = logging.getLogger("max.serve")
 
@@ -232,4 +234,41 @@ class ZmqQueue:
 
     def empty(self) -> bool:
         _ = self._get_or_init_pull_socket()
+        return self.qsize() == 0
+
+
+class RequestDeque:
+    """A wrapper around the multiprocessing queue that allows us to add
+    requests to the front of the queue.
+    """
+
+    def __init__(self, queue: ZmqQueue):
+        self.queue = queue
+        self.preempted: list[tuple[str, InputContext]] = []
+
+    def put_front_nowait(self, item: tuple[str, InputContext]):
+        """A new method that allows us to add requests to the front of the queue."""
+        self.preempted.append(item)
+
+    def put(self, *args, **kwargs) -> None:
+        return self.queue.put(*args, **kwargs)
+
+    def put_nowait(self, item: tuple[str, InputContext]) -> None:
+        return self.queue.put_nowait(item)
+
+    def get(self, *args, **kwargs) -> tuple[str, InputContext]:
+        if self.preempted:
+            return self.preempted.pop()
+        return self.queue.get(*args, **kwargs)
+
+    @traced
+    def get_nowait(self) -> tuple[str, InputContext]:
+        if self.preempted:
+            return self.preempted.pop()
+        return self.queue.get_nowait()
+
+    def qsize(self) -> int:
+        return len(self.preempted) + self.queue.qsize()
+
+    def empty(self) -> bool:
         return self.qsize() == 0

@@ -38,13 +38,15 @@ from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler import (
     EmbeddingsScheduler,
     EmbeddingsSchedulerConfig,
-    Scheduler,
+)
+from max.serve.pipelines.telemetry_worker import MetricClient
+from max.serve.process_control import ProcessControl, ProcessMonitor
+from max.serve.scheduler.base import Scheduler
+from max.serve.scheduler.queues import EngineQueue
+from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
-from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler.queues import EngineQueue
 from max.serve.scheduler.zmq_queue import ZmqQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS

@@ -25,8 +25,9 @@ from enum import Enum
 from typing import Generic, Optional, TypeVar
 
 import sentinel
-from max.serve.scheduler import zmq_queue
-from max.serve.scheduler.process_control import ProcessControl
+from max.serve.process_control import ProcessControl
+
+from .zmq_queue import ZmqQueue
 
 logger = logging.getLogger("max.serve")
 
@@ -91,10 +92,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     ):
         super().__init__()
         self.context = context
-        self.request_q = zmq_queue.ZmqQueue(context)
-
-        self.response_q = zmq_queue.ZmqQueue(context)
-        self.cancel_q = zmq_queue.ZmqQueue(context)
+        self.request_q = ZmqQueue(context)
+        self.response_q = ZmqQueue(context)
+        self.cancel_q = ZmqQueue(context)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
         self._proc: Optional[multiprocessing.process.BaseProcess] = None

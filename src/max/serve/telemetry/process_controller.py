@@ -25,7 +25,7 @@ from typing import Callable, Optional
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
-from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
+from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import (
     MaxMeasurement,

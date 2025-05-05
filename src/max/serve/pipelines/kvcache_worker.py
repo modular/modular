@@ -21,7 +21,7 @@ from typing import Optional
 
 from max.serve.config import Settings
 from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service
-from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
+from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry.common import configure_logging
 
 logger = logging.getLogger(__name__)

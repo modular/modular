@@ -5,6 +5,9 @@ modular_py_library(
     srcs = glob(["*.py"]),
     imports = ["../../.."],
     deps = [
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/core",
+        "//SDK/lib/API/python/max/serve/telemetry",
         requirement("psutil"),
         requirement("sentinel"),
         requirement("pyzmq"),

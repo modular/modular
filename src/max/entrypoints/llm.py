@@ -33,7 +33,7 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.scheduler.process_control import ProcessControl
+from max.serve.process_control import ProcessControl
 
 RequestQueue = Queue[tuple[Sequence[str], Optional[int], bool]]
 ResponseQueue = Queue[list[str]]
