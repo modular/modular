@@ -604,6 +604,13 @@ class ConformanceOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.SymbolRefAttr, /
     ) -> None: ...
 
+class ContextuallyEvaluatedAttrInterface(Protocol):
+    """
+    This interface describes parameter attributes whose evaluation may require
+    additional context. This is in contrast to "simple" parameter attributes
+    that can be simplified context-free at construction time.
+    """
+
 class CostOfOp(max._core.Operation):
     """
     The `kgen.cost_of` operation takes a parametric callee and returns
@@ -917,14 +924,6 @@ class EnvAttr(max._core.Attribute):
     ) -> None: ...
     @property
     def values(self) -> max._core.dialects.builtin.DictionaryAttr: ...
-
-class EvaluatableAttrInterface(Protocol):
-    """
-    This interface describes parameter attributes that can be evaluated
-    contextually during ParameterEvaluator by calling out to
-    evaluateExpression. This is in contrast to "simple" parameter attributes
-    that can be simplified context-free at construction time.
-    """
 
 class ExportKind(enum.Enum):
     not_exported = 0
