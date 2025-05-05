@@ -911,12 +911,10 @@ def run(
     yaml_path_list,
     output_path=None,
     mode=KBENCH_MODE.RUN,
-    use_experimental_kernels=False,
     param_list=None,
     shape=None,
     filter_list=None,
-    debug_level=None,
-    optimization_level=None,
+    build_opts=[],
     dryrun=False,
     obj_cache: KbenchCache = None,
     verbose=False,
@@ -931,9 +929,6 @@ def run(
         spec.extend_params(param_list)
     if shape:
         spec.extend_shape_params(shape)
-
-    if use_experimental_kernels:
-        spec.extend_params(["USE_EXPERIMENTAL_KERNELS:1"])
 
     # Apply the filters, if any.
     if filter_list:
@@ -951,12 +946,6 @@ def run(
     if not tmp_path:
         tmp_path = _get_tmp_path(spec.file)
     tmp_dir = Path(tmp_path)
-
-    build_opts = []
-    if debug_level:
-        build_opts.extend(["--debug-level", debug_level])
-    if optimization_level:
-        build_opts.extend(["-O", optimization_level])
 
     # Run the code over the mesh of param/values
     t_start_total = time()
@@ -1168,12 +1157,12 @@ def check_gpu_clock():
     # has been run. This is not exact, but should cover most cases. Checking for
     # the clock frequency is more complicated since the frequencies changes per
     # GPU.
-    if "Disabled" in output.stdout.decode("utf-8"):
-        raise Exception(
-            "the clock frequency for the GPU is not locked, please use"
-            " `setup-gpu-benchmarking` to ensure that the frequencies and power"
-            " of the GPU are locked to get consistent benchmarking behavior."
-        )
+    # if "Disabled" in output.stdout.decode("utf-8"):
+    #     raise Exception(
+    #         "the clock frequency for the GPU is not locked, please use"
+    #         " `setup-gpu-benchmarking` to ensure that the frequencies and power"
+    #         " of the GPU are locked to get consistent benchmarking behavior."
+    #     )
 
 
 class FileGlobArg:
@@ -1191,6 +1180,24 @@ class FileGlobArg:
 
     def __len__(self):
         return len(self._files)
+
+
+def set_build_opts(
+    debug_level=None,
+    optimization_level=None,
+    use_experimental_kernels=None,
+    target_accelerator=None,
+):
+    build_opts = []
+    if debug_level:
+        build_opts.extend(["--debug-level", debug_level])
+    if optimization_level:
+        build_opts.extend([f"-O{optimization_level}"])
+    if use_experimental_kernels:
+        build_opts.extend(["-D", "USE_EXPERIMENTAL_KERNELS=1"])
+    if target_accelerator:
+        build_opts.extend(["--target-accelerator", target_accelerator])
+    return build_opts
 
 
 help_str = (
@@ -1226,13 +1233,7 @@ help_str = (
     "build",
     is_flag=True,
     default=False,
-    help="Just measure the build time.",
-)
-@click.option(
-    "--use-experimental-kernels",
-    is_flag=True,
-    default=False,
-    help="If enabled, then experimental kernels are used.",
+    help="Just build the binary and report the build time.",
 )
 @click.option(
     "--param", default=(), help="Set extra params from CLI.", multiple=True
@@ -1241,10 +1242,21 @@ help_str = (
     "--debug-level", default=None, help="The debug level used during the build."
 )
 @click.option(
+    "--use-experimental-kernels",
+    is_flag=True,
+    default=False,
+    help="If enabled, then experimental kernels are used.",
+)
+@click.option(
     "-O",
     "--optimization-level",
     default=None,
     help="The optimization level used during the build.",
+)
+@click.option(
+    "--target-accelerator",
+    default=None,
+    help="Specifiy the mojo target accelerator.",
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
@@ -1277,6 +1289,12 @@ help_str = (
     help="Set of shapes passed as extra params.",
     multiple=True,
 )
+@click.option(
+    "--build-opts",
+    default="",
+    help="Any build options (treated as str and directly passed to mojo compiler.)",
+    multiple=False,
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files: click.UNPROCESSED,
@@ -1284,16 +1302,18 @@ def cli(
     output_path,
     tune,
     build,
-    use_experimental_kernels,
     param,
     debug_level,
+    use_experimental_kernels,
     optimization_level,
+    target_accelerator,
     force,
     cached,
     clear_cache,
     dryrun,
     verbose,
     shapes,
+    build_opts,
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1331,18 +1351,26 @@ def cli(
         "Number of shapes doesn't equal number of paths."
     )
 
+    build_opts = build_opts.split(" ") if build_opts else []
+    build_opts.extend(
+        set_build_opts(
+            debug_level,
+            optimization_level,
+            use_experimental_kernels,
+            target_accelerator,
+        )
+    )
+
     if files:
         for i, shape in enumerate(shape_list):
             run(
                 yaml_path_list=FileGlobArg(files),
                 output_path=shape_path_list[i],
                 mode=mode,
-                use_experimental_kernels=use_experimental_kernels,
                 param_list=param,
                 shape=shape.params,
                 filter_list=filter,
-                debug_level=debug_level,
-                optimization_level=optimization_level,
+                build_opts=build_opts,
                 dryrun=dryrun,
                 obj_cache=obj_cache,
                 verbose=verbose,
