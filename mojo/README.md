@@ -109,5 +109,5 @@ MAX and Mojo usage and distribution are licensed under the
 ## Thanks to our contributors
 
 <a href="https://github.com/modular/modular/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=modular/max" />
+  <img src="https://contrib.rocks/image?repo=modular/modular" />
 </a>
