@@ -235,6 +235,252 @@ def test_object_and_arrays():
     assert_equal(String(loads("[1, 2, 3]")), "[1.0, 2.0, 3.0]")
 
 
+def test_real_world_json_formats():
+    """Test parsing of real-world JSON formats and standards."""
+
+    # GeoJSON example
+    var geojson = """
+    {
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": [125.6, 10.1]
+        },
+        "properties": {
+            "name": "Dinagat Islands"
+        }
+    }
+    """
+    var parsed_geojson = loads(geojson)
+    assert_true('"type": "Feature"' in String(parsed_geojson))
+    assert_true('"coordinates": [125.6, 10.1]' in String(parsed_geojson))
+
+    # JSON-API example
+    var jsonapi = """
+    {
+        "data": [{
+            "type": "articles",
+            "id": "1",
+            "attributes": {
+                "title": "JSON:API paints my bike red!",
+                "body": "The shortest article. Ever."
+            },
+            "relationships": {
+                "author": {
+                    "data": {"id": "42", "type": "people"}
+                }
+            }
+        }],
+        "included": [
+            {
+                "type": "people",
+                "id": "42",
+                "attributes": {
+                    "name": "John",
+                    "age": 80
+                }
+            }
+        ]
+    }
+    """
+    var parsed_jsonapi = loads(jsonapi)
+    assert_true('"type": "articles"' in String(parsed_jsonapi))
+    assert_true('"id": "42"' in String(parsed_jsonapi))
+
+    # JSON Web Token (JWT) payload example
+    var jwt_payload = """
+    {
+        "sub": "1234567890",
+        "name": "John Doe",
+        "admin": true,
+        "iat": 1516239022,
+        "exp": 1516242622
+    }
+    """
+    var parsed_jwt = loads(jwt_payload)
+    assert_true('"sub": "1234567890"' in String(parsed_jwt))
+    assert_true('"admin": true' in String(parsed_jwt))
+
+    # Package.json example
+    var package_json = """
+    {
+        "name": "my-package",
+        "version": "1.0.0",
+        "description": "A package for testing JSON parsing",
+        "main": "index.js",
+        "scripts": {
+            "test": "echo \\"Error: no test specified\\" && exit 1",
+            "start": "node index.js"
+        },
+        "keywords": [
+            "test",
+            "json",
+            "parser"
+        ],
+        "author": "Test Author",
+        "license": "MIT",
+        "dependencies": {
+            "express": "^4.17.1",
+            "lodash": "^4.17.21"
+        }
+    }
+    """
+    var parsed_package = loads(package_json)
+    assert_true('"name": "my-package"' in String(parsed_package))
+    assert_true('"express": "^4.17.1"' in String(parsed_package))
+
+
+def test_number_edge_cases():
+    """Test parsing of number edge cases in JSON."""
+    # Integer edge cases
+    assert_equal(String(loads("0")), "0.0")  # Zero
+    assert_equal(
+        String(loads("123456789012345678")), "1.234567890123457e+17"
+    )  # Large integer
+    assert_equal(
+        String(loads("-123456789012345678")), "-1.234567890123457e+17"
+    )  # Large negative
+
+    # Decimal edge cases
+    assert_equal(String(loads("0.0")), "0.0")  # Zero decimal
+    assert_equal(String(loads("0.000000000000001")), "1e-15")  # Small decimal
+    assert_equal(
+        String(loads("-0.000000000000001")), "-1e-15"
+    )  # Small negative decimal
+    assert_equal(
+        String(loads("1.0000000000000001")), "1.0"
+    )  # Decimal with precision loss
+
+    # Scientific notation edge cases
+    assert_equal(String(loads("1e0")), "1.0")  # Power of 0
+    assert_equal(String(loads("1e+0")), "1.0")  # Explicit positive power of 0
+    assert_equal(String(loads("1e-0")), "1.0")  # Negative power of 0
+    assert_equal(String(loads("1.23E+5")), "123000.0")  # Capital E
+
+    # Precision boundary cases
+    assert_equal(
+        String(loads("9007199254740991")), "9007199254740991.0"
+    )  # Max safe integer
+    assert_equal(
+        String(loads("-9007199254740991")), "-9007199254740991.0"
+    )  # Min safe integer
+
+    # Invalid formats should fail
+    with assert_raises():
+        _ = loads("1e")  # Missing exponent
+    with assert_raises():
+        _ = loads("1e+")  # Missing exponent after sign
+    with assert_raises():
+        _ = loads("1.2e-z")  # Invalid character in exponent
+
+
+def test_empty_structures():
+    """Test parsing of empty JSON structures and whitespace handling."""
+    # Empty object with various whitespace
+    assert_equal(String(loads("{}")), "{}")
+    assert_equal(String(loads(" { } ")), "{}")
+    assert_equal(String(loads("\n{\r\n}\t")), "{}")
+
+    # Empty array with various whitespace
+    assert_equal(String(loads("[]")), "[]")
+    assert_equal(String(loads(" [ ] ")), "[]")
+    assert_equal(String(loads("\n[\r\n]\t")), "[]")
+
+    # Nested empty structures
+    assert_equal(String(loads('{"empty_array":[]}')), '{"empty_array": []}')
+    assert_equal(String(loads("[{}]")), "[{}]")
+    assert_equal(String(loads('{"empty_object":{}}')), '{"empty_object": {}}')
+    assert_equal(String(loads("[[]]")), "[[]]")
+
+    # Complex nested empty structures
+    assert_equal(
+        String(loads('{"a":{},"b":[],"c":{"d":[{}]}}')),
+        '{"a": {}, "b": [], "c": {"d": [{}]}}',
+    )
+
+
+def test_object_key_uniqueness():
+    """Test handling of duplicate keys in JSON objects."""
+    # When duplicate keys exist, the last one should win
+    var obj = loads('{"key": "first", "key": "second"}')
+    assert_equal(String(obj), '{"key": "second"}')
+
+    # More complex case with multiple duplicate keys
+    var complex_obj = loads(
+        """
+    {
+        "id": 1,
+        "name": "original",
+        "id": 2,
+        "value": 100,
+        "name": "updated"
+    }
+    """
+    )
+
+    var serialized = String(complex_obj)
+    assert_true('"id": 2' in serialized)
+    assert_true('"name": "updated"' in serialized)
+    assert_true('"value": 100' in serialized)
+    assert_false('"id": 1' in serialized)
+    assert_false('"name": "original"' in serialized)
+
+
+def test_deeply_nested_structures():
+    """Test extremely deeply nested JSON structures."""
+    # Create a deeply nested array structure
+    var deep_array_json = String("[")
+    for _ in range(99):
+        deep_array_json += "["
+    deep_array_json += "42"
+    for _ in range(99):
+        deep_array_json += "]"
+    deep_array_json += "]"
+
+    var deep_array = loads(deep_array_json)
+    # Verify it parsed successfully
+    assert_true("42.0" in String(deep_array))
+
+    # Create a deeply nested object structure
+    var deep_object_json = String("{")
+    for i in range(1, 50):
+        deep_object_json += '"level' + String(i) + '": {'
+    deep_object_json += '"value": 42'
+    for _ in range(50):
+        deep_object_json += "}"
+
+    var deep_object = loads(deep_object_json)
+    # Verify it parsed successfully
+    assert_true("42.0" in String(deep_object))
+
+
+def test_large_structures():
+    """Test parsing of large JSON structures."""
+    # Generate a large array with many elements
+    var large_array_json = String("[")
+    for i in range(1000):
+        if i > 0:
+            large_array_json += ", "
+        large_array_json += String(i)
+    large_array_json += "]"
+
+    var large_array = loads(large_array_json)
+    assert_true("0.0" in String(large_array))
+    assert_true("999.0" in String(large_array))
+
+    # Generate a large object with many key-value pairs
+    var large_object_json = String("{")
+    for i in range(1000):
+        if i > 0:
+            large_object_json += ", "
+        large_object_json += '"key' + String(i) + '": ' + String(i)
+    large_object_json += "}"
+
+    var large_object = loads(large_object_json)
+    assert_true('"key0": 0.0' in String(large_object))
+    assert_true('"key999": 999.0' in String(large_object))
+
+
 def main():
     test_loads()
     test_primitive_serialization()
@@ -245,3 +491,9 @@ def main():
     test_whitespace_handling()
     test_complex_json()
     test_object_and_arrays()
+    test_real_world_json_formats()
+    test_number_edge_cases()
+    test_object_key_uniqueness()
+    test_empty_structures()
+    test_deeply_nested_structures()
+    test_large_structures()
