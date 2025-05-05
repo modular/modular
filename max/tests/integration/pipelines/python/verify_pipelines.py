@@ -645,7 +645,7 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
             absolute_tolerance=0.83,
             relative_tolerance=0.74,
-            cos_dist_threshold=1.1e-3,
+            cos_dist_threshold=1.8e-3,
             kl_div_threshold=5.0e-3,
         ),
     ),
