@@ -147,46 +147,6 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   return executeRequestImpl(request, os, timeout, maxLength);
 }
 
-struct ProgressWrapper {
-  DataProgressBar *progress = nullptr;
-  size_t total = 0;
-  size_t finished = 0;
-
-  void callback(curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal,
-                curl_off_t ulnow) {
-    if (!progress)
-      return;
-    // It's possible that the total will change over time (if e.g. no length is
-    // provided and we have a chunked encoding), so we need to use the grow
-    // call appropriately here.
-    size_t curTotal =
-        static_cast<size_t>(dltotal) + static_cast<size_t>(ultotal);
-    if (curTotal > total && progress->getExpectedWork() < curTotal) {
-      progress->setExpectedWork(curTotal);
-      total = curTotal;
-    }
-    size_t newFinished =
-        static_cast<size_t>(dlnow) + static_cast<size_t>(ulnow);
-    if (newFinished > finished) {
-      if (newFinished > total && progress->getExpectedWork() < newFinished) {
-        progress->setExpectedWork(newFinished);
-        total = newFinished;
-      }
-      progress->addProgress(newFinished - finished);
-      finished = newFinished;
-    }
-  }
-};
-
-static size_t progressCallback(void *clientp, curl_off_t dltotal,
-                               curl_off_t dlnow, curl_off_t ultotal,
-                               curl_off_t ulnow) {
-  ProgressWrapper *wrapper = static_cast<ProgressWrapper *>(clientp);
-  assert(wrapper);
-  wrapper->callback(dltotal, dlnow, ultotal, ulnow);
-  return 0;
-}
-
 HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
                                             raw_ostream &os,
                                             std::chrono::milliseconds timeout,
@@ -283,21 +243,6 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
     CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_NOBODY, 1),
                      "set header to head nobody");
     break;
-  }
-
-  // If there is a progress function, set up the callback appropriately. We
-  // pass the progress object itself as the callback data.
-  ProgressWrapper progress;
-  if (request.progress) {
-    progress.progress = *request.progress;
-    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0),
-                     "set no progress");
-    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_XFERINFODATA,
-                                      static_cast<void *>(&progress)),
-                     "set progress handler");
-    CHECK_CURL_ERROR(
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progressCallback),
-        "set progress callback");
   }
 
   // We can set the read data as a callback.

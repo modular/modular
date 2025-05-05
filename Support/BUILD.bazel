@@ -281,15 +281,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "UI",
-    srcs = glob(["lib/UI/*.cpp"]),
-    hdrs = glob(["include/Support/UI/*.h"]),
-    deps = [
-        ":Base",
-    ],
-)
-
-modular_cc_library(
     name = "HTTP",
     srcs = glob(["lib/HTTP/*.cpp"]),
     hdrs = glob(["include/Support/HTTP/*.h"]),
@@ -297,7 +288,6 @@ modular_cc_library(
         ":Base",
         ":Configuration",
         ":Threading",
-        ":UI",
         ":URI",
         "@curl",
         "@llvm-project//llvm:Support",
