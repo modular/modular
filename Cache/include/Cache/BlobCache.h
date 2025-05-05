@@ -97,28 +97,6 @@ private:
   RCRef<BlobCacheBackend> delegate;
 };
 
-class DylibBackendConfig {
-public:
-  enum ConfigKind {};
-
-  DylibBackendConfig(ConfigKind kind) : kind(kind) {}
-
-  ConfigKind getKind() const { return kind; }
-
-private:
-  const ConfigKind kind;
-};
-
-/// This is the interface for backends that are implemented in a shared library
-/// and opened with dlopen (or other OS equivalent). This is meant to be
-/// generic.
-class DylibBlobCacheBackend : public BlobCacheBackend {
-public:
-  virtual ~DylibBlobCacheBackend() = default;
-
-  virtual ErrorOrSuccess setConfig(const DylibBackendConfig *config) = 0;
-};
-
 /// This is the thing that users will interact with. It holds onto the list of
 /// backends and calls into them, but its primary responsibility is to hash the
 /// keys passed in to normalize the way we try to access the storage backends.
