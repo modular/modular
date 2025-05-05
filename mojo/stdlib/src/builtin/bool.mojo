@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List, Set
-from hashlib._hasher import _Hasher
+from hashlib._hasher import _Hasher, _HashableWithHasher
 
 from python import PythonObject, PythonConvertible, Python
 from python._bindings import ConvertibleFromPython
@@ -117,6 +117,7 @@ struct Bool(
     Representable,
     Stringable,
     Writable,
+    _HashableWithHasher,
 ):
     """The primitive Bool scalar value used in Mojo."""
 

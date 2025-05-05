@@ -137,7 +137,14 @@ struct TensorMapInterleave:
 
 @value
 @register_passable("trivial")
-struct TensorMapSwizzle(Stringable, Writable):
+struct TensorMapSwizzle(
+    Copyable,
+    Movable,
+    EqualityComparable,
+    Intable,
+    Stringable,
+    Writable,
+):
     var _value: Int32
 
     alias SWIZZLE_NONE = Self(0)

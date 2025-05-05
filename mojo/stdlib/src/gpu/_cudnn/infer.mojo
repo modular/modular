@@ -1410,7 +1410,7 @@ fn cudnnSpatialTfSamplerForward(
 
 @value
 @register_passable("trivial")
-struct cudnnNormMode_t:
+struct cudnnNormMode_t(Writable):
     var _value: Int8
     alias CUDNN_NORM_PER_ACTIVATION = Self(0)
     alias CUDNN_NORM_PER_CHANNEL = Self(1)

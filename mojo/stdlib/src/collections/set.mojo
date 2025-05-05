@@ -21,7 +21,7 @@ from .dict import (
 
 
 struct Set[T: KeyElement](
-    Sized, Comparable, Hashable, Boolable, Copyable, Movable
+    Sized, Comparable, Hashable, Boolable, Copyable, Movable, KeyElement
 ):
     """A set data type.
 

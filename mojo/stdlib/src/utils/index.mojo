@@ -21,7 +21,7 @@ from utils import IndexList
 """
 
 from collections.string.string import _calc_initial_buffer_size
-from hashlib._hasher import _Hasher
+from hashlib._hasher import _Hasher, _HashableWithHasher
 from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
@@ -173,6 +173,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Comparable,
     Copyable,
     Movable,
+    _HashableWithHasher,
 ):
     """A base struct that implements size agnostic index functions.
 

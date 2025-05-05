@@ -57,7 +57,7 @@ alias DEFAULT_LEVEL = Level._from_str(
 
 
 @value
-struct Level:
+struct Level(Stringable, Writable):
     """Represents logging severity levels.
 
     Defines the available logging levels in ascending order of severity.

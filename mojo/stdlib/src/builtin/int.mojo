@@ -216,6 +216,7 @@ struct Int(
     Hashable,
     ImplicitlyBoolable,
     Indexer,
+    KeyElement,
     Powable,
     PythonConvertible,
     Representable,

@@ -330,6 +330,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     Stringable,
     Writable,
     EqualityComparable,
+    Intable,
 ):
     """A hierarchical, nested tuple of integers with efficient memory management.
 

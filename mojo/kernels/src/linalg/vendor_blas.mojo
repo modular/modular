@@ -99,7 +99,7 @@ from gpu.host.info import DEFAULT_GPU, H100
 
 @value
 @register_passable("trivial")
-struct Backend:
+struct Backend(Writable):
     var _value: Int32
 
     alias AUTOMATIC = Self(0)

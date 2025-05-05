@@ -86,7 +86,7 @@ alias is_sm90 = ":90" in _accelerator_arch()
 
 @value
 @register_passable("trivial")
-struct MHAConfig:
+struct MHAConfig(Writable):
     var type: DType
 
     # Q, K, V, output should have the same type.
