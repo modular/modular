@@ -282,58 +282,6 @@ ErrorOr<T> toModularErrorOr(llvm::ErrorOr<T> expected) {
   return Error(expected.getError().message());
 }
 
-/// Error component enum and strings
-#define ERROR_COMPONENT_EXPR                                                   \
-  X(Unknown)                                                                   \
-  X(ModularCLI)
-
-enum class CodedErrorComponent {
-#define X(val) val,
-  ERROR_COMPONENT_EXPR
-#undef X
-};
-
-#define X(val) static constexpr const char *CodedErrorComponent##val = #val;
-ERROR_COMPONENT_EXPR
-#undef X
-
-/// CodedErrorOrSuccess enables structured telemetry or logging.
-/// It is assumed the error id is a static string.
-class CodedErrorOrSuccess {
-public:
-  CodedErrorOrSuccess(Error errorValue, CodedErrorComponent component,
-                      const char *errorId)
-      : isSuccess(false), error(std::move(errorValue)), component(component),
-        errorId(errorId) {}
-
-  CodedErrorOrSuccess(CodedErrorOrSuccess &&err)
-      : isSuccess(err.isSuccess), error(std::move(err.error)),
-        component(err.component), errorId(err.errorId) {}
-
-  // This allows initialization from success().
-  /*implicit*/ CodedErrorOrSuccess(SuccessType success) : isSuccess(true) {}
-
-  bool isError() const { return !isSuccess; }
-
-  /// Get the component in which the error occurred as a string
-  const char *getComponentAsString() const;
-
-  /// Get the specific error id as a string
-  const char *getIdAsString() const { return errorId; }
-
-  /// Get the internal Error as a string
-  const char *getErrorAsString() const {
-    assert(!isSuccess && "not an error!");
-    return error->get();
-  }
-
-private:
-  bool isSuccess;
-  std::optional<Error> error;
-  CodedErrorComponent component;
-  const char *errorId;
-};
-
 } // namespace M
 
 #endif // SUPPORT_ERROR_OR_H

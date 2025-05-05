@@ -18,7 +18,6 @@
 namespace M {
 class DType;
 class ErrorOrSuccess;
-class CodedErrorOrSuccess;
 template <typename T>
 class ErrorOr;
 

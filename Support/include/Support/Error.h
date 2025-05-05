@@ -137,7 +137,6 @@ private:
   Error &operator=(const Error &other) = delete; // use copy() explicitly.
   template <typename T>
   friend class M::ErrorOr;
-  friend class M::CodedErrorOrSuccess;
 
   // Stored state.
   const char *value;
