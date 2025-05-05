@@ -66,6 +66,7 @@ struct MMATileBuffers[
     num_k_tiles: Int,
     block_dim: Int,
     block_k_dim: Int,
+    stride: Int,
     warp_tile_mmas: Int,
     mma_warp_dim: Int,
     num_mmas: Int,
@@ -126,7 +127,6 @@ struct MMATileBuffers[
         warp_id: Int,
         warp_idx: Int,
         block_idx: Int,
-        k_dim: Int,
     ):
         """Initialize memory regions for a matrix based on warp coordinates.
 
@@ -134,7 +134,6 @@ struct MMATileBuffers[
             warp_id: The global warp ID (used for warp tiling).
             warp_idx: The warp index within the computation grid (used for MMA operations).
             block_idx: The block index within the computation grid (used for warp tiling).
-            k_dim: The K dimension of the matrix (used for global memory offset calculation).
         """
         self.shared_mem_tile = Self.SharedMemTileType.stack_allocation()
         self.mma_tile = self.shared_mem_tile.tile[mma_warp_dim, block_k_dim](
@@ -144,7 +143,7 @@ struct MMATileBuffers[
         self.register_buffer = Self.RegisterTileType.stack_allocation().split[
             2
         ]()
-        self.global_offset = k_dim * (block_dim * block_idx)
+        self.global_offset = stride * (block_dim * block_idx)
 
     @always_inline
     fn copy_to_shared(self):
@@ -322,17 +321,35 @@ fn gemm_kernel[
     b_type: DType,
     b_layout: Layout,
     transpose_b: Bool,
+    c_layout_int_type: DType,
+    a_layout_int_type: DType,
+    b_layout_int_type: DType,
+    c_linear_idx_type: DType,
+    a_linear_idx_type: DType,
+    b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[
-        c_type, c_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        layout_int_type=c_layout_int_type,
+        linear_idx_type=c_linear_idx_type,
     ],
     a: LayoutTensor[
-        a_type, a_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+        a_type,
+        a_layout,
+        MutableAnyOrigin,
+        layout_int_type=a_layout_int_type,
+        linear_idx_type=a_linear_idx_type,
     ],
     b: LayoutTensor[
-        b_type, b_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+        b_type,
+        b_layout,
+        MutableAnyOrigin,
+        layout_int_type=b_layout_int_type,
+        linear_idx_type=b_linear_idx_type,
     ],
 ):
     """AMD-optimized GEMM kernel for matrix multiplication C = A * B.
@@ -348,6 +365,12 @@ fn gemm_kernel[
         b_type: Data type for the input matrix B.
         b_layout: Memory layout for matrix B.
         transpose_b: Whether matrix B should be transposed.
+        c_layout_int_type: Data type for the integer part of matrix C.
+        a_layout_int_type: Data type for the integer part of matrix A.
+        b_layout_int_type: Data type for the integer part of matrix B.
+        c_linear_idx_type: Data type for the linear index of matrix C.
+        a_linear_idx_type: Data type for the linear index of matrix A.
+        b_linear_idx_type: Data type for the linear index of matrix B.
         config: GEMM configuration parameters (tile sizes, etc.).
         elementwise_lambda_fn: Optional function to apply to output elements.
 
@@ -359,7 +382,6 @@ fn gemm_kernel[
     # Validate input constraints
     constrained[transpose_b, "Transpose b must be true"]()
     constrained[a_type == b_type, "a and b must have same type"]()
-    constrained[b_layout.all_dims_known(), "b_layout must be known"]()
 
     # Type and shape aliases
     alias accum_type = get_accum_type[a_type]()
@@ -410,8 +432,9 @@ fn gemm_kernel[
 
     # Matrix dimensions from input tensors
     var m_dim = a.dim(0)
-    alias n_dim = b.shape[0 if transpose_b else 1]()
-    alias k_dim = b.shape[1 if transpose_b else 0]()
+    var n_dim = b.dim(0 if transpose_b else 1)
+    var k_dim = b.dim(1 if transpose_b else 0)
+    alias stride = b.layout.stride[0].value()
 
     alias num_threads = config.num_threads()
 
@@ -456,13 +479,14 @@ fn gemm_kernel[
         num_k_tiles=k_tiles_count,
         block_dim=block_m,
         block_k_dim=block_k,
+        stride=stride,
         warp_tile_mmas=warp_tile_m_mmas,
         mma_warp_dim=warp_m,
         num_mmas=mmas_per_warp_m,
-    ](warp_id, warp_id // warps_n, block_idx.y, k_dim)
+    ](warp_id, warp_id // warps_n, block_idx.y)
 
     # Global memory iterator for matrix A
-    var a_gmem_iter = a.tile[block_m, k_dim](block_idx.y, 0).tiled_iterator[
+    var a_gmem_iter = a.tile[block_m, stride](block_idx.y, 0).tiled_iterator[
         block_m, block_k, axis=1
     ](0, 0)
 
@@ -476,13 +500,14 @@ fn gemm_kernel[
         num_k_tiles=k_tiles_count,
         block_dim=block_n,
         block_k_dim=block_k,
+        stride=stride,
         warp_tile_mmas=warp_tile_n_mmas,
         mma_warp_dim=warp_n,
         num_mmas=mmas_per_warp_n,
-    ](warp_id, warp_id % warps_n, block_idx.x, k_dim)
+    ](warp_id, warp_id % warps_n, block_idx.x)
 
     # Global memory iterator for matrix B
-    var b_gmem_iter = b.tile[block_n, k_dim](block_idx.x, 0).tiled_iterator[
+    var b_gmem_iter = b.tile[block_n, stride](block_idx.x, 0).tiled_iterator[
         block_n, block_k, axis=1
     ](0, 0)
 

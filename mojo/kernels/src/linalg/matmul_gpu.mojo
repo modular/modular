@@ -612,8 +612,10 @@ fn _matmul_gpu[
                 elif static_N >= 4096 and static_K >= 4096:
                     if m >= 4096:
                         kernel_helper[kernels.mi300x_224x256_1]()
-                    elif m >= 384:
+                    elif m >= 512:
                         kernel_helper[kernels.mi300x_128x128_1]()
+                    elif static_K == 14336:
+                        kernel_helper[kernels.mi300x_64x64_splitk_1]()
                     else:
                         kernel_helper[kernels.mi300x_64x64_1]()
                 else:
@@ -2485,20 +2487,33 @@ fn multistage_gemm[
                 False,
             ]
 
-            ctx.enqueue_function[gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                work_space,
-                runtime_config.num_k_partitions,
-                UnsafePointer[Int32](),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
-                ),
-            )
+            @parameter
+            if has_amd_gpu_accelerator():
+                ctx.enqueue_function[gemm_kernel_type](
+                    tensor_c,
+                    tensor_a,
+                    tensor_b,
+                    work_space,
+                    runtime_config.num_k_partitions,
+                    UnsafePointer[Int32](),
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                )
+            else:
+                ctx.enqueue_function[gemm_kernel_type](
+                    tensor_c,
+                    tensor_a,
+                    tensor_b,
+                    work_space,
+                    runtime_config.num_k_partitions,
+                    UnsafePointer[Int32](),
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        config.shared_mem_usage()
+                    ),
+                )
 
             split_k_reduce[
                 c_type,
@@ -2522,8 +2537,14 @@ fn multistage_gemm[
             b_type,
             tensor_b.layout,
             transpose_b,
-            config,
-            elementwise_lambda_fn,
+            tensor_c.layout_int_type,
+            tensor_a.layout_int_type,
+            tensor_b.layout_int_type,
+            tensor_c.linear_idx_type,
+            tensor_a.linear_idx_type,
+            tensor_b.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[gemm_kernel_type](
             tensor_c,
