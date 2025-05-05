@@ -261,6 +261,7 @@ from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
+from layout.layout_tensor import Layout, LayoutTensor
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -7043,7 +7044,7 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
         kv_collection,
         layer_idx,
         managed_tensor_slice_to_ndbuffer(mask),
-        managed_tensor_slice_to_ndbuffer(valid_lengths),
+        valid_lengths,
         scale,
         managed_tensor_slice_to_ndbuffer(output),
         context,
@@ -7097,7 +7098,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
         managed_tensor_slice_to_ndbuffer(q),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer(valid_lengths),
+        valid_lengths,
         scale,
         managed_tensor_slice_to_ndbuffer(output),
         context,
@@ -7144,7 +7145,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[target](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7168,7 +7169,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
 ) raises:
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[target](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7254,7 +7255,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
 ) raises:
     generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7317,7 +7318,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged_kernel
         local_window_size, target
     ](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7381,7 +7382,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged_kernel_api[
         local_window_size=local_window_size, target=target
     ](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7445,7 +7446,7 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged
         local_window_size, target
     ](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7509,7 +7510,7 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged_kern
         local_window_size=local_window_size, target=target
     ](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        input_row_offsets,
         kv_collection,
         layer_idx,
         scale,
@@ -7881,7 +7882,7 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
 ) raises:
     generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
         managed_tensor_slice_to_ndbuffer(q),
-        managed_tensor_slice_to_ndbuffer(q_input_row_offsets),
+        q_input_row_offsets,
         managed_tensor_slice_to_ndbuffer(q_max_seq_len),
         managed_tensor_slice_to_ndbuffer(kv_input_row_offsets),
         kv_collection,
