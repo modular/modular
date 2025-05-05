@@ -966,6 +966,12 @@ def test_replace():
         StringSlice("hello world hello world").replace("world", "mojo"),
         "hello mojo hello mojo",
     )
+    assert_equal(
+        StringSlice("this is a test").replace(
+            "this", "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz"
+        ),
+        "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz is a test",
+    )
 
 
 def test_join():
