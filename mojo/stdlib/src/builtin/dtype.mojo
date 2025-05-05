@@ -49,40 +49,92 @@ struct DType(
         __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
     )
     """Represents an invalid or unknown data type."""
+
     alias bool = DType(__mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`)
     """Represents a boolean data type."""
-    alias int8 = DType(__mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`)
-    """Represents a signed integer type whose bitwidth is 8."""
+
+    alias index = DType(__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`)
+    """Represents an integral type whose bitwidth is the maximum integral value
+    on the system."""
+
     alias uint8 = DType(__mlir_attr.`#kgen.dtype.constant<ui8> : !kgen.dtype`)
     """Represents an unsigned integer type whose bitwidth is 8."""
-    alias int16 = DType(__mlir_attr.`#kgen.dtype.constant<si16> : !kgen.dtype`)
-    """Represents a signed integer type whose bitwidth is 16."""
+    alias int8 = DType(__mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`)
+    """Represents a signed integer type whose bitwidth is 8."""
     alias uint16 = DType(__mlir_attr.`#kgen.dtype.constant<ui16> : !kgen.dtype`)
     """Represents an unsigned integer type whose bitwidth is 16."""
-    alias int32 = DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
-    """Represents a signed integer type whose bitwidth is 32."""
+    alias int16 = DType(__mlir_attr.`#kgen.dtype.constant<si16> : !kgen.dtype`)
+    """Represents a signed integer type whose bitwidth is 16."""
     alias uint32 = DType(__mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`)
     """Represents an unsigned integer type whose bitwidth is 32."""
-    alias int64 = DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
-    """Represents a signed integer type whose bitwidth is 64."""
+    alias int32 = DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
+    """Represents a signed integer type whose bitwidth is 32."""
     alias uint64 = DType(__mlir_attr.`#kgen.dtype.constant<ui64> : !kgen.dtype`)
     """Represents an unsigned integer type whose bitwidth is 64."""
-    alias int128 = DType(
-        __mlir_attr.`#kgen.dtype.constant<si128> : !kgen.dtype`
-    )
-    """Represents a signed integer type whose bitwidth is 128."""
+    alias int64 = DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
+    """Represents a signed integer type whose bitwidth is 64."""
     alias uint128 = DType(
         __mlir_attr.`#kgen.dtype.constant<ui128> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 128."""
-    alias int256 = DType(
-        __mlir_attr.`#kgen.dtype.constant<si256> : !kgen.dtype`
+    alias int128 = DType(
+        __mlir_attr.`#kgen.dtype.constant<si128> : !kgen.dtype`
     )
-    """Represents a signed integer type whose bitwidth is 256."""
+    """Represents a signed integer type whose bitwidth is 128."""
     alias uint256 = DType(
         __mlir_attr.`#kgen.dtype.constant<ui256> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 256."""
+    alias int256 = DType(
+        __mlir_attr.`#kgen.dtype.constant<si256> : !kgen.dtype`
+    )
+    """Represents a signed integer type whose bitwidth is 256."""
+
+    alias float8_e3m4 = DType(
+        __mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
+    )
+    """Represents an 8-bit e3m4 floating point format, encoded as `seeemmmm`:
+    - (s)ign: 1 bit
+    - (e)xponent: 3 bits
+    - (m)antissa: 4 bits
+    - exponent bias: 3
+    - nan: 00111111, 11111111
+    - -0: 10000000
+    - fn: finite (no inf or -inf encodings)
+    """
+    alias float8_e4m3fn = DType(
+        __mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
+    )
+    """Represents the E4M3 floating point format defined in the [OFP8
+    standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
+
+    This type is named differently across libraries and vendors, for example:
+    - Mojo, PyTorch, JAX, and LLVM refer to it as `e4m3fn`.
+    - OCP, NVIDIA CUDA, and AMD ROCm refer to it as `e4m3`.
+
+    In these contexts, they are all referring to the same finite type specified
+    in the OFP8 standard above, encoded as `seeeemmm`:
+    - (s)ign: 1 bit
+    - (e)xponent: 4 bits
+    - (m)antissa: 3 bits
+    - exponent bias: 7
+    - nan: 01111111, 11111111
+    - -0: 10000000
+    - fn: finite (no inf or -inf encodings)
+    """
+    alias float8_e4m3fnuz = DType(
+        __mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
+    )
+    """Represents an 8-bit e4m3fnuz floating point format, encoded as
+    `seeeemmm`:
+    - (s)ign: 1 bit
+    - (e)xponent: 4 bits
+    - (m)antissa: 3 bits
+    - exponent bias: 8
+    - nan: 10000000
+    - fn: finite (no inf or -inf encodings)
+    - uz: unsigned zero (no -0 encoding)
+    """
     alias float8_e5m2 = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
@@ -110,57 +162,14 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
-    alias float8_e4m3fn = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
-    )
-    """Represents the E4M3 floating point format defined in the [OFP8
-    standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
-    This type is named differently across libraries and vendors, for example:
-    - Mojo, PyTorch, JAX, and LLVM refer to it as `e4m3fn`.
-    - OCP, NVIDIA CUDA, and AMD ROCm refer to it as `e4m3`.
-
-    In these contexts, they are all referring to the same finite type specified
-    in the OFP8 standard above, encoded as `seeeemmm`:
-    - (s)ign: 1 bit
-    - (e)xponent: 4 bits
-    - (m)antissa: 3 bits
-    - exponent bias: 7
-    - nan: 01111111, 11111111
-    - -0: 10000000
-    - fn: finite (no inf or -inf encodings)
-    """
-    alias float8_e3m4 = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
-    )
-    """Represents an 8-bit e3m4 floating point format, encoded as `seeemmmm`:
-    - (s)ign: 1 bit
-    - (e)xponent: 3 bits
-    - (m)antissa: 4 bits
-    - exponent bias: 3
-    - nan: 00111111, 11111111
-    - -0: 10000000
-    - fn: finite (no inf or -inf encodings)
-    """
-    alias float8_e4m3fnuz = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
-    )
-    """Represents an 8-bit e4m3fnuz floating point format, encoded as
-    `seeeemmm`:
-    - (s)ign: 1 bit
-    - (e)xponent: 4 bits
-    - (m)antissa: 3 bits
-    - exponent bias: 8
-    - nan: 10000000
-    - fn: finite (no inf or -inf encodings)
-    - uz: unsigned zero (no -0 encoding)
-    """
     alias bfloat16 = DType(
         __mlir_attr.`#kgen.dtype.constant<bf16> : !kgen.dtype`
     )
     """Represents a brain floating point value whose bitwidth is 16."""
     alias float16 = DType(__mlir_attr.`#kgen.dtype.constant<f16> : !kgen.dtype`)
     """Represents an IEEE754-2008 `binary16` floating point value."""
+
     alias float32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
     """Represents an IEEE754-2008 `binary32` floating point value."""
     alias tensor_float32 = DType(
@@ -170,11 +179,9 @@ struct DType(
     Cores, with the same range as float32 and reduced precision (>=10 bits).
     Note that this dtype is only available on NVIDIA GPUs.
     """
+
     alias float64 = DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
     """Represents an IEEE754-2008 `binary64` floating point value."""
-    alias index = DType(__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`)
-    """Represents an integral type whose bitwidth is the maximum integral value
-    on the system."""
 
     @always_inline
     fn copy(self) -> Self:
@@ -206,54 +213,56 @@ struct DType(
             return Self._from_str(String(str).removeprefix("DType."))
         elif str == "bool":
             return DType.bool
-        elif str == "int8":
-            return DType.int8
-        elif str == "uint8":
-            return DType.uint8
-        elif str == "int16":
-            return DType.int16
-        elif str == "uint16":
-            return DType.uint16
-        elif str == "int32":
-            return DType.int32
-        elif str == "uint32":
-            return DType.uint32
-        elif str == "int64":
-            return DType.int64
-        elif str == "uint64":
-            return DType.uint64
-        elif str == "int128":
-            return DType.int128
-        elif str == "uint128":
-            return DType.uint128
-        elif str == "int256":
-            return DType.int256
-        elif str == "uint256":
-            return DType.uint256
         elif str == "index":
             return DType.index
+
+        elif str == "uint8":
+            return DType.uint8
+        elif str == "int8":
+            return DType.int8
+        elif str == "uint16":
+            return DType.uint16
+        elif str == "int16":
+            return DType.int16
+        elif str == "uint32":
+            return DType.uint32
+        elif str == "int32":
+            return DType.int32
+        elif str == "uint64":
+            return DType.uint64
+        elif str == "int64":
+            return DType.int64
+        elif str == "uint128":
+            return DType.uint128
+        elif str == "int128":
+            return DType.int128
+        elif str == "uint256":
+            return DType.uint256
+        elif str == "int256":
+            return DType.int256
+
         elif str == "float8_e3m4":
             return DType.float8_e3m4
-        elif str == "float8_e5m2":
-            return DType.float8_e5m2
-        elif str == "float8_e5m2fnuz":
-            return DType.float8_e5m2fnuz
         elif str == "float8_e4m3fn":
             return DType.float8_e4m3fn
         elif str == "float8_e4m3fnuz":
             return DType.float8_e4m3fnuz
+        elif str == "float8_e5m2":
+            return DType.float8_e5m2
+        elif str == "float8_e5m2fnuz":
+            return DType.float8_e5m2fnuz
+
         elif str == "bfloat16":
             return DType.bfloat16
         elif str == "float16":
             return DType.float16
         elif str == "float32":
             return DType.float32
-        elif str == "float64":
-            return DType.float64
         elif str == "tensor_float32":
             return DType.tensor_float32
-        elif str == "invalid":
-            return DType.invalid
+        elif str == "float64":
+            return DType.float64
+
         else:
             return DType.invalid
 
@@ -279,55 +288,59 @@ struct DType(
             writer: The object to write to.
         """
 
-        if self == DType.bool:
+        if self is DType.bool:
             return writer.write("bool")
-        elif self == DType.int8:
-            return writer.write("int8")
-        elif self == DType.uint8:
-            return writer.write("uint8")
-        elif self == DType.int16:
-            return writer.write("int16")
-        elif self == DType.uint16:
-            return writer.write("uint16")
-        elif self == DType.int32:
-            return writer.write("int32")
-        elif self == DType.uint32:
-            return writer.write("uint32")
-        elif self == DType.int64:
-            return writer.write("int64")
-        elif self == DType.uint64:
-            return writer.write("uint64")
-        elif self == DType.int128:
-            return writer.write("int128")
-        elif self == DType.uint128:
-            return writer.write("uint128")
-        elif self == DType.int256:
-            return writer.write("int256")
-        elif self == DType.uint256:
-            return writer.write("uint256")
-        elif self == DType.index:
+        elif self is DType.index:
             return writer.write("index")
-        elif self == DType.float8_e3m4:
+
+        elif self is DType.uint8:
+            return writer.write("uint8")
+        elif self is DType.int8:
+            return writer.write("int8")
+        elif self is DType.uint16:
+            return writer.write("uint16")
+        elif self is DType.int16:
+            return writer.write("int16")
+        elif self is DType.uint32:
+            return writer.write("uint32")
+        elif self is DType.int32:
+            return writer.write("int32")
+        elif self is DType.uint64:
+            return writer.write("uint64")
+        elif self is DType.int64:
+            return writer.write("int64")
+        elif self is DType.uint128:
+            return writer.write("uint128")
+        elif self is DType.int128:
+            return writer.write("int128")
+        elif self is DType.uint256:
+            return writer.write("uint256")
+        elif self is DType.int256:
+            return writer.write("int256")
+
+        elif self is DType.float8_e3m4:
             return writer.write("float8_e3m4")
-        elif self == DType.float8_e5m2:
+        elif self is DType.float8_e5m2:
             return writer.write("float8_e5m2")
-        elif self == DType.float8_e5m2fnuz:
+        elif self is DType.float8_e5m2fnuz:
             return writer.write("float8_e5m2fnuz")
-        elif self == DType.float8_e4m3fn:
+        elif self is DType.float8_e4m3fn:
             return writer.write("float8_e4m3fn")
-        elif self == DType.float8_e4m3fnuz:
+        elif self is DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
-        elif self == DType.bfloat16:
+
+        elif self is DType.bfloat16:
             return writer.write("bfloat16")
-        elif self == DType.float16:
+        elif self is DType.float16:
             return writer.write("float16")
-        elif self == DType.float32:
+        elif self is DType.float32:
             return writer.write("float32")
-        elif self == DType.tensor_float32:
+        elif self is DType.tensor_float32:
             return writer.write("tensor_float32")
-        elif self == DType.float64:
+        elif self is DType.float64:
             return writer.write("float64")
-        elif self == DType.invalid:
+
+        elif self is DType.invalid:
             return writer.write("invalid")
 
         return writer.write("<<unknown>>")
@@ -526,11 +539,11 @@ struct DType(
         """
 
         return self in (
-            DType.float8_e5m2,
-            DType.float8_e4m3fn,
-            DType.float8_e5m2fnuz,
-            DType.float8_e4m3fnuz,
             DType.float8_e3m4,
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
         )
 
     @always_inline("nodebug")
@@ -581,30 +594,33 @@ struct DType(
                 )
             )
 
-        if self == DType.bool:
+        if self is DType.bool:
             return sizeof[DType.bool]()
-        if self == DType.index:
+        if self is DType.index:
             return sizeof[DType.index]()
-        if self == DType.float8_e5m2:
-            return sizeof[DType.float8_e5m2]()
-        if self == DType.float8_e5m2fnuz:
-            return sizeof[DType.float8_e5m2fnuz]()
-        if self == DType.float8_e4m3fn:
-            return sizeof[DType.float8_e4m3fn]()
-        if self == DType.float8_e4m3fnuz:
-            return sizeof[DType.float8_e4m3fnuz]()
-        if self == DType.float8_e3m4:
+
+        if self is DType.float8_e3m4:
             return sizeof[DType.float8_e3m4]()
-        if self == DType.bfloat16:
+        if self is DType.float8_e4m3fn:
+            return sizeof[DType.float8_e4m3fn]()
+        if self is DType.float8_e4m3fnuz:
+            return sizeof[DType.float8_e4m3fnuz]()
+        if self is DType.float8_e5m2:
+            return sizeof[DType.float8_e5m2]()
+        if self is DType.float8_e5m2fnuz:
+            return sizeof[DType.float8_e5m2fnuz]()
+
+        if self is DType.bfloat16:
             return sizeof[DType.bfloat16]()
-        if self == DType.float16:
+        if self is DType.float16:
             return sizeof[DType.float16]()
-        if self == DType.float32:
+        if self is DType.float32:
             return sizeof[DType.float32]()
-        if self == DType.tensor_float32:
+        if self is DType.tensor_float32:
             return sizeof[DType.tensor_float32]()
-        if self == DType.float64:
+        if self is DType.float64:
             return sizeof[DType.float64]()
+
         return sizeof[DType.invalid]()
 
     @always_inline
@@ -632,7 +648,9 @@ struct DType(
         Parameters:
             func: A parametrized on dtype function to dispatch.
         """
-        if self is DType.uint8:
+        if self is DType.index:
+            func[DType.index]()
+        elif self is DType.uint8:
             func[DType.uint8]()
         elif self is DType.int8:
             func[DType.int8]()
@@ -648,8 +666,14 @@ struct DType(
             func[DType.uint64]()
         elif self is DType.int64:
             func[DType.int64]()
-        elif self is DType.index:
-            func[DType.index]()
+        elif self is DType.uint128:
+            func[DType.int128]()
+        elif self is DType.int128:
+            func[DType.int128]()
+        elif self is DType.uint256:
+            func[DType.uint256]()
+        elif self is DType.int256:
+            func[DType.int256]()
         else:
             raise Error("only integral types are supported")
 
@@ -676,10 +700,15 @@ struct DType(
         #     func[DType.bfloat16]()
         elif self is DType.float32:
             func[DType.float32]()
+        elif self is DType.tensor_float32:
+            func[DType.tensor_float32]()
         elif self is DType.float64:
             func[DType.float64]()
         else:
-            raise Error("only floating point types are supported")
+            raise Error(
+                "only floating point types with bitwidth in [16, 32, 64] are"
+                " supported"
+            )
 
     @always_inline
     fn _dispatch_bitwidth[
@@ -706,7 +735,6 @@ struct DType(
                 "bitwidth_dispatch only supports types with bitwidth [8, 16,"
                 " 32, 64]"
             )
-        return
 
     @always_inline
     fn _dispatch_custom[
@@ -724,7 +752,7 @@ struct DType(
         @parameter
         for idx in range(len(dtype_var)):
             alias dtype = dtype_var[idx]
-            if self == dtype:
+            if self is dtype:
                 return func[dtype]()
 
         raise Error(
@@ -891,7 +919,6 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
     elif dtype is DType.float32 or dtype is DType.tensor_float32:
         return "8"
     else:
-        constrained[dtype is DType.float64, "unknown floating point type"]()
         return "16"
 
 
@@ -904,12 +931,7 @@ fn _scientific_notation_digits[dtype: DType]() -> StaticString:
 @always_inline
 fn _int_type_of_width[width: Int]() -> DType:
     constrained[
-        width == 8
-        or width == 16
-        or width == 32
-        or width == 64
-        or width == 128
-        or width == 256,
+        width in (8, 16, 32, 64, 128, 256),
         "width must be either 8, 16, 32, 64, 128, or 256",
     ]()
 
@@ -937,12 +959,7 @@ fn _int_type_of_width[width: Int]() -> DType:
 @always_inline
 fn _uint_type_of_width[width: Int]() -> DType:
     constrained[
-        width == 8
-        or width == 16
-        or width == 32
-        or width == 64
-        or width == 128
-        or width == 256,
+        width in (8, 16, 32, 64, 128, 256),
         "width must be either 8, 16, 32, 64, 128, or 256",
     ]()
 
@@ -982,6 +999,9 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     @parameter
     if dtype is DType.bool:
         return _index_printf_format()
+    elif dtype is DType.index:
+        return _index_printf_format()
+
     elif dtype is DType.uint8:
         return "%hhu"
     elif dtype is DType.int8:
@@ -1008,8 +1028,6 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
             return "%llu"
         else:
             return "%lu"
-    elif dtype is DType.index:
-        return _index_printf_format()
 
     elif dtype.is_floating_point():
         return "%.17g"
