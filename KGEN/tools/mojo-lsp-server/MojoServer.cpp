@@ -23,6 +23,7 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/MojoTooling/REPLPythonExprUtils.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Config.h"
@@ -41,7 +42,6 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include <KGEN/Support/CompilerProfiling.h>
 #include <optional>
 
 namespace lsp = mlir::lsp;

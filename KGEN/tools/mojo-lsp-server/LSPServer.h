@@ -7,9 +7,9 @@
 #ifndef KGEN_LIB_MOJO_LSP_LSPSERVER_H
 #define KGEN_LIB_MOJO_LSP_LSPSERVER_H
 
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Support/LogicalResult.h"
-#include <KGEN/Support/CompilerProfiling.h>
 #include <memory>
 
 namespace mlir::lsp {

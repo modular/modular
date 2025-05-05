@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/Runtime/Runtime.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Debugging.h"
 #include "LSPServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
@@ -14,7 +15,6 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 
-#include <KGEN/Support/CompilerProfiling.h>
 #include <unistd.h>
 
 using namespace M;

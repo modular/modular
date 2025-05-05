@@ -15,7 +15,7 @@
 #define SUPPORT_COMPILER_DIAGS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
-#include <Support/LogicalResult.h>
+#include "Support/LogicalResult.h"
 #include <functional>
 #include <string>
 #include <vector>

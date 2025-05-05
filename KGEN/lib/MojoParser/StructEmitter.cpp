@@ -12,6 +12,7 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -20,7 +21,6 @@
 #include "Traits.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/StringExtras.h"
-#include <KGEN/KGENDialect/ParameterReplacer.h>
 
 using namespace M;
 using namespace M::KGEN;

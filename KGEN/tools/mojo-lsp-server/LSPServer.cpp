@@ -7,6 +7,7 @@
 #include "LSPServer.h"
 #include "../common/lsp-protocol/Protocol.h"
 #include "../common/lsp-protocol/SemanticTokens.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "MojoServer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Transport.h"
@@ -17,7 +18,6 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
-#include <KGEN/Support/CompilerProfiling.h>
 #include <optional>
 
 #define DEBUG_TYPE "mojo-lsp-server"
