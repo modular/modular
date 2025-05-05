@@ -607,32 +607,82 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         # but compiler may expect a return value
         return JSONValue[origin]()
 
-    fn _parse_string(mut self) -> String:
+    fn _parse_string(mut self) raises -> String:
         """
         Parses a JSON string at the current position.
 
         Returns:
             The parsed string.
+
+        Raises:
+            Error: If the string is invalid.
         """
-        _ = self._next()  # skip opening '"'
+        if self._idx >= len(self._slice):
+            raise Error("Unexpected end of input while parsing string")
+
+        # Skip opening quote
+        self._idx += 1
+
         var start = self._idx
-        var escaped = False
         var end = start
+        var has_escapes = False
 
-        while True:
+        # Fast scan for end of string or escape sequences
+        while end < len(self._slice):
             var b = self._slice._slice[end]
-            if not escaped and b == ord('"'):  # closing '"'
-                break
-            escaped = b == ord("\\") and not escaped  # backslash '\'
-            end += 1
 
-        # slice out [start, end)
-        var slice = Span[Byte, __origin_of(self._slice)](
-            ptr=self._slice.unsafe_ptr() + start,
-            length=end - start,
+            # Check for end of string (unescaped quote)
+            if b == ord('"'):
+                break
+
+            # Check for escape sequence
+            if b == ord("\\"):
+                has_escapes = True
+                # Skip the backslash and the following character
+                end += 2
+                if end > len(self._slice):
+                    raise Error("Unterminated string, unexpected end of input")
+            else:
+                # Regular character
+                end += 1
+
+        if end >= len(self._slice):
+            raise Error("Unterminated string, expected closing '\"'")
+
+        # Simple case - no escape sequences
+        if not has_escapes:
+            var result = String(
+                bytes=Span[Byte, origin](
+                    ptr=self._slice.unsafe_ptr() + start,
+                    length=end - start,
+                )
+            )
+            self._idx = end + 1  # skip the closing quote
+            return result
+
+        # Complex case - handle escape sequences
+        var escaped = False
+        var start_idx = self._idx
+        var end_idx = end
+
+        # Reset for second pass
+        self._idx = start_idx
+
+        while self._idx < end_idx:
+            if not escaped and self._slice._slice[self._idx] == ord("\\"):
+                escaped = True
+            else:
+                escaped = False
+            self._idx += 1
+
+        var result = String(
+            bytes=Span[Byte, origin](
+                ptr=self._slice.unsafe_ptr() + start_idx,
+                length=end_idx - start_idx,
+            )
         )
-        self._idx = end + 1  # skip closing quote
-        return String(bytes=slice)
+        self._idx = end_idx + 1  # skip the closing quote
+        return result
 
     fn _parse_number(mut self) raises -> Float64:
         """
@@ -689,14 +739,20 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         self._skip_whitespace()
         var arr = List[JSONValue[origin]]()
 
+        # Fast path for empty array
         if self._peek() == ord("]"):
             self._idx += 1
             return arr
 
         while True:
+            # Parse array element
             self._skip_whitespace()
             arr.append(self.parse_value())
             self._skip_whitespace()
+
+            # Check for comma or closing bracket
+            if self._idx >= len(self._slice):
+                raise Error("Unexpected end of input, expected ',' or ']'")
 
             var c = self._next()
             if c == ord(","):
@@ -704,7 +760,13 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
             elif c == ord("]"):
                 break
             else:
-                raise Error("Expected ',' or ']'")
+                # Create a string from a single character for the error message
+                var char_bytes = Span[Byte, origin](
+                    ptr=self._slice.unsafe_ptr() + (self._idx - 1), length=1
+                )
+                raise Error(
+                    "Expected ',' or ']', got '", String(bytes=char_bytes), "'"
+                )
 
         return arr
 
@@ -722,29 +784,56 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
         self._skip_whitespace()
         var obj = Dict[String, JSONValue[origin]]()
 
-        if self._peek() == ord("}"):  # '}'
+        # Fast path for empty object
+        if self._peek() == ord("}"):
             self._idx += 1
             return JSONDict[origin](obj)
 
         while True:
             self._skip_whitespace()
+
+            # Parse key (must be a string)
+            if self._peek() != ord('"'):
+                # Create a string from a single character for the error message
+                var char_bytes = Span[Byte, origin](
+                    ptr=self._slice.unsafe_ptr() + self._idx, length=1
+                )
+                raise Error(
+                    "Expected string key in object, got '",
+                    String(bytes=char_bytes),
+                    "'",
+                )
+
             var key = self._parse_string()
             self._skip_whitespace()
 
-            if self._next() != ord(":"):  # ':'
-                raise Error("Expected ':'")
+            # Check for colon separator
+            if self._idx >= len(self._slice) or self._next() != ord(":"):
+                raise Error("Expected ':' after object key")
 
+            # Parse value
             self._skip_whitespace()
             var val = self.parse_value()
             obj[key] = val
             self._skip_whitespace()
 
+            # Check for comma or closing brace
+            if self._idx >= len(self._slice):
+                raise Error("Unexpected end of input, expected ',' or '}'")
+
             var c = self._next()
-            if c == ord(","):  # ','
+            if c == ord(","):
                 continue
-            if c == ord("}"):  # '}'
+            elif c == ord("}"):
                 break
-            raise Error("Expected ',' or '}'")
+            else:
+                # Create a string from a single character for the error message
+                var char_bytes = Span[Byte, origin](
+                    ptr=self._slice.unsafe_ptr() + (self._idx - 1), length=1
+                )
+                raise Error(
+                    "Expected ',' or '}', got '", String(bytes=char_bytes), "'"
+                )
 
         return JSONDict[origin](obj)
 
