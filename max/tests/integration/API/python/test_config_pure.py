@@ -22,8 +22,6 @@ from test_common.mocks import (
 from test_common.pipeline_model_dummy import DUMMY_ARCH
 from test_common.registry import prepare_registry
 
-LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
-
 
 @prepare_registry
 @mock_estimate_memory_footprint
@@ -45,15 +43,18 @@ def test_config_init__raises_with_no_model_path():
 @mock_pipeline_config_hf_dependencies
 def test_config_post_init__with_weight_path_but_no_model_path():
     config = PipelineConfig(
-        trust_remote_code=True,
         weight_path=[
-            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
+            Path(
+                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+            )
         ],
     )
 
-    assert config.model_config.model_path == "modularai/replit-code-1.5"
+    assert (
+        config.model_config.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
+    )
     assert config.model_config.weight_path == [
-        Path("replit-code-v1_5-3b-f32.gguf")
+        Path("llama-3.1-8b-instruct-q4_0.gguf")
     ]
 
 
@@ -61,7 +62,7 @@ def test_config_post_init__with_weight_path_but_no_model_path():
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
         weight_path="file.gguf",
     )
 
@@ -73,10 +74,12 @@ def test_config_init__reformats_with_str_weights_path():
 @mock_pipeline_config_hf_dependencies
 def test_validate_model_path__correct_repo_id_provided():
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
 
-    assert config.model_config.model_path == "modularai/llama-3.1"
+    assert (
+        config.model_config.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
+    )
 
 
 @pytest.mark.skip("TODO(AITLIB-349): Fix this test")
@@ -106,7 +109,6 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
 
     config = PipelineConfig(
         model_path=replit_135m_local_path,
-        trust_remote_code=True,
         max_batch_size=1,
         max_length=1,
     )
@@ -147,7 +149,7 @@ class LimitedPickler(pickle.Unpickler):
 @mock_pipeline_config_hf_dependencies
 def test_config_is_picklable(tmp_path):
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
 
     pickle_path = tmp_path / "config.pkl"
