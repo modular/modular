@@ -12,7 +12,7 @@ lit_tests(
         "@mojo//:nn",
         "//Kernels/mojo/flash_attention3",
         "@mojo//:kv_cache",
-        "//Kernels/mojo/internal_utils",
+        "//open-source/max/mojo/kernels/src/internal_utils",
         "@mojo//:stdlib",
     ],
     tags = [

@@ -18,7 +18,7 @@ lit_tests(
     mojo_deps = [
         "@mojo//:layout",
         "@mojo//:nn",
-        "//Kernels/mojo/internal_utils",
+        "//open-source/max/mojo/kernels/src/internal_utils",
         "@mojo//:stdlib",
     ],
     tools = [
@@ -39,7 +39,7 @@ lit_tests(
     mojo_deps = [
         "@mojo//:layout",
         "@mojo//:nn",
-        "//Kernels/mojo/internal_utils",
+        "//open-source/max/mojo/kernels/src/internal_utils",
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],
@@ -58,7 +58,7 @@ lit_tests(
         "@mojo//:nn",
         "//Kernels/mojo/flash_attention3",
         "@mojo//:kv_cache",
-        "//Kernels/mojo/internal_utils",
+        "//open-source/max/mojo/kernels/src/internal_utils",
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],

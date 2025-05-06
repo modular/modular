@@ -10,7 +10,7 @@ lit_tests(
     mojo_deps = [
         "@mojo//:stdlib",
         "@mojo//:nn",
-        "//Kernels/mojo/internal_utils",
+        "//open-source/max/mojo/kernels/src/internal_utils",
         "//Kernels/test/testdata",
     ],
     tools = [

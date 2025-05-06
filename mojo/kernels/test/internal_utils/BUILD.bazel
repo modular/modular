@@ -1,14 +1,12 @@
 load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
-    name = "lit",  # NOTE: Name must stay as this to load lit.local.cfg
-    size = "large",
+    name = "lit",
     srcs = glob(["**/*.mojo"]),
-    data = ["lit.local.cfg"],
     mojo_deps = [
         "@mojo//:stdlib",
-        "@mojo//:linalg",
         "//open-source/max/mojo/kernels/src/internal_utils",
+        "@mojo//:layout",
     ],
     tools = [
         "//KGEN/tools/mojo",
