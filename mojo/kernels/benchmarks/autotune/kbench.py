@@ -518,6 +518,8 @@ class Spec:
         for p in self.params:
             p.extend(extra_params)
 
+        if not self.params:
+            self.params = [extra_params]
         self.setup_mesh()
 
     def dump_yaml(self, out_path: Path):
@@ -921,25 +923,30 @@ def run(
     output_path=None,
     mode=KBENCH_MODE.RUN,
     param_list=None,
-    shape=None,
+    shape: SpecInstance | None = None,
     filter_list=None,
-    build_opts=[],
-    exec_prefix=[],
-    exec_suffix=[],
-    dryrun=False,
-    obj_cache: KbenchCache = None,
+    build_opts: list[str] = [],
+    exec_prefix: list[str] = [],
+    exec_suffix: list[str] = [],
+    dryrun: bool = False,
+    obj_cache: KbenchCache | None = None,
     verbose=False,
     tmp_path=None,
 ):
-    # Load specs from a list of YAML files and join them in 'spec'.
-    assert len(yaml_path_list), "There should be at least 1 YAML as input."
-    spec = Spec.load_yaml_list(yaml_path_list)
+    if yaml_path_list:
+        # Load specs from a list of YAML files and join them in 'spec'.
+        assert len(yaml_path_list), "There should be at least 1 YAML as input."
+        spec = Spec.load_yaml_list(yaml_path_list)
+    else:
+        # Just load an empty Spec with identical name and file as shape
+        spec = Spec(shape.name, shape.file)
+
+    if shape:
+        spec.extend_shape_params(shape.params)
 
     # Expand with CLI params
     if param_list:
         spec.extend_params(param_list)
-    if shape:
-        spec.extend_shape_params(shape)
 
     # Apply the filters, if any.
     if filter_list:
@@ -1367,7 +1374,8 @@ def cli(
     elif tune:
         mode = KBENCH_MODE.TUNE
 
-    check_gpu_clock()
+    if not force:
+        check_gpu_clock()
 
     obj_cache = KbenchCache()
 
@@ -1409,25 +1417,25 @@ def cli(
                 ["--bench-max-iters=0", "--bench-max-batch-size=1"]
             )
 
-    if files:
-        for i, shape in enumerate(shape_list):
-            run(
-                yaml_path_list=FileGlobArg(files),
-                output_path=shape_path_list[i],
-                mode=mode,
-                param_list=param,
-                shape=shape.params,
-                filter_list=filter,
-                build_opts=build_opts,
-                exec_prefix=exec_prefix,
-                exec_suffix=exec_suffix,
-                dryrun=dryrun,
-                obj_cache=obj_cache,
-                verbose=verbose,
-            )
-            if obj_cache.is_active:
-                obj_cache.dump()
-        logging.info(f"Number of shapes: {len(shape_list)}")
+    files = FileGlobArg(files) if files else []
+    for i, shape in enumerate(shape_list):
+        run(
+            yaml_path_list=files,
+            output_path=shape_path_list[i],
+            mode=mode,
+            param_list=param,
+            shape=shape,
+            filter_list=filter,
+            build_opts=build_opts,
+            exec_prefix=exec_prefix,
+            exec_suffix=exec_suffix,
+            dryrun=dryrun,
+            obj_cache=obj_cache,
+            verbose=verbose,
+        )
+        if obj_cache.is_active:
+            obj_cache.dump()
+    logging.info(f"Number of shapes: {len(shape_list)}")
     return True
 
 
