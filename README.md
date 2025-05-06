@@ -10,7 +10,7 @@ deployment workflows. Modular Platform accelerates time to market for the latest
 innovations by giving AI developers a single toolchain that unlocks full
 programmability, unparalleled performance, and seamless hardware portability.
 
-![](https://docs.modular.com/images/github/max-stack.png)
+![](https://docs.modular.com/images/modular-container-stack.png)
 
 [See here to get started with the Modular platform](https://docs.modular.com/max/get-started)
 and when you want to report issues or request features,
