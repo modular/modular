@@ -98,6 +98,7 @@ from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
+from nn.fold import fold
 from nn.irfft import irfft
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
@@ -5561,6 +5562,52 @@ struct ConvTranspose:
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
             managed_tensor_slice_to_ndbuffer(output_paddings),
+        )
+
+
+@compiler.register("fold")
+struct Fold:
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[type=type, rank=4],
+        input: InputTensor[type=type, rank=3],
+        output_size: InputTensor,
+        kernel_size: InputTensor,
+        stride: InputTensor,
+        dilation: InputTensor,
+        padding: InputTensor,
+    ) raises:
+        constrained[
+            stride.type.is_integral()
+            and dilation.type.is_integral()
+            and padding.type.is_integral()
+            and kernel_size.type.is_integral()
+            and output_size.type.is_integral(),
+            (
+                "stride, dilation, padding, kernel_size and output_size must"
+                " have integral type"
+            ),
+        ]()
+        var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
+        var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
+        var stride_tuple = Index(stride._ptr[0], stride._ptr[1])
+        var dilation_tuple = Index(dilation._ptr[0], dilation._ptr[1])
+        var padding_tuple = Index(padding._ptr[0], padding._ptr[1])
+
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        fold[type, target=target](
+            input_buf,
+            output_buf,
+            output_size_tuple,
+            kernel_size_tuple,
+            stride_tuple,
+            dilation_tuple,
+            padding_tuple,
         )
 
 
