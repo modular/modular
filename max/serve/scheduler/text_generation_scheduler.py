@@ -263,20 +263,6 @@ class TokenGenerationScheduler(Scheduler):
             self.scheduler_config.max_batch_size_tg - len(self.active_batch),
         )
 
-        # If there are already active TG requests, we want to be more conservative
-        # about scheduling new CE requests if we are constrained by KV Cache space.
-        num_steps_with_headroom = self.scheduler_config.max_forward_steps_ce
-        if len(self.active_batch) > 0:
-            # TODO: E2EOPT-77. we should look at what vLLM does and decide a more intelligent
-            # policy for this.
-            # This hardcoded value was chosen empirically to prevent excessive
-            # preemption on sharegpt.
-            headroom_for_num_tg_iterations = 5
-            num_steps_with_headroom += (
-                headroom_for_num_tg_iterations
-                * self.scheduler_config.max_forward_steps_tg
-            )
-
         ce_batch: dict[str, InputContext] = {}
         tot_input_tokens = 0
         tot_cached_tokens = 0
