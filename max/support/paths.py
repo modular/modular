@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import hashlib
 import logging
 import shlex
 import subprocess
@@ -72,10 +73,19 @@ def is_mojo_binary_package_path(path: Path) -> bool:
 def _build_mojo_source_package(path: Path) -> Path:
     assert is_mojo_source_package_path(path)
 
-    # FIXME(GEX-2032): Delete this source package to avoid cluttering
-    #   the users temporary directory.
-    tmp = tempfile.NamedTemporaryFile(suffix=".mojopkg", delete=False)
-    args = ["mojo", "package", str(path), "-o", tmp.name]
+    # Create a deterministic path in the temp directory based on the source path
+    path_hash = hashlib.md5(str(path.absolute()).encode()).hexdigest()
+    tmp_path = (
+        Path(tempfile.gettempdir())
+        / ".modular"
+        / "mojo_pkg"
+        / f"mojo_pkg_{path_hash}.mojopkg"
+    )
+
+    # Ensure parent directories exist
+    tmp_path.parent.mkdir(parents=True, exist_ok=True)
+
+    args = ["mojo", "package", str(path), "-o", str(tmp_path)]
 
     try:
         # TODO(GEX-2033): Either locate `mojo` more robustly, so this still
@@ -89,4 +99,4 @@ def _build_mojo_source_package(path: Path) -> Path:
         logging.error(str(error))
         raise error from e
 
-    return Path(tmp.name)
+    return tmp_path
