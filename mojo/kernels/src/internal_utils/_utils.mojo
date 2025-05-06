@@ -40,6 +40,7 @@ from testing import assert_almost_equal, assert_equal, assert_true
 
 from utils import Index, IndexList
 from utils.index import product
+from pathlib import Path
 
 
 struct ValOrDim[dim: Dim = Dim()]:
@@ -469,6 +470,16 @@ fn arg_parse(handle: String, default: String) raises -> String:
     return default
 
 
+fn arg_parse(handle: String, default: Float64) raises -> Float64:
+    # TODO: add constraints on dtype of return value
+    var args = argv()
+    for i in range(len(args)):
+        if args[i].startswith("--" + handle):
+            var name_val = args[i].split("=")
+            return atof(name_val[1])
+    return default
+
+
 @always_inline
 fn _str_fmt_width[max_width: Int = 256](str: String, str_width: Int) -> String:
     """Formats string with a given width.
@@ -595,3 +606,30 @@ fn random[
             buffer.data[i] = rnd.cast[dtype]()
     else:
         rand(buffer.data, buffer.num_elements(), min=min, max=max)
+
+
+fn update_bench_config(mut b: Bench) raises:
+    # TODO: refactor and move to bencher.mojo when internal_utils is available in oss.
+
+    # b.config.out_file = Path(arg_parse("bench-out-file", String(b.config.out_file)))
+    b.config.min_runtime_secs = arg_parse(
+        "bench-min-runtime-secs", b.config.min_runtime_secs
+    )
+    b.config.max_runtime_secs = arg_parse(
+        "bench-max-runtime-secs", b.config.max_runtime_secs
+    )
+    b.config.min_warmuptime_secs = arg_parse(
+        "bench-min-warmuptime-secs", b.config.min_warmuptime_secs
+    )
+    # set bench-max-batch-size=1 for single iteration
+    b.config.max_batch_size = arg_parse(
+        "bench-max-batch-size", b.config.max_batch_size
+    )
+    # set bench-max-iters=0 for single iteration
+    b.config.max_iters = arg_parse("bench-max-iters", b.config.max_iters)
+    b.config.num_repetitions = arg_parse(
+        "bench-num-repetitions", b.config.num_repetitions
+    )
+    b.config.flush_denormals = arg_parse(
+        "bench-flush-denormals", b.config.flush_denormals
+    )

@@ -33,4 +33,5 @@ from ._utils import (
     parse_shape,
     random,
     zero,
+    update_bench_config,
 )
