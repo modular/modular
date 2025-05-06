@@ -2123,18 +2123,23 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _stack_copy(
         self,
-    ) -> LayoutTensor[
-        dtype,
-        layout,
-        MutableAnyOrigin,
-        address_space=address_space,
-        element_layout=element_layout,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-        masked=masked,
-        alignment=alignment,
-    ]:
-        var copy = self.stack_allocation()
+        out result: LayoutTensor[
+            dtype,
+            layout,
+            MutableAnyOrigin,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
+        ],
+    ):
+        @parameter
+        if Self.layout.all_dims_known():
+            copy = self.stack_allocation()
+        else:
+            copy = __type_of(result)(self.ptr, self.runtime_layout)
 
         fn self_value(
             lhs: Self.element_type, rhs: Self.element_type
