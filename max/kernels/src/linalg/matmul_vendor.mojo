@@ -74,31 +74,14 @@ fn matmul[
             var m = c.dim[0]()
             var n = c.dim[1]()
 
-            # This is a hacky way to get the commonpattern in transformers where
-            # we have a matmul followed by an add. We can optimize this by using
-            # a single gemm call with beta = 1.0 and alpha = 1.0. This allows us
-            # to avoid the extra elementwise launch operation. This is no an issue
-            # for non-vendor blas libraries (i.e. mojo kernels) because we can
-            # just fuse the add into the gemm kernel.
-            @parameter
-            if _trace_description == "mo.matmul+mo.add":
-                vendor_matmul(
-                    ctx,
-                    c,
-                    a,
-                    b,
-                    c_row_major=True,
-                    transpose_b=transpose_b,
-                    beta=1.0,
-                )
-            else:
-                vendor_matmul(
-                    ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
-                )
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Index(m, n), ctx
-                )
-            return
+            # For D = alpha * A * B + beta * C, vendor matmul currently sets
+            # C to null, i.e don't fuse linear operations into gemm, KERN-1774.
+            vendor_matmul(
+                ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
+            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                Index(m, n), ctx
+            )
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
         var tmp_device_buffer = ctx.enqueue_create_buffer[c.type](
