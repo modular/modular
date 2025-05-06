@@ -23,19 +23,17 @@ from test_common.registry import prepare_registry
 
 @prepare_registry
 @mock_estimate_memory_footprint
-def test_config__validate_speculative_decoding_pipeline(
+def test_config__validate_device_and_encoding_combinations(
     smollm2_135m_local_path,
     llama_3_1_8b_instruct_local_path,
-    exaone_2_4b_local_path,
-    deepseek_r1_distill_llama_8b_local_path,
 ):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Valid device/encoding combinations
     config = PipelineConfig(
         model_path=smollm2_135m_local_path,
-        device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
+        device_specs=[DeviceSpec.cpu()],
         draft_model_path=smollm2_135m_local_path,
     )
 
@@ -43,12 +41,18 @@ def test_config__validate_speculative_decoding_pipeline(
         # Invalid device/encoding combinations
         config = PipelineConfig(
             model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
+            device_specs=[DeviceSpec.cpu()],
             draft_model_path=smollm2_135m_local_path,
             engine=PipelineEngine.HUGGINGFACE,
         )
 
+
+def test_config__validate_target_and_draft_architecture(
+    exaone_2_4b_local_path,
+    smollm2_135m_local_path,
+    deepseek_r1_distill_llama_8b_local_path,
+):
     with pytest.raises(ValueError):
         # Test that when the target & draft architectures are different
         # we raise an error.
@@ -71,4 +75,19 @@ def test_config__validate_speculative_decoding_pipeline(
                 )
             ],
             draft_model_path=smollm2_135m_local_path,
+        )
+
+
+def test_config__validate_huggingface_engine(llama_3_1_8b_instruct_local_path):
+    """Test that speculative decoding is not supported with HuggingFace engine."""
+    with pytest.raises(
+        ValueError,
+        match="Speculative Decoding not supported with the HuggingFace Engine",
+    ):
+        PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            quantization_encoding=SupportedEncoding.bfloat16,
+            device_specs=[DeviceSpec.accelerator()],
+            draft_model_path=llama_3_1_8b_instruct_local_path,
+            engine=PipelineEngine.HUGGINGFACE,
         )

@@ -235,3 +235,31 @@ def test_config__validates_invalid_supported_device(
                 max_length=1,
                 engine=PipelineEngine.MAX,
             )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__validates_engine_configurations(
+    llama_3_1_8b_instruct_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    # Test explicit MAX engine with valid config
+    # This case isn't tested elsewhere
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        device_specs=[DeviceSpec.accelerator()],
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+    assert config.engine == PipelineEngine.MAX
+
+    # Test explicit HuggingFace engine with valid config
+    # This verifies we can force HF even when MAX would work
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        device_specs=[DeviceSpec.accelerator()],
+        max_length=1,
+        engine=PipelineEngine.HUGGINGFACE,
+    )
+    assert config.engine == PipelineEngine.HUGGINGFACE
