@@ -54,6 +54,16 @@ bool KGEN::isParameterizedType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// SymTabEvaluationContext
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
+    ContextuallyEvaluatedAttrInterface attr) {
+  // TODO: Implement for KGEN evaluation.
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // ParameterEvaluator core implementation.
 //===----------------------------------------------------------------------===//
 

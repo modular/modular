@@ -455,10 +455,12 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 bool TypeGeneratorRefAttr::isConstant() const { return false; }
 
 LogicalResult TypeGeneratorRefAttr::verifySymbolUses(
-    Operation *module, mlir::LockedSymbolTableCollection &symtab,
-    Location loc) const {
+    SymTabEvaluationContext &evaluationContext, Location loc) const {
   VerboseCompilerTimeTraceScope traceScope(
       "TypeGeneratorRefAttr::verifySymbolUses");
+
+  Operation *module = evaluationContext.module;
+  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
 
   // The leaf symbol is expected to only refer to a struct generator now.
   SymbolRefAttr symbol = getSymbol();
@@ -472,6 +474,7 @@ LogicalResult TypeGeneratorRefAttr::verifySymbolUses(
   }
 
   ParameterEvaluator evaluator;
+  evaluator.setEvaluationContext(&evaluationContext);
   SmallVector<ParamDeclAttr> remappedParamDecls;
   for (auto [decl, value] :
        llvm::zip(structGen.getInputParams(), getParamValues())) {
@@ -595,11 +598,13 @@ bool SymbolConstantAttr::isConstant() const {
 }
 
 LogicalResult
-SymbolConstantAttr::verifySymbolUses(Operation *module,
-                                     mlir::LockedSymbolTableCollection &symtab,
+SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
                                      Location loc) const {
   VerboseCompilerTimeTraceScope traceScope(
       "SymbolConstantAttr::verifySymbolUses");
+
+  Operation *module = evaluationContext.module;
+  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
 
   // Build the signature of the referenced symbol.
   SymbolRefAttr symbol = getSymbol();
@@ -628,7 +633,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
   FuncTypeGeneratorType declSignature;
   if (symbolOps.size() == 1) {
     declSignature = func.getFuncTypeGenerator().getSpecializedGenerator(
-        getParamValues(), [&] { return emitError(loc); });
+        getParamValues(), [&] { return emitError(loc); }, &evaluationContext);
   } else {
     // Collect the contextual parameter values.
     SmallVector<ParamDeclAttr> paramDecls;
@@ -660,7 +665,7 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
         baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
         genMetadata);
     declSignature = remappedGenerator.getSpecializedGenerator(
-        getParamValues(), [&] { return emitError(loc); });
+        getParamValues(), [&] { return emitError(loc); }, &evaluationContext);
   }
   if (!declSignature)
     return failure();

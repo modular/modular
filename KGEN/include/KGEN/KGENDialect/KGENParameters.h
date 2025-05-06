@@ -239,7 +239,7 @@ struct ParameterUseDefGraph {
 
   /// Verify the validity of the parameter declarations, uses, and definitions
   /// within the current scope.
-  LogicalResult verify(mlir::LockedSymbolTableCollection &symtab,
+  LogicalResult verify(SymTabEvaluationContext &evaluationContext,
                        ParameterCollector::Analysis &cache);
 
   /// Copy this graph into a new instance, remapping all the operations using
@@ -258,8 +258,7 @@ struct ParameterUseDefGraph {
 private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
   /// table is provided.
-  LogicalResult calculateOrVerify(ModuleOp module,
-                                  mlir::LockedSymbolTableCollection *symtab,
+  LogicalResult calculateOrVerify(SymTabEvaluationContext *evaluationContext,
                                   ParameterCollector::Analysis &cache);
 };
 

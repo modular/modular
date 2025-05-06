@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -182,6 +183,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       for (Region &region : decl->getRegions())
         declRegions.emplace_back(&region, declRegions.size());
 
+    SymTabEvaluationContext evaluationContext(module, sharedSymtabs);
+
     // Because parameter simplification invokes the interpreter, we cannot
     // simplify in parallel: functions may be modified as they are being
     // interpreted. Save the use-def graphs from the verification pass here.
@@ -193,11 +196,11 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     }
 
     auto workFunc =
-        [&sharedSymtabs, &graphs, simplify = bool(simplifyParameters)](
+        [&evaluationContext, &graphs, simplify = bool(simplifyParameters)](
             ParamCache &paramCache, std::pair<Region *, size_t> item) {
           auto [declRegion, i] = item;
           ParameterUseDefGraph graph(*declRegion);
-          if (failed(graph.verify(sharedSymtabs, paramCache)))
+          if (failed(graph.verify(evaluationContext, paramCache)))
             return failure();
           if (simplify)
             graphs[i] = std::move(graph);

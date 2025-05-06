@@ -271,9 +271,11 @@ std::optional<StringRef> LIT::StructType::getAliasName(SymbolRefAttr symbol) {
 }
 
 LogicalResult
-LIT::StructType::verifySymbolUses(Operation *module,
-                                  mlir::LockedSymbolTableCollection &symtab,
+LIT::StructType::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
                                   Location loc) const {
+  Operation *module = evaluationContext.module;
+  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
+
   DeclInterface decl = ::dyn_cast_or_null<DeclInterface>(
       symtab.lookupSymbolIn(module, getSymbol()));
   if (!decl) {
@@ -286,6 +288,7 @@ LIT::StructType::verifySymbolUses(Operation *module,
 
   // We have to specialize the type's parameter decls.
   ParameterEvaluator evaluator(decl.getInputParams(), getParamValues());
+  evaluator.setEvaluationContext(&evaluationContext);
   SmallVector<ParamDeclAttr, 8> specializedDecls;
   for (ParamDeclAttr decl : decl.getInputParams())
     specializedDecls.push_back(

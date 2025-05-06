@@ -248,10 +248,9 @@ void ParameterCollector::collectUsesFromTypesImpl(
 namespace {
 class VerifyingParameterCollector : public ParameterCollector {
 public:
-  VerifyingParameterCollector(ModuleOp module,
-                              mlir::LockedSymbolTableCollection *symtab,
+  VerifyingParameterCollector(SymTabEvaluationContext *evaluationContext,
                               ParameterCollector::Analysis &cache)
-      : ParameterCollector(cache), module(module), symtab(symtab) {}
+      : ParameterCollector(cache), evaluationContext(evaluationContext) {}
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -278,10 +277,8 @@ public:
   Operation *op;
 
 private:
-  /// The module in which to lookup symbol references.
-  ModuleOp module;
   /// The symbol to use to verify symbol references.
-  [[maybe_unused]] mlir::LockedSymbolTableCollection *symtab;
+  [[maybe_unused]] SymTabEvaluationContext *evaluationContext;
   /// Cached references that have already been verified.
   DenseSet<const void *> verifiedRefs;
 };
@@ -292,13 +289,13 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
   VerboseCompilerTimeTraceScope traceScope("verifyRefAttr");
 
   // We only check this during the op verification phase.
-  if (!symtab)
+  if (!evaluationContext)
     return;
 
   if (!verifiedRefs.insert(refAttr.getAsOpaquePointer()).second)
     return;
 
-  if (failed(refAttr.verifySymbolUses(module, *symtab, op->getLoc()))) {
+  if (failed(refAttr.verifySymbolUses(*evaluationContext, op->getLoc()))) {
     // If the attribute verifier failed, it will only have the location
     // source information we're passing down.  Include the full op dump now
     // for more context since this is an internal MLIR invariant violation.
@@ -313,13 +310,13 @@ void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
   VerboseCompilerTimeTraceScope traceScope("verifyRefType");
 
   // We only check this during the op verification phase.
-  if (!symtab)
+  if (!evaluationContext)
     return;
 
   if (!verifiedRefs.insert(refType.getAsOpaquePointer()).second)
     return;
 
-  if (failed(refType.verifySymbolUses(module, *symtab, op->getLoc())))
+  if (failed(refType.verifySymbolUses(*evaluationContext, op->getLoc())))
     hadError = true;
 #endif
 }
@@ -664,7 +661,7 @@ static void emitCycleError(ParameterUseDefGraph &g,
 }
 
 LogicalResult ParameterUseDefGraph::calculateOrVerify(
-    ModuleOp module, mlir::LockedSymbolTableCollection *symtab,
+    SymTabEvaluationContext *evaluationContext,
     ParameterCollector::Analysis &cache) {
   VerboseCompilerTimeTraceScope traceScope(
       "ParameterUseDefGraph::calculateOrVerify", [&] {
@@ -678,7 +675,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
   // after nested scopes have been analyzed.
   SmallVector<std::pair<ParamDeclAttr, SmallVector<Region *, 0>>> regionValues;
   // The parameter collector to use.
-  VerifyingParameterCollector c(module, symtab, cache);
+  VerifyingParameterCollector c(evaluationContext, cache);
 
   auto processOp = [&](Operation *op) -> WalkResult {
     VerboseCompilerTimeTraceScope traceScope("processOp");
@@ -781,7 +778,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       // Handle parameters without a declaration.
       if (it == decls.end()) {
         // If we're not verifying, assume this is a capture.
-        if (!symtab) {
+        if (!evaluationContext) {
           usesFromAbove.insert(use);
           continue;
         }
@@ -792,7 +789,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
 
       // Check that the type of the parameter references matches the type of its
       // declaration.
-      if (symtab && it->second.type != use.getType()) {
+      if (evaluationContext && it->second.type != use.getType()) {
         return (op->emitOpError("reference to parameter ")
                 << use.getName() << " with incorrect type " << use.getType())
                    .attachNote(it->second.declOp->getLoc())
@@ -825,7 +822,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
     ParameterUseDefGraph nested(*nestedScope);
     // Propagate the current declarations into the nested scope.
     nested.decls = decls;
-    if (failed(nested.calculateOrVerify(module, symtab, cache)))
+    if (failed(nested.calculateOrVerify(evaluationContext, cache)))
       return failure();
 
     // If there were no uses from above, notify the nested declaration that it
@@ -885,15 +882,14 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
 }
 
 void ParameterUseDefGraph::calculate(ParameterCollector::Analysis &cache) {
-  [[maybe_unused]] LogicalResult result = calculateOrVerify({}, nullptr, cache);
+  [[maybe_unused]] LogicalResult result = calculateOrVerify(nullptr, cache);
   assert(succeeded(result) && "IR should be legal here!");
 }
 
 LogicalResult
-ParameterUseDefGraph::verify(mlir::LockedSymbolTableCollection &symtab,
+ParameterUseDefGraph::verify(SymTabEvaluationContext &evaluationContext,
                              ParameterCollector::Analysis &cache) {
-  return calculateOrVerify(scope->getParentOp()->getParentOfType<ModuleOp>(),
-                           &symtab, cache);
+  return calculateOrVerify(&evaluationContext, cache);
 }
 
 ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
