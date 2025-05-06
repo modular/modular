@@ -403,7 +403,7 @@ fn comparisons(a: Int, b: Int):
    res = a != b
 
 @register_passable
-struct Boolish:
+struct Boolish(Boolable):
   fn __copyinit__(out self, existing: Self): pass
   fn __bool__(self) -> Bool: return True
 

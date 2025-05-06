@@ -86,24 +86,19 @@ fn test_infer_variadic():
 # // -----
 
 
-@register_passable("trivial")
-trait ZAnyRPTrait:
-    pass
-
-
 fn device_func(a: Int, b: Bool) -> Int:
     return 73
 
 
 @value
-struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
+struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: *ArgTypes) -> Int:
         return 91
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
@@ -120,11 +115,6 @@ fn main():
 # Tests that we reject any device_function that is still generic.
 
 
-@register_passable("trivial")
-trait ZAnyRPTrait:
-    pass
-
-
 # A function that has a T that can't be inferred from anything
 fn device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int:
     return 73
@@ -136,13 +126,13 @@ fn device_func_usedT[T: AnyType](a: T, b: Bool) -> Int:
 
 
 @value
-struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
+struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     pass
 
 
 # expected-note @below {{function declared here}}
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
@@ -166,24 +156,19 @@ fn test_reject_generic_device_func_usedT():
 # // -----
 
 
-@register_passable("trivial")
-trait ZAnyRPTrait:
-    pass
-
-
 fn device_func(a: Int, b: Bool) -> Int:
     return 73
 
 
 @value
-struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
+struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: *ArgTypes) -> Int:
         return 91
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
@@ -228,7 +213,7 @@ trait ConvertibleToZPointer:
 
 
 @register_passable("trivial")
-struct ZPointer[T: AnyType]:
+struct ZPointer[T: AnyType](AnyRPTrivialType):
     fn __init__(out self):
         pass
 
@@ -248,7 +233,7 @@ trait ConvertibleToZLayoutTensor:
 
 
 @register_passable("trivial")
-struct ZLayoutTensor:
+struct ZLayoutTensor(AnyRPTrivialType):
     fn __init__(out self):
         pass
 
@@ -257,20 +242,15 @@ struct ZLayoutTensor:
         var z: ZLayoutTensor = c.to_tensor()
 
 
-@register_passable("trivial")
-trait GPUPassable:
-    pass
-
-
 @value
-struct DeviceFunction[*ArgTypes: GPUPassable]:
+struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: *ArgTypes) -> Int:
         return 91
 
 
 @value
-struct ManagedLayoutTensor:
+struct ManagedLayoutTensor(ConvertibleToZLayoutTensor):
     fn to_tensor(self) -> ZLayoutTensor:
         return ZLayoutTensor()
 
@@ -278,7 +258,7 @@ struct ManagedLayoutTensor:
 # Never converted, the GPU just uses this one directly
 @value
 @register_passable("trivial")
-struct NDBuffer:
+struct NDBuffer(AnyRPTrivialType):
     pass
 
 
@@ -287,7 +267,7 @@ fn kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 
 
 fn compile[
-    ArgTypes: __mlir_type[`!kgen.variadic<`, GPUPassable, `>`], //,
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
     func: fn (* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()

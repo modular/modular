@@ -222,7 +222,7 @@ struct FloatDyn:
 
 @value
 @register_passable("trivial")
-struct Int(Copyable):
+struct Int(AnyRPTrivialType, Copyable):
     var value: Index
 
     @always_inline("builtin")
@@ -426,7 +426,7 @@ struct String(KeyElement):
 
 @value
 @register_passable("trivial")
-struct Bool(AnyType):
+struct Bool(AnyRPTrivialType):
     var value: __mlir_type.i1
 
     @always_inline("builtin")
@@ -514,6 +514,11 @@ trait AnyType:
 
 
 alias ImplicitlyDestructible = AnyType
+
+
+@register_passable("trivial")
+trait AnyRPTrivialType:
+    pass
 
 
 # ===----------------------------------------------------------------------=== #

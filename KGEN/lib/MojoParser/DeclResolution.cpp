@@ -2015,6 +2015,12 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
       // @register_passable("trivial")
       if (isTrivialRegisterPassable(callNode)) {
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
+        if (ASTDecl *decl = shared.lookupBuiltinTrait(
+                "Copyable", structDecl.getParentDecl(), decorator->getLoc()))
+          traits.push_back(decl->getSymbolRef());
+        if (ASTDecl *decl = shared.lookupBuiltinTrait(
+                "Movable", structDecl.getParentDecl(), decorator->getLoc()))
+          traits.push_back(decl->getSymbolRef());
         return success();
       }
 
