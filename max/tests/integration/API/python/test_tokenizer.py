@@ -14,6 +14,7 @@ import requests
 from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import (
     PipelineConfig,
+    SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
     TokenGeneratorRequest,
@@ -210,16 +211,18 @@ async def test_tokenizer__encode_and_decode(llama_3_1_8b_instruct_local_path):
     assert test_string == decoded
 
 
-@pytest.mark.skip("TODO(AITLIB-342): Fix this test")
 @mock_estimate_memory_footprint
-def test_text_tokenizer_with_constrained_decoding(smollm2_135m_local_path):
+def test_text_tokenizer_with_constrained_decoding(
+    llama_3_1_8b_instruct_local_path,
+):
     device_specs = []
     if accelerator_count() > 0:
         device_specs.append(DeviceSpec.accelerator(id=0))
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model_path=smollm2_135m_local_path,
+        model_path=llama_3_1_8b_instruct_local_path,
+        quantization_encoding=SupportedEncoding.bfloat16,
         device_specs=device_specs,
         enable_structured_output=True,
     )
