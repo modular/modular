@@ -217,6 +217,18 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_EXPERIMENTAL_ENABLE_KVCACHE_AGENT",
     )
 
+    prefill_zmq_endpoint: Optional[str] = Field(
+        default=None,
+        description="Experimental: Expose Prefill Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
+        alias="MAX_SERVE_PREFILL_ZMQ_ENDPOINT",
+    )
+
+    decode_zmq_endpoint: Optional[str] = Field(
+        default=None,
+        description="Experimental: Expose Decode Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
+        alias="MAX_SERVE_DECODE_ZMQ_ENDPOINT",
+    )
+
 
 def api_prefix(settings: Settings, api_type: APIType):
     return "/" + str(api_type) if len(settings.api_types) > 1 else ""
