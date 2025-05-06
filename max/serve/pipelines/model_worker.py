@@ -47,6 +47,10 @@ from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     DecodeSchedulerConfig,
 )
+from max.serve.scheduler.prefill_scheduler import (
+    PrefillScheduler,
+    PrefillSchedulerConfig,
+)
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
@@ -273,9 +277,7 @@ async def model_worker_run_v3(
                 pipeline, pc, pipeline_config, queues
             )
         elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
-            raise ValueError(
-                f"Pipeline Role of {pipeline_config.pipeline_role} is not supported."
-            )
+            scheduler = _create_prefill_scheduler(pipeline, pc, pipeline_config)
         elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
             scheduler = _create_token_generation_scheduler(
                 pipeline, pc, pipeline_config, queues
@@ -332,6 +334,55 @@ def _create_decode_scheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         queues=queues,
+        paged_manager=paged_manager,
+    )
+
+
+def _create_prefill_scheduler(
+    pipeline: TokenGenerator,
+    pc: ProcessControl,
+    pipeline_config: TokenGeneratorPipelineConfig,
+) -> PrefillScheduler:
+    # Initialize Scheduler Config
+    if pipeline_config.context_encoding:
+        max_batch_size_ce = pipeline_config.context_encoding.size
+        target_tokens_per_batch_ce = (
+            pipeline_config.context_encoding.target_sum_seq_len
+        )
+        if math.isclose(pipeline_config.context_encoding.timeout, 0.0):
+            batch_timeout = None
+        else:
+            batch_timeout = pipeline_config.context_encoding.timeout
+    else:
+        max_batch_size_ce = pipeline_config.token_generation.size
+        target_tokens_per_batch_ce = (
+            pipeline_config.token_generation.target_sum_seq_len
+        )
+        batch_timeout = None
+
+    scheduler_config = PrefillSchedulerConfig(
+        max_batch_size_ce=max_batch_size_ce,
+        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        batch_timeout=batch_timeout,
+        enable_chunked_prefill=pipeline_config.token_generation.enable_chunked_prefill,
+    )
+
+    # Retrieve the KV Cache, failing if KV Cache is not enabled.
+    if (
+        isinstance(pipeline, TextGenerationPipeline)
+        and isinstance(pipeline._pipeline_model, KVCacheMixin)
+        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
+    ):
+        paged_manager = pipeline._pipeline_model.kv_manager
+    else:
+        raise ValueError(
+            "PrefillScheduler only supports Paged Caching Strategy."
+        )
+
+    return PrefillScheduler(
+        process_control=pc,
+        pipeline=pipeline,
+        scheduler_config=scheduler_config,
         paged_manager=paged_manager,
     )
 

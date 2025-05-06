@@ -14,7 +14,6 @@
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
 
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TokenGenerator
@@ -42,7 +41,7 @@ class DecodeScheduler(Scheduler):
         pipeline: TokenGenerator,
         scheduler_config: DecodeSchedulerConfig,
         queues: Mapping[str, ZmqQueue],
-        paged_manager: Optional[PagedKVCacheManager] = None,
+        paged_manager: PagedKVCacheManager,
     ):
         # Initialize Pipeline and Config
         self.scheduler_config = DecodeSchedulerConfig
