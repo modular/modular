@@ -59,10 +59,16 @@ class DevicesOptionType(click.ParamType):
         """
         for gpu_id in gpu_ids:
             if gpu_id not in available_gpu_ids:
-                msg = (
-                    f"GPU {gpu_id} requested but only GPU IDs {available_gpu_ids} are "
-                    f"available. Use valid device IDs or '--devices=cpu'."
-                )
+                if len(available_gpu_ids) == 0:
+                    msg = (
+                        f"GPU {gpu_id} requested but no GPUs are available. "
+                        f"Use valid device IDs or '--devices=cpu'."
+                    )
+                else:
+                    msg = (
+                        f"GPU {gpu_id} requested but only GPU IDs {available_gpu_ids} are "
+                        f"available. Use valid device IDs or '--devices=cpu'."
+                    )
                 raise ValueError(msg)
 
     @staticmethod
@@ -86,7 +92,9 @@ class DevicesOptionType(click.ParamType):
         available_gpu_ids = [
             d.id for d in available_devices if d.device_type == "gpu"
         ]
-        if devices == "cpu" or len(available_gpu_ids) == 0:
+        if devices == "cpu" or (
+            len(available_gpu_ids) == 0 and devices != "gpu"
+        ):
             logger.info("No GPUs available, falling back to CPU")
             # This should return CPU device spec.
             return available_devices
