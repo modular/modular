@@ -1,0 +1,48 @@
+load("//bazel:config.bzl", "SUPPORTED_GPUS")
+
+package(default_visibility = ["//visibility:public"])
+
+constraint_setting(name = "gpu_bool")
+
+constraint_value(
+    name = "has_gpu",
+    constraint_setting = ":gpu_bool",
+)
+
+constraint_setting(name = "multi_gpu_bool")
+
+constraint_value(
+    name = "has_multi_gpu",
+    constraint_setting = ":multi_gpu_bool",
+)
+
+constraint_setting(name = "multi_gpu_4_bool")
+
+constraint_value(
+    name = "has_4_gpus",
+    constraint_setting = ":multi_gpu_4_bool",
+)
+
+constraint_setting(name = "gpu_brand")
+
+constraint_value(
+    name = "amd_gpu",
+    constraint_setting = ":gpu_brand",
+    tags = ["maybe-unused"],
+)
+
+constraint_value(
+    name = "nvidia_gpu",
+    constraint_setting = ":gpu_brand",
+)
+
+constraint_setting(name = "gpu_name")
+
+[
+    constraint_value(
+        name = "{}_gpu".format(gpu),
+        constraint_setting = ":gpu_name",
+        tags = ["maybe-unused"],
+    )
+    for gpu, _, _ in SUPPORTED_GPUS
+]
