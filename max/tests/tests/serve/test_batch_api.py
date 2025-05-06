@@ -28,7 +28,9 @@ def num_requests(request):
 @pytest.mark.skip(reason="TODO(ylou): Fix this after submitting!!!")
 @pytest.mark.asyncio
 async def test_batched_requests_pipeline(num_requests):
-    config = TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1)
+    config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+        tg_batch_size=1, ce_batch_size=1
+    )
 
     # Submit num_requests to the pipeline which will batch and execute them.
     # Verify results afterwards.

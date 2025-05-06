@@ -69,7 +69,9 @@ def token_generator(request):
 def app(token_generator):
     """Fixture for a FastAPI app using a given pipeline."""
     model_name, model_factory = token_generator
-    config = TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1)
+    config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+        tg_batch_size=1, ce_batch_size=1
+    )
     serving_settings = ServingTokenGeneratorSettings(
         model_name=model_name,
         model_factory=model_factory,

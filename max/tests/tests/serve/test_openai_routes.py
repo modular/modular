@@ -37,8 +37,8 @@ def app(fixture_tokenizer, model_name: str):
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )
-    pipeline_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
-        batch_size=1
+    pipeline_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+        tg_batch_size=1, ce_batch_size=1
     )
     model_factory = (
         EchoTokenGenerator
