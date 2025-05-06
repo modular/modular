@@ -323,9 +323,18 @@ class SpecInstance:
         binary_path: Path,
         output_file: Path,
         dryrun: bool = False,
+        exec_prefix: list[str] = [],
+        exec_suffix: list[str] = [],
     ) -> ProcessOutput:
         vars = self._get_vars
-        cmd = [binary_path, "-o", str(output_file), *vars]
+        cmd = []
+        if exec_prefix:
+            logging.debug(f"exec-prefix: {exec_prefix}")
+            cmd.extend(exec_prefix)
+        cmd.extend([binary_path, *vars, "-o", str(output_file)])
+        if exec_suffix:
+            cmd.extend(exec_suffix)
+            logging.debug(f"exec-suffix: {exec_suffix}")
         out = _run_cmdline(cmd, dryrun)
         return out
 
@@ -915,6 +924,8 @@ def run(
     shape=None,
     filter_list=None,
     build_opts=[],
+    exec_prefix=[],
+    exec_suffix=[],
     dryrun=False,
     obj_cache: KbenchCache = None,
     verbose=False,
@@ -990,7 +1001,14 @@ def run(
                     and not build_output.stderr
                     and build_output.path
                 ):
-                    s.execute(build_output.path, output_file, dryrun=dryrun)
+                    out = s.execute(
+                        build_output.path,
+                        output_file,
+                        dryrun=dryrun,
+                        exec_prefix=exec_prefix,
+                        exec_suffix=exec_suffix,
+                    )
+                    out.log()
 
                 elapsed_time_list[i] = int((time() - t_start_item) * 1e3)
                 spec_list[i] = s
@@ -1157,12 +1175,12 @@ def check_gpu_clock():
     # has been run. This is not exact, but should cover most cases. Checking for
     # the clock frequency is more complicated since the frequencies changes per
     # GPU.
-    # if "Disabled" in output.stdout.decode("utf-8"):
-    #     raise Exception(
-    #         "the clock frequency for the GPU is not locked, please use"
-    #         " `setup-gpu-benchmarking` to ensure that the frequencies and power"
-    #         " of the GPU are locked to get consistent benchmarking behavior."
-    #     )
+    if "Disabled" in output.stdout.decode("utf-8"):
+        raise Exception(
+            "the clock frequency for the GPU is not locked, please use"
+            " `setup-gpu-benchmarking` to ensure that the frequencies and power"
+            " of the GPU are locked to get consistent benchmarking behavior."
+        )
 
 
 class FileGlobArg:
@@ -1295,6 +1313,24 @@ help_str = (
     help="Any build options (treated as str and directly passed to mojo compiler.)",
     multiple=False,
 )
+@click.option(
+    "--profile",
+    default=(),
+    help="Set the profiler [ncu, ncu-single].",
+    multiple=False,
+)
+@click.option(
+    "--exec-prefix",
+    default="",
+    help="Any prefix options (treated as str and directly passed before binary.)",
+    multiple=False,
+)
+@click.option(
+    "--exec-suffix",
+    default="",
+    help="Any suffix options (treated as str and directly passed after binary.)",
+    multiple=False,
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files: click.UNPROCESSED,
@@ -1314,6 +1350,9 @@ def cli(
     verbose,
     shapes,
     build_opts,
+    profile,
+    exec_prefix,
+    exec_suffix,
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1361,6 +1400,15 @@ def cli(
         )
     )
 
+    exec_suffix = exec_suffix.split(" ") if exec_suffix else []
+    exec_prefix = exec_prefix.split(" ") if exec_prefix else []
+    if profile in ["ncu", "ncu-single"]:
+        exec_prefix.extend(["ncu"])
+        if profile == "ncu-single":
+            exec_suffix.extend(
+                ["--bench-max-iters=0", "--bench-max-batch-size=1"]
+            )
+
     if files:
         for i, shape in enumerate(shape_list):
             run(
@@ -1371,6 +1419,8 @@ def cli(
                 shape=shape.params,
                 filter_list=filter,
                 build_opts=build_opts,
+                exec_prefix=exec_prefix,
+                exec_suffix=exec_suffix,
                 dryrun=dryrun,
                 obj_cache=obj_cache,
                 verbose=verbose,

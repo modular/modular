@@ -24,7 +24,13 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from internal_utils import Mode, arg_parse, env_get_shape, int_list_to_tuple
+from internal_utils import (
+    Mode,
+    arg_parse,
+    env_get_shape,
+    int_list_to_tuple,
+    update_bench_config,
+)
 
 
 fn bench_func[
@@ -74,6 +80,8 @@ fn main() raises:
     var m = Bench(
         BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
     )
+
+    update_bench_config(m)
 
     bench_func[dtype, shape[0], shape[1], shape[2], stages](m, mode)
 

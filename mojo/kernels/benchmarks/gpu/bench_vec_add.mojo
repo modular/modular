@@ -20,6 +20,7 @@ from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal
+from internal_utils import update_bench_config
 
 
 fn vec_func(
@@ -97,6 +98,7 @@ fn bench_vec_add(
 def main():
     alias block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
+    update_bench_config(m)
 
     with DeviceContext() as ctx:
         bench_vec_add(m, block_dim=block_dim, length=32 * 1024, context=ctx)
