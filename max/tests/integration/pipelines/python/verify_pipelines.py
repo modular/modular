@@ -569,7 +569,7 @@ PIPELINES = {
             absolute_tolerance=1.1,
             relative_tolerance=0.19,
             cos_dist_threshold=9.3e-4,
-            kl_div_threshold=float("inf"),
+            kl_div_threshold=1.2e-02,
         ),
     ),
     "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
@@ -730,14 +730,12 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="exaone",
             encoding="float32",
-            # TODO: Investigate why this is inf here.
-            # Response text looks semantically close.
-            # Part of this is likely an nvidia kernel bug.
-            # Accuracy is much better on AMD.
+            # TODO: Accuracy is much better on AMD.
+            # so we might have an nvidia kernel bug here
             absolute_tolerance=3.0,
             relative_tolerance=0.24,
             cos_dist_threshold=2.4e-2,
-            kl_div_threshold=float("inf"),
+            kl_div_threshold=1.3e-2,
         ),
     ),
     "OLMo-1B-float32": PipelineDef(
