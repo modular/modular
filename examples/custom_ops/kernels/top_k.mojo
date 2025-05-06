@@ -29,7 +29,7 @@ from utils.numerics import min_or_neg_inf
 
 @value
 @register_passable("trivial")
-struct TopKElement[T: DType]:
+struct TopKElement[T: DType](Copyable & GreaterThanComparable):
     """Stores the value with it's index."""
 
     var idx: Int32
