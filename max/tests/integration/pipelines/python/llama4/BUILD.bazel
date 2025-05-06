@@ -57,6 +57,9 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/llama4/testdata"
         ),
     },
+    exec_properties = {
+        "resources:gpu-memory": "11",
+    },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "gpu",
