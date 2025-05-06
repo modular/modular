@@ -13,7 +13,7 @@
 
 @value
 @register_passable("trivial")
-struct NmTarget:
+struct NmTarget(Boolable):
     var x: Bool
 
     @implicit

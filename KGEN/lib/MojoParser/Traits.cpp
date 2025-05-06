@@ -476,6 +476,13 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
     newSymbols.insert(symbol);
   }
 
+  // Warn against implicit conformance. Only emit on success.
+  shared.emitWarning(getLoc(), "struct '")
+      << *getNameIfOperation() << "' utilizes conformance to trait "
+      << ASTType(trait)
+      << " but does not explicitly declare it (implicit conformance is "
+         "deprecated)";
+
   // If we succeeded, build the fully-populated conformance tables.
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
