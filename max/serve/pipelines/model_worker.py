@@ -31,6 +31,7 @@ from max.pipelines.core import (
     PipelinesFactory,
     TokenGenerator,
 )
+from max.pipelines.lib import PipelineRole
 from max.pipelines.lib.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
@@ -42,6 +43,10 @@ from max.serve.pipelines.scheduler import (
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler.base import Scheduler
+from max.serve.scheduler.decode_scheduler import (
+    DecodeScheduler,
+    DecodeSchedulerConfig,
+)
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
@@ -261,27 +266,74 @@ async def model_worker_run_v3(
         with record_ms(METRICS.model_load_time), Tracer("model_factory"):
             pipeline = model_factory()
 
-        scheduler: Scheduler
-        if isinstance(pipeline, TokenGenerator):
+    scheduler: Scheduler
+    if isinstance(pipeline, TokenGenerator):
+        if pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
+            scheduler = _create_decode_scheduler(
+                pipeline, pc, pipeline_config, queues
+            )
+        elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
+            raise ValueError(
+                f"Pipeline Role of {pipeline_config.pipeline_role} is not supported."
+            )
+        elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
             scheduler = _create_token_generation_scheduler(
                 pipeline, pc, pipeline_config, queues
             )
-        elif isinstance(pipeline, EmbeddingsGenerator):
-            scheduler = _create_embeddings_scheduler(
-                pipeline, pc, pipeline_config, queues
-            )
         else:
-            raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
+            raise ValueError(
+                f"Pipeline Role of {pipeline_config.pipeline_role} is not supported."
+            )
 
-        logger.info("Scheduler created with pipeline type: %s", type(pipeline))
+    elif isinstance(pipeline, EmbeddingsGenerator):
+        scheduler = _create_embeddings_scheduler(
+            pipeline, pc, pipeline_config, queues
+        )
+    else:
+        raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
 
-        pc.set_started()
-        logger.debug("Started model worker!")
+    logger.info("Scheduler created with pipeline type: %s", type(pipeline))
 
-        scheduler.run()
+    pc.set_started()
+    logger.debug("Started model worker!")
 
-        pc.set_completed()
-        logger.info("Stopped model worker!")
+    scheduler.run()
+
+    pc.set_completed()
+    logger.info("Stopped model worker!")
+
+
+def _create_decode_scheduler(
+    pipeline: TokenGenerator,
+    pc: ProcessControl,
+    pipeline_config: TokenGeneratorPipelineConfig,
+    queues: Mapping[str, ZmqQueue],
+) -> DecodeScheduler:
+    # Initialize Scheduler Config
+    scheduler_config = DecodeSchedulerConfig(
+        max_batch_size_tg=pipeline_config.token_generation.size,
+        max_forward_steps_tg=pipeline_config.token_generation.max_forward_steps,
+    )
+
+    # Retrieve the KV Cache, failing if KV Cache is not enabled.
+    if (
+        isinstance(pipeline, TextGenerationPipeline)
+        and isinstance(pipeline._pipeline_model, KVCacheMixin)
+        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
+    ):
+        paged_manager = pipeline._pipeline_model.kv_manager
+    else:
+        raise ValueError(
+            "DecodeScheduler only supports Paged Caching Strategy."
+        )
+
+    return DecodeScheduler(
+        process_control=pc,
+        pipeline=pipeline,
+        scheduler_config=scheduler_config,
+        queues=queues,
+        paged_manager=paged_manager,
+    )
 
 
 def _create_token_generation_scheduler(
