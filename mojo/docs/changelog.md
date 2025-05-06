@@ -84,6 +84,8 @@ Changes to Python-Mojo interoperability:
 - Added support for emitting assembly code (.s) using `--emit-asm`.
   - Example usage: `mojo build --emit=asm YourModule.mojo`
 
+- Added `associated alias` support for documentation generated via `mojo doc`.
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
