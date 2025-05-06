@@ -58,7 +58,6 @@ from transformers import AutoConfig
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
 from .model_config import Llama3Config
-from .naive_llama3 import NaiveLlama3
 
 logger = logging.getLogger("max.pipelines")
 
@@ -536,7 +535,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         return state_dict
 
-    def _build_opaque_graph(
+    def _build_graph(
         self, weights: Weights, adapter: Optional[WeightsAdapter] = None
     ) -> Graph:
         device0 = self.devices[0]
@@ -632,104 +631,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 )
                 graph.output(*outputs)
                 return graph
-
-    @traced
-    def _build_graph(
-        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
-    ) -> Graph:
-        if self.kv_cache_config.cache_strategy.uses_opaque():
-            return self._build_opaque_graph(weights, adapter)
-
-        tokens_type = TensorType(
-            DType.int64, shape=["batch_size", "seq_len"], device=DeviceRef.CPU()
-        )
-        attn_mask_type = TensorType(
-            DType.float32,
-            shape=["batch_size", "seq_len", "post_seq_len"],
-            device=DeviceRef.CPU(),
-        )
-
-        return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
-        )
-
-        if len(self.devices) > 1:
-            raise ValueError(
-                "Naive mode does not support distributed execution"
-            )
-
-        kv_inputs = self.kv_manager.input_symbols()[0]
-
-        state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.generate(
-            pipeline_config=self.pipeline_config,
-            huggingface_config=self.huggingface_config,
-            state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            logits_postprocessor=self.logits_postprocessor,
-            norm_method=self.norm_method,
-            attention_bias=self.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
-            return_logits=self.return_logits,
-        )
-        nn_model = NaiveLlama3(model_config)
-
-        # Load weights. We allow the weight types to be overriden due to
-        # multiple quantization encodings in GGUF checkpoints.
-        nn_model.load_state_dict(
-            state_dict,
-            override_quantization_encoding=True,
-            weight_alignment=1,
-        )
-        self.state_dict = nn_model.state_dict()
-
-        with Graph(
-            getattr(self.huggingface_config, "model_type", "llama3"),
-            input_types=[
-                tokens_type,
-                attn_mask_type,
-                return_n_logits_type,
-                *kv_inputs,
-            ],
-        ) as graph:
-            (
-                tokens,
-                attention_mask,
-                return_n_logits,
-                k_cache,
-                v_cache,
-                start_pos,
-                _,
-            ) = graph.inputs
-            mask_dtype = (
-                self.dtype
-                if self.pipeline_config.model_config.quantization_encoding
-                in [
-                    SupportedEncoding.float32,
-                    SupportedEncoding.bfloat16,
-                ]
-                else (
-                    DType.float32
-                    if self.devices[0].label == "cpu"
-                    else DType.bfloat16
-                )
-            )
-            logits = nn_model(
-                tokens.tensor,
-                attention_mask.tensor.cast(mask_dtype),
-                k_cache.buffer,
-                v_cache.buffer,
-                start_pos.tensor,
-                return_n_logits.tensor,
-            )[0]
-
-            graph.output(logits)
-
-            return graph
 
     def compute_log_probabilities(
         self,

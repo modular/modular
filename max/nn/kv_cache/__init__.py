@@ -29,7 +29,6 @@ from .manager import (
     PaddedKVCacheInputs,
     RaggedKVCacheInputs,
 )
-from .naive_cache import NaiveKVCacheManager
 from .paged_cache import (
     BlockCopyType,
     FetchPagedKVCacheCollection,
@@ -54,7 +53,6 @@ __all__ = [
     "ContinuousBatchingKVCacheManager",
     "ContinuousBatchingKVCacheType",
     "FetchContinuousBatchingKVCacheCollection",
-    "NaiveKVCacheManager",
     "ContinuousHFStaticCache",
     "KVCacheStrategy",
     "KVCacheParams",

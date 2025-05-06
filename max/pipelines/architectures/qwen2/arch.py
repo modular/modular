@@ -34,12 +34,10 @@ qwen2_arch = SupportedArchitecture(
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.NAIVE,
         ],
         SupportedEncoding.bfloat16: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.NAIVE,
         ],
     },
     pipeline_model=Qwen2Model,

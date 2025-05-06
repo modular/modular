@@ -37,30 +37,17 @@ llama_arch = SupportedArchitecture(
     ],
     default_encoding=SupportedEncoding.q4_k,
     supported_encodings={
-        SupportedEncoding.gptq: [
-            KVCacheStrategy.PAGED,
-        ],
-        SupportedEncoding.q4_k: [
-            KVCacheStrategy.NAIVE,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.q4_0: [
-            KVCacheStrategy.NAIVE,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.q6_k: [
-            KVCacheStrategy.NAIVE,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
+        SupportedEncoding.q4_k: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.q4_0: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.q6_k: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.NAIVE,
         ],
         SupportedEncoding.bfloat16: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.NAIVE,
             KVCacheStrategy.PAGED_FA3_FALLBACK,
         ],
         SupportedEncoding.float8_e4m3fn: [

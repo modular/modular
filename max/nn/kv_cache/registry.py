@@ -21,12 +21,10 @@ from max.engine import InferenceSession
 from .cache_params import KVCacheParams, KVCacheStrategy
 from .continuous_batching_cache import ContinuousBatchingKVCacheManager
 from .manager import KVCacheManager
-from .naive_cache import NaiveKVCacheManager
 from .paged_cache import PagedKVCacheManager, PagedKVCacheManagerFA3Fallback
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[KVCacheManager]] = {
     KVCacheStrategy.CONTINUOUS: ContinuousBatchingKVCacheManager,
-    KVCacheStrategy.NAIVE: NaiveKVCacheManager,
     KVCacheStrategy.PAGED: PagedKVCacheManager,
     KVCacheStrategy.PAGED_FA3_FALLBACK: PagedKVCacheManagerFA3Fallback,
 }
@@ -46,15 +44,6 @@ def load_kv_manager(
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
     if params.cache_strategy == KVCacheStrategy.CONTINUOUS:
         return ContinuousBatchingKVCacheManager(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            num_layers=num_layers,
-            devices=devices,
-            session=session,
-        )
-    elif params.cache_strategy == KVCacheStrategy.NAIVE:
-        return NaiveKVCacheManager(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,

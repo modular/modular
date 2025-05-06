@@ -19,7 +19,6 @@ from max.dtype import DType
 
 class KVCacheStrategy(str, Enum):
     MODEL_DEFAULT = "model_default"
-    NAIVE = "naive"
     CONTINUOUS = "continuous"
     PAGED = "paged"
     PAGED_FA3_FALLBACK = "paged_fa3_fallback"
@@ -31,7 +30,7 @@ class KVCacheStrategy(str, Enum):
         return self.value
 
     def uses_opaque(self) -> bool:
-        return self != KVCacheStrategy.NAIVE
+        return True
 
 
 class KVCacheParams:

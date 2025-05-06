@@ -34,12 +34,10 @@ phi3_arch = SupportedArchitecture(
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            # KVCacheStrategy.NAIVE,  # TODO(kathywu): Support naive caching for phi models
         ],
         SupportedEncoding.bfloat16: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            # KVCacheStrategy.NAIVE,  # TODO(kathywu): Support naive caching for phi models
         ],
     },
     pipeline_model=Phi3Model,

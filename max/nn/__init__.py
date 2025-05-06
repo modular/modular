@@ -23,7 +23,6 @@ from .attention import (
     DistributedAttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
-    NaiveAttentionWithRope,
     RaggedAttention,
 )
 from .clamp import clamp
@@ -66,8 +65,6 @@ from .sequential import Sequential
 from .transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
-    NaiveTransformer,
-    NaiveTransformerBlock,
     ReturnLogits,
     Transformer,
     TransformerBlock,
@@ -121,9 +118,6 @@ __all__ = [
     "MLP",
     "Module",
     "LayerList",
-    "NaiveAttentionWithRope",
-    "NaiveTransformer",
-    "NaiveTransformerBlock",
     "OptimizedRotaryEmbedding",
     "RMSNormV1",
     "RMSNorm",

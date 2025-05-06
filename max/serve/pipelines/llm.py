@@ -106,31 +106,6 @@ class TokenGeneratorPipelineConfig:
         return config
 
     @classmethod
-    def dynamic_homogenous(
-        cls,
-        batch_size: int,
-        batch_timeout=0.1,
-        max_forward_steps=1,
-        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
-    ) -> TokenGeneratorPipelineConfig:
-        """The dynamic-homogenous config uses a single queue.
-        Requests are dequeued into a batch and the entire batch is
-        executed until all requests are completed.
-        """
-        token_generation_config = BatchQueueConfig(
-            strategy=BatchingStrategy.DYNAMIC_IMMUTABLE,
-            size=batch_size,
-            timeout=batch_timeout,
-            max_forward_steps=max_forward_steps,
-            enable_chunked_prefill=False,
-        )
-        config = cls(
-            token_generation=token_generation_config,
-            pipeline_role=pipeline_role,
-        )
-        return config
-
-    @classmethod
     def continuous_heterogenous(
         cls,
         tg_batch_size: int,
@@ -492,12 +467,6 @@ def batch_config_from_pipeline_config(
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
-        )
-    elif cache_strategy == KVCacheStrategy.NAIVE:
-        batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
-            batch_size=pipeline_config.max_batch_size,
-            batch_timeout=batch_timeout,
-            max_forward_steps=pipeline_config.max_num_steps,
         )
     elif cache_strategy in [
         KVCacheStrategy.PAGED,

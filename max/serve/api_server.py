@@ -208,8 +208,8 @@ async def main() -> None:
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorPipelineConfig.dynamic_homogenous(
-            batch_size=1
+        pipeline_config=TokenGeneratorPipelineConfig.continuous_heterogenous(
+            tg_batch_size=1, ce_batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),
     )

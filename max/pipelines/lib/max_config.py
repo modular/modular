@@ -58,7 +58,7 @@ class KVCacheConfig(MAXConfig):
     """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
     strategy based on the default strategy for the architecture requested.
 
-    You can also force the engine to use a specific caching strategy: :obj:`naive` | :obj:`continuous` | :obj:`paged`.
+    You can also force the engine to use a specific caching strategy: :obj:`continuous` | :obj:`paged`.
     """
 
     kv_cache_page_size: int = 128
@@ -92,7 +92,7 @@ class KVCacheConfig(MAXConfig):
     @staticmethod
     def help() -> dict[str, str]:
         return {
-            "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
+            "cache_strategy": "Force a specific cache strategy: 'paged' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
             "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 512.",
             "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
             "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",

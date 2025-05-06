@@ -42,7 +42,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
 )
 
-from .naive_llama3 import StackedMLP
+from .llama3 import StackedMLP
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config

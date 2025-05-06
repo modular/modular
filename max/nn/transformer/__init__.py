@@ -16,14 +16,11 @@ from .distributed_transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
 )
-from .naive_transformer import NaiveTransformer, NaiveTransformerBlock
 from .transformer import ReturnLogits, Transformer, TransformerBlock
 
 __all__ = [
     "DistributedTransformer",
     "DistributedTransformerBlock",
-    "NaiveTransformer",
-    "NaiveTransformerBlock",
     "Transformer",
     "TransformerBlock",
     "ReturnLogits",

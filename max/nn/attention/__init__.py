@@ -27,7 +27,6 @@ from .interfaces import (
     AttentionImplQKV,
     DistributedAttentionImpl,
 )
-from .naive_attention_with_rope import NaiveAttentionWithRope
 from .ragged_attention import RaggedAttention
 
 __all__ = [
@@ -40,7 +39,6 @@ __all__ = [
     "DistributedAttentionWithRope",
     "AttentionWithRopeQKV",
     "RaggedAttention",
-    "NaiveAttentionWithRope",
     "AttentionWithRope",
     "GPTQAttentionWithRope",
     "GGUFQAttentionWithRope",

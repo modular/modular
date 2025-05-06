@@ -15,9 +15,12 @@
 from __future__ import annotations
 
 import functools
-from typing import Callable
+from collections.abc import Sequence
+from typing import Callable, Optional
 
+import numpy as np
 from max.dtype import DType
+from max.graph import DeviceRef, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
@@ -41,7 +44,79 @@ from max.nn.kv_cache import (
 )
 
 from .model_config import Llama3Config
-from .naive_llama3 import ConstantLayerNorm, StackedMLP
+
+
+class StackedMLP(Module):
+    def __init__(
+        self,
+        dtype: DType,
+        quantization_encoding: Optional[QuantizationEncoding],
+        hidden_dim: int,
+        feed_forward_length: int,
+        devices: Sequence[DeviceRef],
+        linear_cls: Callable[..., Linear],
+        has_scale: bool = False,
+    ):
+        super().__init__()
+        self.gate_up_proj = linear_cls(
+            in_dim=hidden_dim,
+            out_dim=feed_forward_length * 2,
+            dtype=dtype,
+            device=devices[0],
+            quantization_encoding=quantization_encoding,
+        )
+        self.down_proj = linear_cls(
+            in_dim=feed_forward_length,
+            out_dim=hidden_dim,
+            dtype=dtype,
+            device=devices[0],
+            quantization_encoding=quantization_encoding,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        up_states = self.gate_up_proj(x)
+
+        gate = up_states[:, : up_states.shape.static_dims[0] // 2]
+        up_states = up_states[:, up_states.shape.static_dims[0] // 2 :]
+
+        return self.down_proj(ops.silu(gate) * up_states)
+
+
+class ConstantLayerNorm(Module):
+    """Layer normalization block with constant gamma and beta values."""
+
+    gamma: np.ndarray
+    beta: np.ndarray
+    eps: float = 1e-5
+    device: DeviceRef
+    dtype: DType
+
+    def __init__(
+        self,
+        dims,
+        device: DeviceRef,
+        eps: float = 1e-5,
+        dtype: DType = DType.float32,
+    ):
+        super().__init__()
+        self.gamma = np.ones(dims)
+        self.beta = np.zeros(dims)
+        self.eps = eps
+        self.device = device
+        self.dtype = dtype
+
+    def __call__(self, input: TensorValue):
+        gamma = ops.constant(self.gamma, self.dtype, self.device)
+        beta = ops.constant(self.beta, self.dtype, self.device)
+        return ops.cast(
+            ops.layer_norm(
+                ops.cast(input, DType.float32),
+                gamma=gamma,
+                beta=beta,
+                epsilon=self.eps,
+            ),
+            input.dtype,
+        )
 
 
 class Llama3(Transformer):
