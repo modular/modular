@@ -39,6 +39,7 @@ LIBS = [
     "pwd",
     "python",
     "random",
+    "regex",
     "runtime",
     "stat",
     "subprocess",
