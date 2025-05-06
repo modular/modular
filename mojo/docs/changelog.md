@@ -25,6 +25,12 @@ what we publish.
   - `nvml`
   - Benchmarks
 
+- Implicit trait conformance is deprecated. Each instance of implicit
+  conformance results in a warning, but compilation still goes through. Soon it
+  will be upgraded into an error. Any code currently relying on implicit
+  conformance should either declare conformances explicitly or, if appropriate,
+  replace empty, non-load-bearing traits with trait compositions.
+
 ### Language changes
 
 ### Standard library changes
