@@ -254,6 +254,22 @@ def test_dunder_methods(mut python: Python):
     assert_equal(c, -35)
 
 
+def test_inplace_dunder_methods(mut python: Python):
+    # test dunder methods that don't fall back to their non-inplace counterparts
+    var list_obj = Python.list(1, 2)
+
+    list_obj += Python.list(3, 4)
+    assert_equal(String(list_obj), "[1, 2, 3, 4]")
+
+    list_obj *= 2
+    assert_equal(String(list_obj), "[1, 2, 3, 4, 1, 2, 3, 4]")
+
+    _ = python.eval("class A:\n  def __iadd__(self, other):\n    return 1")
+    var a = python.evaluate("A()")
+    a += 1
+    assert_equal(a, 1)
+
+
 def test_num_conversion() -> None:
     alias n = UInt64(0xFEDC_BA09_8765_4321)
     alias n_str = String(n)
@@ -596,6 +612,7 @@ def main():
     var python = Python()
 
     test_dunder_methods(python)
+    test_inplace_dunder_methods(python)
     test_num_conversion()
     test_bool_conversion()
     test_string_conversions()

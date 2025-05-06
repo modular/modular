@@ -696,7 +696,14 @@ struct PythonObject(
     fn __call_single_arg_inplace_method__(
         mut self, owned method_name: String, rhs: PythonObject
     ) raises:
-        self = self.__getattr__(method_name^)(rhs)
+        var callable_obj: PythonObject
+        try:
+            callable_obj = self.__getattr__("__i" + method_name[2:])
+        except:
+            self = self.__getattr__(method_name^)(rhs)
+            return
+
+        self = callable_obj(rhs)
 
     fn __mul__(self, rhs: PythonObject) raises -> PythonObject:
         """Multiplication.
