@@ -43,6 +43,7 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_py_function[case_raise_empty_error]("case_raise_empty_error")
         b.def_py_function[case_raise_string_error]("case_raise_string_error")
         b.def_py_function[case_mojo_raise]("case_mojo_raise")
+        b.def_py_function[case_mojo_mutate]("case_mojo_mutate")
         b.def_py_function[incr_int__wrapper]("incr_int")
         b.def_py_function[add_to_int__wrapper]("add_to_int")
         b.def_py_function[create_string__wrapper]("create_string")
@@ -96,13 +97,24 @@ fn case_raise_string_error(
     return PythonObject(PyObjectPtr())
 
 
-# Tests `create_wrapper_function()` of a `raises` function.
 @export
 fn case_mojo_raise(
     py_self: PythonObject,
     args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
     raise "Mojo error"
+
+
+@export
+fn case_mojo_mutate(
+    py_self: PythonObject,
+    mut args: TypedPythonObject["Tuple"],
+) raises -> PythonObject:
+    # this would work even if args was `read`, but we want just to test that
+    # the binding API accepts a function that mutates the argument.
+    args[0][0] += 1
+
+    return PythonObject(None)
 
 
 # ===----------------------------------------------------------------------=== #

@@ -49,6 +49,11 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(cm.exception.args, ("Mojo error",))
 
+    def test_case_mojo_mutate(self):
+        list_obj = [1, 3, 5]
+        feature_overview.case_mojo_mutate(list_obj)
+        self.assertEqual(list_obj[0], 2)
+
     def test_case_create_mojo_type_instance(self):
         person = feature_overview.Person()
 
