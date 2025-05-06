@@ -598,12 +598,16 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
 
 IREvaluator::IREvaluator(Elaborator &elaborator, ImplNode *parent)
     : BytecodeInterpreter(elaborator.getTarget(), &elaborator),
-      elaborator(&elaborator), parent(parent) {}
+      elaborator(&elaborator), parent(parent) {
+  setEvaluationContext(this);
+}
 
 IREvaluator::IREvaluator(const IREvaluator &other)
     : ParameterEvaluator(other),
       BytecodeInterpreter(other.getTarget(), other.elaborator),
-      elaborator(other.elaborator), parent(other.parent) {}
+      elaborator(other.elaborator), parent(other.parent) {
+  setEvaluationContext(this);
+}
 
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if

@@ -31,7 +31,9 @@ struct ExpansionGraph;
 /// to concretize parameter expressions and compute symbolic parameter
 /// expressions, such as `apply` on a symbol constant or `get_sizeof` and
 /// `get_alignof` a decl type.
-class IREvaluator : public ParameterEvaluator, public BytecodeInterpreter {
+class IREvaluator : public ParameterEvaluationContext,
+                    public ParameterEvaluator,
+                    public BytecodeInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.

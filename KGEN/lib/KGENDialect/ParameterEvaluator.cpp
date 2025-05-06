@@ -68,13 +68,6 @@ ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> paramValues) {
     addInputValue(param);
 }
 
-// NOTE: This is out of line to provide a home for the ParameterEvaluator
-// vtable.
-FailureOr<TypedAttr> ParameterEvaluator::evaluateExpression(
-    ContextuallyEvaluatedAttrInterface attr) {
-  return failure();
-}
-
 std::pair<IntegerAttr, bool>
 ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
   if (auto op = dyn_cast<ParamOperatorAttr>(attr);
@@ -160,9 +153,12 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
 
   // If an evaluatable parameter persisted, try to simplify it with additional
   // context.
-  if (auto attr = dyn_cast<ContextuallyEvaluatedAttrInterface>(result))
-    if (FailureOr<TypedAttr> expr = evaluateExpression(attr); succeeded(expr))
-      result = *expr;
+  if (evaluationContext)
+    if (auto attr = dyn_cast<ContextuallyEvaluatedAttrInterface>(result))
+      if (FailureOr<TypedAttr> expr =
+              evaluationContext->evaluateExpression(attr);
+          succeeded(expr))
+        result = *expr;
 
   return result;
 }

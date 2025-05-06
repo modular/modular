@@ -43,6 +43,29 @@ void collectParameterReferences(Type type,
 bool isParameterizedType(Type type);
 
 //===----------------------------------------------------------------------===//
+// ParameterEvaluationContext
+//===----------------------------------------------------------------------===//
+
+/// This class is used by ParameterEvaluator to evaluate
+/// ContextuallyEvaluatedAttrInterface instances, which are attributes whose
+/// evaluation may be context-dependent. Sub-classes can store state to help
+/// with evaluation.
+///
+/// The use of this separate context/policy provider class allows
+/// ParameterEvaluators, which are stateful and may need to be instantiated
+/// multiple times, to be decoupled from the logic of evaluating attributes.
+class ParameterEvaluationContext {
+public:
+  virtual ~ParameterEvaluationContext() = default;
+
+  /// Evaluate the provided attribute. If the attribute is not evaluatable,
+  /// return failure(). This does not indicate an unexpected situation, but
+  /// rather no further evaluation was possible.
+  virtual FailureOr<TypedAttr>
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) = 0;
+};
+
+//===----------------------------------------------------------------------===//
 // ParameterEvaluator
 //===----------------------------------------------------------------------===//
 
@@ -50,8 +73,6 @@ bool isParameterizedType(Type type);
 /// and simplify parameter expressions based on those values.
 class ParameterEvaluator : public ParameterReplacer<ParameterEvaluator> {
 public:
-  virtual ~ParameterEvaluator() = default;
-
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
                      ArrayRef<TypedAttr> paramValues);
@@ -62,6 +83,11 @@ public:
   ParameterEvaluator(DenseMap<StringAttr, Attribute> paramValues =
                          DenseMap<StringAttr, Attribute>())
       : paramValues(std::move(paramValues)) {}
+
+  /// Set the evaluation context to use.
+  void setEvaluationContext(ParameterEvaluationContext *context) {
+    evaluationContext = context;
+  }
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -93,12 +119,6 @@ public:
   /// Get the specified attribute with any nested parameter expressions
   /// rewritten.
   TypedAttr getReboundAttribute(TypedAttr attr) { return replace(attr); }
-
-  /// Evaluate a potentially symbolic expression. This hook should be overridden
-  /// to process symbol expressions using some global state, including a symbol
-  /// table.
-  virtual FailureOr<TypedAttr>
-  evaluateExpression(ContextuallyEvaluatedAttrInterface attr);
 
   /// Dump the parameter evaluator state.
   void dump() const;
@@ -132,10 +152,15 @@ private:
   /// These are the top-level input parameters to use when rebinding a
   /// signature.
   SmallVector<TypedAttr> inputParamValues;
+
   /// The relative depth from the signature where the input parameters are from.
   /// This is zero for most applications, but should be set accordingly when
   /// substituting attributes or types inside a signature.
   size_t inputDepth = 0;
+
+  /// The optional context to use for evaluating contexually evaluated
+  /// attributes.
+  ParameterEvaluationContext *evaluationContext = nullptr;
 };
 } // namespace M::KGEN
 

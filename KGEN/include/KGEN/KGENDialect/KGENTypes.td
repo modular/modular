@@ -182,9 +182,11 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
     /// Get this GeneratorType with some parameters bound.
     GeneratorType getSpecializedGenerator(
       ArrayRef<TypedAttr> paramBindings,
-      function_ref<InFlightDiagnostic()> emitErrorFn = {});
+      function_ref<InFlightDiagnostic()> emitErrorFn = {},
+      ParameterEvaluationContext *evaluationContext = nullptr);
     GeneratorType getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings, Location location);
+      ArrayRef<TypedAttr> paramBindings, Location location,
+      ParameterEvaluationContext *evaluationContext = nullptr);
 
     /// Returns true if the signature has no input params.
     bool isFullyBound() { return getInputParamTypes().empty(); };
