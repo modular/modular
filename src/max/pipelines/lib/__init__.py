@@ -14,7 +14,13 @@
 """Types to interface with ML pipelines such as text/token generation."""
 
 from .config import PipelineConfig
-from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
+from .config_enums import (
+    PipelineEngine,
+    PipelineRole,
+    RepoType,
+    RopeType,
+    SupportedEncoding,
+)
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import (
     HuggingFaceFile,
@@ -69,6 +75,7 @@ __all__ = [
     "PipelineConfig",
     "PipelineEngine",
     "PipelineModel",
+    "PipelineRole",
     "PIPELINE_REGISTRY",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",

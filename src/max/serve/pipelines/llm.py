@@ -29,6 +29,7 @@ from max.pipelines.core import (
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
+from max.pipelines.lib import PipelineRole
 from max.pipelines.lib.config import PipelineConfig
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
@@ -81,9 +82,14 @@ class TokenGeneratorPipelineConfig:
 
     token_generation: BatchQueueConfig
     context_encoding: Optional[BatchQueueConfig] = None
+    pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
 
     @classmethod
-    def no_cache(cls, batch_size: int) -> TokenGeneratorPipelineConfig:
+    def no_cache(
+        cls,
+        batch_size: int,
+        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
+    ) -> TokenGeneratorPipelineConfig:
         """The no-cache config uses a single queue with no cache.
         Requests are dequeued into a batch and the entire batch is
         executed until all requests are completed.
@@ -93,12 +99,19 @@ class TokenGeneratorPipelineConfig:
             size=batch_size,
             enable_chunked_prefill=False,
         )
-        config = cls(token_generation=token_generation_config)
+        config = cls(
+            token_generation=token_generation_config,
+            pipeline_role=pipeline_role,
+        )
         return config
 
     @classmethod
     def dynamic_homogenous(
-        cls, batch_size: int, batch_timeout=0.1, max_forward_steps=1
+        cls,
+        batch_size: int,
+        batch_timeout=0.1,
+        max_forward_steps=1,
+        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
     ) -> TokenGeneratorPipelineConfig:
         """The dynamic-homogenous config uses a single queue.
         Requests are dequeued into a batch and the entire batch is
@@ -111,7 +124,10 @@ class TokenGeneratorPipelineConfig:
             max_forward_steps=max_forward_steps,
             enable_chunked_prefill=False,
         )
-        config = cls(token_generation=token_generation_config)
+        config = cls(
+            token_generation=token_generation_config,
+            pipeline_role=pipeline_role,
+        )
         return config
 
     @classmethod
@@ -124,6 +140,7 @@ class TokenGeneratorPipelineConfig:
         target_ce_batch_tokens=4096,
         enable_chunked_prefill: bool = True,
         enable_in_flight_batching: bool = False,
+        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
     ) -> TokenGeneratorPipelineConfig:
         """The continuous-hetrogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -146,6 +163,7 @@ class TokenGeneratorPipelineConfig:
         config = cls(
             context_encoding=context_encoding_config,
             token_generation=token_generation_config,
+            pipeline_role=pipeline_role,
         )
         return config
 
@@ -159,6 +177,7 @@ class TokenGeneratorPipelineConfig:
         target_ce_batch_tokens: int = 4096,
         enable_chunked_prefill: bool = True,
         enable_in_flight_batching: bool = False,
+        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
     ) -> TokenGeneratorPipelineConfig:
         """The paged config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -174,6 +193,7 @@ class TokenGeneratorPipelineConfig:
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=enable_chunked_prefill,
             enable_in_flight_batching=enable_in_flight_batching,
+            pipeline_role=pipeline_role,
         )
 
 
@@ -451,7 +471,8 @@ def batch_config_from_pipeline_config(
             pipeline_config.max_batch_size,
         )
         return TokenGeneratorPipelineConfig.no_cache(
-            batch_size=pipeline_config.max_batch_size
+            batch_size=pipeline_config.max_batch_size,
+            pipeline_role=pipeline_config.pipeline_role,
         )
 
     target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
@@ -470,6 +491,7 @@ def batch_config_from_pipeline_config(
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            pipeline_role=pipeline_config.pipeline_role,
         )
     elif cache_strategy == KVCacheStrategy.NAIVE:
         batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
@@ -492,6 +514,7 @@ def batch_config_from_pipeline_config(
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            pipeline_role=pipeline_config.pipeline_role,
         )
     else:
         raise ValueError(

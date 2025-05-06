@@ -37,6 +37,7 @@ from .core import (
 from .lib.config import PipelineConfig
 from .lib.config_enums import (
     PipelineEngine,
+    PipelineRole,
     RepoType,
     RopeType,
     SupportedEncoding,
@@ -93,6 +94,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "PipelineConfig",
     "PipelineEngine",
+    "PipelineRole",
     "PipelineModel",
     "PipelinesFactory",
     "PipelineTask",
