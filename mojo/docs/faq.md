@@ -265,8 +265,8 @@ Yes, but it's different. When we first announced Mojo, it was available
 only through login, in a JupyterLab environment. Now that Mojo is available
 for local development, we've shut down that service.
 
-The new [Mojo Playground](/mojo/playground) is built into the docs website
-and does not require login.
+The new [Mojo Playground](https://developer.modular.com/playground)
+does not require login.
 
 - It provides access to Mojo and the Mojo standard library. It does not have
   network access, so you can't install additional Mojo or Python packages.
@@ -286,7 +286,7 @@ and does not require login.
 
 ### What are the license terms for the SDK?
 
-Please read the [Mojo SDK License Terms](https://www.modular.com/legal/mojo).
+Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
@@ -355,10 +355,10 @@ the language is evolving rapidly and source stability is not guaranteed.
 
 ### How often will you be releasing new versions of Mojo?
 
-Mojo development is moving fast and we are regularly releasing updates.
-Please join the [Mojo Discord channel](http://discord.gg/modular) for
-notifications and [sign up for our newsletter](https://www.modular.com/newsletter)
-for more coarse-grain updates.
+Mojo development is moving fast and we are regularly releasing updates. Please
+join the [Mojo Discord channel](http://discord.gg/modular) for notifications
+and [sign up for our newsletter](https://www.modular.com/modverse#signup) for
+more coarse-grain updates.
 
 ## Open Source
 
