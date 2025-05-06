@@ -124,7 +124,8 @@ class Graph:
 
     You can't call a `Graph` directly from Python. You must compile it and
     execute it with MAX Engine. For more detail, see the tutorial about how to
-    [build a graph with MAX Graph](/max/tutorials/get-started-with-max-graph).
+    [build a graph with MAX
+    Graph](/max/tutorials/get-started-with-max-graph-in-python).
 
     When creating a graph, a global sequence of chains is initialized and stored
     in Graph._current_chain. Every side-effecting op, e.g. buffer_load,
