@@ -226,7 +226,7 @@ struct SharedDict:
     fn __copyinit__(out self, other: Self):
         self.attributes = other.attributes
 
-    def __setitem__(inout self, key: String, value: String):
+    def __setitem__(mut self, key: String, value: String):
         self.attributes[][key] = value
 
     def __getitem__(self, key: String) -> String:

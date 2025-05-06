@@ -213,10 +213,7 @@ hardware](https://www.modular.com/hardware).
 
 Mojo provides all the language functionality necessary for anyone to extend
 hardware support. As such, we expect hardware vendors and community members
-will contribute additional hardware support in the future. We’ll share more
-details about opening access to Mojo in the future, but in the meantime, you
-can read more about our [hardware extensibility
-vision](https://www.modular.com/hardware).
+will contribute additional hardware support in the future.
 
 ### How does Mojo provide a 35,000x speed-up over Python?
 

@@ -807,63 +807,6 @@ It requires that its condition be a valid parameter expression, and ensures that
 the live branch of the `if` statement is compiled into the program. (This is similar to
 use of the `@parameter` decorator with a `for` loop shown earlier.)
 
-## Mojo types are just parameter expressions
-
-While we've shown how you can use parameter expressions within types, type
-annotations can themselves be arbitrary expressions (just like in Python).
-Types in Mojo have a special metatype type, allowing type-parametric algorithms
-and functions to be defined.
-
-For example, we can create a simplified `Array` that supports arbitrary types of
-elements (via the `AnyTrivialRegType` parameter):
-
-```mojo
-from memory import UnsafePointer
-
-struct Array[T: AnyTrivialRegType]:
-    var data: UnsafePointer[T]
-    var size: Int
-
-    fn __init__(out self, size: Int, value: T):
-        self.size = size
-        self.data = UnsafePointer[T].alloc(self.size)
-        for i in range(self.size):
-            (self.data + i).init_pointee_copy(value)
-
-    fn __getitem__(self, i: Int) -> T:
-        return self.data[i]
-
-    fn __del__(owned self):
-        for i in range(self.size):
-            (self.data + i).destroy_pointee()
-        self.data.free()
-
-var v = Array[Float32](4, 3.14)
-print(v[0], v[1], v[2], v[3])
-```
-
-Notice that the `T` parameter is being used as the formal type for the
-`value` arguments and the return type of the `__getitem__()` function.
-Parameters allow the `Array` type to provide different APIs based on the
-different use-cases.
-
-There are many other cases that benefit from more advanced use of parameters.
-For example, you can execute a closure N times in parallel, feeding in a value
-from the context, like this:
-
-```mojo
-fn parallelize[func: fn (Int) -> None](num_work_items: Int):
-    # Not actually parallel: see the 'algorithm' module for real implementation.
-    for i in range(num_work_items):
-        func(i)
-```
-
-Another example where this is important is with variadic generics, where an
-algorithm or data structure may need to be defined over a list of heterogeneous
-types such as for a tuple. Right now, this is not fully supported in Mojo and
-requires writing some MLIR by hand. In the future, this will be possible in pure
-Mojo.
-
 ## `alias`: named parameter expressions
 
 It is very common to want to *name* compile-time values. Whereas `var` defines a
