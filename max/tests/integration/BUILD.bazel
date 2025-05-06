@@ -23,7 +23,7 @@ mojo_library(
     visibility = [":__subpackages__"],
     deps = [
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/max/kernels/src/extensibility/compiler_internal",
+        "@mojo//:compiler_internal",
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
@@ -48,7 +48,7 @@ mojo_library(
     visibility = [":__subpackages__"],
     deps = [
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/max/kernels/src/extensibility/compiler_internal",
+        "@mojo//:compiler_internal",
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
