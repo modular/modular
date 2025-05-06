@@ -58,6 +58,25 @@ def test_config_post_init__with_weight_path_but_no_model_path():
     ]
 
 
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config_post_init__other_repo_weights(llama_3_1_8b_instruct_local_path):
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        weight_path=Path(
+            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
+        ),
+    )
+
+    assert (
+        config.model_config._weights_repo_id
+        == "modularai/Llama-3.1-8B-Instruct-GGUF"
+    )
+    assert config.model_config.weight_path == [
+        Path("llama-3.1-8b-instruct-q4_0.gguf")
+    ]
+
+
 @mock_pipeline_config_hf_dependencies
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.

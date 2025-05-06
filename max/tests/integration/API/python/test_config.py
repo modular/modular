@@ -29,23 +29,6 @@ from test_common.registry import prepare_registry
 
 @prepare_registry
 @mock_estimate_memory_footprint
-def test_config_post_init__other_repo_weights(replit_1_5_3b_local_path):
-    config = PipelineConfig(
-        model_path=replit_1_5_3b_local_path,
-        trust_remote_code=True,
-        weight_path=[
-            Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
-        ],
-    )
-
-    assert config.model_config._weights_repo_id == "modularai/replit-code-1.5"
-    assert config.model_config.weight_path == [
-        Path("replit-code-v1_5-3b-f32.gguf")
-    ]
-
-
-@prepare_registry
-@mock_estimate_memory_footprint
 @pytest.mark.skipif(
     accelerator_count() == 0, reason="GPTQ only supported on gpu"
 )
