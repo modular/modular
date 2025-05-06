@@ -268,6 +268,7 @@ fn memcpy[
             dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
             src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
             n,
+            False,
         )
     else:
         _memcpy_impl(
