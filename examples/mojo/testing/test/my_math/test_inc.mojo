@@ -25,3 +25,8 @@ def test_inc_max():
         # Assign the return value to the discard pattern to prevent the Mojo
         # compiler from warning that it is unused.
         _ = inc(Int.MAX)
+
+
+def main():
+    test_inc_valid()
+    test_inc_max()

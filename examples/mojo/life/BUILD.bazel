@@ -1,0 +1,57 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_test")
+
+mojo_binary(
+    name = "lifev1",
+    srcs = [
+        "gridv1.mojo",
+        "lifev1.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "lifev2",
+    srcs = [
+        "gridv2.mojo",
+        "lifev2.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "benchmark",
+    srcs = [
+        "benchmark.mojo",
+        "gridv1.mojo",
+        "gridv2.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_gridv1",
+    srcs = [
+        "gridv1.mojo",
+        "test/test_gridv1.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_gridv2",
+    srcs = [
+        "gridv2.mojo",
+        "test/test_gridv2.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
