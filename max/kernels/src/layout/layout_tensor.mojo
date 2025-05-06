@@ -6224,7 +6224,7 @@ fn copy_dram_to_local[
 fn copy_dram_to_local[
     src_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: Int):
+](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: UInt32):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
     This function implements an optimized memory transfer operation specifically
@@ -6269,7 +6269,7 @@ fn copy_dram_to_local[
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
 
-    var descriptor = get_amd_buffer_descriptor(src_iter, bounds)
+    var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
     var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
         src_iter.offset
     )

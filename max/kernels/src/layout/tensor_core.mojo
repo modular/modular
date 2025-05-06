@@ -116,8 +116,8 @@ fn _get_b_k_group_size[
     b: Layout, shape: IndexList[3], transpose_b: Bool
 ]() -> Int:
     return (
-        b.shape[1].value()
-        // shape[2] if transpose_b else b.shape[0].value()
+        product(b.shape[1])
+        // shape[2] if transpose_b else product(b.shape[0])
         // shape[2]
     )
 
