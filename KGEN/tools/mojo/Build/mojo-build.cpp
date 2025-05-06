@@ -160,6 +160,14 @@ enum class OutputType {
   //
   // Produced when `--emit shared-lib` and `--gen-py` are specified.
   pythonExtensionModule,
+  // Produce LLVM IR, with the appropriate file extension (.ll).
+  //
+  // Produced when `--emit llvm` is specified.
+  llvm,
+  // Produce assembly code, with the appropriate file extension (.s).
+  //
+  // Produced when `--emit asm` is specified.
+  assembly,
 };
 
 /// Helper function to create an output file with the given extension
@@ -248,10 +256,7 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
       return state.reportError(
           "shared library should not contain a 'main' function");
     break;
-  }
-
-  // If --emit-llvm is specified, emit LLVM IR
-  if (args.hasArg(options::OPT_emit_llvm)) {
+  case OutputType::llvm: {
     // Compile Module to LLVM IR
     llvm::LLVMContext llvmCtx;
     ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
@@ -270,11 +275,20 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
     llvmModule->print(outFile->os(), nullptr);
     outFile->keep();
 
-    // Print to stdout
-    llvmModule->print(llvm::outs(), nullptr);
-
     // Return with success to avoid the link step
     return EXIT_SUCCESS;
+  } break;
+  case OutputType::assembly: {
+    // Compile Module to Assembly
+    auto outFile = createOutputFile(state, /*hasBinaryOutput=*/false, ".s");
+    if (!outFile)
+      return state.reportError("could not open .s output file");
+
+    if (failed(objectCompiler->emitAssembly(std::move(module), outFile->os())))
+      return state.reportError("could not emit assembly");
+    outFile->keep();
+    return EXIT_SUCCESS;
+  } break;
   }
 
   // Generate an archive for the module.
@@ -362,8 +376,12 @@ static int linkOutput(OutputType outputType, const State &state,
     // Python modules require a .so suffix on all platforms.
     case OutputType::pythonExtensionModule:
       return (inputBaseName + ".so").str();
+    case OutputType::llvm:
+      return (inputBaseName + ".ll").str();
     case OutputType::object:
       return (inputBaseName + ".o").str();
+    case OutputType::assembly:
+      return (inputBaseName + ".asm").str();
     }
   }();
   // Validate this is a valid filename using the `path` ctor.
@@ -608,11 +626,16 @@ static int build(const State &subcommandState) {
     // We have a static archive at this point, go ahead and turn it into a
     // dynamic library.
     outputType = OutputType::sharedLibrary;
+  } else if (emitFileType == "llvm") {
+    outputType = OutputType::llvm;
   } else if (emitFileType == "object") {
     outputType = OutputType::object;
+  } else if (emitFileType == "asm") {
+    outputType = OutputType::assembly;
   } else {
-    // FIXME: Report this error better, by showing the valid values.
-    return state.reportError("Unrecognized value for `--emit`.");
+    return state.reportError(
+        Twine("Unrecognized value for `--emit`. Missing case for: ") +
+        emitFileType);
   }
 
   bool generatePythonBindings =
