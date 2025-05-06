@@ -122,8 +122,16 @@ class DevicesOptionType(click.ParamType):
         if value.lower() in {"cpu", "gpu", "default"}:
             return value.lower()
 
+        # By this point, we should only be left with a list of GPU IDs in a
+        # gpu:<id1>,<id2> format.
+        if not value.startswith("gpu:"):
+            raise ValueError(
+                f"Expected 'gpu:<id1>,<id2>' format, got '{value}'"
+            )
+        # Remove the "gpu:" prefix and split the string by commas to get a list of GPU IDs.
         try:
-            return [int(part) for part in value.replace("gpu:", "").split(",")]
+            gpu_ids = value.removeprefix("gpu:").split(",")
+            return [int(part) for part in gpu_ids]
         except ValueError:
             raise ValueError(
                 f"'{value}' is not a valid device list. Use format 'cpu', 'gpu', or 'gpu:0,1'."
