@@ -103,6 +103,43 @@ def test_validate_model_path__correct_repo_id_provided():
 
 @prepare_registry
 @mock_estimate_memory_footprint
+def test_config__test_incompatible_quantization_encoding(
+    llama_3_1_8b_instruct_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    with pytest.raises(ValueError):
+        # This should raise, as q4_k != f32.
+        config = PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            quantization_encoding=SupportedEncoding.q4_k,
+            weight_path=[
+                Path(
+                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+                )
+            ],
+            max_batch_size=1,
+            max_length=1,
+            engine=PipelineEngine.MAX,
+        )
+
+    # This should not raise, as float32 == f32.
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        quantization_encoding=SupportedEncoding.float32,
+        weight_path=[
+            Path(
+                "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
+            )
+        ],
+        max_batch_size=1,
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_known_architecture(
     llama_3_1_8b_instruct_local_path,
 ):

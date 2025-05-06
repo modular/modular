@@ -52,36 +52,6 @@ def test_config__raises_with_unsupported_GPTQ_format():
         )
 
 
-@pytest.mark.skip("TODO(AITLIB-338): Fix this test")
-@prepare_registry
-@mock_estimate_memory_footprint
-def test_config__test_incompatible_quantization_encoding(
-    llama_3_1_8b_instruct_local_path,
-):
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
-
-    with pytest.raises(ValueError):
-        # This should raise, as q4_k != f32.
-        config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.q4_k,
-            weight_path=[Path("llama-3.1-8b-instruct-f32.gguf")],
-            max_batch_size=1,
-            max_length=1,
-            engine=PipelineEngine.MAX,
-        )
-
-    # This should not raise, as float32 == f32.
-    config = PipelineConfig(
-        model_path=llama_3_1_8b_instruct_local_path,
-        quantization_encoding=SupportedEncoding.float32,
-        weight_path=[Path("llama-3.1-8b-instruct-f32.gguf")],
-        max_batch_size=1,
-        max_length=1,
-        engine=PipelineEngine.MAX,
-    )
-
-
 @prepare_registry
 @pytest.mark.skip("TODO: AITLIB-238")
 @mock_estimate_memory_footprint
