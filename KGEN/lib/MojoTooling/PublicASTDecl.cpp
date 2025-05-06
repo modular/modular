@@ -1202,12 +1202,16 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
     return decl.getInheritedFrom() && name == "__del__";
   };
 
+  auto aliases = extractChildDecls<PublicAliasDecl, AliasDeclOp>(*decl);
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl, shouldHideFn));
+
   SmallVector<StringRef> parentTraits;
   collectParentTraits(ctx, decl, parentTraits,
                       cast<TraitDeclOp>(*decl).getCanonicalTrait());
+
   return llvm::json::Object{
+      {"aliases", toJSONArray(ctx, aliases)},
       {"deprecated", deprecated},
       {"description", description},
       {"fields", llvm::json::Array()},
