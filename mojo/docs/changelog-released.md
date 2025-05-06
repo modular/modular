@@ -20,45 +20,58 @@ release](/max/packages#nightly-release).
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
-## v25.3 (pending)
+## v25.3 (2025-05-06)
 
 ### ✨ Highlights
 
 - Parts of the Mojo standard library continue to be progressively open sourced!
   Packages that are open sourced now include:
-  - `subprocess`
-  - `complex`
+
+  - `algorithm`
+  - `benchmark`
   - `buffer`
   - `compile`
+  - `complex`
   - `gpu`
+  - `logger`
   - `runtime`
-  - `benchmark`
-  - `algorithm`
+  - `subprocess`
 
-- Parts of the Kernel library continue to be progressively open sourced!
+  For more information, see the
+  [Standard library reference](/mojo/lib#standard-library) and the
+  [Standard library source](https://github.com/modular/modular/tree/main/mojo/stdlib).
+
+- Parts of the MAX AI kernels library continue to be progressively open sourced!
   Packages that are open sourced now include:
-  - `register`
+
   - `layout`
   - `linalg`
+  - `register`
+
+  For more information, see the
+  [MAX AI kernels library reference](/mojo/lib#max-ai-kernels-library) and the
+  [MAX AI kernels source](https://github.com/modular/modular/tree/main/mojo/kernels).
 
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
-  of the constraint sets of the two original traits.
+  of the constraint sets of the two original traits. For more information, see
+  [Trait compositions](/mojo/manual/traits/#trait-compositions) in the Mojo
+  Manual.
 
-### Language changes
+- String types in Mojo got several significant improvements. See
+  [Standard library changes](#25-3-standard-library-changes) for details.
 
-- The Mojo compiler now warns about obsolete use of `mut self` in initializers,
-  please switch over to `fn __init__(out self)` instead.
+### Language changes {#25-3-language-changes}
 
-- The syntax for adding attributes to an `__mlir_op` is now limited to inherent
-  attributes (those defined by the op definition). Most users will not need to
-  attach other kinds of attributes, and this helps guard against typos and mojo
-  code getting outdated when the dialect changes.
+- Mojo can now use [user-declared `__merge_with__()` dunder
+  methods](https://github.com/modular/modular/blob/main/mojo/proposals/custom-type-merging.md)
+  to merge values when using different types in ternary operations. This has
+  been adopted to allow pointers to work naturally with the ternary operator,
+  for example `var x = one_pointer if cond else other_pointer`.
 
-- `def` functions now require type annotations on arguments, and treat a missing
-  return type as returning `None`. Previously these defaulted to the `object`
-  type which led to a variety of problems.  Support for `object` is being
-  removed until we have time to investigate a proper replacement.
+- Auto-parameterization now extends to struct metatypes. For example, this
+  declaration `fn foo[M: __type_of(StringLiteral[_])]` will auto-parameterize
+  on the unbound parameter of `StringLiteral`.
 
 - The Mojo compiler now warns about stores to values that are never used, e.g.:
   `x = foo(); x = bar()` will warn about the first assignment to `x` because
@@ -69,183 +82,201 @@ release](/max/packages#nightly-release).
   `var x: Int`.  You may also silence this warning entirely for a variable by
   renaming it to start with an underscore, e.g. `_x`.
 
-- Mojo can now use [user-declared `__merge_with__` dunder
-  methods](https://github.com/modular/modular/blob/main/mojo/proposals/custom-type-merging.md)
-  to merge values if different types in ternary operations.  This has been
-  adopted to allow pointers to work naturally with the ternary operator, for
-  example `var x = one_pointer if cond else other_pointer`.
+- The Mojo compiler now warns about obsolete use of `mut self` in initializers,
+  please switch over to `fn __init__(out self)` instead.
 
-- Auto-parameterization now extends to struct metatypes. For example, this
-  declaration `fn foo[M: __type_of(StringLiteral[_])]` will auto-parameterize
-  on the unbound parameter of `StringLiteral`.
+- `def` functions now require type annotations on arguments, and treat a missing
+  return type as returning `None`. Previously these defaulted to the `object`
+  type which led to a variety of problems.  Support for `object` has been
+  removed until we have time to investigate a proper replacement.
 
-### Standard library changes
+### Standard library changes {#25-3-standard-library-changes}
 
 String types in Mojo got several significant improvements:
 
-- The `String` type no longer copies data from `StringLiteral` and
-  `StaticString` since they are known-static-constant values.  This allows us to
-  make construction from these values be implicit, which improves ergonomics and
-  performance together. It also implements the "small string optimization",
-  which avoids heap allocation for common short strings.  On a 64-bit system,
-  `String` can hold up to 23 bytes inline. Its copy constructor is now O(1),
-  performing string data copy lazily on mutation.
+- The [`String`](/mojo/stdlib/collections/string/string/String/) type no longer
+  copies data from
+  [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/) and
+  [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases) since
+  they are known-static-constant values. This allows us to make construction
+  from these values be implicit, which improves ergonomics and performance
+  together. It also implements the "small string optimization", which avoids
+  heap allocation for common short strings. On a 64-bit system, `String` can
+  hold up to 23 bytes inline. Its copy constructor is now O(1), performing
+  string data copy lazily on mutation.
 
-- `Set` now conforms to `Copyable` so it can be used in other collection elements.
+- The types
+  [`StringSlice`(/mojo/stdlib/collections/string/string_slice/StringSlice/) and [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases)
+  are now part of the prelude, there is no need to import them anymore. These
+  are useful for code that just needs a "view" of string data, not to own and
+  mutate it.
 
-- The types `StringSlice` and `StaticString` are now part of the prelude, there
-  is no need to import them anymore.  These are useful for code that just needs
-  a "view" of string data, not to own and mutate it.
-
-- The `StringLiteral` type has been moved to a more reliable "dependent type"
-  design where the value of the string is carried in a parameter instead of a
-  stored member. This defines away a category of compiler crashes when working
-  with `StringLiteral` by making it impossible to express that.  As a
-  consequence of this change, many APIs should switch to using `StaticString`
-  instead of `StringLiteral`.
+- The [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/) type
+  has been moved to a more reliable "dependent type" design where the value of
+  the string is carried in a parameter instead of a stored member. This defines
+  away a category of compiler crashes when working with `StringLiteral` that
+  involved attempting to manipulate a `StringLiteral` at run time. As a
+  consequence of this change, many APIs should switch to using
+  [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases)
+  instead of `StringLiteral`. For more information on this "dependent type"
+  design for literals, see the proposal,
+  [Fixing Simple Literals in Mojo](https://github.com/modular/modular/blob/main/mojo/proposals/fixing-simple-literals.md).
 
 - `String` supports a new `String(unsafe_uninit_length=x)` constructor and
   `str.resize(unsafe_uninit_length=x)` for clients that want to allocate space
   that they intend to fill in with custom unsafe initialization patterns.  The
   `String(ptr=x, length=y)` constructor has been removed.
 
-- `String` supports working with legacy C APIs that assume "nul" termination,
+- `String` supports working with legacy C APIs that assume null termination,
   but the details have changed: `String` is now no longer implicitly
-  nul-terminated, which means that it is incorrect to assume that
-  `str.unsafe_ptr()` will return a nul-terminated string.  For that, use the
+  null-terminated, which means that it is incorrect to assume that
+  `str.unsafe_ptr()` will return a null-terminated string.  For that, use the
   `str.unsafe_cstr_ptr()` method. It now requires the string to be mutable in
-  order to make nul-termination lazy on demand. This improves performance for
+  order to make null-termination lazy on demand. This improves performance for
   strings that are not passed to legacy APIs.
 
-- The `List` type has been improved similarly to `String` to reduce
-  inconsistency and enable power-user features, including removing adding
-  `List(unsafe_uninit_length=x)` and `list.resize(unsafe_uninit_size=n)` methods
-  avoid initialized memory that the caller plans to overwrite.
+- The [`List`](/mojo/stdlib/collections/list/List) type has been improved
+  similarly to `String` to reduce inconsistency and enable power-user features,
+  including removing adding `List(unsafe_uninit_length=x)` and
+  `list.resize(unsafe_uninit_size=n)` methods avoid initialized memory that the
+  caller plans to overwrite.
 
-The following traits have been removed in favor of trait composition:
-`EqualityComparableCollectionElement`, `RepresentableCollectionElement`,
-`TestableCollectionElement`, `Testable`, `StringableIdentifiable`,
-`IntervalPayload`, `WritableCollectionElement`, `ComparableCollectionElement`,
-`BoolableCollectionElement`, `EqualityComparableWritableCollectionElement`,
-`EqualityComparableWritableCollectionElementNew`, `CollectionElementNew`,
-`WritableCollectionElementNew`.
+- [`Set`](/mojo/stdlib/collections/set/Set/) now conforms to the
+  [`Copyable`](/mojo/stdlib/builtin/value/Copyable/) trait so you can store sets
+  in other types of collections (for example, as values in a `Dict`).
 
-The `PythonObject` type is being reworked in preparation for some improvements
-to Mojo-Python interoperability:
+- The following traits have been removed in favor of trait composition:
+  `EqualityComparableCollectionElement`, `RepresentableCollectionElement`,
+  `TestableCollectionElement`, `Testable`, `StringableIdentifiable`,
+  `StringableCollectionElement`, `IntervalPayload`, `WritableCollectionElement`,
+  `ComparableCollectionElement`, `BoolableCollectionElement`,
+  `EqualityComparableWritableCollectionElement`,
+  `EqualityComparableWritableCollectionElementNew`, `CollectionElementNew`,
+  `WritableCollectionElementNew`.
 
-- Since virtually any operation on a `PythonObject` can raise, the
-  `PythonObject` struct no longer implements the following traits:
-  `ImplicitlyBoolable`, `ImplicitlyIntable`.
+  For example, you can replace `EqualityComparableCollectionElement` with
+  `EqualityComparable & CollectionElement`. `StringableCollectionElement` was
+  already deprecated and scheduled to be removed; it can be replaced with
+  `Writable & CollectionElement`.
 
-- `PythonObject.from_borrowed_ptr` has been removed in favor of a constructor
-  with a keyword-only argument.
+- The [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) type is
+  being reworked in preparation for some improvements to Mojo-Python
+  interoperability:
 
-- The `list` and `tuple` factory methods have been moved from `PythonObject` to
-  the `Python` struct.
+  - Since virtually any operation on a `PythonObject` can raise, the
+    `PythonObject` struct no longer implements the following traits:
+    `ImplicitlyBoolable`, `ImplicitlyIntable`.
 
-- The deprecated `PythonObject.to_float64` method has been removed.
+  - `PythonObject` is no longer implicitly constructible from tuple or list
+    literals. For example, `var x : PythonObject = [1, 2, "foo"]` is no longer
+    accepted. Instead, please use the new `Python.list()` and `Python.tuple()`
+    factory methods. For example:
 
-- `Span` now has a `swap_elements` method which takes two indices and swaps them
-   within the span.
+    ```mojo
+    var x = Python.list(1, 2, "foo")
+    ```
 
-- `Pointer` now has `get_immutable()` to return a new `Pointer`
-  with the same underlying data but an `ImmutableOrigin`.
+    (The `list()` and `tuple()` factory methods were originally added on
+    `PythonObject`, but have been moved to the `Python` struct.)
 
-- You can now forward a `VariadicPack` that is `Writable` to a writer using
-`WritableVariadicPack`:
+    We hope to re-enable literal syntax in the future as the standard library
+    matures.
 
-```mojo
-from utils.write import WritableVariadicPack
+  - `PythonObject.from_borrowed_ptr()` has been removed in favor of a
+    constructor with a keyword-only `from_borrowed_ptr` argument.
 
-fn print_message[*Ts: Writable](*messages: *Ts):
-    print("message:", WritableVariadicPack(messages), "[end]")
+  - The deprecated `PythonObject.to_float64()` method has been removed. Use the
+    `Float64()` constructor, instead.
 
-x = 42
-print_message("'x = ", x, "'")
-```
+- [`Span`](/mojo/stdlib/memory/span/Span) now has a `swap_elements()` method
+  which takes two indices and swaps them within the span.
 
-```text
-message: 'x = 42' [end]
-```
+- [`Pointer`](/mojo/stdlib/memory/pointer/Pointer/) now has a `get_immutable()`
+  method to return a new `Pointer` with the same underlying data but with an
+  `ImmutableOrigin`.
 
-In this example the variadic pack is buffered to the stack in the `print` call
-along with the extra arguments, before doing a single syscall to write to
-stdout.
+- You can now forward a
+  [`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack/) where all
+  values are `Writable` to a writer using
+  [`WritableVariadicPack`](/mojo/stdlib/utils/write/WritableVariadicPack/):
 
-- Removed `unroll` utility. Now simply use `@parameter` on for-loops.
+  ```mojo
+  from utils.write import WritableVariadicPack
 
-```mojo
-from utils.loop import unroll
+  fn print_message[*Ts: Writable](*messages: *Ts):
+      print("message:", WritableVariadicPack(messages), "[end]")
 
-# Before
-@always_inline
-@parameter
-fn foo[i: Int]():
-    body_logic[i]()
-unroll[foo, iteration_range]()
+  x = 42
+  print_message("'x = ", x, "'")
+  ```
 
-# After
-@parameter
-for i in range(iteration_range):
-    body_logic[i]()
-```
+  ```text
+  message: 'x = 42' [end]
+  ```
 
-- The `is_power_of_two(x)` function in the `bit` package is now a method on
-  `Int`, `UInt` and `SIMD`.
+  In this example the variadic pack is buffered to the stack in the `print` call
+  along with the extra arguments, before doing a single syscall to write to
+  stdout.
 
-- The `constrained[cond, string]()` function now accepts multiple strings that
-  are printed concatenated on failure, so you can use:
-  `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
-  efficient and somewhat more ergonomic than using string concatenation.
+- [`debug_assert()`](/mojo/stdlib/builtin/debug_assert/debug_assert/) in AMD GPU
+  kernels now behaves the same as on NVIDIA, printing the thread information and
+  variadic args passed after the condition:
 
-- `pathlib.Path.write_text` now accepts a `Writable` argument instead of a `Stringable`
-  argument. This makes the function more efficient by removing a String allocation.
+  ```mojo
+  from gpu.host import DeviceContext
 
-- Added `pathlib.Path.write_bytes` which enables writing raw bytes to a file.
+  fn kernel():
+      var x = 1
+      debug_assert(x == 2, "x should be 2 but is: ", x)
 
-- Added `os.path.split_extension` to split a path into its root and extension.
+  def main():
+      with DeviceContext() as ctx:
+          ctx.enqueue_function[kernel](grid_dim=2, block_dim=2)
+  ```
 
-- Added `os.path.is_absolute` to check if a given path is absolute or not.
+  Running `mojo run -D ASSERT=all [filename]` will output:
 
-- `PythonObject` is no longer implicitly constructible from tuple or list
-  literals, e.g. `var x : PythonObject = [1, 2, "foo"]` is no longer accepted.
-  Instead, please use named constructors like
-  `var x = Python.list(1, 2, "foo")`.  We hope to re-enable the syntax in
-  the future as the standard library matures.
+  ```text
+  At /tmp/test.mojo:5:17: block: [0,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
+  At /tmp/test.mojo:5:17: block: [0,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
+  At /tmp/test.mojo:5:17: block: [1,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
+  At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
+  ```
 
-- One can now specify the consistency used in atomic operations with the default
-  being sequential consistency.
+- The
+  [`constrained[cond, string]()`](/mojo/stdlib/builtin/constrained/constrained/)
+  function now accepts multiple strings that are printed concatenated on
+  failure, so you can use:
 
-### GPU changes
+  ```mojo
+  constrained[cond, "hello: ", String(n), ": world"]()
+  ```
 
-- `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
-thread information and variadic args passed after the condition:
+  This is more compile-time efficient and somewhat more ergonomic than using
+  string concatenation.
 
-```mojo
-from gpu.host import DeviceContext
+- [`pathlib.Path.write_text()`](/mojo/stdlib/pathlib/path/Path/#write_text) now
+  accepts a `Writable` argument instead of a `Stringable` argument. This makes
+  the function more efficient by removing a String allocation.
 
-fn kernel():
-    var x = 1
-    debug_assert(x == 2, "x should be 2 but is: ", x)
+- Added
+  [`pathlib.Path.write_bytes()`](/mojo/stdlib/pathlib/path/Path/#write_bytes)
+  which enables writing raw bytes to a file.
 
-def main():
-    with DeviceContext() as ctx:
-        ctx.enqueue_function[kernel](grid_dim=2, block_dim=2)
-```
+- Added
+  [`os.path.split_extension()`](/mojo/stdlib/os/path/path/split_extension) to
+  split a path into its root and extension.
 
-Running `mojo run -D ASSERT=all [filename]` will output:
+- Added [`os.path.is_absolute()`](/mojo/stdlib/os/path/path/is_absolute) to
+  check if a given path is absolute or not.
 
-```text
-At /tmp/test.mojo:5:17: block: [0,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
-At /tmp/test.mojo:5:17: block: [0,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
-At /tmp/test.mojo:5:17: block: [1,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
-At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
-```
+- One can now specify the consistency model used in atomic operations with the
+  default being sequential consistency. The consistency models are defined in
+  the [`Consistency`](/mojo/stdlib/os/atomic/Consistency/) struct.
 
-- Removed deprecated `DeviceContext` methods `copy_sync` and `memset_sync`.
-
-- Add `Variant.is_type_supported` method. ([PR #4057](https://github.com/modular/modular/pull/4057))
-  Example:
+- Added
+  [`Variant.is_type_supported()`](/mojo/stdlib/utils/variant/Variant/#is_type_supported)
+  method. ([PR #4057](https://github.com/modular/modular/pull/4057)) Example:
 
   ```mojo
     def takes_variant(mut arg: Variant):
@@ -260,84 +291,114 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - The `type` parameter of `SIMD` has been renamed to `dtype`.
 
+- The `is_power_of_two(x)` function in the `bit` package is now a method on
+  `Int`, `UInt` and `SIMD`.
+
 - The `Pointer.address_of(...)` and `UnsafePointer.address_of(...)` functions
-  have been deprecated.  Please use the `Pointer(to=...)` and `UnsafePointer(to=...)`
-  constructors instead.  Conceptually, this is saying "please
-  initialize a `Pointer` (a reference, if you will) to *some other address in
-  memory*.  In the future, these `address_of` functions will be removed.
+  have been deprecated. Please use the
+  [`Pointer(to=...)`](/mojo/stdlib/memory/pointer/Pointer#__init__) and
+  [`UnsafePointer(to=...)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#__init__)
+  constructors instead. Conceptually, this is saying "please initialize a
+  `Pointer` (a reference, if you will) to *some other address in memory*. In the
+  future, these `address_of()` functions will be removed.
 
-- The `logger` package is now open sourced (along with its commit history)!
-  This helps continue our commitment to progressively open sourcing more
-  of the standard library.
+### Tooling changes {#25-3-tooling-changes}
 
-### Tooling changes
-
-- **Fixed SIMD boolean display in debugger:** SIMD boolean values now display
+- Fixed SIMD boolean display in debugger: SIMD boolean values now display
   correctly with proper bit extraction.
 
-- **Improved language server performance:** The language server now avoids
+- Improved language server performance: The language server now avoids
   parsing more than it needs to, improving performance across the board.
 
-### Mojo Compiler
-
 - The Mojo compiler is now able to interpret all arithmetic operations from
-the `index` dialect that are used in methods of `Int` and `UInt` types.
-That allows users to finally compute constants at compile time:
+  the `index` dialect that are used in methods of `Int` and `UInt` types.
+  That allows users to finally compute constants at compile time:
 
-```mojo
-alias a: Int = 1000000000
-alias b: Int = (5 * a) // 2
-```
+  ```mojo
+  alias a: Int = 1000000000
+  alias b: Int = (5 * a) // 2
+  ```
 
-previously compiler would throw error "cannot fold operation".
+  Previously, the compiler would throw the error "cannot fold operation".
 
-- New `--emit-llvm` option to the `mojo build` command that allows users to emit
-LLVM IR. When `--emit-llvm` is specified, the build process will: compile mojo
-code to LLVM IR, save the IR to a .ll file (using the same name as the input
- file), and print the IR to stdout for immediate inspection.
+- Added a new `--emit-llvm` option to the `mojo build` command, which allows
+  users to emit LLVM IR. When `--emit-llvm` is specified, the build process
+  will: compile mojo code to LLVM IR, save the IR to a .ll file (using the same
+  name as the input file), and print the IR to stdout for immediate inspection.
 
-### ❌ Removed
+### Other changes
+
+- The syntax for adding attributes to an `__mlir_op` is now limited to inherent
+  attributes (those defined by the op definition). Most users will not need to
+  attach other kinds of attributes, and this helps guard against typos and mojo
+  code getting outdated when the dialect changes.
+
+### ❌ Removed {#25-3-removed}
 
 - The `SIMD.roundeven()` method has been removed from the standard library.
-  This functionality is now handled by the `round()` function.
+  This functionality is now handled by the
+  [`round()`](/mojo/stdlib/builtin/math/round) function.
 
 - Error messages about the obsolete `borrowed` and `inout` keywords, as well as
-  the obsolete `-> Int as name` syntax has been removed.
-
-- The `StringableCollectionElement` trait has been removed in favor of
-  `WritableCollectionElement`.
+  the obsolete `-> Int as name` syntax have been removed.
 
 - The `object` type has been removed.
 
-- `utils.numerics.ulp` has been removed.  Use the same `ulp` function from the
-  `math` package instead.
+- `utils.numerics.ulp` has been removed. Use the
+  [`ulp()`](/mojo/stdlib/math/math/ulp) function from the `math` package
+  instead.
 
 - Several free functions that were deprecated in the 25.2 release have now been
   removed.  This includes:
+
   - The `str` free function. Use the `String` constructor instead.
   - The `int` free function. Use the `Int` constructor instead.
   - The `bool` free function. Use the `Bool` constructor instead.
   - The `float` free function. Use the `Float64` constructor instead.
 
+- Removed deprecated
+  [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) methods
+  `copy_sync()` and `memset_sync()`.
+
+- The `unroll()` utility has been removed. Use the
+  [`@parameter for` construct](/mojo/manual/decorators/parameter#parametric-for-statement)
+  instead.
+
+  ```mojo
+  from utils.loop import unroll
+
+  # Before
+  @always_inline
+  @parameter
+  fn foo[i: Int]():
+      body_logic[i]()
+  unroll[foo, iteration_range]()
+
+  # After
+  @parameter
+  for i in range(iteration_range):
+      body_logic[i]()
+  ```
+
 - The `InlinedString` type has been removed.  Use `String` instead which now
   supports the Small String Optimization (SSO).
 
-### 🛠️ Fixed
+### 🛠️ Fixed {#25-3-fixed}
 
-- [#3510](https://github.com/modular/modular/issues/3510) - `PythonObject` doesn't
-  handle large `UInt64` correctly.
+- [#3510](https://github.com/modular/modular/issues/3510) - `PythonObject`
+  doesn't handle large `UInt64` correctly.
 
 - [#3847](https://github.com/modular/modular/issues/3847) - Count leading zeros
-  can't be used on SIMD at compile time.
+  can't be used on `SIMD` at compile time.
 
 - [#4198](https://github.com/modular/modular/issues/4198) - Apple M4
   is not properly detected with `sys.is_apple_silicon()`.
 
-- [#3662](https://github.com/modular/modular/issues/3662) - Code using `llvm.assume`
-  cannot run at compile time.
+- [#3662](https://github.com/modular/modular/issues/3662) - Code using
+  `llvm.assume` cannot run at compile time.
 
 - [#4273](https://github.com/modular/modular/issues/4273) - `count_leading_zeros`
-  doesn't work for vectors with size > 1 at comptime.
+  doesn't work for vectors with size > 1 at compile time.
 
 - [#4320](https://github.com/modular/modular/issues/4320) - Intermittent
   miscompilation with bytecode imported traits.
@@ -354,8 +415,24 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 - [#4362](https://github.com/modular/modular/issues/4362) - Function call with
   `IntLiteral` incorrectly eliminated despite side-effects.
 
-- [#4431](https://github.com/modular/modular/issues/4431) - [BUG] Python.evaluate
-  doesn't handle nul termination correctly.
+- [#4431](https://github.com/modular/modular/issues/4431) - [BUG]
+  Python.evaluate doesn't handle null termination correctly.
+
+### Special thanks
+
+Special thanks to our community contributors:
+
+[@auris](https://github.com/auris),
+[@bgreni](https://github.com/bgreni),
+[@christianbator](https://github.com/christianbator),
+[@KamilGucik](https://github.com/KamilGucik),
+[@kasmith11](https://github.com/kasmith11),
+[@martinvuyk](https://github.com/martinvuyk),
+[@ratulb](https://github.com/ratulb),
+[@rd4com](https://github.com/rd4com),
+[@sora](https://github.com/sora),
+[@thatstoasty](https://github.com/thatstoasty), and
+[@winding-lines](https://github.com/winding-lines).
 
 ## v25.2 (2025-03-25)
 
@@ -742,7 +819,8 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
   origin parameter extending the lifetime of unrelated local variables for this
   common method.
 
-- Several more packages are now documented.
+- Several more packages are now documented:
+
   - [`compile`](/mojo/stdlib/compile) package
   - [`gpu`](/mojo/stdlib/gpu) package
   - [`layout`](/mojo/kernels/layout) package is underway, beginning with core
