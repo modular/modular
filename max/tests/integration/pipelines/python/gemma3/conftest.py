@@ -94,38 +94,42 @@ def attention_weights(text_config: Gemma3TextConfig) -> dict[str, torch.Tensor]:
     K_NORM_STD = 0.793
     Q_NORM_STD = 0.68
 
+    q_dim = text_config.head_dim * text_config.num_attention_heads
+    kv_dim = text_config.head_dim * text_config.num_key_value_heads
+    hidden_size = text_config.hidden_size
+
     return {
         "k_norm.weight": torch.randn(
-            256,
+            text_config.head_dim,
             dtype=torch.bfloat16,
         )
         * K_NORM_STD,
         "k_proj.weight": torch.randn(
-            256,
-            1152,
+            kv_dim,
+            hidden_size,
             dtype=torch.bfloat16,
         )
         * K_PROJ_STD,
         "o_proj.weight": torch.randn(
-            1152,
-            1024,
+            hidden_size,
+            q_dim,
             dtype=torch.bfloat16,
         )
         * O_PROJ_STD,
         "q_norm.weight": torch.randn(
-            256,
+            text_config.head_dim,
             dtype=torch.bfloat16,
         )
         * Q_NORM_STD,
         "q_proj.weight": torch.randn(
-            1024,
-            1152,
+            q_dim,
+            hidden_size,
             dtype=torch.bfloat16,
         )
         * Q_PROJ_STD,
         "v_proj.weight": torch.randn(
-            256,
-            1152,
+            kv_dim,
+            hidden_size,
             dtype=torch.bfloat16,
         )
         * V_PROJ_STD,
