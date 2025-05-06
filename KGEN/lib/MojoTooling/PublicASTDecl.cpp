@@ -271,14 +271,26 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
   if (line >= lines.size())
     return {};
 
+  // Skip blank lines after the section header.
+  size_t cur = line + 1;
+  while (cur < lineEnd && lines[cur].trim().empty())
+    ++cur;
+
+  // If we hit another section header or end, log diagnostic and return empty.
+  if (cur >= lineEnd || lines[cur].ends_with(":")) {
+    llvm::errs()
+        << "[mojodoc] Section '" << lines[line].rtrim(":")
+        << "' is empty or immediately followed by another section header.\n";
+    line = cur - 1; // So the main loop can process the next section header.
+    return {};
+  }
+
   std::string paragraph;
   llvm::raw_string_ostream paragraphOS(paragraph);
 
-  paragraphOS << lines[++line].trim();
-
-  // Merge in additional description lines that have equal or larger
-  // indentation.
-  size_t indent = getIndentationLevel(lines[line]);
+  paragraphOS << lines[cur].trim();
+  size_t indent = getIndentationLevel(lines[cur]);
+  line = cur;
   while (++line < lineEnd && getIndentationLevel(lines[line]) >= indent)
     paragraphOS << "\n" << lines[line].trim();
   return paragraphOS.str();
