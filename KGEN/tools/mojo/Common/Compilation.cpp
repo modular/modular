@@ -140,6 +140,13 @@ ErrorOrSuccess M::parseCompilationOptions(
         return Error("Invalid number of threads: " + numThreadsStr.str());
     }
   }
+
+  // Unike other command line options, disableWarnings is parsed
+  // in State::parseDiagnosticFormatArguments(), because there is another
+  // warning emission mechanism in State::reportWarning(), and the option
+  // is single-sourced to affect both places.
+  compilationOptions.disableWarnings = state.areWarningsDisabled();
+
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
 
   // Initialize the MLIR context.

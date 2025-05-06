@@ -67,7 +67,7 @@ static int doc(const State &subcommandState) {
   }
 
   if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format))
+          args, options::OPT_diagnostic_format, llvm::opt::OptSpecifier()))
     return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;

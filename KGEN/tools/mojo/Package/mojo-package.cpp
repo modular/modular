@@ -341,7 +341,7 @@ static int package(const State &subcommandState) {
   }
 
   if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format))
+          args, options::OPT_diagnostic_format, options::OPT_disable_warnings))
     return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
