@@ -195,8 +195,7 @@ def pipeline_config_options(func):
         is_flag=False,
         type=DevicesOptionType(),
         show_default=False,
-        default="",
-        flag_value="0",
+        default="default",
         help=(
             "Whether to run the model on CPU (--devices=cpu), GPU (--devices=gpu)"
             " or a list of GPUs (--devices=gpu:0,1) etc. An ID value can be"

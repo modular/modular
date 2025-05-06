@@ -38,10 +38,10 @@ class DevicesOptionType(click.ParamType):
         Returns:
             List of requested GPU IDs
         """
-        if devices == "gpu":
+        if devices == "gpu" or devices == "default":
             return [0]
         elif isinstance(devices, list):
-            return devices if devices else [0]
+            return devices
         return []
 
     @staticmethod
@@ -92,12 +92,11 @@ class DevicesOptionType(click.ParamType):
         available_gpu_ids = [
             d.id for d in available_devices if d.device_type == "gpu"
         ]
-        if devices == "cpu" or (
-            len(available_gpu_ids) == 0 and devices != "gpu"
-        ):
+        if devices == "cpu":
+            return [DeviceSpec.cpu()]
+        elif devices == "default" and len(available_gpu_ids) == 0:
             logger.info("No GPUs available, falling back to CPU")
-            # This should return CPU device spec.
-            return available_devices
+            return [DeviceSpec.cpu()]
 
         requested_gpu_ids = DevicesOptionType._get_requested_gpu_ids(devices)
 
@@ -115,19 +114,15 @@ class DevicesOptionType(click.ParamType):
             value: The value provided as a string (e.g., "cpu", "gpu", "gpu:0,1,2")
 
         Returns:
-            Either "cpu", "gpu", or a list of GPU IDs as integers.
+            Either "cpu", "gpu", "default", or a non-empty list of GPU IDs as integers.
 
         Raises:
             ValueError: If the format is invalid
         """
-        if not value:
-            return []
-
-        if value.lower() in {"cpu", "gpu"}:
+        if value.lower() in {"cpu", "gpu", "default"}:
             return value.lower()
 
         try:
-            # Support both "gpu:0,1" and old "0,1" formats.
             return [int(part) for part in value.replace("gpu:", "").split(",")]
         except ValueError:
             raise ValueError(
