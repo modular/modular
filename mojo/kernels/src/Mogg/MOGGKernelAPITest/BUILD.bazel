@@ -6,8 +6,8 @@ mojo_kgen_lib(
     name = "MOGGKernelAPITestLib",
     srcs = glob(["**/*.mojo"]),
     deps = [
-        "//Kernels/mojo/extensibility/compiler_internal",
-        "//Kernels/mojo/extensibility/tensor_internal",
+        "//open-source/max/mojo/kernels/src/extensibility/compiler_internal",
+        "//open-source/max/mojo/kernels/src/extensibility/tensor_internal",
         "@mojo//:stdlib",
     ],
 )

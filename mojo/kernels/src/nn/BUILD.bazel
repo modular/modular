@@ -6,7 +6,7 @@ mojo_library(
     name = "nn",
     srcs = glob(["**/*.mojo"]),
     deps = [
-        "//Kernels/mojo/extensibility/tensor_internal",
+        "//open-source/max/mojo/kernels/src/extensibility/tensor_internal",
         "@mojo//:kv_cache",
         "@mojo//:layout",
         "@mojo//:linalg",
