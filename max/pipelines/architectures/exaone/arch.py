@@ -30,8 +30,14 @@ exaone_arch = SupportedArchitecture(
     default_encoding=SupportedEncoding.float32,
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={
-        SupportedEncoding.q4_k: [KVCacheStrategy.NAIVE],
-        SupportedEncoding.q6_k: [KVCacheStrategy.NAIVE],
+        SupportedEncoding.q4_k: [
+            KVCacheStrategy.NAIVE,
+            KVCacheStrategy.CONTINUOUS,
+        ],
+        SupportedEncoding.q6_k: [
+            KVCacheStrategy.NAIVE,
+            KVCacheStrategy.CONTINUOUS,
+        ],
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
