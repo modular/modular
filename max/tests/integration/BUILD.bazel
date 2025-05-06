@@ -22,8 +22,8 @@ mojo_library(
     srcs = glob(["Inputs/counter_ops/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
-        "//Kernels/mojo/extensibility/compiler_internal",
         "//SDK/lib/API/mojo/max/tensor",
+        "//open-source/max/mojo/kernels/src/extensibility/compiler_internal",
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
@@ -47,8 +47,8 @@ mojo_library(
     srcs = glob(["Inputs/kernel_verification_ops/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
-        "//Kernels/mojo/extensibility/compiler_internal",
         "//SDK/lib/API/mojo/max/tensor",
+        "//open-source/max/mojo/kernels/src/extensibility/compiler_internal",
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
