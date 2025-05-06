@@ -71,6 +71,14 @@ Changes to Python-Mojo interoperability:
 
 ### Tooling changes
 
+- Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
+  - Example usage: `mojo build --emit=llvm YourModule.mojo`
+
+- Removing support for command line option `--emit-llvm` infavor of `--emit=llvm`.
+
+- Added support for emitting assembly code (.s) using `--emit-asm`.
+  - Example usage: `mojo build --emit=asm YourModule.mojo`
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
