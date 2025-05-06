@@ -149,7 +149,7 @@ from utils.numerics import max_finite, min_finite
 # ===-----------------------------------------------------------------------===#
 @value
 @register_passable("trivial")
-struct Batch(CollectionElement):
+struct Batch(Copyable, Movable):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -214,7 +214,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @value
-struct Report(CollectionElement):
+struct Report(Copyable, Movable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """

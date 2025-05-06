@@ -33,7 +33,7 @@ from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 # Check that the dimension is either x, y, or z.
 # TODO: Some day we should use typed string literals or 'requires' clauses to
 #       enforce this at the type system level.
-# https://github.com/modular/max/issues/1278
+# https://github.com/modular/modular/issues/1278
 fn _verify_xyz[dim: StaticString]():
     constrained[
         dim == "x" or dim == "y" or dim == "z",
@@ -1143,13 +1143,13 @@ alias block_idx = _BlockIdx()
 
 
 @always_inline
-fn _get_gcn_idx[offset: Int, dtype: DType = DType.int16]() -> UInt:
+fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
         UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
         has_side_effect=False,
     ]()
-    return UInt(Int(ptr.load[alignment=4](offset)))
+    return UInt(ptr.load[alignment=4](offset))
 
 
 @register_passable("trivial")
@@ -1193,7 +1193,7 @@ struct _BlockDim:
                     constrained[dim == "z"]()
                     return 8
 
-            return _get_gcn_idx[_get_offset()]()
+            return _get_gcn_idx[_get_offset(), DType.uint16]()
 
 
 alias block_dim = _BlockDim()
@@ -1244,7 +1244,7 @@ struct _GridDim:
                     constrained[dim == "z"]()
                     return 2
 
-            return _get_gcn_idx[_get_offset(), DType.int32]()
+            return _get_gcn_idx[_get_offset(), DType.uint32]()
 
 
 alias grid_dim = _GridDim()

@@ -560,8 +560,8 @@ The following sections give brief introduction to the main collection types.
 
 [`List`](/mojo/stdlib/collections/list/List) is a dynamically-sized array of
 elements. List elements need to conform to the
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait, which
-just means that the items must be copyable and movable. Most of the common
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
 trait. You can create a `List` by passing the element type as a parameter,  like
 this:
@@ -661,8 +661,8 @@ var values = Dict[String, Float64]()
 
 The dictionary's key type must conform to the
 [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, and value
-elements must conform to the
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait.
+elements must conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
+and [`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
@@ -720,7 +720,8 @@ We both like:
 An [`Optional`](/mojo/stdlib/collections/optional/Optional)  represents a
 value that may or may not be present. Like the other collection types, it is
 generic, and can hold any type that conforms to the
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait.
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
 ```mojo
 # Two ways to initialize an Optional with a value

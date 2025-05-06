@@ -331,6 +331,16 @@ struct MatmulKernels[
         scheduler_hint=Index(2, 2, 2),
     )
 
+    alias mi300x_64x64_splitk_1 = MatmulConfig[
+        a_type, b_type, c_type, transpose_b
+    ](
+        block_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(32, 32, _bk_base[a_type, True]()),
+        num_pipeline_stages=1,
+        scheduler_hint=Index(2, 2, 2),
+        num_k_partitions=4,
+    )
+
     alias mi300x_128x128_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, 128, _bk_base[a_type, True]()),
         warp_tile_shape=Index(64, 64, _bk_base[a_type, True]()),

@@ -11,7 +11,7 @@ involved soon. [The Modular forum](https://forum.modular.com/) is the best place
 to stay up-to-date with the latest developments.
 
 In the meantime, you can still support the project by testing the kernels,
-filing bugs, and suggesting improvements through [GitHub Issues](https://github.com/modular/max/issues).
+filing bugs, and suggesting improvements through [GitHub Issues](https://github.com/modular/modular/issues).
 
 ## Submitting bugs
 

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import UnsafePointer
+
 
 trait DevicePassable:
     """This trait marks types as passable to accelerator devices."""
@@ -18,15 +20,13 @@ trait DevicePassable:
     alias device_type: AnyTrivialRegType
     """Indicate the type being used on accelerator devices."""
 
-    fn _to_device_type(self) -> device_type:
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
         """
-        Convert the host type object to a device_type.
+        Convert the host type object to a device_type and store it at the
+        target address.
 
         NOTE: This should only be called by `DeviceContext` during invocation
         of accelerator kernels.
-
-        Returns:
-            A `device_type`.
         """
         ...
 

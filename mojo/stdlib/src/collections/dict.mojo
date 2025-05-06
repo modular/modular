@@ -28,8 +28,8 @@ Its implementation closely mirrors Python's `dict` implementation:
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
 Key elements must implement the `KeyElement` trait, which encompasses
-Movable, Hashable, and EqualityComparable. It also includes CollectionElement
-and Copyable until we push references through the standard library types.
+Movable, Hashable, and EqualityComparable. It also includes Copyable and Movable
+until we push references through the standard library types.
 
 Value elements must be CollectionElements for a similar reason. Both key and
 value types must always be Movable so we can resize the dictionary as it grows.
@@ -56,7 +56,7 @@ trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
 struct _DictEntryIter[
     dict_mutability: Bool, //,
     K: KeyElement,
-    V: CollectionElement,
+    V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
 ]:
@@ -113,7 +113,7 @@ struct _DictEntryIter[
 struct _DictKeyIter[
     dict_mutability: Bool, //,
     K: KeyElement,
-    V: CollectionElement,
+    V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
 ]:
@@ -151,7 +151,7 @@ struct _DictKeyIter[
 struct _DictValueIter[
     dict_mutability: Bool, //,
     K: KeyElement,
-    V: CollectionElement,
+    V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
 ]:
@@ -200,8 +200,8 @@ struct _DictValueIter[
 
 
 @value
-struct DictEntry[K: KeyElement, V: CollectionElement](
-    CollectionElement, ExplicitlyCopyable
+struct DictEntry[K: KeyElement, V: Copyable & Movable](
+    Copyable, Movable, ExplicitlyCopyable
 ):
     """Store a key-value pair entry inside a dictionary.
 
@@ -343,8 +343,8 @@ struct _DictIndex:
         self.data.free()
 
 
-struct Dict[K: KeyElement, V: CollectionElement](
-    Sized, CollectionElement, ExplicitlyCopyable, Boolable
+struct Dict[K: KeyElement, V: Copyable & Movable](
+    Sized, Copyable, Movable, ExplicitlyCopyable, Boolable
 ):
     """A container that stores key-value pairs.
 
@@ -352,10 +352,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
     dictionary, which can accept arbitrary key and value types.
 
     The key type must implement the `KeyElement` trait, which encompasses
-    `Movable`, `Hashable`, and `EqualityComparable`. It also includes
-    `CollectionElement` and `Copyable` until we have references.
+    `Movable`, `Hashable`, and `EqualityComparable`. It also includes `Copyable`
+    and `Movable` until we have references.
 
-    The value type must implement the `CollectionElement` trait.
+    The value type must implement the `Copyable` and `Movable` traits.
 
     Examples:
 
@@ -373,7 +373,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     Parameters:
         K: The type of the dictionary key. Must be Hashable and EqualityComparable
            so we can find the key in the map.
-        V: The value type of the dictionary. Currently must be CollectionElement.
+        V: The value type of the dictionary. Currently must be Copyable & Movable.
 
     For more information on the Mojo `Dict` type, see the
     [Mojo `Dict` manual](/mojo/manual/types/#dict). To learn more about using
@@ -419,8 +419,8 @@ struct Dict[K: KeyElement, V: CollectionElement](
     #     the beginning to free new space while retaining insertion order.
     #
     # Key elements must implement the `KeyElement` trait, which encompasses
-    # Movable, Hashable, and EqualityComparable. It also includes CollectionElement
-    # and Copyable until we have references.
+    # Movable, Hashable, and EqualityComparable. It also includes Copyable
+    # and Movable until we have references.
     #
     # Value elements must be CollectionElements for a similar reason. Both key and
     # value types must always be Movable so we can resize the dictionary as it grows.
@@ -683,7 +683,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     @no_inline
     fn __str__[
-        T: KeyElement & Representable, U: CollectionElement & Representable, //
+        T: KeyElement & Representable, U: Copyable & Movable & Representable, //
     ](self: Dict[T, U]) -> String:
         """Returns a string representation of a `Dict`.
 
@@ -711,7 +711,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             T: The type of the keys in the Dict. Must implement the
                 traits `Representable` and `KeyElement`.
             U: The type of the values in the Dict. Must implement the
-                traits `Representable` and `CollectionElement`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A string representation of the Dict.
@@ -1077,8 +1077,8 @@ struct Dict[K: KeyElement, V: CollectionElement](
         self._n_entries = self._len
 
 
-struct OwnedKwargsDict[V: CollectionElement](
-    Sized, CollectionElement, ExplicitlyCopyable
+struct OwnedKwargsDict[V: Copyable & Movable](
+    Sized, Copyable, Movable, ExplicitlyCopyable
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 
@@ -1087,7 +1087,7 @@ struct OwnedKwargsDict[V: CollectionElement](
     should not be instantiated directly by users.
 
     Parameters:
-        V: The value type of the dictionary. Currently must be CollectionElement.
+        V: The value type of the dictionary. Currently must be Copyable & Movable.
     """
 
     # Fields

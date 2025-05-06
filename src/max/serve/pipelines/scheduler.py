@@ -14,7 +14,6 @@
 import logging
 import queue
 import time
-from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ from max.pipelines.core import (
     TokenGenerator,
 )
 from max.profiler import Trace, traced
+from max.serve.scheduler import Scheduler
 from max.serve.scheduler.process_control import ProcessControl
 from max.serve.scheduler.queues import STOP_STREAM
 from max.serve.scheduler.zmq_queue import ZmqQueue
@@ -128,21 +128,6 @@ class RequestDeque:
 
     def empty(self) -> bool:
         return self.qsize() == 0
-
-
-class Scheduler(ABC):
-    """Abstract base class defining the interface for schedulers."""
-
-    @abstractmethod
-    def run(self):
-        """The main scheduler loop that creates and executes batches.
-
-        This method should implement the core scheduling logic including:
-        - Batch creation and management
-        - Request scheduling
-        - Error handling
-        """
-        pass
 
 
 @dataclass

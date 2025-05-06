@@ -42,7 +42,7 @@ OpenAI-compatible APIs as follows.
 First enter the local virtual environment:
 
 ```cd
-git clone -b stable https://github.com/modular/max.git
+git clone -b stable https://github.com/modular/modular.git
 
 cd max/benchmark
 

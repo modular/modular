@@ -28,6 +28,10 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
+from tensor_internal import ManagedTensorSlice
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
+
 
 def execute_ragged_flash_attention(
     ctx: DeviceContext,
@@ -207,7 +211,10 @@ def execute_ragged_flash_attention(
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        true_ce_row_offsets_device.tensor,
+        ManagedTensorSlice[
+            io_spec=IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ](true_ce_row_offsets_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -222,7 +229,10 @@ def execute_ragged_flash_attention(
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        mixed_ce_row_offsets_device.tensor,
+        ManagedTensorSlice[
+            io_spec=IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ](mixed_ce_row_offsets_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )

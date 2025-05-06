@@ -13,7 +13,13 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, is_nvidia_gpu, simdwidthof, sizeof
+from sys import (
+    alignof,
+    is_nvidia_gpu,
+    simdwidthof,
+    sizeof,
+    has_amd_gpu_accelerator,
+)
 
 import gpu.warp as warp
 from buffer import NDBuffer
@@ -66,6 +72,8 @@ from utils.numerics import get_accum_type
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
+
+from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 
 
 @always_inline
@@ -1096,8 +1104,8 @@ fn multistage_gemm_split_k_kernel[
     locks: UnsafePointer[Int32],
 ):
     var M = c.dim(0)
-    var N = c.dim(1)
-
+    alias N = b.shape[0]() if transpose_b else b.shape[1]()
+    alias K = b.shape[1]() if transpose_b else b.shape[0]()
     alias BK = config.block_tile_shape[2]
 
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
@@ -1156,14 +1164,28 @@ fn multistage_gemm_split_k_kernel[
             num_pipeline_stages=config.num_pipeline_stages,
         )
 
-        multistage_gemm_kernel[
-            work_space_type,
-            work_space_part.layout,
-            a_type,
-            a_part.layout,
-            b_type,
-            b_part.layout,
-            transpose_b,
-            config=k_partition_config,
-            serial_reduction=serial_reduction,
-        ](work_space_part, a_part, b_part, locks)
+        @parameter
+        if has_amd_gpu_accelerator() and transpose_b:
+            amd_gemm_kernel[
+                work_space_type,
+                work_space_part.layout,
+                a_type,
+                a_part.layout,
+                b_type,
+                b_part.layout,
+                transpose_b,
+                config=k_partition_config,
+            ](work_space_part, a_part, b_part)
+
+        else:
+            multistage_gemm_kernel[
+                work_space_type,
+                work_space_part.layout,
+                a_type,
+                a_part.layout,
+                b_type,
+                b_part.layout,
+                transpose_b,
+                config=k_partition_config,
+                serial_reduction=serial_reduction,
+            ](work_space_part, a_part, b_part, locks)

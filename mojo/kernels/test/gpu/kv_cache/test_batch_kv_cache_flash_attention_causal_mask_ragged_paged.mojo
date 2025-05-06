@@ -32,6 +32,9 @@ from testing import assert_almost_equal
 
 from utils import Index, IndexList
 
+from tensor_internal import ManagedTensorSlice
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -210,7 +213,10 @@ def execute_ragged_flash_attention[
         kv_collection_continuous_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        input_row_offsets_device.tensor,
+        ManagedTensorSlice[
+            io_spec=IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ](input_row_offsets_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -223,7 +229,10 @@ def execute_ragged_flash_attention[
         kv_collection_paged_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        input_row_offsets_device.tensor,
+        ManagedTensorSlice[
+            io_spec=IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ](input_row_offsets_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )

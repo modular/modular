@@ -32,6 +32,7 @@ def main():
 """
 from collections import Optional
 from math import isclose
+from python import PythonObject
 
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
@@ -132,7 +133,8 @@ fn assert_equal[
         )
 
 
-# TODO: Remove the String, SIMD and List overloads once we have more powerful traits.
+# TODO: Remove the PythonObject, String, SIMD and List overloads once we have
+# more powerful traits.
 @always_inline
 fn assert_equal(
     lhs: String,
@@ -196,7 +198,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    T: CollectionElement & EqualityComparable & Representable, //
+    T: Copyable & Movable & EqualityComparable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -309,6 +311,35 @@ fn assert_equal[
 
 
 @always_inline
+fn assert_equal(
+    lhs: PythonObject,
+    rhs: PythonObject,
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    """Asserts that the input values are equal. If it is not then an Error
+    is raised.
+
+    Args:
+        lhs: The lhs of the equality.
+        rhs: The rhs of the equality.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (default to the `__call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=location.or_else(__call_location()),
+        )
+
+
+@always_inline
 fn assert_not_equal[
     T: EqualityComparable & Stringable, //
 ](
@@ -405,7 +436,7 @@ fn assert_not_equal[
 
 @always_inline
 fn assert_not_equal[
-    T: CollectionElement & EqualityComparable & Representable, //
+    T: Copyable & Movable & EqualityComparable & Representable, //
 ](
     lhs: List[T],
     rhs: List[T],

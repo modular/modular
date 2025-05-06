@@ -83,7 +83,7 @@ fn run_rms_norm_gpu[
     ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
         data_buf.store(idx, val)
 
-    rms_norm_gpu[input_fn, identity_output_fn](
+    rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape, gamma, epsilon, weight_offset, ctx
     )
     ctx.enqueue_copy(res, data_d)

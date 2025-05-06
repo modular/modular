@@ -32,12 +32,13 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
-from sys.info import _current_arch
+from sys.info import _is_sm_9x_or_newer
 
 from bit import count_leading_zeros, count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
+from algorithm import vectorize
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -306,6 +307,15 @@ fn isqrt(x: SIMD) -> __type_of(x):
             return _isqrt_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
 
         return _isqrt_nvvm(x)
+    elif is_amd_gpu():
+
+        @parameter
+        if x.dtype in (DType.float16, DType.float32, DType.float64):
+            return _call_amdgcn_intrinsic[
+                "llvm.amdgcn.rsq." + _get_amdgcn_type_suffix[x.dtype]()
+            ](x)
+
+        return isqrt(x.cast[DType.float32]()).cast[x.dtype]()
 
     return 1 / sqrt(x)
 
@@ -354,6 +364,15 @@ fn recip(x: SIMD) -> __type_of(x):
             return _recip_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
 
         return _recip_nvvm(x)
+    elif is_amd_gpu():
+
+        @parameter
+        if x.dtype in (DType.float16, DType.float32, DType.float64):
+            return _call_amdgcn_intrinsic[
+                "llvm.amdgcn.rcp." + _get_amdgcn_type_suffix[x.dtype]()
+            ](x)
+
+        return recip(x.cast[DType.float32]()).cast[x.dtype]()
 
     return 1 / x
 
@@ -389,7 +408,7 @@ fn exp2[
         if dtype is DType.float16:
 
             @parameter
-            if _current_arch() == "sm_90a":
+            if _is_sm_9x_or_newer():
                 return _call_ptx_intrinsic[
                     scalar_instruction="ex2.approx.f16",
                     vector2_instruction="ex2.approx.f16x2",
@@ -400,7 +419,7 @@ fn exp2[
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif dtype is DType.bfloat16 and _current_arch() == "sm_90a":
+        elif dtype is DType.bfloat16 and _is_sm_9x_or_newer():
             return _call_ptx_intrinsic[
                 scalar_instruction="ex2.approx.ftz.bf16",
                 vector2_instruction="ex2.approx.ftz.bf16x2",
@@ -414,20 +433,9 @@ fn exp2[
 
     @parameter
     if is_amd_gpu() and dtype in (DType.float16, DType.float32):
-        alias asm = StaticString(
-            "llvm.amdgcn.exp2.f16"
-        ) if dtype is DType.float16 else "llvm.amdgcn.exp2.f32"
-        var res = SIMD[dtype, simd_width]()
-
-        @parameter
-        for i in range(simd_width):
-            res[i] = llvm_intrinsic[
-                asm,
-                Scalar[dtype],
-                has_side_effect=False,
-            ](x[i])
-
-        return res
+        return _call_amdgcn_intrinsic[
+            "llvm.amdgcn.exp2." + _get_amdgcn_type_suffix[dtype]()
+        ](x)
 
     @parameter
     if dtype not in (DType.float32, DType.float64):
@@ -1161,12 +1169,14 @@ fn iota[
         len: The length of the buffer to fill.
         offset: The value to fill at index 0.
     """
-    alias simd_width = simdwidthof[dtype]()
-    var vector_end = align_down(len, simd_width)
-    for i in range(0, vector_end, simd_width):
-        buff.store(i, iota[dtype, simd_width](i + offset))
-    for i in range(vector_end, len):
-        buff.store(i, i + offset)
+
+    @always_inline
+    @__copy_capture(offset, buff)
+    @parameter
+    fn fill[simd_width: Int](i: Int):
+        buff.store(i, iota[dtype, simd_width](offset + i))
+
+    vectorize[fill, simdwidthof[dtype]()](len)
 
 
 fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
@@ -2619,6 +2629,32 @@ fn _call_ptx_intrinsic[
         )
 
     return res
+
+
+@always_inline
+fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD) -> __type_of(x):
+    var res = __type_of(x)()
+
+    @parameter
+    for i in range(x.size):
+        res[i] = llvm_intrinsic[intrin, Scalar[x.dtype], has_side_effect=False](
+            x[i]
+        )
+    return res
+
+
+@always_inline
+fn _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
+    @parameter
+    if dtype is DType.float16:
+        return "f16"
+    elif dtype is DType.float32:
+        return "f32"
+    elif dtype is DType.float64:
+        return "f64"
+    else:
+        constrained[False, "Extend to support additional dtypes."]()
+        return ""
 
 
 # ===----------------------------------------------------------------------=== #

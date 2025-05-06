@@ -21,7 +21,7 @@ from collections.string import StaticString
 
 @value
 @register_passable("trivial")
-struct ConstantMemoryMapping(CollectionElement):
+struct ConstantMemoryMapping(Copyable, Movable):
     """Represents a mapping of constant memory between host and device.
 
     This struct encapsulates the information needed to manage constant memory

@@ -31,6 +31,8 @@ from nn.mha_mask import MHAMask, TileMaskStatus
 from utils.index import Index, IndexList
 from linalg.fast_div import FastDiv
 from os.atomic import Atomic
+from builtin.device_passable import DevicePassable
+from tensor_internal import ManagedTensorSlice
 
 
 @value

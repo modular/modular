@@ -31,7 +31,7 @@ from memory import UnsafePointer
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: CollectionElement](
+struct Deque[ElementType: Copyable & Movable](
     Boolable,
     ExplicitlyCopyable,
     Movable,
@@ -44,7 +44,7 @@ struct Deque[ElementType: CollectionElement](
 
     Parameters:
         ElementType: The type of the elements in the deque.
-            Must implement the trait `CollectionElement`.
+            Must implement the traits `Copyable` and `Movable`.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -273,7 +273,7 @@ struct Deque[ElementType: CollectionElement](
                 self.append(element[])
 
     fn __eq__[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
@@ -298,7 +298,7 @@ struct Deque[ElementType: CollectionElement](
         return True
 
     fn __ne__[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
@@ -315,7 +315,7 @@ struct Deque[ElementType: CollectionElement](
         return not (self == other)
 
     fn __contains__[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
@@ -404,7 +404,7 @@ struct Deque[ElementType: CollectionElement](
 
     @no_inline
     fn write_to[
-        T: Representable & CollectionElement,
+        T: Representable & Copyable & Movable,
         WriterType: Writer,
     ](self: Deque[T], mut writer: WriterType):
         """Writes `my_deque.__str__()` to a `Writer`.
@@ -427,7 +427,7 @@ struct Deque[ElementType: CollectionElement](
 
     @no_inline
     fn __str__[
-        T: Representable & CollectionElement, //
+        T: Representable & Copyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -455,7 +455,7 @@ struct Deque[ElementType: CollectionElement](
 
     @no_inline
     fn __repr__[
-        T: Representable & CollectionElement, //
+        T: Representable & Copyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -532,7 +532,7 @@ struct Deque[ElementType: CollectionElement](
         self._tail = 0
 
     fn count[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
@@ -620,7 +620,7 @@ struct Deque[ElementType: CollectionElement](
             (src + i).move_pointee_into(self._data + self._head)
 
     fn index[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](
         self: Deque[T],
         value: T,
@@ -714,7 +714,7 @@ struct Deque[ElementType: CollectionElement](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
@@ -986,7 +986,7 @@ struct Deque[ElementType: CollectionElement](
 @value
 struct _DequeIter[
     deque_mutability: Bool, //,
-    ElementType: CollectionElement,
+    ElementType: Copyable & Movable,
     deque_lifetime: Origin[deque_mutability],
     forward: Bool = True,
 ]:

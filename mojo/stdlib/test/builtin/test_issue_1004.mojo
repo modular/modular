@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-# Test for https://github.com/modular/max/issues/1004
+# Test for https://github.com/modular/modular/issues/1004
 
 from testing import assert_equal
 

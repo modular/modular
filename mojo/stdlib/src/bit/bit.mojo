@@ -353,6 +353,11 @@ fn log2_floor(val: Int) -> Int:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0.
     """
+    if val == 32:
+        return 5
+    if val == 64:
+        return 6
+
     alias bitwidth = bitwidthof[Int]()
     return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
 

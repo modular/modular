@@ -25,7 +25,7 @@ alias target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
     `features = "+ptx81", `,
-    `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+    `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
     `simd_bit_width = 128,`,
     `index_bit_width = 64`,
     `> : !kgen.target`,
@@ -54,7 +54,7 @@ def test_data_layout_llvm[emission_kind: StaticString]():
     ]()
 
     assert_true(
-        "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64"
+        "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64"
         in target_short_llvm
     )
 

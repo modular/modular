@@ -19,12 +19,7 @@ import math
 from typing import Callable
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    Weight,
-    ops,
-)
+from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
@@ -40,9 +35,7 @@ from max.nn.kv_cache import (
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import OptimizedRotaryEmbedding
-from max.pipelines.architectures.gemma3.layers.rms_norm import (
-    Gemma3RMSNorm,
-)
+from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 
 class _Gemma3Attention(Module):
@@ -219,23 +212,6 @@ class _Gemma3Attention(Module):
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if self.use_rope:
-            if xq.device is not None:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
-                    xq.device
-                )
-            else:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
-            xq = fused_qk_ragged_rope(
-                self.kv_params,
-                xq,
-                kwargs["input_row_offsets"],
-                kv_collection,
-                freqs_cis,
-                layer_idx,
-                interleaved=self.rope.interleaved,
-            )
-
         if self.use_qk_norm:
             # Apply QK norm to query and key states.
 
@@ -253,6 +229,24 @@ class _Gemma3Attention(Module):
                 layer_idx=self.layer_idx,
                 total_seq_len=total_seq_len,
                 input_row_offsets=kwargs["input_row_offsets"],
+                weight_offset=1.0,
+            )
+
+        if self.use_rope:
+            if xq.device is not None:
+                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
+                    xq.device
+                )
+            else:
+                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            xq = fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                kwargs["input_row_offsets"],
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=self.rope.interleaved,
             )
 
         # Calculate Flash Attention.

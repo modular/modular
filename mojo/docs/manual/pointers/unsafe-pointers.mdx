@@ -92,15 +92,16 @@ At any given time, a pointer can be in one of several states:
   behavior.
 
 - Pointing to initialized memory. You can initialize an allocated, uninitialized
-  pointer by moving or copying an existing value into the memory. Or you can use
-  the `address_of()` static method to get a pointer to an existing value.
+  pointer by moving or copying an existing value into the memory. Or you can get
+  a pointer to an  existing value by calling the constructor with the `to`
+  keyword argument.
 
   ```mojo
   ptr.init_pointee_copy(value)
   # or
   ptr.init_pointee_move(value^)
   # or
-  ptr = UnsafePointer[Int].address_of(value)
+  ptr = UnsafePointer(to=value)
   ```
 
   Once the value is initialized, you can read or mutate it using the dereference
@@ -171,17 +172,17 @@ type](/mojo/manual/types#register-passable-memory-only-and-trivial-types) (like
 str_ptr.init_pointee_move(String("Owned string"))
 ```
 
-Alternately, you can get a pointer to an existing value using the static
-`address_of()` method. This is useful for getting a pointer to a value on the
-stack, for example.
+Alternately, you can get a pointer to an existing value by calling the
+`UnsafePointer` constructor with the keyword `to` argument. This is useful for
+getting a pointer to a value on the stack, for example.
 
 ```mojo
 var counter: Int = 5
-ptr = UnsafePointer[Int].address_of(counter)
+ptr = UnsafePointer(to=counter)
 ```
 
-Note that when calling `address_of()`, you don't need to allocate memory ahead
-of time, since you're pointing to an existing value.
+Note that when calling `UnsafePointer(to=value)`, you don't need to allocate
+memory, since you're pointing to an existing value.
 
 ### Dereferencing pointers
 
@@ -193,7 +194,6 @@ Use the `[]` dereference operator to access the value stored at a pointer (the
 print(ptr[])
 # mutate pointee
 ptr[] = 0
-
 ```
 
 ```output
@@ -317,6 +317,59 @@ for offset in range(6):
 ```output
 0.0, 0.0, 3.0, 0.0, 0.0, 0.0,
 ```
+
+## `UnsafePointer` and origins
+
+The `UnsafePointer` struct has an optional `origin` parameter to track the
+origin of the memory it points to.
+
+For pointers initialized with the `to` keyword argument, the origin is set to
+the origin of the pointee. For example, in the following code, `s_ptr.origin` is
+the same as the origin of `s`:
+
+```mojo
+s = String("Testing")
+s_ptr = UnsafePointer(to=s)
+```
+
+When initializing an `UnsafePointer` in other ways, the `origin` defaults to
+`MutableAnyOrigin`—indicating a pointer that could reference anything in the
+current scope.
+
+If you're using a pointer in the implementation of a struct, you usually don't
+have to worry about the origin, as long as the pointer isn't exposed outside of
+of the struct. For example, if you implement a static array type that allocates
+memory in its constructor, deallocates it in its destructor, and doesn't expose
+the pointer outside of the struct, the default origin is fine.
+
+But if the struct exposes a pointer to that memory, you need to set the origin
+appropriately. For example, the `List` type has an `unsafe_ptr()` method that
+returns an `UnsafePointer` to the underlying storage. In this case, the returned
+pointer should share the origin of the list, since the list is the logical owner
+of the storage.
+
+That method looks something like this:
+
+```mojo
+fn unsafe_ptr(
+    ref self,
+) -> UnsafePointer[
+    T,
+    mut = Origin(__origin_of(self)).mut,
+    origin = __origin_of(self),
+]:
+
+    return self.data.origin_cast[
+        mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
+    ]()
+```
+
+This returns a copy of the original pointer, with the origin set to match the
+origin and mutability of the `self` value.
+
+A method like this is unsafe, but setting the correct origin makes it safer,
+since the compiler knows that the pointer is referring to data owned by the
+list.
 
 ## Working with foreign pointers
 
@@ -495,13 +548,13 @@ from (pointer address) + <var>offset[n]</var>.
 Unsafe pointers are unsafe for several reasons:
 
 - Memory management is up to the user. You need to manually allocate
-  and free memory, and be aware of when other APIs are allocating or freeing
+  and free memory, and/or be aware of when other APIs are allocating or freeing
   memory for you.
 
 - `UnsafePointer` values are *nullable*—that is, the pointer
   is not guaranteed to point to anything. And even when a pointer points to
   allocated memory, that memory may not be *initialized*.
 
-- Mojo doesn't track lifetimes for the data pointed to by an `UnsafePointer`.
-  When you use an `UnsafePointer`, managing memory and knowing when to destroy
-  objects is your responsibility.
+- `UnsafePointer` does have an `origin` parameter so Mojo can track the origin
+  of the data it points to, but it also provides unsafe APIs. For example, when
+  you do pointer arithmetic, the compiler doesn't do any bounds checking.

@@ -31,7 +31,7 @@ from .benchmark import _run_impl, _RunOptions
 
 
 @value
-struct BenchMetric(CollectionElement, Stringable, Writable):
+struct BenchMetric(Copyable, Movable, Stringable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -144,7 +144,7 @@ struct BenchMetric(CollectionElement, Stringable, Writable):
 
 
 @value
-struct ThroughputMeasure(CollectionElement):
+struct ThroughputMeasure(Copyable, Movable):
     """Records a throughput metric of metric BenchMetric and value."""
 
     var metric: BenchMetric
@@ -289,7 +289,7 @@ struct Format(Writable, Stringable):
 
 
 @value
-struct BenchConfig(CollectionElement):
+struct BenchConfig(Copyable, Movable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
     """
@@ -442,7 +442,7 @@ struct BenchId:
 
 
 @value
-struct BenchmarkInfo(CollectionElement):
+struct BenchmarkInfo(Copyable, Movable):
     """Defines a Benchmark Info struct to record execution Statistics."""
 
     var name: String
@@ -1148,7 +1148,7 @@ struct Bench(Writable):
 
 
 @value
-struct _Metric(CollectionElement):
+struct _Metric(Copyable, Movable):
     var max_width: Int
     var rates: Dict[Int, Float64]
 

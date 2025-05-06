@@ -56,6 +56,10 @@ from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
+from layout import LayoutTensor, Layout
+from tensor_internal import ManagedTensorSlice, trace_slice_arg
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (ragged)
@@ -334,14 +338,14 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     type: DType,
     weight_type: DType,
     output_type: DType,
+    scale_type: DType,
     target: StaticString = "cpu",
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[weight_type, 2, _, _],
-    scale: Float32,
+    input_scale: NDBuffer[scale_type, 2, _, _],
+    weight_scale: NDBuffer[scale_type, 2, _, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[mut=True, output_type, 2, _, _],
@@ -357,7 +361,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads *
             head_size).
-        scale: Scale to be multiplied to the QKV Tensor.
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object from
             kv_collection.
@@ -374,7 +379,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             trace_arg("output", output),
             trace_arg("hidden_state", hidden_state),
             trace_arg("weight", weight),
-            "scale=" + String(scale),
+            trace_arg("input_scale", input_scale),
+            trace_arg("weight_scale", weight_scale),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -390,13 +396,12 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
             target=target,
-            group_size=group_size,
-            has_zp=has_zp,
         ](
             hidden_state,
             input_row_offsets,
             weight,
-            scale,
+            input_scale,
+            weight_scale,
             kv_collection,
             layer_idx,
             output,
@@ -526,17 +531,17 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     type: DType,
     weight_type: DType,
     output_type: DType,
+    scale_type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[weight_type, 2, _, _],
-    scale: Float32,
+    input_scale: NDBuffer[scale_type, 2, _, _],
+    weight_scale: NDBuffer[scale_type, 2, _, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[mut=True, output_type, 2, _, _],
@@ -553,7 +558,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
             in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads *
             head_size).
-        scale: Input scale to be multiplied to the QKV Tensor.
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object
             from kv_collection.
@@ -570,15 +576,12 @@ fn _fused_qkv_matmul_kv_cache_ragged_scale[
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
-        target=target,
-        group_size=group_size,
-        has_zp=has_zp,
-    ](
+    return _fused_qkv_matmul_kv_cache_ragged_impl_scale[target=target,](
         hidden_state,
         input_row_offsets,
         weight,
-        scale,
+        input_scale,
+        weight_scale,
         k_cache,
         v_cache,
         output,
@@ -859,16 +862,16 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     type: DType,
     weight_type: DType,
     output_type: DType,
+    scale_type: DType,
     cache_t: KVCacheT, //,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[weight_type, 2, _, _],
-    scale: Float32,
+    input_scale: NDBuffer[scale_type, 2, _, _],
+    weight_scale: NDBuffer[scale_type, 2, _, _],
     k_cache: cache_t,
     v_cache: cache_t,
     output: NDBuffer[mut=True, output_type, 2, *_],
@@ -883,7 +886,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             denoting the start of each sequence along the seq_len dimension.
         weight: Tensor with shape (num_heads * head_size, (num_heads + 2 *
             num_kv_heads) * head_size).
-        scale: Input scale to be multiplied to the QKV Tensor.
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
         k_cache: The historical KVCacheT for keys, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
         v_cache: The historical KVCacheT for values, with logical shape:
@@ -903,13 +907,43 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
+    # Here we decide the quantization scheme for the QKV Tensor.
+    alias use_per_tensor = (
+        input_scale.shape.get[0]() == 1
+        and input_scale.shape.get[1]() == 1
+        and weight_scale.shape.get[0]() == 1
+        and weight_scale.shape.get[1]() == 1
+    )
+    alias use_per_channel = (
+        input_scale.shape.get[1]() == 1
+        and weight_scale.shape.get[1]() == 1
+        and not use_per_tensor
+    )
+
+    constrained[
+        use_per_tensor or use_per_channel, "Invalid quantization scheme"
+    ]()
+
     @parameter
-    @__copy_capture(scale, q_dim, qk_offset, batch_size)
+    @__copy_capture(input_scale, weight_scale, q_dim, qk_offset, batch_size)
     @always_inline
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
-        var output_val = val.cast[DType.float32]() * scale
+        var output_val: SIMD[type_, width]
+
+        @parameter
+        if use_per_tensor:
+            var scale_a = input_scale[0, 0].cast[type_]()
+            var scale_b = weight_scale[0, 0].cast[type_]()
+            output_val = val * (scale_a * scale_b)
+        else:
+            var scale_a = input_scale.load[width=1](idx[0], 0).cast[type_]()
+            var scale_b = weight_scale.load[width=width](idx[1], 0).cast[
+                type_
+            ]()
+            output_val = val * (scale_a * scale_b)
+
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
                 idx,
@@ -1881,7 +1915,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged[
     target: StaticString, type: DType, local_window_size: Int
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -1929,7 +1963,7 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged[
     target: StaticString, type: DType, local_window_size: Int
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -1977,7 +2011,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
     target: StaticString, type: DType
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -2023,7 +2057,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -2036,7 +2070,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
         return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
-            trace_arg("input_row_offsets", input_row_offsets),
+            trace_slice_arg("input_row_offsets", input_row_offsets),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -2070,7 +2104,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -2083,7 +2117,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged[
         return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
-            trace_arg("input_row_offsets", input_row_offsets),
+            trace_slice_arg("input_row_offsets", input_row_offsets),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -2117,7 +2151,7 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -2130,7 +2164,7 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged
         return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
-            trace_arg("input_row_offsets", input_row_offsets),
+            trace_slice_arg("input_row_offsets", input_row_offsets),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -2163,7 +2197,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -2176,7 +2210,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
         return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
-            trace_arg("input_row_offsets", input_row_offsets),
+            trace_slice_arg("input_row_offsets", input_row_offsets),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -2207,7 +2241,7 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
     type: DType, //, target: StaticString
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
@@ -2220,7 +2254,7 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
         return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
-            trace_arg("input_row_offsets", input_row_offsets),
+            trace_slice_arg("input_row_offsets", input_row_offsets),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
@@ -2256,7 +2290,7 @@ fn _flash_attention_kv_cache_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: mask_t,
@@ -2303,7 +2337,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2348,7 +2382,7 @@ fn _flash_attention_kv_cache_ragged_impl[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: mask_t,
@@ -2377,7 +2411,14 @@ fn _flash_attention_kv_cache_ragged_impl[
     @parameter
     if is_cpu[target]():
         return flash_attention_kv_cache_cpu(
-            q, input_row_offsets, input_row_offsets, k, v, mask, scale, output
+            q,
+            valid_length_managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            valid_length_managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            k,
+            v,
+            mask,
+            scale,
+            output,
         )
     else:
         return _flash_attention_kv_cache_ragged_gpu[target=target](
@@ -2393,7 +2434,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2422,9 +2463,9 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
         # TODO: I dont think this is set up yet.
         return flash_attention_kv_cache_cpu(
             q,
-            input_row_offsets,
+            valid_length_managed_tensor_slice_to_ndbuffer(input_row_offsets),
             # Assume self attention: Q and KV sequence lengths are equal.
-            input_row_offsets,
+            valid_length_managed_tensor_slice_to_ndbuffer(input_row_offsets),
             k,
             v,
             CausalMask(),
@@ -2446,7 +2487,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
@@ -2472,7 +2513,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
     type: DType, cache_t: KVCacheT, //, *, target: StaticString
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     k: cache_t,
     v: cache_t,
     scale: Float32,
@@ -2504,7 +2545,7 @@ fn _flash_attention_kv_cache_chunked_causal_mask_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2543,7 +2584,7 @@ fn _flash_attention_kv_cache_sliding_window_causal_mask_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2673,7 +2714,11 @@ fn _flare_mla_decode_kv_cache_ragged[
 
 @always_inline
 fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
-    target: StaticString, type: DType
+    type: DType,
+    softmax_type: DType,
+    write_softmax_info: Bool,
+    use_cascade_attention: Bool,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     k: NDBuffer[type, 3, *_],
@@ -2685,7 +2730,12 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
+    softmax_info: NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin],
     context: DeviceContextPtr,
+    prev_output: OptionalReg[NDBuffer[type, 3, MutableAnyOrigin]] = None,
+    prev_softmax_info: OptionalReg[
+        NDBuffer[softmax_type, 3, MutableAnyOrigin]
+    ] = None,
 ) raises:
     @always_inline
     @parameter
@@ -2711,7 +2761,10 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
-            kv_collection.CacheType, target=target
+            kv_collection.CacheType,
+            write_softmax_info=write_softmax_info,
+            use_cascade_attention=use_cascade_attention,
+            target=target,
         ](
             q,
             k,
@@ -2724,16 +2777,22 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
             CausalMask(),
             scale,
             output,
+            softmax_info,
             context,
+            prev_output,
+            prev_softmax_info,
         )
 
 
 @always_inline
 fn _flare_mla_prefill_kv_cache_ragged[
     type: DType,
+    softmax_type: DType,
     collection_t: KVCollectionT,
     mask_t: MHAMask, //,
     cache_t: KVCacheT,
+    write_softmax_info: Bool,
+    use_cascade_attention: Bool,
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
@@ -2747,7 +2806,12 @@ fn _flare_mla_prefill_kv_cache_ragged[
     mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
+    softmax_info: NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin],
     context: DeviceContextPtr,
+    prev_output: OptionalReg[NDBuffer[type, 3, MutableAnyOrigin]] = None,
+    prev_softmax_info: OptionalReg[
+        NDBuffer[softmax_type, 3, MutableAnyOrigin]
+    ] = None,
 ) raises:
     """Performs MLA prefill.
 
@@ -2764,7 +2828,12 @@ fn _flare_mla_prefill_kv_cache_ragged[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
+        softmax_info: NDBuffer with shape (total_seq_len, num_heads, 2).
         context: Pointer containing the runtime context for the target device.
+        prev_output: Optional tensor that stores the temporal results for the previous
+            prefill iteration.
+        prev_softmax_info: Optional tensor that stores the temporal softmax info for the
+            previous prefill iteration.
     """
     constrained[is_gpu[target](), "MLA is only supported on GPU"]()
 
@@ -2774,7 +2843,8 @@ fn _flare_mla_prefill_kv_cache_ragged[
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
 
     flare_mla_prefill[
-        softmax_type = DType.float32  # TODO: remove it in next PR
+        write_softmax_info=write_softmax_info,
+        use_cascade_attention=use_cascade_attention,
     ](
         output,
         q,
@@ -2787,6 +2857,14 @@ fn _flare_mla_prefill_kv_cache_ragged[
         buffer_row_offsets,
         scale,
         cuda_ctx,
+        softmax_info=OptionalReg[NDBuffer[softmax_type, 3, MutableAnyOrigin]](
+            softmax_info
+        ),
+        cache_offsets=OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+            cache_offsets
+        ),
+        prev_output=prev_output,
+        prev_softmax_info=prev_softmax_info,
     )
 
 
@@ -2897,7 +2975,7 @@ fn _cross_attention_kv_cache_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: NDBuffer[mut=True, DType.uint32, 1, *_],
+    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: NDBuffer[DType.uint32, 1],
     kv_collection: collection_t,
@@ -2930,7 +3008,7 @@ fn _cross_attention_kv_cache_ragged[
     if is_cpu[target]():
         return flash_attention_kv_cache_cpu(
             q,
-            q_input_row_offsets,
+            valid_length_managed_tensor_slice_to_ndbuffer(q_input_row_offsets),
             # Use KV offsets for cross attention.
             kv_input_row_offsets,
             k,
@@ -2963,7 +3041,7 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
     type: DType, //, target: StaticString
 ](
     q: NDBuffer[mut=True, type, 3, *_],
-    q_input_row_offsets: NDBuffer[mut=True, DType.uint32, 1, *_],
+    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
@@ -2978,7 +3056,7 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
         return String(";").join(
             trace_arg("output", output),
             trace_arg("q", q),
-            trace_arg("q_input_row_offsets", q_input_row_offsets),
+            trace_slice_arg("q_input_row_offsets", q_input_row_offsets),
             trace_arg("kv_input_row_offsets", kv_input_row_offsets),
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
@@ -3006,3 +3084,14 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
             output,
             context,
         )
+
+
+# TODO: Remove this when we're no longer using NDBuffers.
+@always_inline
+fn valid_length_managed_tensor_slice_to_ndbuffer(
+    tensor: ManagedTensorSlice[type = DType.uint32, rank=1]
+) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
+    var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
+    return NDBuffer[DType.uint32, 1, MutableAnyOrigin](
+        ptr, tensor.shape(), tensor._runtime_strides
+    )

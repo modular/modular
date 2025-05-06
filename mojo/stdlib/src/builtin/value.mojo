@@ -184,6 +184,3 @@ trait Defaultable:
     fn __init__(out self):
         """Create a default instance of the value."""
         ...
-
-
-alias CollectionElement = Copyable & Movable

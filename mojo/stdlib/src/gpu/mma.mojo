@@ -1003,55 +1003,22 @@ fn wgmma_async[
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
 
-    @parameter
-    if (
-        a_type == b_type is DType.bfloat16
-        and c_dtype == accum_type is DType.float32
-    ):
-        var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`bf16`,
-            type_b = __mlir_attr.`bf16`,
-            type_c = __mlir_attr.`f32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = c_reg.type,
-        ](desc_a_value, desc_b_value, c_reg.array)
+    var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
+        shape_m = m.value,
+        shape_n = n.value,
+        shape_k = k.value,
+        type_a = a_type.__mlir_type(),
+        type_b = b_type.__mlir_type(),
+        type_c = c_dtype.__mlir_type(),
+        layout_a=layout_a_value,
+        layout_b=layout_b_value,
+        scale_d = scale_d.value,
+        scale_a = scale_a.value,
+        scale_b = scale_b.value,
+        _type = c_reg.type,
+    ](desc_a_value, desc_b_value, c_reg.array)
 
-        return rebind[StaticTuple[Scalar[c_dtype], width]](res)
-
-    elif a_type == b_type is DType.float8_e4m3fn and c_dtype is DType.float32:
-        return __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
-            shape_m = m.value,
-            shape_n = n.value,
-            shape_k = k.value,
-            type_a = __mlir_attr.`f8E4M3`,
-            type_b = __mlir_attr.`f8E4M3`,
-            type_c = __mlir_attr.`f32`,
-            layout_a=layout_a_value,
-            layout_b=layout_b_value,
-            scale_d = scale_d.value,
-            scale_a = scale_a.value,
-            scale_b = scale_b.value,
-            _type = c_reg.type,
-        ](desc_a_value, desc_b_value, c_reg.array)
-    else:
-        constrained[
-            False,
-            "Unsupported data type combination: ",
-            String(a_type),
-            " and ",
-            String(b_type),
-            " with accum_type ",
-            String(accum_type),
-        ]()
-
-        return c_reg
+    return rebind[StaticTuple[Scalar[c_dtype], width]](res)
 
 
 @always_inline
@@ -1162,32 +1129,13 @@ fn wgmma_async[
         out_type: DType, in_type: DType = out_type
     ]() -> __mlir_type.`!kgen.deferred`:
         @parameter
-        if out_type is DType.tensor_float32:
-            return __mlir_attr.`tf32`
-        elif out_type is DType.float32:
-            return __mlir_attr.`f32`
-        elif out_type is DType.bfloat16:
-            return __mlir_attr.`bf16`
-        elif out_type is DType.float16 or out_type is DType.uint32:
+        if out_type is DType.float16 or out_type is DType.uint32:
             # Special case when input types are integers, the result has to be integer too.
             if in_type != out_type and in_type.is_integral():
                 return __mlir_attr.`si32`
             return __mlir_attr.`f16`
-        elif out_type is DType.float8_e4m3fn:
-            return __mlir_attr.`f8E4M3`
-        elif out_type is DType.float8_e5m2:
-            return __mlir_attr.`f8E5M2`
-        elif out_type is DType.int8:
-            return __mlir_attr.`si8`
-        elif out_type is DType.uint8:
-            return __mlir_attr.`ui8`
-        elif out_type is DType.uint32:
-            return __mlir_attr.`si32`
         else:
-            constrained[
-                False, "Unsupported dtype '" + String(out_type) + "'."
-            ]()
-            return __mlir_attr.`f32`
+            return out_type.__mlir_type()
 
     return __mlir_op.`pop.nvvm.wgmma.mma_async`[
         shape_m = m.value,

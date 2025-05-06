@@ -15,7 +15,7 @@ clusters](https://docs.modular.com/max/tutorials/deploy-max-serve-on-kubernetes/
 
 ## Source Code
 
-* <https://github.com/modular/max>
+* <https://github.com/modular/modular>
 
 ## Usage
 

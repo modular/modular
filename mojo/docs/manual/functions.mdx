@@ -474,10 +474,9 @@ There are currently a few limitations:
   is `**kwargs: Float64` then the argument dictionary will be a
   `OwnedKwargsDict[Float64]`.
 
-* The argument type must conform to the
-  [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait.
-  That is, the type must be both [`Movable`](/mojo/stdlib/builtin/value/Movable)
-  and [`Copyable`](/mojo/stdlib/builtin/value/Copyable).
+* The argument type must conform to both the
+  [`Movable`](/mojo/stdlib/builtin/value/Movable) and
+  [`Copyable`](/mojo/stdlib/builtin/value/Copyable) traits.
 
 * Dictionary unpacking is not supported yet:
 

@@ -283,7 +283,7 @@ struct LayoutTensor[
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
-](CollectionElement, ExplicitlyCopyable, Stringable, Writable):
+](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 

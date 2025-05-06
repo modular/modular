@@ -36,7 +36,8 @@ struct Error(
     Boolable,
     Representable,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
     ExplicitlyCopyable,
     _CurlyEntryFormattable,
 ):

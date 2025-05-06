@@ -33,7 +33,7 @@ from python._cpython import (
 )
 
 
-trait ConvertibleFromPython(CollectionElement):
+trait ConvertibleFromPython(Copyable, Movable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """
@@ -120,10 +120,7 @@ fn python_type_object[
     var type_obj = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
 
     if type_obj.is_null():
-        Python.throw_python_exception_if_error_state(cpython)
-        return abort[TypedPythonObject["Type"]](
-            "expected to raise after getting NULL type object"
-        )
+        raise cpython.get_error()
 
     return TypedPythonObject["Type"](
         unsafe_unchecked_from=PythonObject(type_obj)
@@ -581,7 +578,7 @@ fn check_arguments_arity(
             )
 
 
-fn _get_type_name(obj: PythonObject) -> String:
+fn _get_type_name(obj: PythonObject) raises -> String:
     var cpython = Python().cpython()
 
     var actual_type = cpython.Py_TYPE(obj.unsafe_as_py_object_ptr())

@@ -339,7 +339,7 @@ struct TaskGroupContext:
 
 
 @register_passable
-struct _TaskGroupBox(CollectionElement):
+struct _TaskGroupBox(Copyable, Movable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine

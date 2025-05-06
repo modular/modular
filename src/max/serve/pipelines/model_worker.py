@@ -21,8 +21,8 @@ import signal
 import sys
 import uuid
 from collections.abc import AsyncGenerator, Mapping
-from contextlib import asynccontextmanager
-from typing import Optional
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Callable, Optional
 
 import uvloop
 from max.nn.kv_cache import PagedKVCacheManager
@@ -70,7 +70,9 @@ def _model_worker_process_fn(
     batch_config: TokenGeneratorPipelineConfig,
     queues: Mapping[str, ZmqQueue],
     settings: Settings,
-    metric_client: MetricClient,
+    metric_client_factory: Callable[
+        [], AbstractAsyncContextManager[MetricClient]
+    ],
 ) -> None:
     try:
         _set_pdeathsig(signal.SIGTERM)
@@ -81,7 +83,7 @@ def _model_worker_process_fn(
                 batch_config,
                 queues,
                 settings,
-                metric_client,
+                metric_client_factory,
             )
         )
     except KeyboardInterrupt:
@@ -141,7 +143,7 @@ async def start_model_worker(
             batch_config,
             queue_args,
             settings,
-            metric_client,
+            metric_client.cross_process_factory(),
         ),
     )
     worker.start()
@@ -241,39 +243,43 @@ async def model_worker_run_v3(
     pipeline_config: TokenGeneratorPipelineConfig,
     queues: Mapping[str, ZmqQueue],
     settings: Settings,
-    metric_client: MetricClient,
-):
+    metric_client_factory: Callable[
+        [], AbstractAsyncContextManager[MetricClient]
+    ],
+) -> None:
     configure_logging(settings)
-    mw_configure_metrics(settings, metric_client)
 
     pid = os.getpid()
     logger.info("Starting model worker on process %d!", pid)
 
-    # Initialize token generator.
-    with record_ms(METRICS.model_load_time), Tracer("model_factory"):
-        pipeline = model_factory()
+    async with metric_client_factory() as metric_client:
+        mw_configure_metrics(settings, metric_client)
 
-    scheduler: Scheduler
-    if isinstance(pipeline, TokenGenerator):
-        scheduler = _create_token_generation_scheduler(
-            pipeline, pc, pipeline_config, queues
-        )
-    elif isinstance(pipeline, EmbeddingsGenerator):
-        scheduler = _create_embeddings_scheduler(
-            pipeline, pc, pipeline_config, queues
-        )
-    else:
-        raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
+        # Initialize token generator.
+        with record_ms(METRICS.model_load_time), Tracer("model_factory"):
+            pipeline = model_factory()
 
-    logger.info("Scheduler created with pipeline type: %s", type(pipeline))
+        scheduler: Scheduler
+        if isinstance(pipeline, TokenGenerator):
+            scheduler = _create_token_generation_scheduler(
+                pipeline, pc, pipeline_config, queues
+            )
+        elif isinstance(pipeline, EmbeddingsGenerator):
+            scheduler = _create_embeddings_scheduler(
+                pipeline, pc, pipeline_config, queues
+            )
+        else:
+            raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
 
-    pc.set_started()
-    logger.debug("Started model worker!")
+        logger.info("Scheduler created with pipeline type: %s", type(pipeline))
 
-    scheduler.run()
+        pc.set_started()
+        logger.debug("Started model worker!")
 
-    pc.set_completed()
-    logger.info("Stopped model worker!")
+        scheduler.run()
+
+        pc.set_completed()
+        logger.info("Stopped model worker!")
 
 
 def _create_token_generation_scheduler(

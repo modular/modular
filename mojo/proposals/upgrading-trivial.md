@@ -14,17 +14,17 @@ Here are some simple examples of both forms of `@register_passable` :
 struct RP:
   var v: Int
   var p: ArcPointer[String]
-  
+
   # Can choose to provide __copyinit__ and __del__ if it wants.
   fn __copyinit__(out self, existing: Self): ...
 
   # Can't define __moveinit__.
-  
+
 @register_passable("trivial")
 struct RPTrivial:
   var x: Int
   var y: Float64
-  
+
   # Can't define __copyinit__ or __moveinit__ or __del__
 ```
 
@@ -145,15 +145,15 @@ We can now declare that types conform to the `Trivial` trait, some examples:
 struct RPTrivial(Trivial):
   var x: Int
   var y: Float64
-  
+
   # Can't define copyinit or moveinit
-  
+
 
 struct MemTrivial(Trivial):
   var x: Int
   var y: Float64
   var z: OtherMemTrivial
-  
+
   # Can't define copyinit or moveinit
 ```
 
@@ -183,7 +183,7 @@ someday:
 
 ```mojo
 # No more hint_trivial_type!
-struct List[T: CollectionElement]:
+struct List[T: Copyable & Movable]:
 
     fn __del__(owned self):
         @parameter

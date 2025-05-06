@@ -18,7 +18,7 @@ from importlib.util import find_spec
 FIX = """
 -------------------------------------------------------------------------
 fix following the steps here:
-    https://github.com/modular/max/issues/1085#issuecomment-1771403719
+    https://github.com/modular/modular/issues/1085#issuecomment-1771403719
 -------------------------------------------------------------------------
 """
 

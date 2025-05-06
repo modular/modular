@@ -396,7 +396,7 @@ struct AccessProperty(Writable):
 
 @value
 @register_passable("trivial")
-struct LaunchAttribute(CollectionElement):
+struct LaunchAttribute(Copyable, Movable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form

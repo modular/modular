@@ -73,7 +73,7 @@ from sys.intrinsics import likely, unlikely
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
-from python import PythonObject, PythonConvertible
+from python import Python, PythonObject, PythonConvertible
 
 from utils.write import _WriteBufferStack
 
@@ -454,7 +454,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Representable,
     Sized,
     Writable,
-    CollectionElement,
+    Copyable,
+    Movable,
     ExplicitlyCopyable,
     EqualityComparable,
     Hashable,
@@ -839,6 +840,28 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A PythonObject representing the value.
         """
         return PythonObject(self)
+
+    @doc_private
+    fn __init__(
+        out self: StringSlice[MutableAnyOrigin],
+        *,
+        unsafe_borrowed_obj: PythonObject,
+    ) raises:
+        """Construct a `StringSlice` from a Python `str` object.
+
+        The caller is responsible for keeping the Python `str` object alive
+        until the `StringSlice` is no longer needed.
+
+        Args:
+            unsafe_borrowed_obj: The Python `str` object to convert from.
+
+        Raises:
+            An error if the conversion failed.
+        """
+        var cpython = Python().cpython()
+        self = cpython.PyUnicode_AsUTF8AndSize(unsafe_borrowed_obj.py_object)
+        if not self.unsafe_ptr():
+            raise cpython.get_error()
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
@@ -2130,13 +2153,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: CollectionElement & Writable
+        T: Copyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            T: The type of the elements, must implement the `CollectionElement`
-                and `Writable` traits.
+            T: The type of the elements, must implement the `Copyable`,
+                `Movable` and `Writable` traits.
 
         Args:
             elems: The input values.
@@ -2235,7 +2258,7 @@ fn get_static_string[
 
 fn _to_string_list[
     O: ImmutableOrigin, //,
-    T: CollectionElement,  # TODO(MOCO-1446): Make `T` parameter inferred
+    T: Copyable & Movable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, mut=False, origin=O],
 ](items: List[T]) -> List[String]:
@@ -2318,7 +2341,7 @@ fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
         The length of the null terminated string without the null terminator.
     """
     var len = 0
-    while ptr.load(len):
+    while ptr[len]:
         len += 1
     return len
 

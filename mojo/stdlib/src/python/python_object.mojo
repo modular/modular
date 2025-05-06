@@ -19,6 +19,7 @@ from python import PythonObject
 ```
 """
 
+from os import abort
 from collections import Dict
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
@@ -262,7 +263,7 @@ struct TypedPythonObject[type_hint: StaticString](
         )
 
         if item.is_null():
-            raise Python.unsafe_get_python_exception(cpython)
+            raise cpython.get_error()
 
         # TODO(MSTDL-911): Avoid unnecessary owned reference counts when
         #   returning read-only PythonObject values.
@@ -273,7 +274,6 @@ struct TypedPythonObject[type_hint: StaticString](
 struct PythonObject(
     KeyElement,
     SizedRaising,
-    Stringable,
     Writable,
     PythonConvertible,
     _HashableWithHasher,
@@ -528,9 +528,10 @@ struct PythonObject(
             If the object is not iterable.
         """
         var cpython = Python().cpython()
-        var iter = cpython.PyObject_GetIter(self.py_object)
-        Python.throw_python_exception_if_error_state(cpython)
-        return _PyIter(PythonObject(iter))
+        var iter_ptr = cpython.PyObject_GetIter(self.py_object)
+        if iter_ptr.is_null():
+            raise cpython.get_error()
+        return _PyIter(PythonObject(iter_ptr))
 
     fn __getattr__(self, owned name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
@@ -543,9 +544,8 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_GetAttrString(self.py_object, name^)
-        Python.throw_python_exception_if_error_state(cpython)
         if result.is_null():
-            raise Error("Attribute is not found.")
+            raise cpython.get_error()
         return PythonObject(result)
 
     fn __setattr__(self, owned name: String, new_value: PythonObject) raises:
@@ -559,9 +559,8 @@ struct PythonObject(
         var result = cpython.PyObject_SetAttrString(
             self.py_object, name^, new_value.py_object
         )
-        Python.throw_python_exception_if_error_state(cpython)
-        if result < 0:
-            raise Error("Attribute is not found or could not be set.")
+        if result != 0:
+            raise cpython.get_error()
 
     fn __bool__(self) -> Bool:
         """Evaluate the boolean value of the object.
@@ -627,7 +626,8 @@ struct PythonObject(
         cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self.py_object, key_obj)
         cpython.Py_DecRef(key_obj)
-        Python.throw_python_exception_if_error_state(cpython)
+        if result.is_null():
+            raise cpython.get_error()
         return PythonObject(result)
 
     fn __getitem__(self, *args: Slice) raises -> PythonObject:
@@ -656,7 +656,8 @@ struct PythonObject(
         cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self.py_object, key_obj)
         cpython.Py_DecRef(key_obj)
-        Python.throw_python_exception_if_error_state(cpython)
+        if result.is_null():
+            raise cpython.get_error()
         return PythonObject(result)
 
     fn __setitem__(mut self, *args: PythonObject, value: PythonObject) raises:
@@ -687,7 +688,7 @@ struct PythonObject(
             self.py_object, key_obj, value.py_object
         )
         if result != 0:
-            Python.throw_python_exception_if_error_state(cpython)
+            raise cpython.get_error()
         cpython.Py_DecRef(key_obj)
         cpython.Py_DecRef(value.py_object)
 
@@ -1340,16 +1341,8 @@ struct PythonObject(
         cpython.Py_DecRef(callable_obj)
         cpython.Py_DecRef(tuple_obj)
         cpython.Py_DecRef(dict_obj)
-        Python.throw_python_exception_if_error_state(cpython)
-        # Python always returns non null on success.
-        # A void function returns the singleton None.
-        # If the result is null, something went awry;
-        # an exception should have been thrown above.
         if result.is_null():
-            raise Error(
-                "Call returned null value, indicating failure. Void functions"
-                " return NoneType."
-            )
+            raise cpython.get_error()
         return PythonObject(result)
 
     # ===-------------------------------------------------------------------===#
@@ -1402,7 +1395,7 @@ struct PythonObject(
         Raises:
             An error if the conversion failed.
         """
-        return Python.py_number_long(self)
+        return Python.int(self)
 
     fn __float__(self) -> Float64:
         """Returns a float representation of the object.
@@ -1413,23 +1406,17 @@ struct PythonObject(
         cpython = Python().cpython()
         return cpython.PyFloat_AsDouble(self.py_object)
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the object.
-
-        Calls the underlying object's `__str__` method.
+    @always_inline
+    fn __str__(self) raises -> PythonObject:
+        """Convert the PythonObject to a Python `str`.
 
         Returns:
-            A string that represents this object.
+            A Python `str` object.
+
+        Raises:
+            An error if the conversion failed.
         """
-        var cpython = Python().cpython()
-        var python_str: PythonObject = cpython.PyObject_Str(self.py_object)
-        # copy the string
-        var mojo_str = String(
-            cpython.PyUnicode_AsUTF8AndSize(python_str.py_object)
-        )
-        # keep python object alive so the copy can occur
-        _ = python_str
-        return mojo_str
+        return Python.str(self)
 
     fn write_to[W: Writer](self, mut writer: W):
         """
@@ -1442,8 +1429,12 @@ struct PythonObject(
             writer: The object to write to.
         """
 
-        # TODO: Avoid this intermediate String allocation, if possible.
-        writer.write(String(self))
+        try:
+            # TODO: Avoid this intermediate String allocation, if possible.
+            writer.write(String(self))
+        except:
+            # TODO: make this method raising when we can raise parametrically.
+            return abort("failed to write PythonObject to writer")
 
     # ===-------------------------------------------------------------------===#
     # Methods

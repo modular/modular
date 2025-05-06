@@ -27,8 +27,9 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: CollectionElement](
-    CollectionElement,
+struct Tuple[*element_types: Copyable & Movable](
+    Copyable,
+    Movable,
     Sized,
 ):
     """The type of a literal tuple expression.
@@ -41,7 +42,7 @@ struct Tuple[*element_types: CollectionElement](
 
     alias _mlir_type = __mlir_type[
         `!kgen.pack<:!kgen.variadic<`,
-        CollectionElement,
+        Copyable & Movable,
         `> `,
         element_types,
         `>`,
@@ -63,7 +64,7 @@ struct Tuple[*element_types: CollectionElement](
     fn __init__(
         out self,
         *,
-        owned storage: VariadicPack[_, _, CollectionElement, *element_types],
+        owned storage: VariadicPack[_, _, Copyable & Movable, *element_types],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -150,7 +151,7 @@ struct Tuple[*element_types: CollectionElement](
 
         @parameter
         fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, CollectionElement, `>`]
+            x: __mlir_type[`!kgen.variadic<`, Copyable & Movable, `>`]
         ) -> Int:
             return __mlir_op.`pop.variadic.size`(x)
 
@@ -189,7 +190,7 @@ struct Tuple[*element_types: CollectionElement](
 
     @always_inline("nodebug")
     fn __contains__[
-        T: EqualityComparable & CollectionElement
+        T: EqualityComparable & Copyable & Movable
     ](self, value: T) -> Bool:
         """Return whether the tuple contains the specified value.
 

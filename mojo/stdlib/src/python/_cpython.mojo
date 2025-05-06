@@ -121,7 +121,7 @@ struct PyKeysValuePair:
 
 @value
 @register_passable("trivial")
-struct PyObjectPtr(CollectionElement):
+struct PyObjectPtr(Copyable, Movable):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
@@ -298,7 +298,7 @@ fn _py_finalize(lib: DLHandle):
 
 
 @value
-struct PyMethodDef(CollectionElement):
+struct PyMethodDef(Copyable, Movable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -420,7 +420,7 @@ struct PyType_Spec:
 
 @value
 @register_passable("trivial")
-struct PyType_Slot(CollectionElement):
+struct PyType_Slot(Copyable, Movable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -888,6 +888,58 @@ struct CPython:
             error += "\n\nMojo/Python interop error, troubleshooting docs at:"
             error += "\n    https://modul.ar/fix-python\n"
             raise error
+
+    fn unsafe_get_error(self) -> Error:
+        """Get the `Error` object corresponding to the current CPython
+        interpreter error state.
+
+        Safety:
+            The caller MUST be sure that the CPython interpreter is in an error
+            state before calling this function.
+
+        This function will clear the CPython error.
+
+        Returns:
+            `Error` object describing the CPython error.
+        """
+        debug_assert(
+            self.PyErr_Occurred(),
+            "invalid unchecked conversion of Python error to Mojo error",
+        )
+
+        # TODO(MSTDL-1479): PyErr_Fetch is deprecated since Python 3.12.
+        var err_ptr = self.PyErr_Fetch()
+        debug_assert(
+            not err_ptr.is_null(),
+            "Python exception occurred but PyErr_Fetch returned null",
+        )
+
+        var error: Error
+        try:
+            error = String(PythonObject(err_ptr))
+        except e:
+            return abort[Error](
+                "internal error: Python exception occurred but cannot be"
+                " converted to String"
+            )
+
+        self.PyErr_Clear()
+        return error
+
+    fn get_error(self) -> Error:
+        """Return an `Error` object from the CPython interpreter if it's in an
+        error state, or an internal error if it's not.
+
+        This should be used when you expect CPython to be in an error state,
+        but want to fail gracefully if it's not.
+
+        Returns:
+            An `Error` object from the CPython interpreter if it's in an
+            error state, or an internal error if it's not.
+        """
+        if self.PyErr_Occurred():
+            return self.unsafe_get_error()
+        return Error("internal error: expected CPython exception not found")
 
     # ===-------------------------------------------------------------------===#
     # Logging
@@ -1411,21 +1463,26 @@ struct CPython:
         self,
         obj: PyObjectPtr,
         owned name: String,
-    ) -> Int:
-        var r = self.lib.get_function[
-            fn (PyObjectPtr, __type_of(name.unsafe_cstr_ptr())) -> Int
-        ]("PyObject_HasAttrString")(obj, name.unsafe_cstr_ptr())
-        return r
+    ) -> c_int:
+        """Returns `1` if `obj` has the attribute `attr_name`, and `0` otherwise.
+
+        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString).
+        """
+        # int PyObject_HasAttrString(PyObject *o, const char *attr_name)
+        return self.lib.call["PyObject_HasAttrString", c_int](
+            obj, name.unsafe_cstr_ptr()
+        )
 
     fn PyObject_GetAttrString(
         self,
         obj: PyObjectPtr,
         owned name: String,
     ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString).
-        """
+        """Retrieve an attribute named `name` from object `obj`.
 
+        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString).
+        """
+        # PyObject *PyObject_GetAttrString(PyObject *o, const char *attr_name)
         var r = self.lib.call["PyObject_GetAttrString", PyObjectPtr](
             obj, name.unsafe_cstr_ptr()
         )
@@ -1444,12 +1501,16 @@ struct CPython:
         return r
 
     fn PyObject_SetAttrString(
-        self, obj: PyObjectPtr, owned name: String, new_value: PyObjectPtr
+        self,
+        obj: PyObjectPtr,
+        owned name: String,
+        new_value: PyObjectPtr,
     ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString).
-        """
+        """Set the value of the attribute named `name`, for object `obj`, to the value `new_value`.
 
+        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString).
+        """
+        # int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v)
         var r = self.lib.call["PyObject_SetAttrString", c_int](
             obj, name.unsafe_cstr_ptr(), new_value
         )

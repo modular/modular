@@ -64,21 +64,21 @@ fn _inline_array_construction_checks[size: Int]():
 
 @value
 struct InlineArray[
-    ElementType: CollectionElement,
+    ElementType: Copyable & Movable,
     size: Int,
     *,
     run_destructors: Bool = False,
-](Sized, Movable, Copyable, ExplicitlyCopyable, CollectionElement):
+](Sized, Movable, Copyable, ExplicitlyCopyable):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
     InlineArray provides a fixed-size array implementation with compile-time
     size checking. The array size is determined at compile time and cannot be
-    changed. Elements must implement the CollectionElement trait.
+    changed. Elements must implement the `Copyable` and `Movable` traits.
 
     Parameters:
         ElementType: The type of the elements in the array. Must implement
-            `CollectionElement`.
+            `Copyable` and `Movable`.
         size: The size of the array. Must be a positive integer constant.
         run_destructors: Whether to run destructors on the elements. Defaults to
             `False` for backwards compatibility. Will default to `True` in the
@@ -538,13 +538,13 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & CollectionElement, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: InlineArray[T, size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
             T: The element type, must implement both `EqualityComparable` and
-                `CollectionElement`.
+                `Copyable` and `Movable`.
 
         Args:
             value: The value to search for.
@@ -565,7 +565,7 @@ struct InlineArray[
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement both `EqualityComparable` and `CollectionElement` traits
+            implement the `EqualityComparable`, `Copyable` and `Movable` traits
             to support equality comparison.
         """
 

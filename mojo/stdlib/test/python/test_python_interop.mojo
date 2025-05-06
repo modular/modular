@@ -14,7 +14,7 @@
 # RUN: %mojo %s
 
 from python.python import Python, PythonObject
-from testing import assert_equal
+from testing import assert_equal, assert_raises, assert_true
 
 
 fn test_execute_python_string(mut python: Python) -> String:
@@ -73,6 +73,15 @@ fn test_call(mut python: Python) -> String:
         return String(e)
 
 
+def test_python_int():
+    var py_int = Python.int(PythonObject("123"))
+    # TODO: use assert_equal once we have parametric raises in __eq__.
+    assert_true(py_int == PythonObject(123))
+
+    with assert_raises(contains="invalid literal for int()"):
+        _ = Python.int(PythonObject("foo"))
+
+
 def main():
     var python = Python()
     assert_equal(test_local_import(python), "orange")
@@ -102,3 +111,5 @@ def main():
     assert_equal(String(obj), "None")
 
     assert_equal(test_execute_python_string(python), "ab")
+
+    test_python_int()

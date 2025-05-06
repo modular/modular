@@ -14,13 +14,13 @@ programmability, unparalleled performance, and seamless hardware portability.
 
 [See here to get started with the Modular platform](https://docs.modular.com/max/get-started)
 and when you want to report issues or request features,
-[please create a GitHub issue here](https://github.com/modular/max/issues/new/choose).
+[please create a GitHub issue here](https://github.com/modular/modular/issues/new/choose).
 
 The [Discord](https://discord.gg/modular) community and
 [our forum](https://forum.modular.com/) is the best place to share
 your experiences and chat with the team and other community members.
 
-In the [examples directory](https://github.com/modular/max/tree/main/examples),
+In the [examples directory](https://github.com/modular/modular/tree/main/examples),
 you will find code examples and Jupyter notebooks that show how to run inference
 with Modular platform.
 
@@ -95,7 +95,7 @@ Please see the [Contribution Guide](mojo/CONTRIBUTING.md) for instructions.
 We are not accepting contributions for other parts of the repository.
 
 We also welcome your bug reports.  If you have a bug, please file an issue
-[here](https://github.com/modular/max/issues/new/choose).
+[here](https://github.com/modular/modular/issues/new/choose).
 
 If you need support, the [Discord](https://discord.gg/modular)
 community and [our forum](https://forum.modular.com/) is the best

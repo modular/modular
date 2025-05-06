@@ -76,21 +76,6 @@ class BatchQueueConfig:
     """Target sum of the sequence lengths in the batch."""
 
 
-class QueueType(Enum):
-    ZMQ = "zmq"
-    """Use ZMQ sockets for multiprocessing."""
-
-
-def create_queue(
-    queue_type: QueueType,
-    context: multiprocessing.context.BaseContext,
-) -> zmq_queue.ZmqQueue:
-    if queue_type == QueueType.ZMQ:
-        return zmq_queue.ZmqQueue(context)
-    else:
-        raise ValueError(f"Invalid queue type: {queue_type}")
-
-
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     """Container for managing interactions between a remote model worker process
 
@@ -103,13 +88,13 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self,
         context: multiprocessing.context.BaseContext,
         worker_pc: ProcessControl,
-        queue_type: QueueType = QueueType.ZMQ,
     ):
         super().__init__()
         self.context = context
-        self.request_q = create_queue(queue_type, context)
-        self.response_q = create_queue(queue_type, context)
-        self.cancel_q = create_queue(queue_type, context)
+        self.request_q = zmq_queue.ZmqQueue(context)
+
+        self.response_q = zmq_queue.ZmqQueue(context)
+        self.cancel_q = zmq_queue.ZmqQueue(context)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
         self._proc: Optional[multiprocessing.process.BaseProcess] = None

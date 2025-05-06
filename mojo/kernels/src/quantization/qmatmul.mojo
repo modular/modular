@@ -1163,23 +1163,28 @@ fn _matmul_qint4_m_any[
 
                     c_float.store(c_ptr, N)
 
-                    @parameter
-                    if elementwise_lambda_fn:
-                        alias func = elementwise_lambda_fn.value()
+                    # we only need to call the epilogue for the last iteration,
+                    # otherwise we give intermediate results.
+                    var last_k_iter = ceildiv(K, K_BATCH_SIZE) - 1
+                    if ko == last_k_iter * K_BATCH_SIZE:
 
                         @parameter
-                        for mm in range(tile_m):
+                        if elementwise_lambda_fn:
+                            alias func = elementwise_lambda_fn.value()
 
                             @parameter
-                            for nn in range(tile_n):
-                                var val = c_float[mm, nn]
-                                func[DType.float32, simd_width](
-                                    Index(
-                                        m + mm,
-                                        n + nn * simd_width,
-                                    ),
-                                    val,
-                                )
+                            for mm in range(tile_m):
+
+                                @parameter
+                                for nn in range(tile_n):
+                                    var val = c_float[mm, nn]
+                                    func[DType.float32, simd_width](
+                                        Index(
+                                            m + mm,
+                                            n + nn * simd_width,
+                                        ),
+                                        val,
+                                    )
 
                 tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
 

@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import functools
 import logging
 import queue
 import sys
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from typing import Optional
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Callable, NoReturn, Optional
 
 from max.serve.config import MetricLevel, Settings
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
@@ -40,7 +41,16 @@ class NotStarted(Exception):
 class AsyncioMetricClient(MetricClient):
     def __init__(self, settings: Settings, q):
         self.q = q
+        # Important: If any other items of settings are pulled out here in
+        # __init__, please make sure they are put back into the reconstructed
+        # Settings object inside of cross_process_factory.
         self.level = settings.metric_level
+
+    def __getstate__(self) -> NoReturn:
+        raise TypeError(
+            "AsyncioMetricClient is not safe to serialize.  "
+            "Use cross_process_factory to safely send across processes."
+        )
 
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
         if level > self.level:
@@ -51,6 +61,12 @@ class AsyncioMetricClient(MetricClient):
             logger.warning(
                 "Telemetry Queue is full. Dropping data for {m.instrument_name}"
             )
+
+    def cross_process_factory(
+        self,
+    ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        settings = Settings(metric_level=self.level)
+        return functools.partial(start_asyncio_consumer, settings)
 
 
 class AsyncioTelemetryController:

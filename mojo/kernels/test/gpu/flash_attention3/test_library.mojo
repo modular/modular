@@ -34,6 +34,10 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
+from tensor_internal import ManagedTensorSlice
+from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
+
 
 def test_flash_attention[
     num_q_heads: Int, kv_params: KVCacheStaticParams, page_size: Int
@@ -214,7 +218,10 @@ def test_flash_attention[
         kv_collection_opaque.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        input_row_offsets_ui32_device.tensor,
+        ManagedTensorSlice[
+            io_spec=IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ](input_row_offsets_ui32_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )

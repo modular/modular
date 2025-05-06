@@ -24,7 +24,7 @@ from utils import Variant
 
 
 @value
-struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
+struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
     """A container for counting hashable items.
 
     The value type must be specified statically, unlike a Python
@@ -596,7 +596,8 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
 
 
 struct CountTuple[V: KeyElement](
-    CollectionElement,
+    Copyable,
+    Movable,
 ):
     """A tuple representing a value and its count in a Counter.
 

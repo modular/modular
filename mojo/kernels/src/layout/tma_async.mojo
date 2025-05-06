@@ -141,7 +141,7 @@ fn _tma_desc_tile_layout[
 
 @value
 @register_passable("trivial")
-struct SharedMemBarrier(CollectionElement):
+struct SharedMemBarrier(Copyable, Movable):
     """A hardware-accelerated synchronization primitive for GPU shared memory operations.
 
     This struct provides a barrier mechanism optimized for coordinating thread execution

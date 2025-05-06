@@ -152,7 +152,8 @@ might hold a `Pointer` back to the original list.
 the iterators for standard library collection types like `List` return
 pointers.)
 
-You can construct a `Pointer` using the `address_of()` static method:
+You can construct a `Pointer` to an existing value by calling the constructor
+with the `to` keyword argument:
 
 ```python
 ptr = Pointer(to=some_value)
@@ -239,7 +240,7 @@ def main():
 ```
 
 Note: The reference count is stored using an
-[`Atomic`]([/mojo/stdlib/os/atomic/Atomic](https://docs.modular-staging.com/mojo/stdlib/os/atomic/Atomic))
+[`Atomic`](/mojo/stdlib/os/atomic/Atomic)
 value to ensure that updates to the reference count are thread-safe. However,
 Mojo doesn't currently enforce exclusive access across thread boundaries, so
 it's possible to form race conditions.

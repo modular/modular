@@ -121,6 +121,18 @@ struct UInt(
         """
         self = value.__uint__()
 
+    @always_inline("nodebug")
+    fn __init__[T: Indexer](out self, value: T):
+        """Construct UInt from the given Indexable value.
+
+        Parameters:
+            T: The type that that can index into a collection or pointer.
+
+        Args:
+            value: The init value.
+        """
+        self = value.__index__()
+
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
