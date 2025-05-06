@@ -82,16 +82,16 @@ def test_validate_model_path__correct_repo_id_provided():
     )
 
 
-@pytest.mark.skip("TODO(AITLIB-349): Fix this test")
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_known_architecture(
-    tiny_random_llama_local_path,
+    llama_3_1_8b_instruct_local_path,
 ):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        model_path=tiny_random_llama_local_path,
+        model_path=llama_3_1_8b_instruct_local_path,
+        quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
     )
@@ -116,16 +116,16 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
     assert config.engine == PipelineEngine.HUGGINGFACE
 
 
-@pytest.mark.skip("TODO(AITLIB-349): Fix this test")
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
-    tiny_random_llama_local_path,
+    llama_3_1_8b_instruct_local_path,
 ):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        model_path=tiny_random_llama_local_path,
+        model_path=llama_3_1_8b_instruct_local_path,
+        quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,
