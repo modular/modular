@@ -53,7 +53,7 @@ fn _human_memory(size: Int) -> String:
 
 
 @value
-struct Config:
+struct Config(Writable):
     var direction: Int
     var pinned_memory: Bool
     # Definitions for direction field.
