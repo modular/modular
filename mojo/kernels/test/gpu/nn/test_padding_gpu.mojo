@@ -25,6 +25,8 @@ from internal_utils import (
     int_list_to_tuple,
     ndbuffer_to_str,
 )
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
@@ -38,7 +40,7 @@ fn test_pad_constant_gpu[
     type: DType, rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: NDBuffer[DType.index, 1, _, 2 * rank],
+    paddings: LayoutTensor[DType.index, Layout(2 * rank)],
     ctx: DeviceContext,
     verbose: Bool = False,
 ) raises:
@@ -85,7 +87,7 @@ fn test_pad_constant_gpu[
         output_shape,
         in_device._unsafe_ptr(),
         input_shape,
-        paddings.data,
+        paddings.ptr,
         constant,
         ctx,
     )
@@ -102,7 +104,7 @@ fn test_pad_constant_gpu[
     )
     var output_cpu = NDBuffer[type, rank](output_data_cpu, output_shape)
     output_cpu.fill(0)
-    pad_cpu(output_cpu, input, paddings.data, constant)
+    pad_cpu(output_cpu, input, paddings.ptr, constant)
 
     if verbose:
         print(ndbuffer_to_str(output_cpu))
@@ -123,8 +125,8 @@ def main():
     with DeviceContext() as ctx:
         var input_shape_1d = IndexList[1](32)
         # Create a padding array of the (before,after) form
-        var paddings_1d = NDBuffer[
-            DType.index, 1, MutableAnyOrigin, 2 * 1
+        var paddings_1d = LayoutTensor[
+            DType.index, Layout(2 * 1), MutableAnyOrigin
         ].stack_allocation()
         paddings_1d[0] = 2  # axis-0 pre-pad
         paddings_1d[1] = 1  # axis-0 post-pad
@@ -133,8 +135,8 @@ def main():
 
         var input_shape_2d = IndexList[2](32, 32)
         # Create a padding array of the (before,after) form
-        var paddings_2d = NDBuffer[
-            DType.index, 1, MutableAnyOrigin, 2 * 2
+        var paddings_2d = LayoutTensor[
+            DType.index, Layout(2 * 2), MutableAnyOrigin
         ].stack_allocation()
         paddings_2d[0] = 2  # axis-0 pre-pad
         paddings_2d[1] = 1  # axis-0 post-pad
@@ -145,8 +147,8 @@ def main():
 
         var input_shape_3d = IndexList[3](32, 32, 32)
         # Create a padding array of the (before,after) form
-        var paddings_3d = NDBuffer[
-            DType.index, 1, MutableAnyOrigin, 2 * 3
+        var paddings_3d = LayoutTensor[
+            DType.index, Layout(2 * 3), MutableAnyOrigin
         ].stack_allocation()
         paddings_3d[0] = 2  # axis-0 pre-pad
         paddings_3d[1] = 1  # axis-0 post-pad

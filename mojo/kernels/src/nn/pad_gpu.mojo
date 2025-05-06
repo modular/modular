@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from buffer import NDBuffer
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
 from gpu import *
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
@@ -46,7 +47,7 @@ fn _fill_strides_indexlist[
     rank: Int,
 ](
     input_shape: IndexList[rank],
-    strides: NDBuffer[mut=True, DType.index, 1, _, rank],
+    strides: LayoutTensor[mut=True, DType.index, Layout(rank)],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -364,11 +365,11 @@ fn pad_constant[
             ctx,
         )
 
-    var input_strides_buf = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, rank
+    var input_strides_buf = LayoutTensor[
+        DType.index, Layout(rank), MutableAnyOrigin
     ].stack_allocation()
-    var output_strides_buf = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, rank
+    var output_strides_buf = LayoutTensor[
+        DType.index, Layout(rank), MutableAnyOrigin
     ].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)
@@ -378,8 +379,8 @@ fn pad_constant[
         input,
         paddings,
         output_shape,
-        output_strides_buf.data,
-        input_strides_buf.data,
+        output_strides_buf.ptr,
+        input_strides_buf.ptr,
         ctx,
     )
 
@@ -388,7 +389,7 @@ fn get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: NDBuffer[DType.index, 1, _, 2 * rank],
+    paddings: LayoutTensor[DType.index, Layout(2 * rank)],
 ) -> IndexList[rank]:
     var output_shape = IndexList[rank]()
     for i in range(rank):
