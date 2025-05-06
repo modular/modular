@@ -130,7 +130,12 @@ class SupportedEncoding(str, Enum):
 
     def supported_on(self, device_spec: DeviceSpec) -> bool:
         """Returns whether this quantization encoding is supported on a device."""
-        return device_spec.device_type in _SUPPORTED_DEVICES[self]
+        return device_spec.device_type in self.supported_devices
+
+    @property
+    def supported_devices(self) -> tuple[str, ...]:
+        """Returns the devices that this quantization encoding is supported on."""
+        return _SUPPORTED_DEVICES[self]
 
 
 _SUPPORTED_ENCODING_TO_DTYPE = {

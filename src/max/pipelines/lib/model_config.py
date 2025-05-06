@@ -484,8 +484,21 @@ class MAXModelConfig(MAXModelConfigBase):
         This method should only be called after the quantization encoding has
         been set.
         """
+        assert self.quantization_encoding, (
+            "quantization_encoding must be set by now."
+        )
 
-        assert self.quantization_encoding, "quantization_encoding must be set."
+        # If the current encoding is only supported on CPU, and all devices are
+        # GPU, switch to CPU automatically. This "downcast" is possible. Going
+        # the other way (CPU -> GPU) is not supported and will error out in the
+        # loop check below.
+        if self.quantization_encoding.supported_devices == ("cpu",) and all(
+            d.device_type == "gpu" for d in self.device_specs
+        ):
+            logger.warning(
+                f"Encoding '{self.quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
+            )
+            self.device_specs = [DeviceSpec.cpu()]
         # Check that the quantization encoding is supported on the specified
         # devices.
         for device_spec in self.device_specs:
