@@ -1192,3 +1192,23 @@ struct MySquareComputeOutFusion:
         else:
             # We still need to support normal fusion in case the kernel is fused with a cast.
             out._fused_store[width=1](IndexList[1](0), res)
+
+
+@compiler.register("inplace_no_out_func")
+struct InplaceNoOutFunc:
+    # This kernel is meant to test that epilogue fusion will
+    # be skipped if the out_func overload of foreach is not used.
+    @staticmethod
+    fn execute(
+        output: MutableInputTensor,
+        input: FusedInputTensor[type = output.type, rank = output.rank],
+    ) raises:
+        @parameter
+        @always_inline
+        fn func[
+            width: Int
+        ](idx: IndexList[output.rank]) -> SIMD[output.type, width]:
+            var val = input._fused_load[width](idx)
+            return val * SIMD[output.type, width](2.0)
+
+        foreach[func](output)
