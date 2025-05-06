@@ -25,8 +25,8 @@ listing:
 This section includes the Mojo API references:
 
 - [Standard library](#standard-library): Common Mojo APIs.
-- [Kernels library](#kernels-library). Mojo APIs for writing high-performance
-  computational kernels and custom operations.
+- [MAX AI Kernels library](#kernels-library). Mojo APIs for writing
+  high-performance computational kernels and custom operations for AI models.
 - [MAX library](#max-library). MAX Mojo APIs, including tensor APIs for custom
   operations, and legacy MAX APIs.
 - [Decorators](#decorators). Mojo decorators reference.
@@ -119,12 +119,13 @@ Top-level packages:
 :::🔥#stdlib
 :::
 
-## Kernels library
+## MAX AI kernels library
 
-The Mojo kernels library provides APIs for writing computational kernels that
-run on CPU and GPU. You can use these APIs when developing
-[MAX custom operations](/max/custom-ops/) or standalone
-[GPU kernels](/mojo/manual/gpu/basics).
+The MAX AI kernels library provides a collection of highly optimized, reusable
+compute kernels for high-performance numerical and AI workloads. These kernels
+serve as the foundational building blocks for writing [MAX custom
+operations](/max/custom-ops/) or standalone [GPU
+kernels](/mojo/manual/gpu/basics) that are portable across CPUs and GPUs.
 
 Top-level packages:
 
