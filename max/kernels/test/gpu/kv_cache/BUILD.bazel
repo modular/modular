@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "lit",
+    size = "large",
+    srcs = glob(["**/*.mojo"]),
+    gpu_constraints = ["//:has_gpu"],
+    mojo_deps = [
+        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:kv_cache",
+        "@mojo//:quantization",
+        "@mojo//:stdlib",
+    ],
+    tags = ["gpu"],
+    tools = ["//KGEN/tools/mojo"],
+)

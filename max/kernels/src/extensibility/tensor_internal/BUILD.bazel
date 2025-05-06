@@ -1,0 +1,32 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "mojo_library")
+
+exports_files(["__init__.mojo"])
+
+mojo_library(
+    name = "tensor_internal",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//open-source/max/max/kernels/src/extensibility/compiler_internal",
+        "@mojo//:layout",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+)
+
+filegroup(
+    name = "extensibility/tensor_internal.doc_group",
+    srcs = [
+        ":tensor_internal.docs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "docs",
+    srcs = [":extensibility/tensor_internal.doc_group"],
+    prefix = "tensor_internal",
+    strip_prefix = strip_prefix.from_pkg("tensor_internal.docs"),
+    visibility = ["//visibility:public"],
+)

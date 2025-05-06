@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//visibility:public"])
+
+mojo_library(
+    name = "internal_utils",
+    srcs = glob(["**/*.mojo"]),
+    deps = [
+        "//open-source/max/max/kernels/src/extensibility/tensor_internal",
+        "@mojo//:stdlib",
+    ],
+)
