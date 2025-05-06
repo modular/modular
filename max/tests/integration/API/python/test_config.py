@@ -12,16 +12,13 @@ from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineEngine,
     SupportedEncoding,
 )
-from test_common.mocks import (
-    mock_estimate_memory_footprint,
-)
+from test_common.mocks import mock_estimate_memory_footprint
 from test_common.pipeline_model_dummy import (
     DUMMY_ARCH,
     DUMMY_GPTQ_ARCH,
@@ -99,27 +96,6 @@ def test_config__test_incompatible_quantization_encoding(
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,
-    )
-
-
-@prepare_registry
-@mock_estimate_memory_footprint
-def test_config__update_cache_strategy(llama_3_1_8b_instruct_local_path):
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
-
-    pipeline_config = PipelineConfig(
-        model_path=llama_3_1_8b_instruct_local_path,
-        cache_strategy=KVCacheStrategy.NAIVE,
-        max_batch_size=1,
-        max_length=1,
-        engine=PipelineEngine.MAX,
-    )
-
-    # Naive is not shown as supported in architecture, as
-    # such this should change to a support strategy automatically.
-    assert (
-        pipeline_config.model_config.kv_cache_config.cache_strategy
-        == KVCacheStrategy.CONTINUOUS
     )
 
 

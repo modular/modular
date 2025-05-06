@@ -24,10 +24,7 @@ from max.entrypoints.cli import (
     validate_field_type,
 )
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_cli_utils import (
     CLITestCommand,
@@ -112,26 +109,6 @@ TEST_COMMANDS = [
                 ],
                 "kv_cache_config": {
                     "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
-                },
-            },
-        },
-        valid=True,
-    ),
-    CLITestCommand(
-        args=[
-            "--model-path",
-            "modularai/llama-3.1",
-            "--cache-strategy",
-            "naive",
-            "--devices",
-            "cpu",
-        ],
-        expected={
-            "model_config": {
-                "model_path": "modularai/llama-3.1",
-                "trust_remote_code": False,
-                "kv_cache_config": {
-                    "cache_strategy": KVCacheStrategy.NAIVE,
                 },
             },
         },

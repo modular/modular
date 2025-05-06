@@ -186,19 +186,6 @@ def test_attention__wrong_mask_dtype():
         )
 
 
-def test_attention__wrong_strategy():
-    # This is expected to fail when passing a naive kv cache strategy to the opaque attention kernel.
-    # Get Graph.
-    with pytest.raises(ValueError) as _:
-        graph, _, _ = _attention_layer(
-            DType.float32,
-            DType.float32,
-            CPU(),
-            KVCacheStrategy.NAIVE,
-            InferenceSession(devices=[CPU()]),
-        )
-
-
 @pytest.mark.parametrize(
     "start_pos,seq_len",
     [
