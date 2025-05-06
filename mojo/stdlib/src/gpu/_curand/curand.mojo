@@ -30,7 +30,10 @@ from utils import StaticTuple
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CURAND_LIBRARY_PATH = "/usr/local/cuda/lib64/libcurand.so"
+alias CUDA_CURAND_LIBRARY_PATHS = List[Path](
+    "libcurand.so.10",
+    "/usr/local/cuda/lib64/libcurand.so.10",
+)
 
 alias CUDA_CURAND_LIBRARY = _Global[
     "CUDA_CURAND_LIBRARY", _OwnedDLHandle, _init_dylib
@@ -38,7 +41,7 @@ alias CUDA_CURAND_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["CUDA cuRand library"](CUDA_CURAND_LIBRARY_PATH)
+    return _find_dylib["CUDA cuRand"](CUDA_CURAND_LIBRARY_PATHS)
 
 
 @always_inline

@@ -28,7 +28,7 @@ from .types import Status
 # ===-----------------------------------------------------------------------===#
 
 alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
-    "/opt/rocm/lib/librocblas.so",
+    "librocblas.so.4",
     "/opt/rocm/lib/librocblas.so.4",
 )
 
