@@ -137,9 +137,11 @@ struct _PyIter(Sized):
 
 
 alias PythonModule = TypedPythonObject["Module"]
-alias PyFunction = fn (PythonObject, TypedPythonObject["Tuple"]) -> PythonObject
+alias PyFunction = fn (
+    mut PythonObject, mut TypedPythonObject["Tuple"]
+) -> PythonObject
 alias PyFunctionRaising = fn (
-    PythonObject, TypedPythonObject["Tuple"]
+    mut PythonObject, mut TypedPythonObject["Tuple"]
 ) raises -> PythonObject
 
 
@@ -660,7 +662,7 @@ struct PythonObject(
             raise cpython.get_error()
         return PythonObject(result)
 
-    fn __setitem__(mut self, *args: PythonObject, value: PythonObject) raises:
+    fn __setitem__(self, *args: PythonObject, value: PythonObject) raises:
         """Set the value with the given key or keys.
 
         Args:

@@ -507,7 +507,7 @@ fn py_c_function_wrapper[
     user_func: PyFunctionRaising
 ](py_self_ptr: PyObjectPtr, py_args_ptr: PyObjectPtr) -> PyObjectPtr:
     fn wrapper(
-        py_self: PythonObject, args: TypedPythonObject["Tuple"]
+        mut py_self: PythonObject, mut args: TypedPythonObject["Tuple"]
     ) -> PythonObject:
         var cpython = Python().cpython()
 
