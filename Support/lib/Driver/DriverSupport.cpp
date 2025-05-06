@@ -93,6 +93,9 @@ int State::reportError(const Twine &message) const {
 }
 
 void State::reportWarning(const Twine &message) const {
+  if (disableWarnings)
+    return;
+
   switch (diagnosticFormat) {
   case DiagnosticFormat::Text:
     llvm::errs() << programName << ": warning: " << message << '\n';
@@ -107,7 +110,8 @@ void State::reportWarning(const Twine &message) const {
 
 int State::parseDiagnosticFormatArguments(
     llvm::opt::InputArgList &args,
-    llvm::opt::OptSpecifier diagnosticFormatOptionID) {
+    llvm::opt::OptSpecifier diagnosticFormatOptionID,
+    llvm::opt::OptSpecifier disableWarningsOptionID) {
   StringLiteral kDiagnosticFormatText = "text";
   StringLiteral kDiagnosticFormatJSON = "json";
   StringRef format =
@@ -123,6 +127,10 @@ int State::parseDiagnosticFormatArguments(
   diagnosticFormat = llvm::StringSwitch<DiagnosticFormat>(format)
                          .Case(kDiagnosticFormatText, DiagnosticFormat::Text)
                          .Case(kDiagnosticFormatJSON, DiagnosticFormat::JSON);
+
+  if (disableWarningsOptionID.isValid())
+    disableWarnings = args.hasArg(disableWarningsOptionID);
+
   return EXIT_SUCCESS;
 }
 

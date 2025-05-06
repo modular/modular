@@ -53,4 +53,8 @@ def mojo_search_paths : JoinedOrSeparate<["-"], "mojo-search-paths">,
     HelpText<"Specify additional search paths for Mojo modules.">,
     Flags<[HelpHidden]>;
 
+def disable_warnings : Flag<["--", "-"],
+  "disable-warnings">, Group<DiagnosticOptionGroup>, Index<7>,
+  HelpText<"Do not print warning messages.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

@@ -196,12 +196,14 @@ static void prefixStrippingDiagHandler(const llvm::SMDiagnostic &diagnostic,
 
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
-             StringRef stripFilenamePrefix, void *extraContext)
+             StringRef stripFilenamePrefix, bool disableWarnings,
+             void *extraContext)
     : sourceMgr(sourceMgr), context(context), extraContext(extraContext),
       sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>(
           context, stripFilenamePrefix)),
       useMLIRDiagnostics(useMLIRDiagnostics),
-      maxNotesPerDiagnostic(maxNotesPerDiagnostic) {
+      maxNotesPerDiagnostic(maxNotesPerDiagnostic),
+      disableWarnings(disableWarnings) {
   // Install a prefix-stripping diag handler if necessary.
   if (!stripFilenamePrefix.empty()) {
     prevDiagHandler = sourceMgr.getDiagHandler();
@@ -364,6 +366,9 @@ InflightDiag::InflightDiag(Location loc, Diags &diags, bool isWarning)
 InflightDiag::~InflightDiag() {
   // If the diagnostic got abandoned, just drop it.
   if (!diags)
+    return;
+
+  if (diags->disableWarnings && isWarning)
     return;
 
   diags->diagnosticEmitted = true;

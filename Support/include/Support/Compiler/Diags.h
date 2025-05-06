@@ -38,7 +38,7 @@ class Diags {
 public:
   Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
         int maxNotesPerDiagnostic, StringRef stripFilenamePrefix,
-        void *extraContext = nullptr);
+        bool disableWarnings, void *extraContext = nullptr);
   ~Diags();
 
   llvm::SourceMgr &sourceMgr;
@@ -133,6 +133,8 @@ private:
 
   /// Configuration for how many notes to print for a diagnostic.
   int maxNotesPerDiagnostic;
+
+  bool disableWarnings;
 };
 
 /// This class represents a diagnostic that is built up by the parser and

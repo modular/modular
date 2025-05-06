@@ -159,7 +159,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   // Otherwise, within this subset of arguments that appear before the input,
   // unknown or invalid arguments are rejected.
   if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format))
+          args, options::OPT_diagnostic_format, options::OPT_disable_warnings))
     return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;

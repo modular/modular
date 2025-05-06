@@ -67,12 +67,15 @@ struct State {
   /// Write the given message to stderr, according to format config.
   void reportWarning(const Twine &message) const;
 
+  bool areWarningsDisabled() const { return disableWarnings; }
+
   /// If `args` contains a diagnostic format option (as specified by the given
   /// option ID), this parses that option and sets this object's
   /// `diagnosticFormat` member based on its value.
   int parseDiagnosticFormatArguments(
       llvm::opt::InputArgList &args,
-      llvm::opt::OptSpecifier diagnosticFormatOptionID);
+      llvm::opt::OptSpecifier diagnosticFormatOptionID,
+      llvm::opt::OptSpecifier disableWarningsOptionID);
 
   /// Print the given `helpText` to stdout and return a successful exit code.
 #if __cplusplus >= 202002
@@ -111,6 +114,9 @@ struct State {
 
   /// The output format for driver errors, as reported by `reportError`.
   DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
+
+  /// Whether to report warnings or silently ignore them.
+  bool disableWarnings = false;
 };
 
 /// A mapping from each subcommand to a callback function that encapsulates the

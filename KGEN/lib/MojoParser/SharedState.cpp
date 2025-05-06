@@ -357,6 +357,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
             config.maxNotesPerDiagnostic,
             canonicalizeFileCompilationDir(config.stripFilePrefix),
+            /* disableWarnings */ config.options.disableWarnings,
             /*extraContext*/ this),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),

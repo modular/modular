@@ -128,6 +128,8 @@ public:
 
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
+
+  bool disableWarnings = false;
 };
 
 bool isGPUTriple(const llvm::Triple &triple);
