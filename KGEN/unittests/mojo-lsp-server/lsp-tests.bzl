@@ -25,7 +25,7 @@ def lsp_test(name, pattern):
         mojo_deps = [
             "@mojo//:stdlib",
             "//SDK/lib/API/mojo/max/tensor",
-            "//Kernels/mojo/extensibility/compiler_internal",
+            "//open-source/max/mojo/kernels/src/extensibility/compiler_internal",
         ],
         py_deps = [],
         tags = [
