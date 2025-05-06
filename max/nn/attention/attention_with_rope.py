@@ -432,15 +432,9 @@ class AttentionWithRope(Module):
                     ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
                 ],
                 input_row_offsets: TensorValue,
-                context_lengths: TensorValue | None = None,
             ) -> TensorValue:
                 input_row_offsets_type = input_row_offsets.type
                 misc_input_types = [input_row_offsets_type]
-                context_lengths_type = (
-                    context_lengths.type if context_lengths else None
-                )
-                if context_lengths_type:
-                    misc_input_types.append(context_lengths_type)
 
                 graph_inputs = (
                     [
@@ -468,17 +462,12 @@ class AttentionWithRope(Module):
                         arg_x = subgraph.inputs[1]
                         arg_kv_collection = subgraph.inputs[2]
                         arg_input_row_offsets_arg = subgraph.inputs[3]
-                        arg_context_lengths_arg = (
-                            subgraph.inputs[4] if context_lengths else None
-                        )
                         subgraph._mlir_value_map.update(
                             {
                                 w: subgraph_input._mlir_value
                                 for w, subgraph_input in zip(
                                     weight_mlir_values,
-                                    subgraph.inputs[
-                                        4 + (1 if context_lengths else 0) : -1
-                                    ],
+                                    subgraph.inputs[4:],
                                 )
                             }
                         )
@@ -490,14 +479,11 @@ class AttentionWithRope(Module):
                             outer_self(
                                 arg_x,
                                 arg_kv_collection,
-                                context_lengths=arg_context_lengths_arg,
                                 input_row_offsets=arg_input_row_offsets_arg,
                             ),
                         )
 
                 call_args = [x, kv_collection, input_row_offsets]
-                if context_lengths:
-                    call_args.append(context_lengths)
                 call_args.extend([w.tensor for w in weights])
                 call_args.append(freqs_cis)
                 return ops.call(subgraph, *call_args)[0].tensor
@@ -566,7 +552,6 @@ class AttentionWithRope(Module):
             layer_idx,
             interleaved=self.rope.interleaved,
         )
-        context_lengths = kwargs.get("context_lengths")
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
             self.kv_params,
@@ -574,7 +559,6 @@ class AttentionWithRope(Module):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
-            context_lengths=context_lengths,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
@@ -1458,26 +1442,16 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                     ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
                 ],
                 input_row_offsets: TensorValue,
-                context_lengths: TensorValue | None,
             ) -> list[TensorValue]:
                 input_row_offsets_ = distribute_value(
                     input_row_offsets, outer_self.devices
                 )
-                if context_lengths:
-                    context_lengths_ = distribute_value(
-                        context_lengths, outer_self.devices
-                    )
-                else:
-                    context_lengths_ = None
                 return outer_self.allreduce(
                     inputs=[
                         attn_subgraphs[i](
                             x[i],
                             kv_collections[i],
                             input_row_offsets=input_row_offsets_[i],
-                            context_lengths=context_lengths_[i]
-                            if context_lengths_
-                            else None,
                         )
                         for i in range(len(outer_self.devices))
                     ],
@@ -1499,22 +1473,12 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
-        has_context_lengths = "context_lengths" in kwargs
-        if has_context_lengths:
-            context_lengths = distribute_value(
-                kwargs["context_lengths"], self.devices
-            )
-        else:
-            context_lengths = None
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
                     x[i],
                     kv_collections[i],
                     input_row_offsets=input_row_offsets_[i],
-                    context_lengths=context_lengths[i]
-                    if context_lengths
-                    else None,
                 )
                 for i in range(len(self.devices))
             ],

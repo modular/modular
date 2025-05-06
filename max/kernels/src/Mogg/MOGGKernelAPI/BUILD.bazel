@@ -7,7 +7,6 @@ mogg_lib_deps = [
     "@mojo//:layout",
     "@mojo//:linalg",
     "@mojo//:nn",
-    "//Kernels/mojo/flash_attention3",
     "@mojo//:quantization",
     "//open-source/max/max/kernels/src/extensibility/tensor_internal",
     "//open-source/max/max/kernels/src/extensibility/compiler_internal",

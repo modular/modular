@@ -33,7 +33,6 @@ from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -93,15 +92,9 @@ class DistributedTransformerBlock(Module):
                     ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
                 ],
                 input_row_offsets: TensorValue,
-                context_lengths: TensorValue | None = None,
             ) -> list[TensorValue]:
                 input_row_offsets_type = input_row_offsets.type
                 misc_input_types = [input_row_offsets_type]
-                context_lengths_type = (
-                    context_lengths.type if context_lengths else None
-                )
-                if context_lengths_type:
-                    misc_input_types.append(context_lengths_type)
 
                 name_suffix = md5(
                     str(tuple(t.to_mlir() for t in misc_input_types)).encode()
@@ -140,22 +133,12 @@ class DistributedTransformerBlock(Module):
                         arg_input_row_offsets = subgraph.inputs[
                             1 + 3 * num_devices
                         ]
-                        arg_context_lengths = (
-                            subgraph.inputs[1 + 3 * num_devices + 1]
-                            if context_lengths
-                            else None
-                        )
                         subgraph._mlir_value_map.update(
                             {
                                 w: subgraph_input._mlir_value
                                 for w, subgraph_input in zip(
                                     weight_mlir_values,
-                                    subgraph.inputs[
-                                        1
-                                        + 3 * num_devices
-                                        + 1
-                                        + (1 if context_lengths else 0) :
-                                    ],
+                                    subgraph.inputs[1 + 3 * num_devices + 1 :],
                                 )
                             }
                         )
@@ -169,7 +152,6 @@ class DistributedTransformerBlock(Module):
                                 arg_signal_buffers,
                                 arg_kv_collections,
                                 input_row_offsets=arg_input_row_offsets,
-                                context_lengths=arg_context_lengths,
                             ),
                         )
                         outer_self.use_subgraph = True
@@ -180,8 +162,6 @@ class DistributedTransformerBlock(Module):
                     *kv_collections,
                     input_row_offsets,
                 ]
-                if context_lengths:
-                    call_args.append(context_lengths)
                 call_args.extend([w.tensor for w in weights])
                 return [res.tensor for res in ops.call(subgraph, *call_args)]
 
@@ -228,7 +208,6 @@ class DistributedTransformer(Module):
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
-            | FetchPagedKVCacheCollectionFA3Fallback
         ),
         devices: list[DeviceRef],
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
@@ -267,18 +246,11 @@ class DistributedTransformer(Module):
 
         input_row_offsets = kwargs["input_row_offsets"]
         root_cache_lengths = kv_cache_inputs_per_dev[0][1]
-        valid_lengths: TensorValue = ops.rebind(
-            input_row_offsets[1:] - input_row_offsets[:-1],
-            root_cache_lengths.shape,
-        )
-        context_lengths = valid_lengths + root_cache_lengths
-        context_lengths = context_lengths.cast(DType.int32)
         for _, layer in enumerate(self.layers):
             h = layer(
                 h,
                 signal_buffers,
                 kv_collections,
-                context_lengths=context_lengths,
                 **kwargs,
             )
 

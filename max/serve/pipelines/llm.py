@@ -468,10 +468,7 @@ def batch_config_from_pipeline_config(
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
         )
-    elif cache_strategy in [
-        KVCacheStrategy.PAGED,
-        KVCacheStrategy.PAGED_FA3_FALLBACK,
-    ]:
+    elif cache_strategy == KVCacheStrategy.PAGED:
         batch_config = TokenGeneratorPipelineConfig.paged(
             tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(

@@ -21,12 +21,11 @@ from max.engine import InferenceSession
 from .cache_params import KVCacheParams, KVCacheStrategy
 from .continuous_batching_cache import ContinuousBatchingKVCacheManager
 from .manager import KVCacheManager
-from .paged_cache import PagedKVCacheManager, PagedKVCacheManagerFA3Fallback
+from .paged_cache import PagedKVCacheManager
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[KVCacheManager]] = {
     KVCacheStrategy.CONTINUOUS: ContinuousBatchingKVCacheManager,
     KVCacheStrategy.PAGED: PagedKVCacheManager,
-    KVCacheStrategy.PAGED_FA3_FALLBACK: PagedKVCacheManagerFA3Fallback,
 }
 
 
@@ -51,16 +50,7 @@ def load_kv_manager(
             devices=devices,
             session=session,
         )
-    elif params.cache_strategy in {
-        KVCacheStrategy.PAGED,
-        KVCacheStrategy.PAGED_FA3_FALLBACK,
-    }:
-        manager_cls: type[
-            PagedKVCacheManager | PagedKVCacheManagerFA3Fallback
-        ] = PagedKVCacheManager
-        if params.cache_strategy == KVCacheStrategy.PAGED_FA3_FALLBACK:
-            manager_cls = PagedKVCacheManagerFA3Fallback
-
+    elif params.cache_strategy == KVCacheStrategy.PAGED:
         if page_size is None:
             msg = (
                 "Missing required argument page_size for KVCacheStrategy.PAGED"
@@ -76,7 +66,7 @@ def load_kv_manager(
             msg = "Missing required argument available_cache_memory for KVCacheStrategy.PAGED"
             raise ValueError(msg)
 
-        return manager_cls(
+        return PagedKVCacheManager(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,

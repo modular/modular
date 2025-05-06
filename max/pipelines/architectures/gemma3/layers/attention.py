@@ -250,7 +250,6 @@ class _Gemma3Attention(Module):
             )
 
         # Calculate Flash Attention.
-        context_lengths = kwargs.get("context_lengths")
         mask_variant = (
             MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
             if bool((layer_idx + 1) % self.sliding_window_pattern)
@@ -262,7 +261,6 @@ class _Gemma3Attention(Module):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
-            context_lengths=context_lengths,
             mask_variant=mask_variant,
             scale=self.scale,
         )

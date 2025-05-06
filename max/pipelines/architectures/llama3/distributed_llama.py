@@ -38,7 +38,6 @@ from max.nn import (
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheStrategy,
 )
 
@@ -180,17 +179,11 @@ class DistributedLlama3(DistributedTransformer):
         kv_collection_cls: (
             type[FetchContinuousBatchingKVCacheCollection]
             | type[FetchPagedKVCacheCollection]
-            | type[FetchPagedKVCacheCollectionFA3Fallback]
         )
         if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
             kv_collection_cls = FetchContinuousBatchingKVCacheCollection
         elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
-        elif (
-            config.kv_params.cache_strategy
-            == KVCacheStrategy.PAGED_FA3_FALLBACK
-        ):
-            kv_collection_cls = FetchPagedKVCacheCollectionFA3Fallback
         else:
             raise ValueError(
                 "Unsupported caching strategy "

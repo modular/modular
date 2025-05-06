@@ -15,21 +15,15 @@ from __future__ import annotations
 from .block_copy_engine import BlockCopyEngine, BlockCopyType
 from .paged_cache import (
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     PagedKVCacheCollection,
-    PagedKVCacheCollectionFA3Fallback,
     PagedKVCacheManager,
-    PagedKVCacheManagerFA3Fallback,
     PagedKVCacheType,
 )
 
 __all__ = [
     "BlockCopyType",
     "FetchPagedKVCacheCollection",
-    "FetchPagedKVCacheCollectionFA3Fallback",
     "PagedKVCacheManager",
-    "PagedKVCacheManagerFA3Fallback",
     "PagedKVCacheCollection",
-    "PagedKVCacheCollectionFA3Fallback",
     "PagedKVCacheType",
 ]

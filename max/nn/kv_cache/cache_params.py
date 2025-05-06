@@ -21,7 +21,6 @@ class KVCacheStrategy(str, Enum):
     MODEL_DEFAULT = "model_default"
     CONTINUOUS = "continuous"
     PAGED = "paged"
-    PAGED_FA3_FALLBACK = "paged_fa3_fallback"
 
     def kernel_substring(self) -> str:
         """Returns the common substring that we include in the kernel name for this caching strategy."""

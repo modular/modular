@@ -46,28 +46,6 @@ lit_tests(
     tools = ["//KGEN/tools/mojo"],
 )
 
-lit_tests(
-    name = "daolabs-flash-attention-benchmark",
-    size = "enormous",
-    srcs = ["gpu/bench_daolabs_fa3.mojo"],
-    env = {
-        "FLASH_ATTENTION_LIBRARY": "$(location @flash_attn)",
-    },
-    gpu_constraints = ["//:h100_gpu"],
-    mojo_deps = [
-        "@mojo//:nn",
-        "//Kernels/mojo/flash_attention3",
-        "@mojo//:kv_cache",
-        "//open-source/max/max/kernels/src/internal_utils",
-        "@mojo//:stdlib",
-    ],
-    tags = ["gpu"],
-    tools = [
-        "//KGEN/tools/mojo",
-        "@flash_attn",
-    ],
-)
-
 pkg_files(
     name = "kernel_benchmark_files",
     srcs = glob(

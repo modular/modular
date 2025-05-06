@@ -201,8 +201,6 @@ class Llama4TextModel(Module):
             input_row_offsets[1:] - input_row_offsets[:-1],
             root_cache_lengths.shape,
         )
-        context_lengths = valid_lengths + root_cache_lengths
-        context_lengths = context_lengths.cast(DType.int32)
         distributed_cache_positions = distribute_value(
             cache_positions, self.devices
         )
@@ -212,7 +210,6 @@ class Llama4TextModel(Module):
                 distributed_cache_positions,
                 signal_buffers,
                 kv_collections,
-                context_lengths=context_lengths,
                 **kwargs,
             )
 

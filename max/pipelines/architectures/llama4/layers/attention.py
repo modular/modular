@@ -274,7 +274,6 @@ class _Llama4TextAttention(Module):
             xq = (xq.cast(DType.float32) * attn_scales).cast(xq.dtype)
 
         # Calculate Flash Attention.
-        context_lengths = kwargs.get("context_lengths")
         mask_variant = (
             MHAMaskVariant.CHUNKED_CAUSAL_MASK
             if int((self.layer_idx + 1) % 4) != 0
@@ -286,7 +285,6 @@ class _Llama4TextAttention(Module):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
-            context_lengths=context_lengths,
             mask_variant=mask_variant,
             scale=self.scale,
         )
@@ -347,13 +345,6 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
-        has_context_lengths = "context_lengths" in kwargs
-        if has_context_lengths:
-            context_lengths = distribute_value(
-                kwargs["context_lengths"], self.devices
-            )
-        else:
-            context_lengths = None
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
@@ -361,9 +352,6 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
                     [cache_positions_list[i]],
                     [kv_collections[i]],  # type: ignore
                     input_row_offsets=input_row_offsets_[i],
-                    context_lengths=context_lengths[i]
-                    if context_lengths
-                    else None,
                 )[0]
                 for i in range(len(self.devices))
             ],

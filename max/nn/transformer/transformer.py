@@ -29,7 +29,6 @@ from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -103,7 +102,6 @@ class Transformer(Module):
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
-            | FetchPagedKVCacheCollectionFA3Fallback
         ),
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
@@ -145,16 +143,7 @@ class Transformer(Module):
             )
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
-        cache_lengths = kv_cache_inputs[1]
-
         input_row_offsets = kwargs["input_row_offsets"]
-        prompt_lengths = ops.rebind(
-            input_row_offsets[1:] - input_row_offsets[:-1],
-            cache_lengths.shape,
-        )
-
-        context_lengths = prompt_lengths + cache_lengths
-        kwargs["context_lengths"] = context_lengths
 
         for _, layer in enumerate(self.layers):
             h = layer(

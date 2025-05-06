@@ -32,11 +32,8 @@ from .manager import (
 from .paged_cache import (
     BlockCopyType,
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     PagedKVCacheCollection,
-    PagedKVCacheCollectionFA3Fallback,
     PagedKVCacheManager,
-    PagedKVCacheManagerFA3Fallback,
     PagedKVCacheType,
 )
 from .registry import (
@@ -64,11 +61,8 @@ __all__ = [
     "RaggedKVCacheInputs",
     "BlockCopyType",
     "FetchPagedKVCacheCollection",
-    "FetchPagedKVCacheCollectionFA3Fallback",
     "PagedKVCacheManager",
     "PagedKVCacheCollection",
-    "PagedKVCacheCollectionFA3Fallback",
-    "PagedKVCacheManagerFA3Fallback",
     "PagedKVCacheType",
     "load_kv_manager",
     "estimate_kv_cache_size",

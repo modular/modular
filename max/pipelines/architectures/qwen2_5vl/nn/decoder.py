@@ -29,7 +29,6 @@ from max.nn import (
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
 )
 from max.nn.layer import LayerList
@@ -132,7 +131,6 @@ class Qwen2_5VLDecoderTransformer(Module):
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
-            | FetchPagedKVCacheCollectionFA3Fallback
         ),
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
@@ -201,9 +199,6 @@ class Qwen2_5VLDecoderTransformer(Module):
             input_row_offsets[1:] - input_row_offsets[:-1],
             cache_lengths.shape,
         )
-
-        context_lengths = prompt_lengths + cache_lengths
-        kwargs["context_lengths"] = context_lengths
 
         for _, layer in enumerate(self.layers):
             h = layer(

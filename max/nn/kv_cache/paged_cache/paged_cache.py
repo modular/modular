@@ -31,7 +31,6 @@ from max.dtype import DType, max_to_torch_type
 from max.engine import InferenceSession
 from max.graph import (
     DeviceRef,
-    Dim,
     TensorType,
     TensorValue,
     _OpaqueType,
@@ -98,124 +97,12 @@ class PagedKVCacheCollectionType(_OpaqueType):
         super().__init__("PagedKVCacheCollection")
 
 
-class PagedKVCacheCollectionFA3FallbackType(_OpaqueType):
-    """The graph type for a "view" of the cache for the given sequences in the
-    batch.
-
-    This object does not own the underlying buffers in k_cache and v_cache,
-    it's borrowing them from the BlockWrappers in our ContinuousKVCacheManager.
-    It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
-    """
-
-    def __init__(self) -> None:
-        """Creates an opaque type containing a paged KV cache collection."""
-        super().__init__("PagedKVCacheCollectionFA3Fallback")
-
-
 class PagedKVCache(_OpaqueValue):
     """PagedAttention Mojo KV cache graph value."""
 
 
-class PagedKVCacheCollectionFA3Fallback(_OpaqueValue):
-    """The graph value for a view of the KV cache."""
-
-
 class PagedKVCacheCollection(_OpaqueValue):
     """The graph value for a view of the KV cache."""
-
-
-class FetchPagedKVCacheCollectionFA3Fallback:
-    def __init__(self, kv_params: KVCacheParams, num_layers: int) -> None:
-        self.kv_params = kv_params
-        self.num_layers = num_layers
-
-    def __call__(
-        self,
-        blocks: TensorValue,
-        cache_lengths: TensorValue,
-        lookup_table: TensorValue,
-        is_cache_empty: TensorValue,
-    ) -> PagedKVCacheCollectionFA3Fallback:
-        """Constructs a PagedKVCacheCollection for use downstream.
-
-        This constructs a KVCache for use with the DaoLabds FA3 backend.
-        """
-
-        # Explicit validation.
-        if blocks.dtype != self.kv_params.dtype:
-            msg = (
-                f"expected blocks to be dtype: {self.kv_params.dtype}, got"
-                f" {blocks.dtype}"
-            )
-            raise ValueError(msg)
-
-        if blocks.rank != 5:
-            msg = f"expected blocks to be of rank 5, got {blocks.rank}"
-            raise ValueError(msg)
-
-        # For all tensors other than the blocks tensor, the length should be equivalent
-        # to batch size, which is unknown within the graph at this stage.
-        if cache_lengths.dtype != DType.uint32:
-            msg = f"expected cache lengths to be dtype: uint32, got {cache_lengths.dtype}"
-            raise ValueError(msg)
-
-        if cache_lengths.rank != 1:
-            msg = f"expected cache lengths to be of rank 1, got {cache_lengths.rank}"
-            raise ValueError(msg)
-
-        if lookup_table.dtype != DType.uint32:
-            msg = f"expected lookup_table to be dtype: uint32, got {lookup_table.dtype}"
-            raise ValueError(msg)
-
-        if lookup_table.rank != 2:
-            msg = f"expected lookup_table to be of rank 2, got {lookup_table.rank}"
-            raise ValueError(msg)
-
-        # expand our lookup table to fit to num_blocks
-        # we need a different lookup table for each layer
-        # TODO(austin) move this to a unified location, right now it's split across the codebase.
-        num_layers = ops.constant(
-            self.num_layers, DType.uint32, device=DeviceRef.CPU()
-        )
-        start_constant = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
-        step_constant = ops.constant(1, DType.uint32, device=DeviceRef.CPU())
-        layers_arange = ops.range(
-            start_constant,
-            num_layers,
-            step_constant,
-            out_dim=Dim(self.num_layers),
-            device=DeviceRef.CPU(),
-        )
-        if blocks.device is not None:
-            layers_arange = layers_arange.to(blocks.device)
-        layers_arange = ops.reshape(layers_arange, shape=[-1, 1, 1])
-        lookup_table = ops.reshape(
-            lookup_table,
-            shape=[1, lookup_table.shape[0], lookup_table.shape[1]],
-        )
-
-        lookup_table = ops.tile(lookup_table, repeats=[self.num_layers, 1, 1])
-        lookup_table = lookup_table * self.num_layers + layers_arange
-        cache_lengths_cast = cache_lengths.cast(DType.int32)
-        lookup_table_cast = lookup_table.cast(DType.int32)
-
-        return PagedKVCacheCollectionFA3Fallback(
-            ops.custom(
-                "mo.kv_collection_ctor.paged_fa3_fallback",
-                values=[
-                    blocks,
-                    cache_lengths_cast,
-                    lookup_table_cast,
-                    is_cache_empty,
-                ],
-                out_types=[PagedKVCacheCollectionFA3FallbackType()],
-                parameters={
-                    "num_heads": self.kv_params.n_kv_heads_per_device,
-                    "head_dim": self.kv_params.head_dim,
-                    "page_size": int(blocks.shape[2]),
-                },
-            )[0].opaque
-        )
 
 
 class FetchPagedKVCacheCollection:
@@ -932,70 +819,3 @@ class PagedKVCacheManager(KVCacheManager):
                 ]
 
         return res
-
-
-class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
-    def input_symbols(self) -> list[PagedCacheInputSymbols]:
-        return [
-            PagedCacheInputSymbols(
-                kv_blocks=TensorType(
-                    self.params.dtype,
-                    shape=self.block_shape(is_parameterized=True),
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
-                ),
-                cache_lengths=TensorType(
-                    DType.uint32,
-                    shape=["batch_size"],
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
-                ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=["batch_size", "max_num_pages"],
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
-                ),
-                max_lengths=TensorType(
-                    DType.uint32,
-                    shape=["steps_remaining", 2],
-                    device=DeviceRef.CPU(),
-                ),
-            )
-            for i in range(len(self.devices))
-        ]
-
-    def block_shape(
-        self,
-        total_num_pages: int | None = None,
-        is_parameterized: bool = False,
-    ) -> list[int | str]:
-        if total_num_pages is None:
-            total_num_pages = self.total_num_pages
-        return self._block_shape(
-            self.params,
-            total_num_pages,
-            self.page_size,
-            self.num_layers,
-            is_parameterized,
-        )
-
-    @classmethod
-    def _block_shape(
-        cls,
-        params: KVCacheParams,
-        total_num_pages: int,
-        page_size: int,
-        num_layers: int,
-        is_parameterized: bool = False,
-    ) -> list[int | str]:
-        # split k and v caches across a single dim
-        # 0 = key
-        # 1 = value
-        kv_dim = 2
-        return [
-            kv_dim,
-            "total_num_pages"
-            if is_parameterized
-            else (total_num_pages * num_layers),
-            page_size,
-            params.n_kv_heads_per_device,
-            params.head_dim,
-        ]

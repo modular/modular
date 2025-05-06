@@ -48,12 +48,10 @@ llama_arch = SupportedArchitecture(
         SupportedEncoding.bfloat16: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.PAGED_FA3_FALLBACK,
         ],
         SupportedEncoding.float8_e4m3fn: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.PAGED_FA3_FALLBACK,
         ],
     },
     pipeline_model=Llama3Model,
