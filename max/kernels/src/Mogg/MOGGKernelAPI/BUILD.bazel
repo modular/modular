@@ -8,8 +8,8 @@ mogg_lib_deps = [
     "@mojo//:linalg",
     "@mojo//:nn",
     "@mojo//:quantization",
-    "//open-source/max/max/kernels/src/extensibility/tensor_internal",
-    "//open-source/max/max/kernels/src/extensibility/compiler_internal",
+    "@mojo//:tensor_internal",
+    "@mojo//:compiler_internal",
     "@mojo//:stdlib",
 ]
 

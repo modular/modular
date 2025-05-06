@@ -6,7 +6,7 @@ mojo_library(
     name = "internal_utils",
     srcs = glob(["**/*.mojo"]),
     deps = [
-        "//open-source/max/max/kernels/src/extensibility/tensor_internal",
         "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
     ],
 )

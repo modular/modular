@@ -11,47 +11,57 @@ alias(
 
 alias(
     name = "kv_cache",
-    actual = "@//mojo/kernels/src/kv_cache",
+    actual = "@//max/kernels/src/kv_cache",
 )
 
 alias(
     name = "layout",
-    actual = "@//mojo/kernels/src/layout",
+    actual = "@//max/kernels/src/layout",
 )
 
 alias(
     name = "linalg",
-    actual = "@//mojo/kernels/src/linalg",
+    actual = "@//max/kernels/src/linalg",
 )
 
 alias(
     name = "nn",
-    actual = "@//mojo/kernels/src/nn",
+    actual = "@//max/kernels/src/nn",
 )
 
 alias(
     name = "nvml",
-    actual = "@//mojo/kernels/src/nvml",
+    actual = "@//max/kernels/src/nvml",
 )
 
 alias(
     name = "quantization",
-    actual = "@//mojo/kernels/src/quantization",
+    actual = "@//max/kernels/src/quantization",
 )
 
 alias(
     name = "register",
-    actual = "@//mojo/kernels/src/register",
+    actual = "@//max/kernels/src/register",
 )
 
 alias(
     name = "MOGGPrimitives",
-    actual = "@//mojo/kernels/src/Mogg/MOGGPrimitives",
+    actual = "@//max/kernels/src/Mogg/MOGGPrimitives",
 )
 
 alias(
     name = "MOGGKernelAPI",
-    actual = "@//mojo/kernels/src/Mogg/MOGGKernelAPI",
+    actual = "@//max/kernels/src/Mogg/MOGGKernelAPI",
+)
+
+alias(
+    name = "tensor_internal",
+    actual = "@//max/kernels/src/extensibility/tensor_internal",
+)
+
+alias(
+    name = "compiler_internal",
+    actual = "@//max/kernels/src/extensibility/compiler_internal",
 )
 """)
 

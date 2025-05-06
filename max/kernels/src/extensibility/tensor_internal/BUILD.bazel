@@ -8,7 +8,7 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//open-source/max/max/kernels/src/extensibility/compiler_internal",
+        "@mojo//:compiler_internal",
         "@mojo//:layout",
         "@mojo//:register",
         "@mojo//:stdlib",
