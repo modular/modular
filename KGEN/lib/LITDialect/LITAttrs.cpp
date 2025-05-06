@@ -968,9 +968,11 @@ printStructElements(AsmPrinter &p,
 }
 
 LogicalResult
-LITStructAttr::verifySymbolUses(Operation *module,
-                                mlir::LockedSymbolTableCollection &symtab,
+LITStructAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
                                 Location loc) const {
+  Operation *module = evaluationContext.module;
+  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
+
   SymbolRefAttr symbolRef = getType().getSymbol();
   auto structDecl = symtab.lookupSymbolIn<StructDeclOp>(module, symbolRef);
   if (!structDecl) {
@@ -980,6 +982,7 @@ LITStructAttr::verifySymbolUses(Operation *module,
 
   ParameterEvaluator evaluator(structDecl.getInputParams(),
                                getType().getParamValues());
+  evaluator.setEvaluationContext(&evaluationContext);
 
   auto fields = structDecl.getFieldDecls();
   unsigned numFields = std::distance(fields.begin(), fields.end());

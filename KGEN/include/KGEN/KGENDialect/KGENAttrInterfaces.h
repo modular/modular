@@ -12,9 +12,9 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Location.h"
 
-namespace mlir {
-class LockedSymbolTableCollection;
-} // namespace mlir
+namespace M::KGEN {
+class SymTabEvaluationContext;
+} // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

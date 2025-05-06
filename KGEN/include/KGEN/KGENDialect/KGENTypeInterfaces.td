@@ -83,10 +83,11 @@ def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Verify whether the symbol reference is valid. A symbol table is provided
-      to lookup the type definition.
+      Verify whether the symbol reference is valid. A symbol table evaluation
+      handler is provided to lookup the type definition and perform any
+      parameter evaluation necessary.
     }], "LogicalResult", "verifySymbolUses",
-      (ins "Operation *":$module, "mlir::LockedSymbolTableCollection &":$symtab,
+      (ins "SymTabEvaluationContext &":$evaluationContext,
            "Location":$loc)>,
     InterfaceMethod<[{
       Get an optional alias for this symbol reference.

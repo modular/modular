@@ -221,6 +221,9 @@ mlir_nanobind(
         "KGEN_ParamMaterializeOp",
         "KGEN_NoneAttr",  # Can't bind NoneAttr::get for some reason
         "KGEN_CallOp",  # Can't bind CallOp::setCalleeAttr for some reason
+        # These interfaces use internally defined evaluation handler type
+        "DeclRefAttrInterface",
+        "StructTypeInterface",
     ],
     output_dir = "include/KGEN/KGENDialect/Nanobind",
     visibility = ["//visibility:public"],
@@ -1021,6 +1024,7 @@ modular_cc_library(
         ":CODialect",
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
+        ":KGENDialect",
         ":LITDialect",
         ":POPDialect",
         ":ToolCommon.headers",

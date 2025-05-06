@@ -122,9 +122,10 @@ def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
   let methods = [
     InterfaceMethod<[{
       Verify whether the value of the attribute matches the type. A symbol table
-      is provided to lookup the type definition.
+      evaluation handler is provided to lookup the type definition and perform
+      any parameter evaluation necessary.
     }], "LogicalResult", "verifySymbolUses",
-      (ins "Operation *":$module, "mlir::LockedSymbolTableCollection &":$symtab,
+      (ins "SymTabEvaluationContext &":$evaluationContext,
            "Location":$loc)>
   ];
 }

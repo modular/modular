@@ -12,6 +12,10 @@
 #include "Support/ForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 
+namespace mlir {
+class LockedSymbolTableCollection;
+} // namespace mlir
+
 namespace M {
 class Error;
 } // namespace M
@@ -63,6 +67,20 @@ public:
   /// rather no further evaluation was possible.
   virtual FailureOr<TypedAttr>
   evaluateExpression(ContextuallyEvaluatedAttrInterface attr) = 0;
+};
+
+/// An evaluation context that exposes a LockedSymbolTableCollection.
+class SymTabEvaluationContext : public ParameterEvaluationContext {
+public:
+  SymTabEvaluationContext(Operation *module,
+                          mlir::LockedSymbolTableCollection &symtab)
+      : module(module), symtab(symtab) {}
+
+  FailureOr<TypedAttr>
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+
+  Operation *module;
+  mlir::LockedSymbolTableCollection &symtab;
 };
 
 //===----------------------------------------------------------------------===//
