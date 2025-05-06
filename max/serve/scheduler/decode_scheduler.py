@@ -20,7 +20,7 @@ from max.pipelines.core import TokenGenerator
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
-from .zmq_queue import RequestDeque, ZmqQueue
+from .zmq_queue import ZmqDeque, ZmqQueue
 
 
 @dataclass
@@ -69,7 +69,7 @@ class DecodeScheduler(Scheduler):
         # TODO: Initialize ZmqQueue as Client/Server
 
         # Initialize Queues
-        self.request_queue = RequestDeque(queues["REQUEST"])
+        self.request_queue = ZmqDeque(queues["REQUEST"])
         self.response_q = queues["RESPONSE"]
         self.cancel_q = queues["CANCEL"]
 

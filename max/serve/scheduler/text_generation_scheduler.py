@@ -33,7 +33,7 @@ from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
 from .queues import STOP_STREAM
-from .zmq_queue import RequestDeque, ZmqQueue
+from .zmq_queue import ZmqDeque, ZmqQueue
 
 logger = logging.getLogger("max.serve")
 
@@ -159,9 +159,9 @@ class TokenGenerationScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q = RequestDeque(queues["REQUEST"])
+        self.request_q = ZmqDeque(queues["REQUEST"])
         self.response_q = queues["RESPONSE"]
-        self.cancel_q = queues["CANCEL"]
+        self.cancel_q = ZmqDeque(queues["CANCEL"])
 
         # Initialize Scheduler state.
         self.active_batch: dict[str, InputContext] = {}

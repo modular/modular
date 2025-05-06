@@ -14,53 +14,21 @@
 """Multi-process queue based on ZeroMQ. Tested for SPSC case."""
 
 import logging
-import multiprocessing
 import queue
 import tempfile
 import threading
 import uuid
 import weakref
+from collections import deque
 from typing import Any, Optional, Union
 
 import psutil
 import zmq
 import zmq.asyncio
 import zmq.constants
-from max.pipelines.core import InputContext
 from max.profiler import traced
 
 logger = logging.getLogger("max.serve")
-
-
-class AtomicInt:
-    """A atomic integer counter that can be shared across processes.
-
-    This counter is strictly non-negative.
-    """
-
-    def __init__(self, ctx: multiprocessing.context.BaseContext, x: int = 0):
-        self.counter: Any = ctx.Value("i", x)
-
-    def inc(self) -> int:
-        """Increment the counter by 1 and returns the old value."""
-        with self.counter.get_lock():
-            x = self.counter.value
-            self.counter.value += 1
-            return x
-
-    def dec(self) -> int:
-        """Decrement the counter by 1 if it is greater than 0 and returns the old value.
-        Returns None if the counter is 0."""
-        with self.counter.get_lock():
-            x = self.counter.value
-            if x > 0:
-                self.counter.value -= 1
-            return x
-
-    @property
-    def value(self) -> int:
-        """Return the value of the counter"""
-        return self.counter.value
 
 
 def _generate_zmq_ipc_path() -> str:
@@ -115,10 +83,7 @@ class ZmqQueue:
     mutex: threading.Lock = threading.Lock()
     zmq_ctx: Optional[zmq.Context] = None
 
-    def __init__(
-        self,
-        ctx: multiprocessing.context.BaseContext,
-    ):
+    def __init__(self):
         # Generate a unique path for the ZMQ socket.
         self.zmq_ipc_path = _generate_zmq_ipc_path()
 
@@ -127,10 +92,6 @@ class ZmqQueue:
         # picklable.
         self.zmq_pull_socket: Optional[zmq.Socket] = None
         self.zmq_push_socket: Optional[zmq.Socket] = None
-
-        # This counter is used to track the number of items in the queue.
-        # This is a best effort estimate that may not be accurate.
-        self.counter = AtomicInt(ctx)
 
         # Register a finalizer to clean up resource handles.
         self._finalizer = weakref.finalize(self, self._cleanup)
@@ -179,17 +140,9 @@ class ZmqQueue:
     def get(self, *args, **kwargs) -> Any:
         pull_socket = self._get_or_init_pull_socket()
 
-        # Decrement the counter prior to recv
-        count = self.counter.dec()
-        if count == 0:
-            raise queue.Empty()
-
         try:
             return pull_socket.recv_pyobj(*args, **kwargs)
         except zmq.ZMQError as e:
-            # Since it failed, we increment the counter
-            self.counter.inc()
-
             # If we get EAGAIN, this is probably:
             #   - the queue is empty
             #   - the push socket is not yet ready
@@ -209,9 +162,6 @@ class ZmqQueue:
             try:
                 push_socket.send_pyobj(*args, **kwargs)
 
-                # Increment the counter after send
-                self.counter.inc()
-
                 # Exit since we succeeded
                 break
             except zmq.ZMQError as e:
@@ -228,47 +178,50 @@ class ZmqQueue:
                 )
                 raise e
 
-    def qsize(self) -> int:
-        _ = self._get_or_init_pull_socket()
-        return self.counter.value
 
-    def empty(self) -> bool:
-        _ = self._get_or_init_pull_socket()
-        return self.qsize() == 0
+class ZmqDeque:
+    """A wrapper around the ZmqQueue that adds a local queue.
 
-
-class RequestDeque:
-    """A wrapper around the multiprocessing queue that allows us to add
-    requests to the front of the queue.
+    This allows the user to add requests to the front of the queue and check
+    the queue size. This should probably only be used on the PULL side.
     """
 
     def __init__(self, queue: ZmqQueue):
         self.queue = queue
-        self.preempted: list[tuple[str, InputContext]] = []
+        self.local_queue: deque[Any] = deque()
 
-    def put_front_nowait(self, item: tuple[str, InputContext]):
+    def put_front_nowait(self, item: Any):
         """A new method that allows us to add requests to the front of the queue."""
-        self.preempted.append(item)
+        self.local_queue.append(item)
 
     def put(self, *args, **kwargs) -> None:
         return self.queue.put(*args, **kwargs)
 
-    def put_nowait(self, item: tuple[str, InputContext]) -> None:
+    def put_nowait(self, item: Any) -> None:
         return self.queue.put_nowait(item)
 
-    def get(self, *args, **kwargs) -> tuple[str, InputContext]:
-        if self.preempted:
-            return self.preempted.pop()
+    def get(self, *args, **kwargs) -> Any:
+        if self.local_queue:
+            return self.local_queue.pop()
         return self.queue.get(*args, **kwargs)
 
     @traced
-    def get_nowait(self) -> tuple[str, InputContext]:
-        if self.preempted:
-            return self.preempted.pop()
+    def get_nowait(self) -> Any:
+        if self.local_queue:
+            return self.local_queue.pop()
         return self.queue.get_nowait()
 
     def qsize(self) -> int:
-        return len(self.preempted) + self.queue.qsize()
+        """Return the size of the queue by repeatedly polling the ZmqQueue and
+        adding the items to the local queue."""
+        while True:
+            try:
+                item = self.queue.get_nowait()
+                self.local_queue.appendleft(item)
+            except queue.Empty:
+                break
+
+        return len(self.local_queue)
 
     def empty(self) -> bool:
         return self.qsize() == 0
