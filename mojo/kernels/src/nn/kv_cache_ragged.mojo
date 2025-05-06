@@ -50,6 +50,7 @@ from nn.mla import (
     mla_prefill_plan,
 )
 from quantization.qmatmul import matmul_qint4
+from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
@@ -1759,23 +1760,17 @@ fn _qmatmul_gguf_quantized_common[
             output,
         )
     elif quantization_encoding == "q4_k":
-        raise Error("KVCache epilogue is not yet implemented for q4_k matmul")
-
-        # TODO: E2EOPT-42. Enable q4_k matmul
-        # matmul_Q4_K(
-        #     hidden_state,
-        #     weight,
-        #     output,
-        # )
+        matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
+            hidden_state,
+            weight,
+            output,
+        )
     elif quantization_encoding == "q6_k":
-        raise Error("KVCache epilogue is not yet implemented for q6_k matmul")
-
-        # TODO: E2EOPT-42. Enable q6_k matmul
-        # matmul_Q6_K(
-        #     hidden_state,
-        #     weight,
-        #     output,
-        # )
+        matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
+            hidden_state,
+            weight,
+            output,
+        )
     else:
         raise Error(
             "Unsupported quantization encoding: ", quantization_encoding

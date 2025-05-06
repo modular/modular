@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray
+from collections import InlineArray, OptionalReg
 from math import ceildiv
 from sys import (
     CompilationTarget,
@@ -23,6 +23,8 @@ from sys import (
     simdwidthof,
     sizeof,
 )
+from linalg.matmul import elementwise_epilogue_type
+
 from sys.intrinsics import llvm_intrinsic
 
 from algorithm import sync_parallelize, tile, vectorize
@@ -951,12 +953,18 @@ fn _apply_a_scales[
 
 @always_inline
 fn _accumulate_and_store[
-    tile_m: Int, tile_n: Int, simd_width: Int
+    tile_m: Int,
+    tile_n: Int,
+    simd_width: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_ptr: UnsafePointer[Float32],
     N: Int,
     accumulate: Bool,
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    m: Int,
+    n: Int,
+    is_last_k_iter: Bool,
 ):
     if accumulate:
         var c_existing = _Accumulator[
@@ -973,6 +981,26 @@ fn _accumulate_and_store[
                 c_float[row, col] += c_existing[row, col]
 
     c_float.store(c_ptr, N)
+
+    @parameter
+    if elementwise_lambda_fn:
+        alias func = elementwise_lambda_fn.value()
+
+        if is_last_k_iter:
+
+            @parameter
+            for mm in range(tile_m):
+
+                @parameter
+                for nn in range(tile_n):
+                    var val = c_float[mm, nn]
+                    func[DType.float32, simd_width](
+                        Index(
+                            m + mm,
+                            n + nn * simd_width,
+                        ),
+                        val,
+                    )
 
 
 @always_inline
@@ -1023,6 +1051,7 @@ fn _matmul_Q4_K_tile[
         a_ptr: UnsafePointer[Int8],
         mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     ) capturing [_] -> None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
@@ -1030,6 +1059,9 @@ fn _matmul_Q4_K_tile[
     c_ptr: UnsafePointer[Float32],
     N: Int,
     accumulate: Bool,
+    m: Int,
+    n: Int,
+    is_last_k_iter: Bool,
 ):
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
@@ -1089,11 +1121,15 @@ fn _matmul_Q4_K_tile[
 
     _apply_a_scales(a_tile_ptr[].scales.unsafe_ptr(), c_float)
 
-    _accumulate_and_store(c_ptr, N, accumulate, c_float)
+    _accumulate_and_store[elementwise_lambda_fn=elementwise_lambda_fn](
+        c_ptr, N, accumulate, c_float, m, n, is_last_k_iter
+    )
 
 
 fn _matmul_Q4_K_columns[
-    tile_n: Int, simd_width: Int
+    tile_n: Int,
+    simd_width: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     owned a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
@@ -1101,6 +1137,8 @@ fn _matmul_Q4_K_columns[
     M: Int,
     N: Int,
     accumulate: Bool,
+    n: Int,
+    is_last_k_iter: Bool,
 ):
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
@@ -1127,8 +1165,18 @@ fn _matmul_Q4_K_columns[
         ):
             _matmul_group_packed_Q4_K(a_q_bits_ptr, b_q_bits_ptr, c_int32_group)
 
-        _matmul_Q4_K_tile[matmul_group_packed](
-            a_ptr, b_ptr, b_q_scales_and_mins_buf, c_ptr, N, accumulate
+        _matmul_Q4_K_tile[
+            matmul_group_packed, elementwise_lambda_fn=elementwise_lambda_fn
+        ](
+            a_ptr,
+            b_ptr,
+            b_q_scales_and_mins_buf,
+            c_ptr,
+            N,
+            accumulate,
+            0,
+            n,
+            is_last_k_iter,
         )
         _ = b_q_bits_ptr
 
@@ -1157,8 +1205,18 @@ fn _matmul_Q4_K_columns[
                 a_ptr, b_q_bits_ptr, c_int32_group
             )
 
-        _matmul_Q4_K_tile[matmul_group_unpacked](
-            a_ptr, b_ptr, b_q_scales_and_mins_buf, c_ptr, N, accumulate
+        _matmul_Q4_K_tile[
+            matmul_group_unpacked, elementwise_lambda_fn=elementwise_lambda_fn
+        ](
+            a_ptr,
+            b_ptr,
+            b_q_scales_and_mins_buf,
+            c_ptr,
+            N,
+            accumulate,
+            m,
+            n,
+            is_last_k_iter,
         )
         _ = b_q_bits_ptr
 
@@ -1226,12 +1284,16 @@ fn _matmul_Q6_K_tile[
             DType.int32, tile_m, tile_n, simd_width
         ],
     ) capturing [_] -> None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
     c_ptr: UnsafePointer[Float32],
     N: Int,
     accumulate: Bool,
+    m: Int,
+    n: Int,
+    is_last_k_iter: Bool,
 ):
     alias group_size = _block_Q6_K.group_size
     alias group_count = _block_Q6_K.group_count
@@ -1301,11 +1363,15 @@ fn _matmul_Q6_K_tile[
 
     _apply_a_scales(a_tile_ptr[].scales.unsafe_ptr(), c_float)
 
-    _accumulate_and_store(c_ptr, N, accumulate, c_float)
+    _accumulate_and_store[elementwise_lambda_fn=elementwise_lambda_fn](
+        c_ptr, N, accumulate, c_float, m, n, is_last_k_iter
+    )
 
 
 fn _matmul_Q6_K_columns[
-    tile_n: Int, simd_width: Int
+    tile_n: Int,
+    simd_width: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     owned a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
@@ -1313,6 +1379,8 @@ fn _matmul_Q6_K_columns[
     M: Int,
     N: Int,
     accumulate: Bool,
+    n: Int,
+    is_last_k_iter: Bool,
 ):
     alias group_size = _block_Q6_K.group_size
     alias group_count = _block_Q6_K.group_count
@@ -1339,9 +1407,9 @@ fn _matmul_Q6_K_columns[
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
             )
 
-        _matmul_Q6_K_tile[matmul_group_packed](
-            a_ptr, b_ptr, c_ptr, N, accumulate
-        )
+        _matmul_Q6_K_tile[
+            matmul_group_packed, elementwise_lambda_fn=elementwise_lambda_fn
+        ](a_ptr, b_ptr, c_ptr, N, accumulate, 0, n, is_last_k_iter)
         _ = b_q_bits_ptr
 
         return
@@ -1369,9 +1437,9 @@ fn _matmul_Q6_K_columns[
                 a_ptr, b_q_bits_ptr, c_int32_group
             )
 
-        _matmul_Q6_K_tile[matmul_group_unpacked](
-            a_ptr, b_ptr, c_ptr, N, accumulate
-        )
+        _matmul_Q6_K_tile[
+            matmul_group_unpacked, elementwise_lambda_fn=elementwise_lambda_fn
+        ](a_ptr, b_ptr, c_ptr, N, accumulate, m, n, is_last_k_iter)
         _ = b_q_bits_ptr
 
         a_ptr += tile_m
@@ -1384,16 +1452,23 @@ fn _matmul_Q6_K_columns[
 fn _matmul_Qb_K[
     group_size: Int,
     b_type: AnyType, //,
-    columns_fn: fn[tile_n: Int, simd_width: Int] (
+    columns_fn: fn[
+        tile_n: Int,
+        simd_width: Int,
+        elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    ] (
         owned a_ptr: UnsafePointer[_block_Q8_K_packed[group_size]],
         b_ptr: UnsafePointer[b_type],
         owned c_ptr: UnsafePointer[Float32],
         M: Int,
         N: Int,
         accumulate: Bool,
-    ) -> None,
+        n: Int,
+        is_last_k_iter: Bool,
+    ) capturing -> None,
     *,
     interleave_group_sums: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2],
@@ -1432,11 +1507,25 @@ fn _matmul_Qb_K[
             var cn_ptr = c.data + task_n_start
             var accumulate = k_block > 0
 
+            # only run epilogue for the last iter of K loop
+            var is_last_k_iter = k_block == k_blocks - 1
+
             @parameter
             @always_inline
             fn process_cols[tile_n: Int](n_idx: Int):
-                columns_fn[tile_n, simd_width](
-                    a_packed_ptr, bn_packed_ptr, cn_ptr, M, N, accumulate
+                columns_fn[
+                    tile_n,
+                    simd_width,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    a_packed_ptr,
+                    bn_packed_ptr,
+                    cn_ptr,
+                    M,
+                    N,
+                    accumulate,
+                    task_n_start + n_idx * simd_width,
+                    is_last_k_iter,
                 )
 
                 bn_packed_ptr += tile_n * simd_width
@@ -1454,17 +1543,32 @@ fn _matmul_Qb_K[
     a_packed_base_ptr.free()
 
 
-fn matmul_Q4_K(
+fn matmul_Q4_K[
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
+](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[DType.float32, 2],
 ):
-    _matmul_Qb_K[_matmul_Q4_K_columns, interleave_group_sums=True](a, b, c)
+    _matmul_Qb_K[
+        group_size = _block_Q4_K.group_size,
+        b_type=_block_Q4_K_packed,
+        columns_fn=_matmul_Q4_K_columns,
+        interleave_group_sums=True,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](a, b, c)
 
 
-fn matmul_Q6_K(
+fn matmul_Q6_K[
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
+](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[DType.float32, 2],
 ):
-    _matmul_Qb_K[_matmul_Q6_K_columns](a, b, c)
+    _matmul_Qb_K[
+        group_size = _block_Q6_K.group_size,
+        b_type=_block_Q6_K_packed,
+        columns_fn=_matmul_Q6_K_columns,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](a, b, c)
