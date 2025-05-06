@@ -768,22 +768,6 @@ class DTypeType(max._core.Type):
 
     def __init__(self) -> None: ...
 
-class DeclRefAttrInterface(Protocol):
-    """
-    This interface provides a mechanism for attributes of `!lit.struct` type
-    to implement a verifier hook. `StructType` is a reference to an out-of-line
-    type definition and values of this type require a symbol table to lookup the
-    definition for verification.
-    """
-
-    def verify_symbol_uses(
-        self,
-        arg0: max._core._Operation,
-        arg1: max._core._LockedSymbolTableCollection,
-        arg2: Location,
-        /,
-    ) -> bool: ...
-
 class DecoratorsAttr(max._core.Attribute):
     """
     The `#kgen.decorators` attribute represents a list of decorator invocations
@@ -3261,22 +3245,6 @@ class StructType(max._core.Type):
     def element_types(self) -> Sequence[max._core.Type]: ...
     @property
     def is_memory_only(self) -> bool: ...
-
-class StructTypeInterface(Protocol):
-    """
-    This interface provides mechanisms for types that refer to a KGEN
-    declaration to verify the referenced declaration.
-    """
-
-    @property
-    def alias_name(self) -> str | None: ...
-    def verify_symbol_uses(
-        self,
-        arg0: max._core._Operation,
-        arg1: max._core._LockedSymbolTableCollection,
-        arg2: Location,
-        /,
-    ) -> bool: ...
 
 class SymbolConstantAttr(max._core.Attribute):
     """
