@@ -24,6 +24,8 @@ what we publish.
   - `quantization`
   - `nvml`
   - Benchmarks
+  - `Mogg` directory which contains registration of kernels with the Graph
+    Compiler
 
 - Implicit trait conformance is deprecated. Each instance of implicit
   conformance results in a warning, but compilation still goes through. Soon it
