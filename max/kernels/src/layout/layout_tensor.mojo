@@ -399,19 +399,14 @@ struct LayoutTensor[
             origin,
             address_space=address_space, **_,
         ],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a `LayoutTensor` with a `Span` and a runtime layout
-        for the tensor.
+        for the tensor. The runtime layout element type will be casted to the
+        layout tensor layout integer type.
 
         Constraints:
             - Element layout must be fully static.
-            - Runtime layout and `LayoutTensor` must have the same bitwidth and
-                index type.
 
         Args:
             span: The `Span` pointing to the underlying data.
@@ -422,13 +417,10 @@ struct LayoutTensor[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
 
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
         self.ptr = span.unsafe_ptr()
-        self.runtime_layout = runtime_layout
+        self.runtime_layout = runtime_layout.cast[
+            layout_int_type, linear_idx_type=linear_idx_type
+        ]()
         self.runtime_element_layout = __type_of(self.runtime_element_layout)()
 
     @always_inline
@@ -439,19 +431,12 @@ struct LayoutTensor[
             origin,
             address_space=address_space, **_,
         ],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-        element_runtime_layout: RuntimeLayout[
-            element_layout,
-            element_type = DType.int32,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
+        element_runtime_layout: RuntimeLayout[element_layout, **_],
     ):
         """Create a `LayoutTensor` with a `Span`, a runtime layout of
-        the tensor, and the runtime layout of each element.
+        the tensor, and the runtime layout of each element. The runtime layout
+        element type will be casted to the layout tensor layout integer type.
 
         Constraints:
             - Runtime layout and `LayoutTensor` must have the same bitwidth and
@@ -469,8 +454,12 @@ struct LayoutTensor[
         ]()
 
         self.ptr = span.unsafe_ptr()
-        self.runtime_layout = runtime_layout
-        self.runtime_element_layout = element_runtime_layout
+        self.runtime_layout = runtime_layout.cast[
+            layout_int_type, linear_idx_type=linear_idx_type
+        ]()
+        self.runtime_element_layout = element_runtime_layout.cast[
+            DType.int32, linear_idx_type=linear_idx_type
+        ]()
 
     @always_inline
     @implicit
@@ -512,14 +501,11 @@ struct LayoutTensor[
             mut=mut,
             origin=origin, **_,
         ],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer` and a runtime layout
-        for the tensor.
+        for the tensor. The runtime layout element type will be casted to the
+        layout tensor layout integer type.
 
         Constraints:
             Element layout must be fully static.
@@ -533,13 +519,10 @@ struct LayoutTensor[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
 
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
         self.ptr = ptr
-        self.runtime_layout = runtime_layout
+        self.runtime_layout = runtime_layout.cast[
+            layout_int_type, linear_idx_type=linear_idx_type
+        ]()
         self.runtime_element_layout = __type_of(self.runtime_element_layout)()
 
     @always_inline
@@ -551,23 +534,12 @@ struct LayoutTensor[
             mut=mut,
             origin=origin, **_,
         ],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-        element_runtime_layout: RuntimeLayout[
-            element_layout,
-            element_type = DType.int32,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
+        element_runtime_layout: RuntimeLayout[element_layout, **_],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer`, a runtime layout for
-        the tensor, and the runtime layout of each element.
-
-        Constraints:
-            The bitwidth of `runtime_layout` and `element_runtime_layout` must
-            be the same.
+        the tensor, and the runtime layout of each element. The runtime layout
+        element type will be casted to the layout tensor layout integer type.
 
         Args:
             ptr: The `UnsafePointer` pointing to the underlying data.
@@ -575,14 +547,13 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
 
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
         self.ptr = ptr
-        self.runtime_layout = runtime_layout
-        self.runtime_element_layout = element_runtime_layout
+        self.runtime_layout = runtime_layout.cast[
+            layout_int_type, linear_idx_type=linear_idx_type
+        ]()
+        self.runtime_element_layout = element_runtime_layout.cast[
+            DType.int32, linear_idx_type=linear_idx_type
+        ]()
 
     @always_inline
     @implicit
@@ -678,18 +649,14 @@ struct LayoutTensor[
             alignment=alignment,
         ],
         ref [origin]device_buffer: DeviceBuffer[dtype],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer` and a runtime layout.
+        The runtime layout element type will be casted to the layout tensor layout
+        integer type.
 
         Constraints:
             - Element layout must be fully static.
-            - Runtime layout and `LayoutTensor` must have the same bitwidth and
-                index type.
 
         Args:
             device_buffer: The `DeviceBuffer` containing to the underlying data.
@@ -711,18 +678,14 @@ struct LayoutTensor[
             alignment=alignment,
         ],
         ref [origin]host_buffer: HostBuffer[dtype],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a `LayoutTensor` from a `HostBuffer` and a runtime layout.
+        The runtime layout element type will be casted to the layout tensor layout
+        integer type.
 
         Constraints:
             - Element layout must be fully static.
-            - Runtime layout and `LayoutTensor` must have the same bitwidth and
-                index type.
 
         Args:
             host_buffer: The `HostBuffer` containing to the underlying data.
@@ -744,23 +707,12 @@ struct LayoutTensor[
             alignment=alignment,
         ],
         ref [origin]device_buffer: DeviceBuffer[dtype],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-        element_runtime_layout: RuntimeLayout[
-            element_layout,
-            element_type = DType.int32,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
+        element_runtime_layout: RuntimeLayout[element_layout, **_],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer`, a runtime layout for
-        the tensor, and the runtime layout of each element.
-
-        Constraints:
-            The bitwidth of `runtime_layout` and `element_runtime_layout` must
-            be the same.
+        the tensor, and the runtime layout of each element. The runtime layout
+        element type will be casted to the layout tensor layout integer type.
 
         Args:
             device_buffer: The `DeviceBuffer` containing to the underlying data.
@@ -785,23 +737,12 @@ struct LayoutTensor[
             alignment=alignment,
         ],
         ref [origin]host_buffer: HostBuffer[dtype],
-        runtime_layout: RuntimeLayout[
-            layout,
-            element_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-        element_runtime_layout: RuntimeLayout[
-            element_layout,
-            element_type = DType.int32,
-            linear_idx_type=linear_idx_type,
-        ],
+        runtime_layout: RuntimeLayout[layout, **_],
+        element_runtime_layout: RuntimeLayout[element_layout, **_],
     ):
         """Create a `LayoutTensor` from a `HostBuffer`, a runtime layout for the
-        tensor, and the runtime layout of each element.
-
-        Constraints:
-            The bitwidth of `runtime_layout` and `element_runtime_layout` must
-            be the same.
+        tensor, and the runtime layout of each element. The runtime layout
+        element type will be casted to the layout tensor layout integer type.
 
         Args:
             host_buffer: The `HostBuffer` containing to the underlying data.
