@@ -17,11 +17,11 @@ mogg_lib_deps = [
 mojo_kgen_lib(
     name = "MOGGKernelAPILib",
     srcs = glob(["**/*.mojo"]),
-    deps = mogg_lib_deps + ["//open-source/max/mojo/kernels/src/Mogg/MOGGPrimitives"],
+    deps = mogg_lib_deps + ["@mojo//:MOGGPrimitives"],
 )
 
 mojo_library(
     name = "MOGGKernelAPI",
     srcs = glob(["**/*.mojo"]),
-    deps = mogg_lib_deps + ["//open-source/max/mojo/kernels/src/Mogg/MOGGPrimitives"],
+    deps = mogg_lib_deps + ["@mojo//:MOGGPrimitives"],
 )
