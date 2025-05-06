@@ -95,7 +95,7 @@ class ModelGroup(click.Group):
     callback=lambda ctx, param, value: print_version(ctx, param, value),
     expose_value=False,
     is_eager=True,  # Eager ensures this runs before other options/commands
-    help="Show the MAX engine version and exit.",
+    help="Show the MAX version and exit.",
 )
 def main():
     from max.serve.config import Settings
@@ -320,7 +320,7 @@ def print_version(ctx, param, value):
         return
     from max import _core
 
-    click.echo(f"\nMAX engine version {_core.__version__}\n")
+    click.echo(f"\nMAX version {_core.__version__}\n")
     ctx.exit()
 
 
