@@ -1463,10 +1463,11 @@ fn _matmul_k_cache_ragged_impl[
 # ===-----------------------------------------------------------------------===#
 
 
-fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
+fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     type: DType,
     num_heads: Int,
-    head_dim: Int, //,
+    head_dim: Int,
+    page_size: Int, //,
     quantization_encoding_q: StaticString,
     quantization_encoding_k: StaticString,
     quantization_encoding_v: StaticString,
@@ -1476,15 +1477,16 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
     q_weight: NDBuffer[DType.uint8, 2, _, _],
     k_weight: NDBuffer[DType.uint8, 2, _, _],
     v_weight: NDBuffer[DType.uint8, 2, _, _],
-    kv_collection: ContinuousBatchingKVCacheCollection[
+    kv_collection: PagedKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        page_size,
     ],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, DType.float32, 2, _, _],
     ctx: DeviceContextPtr,
 ) raises:
-    """Performs a quantized matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
+    """Performs a quantized matmul, writing the output into a mutable PagedKVCacheCollection object.
 
     Unlike the un-quantized version (kv_matmul_ragged_continuous_batching), this
     implementation does not concat the q, k, and v weights together. Instead, it
@@ -1524,7 +1526,7 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
-        "mo.kv_matmul.ragged.continuous_batching.nhead_"
+        "mo.kv_matmul.ragged.paged.nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size)
@@ -1536,27 +1538,25 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
         + quantization_encoding_v,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        return (
-            _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
-                quantization_encoding_q,
-                quantization_encoding_k,
-                quantization_encoding_v,
-            ](
-                hidden_state,
-                input_row_offsets,
-                q_weight,
-                k_weight,
-                v_weight,
-                kv_collection,
-                layer_idx,
-                output,
-                ctx,
-            )
+        return _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
+            quantization_encoding_q,
+            quantization_encoding_k,
+            quantization_encoding_v,
+        ](
+            hidden_state,
+            input_row_offsets,
+            q_weight,
+            k_weight,
+            v_weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
         )
 
 
 @always_inline
-fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
+fn _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     quantization_encoding_q: StaticString,
     quantization_encoding_k: StaticString,
     quantization_encoding_v: StaticString,
@@ -1566,7 +1566,7 @@ fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
     q_weight: NDBuffer[DType.uint8, 2, _, _],
     k_weight: NDBuffer[DType.uint8, 2, _, _],
     v_weight: NDBuffer[DType.uint8, 2, _, _],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     output: NDBuffer[mut=True, DType.float32, 2, _, _],
     context: DeviceContextPtr,
@@ -1575,8 +1575,8 @@ fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
-    alias cache_t = ContinuousBatchingKVCache[
-        DType.float32, kv_collection.kv_params
+    alias cache_t = PagedKVCache[
+        DType.float32, kv_collection.kv_params, kv_collection.page_size
     ]
     k_cache_reg = rebind[cache_t](k_cache)
     v_cache_reg = rebind[cache_t](v_cache)

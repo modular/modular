@@ -162,7 +162,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     k_matmul_ragged_paged,
     kv_matmul_ragged_continuous_batching,
-    unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized,
+    unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
 from nn.mha import flash_attention
 from nn.moe import moe_create_indices
@@ -8669,15 +8669,14 @@ struct Struct_k_matmul_ragged_paged:
         )
 
 
-@compiler.register(
-    "mo.unfused_qkv_matmul.ragged.continuous_batching.gguf_quantized"
-)
-struct Struct_unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized:
+@compiler.register("mo.unfused_qkv_matmul.ragged.paged.gguf_quantized")
+struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
     @always_inline
     @staticmethod
     fn execute[
         num_heads: Int,
-        head_dim: Int, //,
+        head_dim: Int,
+        page_size: Int, //,
         quantization_encoding_q: StaticString,
         quantization_encoding_k: StaticString,
         quantization_encoding_v: StaticString,
@@ -8688,14 +8687,15 @@ struct Struct_unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized:
         q_weight: InputTensor[type = DType.uint8, rank=2],
         k_weight: InputTensor[type = DType.uint8, rank=2],
         v_weight: InputTensor[type = DType.uint8, rank=2],
-        kv_collection: ContinuousBatchingKVCacheCollection[
+        kv_collection: PagedKVCacheCollection[
             DType.float32,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
-        unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
+        unfused_qkv_matmul_ragged_paged_gguf_quantized[
             quantization_encoding_q,
             quantization_encoding_k,
             quantization_encoding_v,

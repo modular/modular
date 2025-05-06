@@ -253,9 +253,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
         msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         raise ValueError(msg)
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.CONTINUOUS,
-    }:
+    if kv_params.cache_strategy not in {KVCacheStrategy.PAGED}:
         msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
@@ -268,12 +266,14 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             f"expected quantization_encoding_q, quantization_encoding_k, and quantization_encoding_v to be gguf, was {quantization_encoding_q}, {quantization_encoding_k}, and {quantization_encoding_v}"
         )
 
+    assert kv_params.page_size is not None
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "quantization_encoding_q": quantization_encoding_q.name,
         "quantization_encoding_k": quantization_encoding_k.name,
         "quantization_encoding_v": quantization_encoding_v.name,
+        "page_size": kv_params.page_size,
     }
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
