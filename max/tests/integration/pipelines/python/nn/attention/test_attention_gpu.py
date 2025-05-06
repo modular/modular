@@ -20,17 +20,14 @@ from max.nn.attention import Attention
 from max.nn.kernels import (
     MHAMaskVariant,
     flare_mla_prefill_ragged,
-    flash_attention_ragged_paged_fa3_fallback,
 )
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
-    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
-    PagedKVCacheManagerFA3Fallback,
     load_kv_manager,
 )
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
@@ -38,7 +35,6 @@ from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
 )
 from modular_graph_test import are_all_tensor_values
 from test_common.distance_metrics import is_euclidean_distance_close
-from test_common.graph_utils import is_h100_h200
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
@@ -549,139 +545,6 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
         # float32 dtype.
         rtol=torch.finfo(torch.bfloat16).eps,
     )
-
-
-@pytest.mark.skipif(
-    not is_h100_h200(), reason="Test only supported on H100 and H200"
-)
-def test_kv_cache_paged_fa3_fallback():
-    cuda = Accelerator()
-    session = InferenceSession(devices=[cuda])
-    num_q_heads = 32
-    kv_params = KVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=8,
-        head_dim=128,
-        cache_strategy=KVCacheStrategy.PAGED_FA3_FALLBACK,
-        page_size=128,
-    )
-    num_layers = 1
-    prompt_lens = [10, 30]
-    batch_size = len(prompt_lens)
-    total_seq_len = sum(prompt_lens)
-    input_type = TensorType(
-        DType.bfloat16,
-        ["total_seq_len", num_q_heads, kv_params.head_dim],
-        DeviceRef.GPU(),
-    )
-    input_row_offsets_type = TensorType(
-        DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
-    )
-    kv_manager = PagedKVCacheManagerFA3Fallback(
-        kv_params,
-        cache_memory=1024 * 1024 * 1024,
-        page_size=128,
-        max_batch_size=2,
-        max_seq_len=100,
-        num_layers=num_layers,
-        devices=[cuda],
-        session=session,
-    )
-    fetch_op = FetchPagedKVCacheCollectionFA3Fallback(kv_params, num_layers)
-
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.input_symbols()[0]
-    )
-
-    def construct() -> Graph:
-        with Graph(
-            "call_ragged_attention",
-            input_types=[
-                input_type,
-                input_row_offsets_type,
-                blocks_type,
-                cache_lengths_type,
-                lookup_table_type,
-                is_cache_empty_type,
-            ],
-        ) as g:
-            assert are_all_tensor_values(g.inputs)
-            (
-                input,
-                input_row_offsets,
-                blocks,
-                cache_lengths,
-                lookup_table,
-                is_cache_empty,
-            ) = g.inputs
-
-            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
-
-            kv_collection = fetch_op(
-                blocks, cache_lengths, lookup_table, is_cache_empty
-            )
-            context_lengths = (
-                ops.rebind(
-                    input_row_offsets[1:] - input_row_offsets[:-1],
-                    cache_lengths.shape,
-                )
-                + cache_lengths
-            )
-            result = flash_attention_ragged_paged_fa3_fallback(
-                kv_params,
-                input,
-                input_row_offsets,
-                kv_collection,
-                context_lengths,
-                layer_idx,
-            )
-            g.output(result.cast(DType.float32))
-        return g
-
-    g = construct()
-    # Claim seq_ids in cache
-    seq_ids = []
-    for _ in range(batch_size):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
-
-    input_row_offsets = Tensor(
-        DType.uint32,
-        [batch_size + 1],
-    )
-    running_sum = 0
-    for i in range(batch_size):
-        input_row_offsets[i] = running_sum
-        running_sum += prompt_lens[i]
-    input_row_offsets[batch_size] = running_sum
-    input_row_offsets = input_row_offsets.to(cuda)
-
-    batch = [
-        create_text_context(s, np.empty(prompt_lens[i]))
-        for i, s in enumerate(seq_ids)
-    ]
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
-    )
-    model = session.load(g)
-
-    input_tensor = Tensor.zeros(
-        (total_seq_len, num_q_heads, kv_params.head_dim), dtype=DType.bfloat16
-    )
-
-    result = model.execute(
-        input_tensor.to(cuda),
-        input_row_offsets.to(cuda),
-        blocks.to(cuda),
-        cache_lengths.to(cuda),
-        lookup_table_tensor.to(cuda),
-        is_cache_empty_buf,
-    )[0]
-    assert isinstance(result, Tensor)
-
-    host = CPU(0)
-    assert np.all(result.to(host).to_numpy() != np.inf)
-    assert np.all(result.to(host).to_numpy() != np.nan)
 
 
 @pytest.mark.skipif(
