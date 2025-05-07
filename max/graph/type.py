@@ -25,7 +25,7 @@ import numpy as np
 from max import mlir
 from max._core import graph as _graph
 from max._core.dialects import mo
-from max.driver import Device
+from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 
 
@@ -603,6 +603,14 @@ class DeviceRef:
         return _graph.device_attr(
             mlir.Context.current, str(self.device_type), self.id
         )
+
+    def to_device(self) -> Device:
+        if self.device_type is DeviceKind.CPU:
+            return CPU(self.id)
+        elif self.device_type is DeviceKind.GPU:
+            return Accelerator(self.id)
+        else:
+            raise ValueError(f"Unsupported device type: {self.device_type}")
 
     @staticmethod
     def from_mlir(device_attr: mlir.Attribute) -> DeviceRef:

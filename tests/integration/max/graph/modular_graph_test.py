@@ -124,7 +124,7 @@ def given_input_types(
     input_arrays = []
     for i, input_type in enumerate(input_types):
         if i in provided_inputs:
-            input_arrays.append(st.just(provided_inputs[i]))
+            input_arrays.append(st.just(Tensor.from_dlpack(provided_inputs[i])))
         elif max_magnitude is not None:
             input_arrays.append(
                 arrays(
@@ -138,6 +138,11 @@ def given_input_types(
             input_arrays.append(
                 arrays(input_type, static_dims=static_dims, **kwargs)
             )
+
+        # Move things to the right device
+        input_arrays[i] = input_arrays[i].map(
+            lambda t: t.to(input_type.device.to_device())
+        )
 
     return given(st.tuples(*input_arrays))
 
