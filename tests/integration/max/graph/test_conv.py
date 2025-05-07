@@ -8,10 +8,13 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.ops import conv2d
 from modular_graph_test import modular_graph_test
+
+device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
 def torch_conv2d(
@@ -41,8 +44,8 @@ def torch_conv2d(
     "input_type, filter_type",
     [
         (
-            TensorType(DType.float32, [1, 16, 16, 4], device=DeviceRef.CPU()),
-            TensorType(DType.float32, [16, 16, 4, 5], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [1, 16, 16, 4], device=device_ref),
+            TensorType(DType.float32, [16, 16, 4, 5], device=device_ref),
         ),
     ],
 )
@@ -61,7 +64,10 @@ def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
             result = execute(inputs).to_numpy()
             x, w = torch_inputs
             expected = (
-                torch_conv2d(x, w, stride, dilation, padding).detach().numpy()
+                torch_conv2d(x, w, stride, dilation, padding)
+                .detach()
+                .cpu()
+                .numpy()
             )
             ACCURACY_RTOL = 1e-4
             ACCURACY_ATOL = 1e-6
