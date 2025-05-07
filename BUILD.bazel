@@ -46,3 +46,9 @@ constraint_setting(name = "gpu_name")
     )
     for gpu, _, _ in SUPPORTED_GPUS
 ]
+
+config_setting(
+    name = "asan",
+    tags = ["maybe-unused"],
+    values = {"features": "asan"},
+)
