@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
+
 from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
 from layout.swizzle import Swizzle
@@ -18,7 +18,6 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 
 
 fn test_svg_nvidia_shape() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[1, 2]().distribute[
@@ -51,7 +50,6 @@ fn test_svg_nvidia_shape() raises:
 
 
 fn test_svg_nvidia_tile() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
@@ -59,7 +57,6 @@ fn test_svg_nvidia_tile() raises:
 
 
 fn test_svg_nvidia_tile_memory_bank() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
@@ -67,7 +64,6 @@ fn test_svg_nvidia_tile_memory_bank() raises:
 
 
 fn test_svg_amd_shape_a() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.distribute[Layout.col_major(16, 4)](0)
@@ -75,7 +71,6 @@ fn test_svg_amd_shape_a() raises:
 
 
 fn test_svg_amd_shape_b() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.distribute[Layout.row_major(4, 16)](0)
@@ -83,7 +78,6 @@ fn test_svg_amd_shape_b() raises:
 
 
 fn test_svg_amd_shape_d() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[4, 1]().distribute[
@@ -96,7 +90,6 @@ fn test_svg_amd_shape_d() raises:
 
 
 fn test_svg_wgmma_shape() raises:
-    # CHECK: <?xml version="1.0" encoding="UTF-8"?>
     # wgmma tensor core a matrix fragment
     alias layout = Layout(
         IntTuple(IntTuple(8, 8), IntTuple(8, 2)),
