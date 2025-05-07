@@ -9,11 +9,7 @@ from pathlib import Path
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineEngine,
-    SupportedEncoding,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineEngine, SupportedEncoding
 from max.pipelines.lib import PipelineConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
@@ -159,12 +155,12 @@ def test_config__test_retrieve_factory_with_known_architecture(
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_unsupported_model_path(
-    replit_135m_local_path,
+    gemma_3_1b_it_local_path,
 ):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        model_path=replit_135m_local_path,
+        model_path=gemma_3_1b_it_local_path,
         max_batch_size=1,
         max_length=1,
     )

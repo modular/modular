@@ -59,9 +59,7 @@ def test_config__raises_with_unsupported_GPTQ_format():
     platform.machine() in ["arm64", "aarch64"],
     reason="BF16 is not supported on ARM CPU architecture",
 )
-def test_config__update_weight_paths(
-    llama_3_1_8b_instruct_local_path, replit_1_5_3b_local_path
-):
+def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     PIPELINE_REGISTRY.register(REPLIT_ARCH)
 
@@ -161,18 +159,6 @@ def test_config__update_weight_paths(
         )
         assert config.engine == PipelineEngine.HUGGINGFACE
 
-        # This example, should not raise, as we are showing that we have a weight converter for pytorch for Replit.
-        config = PipelineConfig(
-            model_path=replit_1_5_3b_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
-            device_specs=[DeviceSpec.accelerator()],
-            trust_remote_code=True,
-            max_batch_size=1,
-            max_length=1,
-        )
-        assert config.engine == PipelineEngine.MAX
-        assert config.model_config.weight_path == [Path("pytorch_model.bin")]
-
         # Test a partially complete huggingface_repo
         config = PipelineConfig(
             model_path="neubla/tiny-random-LlamaForCausalLM",
@@ -185,23 +171,3 @@ def test_config__update_weight_paths(
         )
         assert config.engine == PipelineEngine.MAX
         assert config.model_config.weight_path == [Path("model.safetensors")]
-
-        # This example, should not raise as we are passing a valid weights path in a different repository.
-        config = PipelineConfig(
-            model_path=replit_1_5_3b_local_path,
-            quantization_encoding=SupportedEncoding.float32,
-            trust_remote_code=True,
-            weight_path=[
-                Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
-            ],
-            max_batch_size=1,
-            max_length=1,
-        )
-        assert config.engine == PipelineEngine.MAX
-        assert config.model_config.weight_path == [
-            Path("replit-code-v1_5-3b-f32.gguf")
-        ]
-        assert (
-            config.model_config.huggingface_weight_repo_id
-            == "modularai/replit-code-1.5"
-        )

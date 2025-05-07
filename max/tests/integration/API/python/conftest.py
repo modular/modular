@@ -25,14 +25,6 @@ LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M"
 SMOLLM2_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM2_HF_REPO_ID)
 
-REPLIT_HF_REPO_ID = "modularai/replit-code-1.5"
-REPLIT_HF_REVISION = hf_repo_lock.revision_for_hf_repo(REPLIT_HF_REPO_ID)
-
-REPLIT_1_5_3B_HF_REPO_ID = "replit/replit-code-v1_5-3b"
-REPLIT_1_5_3B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
-    REPLIT_1_5_3B_HF_REPO_ID
-)
-
 EXAONE_2_4B_HF_REPO_ID = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
 EXAONE_2_4B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     EXAONE_2_4B_HF_REPO_ID
@@ -51,6 +43,13 @@ TINY_RANDOM_LLAMA_HF_REPO_ID = (
 TINY_RANDOM_LLAMA_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     TINY_RANDOM_LLAMA_HF_REPO_ID
 )
+
+
+GEMMA_3_1B_IT_HF_REPO_ID = "google/gemma-3-1b-it"
+GEMMA_3_1B_IT_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    GEMMA_3_1B_IT_HF_REPO_ID
+)
+
 
 logger = logging.getLogger("max.pipelines")
 
@@ -203,36 +202,6 @@ def smollm2_135m_local_path():
 
 
 @pytest.fixture
-def replit_135m_local_path():
-    try:
-        model_path = generate_local_model_path(
-            REPLIT_HF_REPO_ID, REPLIT_HF_REVISION
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
-        logger.warning(
-            f"Falling back to repo_id: {REPLIT_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = REPLIT_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
-def replit_1_5_3b_local_path():
-    try:
-        model_path = generate_local_model_path(
-            REPLIT_1_5_3B_HF_REPO_ID, REPLIT_1_5_3B_HF_REVISION
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
-        logger.warning(
-            f"Falling back to repo_id: {REPLIT_1_5_3B_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = REPLIT_1_5_3B_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
 def exaone_2_4b_local_path():
     try:
         model_path = generate_local_model_path(
@@ -290,4 +259,19 @@ def tiny_random_llama_local_path():
             f"Falling back to repo_id: {TINY_RANDOM_LLAMA_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = TINY_RANDOM_LLAMA_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def gemma_3_1b_it_local_path():
+    try:
+        model_path = generate_local_model_path(
+            GEMMA_3_1B_IT_HF_REPO_ID, GEMMA_3_1B_IT_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {GEMMA_3_1B_IT_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = GEMMA_3_1B_IT_HF_REPO_ID
     return model_path
