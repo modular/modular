@@ -412,9 +412,9 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
     ValueDest noneDest(EC_PyBindGen);
     checkArgumentsArityOv.emitCall(CallOperands({
-                                       {originalFuncNameStrAttr, synth},
                                        {funcArityAttr, synth},
                                        {pyArgsTuple, synth},
+                                       {originalFuncNameStrAttr, synth},
                                    }),
                                    noneDest, emitter);
   }
