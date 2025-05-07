@@ -95,7 +95,7 @@ fn normalize_index[
 @always_inline
 fn normalize_index[
     I: Indexer, //, container_name: StaticString
-](idx: I, length: Int) -> Int:
+](idx: I, length: Int) -> UInt:
     """Normalize the given index value to a valid index value for the given container length.
 
     If the provided value is negative, the `index + container_length` is returned.
@@ -111,4 +111,4 @@ fn normalize_index[
     Returns:
         The normalized index value.
     """
-    return Int(normalize_index[container_name](idx, UInt(length)))
+    return normalize_index[container_name](idx, UInt(length))
