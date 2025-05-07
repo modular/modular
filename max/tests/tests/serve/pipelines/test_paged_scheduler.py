@@ -16,11 +16,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedKVCacheManager,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import (
     InputContext,
     TextContext,
@@ -744,7 +740,6 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
     output_tokens = 16
 
     scheduler = create_paged_scheduler(
-        enable_chunked_prefill=True,
         enable_in_flight_batching=True,
     )
 
