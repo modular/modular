@@ -20,12 +20,8 @@ from builtin._pybind import (
 )
 from memory import UnsafePointer
 from python import Python, PythonObject, TypedPythonObject
-from python._bindings import (
-    PyMojoObject,
-    py_c_function_wrapper,
-    PythonModuleBuilder,
-)
-from python._cpython import PyMethodDef, PyObjectPtr, PyTypeObject
+from python._bindings import PyMojoObject, PythonModuleBuilder
+from python._cpython import PyObjectPtr, PyTypeObject
 
 
 @export
@@ -177,7 +173,7 @@ fn incr_int__wrapper(
     py_self: PythonObject,
     py_args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
-    check_arguments_arity("incr_int".value, 1, py_args)
+    check_arguments_arity(1, py_args, "incr_int".value)
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
         "incr_int", "Int", py_args, 0
@@ -193,7 +189,7 @@ fn add_to_int__wrapper(
     py_self: PythonObject,
     py_args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
-    check_arguments_arity("add_to_int".value, 2, py_args)
+    check_arguments_arity(2, py_args, "add_to_int".value)
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
         "add_to_int", "Int", py_args, 0
@@ -225,10 +221,7 @@ fn create_string__wrapper(
     py_self: PythonObject,
     py_args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
-    alias func_name = "create_int"
-    alias func_arity = 0
-
-    check_arguments_arity(func_name.value, func_arity, py_args)
+    check_arguments_arity(0, py_args, "create_int".value)
 
     var cpython = Python().cpython()
 
