@@ -80,8 +80,7 @@ class TokenGenerationSchedulerConfig:
     each batch contains exactly `target_tokens_per_batch_ce` tokens."""
 
     enable_in_flight_batching: bool = False
-    """When enabled, prioritizes token generation by batching it with context encoding requests.
-    Requires chunked prefill."""
+    """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
     def __post_init__(self) -> None:
         if (
@@ -96,10 +95,6 @@ class TokenGenerationSchedulerConfig:
                 "Prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
             )
             self.max_forward_steps_ce = 1
-
-        if self.enable_in_flight_batching and not self.enable_chunked_prefill:
-            msg = "Requires chunked prefill for in-flight batching."
-            raise ValueError(msg)
 
 
 class SchedulerOutput:
