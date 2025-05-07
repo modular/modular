@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 mogg_primitives_lib_deps = [
     "@mojo//:register",
     "@mojo//:nn",
-    "//Kernels/mojo/weights_registry",
+    "//open-source/max/max/kernels/src/weights_registry",
     "@mojo//:stdlib",
 ]
 
