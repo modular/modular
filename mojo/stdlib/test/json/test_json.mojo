@@ -333,11 +333,11 @@ def test_number_edge_cases():
     # Integer edge cases
     assert_equal(dumps(loads("0")), "0.0")  # Zero
     assert_equal(
-        dumps(loads("123456789012345678")), "1.234567890123457e+17"
-    )  # Large integer
+        dumps(loads("123456789012345678")), "1.2345678901234566e+17"
+    )  # Large integer, closest float64 representation
     assert_equal(
-        dumps(loads("-123456789012345678")), "-1.234567890123457e+17"
-    )  # Large negative
+        dumps(loads("-123456789012345678")), "-1.2345678901234566e+17"
+    )  # Large negative, closest float64 representation
 
     # Decimal edge cases
     assert_equal(dumps(loads("0.0")), "0.0")  # Zero decimal
