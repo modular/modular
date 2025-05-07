@@ -76,6 +76,8 @@ Changes to Python-Mojo interoperability:
 
 - A new `def_function` API is added to `PythonModuleBuilder` to allow declaring
   Python bindings for arbitrary functions that take and return `PythonObject`s.
+  Similarly, a new `def_method` API is added to `PythonTypeBuilder` to allow
+  declaring Python bindings for methods that take and return `PythonObject`s.
 
 ### Tooling changes
 
