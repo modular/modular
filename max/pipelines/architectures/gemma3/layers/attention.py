@@ -180,17 +180,11 @@ class _Gemma3Attention(Module):
 
     def __call__(
         self,
-        xs: list[TensorValue],
-        cache_positions_list: list[TensorValue],
-        kv_collections: list[ContinuousBatchingKVCacheCollection]
-        | list[PagedKVCacheCollection],
+        x: TensorValue,
+        kv_collection: ContinuousBatchingKVCacheCollection
+        | PagedKVCacheCollection,
         **kwargs,
-    ) -> list[TensorValue]:
-        assert len(xs) == 1 and len(kv_collections) == 1
-        x = xs[0]
-        kv_collection = kv_collections[0]
-        cache_positions = cache_positions_list[0]
-
+    ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -266,4 +260,4 @@ class _Gemma3Attention(Module):
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
-        return [ret]
+        return ret
