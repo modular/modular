@@ -24,7 +24,6 @@ The reference implementation used was the one in C# and can be found here:
 
 import sys
 
-# from utils.string_slice import StringSlice
 from math import ceil, log10
 from collections import InlineArray
 from testing import assert_equal
