@@ -63,6 +63,16 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(repr(person), "Person('John Smith', 123)")
 
+        with self.assertRaises(Exception) as cm:
+            person.change_name("John Modular")
+
+        self.assertEqual(
+            cm.exception.args, ("cannot make name longer than current name",)
+        )
+
+        person.change_name("John Doe")
+        self.assertEqual(person.name(), "John Doe")
+
         # Test that an error is raised if passing any arguments to the initalizer
 
         # FIXME: tp_dealloc_wrapper runs the destructor even if the constructor

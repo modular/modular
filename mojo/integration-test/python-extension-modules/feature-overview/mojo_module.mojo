@@ -44,7 +44,11 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_py_function[add_to_int__wrapper]("add_to_int")
         b.def_py_function[create_string__wrapper]("create_string")
 
-        _ = b.add_type[Person]("Person").def_py_method[Person.obj_name]("name")
+        _ = (
+            b.add_type[Person]("Person")
+            .def_py_method[Person.obj_name]("name")
+            .def_py_method[Person.change_name]("change_name")
+        )
         _ = b.add_type[Int]("Int")
         _ = b.add_type[String]("String")
         return b.finalize()
@@ -145,6 +149,22 @@ struct Person(Defaultable, Representable):
         ]()
 
         return PythonObject(self0[].name).steal_data()
+
+    @staticmethod
+    fn change_name(
+        self_: PythonObject, args: TypedPythonObject["Tuple"]
+    ) raises -> PythonObject:
+        var self0 = self_.unsafe_as_py_object_ptr().unchecked_cast_to_mojo_value[
+            Person
+        ]()
+
+        var new_name = args[0]
+        if len(new_name) > len(self0[].name.codepoints()):
+            raise "cannot make name longer than current name"
+
+        self0[].name = String(new_name)
+
+        return PythonObject(None)
 
 
 # ===----------------------------------------------------------------------=== #
