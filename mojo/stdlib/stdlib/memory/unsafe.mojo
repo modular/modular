@@ -134,8 +134,9 @@ fn pack_bits[
         width == bitwidthof[Scalar[new_type]](),
         (
             "the width of the bool vector must be the same as the bitwidth of"
-            " the target type"
+            " the target type. "
         ),
+        "Scalar bool (width=1) is not supported." if width == 1 else "",
     ]()
 
     return __mlir_op.`pop.bitcast`[_type = Scalar[new_type]._mlir_type](
