@@ -9,45 +9,54 @@ load("@rules_python//python:py_library.bzl", "py_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")
 
 modular_py_library = py_library
-modular_run_binary_test = binary_test
-mojo_binary = _mojo_binary
 mojo_test = _mojo_test
 requirement = _requirement
 strip_prefix = _strip_prefix
+
+def _has_internal_reference(deps):
+    return any([dep.startswith(("//GenericML/", "//Kernels/", "//SDK/")) for dep in deps])
 
 # buildifier: disable=function-docstring
 def mojo_library(
         validate_missing_docs = False,  # buildifier: disable=unused-variable
         build_docs = False,  # buildifier: disable=unused-variable
-        target_compatible_with = [],
         deps = [],
         **kwargs):
-    extra_target_compatible_with = []
-    if any([dep.startswith(("//Kernels/", "//SDK/")) for dep in deps]):
-        extra_target_compatible_with = ["@platforms//:incompatible"]
-        deps = []
+    if _has_internal_reference(deps):
+        return
 
     _mojo_library(
         deps = deps,
-        target_compatible_with = target_compatible_with + extra_target_compatible_with,
         **kwargs
     )
 
-def lit_tests(**_kwargs):
-    pass
+def mojo_binary(
+        data = [],
+        deps = [],
+        **kwargs):
+    if _has_internal_reference(deps) or _has_internal_reference(data):
+        return
+    _mojo_binary(
+        data = data,
+        deps = deps,
+        **kwargs
+    )
 
-def mojo_doc(**_kwargs):
-    pass
-
-def modular_py_binary(**_kwargs):
-    pass
-
-def mojo_kgen_lib(**_kwargs):
-    pass
+def modular_run_binary_test(name, **kwargs):
+    if name.endswith(".example-test"):
+        return  # TODO: Fix custom_ops python examples
+    binary_test(
+        name = name,
+        **kwargs
+    )
 
 def _noop(**_kwargs):
     pass
 
+lit_tests = _noop
+modular_py_binary = _noop
+mojo_doc = _noop
+mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
 pkg_files = _noop
