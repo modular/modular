@@ -845,7 +845,7 @@ fn mha_single_batch[
     # TODO: This is expensive, dereferencing q_gmem_warp_iter[] is expensive and
     # using its dim() is also expensive. Need to find a better way to do this.
     var q_bounds = max(
-        min(Int32(WM), Int32(q_tile.dim(0) - WM * warp_row))
+        min(Int32(WM), Int32(q_tile.dim[0]() - WM * warp_row))
         * q_tile.stride[0](),
         0,
     )
@@ -1344,7 +1344,7 @@ fn mha_decoding_single_batch[
         ](
             q_reg_tile.vectorize[1, simd_width](),
             q_gmem_warp_iter,
-            q_tile.dim(0) * q_tile.stride[0](),
+            q_tile.dim[0]() * q_tile.stride[0](),
         )
         q_gmem_warp_iter._incr()
 

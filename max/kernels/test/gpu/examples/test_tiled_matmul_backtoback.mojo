@@ -184,9 +184,9 @@ fn b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M: UInt = D.dim(0)
-    var L: UInt = B.dim(0) if transpose_b else B.dim(1)
-    # var K: UInt = B.dim(1) if transpose_b else B.dim(0)
+    var M: UInt = D.dim[0]()
+    var L: UInt = B.dim[0 if transpose_b else 1]()
+    # var K: UInt = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
     alias K: UInt = Int(A.layout.shape[1])

@@ -1380,7 +1380,7 @@ fn mha_single_batch[
                 tensor.ptr,
                 __type_of(tensor.runtime_layout)(
                     __type_of(tensor.runtime_layout.shape)(
-                        num_rows, tensor.dim(1)
+                        num_rows, tensor.dim[1]()
                     ),
                     tensor.runtime_layout.stride,
                 ),
@@ -2441,8 +2441,8 @@ fn mha_single_batch_pipelined[
             barrier()
 
             # TODO(KERN-1495): Revert to copy_sram_to_dram once the bug is fixed
-            for i in range(output_gmem_tile.dim(0)):
-                for j in range(lane_id(), output_gmem_tile.dim(1), WARP_SIZE):
+            for i in range(output_gmem_tile.dim[0]()):
+                for j in range(lane_id(), output_gmem_tile.dim[1](), WARP_SIZE):
                     output_gmem_tile[i, j] = accum_smem_tile[i, j]
 
             # copy_sram_to_dram[
@@ -3156,7 +3156,9 @@ fn mha_decoding_single_batch[
         return __type_of(tensor)(
             tensor.ptr,
             __type_of(tensor.runtime_layout)(
-                __type_of(tensor.runtime_layout.shape)(num_rows, tensor.dim(1)),
+                __type_of(tensor.runtime_layout.shape)(
+                    num_rows, tensor.dim[1]()
+                ),
                 tensor.runtime_layout.stride,
             ),
         )
@@ -4088,8 +4090,10 @@ fn mha_decoding_single_batch_pipelined[
         )
 
         # TODO(KERN-1495): Revert to copy_sram_to_dram once the bug is fixed
-        for i in range(output_gmem_warp_tile.dim(0)):
-            for j in range(lane_id(), output_gmem_warp_tile.dim(1), WARP_SIZE):
+        for i in range(output_gmem_warp_tile.dim[0]()):
+            for j in range(
+                lane_id(), output_gmem_warp_tile.dim[1](), WARP_SIZE
+            ):
                 output_gmem_warp_tile[i, j] = accum_smem_warp_tile[i, j]
         # copy_sram_to_dram[
         #    thread_layout = Layout.row_major(1, WARP_SIZE),

@@ -567,7 +567,7 @@ fn warp_specialized_gemm_output[
 
                 # Output dimensions in global memory.
                 alias N = c_layout.shape[1].value()
-                var M: UInt = c.dim(0)
+                var M: UInt = c.dim[0]()
 
                 var c_gmem_frag = c_gmem_wg_tile.vectorize[
                     1, simd_size
@@ -648,7 +648,7 @@ fn warp_specialized_gemm_output[
 
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
-            var M: UInt = c.dim(0)
+            var M: UInt = c.dim[0]()
 
             lane = lane_id()
 

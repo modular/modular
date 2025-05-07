@@ -2091,8 +2091,10 @@ struct LayoutTensor[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _to_static[t: IntTuple]() -> IndexList[len(t)]:
-        var st = IndexList[len(t)]()
+    fn _to_static[
+        t: IntTuple[__origin_of()], element_type: DType
+    ](out result: IndexList[len(t), element_type=element_type]):
+        var st = __type_of(result)()
 
         @parameter
         for i in range(len(t)):
@@ -2156,11 +2158,10 @@ struct LayoutTensor[
 
         - This is a static method that operates on the tensor's type information,
             not on a specific tensor instance.
-        - For dynamic dimensions, use the instance method `dim()` instead.
         """
 
         # FIXME: having to specify the origin is kind of weird
-        alias shape = Self._to_static[layout.shape.origin, layout.shape]()
+        alias shape = Self._to_static[layout.shape, layout_int_type]()
         return shape[idx]
 
     @always_inline
@@ -2204,11 +2205,11 @@ struct LayoutTensor[
         """
 
         # FIXME: having to specify the origin is kind of weird
-        alias stride = Self._to_static[layout.stride.origin, layout.stride]()
+        alias stride = Self._to_static[layout.stride, linear_idx_type]()
         return stride[idx]
 
     @always_inline
-    fn dim(self, idx: Int) -> Int:
+    fn dim[idx: Int](self) -> Int:
         """Returns the runtime dimension size of the tensor along the specified
         axis.
 
@@ -2216,16 +2217,16 @@ struct LayoutTensor[
         to the tensor's actual dimension sizes at runtime, which is necessary
         for tensors with dynamic shapes or when working with tensor slices.
 
-        Constraints:
-            - Only works with tensors that have depth-1 layouts (no nested
-                shapes).
-
-        Args:
+        Parameters:
             idx: The dimension index to query (0-based).
                  For example, in a 3D tensor with shape `[10, 20, 30]`:
                  - `dim(0)` returns 10 (first dimension).
                  - `dim(1)` returns 20 (second dimension).
                  - `dim(2)` returns 30 (third dimension).
+
+        Constraints:
+            - Only works with tensors that have depth-1 layouts (no nested
+                shapes).
 
         Returns:
             The size of the tensor along the specified dimension as an integer.
@@ -2245,9 +2246,19 @@ struct LayoutTensor[
         """
         constrained[
             depth(layout.shape) == 1,
-            "Dim is defined for depth-1 layouts",
+            (
+                "This method only works with tensors that have depth-1 layouts"
+                " (no nested shapes)."
+            ),
         ]()
-        return self.runtime_layout.shape.value[idx]
+
+        alias shape = Self._to_static[layout.shape, layout_int_type]()
+
+        @parameter
+        if not layout.shape[idx].all_known() or Self.masked:
+            return self.runtime_layout.shape.value[idx]
+        else:
+            return shape[idx]
 
     @always_inline
     fn coalesce(
@@ -2464,7 +2475,7 @@ struct LayoutTensor[
 
                 @parameter
                 for i in range(result.layout.rank()):
-                    cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                    cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(0, min(tile_sizes[i], cur_dim))
                     runtime_layout.shape.value[i] = shape_i
 
@@ -2490,7 +2501,7 @@ struct LayoutTensor[
             # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
             @parameter
             for i in range(result.layout.rank()):
-                cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(0, min(tile_sizes[i], cur_dim))
                 runtime_layout.shape.value[i] = shape_i
 
@@ -2610,7 +2621,7 @@ struct LayoutTensor[
 
                 @parameter
                 for i in range(result.layout.rank()):
-                    cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                    cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(0, min(tile_sizes[i], cur_dim))
                     runtime_shape.value[i] = shape_i
 
@@ -2650,7 +2661,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(result.layout.rank()):
-                cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(0, min(tile_sizes[i], cur_dim))
                 runtime_shape.value[i] = shape_i
 
@@ -2662,7 +2673,7 @@ struct LayoutTensor[
                 runtime_layout=__type_of(result.runtime_layout)(
                     runtime_shape, runtime_stride
                 ),
-                dimension_bound=self.dim(axis),
+                dimension_bound=self.dim[axis](),
                 idx=tile_coords[axis],
             )
 
@@ -2865,9 +2876,9 @@ struct LayoutTensor[
             alias thread_stride_i = Int(thread_stride[i])
             alias thread_shape_i = Int(thread_shape[i])
             var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
-            var tile_shape_i = ceildiv(self.dim(i), thread_shape_i)
+            var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
             var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
-            tile_shape[i] = min(self.dim(i) - bound_i, tile_shape_i)
+            tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape
 
@@ -4873,7 +4884,7 @@ fn copy_dram_to_sram[
 
         # NOTE: This can be a negative number, so we cannot use unsigned type
         # in layout tensor.
-        var src_idx_bound = (src.dim(0) * stride - src_frag_offset).cast[
+        var src_idx_bound = (src.dim[0]() * stride - src_frag_offset).cast[
             src_fragments.linear_idx_type
         ]()
 
@@ -5556,7 +5567,7 @@ fn copy_dram_to_sram_async[
             )
 
         var src_idx_bound = (
-            Scalar[src_fragments.linear_idx_type](src.dim(0)) * row_stride
+            Scalar[src_fragments.linear_idx_type](src.dim[0]()) * row_stride
             - src_frag_offset
         )
 
@@ -5801,7 +5812,7 @@ fn copy_sram_to_dram[
             else:
                 stride = dst.runtime_layout.stride.value[0]
             var dst_frag_offset = dst_fragments.distance(dst.ptr)
-            var dst_idx_bound = (dst.dim(0) * stride - dst_frag_offset).cast[
+            var dst_idx_bound = (dst.dim[0]() * stride - dst_frag_offset).cast[
                 dst_fragments.linear_idx_type
             ]()
 
@@ -5990,7 +6001,7 @@ fn copy_local_to_dram[
             stride = static_stride
         else:
             stride = dst.runtime_layout.stride.value[0]
-        var dst_idx_bound = (dst.dim(0) * stride - dst_frag_offset).cast[
+        var dst_idx_bound = (dst.dim[0]() * stride - dst_frag_offset).cast[
             dst_fragments.linear_idx_type
         ]()
 
@@ -6345,7 +6356,7 @@ fn copy_dram_to_local[
             stride = static_stride
         else:
             stride = src.runtime_layout.stride.value[0]
-        var src_idx_bound = (src.dim(0) * stride - src_frag_offset).cast[
+        var src_idx_bound = (src.dim[0]() * stride - src_frag_offset).cast[
             src_fragments.linear_idx_type
         ]()
 

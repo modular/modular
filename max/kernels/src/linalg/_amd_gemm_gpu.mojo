@@ -431,10 +431,10 @@ fn gemm_kernel[
     alias warp_tile_n_mmas = warp_n // mma_n
 
     # Matrix dimensions from input tensors
-    var m_dim = a.dim(0)
-    var n_dim = b.dim(0 if transpose_b else 1)
-    var k_dim = b.dim(1 if transpose_b else 0)
-    alias stride = b.layout.stride[0].value()
+    var m_dim = a.dim[0]()
+    var n_dim = b.dim[0 if transpose_b else 1]()
+    var k_dim = b.dim[1 if transpose_b else 0]()
+    alias stride = b.stride[0]()
 
     alias num_threads = config.num_threads()
 

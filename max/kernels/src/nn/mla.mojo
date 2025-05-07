@@ -1947,7 +1947,7 @@ fn mla_prefill_single_batch[
                 tensor.ptr,
                 __type_of(tensor.runtime_layout)(
                     __type_of(tensor.runtime_layout.shape)(
-                        num_rows, tensor.dim(1)
+                        num_rows, tensor.dim[1]()
                     ),
                     tensor.runtime_layout.stride,
                 ),

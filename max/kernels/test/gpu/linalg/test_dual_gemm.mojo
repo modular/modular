@@ -64,8 +64,8 @@ fn multistage_gemm_simple[
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    var M = c.dim(0)
-    var N = c.dim(1)
+    var M = c.dim[0]()
+    var N = c.dim[1]()
 
     # Dispatch w/o split K
     alias kernel = multistage_gemm_kernel[
@@ -129,8 +129,8 @@ fn naive_dual_gemm[
         ]()
         alias align = alignof[SIMD[c_type, simd_width]]()
 
-        var M = c01.dim(0)
-        var N = c01.dim(1) // 2
+        var M = c01.dim[0]()
+        var N = c01.dim[1]() // 2
 
         @always_inline
         @__copy_capture(c01, N)

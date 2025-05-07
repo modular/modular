@@ -480,7 +480,7 @@ fn multistage_qgemm_kernel[
     alias repack_tile = Index(64, 16)
     alias group_bytes = group_size // 2 + 2
 
-    var M: UInt = c.dim(0)
+    var M: UInt = c.dim[0]()
     alias N = Int(b_layout.shape[0])
     alias K = Int(b_layout.shape[1]) // group_bytes * group_size
 

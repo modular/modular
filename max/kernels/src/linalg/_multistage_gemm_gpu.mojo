@@ -254,7 +254,7 @@ fn multistage_mma[
             ](
                 RuntimeTuple[
                     tensor.layout.shape, element_type = tensor.layout_int_type
-                ](num_rows, tensor.dim(1)),
+                ](num_rows, tensor.dim[1]()),
                 tensor.runtime_layout.stride,
             ),
         )
@@ -689,9 +689,9 @@ fn multistage_gemm_kernel[
     ]()
     alias simd_size = simdwidthof[c_type]()
 
-    var M: UInt = c.dim(0)
-    var N: UInt = b.dim(0) if transpose_b else b.dim(1)
-    var K: UInt = b.dim(1) if transpose_b else b.dim(0)
+    var M: UInt = c.dim[0]()
+    var N: UInt = b.dim[0 if transpose_b else 1]()
+    var K: UInt = b.dim[1 if transpose_b else 0]()
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -1103,7 +1103,7 @@ fn multistage_gemm_split_k_kernel[
     num_partitions: UInt,
     locks: UnsafePointer[Int32],
 ):
-    var M = c.dim(0)
+    var M = c.dim[0]()
     alias N = b.shape[0]() if transpose_b else b.shape[1]()
     alias K = b.shape[1]() if transpose_b else b.shape[0]()
     alias BK = config.block_tile_shape[2]

@@ -184,7 +184,7 @@ fn gemm_kernel_1[
     var dst_reg: c.element_type = 0
 
     # Iterate over the K dimension to compute the dot product.
-    for k in range(b.dim(0)):
+    for k in range(b.dim[0]()):
         # Get the corresponding tiles from matrices A and B.
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
@@ -305,7 +305,7 @@ fn gemm_kernel_2[
     var dst_reg: c.element_type = 0
 
     # Iterate over the K dimension
-    for k in range(b.dim(0)):
+    for k in range(b.dim[0]()):
         # Get the tiles of input matrices A and B
         var a_tile = a.tile[BM, 1](bidy, k)
         var b_tile = b.tile[1, BN](k, bidx)
@@ -432,7 +432,7 @@ fn gemm_kernel_3[
     var dst_reg: c.element_type = 0
 
     # Iterate over tiles of input matrices A and B
-    for block in range(b.dim(0) // BK):
+    for block in range(b.dim[0]() // BK):
         # Define the layout for loading tiles of A and B into shared memory
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
@@ -586,7 +586,7 @@ fn gemm_kernel_4[
     dst_reg.copy_from(dst)
 
     # Iterate over the tiles of A and B in the K dimension.
-    for block in range(b.dim(0) // BK):
+    for block in range(b.dim[0]() // BK):
         # Define the layout for loading tiles of A and B into shared
         # memory.
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
@@ -752,7 +752,7 @@ fn gemm_kernel_5[
     var a_reg = tb[dtype]().layout[TM]().local().alloc()
     var b_reg = tb[dtype]().layout[TN]().local().alloc()
 
-    var ntiles = b.dim(0) // BK
+    var ntiles = b.dim[0]() // BK
 
     for block in range(ntiles):
         alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
@@ -918,7 +918,7 @@ fn gemm_kernel_6[
     var a_reg = tb[dtype]().layout[TM]().local().alloc()
     var b_reg = tb[dtype]().layout[TN]().local().alloc()
 
-    var ntiles = b.dim(0) // BK
+    var ntiles = b.dim[0]() // BK
 
     # Iterate over the tiles of A and B in the K dimension.
     for block in range(ntiles):

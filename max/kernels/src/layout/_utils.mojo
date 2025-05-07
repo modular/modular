@@ -241,14 +241,14 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
         tensor.element_layout.size() == 1, "Element layout must be a scalar"
     ]()
 
-    if tensor.dim(0) == 0 or tensor.dim(1) == 0:
+    if tensor.dim[0]() == 0 or tensor.dim[1]() == 0:
         return 0
 
     alias element_layout = tensor.element_layout
     alias element_offset = element_layout(element_layout.size() - 1)
     var strides = tensor.runtime_layout.stride.value
     var offset = tensor._get_offset(
-        strides, IndexList[2](tensor.dim(0) - 1, tensor.dim(1) - 1)
+        strides, IndexList[2](tensor.dim[0]() - 1, tensor.dim[1]() - 1)
     )
     return offset + 1
 
@@ -291,8 +291,8 @@ fn hash(tensor: LayoutTensor) -> Int:
     var hash_value: Int = 0
     alias size = tensor.layout.size()
 
-    for i in range(tensor.dim(0)):
-        for j in range(tensor.dim(1)):
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
             var val = tensor[i, j]
             var addr = UnsafePointer(to=val)
             var addr_int = addr.bitcast[Int16]()

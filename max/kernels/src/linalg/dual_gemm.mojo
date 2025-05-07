@@ -170,7 +170,7 @@ fn multistage_dual_mma[
             ](
                 RuntimeTuple[
                     tensor.layout.shape, element_type = tensor.layout_int_type
-                ](num_rows, tensor.dim(1)),
+                ](num_rows, tensor.dim[1]()),
                 tensor.runtime_layout.stride,
             ),
         )
@@ -457,9 +457,9 @@ fn multistage_dual_gemm_kernel[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var M: UInt = c.dim(0)
-    var N: UInt = b0.dim(0) if transpose_b else b0.dim(1)
-    var K: UInt = b0.dim(1) if transpose_b else b0.dim(0)
+    var M: UInt = c.dim[0]()
+    var N: UInt = b0.dim[0 if transpose_b else 1]()
+    var K: UInt = b0.dim[1 if transpose_b else 0]()
     # we require b0 and b1 to be of the same size
 
     alias BM = config.block_tile_shape[0]
@@ -760,8 +760,8 @@ fn multistage_dual_gemm[
     b1: LayoutTensor[b_type, b_layout],
     ctx: DeviceContext,
 ) raises:
-    var M = c.dim(0)
-    var N = c.dim(1)
+    var M = c.dim[0]()
+    var N = c.dim[1]()
 
     alias smem_usage = config.shared_mem_usage()
     constrained[

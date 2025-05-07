@@ -1215,7 +1215,7 @@ def create_tma_tile[
             1,
             owning=False,
         ),
-        (tensor.dim(0), tensor.dim(1)),
+        (tensor.dim[0](), tensor.dim[1]()),
         (tensor.stride[0](), tensor.stride[1]()),
         (tile_sizes[0], tile_sizes[1]),
     )
@@ -1328,7 +1328,7 @@ def create_tma_tile[
                 1,
                 owning=False,
             ),
-            (tensor.dim(0), tensor.dim(1)),
+            (tensor.dim[0](), tensor.dim[1]()),
             (tensor.stride[0](), tensor.stride[1]()),
             (__desc_layout.shape[0].value(), __desc_layout.shape[1].value()),
         )
@@ -1354,7 +1354,7 @@ def create_tma_tile[
                 1,
                 owning=False,
             ),
-            (tensor.dim(0), tensor.dim(1), tensor.dim(2)),
+            (tensor.dim[0](), tensor.dim[1](), tensor.dim[2]()),
             (tensor.stride[0](), tensor.stride[1](), tensor.stride[2]()),
             (
                 __desc_layout.shape[0].value(),

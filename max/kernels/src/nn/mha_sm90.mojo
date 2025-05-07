@@ -940,7 +940,7 @@ fn _mask_tensor_row(
     return __type_of(tensor)(
         tensor.ptr,
         __type_of(tensor.runtime_layout)(
-            __type_of(tensor.runtime_layout.shape)(num_rows, tensor.dim(1)),
+            __type_of(tensor.runtime_layout.shape)(num_rows, tensor.dim[1]()),
             tensor.runtime_layout.stride,
         ),
     )
