@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx, block_idx, block_dim
+from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from math import ceildiv
@@ -72,6 +72,6 @@ fn vector_addition(
     size: Int
 ):
     """The calculation to perform across the vector on the GPU."""
-    var global_tid = block_idx.x * block_dim.x + thread_idx.x
+    var global_tid = global_idx.x
     if global_tid < size:
         out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]
