@@ -59,7 +59,7 @@ class AsyncioMetricClient(MetricClient):
             self.q.put_nowait(m)
         except queue.Full:
             logger.warning(
-                "Telemetry Queue is full. Dropping data for {m.instrument_name}"
+                f"Telemetry Queue is full. Dropping data for {m.instrument_name}"
             )
 
     def cross_process_factory(
@@ -125,7 +125,7 @@ class AsyncioTelemetryController:
                 logger.warning("Failed to record telemetry", exc_info=True)
 
         logger.debug(
-            "AsyncioTelemetryController consumer shut down. Residual queue size: {q.qsize()}"
+            f"AsyncioTelemetryController consumer shut down. Residual queue size: {q.qsize()}"
         )
 
     async def __aenter__(self):
