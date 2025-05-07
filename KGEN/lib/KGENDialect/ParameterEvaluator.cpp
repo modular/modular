@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -59,8 +60,47 @@ bool KGEN::isParameterizedType(Type type) {
 
 FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
-  // TODO: Implement for KGEN evaluation.
+  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr))
+    return evaluateGetWitness(getWitness);
+
   return failure();
+}
+
+FailureOr<TypedAttr>
+SymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
+  // We can only simplify if the type reference is resolved already.
+  auto typeParam = dyn_cast<TypeParamAttr>(getWitness.getTypeValue());
+  if (!typeParam)
+    return failure();
+
+  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(
+      getWitness.getTypeRefIfResolved());
+  if (!genRef)
+    return failure();
+
+  // Find the struct decl for the instance.
+  auto structDecl =
+      symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
+  if (!structDecl)
+    return failure();
+
+  auto conformance = symtab.lookupSymbolIn<ConformanceOp>(
+      structDecl, getWitness.getTraitName());
+  if (!conformance)
+    return failure();
+
+  ParameterEvaluator evaluator;
+  evaluator.setEvaluationContext(this);
+  for (auto [param, value] :
+       llvm::zip(structDecl.getInputParams(), genRef.getParamValues()))
+    evaluator.setParameterValue(param, value);
+
+  FailureOr<TypedAttr> simplified =
+      getWitness.simplify(conformance, &evaluator);
+  if (failed(simplified) || !simplified.value())
+    return failure();
+
+  return simplified.value();
 }
 
 //===----------------------------------------------------------------------===//

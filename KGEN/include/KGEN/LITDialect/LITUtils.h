@@ -12,6 +12,7 @@
 #ifndef KGEN_LITDIALECT_LITUTILS_H
 #define KGEN_LITDIALECT_LITUTILS_H
 
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/AttrTypeSubElements.h"
@@ -335,6 +336,20 @@ LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                                  size_t numPosDefaults,
                                  size_t numKwOnlyDefaults,
                                  StringRef argOrParam);
+
+//===----------------------------------------------------------------------===//
+// EvaluatableAttrHandler
+//===----------------------------------------------------------------------===//
+
+class LITSymTabEvaluationContext : public SymTabEvaluationContext {
+public:
+  using SymTabEvaluationContext::SymTabEvaluationContext;
+
+  FailureOr<TypedAttr>
+  evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
+
+  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
+};
 
 } // namespace LIT
 } // namespace KGEN

@@ -312,11 +312,12 @@ bool UpcastAttr::isConstant() const { return false; }
 
 bool GetWitnessAttr::isConstant() const { return false; }
 
-TypeInstanceRefAttr GetWitnessAttr::getTypeInstanceRef() {
-  if (auto typeRef = ::dyn_cast<TypeInstanceRefAttr>(getTypeValue()))
+TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
+  TypedAttr typeRef = getTypeValue();
+  if (::isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
     return typeRef;
 
-  auto typeParam = ::dyn_cast<TypeParamAttr>(getTypeValue());
+  auto typeParam = ::dyn_cast<TypeParamAttr>(typeRef);
   if (!typeParam)
     return {};
 
@@ -324,7 +325,11 @@ TypeInstanceRefAttr GetWitnessAttr::getTypeInstanceRef() {
   if (!typeValueType)
     return {};
 
-  return ::dyn_cast<TypeInstanceRefAttr>(typeValueType.getTypeValue());
+  typeRef = typeValueType.getTypeValue();
+  if (!::isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return {};
+
+  return typeRef;
 }
 
 FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
