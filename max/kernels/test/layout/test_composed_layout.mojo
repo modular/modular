@@ -72,10 +72,7 @@ fn test_composed_layout_swizzle_rt() raises:
     assert_equal(comp_layout(5), 40)
 
 
-fn main():
-    try:
-        test_composed_layout()
-        test_composed_layout_swizzle()
-        test_composed_layout_swizzle_rt()
-    except e:
-        print("Error => ", e)
+fn main() raises:
+    test_composed_layout()
+    test_composed_layout_swizzle()
+    test_composed_layout_swizzle_rt()
