@@ -504,6 +504,59 @@ PIPELINES = {
             kl_div_threshold=4.3e-3,
         ),
     ),
+    "Llama-3.1-8B-Instruct-float8-static": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        # This does not require multigpu, but does require h100.
+        tags=["h100-multi"],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3.1-8b-float8-static",
+            encoding="float8_e4m3fn",
+            # This model does not run with torch and transformers.
+            # It only runs with vllm.
+            # For now compare to the bfloat16 goldens cause we have them.
+            pregenerated_torch_goldens_rlocation=(
+                "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
+            ),
+            absolute_tolerance=1.4,
+            relative_tolerance=0.67,
+            cos_dist_threshold=7.6e-3,
+            kl_div_threshold=8.6e-2,
+        ),
+    ),
+    # TODO: enable after #60954 lands
+    # "Llama-3.1-8B-Instruct-float8-dynamic": PipelineDef(
+    #     compatible_with=[DeviceKind.GPU],
+    #     # This does not require multigpu, but does require h100.
+    #     tags=["h100-multi"],
+    #     run=lambda device_type,
+    #     devices,
+    #     find_tolerances,
+    #     print_suggested_tolerances: run_llm_verification(
+    #         device_type=device_type,
+    #         devices=devices,
+    #         find_tolerances=find_tolerances,
+    #         print_suggested_tolerances=print_suggested_tolerances,
+    #         pipeline="llama3.1-8b-float8-dynamic",
+    #         encoding="float8_e4m3fn",
+    #         # This model does not run with torch and transformers.
+    #         # It only runs with vllm.
+    #         # For now compare to the bfloat16 goldens cause we have them.
+    #         pregenerated_torch_goldens_rlocation=(
+    #             "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
+    #         ),
+    #         absolute_tolerance=0.17,
+    #         relative_tolerance=3.5e-2,
+    #         cos_dist_threshold=1.3e-4,
+    #         kl_div_threshold=1.2e-3,
+    #     ),
+    # ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],

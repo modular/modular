@@ -53,6 +53,7 @@ EX_TEMPFAIL = 75
 ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
     "float32": torch.float32,
     "bfloat16": torch.bfloat16,
+    "float8_e4m3fn": torch.float8_e4m3fn,
     "gptq": torch.float16,
     "q4_k": torch.float32,
     "q4_0": torch.float32,
@@ -465,6 +466,20 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32", "q4_k"],
         },
     ),
+    "llama3.1-8b-float8-static": GenericOracle(
+        model_path="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
+    "llama3.1-8b-float8-dynamic": GenericOracle(
+        model_path="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
     "llama3.3-70b": GenericOracle(
         model_path="meta-llama/Llama-3.3-70B-Instruct",
         config_params={"max_length": 512},
@@ -700,6 +715,15 @@ def generate_llm_logits(
     similarity.
 
     """
+
+    # For the small float8 models, run on single gpu even on the h100-multi node.
+    # They are just kicked off on the h100 node cause they need h100 to run float8.
+    if pipeline_name in [
+        "llama3.1-8b-float8-static",
+        "llama3.1-8b-float8-dynamic",
+    ]:
+        device_specs = device_specs[:1]
+
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
 
