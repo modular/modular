@@ -97,6 +97,27 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark Dict __getitem__ K: trivial V:allocated
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_dict_getitem[size: Int](mut b: Bencher) raises:
+    """__getitem__ size new items."""
+    var items = Dict[Int, String]()
+    for i in range(size):
+        items[i] = String(i)
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for key in range(size):
+            var res = Int(random.random_si64(0, size)) in items
+            keep(res)
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Dict Memory Footprint
 # ===-----------------------------------------------------------------------===#
 
@@ -139,6 +160,9 @@ def main():
         m.bench_function[bench_dict_lookup[size]](
             BenchId(String("bench_dict_lookup[", size, "]"))
         )
+    m.bench_function[bench_dict_getitem[1000]](
+        BenchId(String("bench_dict_getitem[1000]"))
+    )
 
     m.dump_report()
 
