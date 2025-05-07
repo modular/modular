@@ -46,6 +46,7 @@ from .elementwise import min as _elementwise_min
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd
+from .hann_window import hann_window
 from .irfft import irfft
 from .layer_norm import layer_norm
 from .matmul import matmul
