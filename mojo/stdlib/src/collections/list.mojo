@@ -522,6 +522,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self.data = new_data
         self.capacity = new_capacity
 
+    # FIXME(#4157): remove overload and set unsafe_no_checks default to false
     fn append(mut self, owned value: T):
         """Appends a value to this list.
 
@@ -532,8 +533,30 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             If there is no capacity left, resizes to twice the current capacity.
             Except for 0 capacity where it sets 1.
         """
+
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
+        self._unsafe_next_uninit_ptr().init_pointee_move(value^)
+        self._len += 1
+
+    fn append[*, unsafe_no_checks: Bool](mut self, owned value: T):
+        """Appends a value to this list.
+
+        Parameters:
+            unsafe_no_checks: Unsafely assume the buffer is large enough.
+
+        Args:
+            value: The value to append.
+
+        Notes:
+            If there is no capacity left, resizes to twice the current capacity.
+            Except for 0 capacity where it sets 1.
+        """
+
+        @parameter
+        if not unsafe_no_checks:
+            if self._len >= self.capacity:
+                self._realloc(self.capacity * 2 | Int(self.capacity == 0))
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
         self._len += 1
 
@@ -589,8 +612,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn extend(mut self, owned other: List[T, *_]):
+    fn extend[
+        *, unsafe_no_checks: Bool = False
+    ](mut self, owned other: List[T, *_]):
         """Extends this list by consuming the elements of `other`.
+
+        Parameters:
+            unsafe_no_checks: Unsafely assume the buffer is large enough.
 
         Args:
             other: List whose elements will be added in order at the end of this list.
@@ -598,7 +626,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         var other_len = len(other)
         var final_size = len(self) + other_len
-        self.reserve(final_size)
+
+        @parameter
+        if not unsafe_no_checks:
+            self.reserve(final_size)
+        else:
+            alias msg = "capacity must be >= len(self) + len(other)"
+            debug_assert(self.capacity >= self._len + len(other), msg)
 
         var dest_ptr = self.data + self._len
         var src_ptr = other.unsafe_ptr()
@@ -623,12 +657,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         other._len = 0
 
     fn extend[
-        D: DType, //
+        D: DType, //, *, unsafe_no_checks: Bool = False
     ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _]):
         """Extends this list with the elements of a vector.
 
         Parameters:
             D: The DType.
+            unsafe_no_checks: Unsafely assume the buffer is large enough.
 
         Args:
             value: The value to append.
@@ -636,17 +671,24 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Notes:
             If there is no capacity left, resizes to `len(self) + value.size`.
         """
-        self.reserve(self._len + value.size)
+
+        @parameter
+        if not unsafe_no_checks:
+            self.reserve(self._len + value.size)
+        else:
+            alias msg = "capacity must be >= len(self) + len(value)"
+            debug_assert(self.capacity >= self._len + len(value), msg)
         self._unsafe_next_uninit_ptr().store(value)
         self._len += value.size
 
     fn extend[
-        D: DType, //
+        D: DType, //, *, unsafe_no_checks: Bool = False
     ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _], *, count: Int):
         """Extends this list with `count` number of elements from a vector.
 
         Parameters:
             D: The DType.
+            unsafe_no_checks: Unsafely assume the buffer is large enough.
 
         Args:
             value: The value to append.
@@ -657,18 +699,25 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             If there is no capacity left, resizes to `len(self) + count`.
         """
         debug_assert(count <= value.size, "count must be <= value.size")
-        self.reserve(self._len + count)
+
+        @parameter
+        if not unsafe_no_checks:
+            self.reserve(self._len + count)
+        else:
+            alias msg = "capacity must be >= len(self) + count"
+            debug_assert(self.capacity >= self._len + count, msg)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[D]]()
         memcpy(self._unsafe_next_uninit_ptr(), v_ptr, count)
         self._len += count
 
     fn extend[
-        D: DType, //
+        D: DType, //, *, unsafe_no_checks: Bool = False
     ](mut self: List[Scalar[D], *_, **_], value: Span[Scalar[D]]):
         """Extends this list with the elements of a `Span`.
 
         Parameters:
             D: The DType.
+            unsafe_no_checks: Unsafely assume the buffer is large enough.
 
         Args:
             value: The value to append.
@@ -676,7 +725,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Notes:
             If there is no capacity left, resizes to `len(self) + len(value)`.
         """
-        self.reserve(self._len + len(value))
+
+        @parameter
+        if not unsafe_no_checks:
+            self.reserve(self._len + len(value))
+        else:
+            alias msg = "capacity must be >= len(self) + len(value)"
+            debug_assert(self.capacity >= self._len + len(value), msg)
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
