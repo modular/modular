@@ -153,7 +153,7 @@ They also need to go back and forth between files and functions to understand
 the flow of the code. This is exponentially hard as there are more lines in the code.
 - **Avoiding blocking changes that are valid**: In a huge pull request, it's
 likely that some changes are valid and some need to be reworked/discussed. If all
-the changes are in the same pull request, then the valid changes will be be blocked
+the changes are in the same pull request, then the valid changes will be blocked
 until all discussions have been resolved.
 - **Reducing the number of git conflicts**: Bigger pull request means slower reviews,
 thus means that the pull request will be open longer and will have more git conflicts
@@ -422,7 +422,7 @@ delays due any of the following:
   the team's weekly design discussion meetings).
 
 Note that just because a pull request has been reviewed does not necessarily
-mean it will be able to merged internally immediately.  This could be due to a
+mean it will be able to be merged internally immediately.  This could be due to a
 variety of reasons, such as:
 
 - Mojo compiler bugs.  These take time to find a minimal reproducer, file an
@@ -432,7 +432,7 @@ variety of reasons, such as:
   fix - remember, we have the largest Mojo codebase in the world internally.
 
 If delays occur, we'll provide status updates in the relevant thread (pull
-request or GitHub issue).  Please bare with us as Mojo is an early language.
+request or GitHub issue).  Please bear with us as Mojo is an early language.
 We look forward to working together with you in making Mojo better for everyone!
 
 #### How You Can Help
