@@ -1,5 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
-load("//bazel:api.bzl", "mojo_doc", "mojo_library")
+load("//bazel:api.bzl", "mojo_doc", "mojo_library", "pkg_filegroup", "pkg_files")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -73,7 +72,6 @@ LIBS = [
         renames = {
             lib + ".docs": lib,
         },
-        tags = ["manual"],  # TODO: Make this build and remove this
         visibility = ["//visibility:private"],
     )
     for lib in LIBS
@@ -85,5 +83,4 @@ pkg_filegroup(
         ":" + lib + "-doc-files"
         for lib in LIBS
     ],
-    tags = ["manual"],  # TODO: Make this build and remove this
 )

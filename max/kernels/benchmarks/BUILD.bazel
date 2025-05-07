@@ -1,5 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "pkg_files", "strip_prefix")
 
 lit_tests(
     name = "benchmarks",

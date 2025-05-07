@@ -1,5 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
 modular_py_library(
     name = "nn",

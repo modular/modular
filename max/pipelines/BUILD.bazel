@@ -1,5 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files")
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "pkg_filegroup", "pkg_files", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 

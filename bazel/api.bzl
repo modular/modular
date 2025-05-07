@@ -4,6 +4,7 @@ load("@modular_test_deps//:requirements.bzl", _requirement = "requirement")
 load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
 load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
 load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
+load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")
 
@@ -12,6 +13,7 @@ modular_run_binary_test = binary_test
 mojo_binary = _mojo_binary
 mojo_test = _mojo_test
 requirement = _requirement
+strip_prefix = _strip_prefix
 
 # buildifier: disable=function-docstring
 def mojo_library(
@@ -42,3 +44,10 @@ def modular_py_binary(**_kwargs):
 
 def mojo_kgen_lib(**_kwargs):
     pass
+
+def _noop(**_kwargs):
+    pass
+
+pkg_attributes = _noop
+pkg_filegroup = _noop
+pkg_files = _noop
