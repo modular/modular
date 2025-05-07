@@ -397,13 +397,13 @@ By making a contribution to this project, I certify that:
   - Once a contributor addresses feedback, maintainers will review updates as
     soon as they can, typically within 5 business days.
 
-2. Issue Triage Timeline
+1. Issue Triage Timeline
 
 - New Issues:
   - Maintainers will label and acknowledge new issues within 10 days of the
     issue submission.
 
-3. Proposals
+1. Proposals
 
 - Proposals take more time for the team to review, discuss, and make sure this
   is in line with the overall strategy and vision for the standard library.
