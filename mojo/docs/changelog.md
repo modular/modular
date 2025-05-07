@@ -42,6 +42,18 @@ what we publish.
 - Added support for NVIDIA RTX 2060 GPUs, enabling Mojo programs to run
   on a wider range of consumer-grade hardware.
 
+- The `bitset` datastructure was added to the `collections` package. This is a
+  fixed `bitset` that simplifies working with a set of bits and perform bit
+  operations.
+
+- A new `json` module was added the provides a way to deserialize JSON objects
+  into Mojo.
+
+- A new `regex` module was added. The regex module provides functionality
+  for pattern matching and manipulation of strings using regular
+  expressions. This is a simple implementation that supports basic regex
+  operations.
+
 Changes to Python-Mojo interoperability:
 
 - `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
@@ -60,19 +72,10 @@ Changes to Python-Mojo interoperability:
   The new `Python.str` function can also be used to convert an arbitrary
   `PythonObject` to a Python `str` object.
 
-- `String` now implements `ConvertibleFromPython`.
+- `String` and `Bool` now implement `ConvertibleFromPython`.
 
-- The `bitset` datastructure was added to the `collections` package. This is a
-  fixed `bitset` that simplifies working with a set of bits and perform bit
-  operations.
-
-- A new `json` module was added the provides a way to deserialize JSON objects
-  into Mojo.
-
-- A new `regex` module was added. The regex module provides functionality
-  for pattern matching and manipulation of strings using regular
-  expressions. This is a simple implementation that supports basic regex
-  operations.
+- A new `def_function` API is added to `PythonModuleBuilder` to allow declaring
+  Python bindings for arbitrary functions that take and return `PythonObject`s.
 
 ### Tooling changes
 
