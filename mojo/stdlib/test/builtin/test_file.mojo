@@ -20,6 +20,8 @@ from tempfile import gettempdir
 from memory import UnsafePointer
 from testing import assert_equal, assert_true
 
+alias DUMMY_FILE_SIZE: UInt = 954
+
 
 def test_file_read():
     var path = _dir_of_current_file() / "test_file_dummy_input.txt"
@@ -65,6 +67,24 @@ def test_file_read_bytes_multi():
 
         assert_equal(len(s), 936)
         assert_true(s.startswith("sit amet, consectetur adipiscing elit."))
+
+
+def test_file_read_bytes_all():
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var bytes_all = f.read_bytes(-1)
+        assert_equal(len(bytes_all), DUMMY_FILE_SIZE)
+
+
+def test_file_read_all():
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var all = f.read(-1)
+        assert_equal(len(all), DUMMY_FILE_SIZE)
 
 
 def test_file_read_path():
@@ -287,6 +307,8 @@ def main():
     test_file_read()
     test_file_read_multi()
     test_file_read_bytes_multi()
+    test_file_read_bytes_all()
+    test_file_read_all()
     test_file_read_path()
     test_file_path_direct_read()
     test_file_read_context()
