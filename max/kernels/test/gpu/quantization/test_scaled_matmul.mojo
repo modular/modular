@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s
-
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from collections import Optional

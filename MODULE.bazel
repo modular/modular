@@ -8,13 +8,13 @@ bazel_dep(name = "rules_mojo", version = "0.1.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_python", version = "1.4.0-rc4")
 
-# TODO: Remove when 0.2.0 is released
+# TODO: Remove when 0.3.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-oN9RMLe1l0rB5Fh/TP/QioJCSRYMz4JKg25W2grWYS8=",
-    strip_prefix = "rules_mojo-0.2.0",
+    integrity = "sha256-M+N5i6LqT7kDtRQ4QqS4mK0HnaO7JNrqwDYKwqaNWMk=",
+    strip_prefix = "rules_mojo-7d906beee4f1d01e761925247121ae9f1d138e9e",
     urls = [
-        "https://github.com/modular/rules_mojo/releases/download/0.2.0/rules_mojo-0.2.0.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/7d906beee4f1d01e761925247121ae9f1d138e9e.tar.gz",
     ],
 )
 
