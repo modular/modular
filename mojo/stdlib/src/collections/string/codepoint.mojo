@@ -316,7 +316,7 @@ struct Codepoint(
         """
         var char_len = self.utf8_byte_length()
         var result = String(unsafe_uninit_length=char_len)
-        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
+        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut[is_owned=True]())
         return result
 
     # ===-------------------------------------------------------------------===#
