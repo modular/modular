@@ -77,7 +77,7 @@ struct Error(
             value: The error message.
         """
         self.data = value.unsafe_ptr()
-        self.loaded_length = len(value)
+        self.loaded_length = value.byte_length()
 
     @implicit
     fn __init__(out self, src: String):
@@ -88,11 +88,7 @@ struct Error(
         """
         var length = src.byte_length()
         var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(
-            dest=dest,
-            src=src.unsafe_ptr(),
-            count=length,
-        )
+        memcpy(dest, src.unsafe_ptr(), length)
         dest[length] = 0
         self.data = dest
         self.loaded_length = -length
@@ -104,13 +100,9 @@ struct Error(
         Args:
             src: The error message.
         """
-        var length = len(src)
+        var length = src.byte_length()
         var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(
-            dest=dest,
-            src=src.unsafe_ptr(),
-            count=length,
-        )
+        memcpy(dest, src.unsafe_ptr(), length)
         dest[length] = 0
         self.data = dest
         self.loaded_length = -length
@@ -198,11 +190,7 @@ struct Error(
         """
         if not self:
             return
-        writer.write(
-            StringSlice[__origin_of(self)](
-                unsafe_from_utf8_ptr=self.unsafe_cstr_ptr()
-            )
-        )
+        writer.write(self.as_string_slice())
 
     @no_inline
     fn __repr__(self) -> String:
@@ -211,11 +199,18 @@ struct Error(
         Returns:
             A printable representation of the error message.
         """
-        return String(
-            "Error(",
-            repr(String(unsafe_from_utf8_ptr=self.unsafe_cstr_ptr())),
-            ")",
-        )
+        return String("Error(", repr(self.as_string_slice()), ")")
+
+    fn byte_length(self) -> Int:
+        """Get the length of the Error string in bytes.
+
+        Returns:
+            The length of the Error string in bytes.
+
+        Notes:
+            This does not include the trailing null terminator in the count.
+        """
+        return abs(self.loaded_length)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -230,6 +225,20 @@ struct Error(
             The pointer to the underlying memory.
         """
         return self.data.bitcast[c_char]()
+
+    fn as_string_slice(self) -> StringSlice[ImmutableAnyOrigin]:
+        """Returns a string slice of the data maybe owned by the Error.
+
+        Returns:
+            A string slice pointing to the data maybe owned by the Error.
+
+        Notes:
+            Since the data is not guaranteed to be owned by the Error, the
+            resulting StringSlice is given an ImmutableAnyOrigin.
+        """
+        return StringSlice[ImmutableAnyOrigin](
+            ptr=self.data, length=self.byte_length()
+        )
 
 
 @doc_private
