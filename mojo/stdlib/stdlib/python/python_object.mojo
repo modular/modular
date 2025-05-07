@@ -87,16 +87,18 @@ struct _PyIter(Sized):
         var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
         if maybe_next_item.is_null():
             self.is_done = True
-            self.prepared_next_item = PythonObject(PyObjectPtr())
+            self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
         else:
-            self.prepared_next_item = PythonObject(maybe_next_item)
+            self.prepared_next_item = PythonObject(
+                from_owned_ptr=maybe_next_item
+            )
             self.is_done = False
 
     fn __init__(out self):
         """Initialize an empty iterator."""
-        self.iterator = PythonObject(PyObjectPtr())
+        self.iterator = PythonObject(from_owned_ptr=PyObjectPtr())
         self.is_done = True
-        self.prepared_next_item = PythonObject(PyObjectPtr())
+        self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -117,7 +119,9 @@ struct _PyIter(Sized):
         if maybe_next_item.is_null():
             self.is_done = True
         else:
-            self.prepared_next_item = PythonObject(maybe_next_item)
+            self.prepared_next_item = PythonObject(
+                from_owned_ptr=maybe_next_item
+            )
         return current
 
     @always_inline
@@ -305,17 +309,16 @@ struct PythonObject(
         """
         return self
 
-    @implicit
-    fn __init__(out self, ptr: PyObjectPtr):
+    fn __init__(out self, *, from_owned_ptr: PyObjectPtr):
         """Initialize this object from an owned reference-counted Python object
         pointer.
 
         Ownership of the reference will be assumed by `PythonObject`.
 
         Args:
-            ptr: The `PyObjectPtr` to take ownership of.
+            from_owned_ptr: The `PyObjectPtr` to take ownership of.
         """
-        self.py_object = ptr
+        self.py_object = from_owned_ptr
 
     fn __init__(out self, *, from_borrowed_ptr: PyObjectPtr):
         """Initialize this object from a read-only reference-counted Python
@@ -350,7 +353,7 @@ struct PythonObject(
         #   count to convert this to a 'strong reference'.
         cpython.Py_IncRef(from_borrowed_ptr)
 
-        self = PythonObject(from_borrowed_ptr)
+        self = PythonObject(from_owned_ptr=from_borrowed_ptr)
 
     @implicit
     fn __init__(out self, owned typed_obj: TypedPythonObject[_]):
@@ -533,7 +536,7 @@ struct PythonObject(
         var iter_ptr = cpython.PyObject_GetIter(self.py_object)
         if iter_ptr.is_null():
             raise cpython.get_error()
-        return _PyIter(PythonObject(iter_ptr))
+        return _PyIter(PythonObject(from_owned_ptr=iter_ptr))
 
     fn __getattr__(self, owned name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
@@ -548,7 +551,7 @@ struct PythonObject(
         var result = cpython.PyObject_GetAttrString(self.py_object, name^)
         if result.is_null():
             raise cpython.get_error()
-        return PythonObject(result)
+        return PythonObject(from_owned_ptr=result)
 
     fn __setattr__(self, owned name: String, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
@@ -630,7 +633,7 @@ struct PythonObject(
         cpython.Py_DecRef(key_obj)
         if result.is_null():
             raise cpython.get_error()
-        return PythonObject(result)
+        return PythonObject(from_owned_ptr=result)
 
     fn __getitem__(self, *args: Slice) raises -> PythonObject:
         """Return the sliced value for the given Slice or Slices.
@@ -660,7 +663,7 @@ struct PythonObject(
         cpython.Py_DecRef(key_obj)
         if result.is_null():
             raise cpython.get_error()
-        return PythonObject(result)
+        return PythonObject(from_owned_ptr=result)
 
     fn __setitem__(self, *args: PythonObject, value: PythonObject) raises:
         """Set the value with the given key or keys.
@@ -1295,7 +1298,7 @@ struct PythonObject(
         cpython.Py_DecRef(dict_obj)
         if result.is_null():
             raise cpython.get_error()
-        return PythonObject(result)
+        return PythonObject(from_owned_ptr=result)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

@@ -123,7 +123,7 @@ fn python_type_object[
         raise cpython.get_error()
 
     return TypedPythonObject["Type"](
-        unsafe_unchecked_from=PythonObject(type_obj)
+        unsafe_unchecked_from=PythonObject(from_owned_ptr=type_obj)
     )
 
 
@@ -1350,9 +1350,9 @@ fn py_c_function_wrapper[
     #   This is valid to do, because these are passed using the `read-only`
     #   argument convention to `user_func`, so logically they are treated
     #   as Python read-only references.
-    var py_self = PythonObject(py_self_ptr)
+    var py_self = PythonObject(from_owned_ptr=py_self_ptr)
     var args = TypedPythonObject["Tuple"](
-        unsafe_unchecked_from=PythonObject(args_ptr)
+        unsafe_unchecked_from=PythonObject(from_owned_ptr=args_ptr)
     )
 
     # SAFETY:
@@ -1397,7 +1397,7 @@ fn py_c_function_wrapper[
             )
 
             # Return a NULL `PyObject*`.
-            return PythonObject(PyObjectPtr())
+            return PythonObject(from_owned_ptr=PyObjectPtr())
         finally:
             cpython.PyGILState_Release(state)
 
@@ -1467,7 +1467,9 @@ fn _get_type_name(obj: PythonObject) raises -> String:
     var cpython = Python().cpython()
 
     var actual_type = cpython.Py_TYPE(obj.unsafe_as_py_object_ptr())
-    var actual_type_name = PythonObject(cpython.PyType_GetName(actual_type))
+    var actual_type_name = PythonObject(
+        from_owned_ptr=cpython.PyType_GetName(actual_type)
+    )
 
     return String(actual_type_name)
 

@@ -199,7 +199,9 @@ struct PyObjectPtr(Copyable, Movable):
     ) -> Optional[UnsafePointer[T]]:
         var cpython = Python().cpython()
         var type = cpython.Py_TYPE(self)
-        var type_name = PythonObject(cpython.PyType_GetName(type))
+        var type_name = PythonObject(
+            from_owned_ptr=cpython.PyType_GetName(type)
+        )
 
         # FIXME(MSTDL-978):
         #   Improve this check. We should do something conceptually equivalent
@@ -916,7 +918,7 @@ struct CPython:
 
         var error: Error
         try:
-            error = String(PythonObject(err_ptr))
+            error = String(PythonObject(from_owned_ptr=err_ptr))
         except e:
             return abort[Error](
                 "internal error: Python exception occurred but cannot be"

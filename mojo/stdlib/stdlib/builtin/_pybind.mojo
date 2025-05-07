@@ -55,7 +55,7 @@ fn fail_initialization(owned err: Error) -> PythonObject:
         err.unsafe_cstr_ptr(),
     )
     _ = err^
-    return PythonObject(PyObjectPtr())
+    return PythonObject(from_owned_ptr=PyObjectPtr())
 
 
 fn gen_pytype_wrapper[

@@ -156,7 +156,7 @@ struct Python:
             )
             if code_obj_ptr.is_null():
                 raise cpython.get_error()
-            var code = PythonObject(code_obj_ptr)
+            var code = PythonObject(from_owned_ptr=code_obj_ptr)
 
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
@@ -169,7 +169,7 @@ struct Python:
             if result_ptr.is_null():
                 raise cpython.get_error()
 
-            var result = PythonObject(result_ptr)
+            var result = PythonObject(from_owned_ptr=result_ptr)
             _ = result^
             _ = code^
             return module
@@ -182,7 +182,7 @@ struct Python:
             )
             if result.is_null():
                 raise cpython.get_error()
-            return PythonObject(result)
+            return PythonObject(from_owned_ptr=result)
 
     @staticmethod
     fn add_to_path(dir_path: StringSlice) raises:
@@ -239,10 +239,10 @@ struct Python:
         var cpython = Python().cpython()
         # Throw error if it occurred during initialization
         cpython.check_init_error()
-        var module_maybe = cpython.PyImport_ImportModule(module^)
-        if module_maybe.is_null():
+        var module_ptr = cpython.PyImport_ImportModule(module^)
+        if module_ptr.is_null():
             raise cpython.get_error()
-        return PythonObject(module_maybe)
+        return PythonObject(from_owned_ptr=module_ptr)
 
     @staticmethod
     fn create_module(name: StaticString) raises -> PythonModule:
@@ -266,11 +266,13 @@ struct Python:
         # This will throw an error if there are any errors during initialization.
         cpython.check_init_error()
 
-        var module_obj = cpython.PyModule_Create(name)
-        if module_obj.is_null():
+        var module_ptr = cpython.PyModule_Create(name)
+        if module_ptr.is_null():
             raise cpython.get_error()
 
-        return PythonModule(unsafe_unchecked_from=PythonObject(module_obj))
+        return PythonModule(
+            unsafe_unchecked_from=PythonObject(from_owned_ptr=module_ptr)
+        )
 
     @staticmethod
     fn add_functions(
@@ -387,13 +389,13 @@ struct Python:
             A PythonObject representing the list.
         """
         var cpython = Python().cpython()
-        var py_object = cpython.PyList_New(len(values))
+        var obj_ptr = cpython.PyList_New(len(values))
 
         for i in range(len(values)):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
-        return py_object
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object)
+        return PythonObject(from_owned_ptr=obj_ptr)
 
     @staticmethod
     fn _list[
@@ -411,14 +413,14 @@ struct Python:
             A PythonObject representing the list.
         """
         var cpython = Python().cpython()
-        var py_object = cpython.PyList_New(len(values))
+        var obj_ptr = cpython.PyList_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
-        return py_object
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object)
+        return PythonObject(from_owned_ptr=obj_ptr)
 
     @always_inline
     @staticmethod
@@ -452,14 +454,14 @@ struct Python:
             A PythonObject representing the tuple.
         """
         var cpython = Python().cpython()
-        var py_object = cpython.PyTuple_New(len(values))
+        var obj_ptr = cpython.PyTuple_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyTuple_SetItem(py_object, i, obj.py_object)
-        return py_object
+            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.py_object)
+        return PythonObject(from_owned_ptr=obj_ptr)
 
     @always_inline
     @staticmethod
@@ -518,7 +520,7 @@ struct Python:
             A PythonObject that holds the type object.
         """
         var cpython = Python().cpython()
-        return cpython.PyObject_Type(obj.py_object)
+        return PythonObject(from_owned_ptr=cpython.PyObject_Type(obj.py_object))
 
     @staticmethod
     fn none() -> PythonObject:
@@ -547,7 +549,7 @@ struct Python:
         if py_str_ptr.is_null():
             raise cpython.get_error()
 
-        return PythonObject(py_str_ptr)
+        return PythonObject(from_owned_ptr=py_str_ptr)
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
@@ -568,7 +570,7 @@ struct Python:
         if py_obj_ptr.is_null():
             raise cpython.get_error()
 
-        return PythonObject(py_obj_ptr)
+        return PythonObject(from_owned_ptr=py_obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
