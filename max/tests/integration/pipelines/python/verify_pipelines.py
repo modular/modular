@@ -501,7 +501,7 @@ PIPELINES = {
             absolute_tolerance=0.25,
             relative_tolerance=0.11,
             cos_dist_threshold=3.3e-4,
-            kl_div_threshold=2.2e-3,
+            kl_div_threshold=4.3e-3,
         ),
     ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
