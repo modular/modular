@@ -358,7 +358,7 @@ struct PyMethodDef(Copyable, Movable):
 
     @staticmethod
     fn function(
-        func: fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+        func: PyCFunction,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> Self:

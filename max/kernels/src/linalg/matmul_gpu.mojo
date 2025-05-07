@@ -609,6 +609,13 @@ fn _matmul_gpu[
                 @parameter
                 if not transpose_b:
                     kernel_helper[kernels.mi300x_128x128_2]()
+                elif static_N >= 28672 and static_K >= 4096:
+                    if m >= 1024:
+                        kernel_helper[kernels.mi300x_224x256_1]()
+                    elif m >= 128:
+                        kernel_helper[kernels.mi300x_128x128_1]()
+                    else:
+                        kernel_helper[kernels.mi300x_64x64_1]()
                 elif static_N >= 4096 and static_K >= 4096:
                     if m >= 4096:
                         kernel_helper[kernels.mi300x_224x256_1]()
