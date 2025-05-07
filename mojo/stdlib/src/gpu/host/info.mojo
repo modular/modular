@@ -400,6 +400,111 @@ alias L4 = Info(
 )
 
 # ===-----------------------------------------------------------------------===#
+# RTX 4090 M
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_rtx4090m_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
+
+    Returns:
+        MLIR target configuration for H100.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_89", `,
+        `features = "+ptx81,+sm_89", `,
+        `tune_cpu = "sm_90a", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias RTX4090m = Info(
+    name="RTX4090m",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="ada lovelace",
+    compile_options="nvptx-short-ptr=true",
+    compute=8.9,
+    version="sm_89",
+    sm_count=76,
+    warp_size=32,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=1536,
+    thread_blocks_per_multiprocessor=24,
+    shared_memory_per_multiprocessor=102400,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=24,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+# ===-----------------------------------------------------------------------===#
+# RTX 4090
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_rtx4090_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA RTX 4090.
+
+    Returns:
+        MLIR target configuration for H100.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_89", `,
+        `features = "+ptx81,+sm_89", `,
+        `tune_cpu = "sm_90a", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias RTX4090 = Info(
+    name="RTX4090",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="ada lovelace",
+    compile_options="nvptx-short-ptr=true",
+    compute=8.9,
+    version="sm_89",
+    sm_count=128,
+    warp_size=32,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=1536,
+    thread_blocks_per_multiprocessor=24,
+    shared_memory_per_multiprocessor=102400,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=24,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # H100
 # ===-----------------------------------------------------------------------===#
 
@@ -796,6 +901,10 @@ struct Info(Writable):
             return _get_a10_target()
         if self.name == "L4":
             return _get_l4_target()
+        if self.name == "RTX4090m":
+            return _get_rtx4090m_target()
+        if self.name == "RTX4090":
+            return _get_rtx4090_target()
         if self.name == "H100":
             return _get_h100_target()
         if self.name == "B100" or self.name == "B200":
