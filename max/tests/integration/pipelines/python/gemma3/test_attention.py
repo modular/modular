@@ -218,25 +218,19 @@ def generate_max_outputs(
         input_types=(
             input_type,
             input_row_offsets_type,
-            cache_positions_type,
             *flattened_kv_types,
         ),
     ) as graph:
-        inputs, input_row_offsets, cache_positions, *kv_cache = graph.inputs
-        kv_cache_inputs_per_dev = unflatten_kv_inputs(
-            kv_manager, kv_params, [k.tensor for k in kv_cache]
-        )
-        kv_collections = [
-            kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
-        ]
+        inputs, input_row_offsets, *kv_cache = graph.inputs
+        kv_inputs_flat = [k.tensor for k in kv_cache]
+        kv_collection = kv_collection_constructor(*kv_inputs_flat)
+
         graph.output(
             attention(
-                [inputs.tensor],
-                [cache_positions.tensor],
-                kv_collections,
+                inputs.tensor,
+                kv_collection,
                 input_row_offsets=input_row_offsets.tensor,
-            )[0]
+            )
         )
 
     compiled = session.load(graph, weights_registry=attention.state_dict())
@@ -249,13 +243,11 @@ def generate_max_outputs(
         kv_manager.fetch(batch)[0]
     )
 
-    cache_positions_input = np.arange(input_seq_len, dtype=np.uint32)
     output = compiled.execute(
         Tensor.from_dlpack(input_tensor[0]).to(device),
         Tensor.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        Tensor.from_numpy(cache_positions_input).to(device),
         blocks.to(device),
         cache_lengths.to(device),
         lookup_table_tensor.to(device),
