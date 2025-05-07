@@ -80,6 +80,7 @@ from linalg.utils import (
 )
 from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
+from nn._ragged_utils import merge_ragged_tensors
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.argmaxmin import argmax, argmin
@@ -9245,4 +9246,37 @@ struct MatmulStaticScaledFloat8:
             input,
             weight,
             Optional[DeviceContext](ctx.get_device_context()),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Ragged Tensor Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.merge_ragged_tensors")
+struct MergeRaggedTensors:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type_: DType,
+        rank_: Int, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[type=type_, rank=rank_],
+        output_row_offsets: OutputTensor[type = DType.uint32, rank=1],
+        a: InputTensor[type=type_, rank=rank_],
+        a_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        b: InputTensor[type=type_, rank=rank_],
+        b_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        merge_ragged_tensors[target=target](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(output_row_offsets),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(a_row_offsets),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(b_row_offsets),
+            ctx,
         )

@@ -1887,3 +1887,72 @@ def matmul_static_scaled_float8(
             )
         ],
     )[0].tensor
+
+
+def merge_ragged_tensors(
+    a: TensorValue,
+    a_row_offsets: TensorValue,
+    b: TensorValue,
+    b_row_offsets: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Merges two ragged tensors into a single ragged tensor.
+
+    Both ragged tensors must have the same batch size (same number of row
+    offsets). This function interleaves the rows from each tensor based on
+    their row offsets.
+
+    Args:
+        a: The first ragged tensor of shape [total_a_rows, ...].
+        a_row_offsets: The row offsets of the first ragged tensor,indicating
+            where each batch starts and ends in `a`.
+        b: The second ragged tensor of shape [total_b_rows, ...].
+        b_row_offsets: The row offsets of the second ragged tensor, indicating
+            where each batch starts and ends in `b`.
+
+    Returns:
+        A tuple of two tensors:
+            - The merged ragged tensor with shape
+                [total_a_rows + total_b_rows, ...].
+            - The merged row offsets with the same shape as input row offsets.
+
+    Example:
+        a = [1, 2, 3, 4, 5, 6]
+        a_row_offsets = [0, 2, 6]
+        b = [7, 8, 9, 10]
+        b_row_offsets = [0, 3, 4]
+
+        merged_tensor, merged_row_offsets = merge_ragged_tensors(
+            a, a_row_offsets, b, b_row_offsets)
+
+        merged_tensor = [1, 2, 7, 8, 9, 3, 4, 5, 6, 10]
+        merged_row_offsets = [0, 5, 10]
+    """
+
+    if a.dtype != b.dtype:
+        msg = "a and b must have the same dtype"
+        raise ValueError(msg)
+
+    if a_row_offsets.shape[0] != b_row_offsets.shape[0]:
+        msg = "a_row_offsets and b_row_offsets must have the same shape"
+        raise ValueError(msg)
+
+    c_shape = [a.shape[0] + b.shape[0]] + a.shape[1:]
+
+    results = ops.custom(
+        "mo.merge_ragged_tensors",
+        values=[a, a_row_offsets, b, b_row_offsets],
+        out_types=[
+            TensorType(
+                dtype=a.dtype,
+                shape=c_shape,
+                device=a.device,
+            ),
+            TensorType(
+                dtype=DType.uint32,
+                shape=a_row_offsets.shape,
+                device=a.device,
+            ),
+        ],
+    )
+
+    return results[0].tensor, results[1].tensor
