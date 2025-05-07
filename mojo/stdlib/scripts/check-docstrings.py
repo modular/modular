@@ -30,7 +30,7 @@ def main():
         "./mojo/stdlib/src",
     ]
     result = subprocess.run(command, capture_output=True)
-    if result.returncode != 0:
+    if result.stderr or result.returncode != 0:
         print("Docstring issue found in the stdlib: ")
         print(result.stderr.decode())
         sys.exit(1)
