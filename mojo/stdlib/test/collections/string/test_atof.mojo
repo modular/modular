@@ -92,8 +92,6 @@ def test_error_cases():
         _ = atof("47421763.548648646474532187448684")
 
 
-from testing import assert_equal
-
 alias T = Tuple[Float64, String]
 alias numbers_to_test = List[T](
     T(5e-324, "5e-324"),  # smallest value possible with float64
