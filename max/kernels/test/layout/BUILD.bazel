@@ -1,8 +1,22 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
+
+_LIT_TESTS = [
+    "test_element.mojo",
+    "test_layout.mojo",
+    "test_nd_buffer_stub.mojo",
+    "test_swizzle.mojo",
+    "test_tensor.mojo",
+    "test_tensor_masked.mojo",
+    "test_tensor_math.mojo",
+    "test_tensor_runtime_layout.mojo",
+    "test_tiled_matmul.mojo",
+    "test_tiled_matmul_backtoback.mojo",  # TODO: re-enable test and move to mojo_test
+    "test_vectorized_matmul.mojo",
+]
 
 lit_tests(
     name = "lit",
-    srcs = glob(["**/*.mojo"]),
+    srcs = _LIT_TESTS,
     mojo_deps = [
         "@mojo//:stdlib",
         "@mojo//:layout",
@@ -11,3 +25,18 @@ lit_tests(
         "//KGEN/tools/mojo",
     ],
 )
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _LIT_TESTS,
+    )
+]

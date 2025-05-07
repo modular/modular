@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.int_tuple import IntTuple
 from layout.int_tuple import crd2idx as crd2idx_int_tuple
@@ -30,7 +29,6 @@ from layout.runtime_tuple import (
 from testing import assert_equal, assert_false, assert_true
 
 
-# CHECK-LABEL: test_construct
 def test_construct():
     print("== test_construct")
     var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
@@ -43,7 +41,6 @@ def test_construct():
     assert_equal(String(t3), "(-1, 1)")
 
 
-# CHECK-LABEL: test_concat
 def test_concat():
     print("== test_concat")
     var lhs = RuntimeTuple[
@@ -57,14 +54,12 @@ def test_concat():
     print(lhs.concat(rhs))
 
 
-# CHECK-LABEL: test_flatten
 def test_flatten():
     print("== test_flatten")
     var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
     assert_equal(String(t1.flatten()), "(1, 44, 1, 102)")
 
 
-# CHECK-LABEL: test_prefix_product
 def test_prefix_product():
     print("== test_prefix_product")
     var t1 = RuntimeTuple[IntTuple(UNKNOWN_VALUE, IntTuple(2, 4))](8, 2, 4)
@@ -73,7 +68,6 @@ def test_prefix_product():
     assert_equal(String(t1_p.S), "(1, (-1, -1))")
 
 
-# CHECK-LABEL: test_idx2crd
 def test_idx2crd():
     print("== test_idx2crd")
 
@@ -88,7 +82,6 @@ def test_idx2crd():
         )
 
 
-# CHECK-LABEL: test_crd2idx
 def test_crd2idx():
     print("== test_crd2idx")
     alias shape_t = IntTuple(4, 4)
@@ -109,7 +102,6 @@ def test_crd2idx():
             )
 
 
-# CHECK-LABEL: test_shape_div
 def test_shape_div():
     print("== test_shape_div")
     alias shape_a_1 = IntTuple(4, 4)
