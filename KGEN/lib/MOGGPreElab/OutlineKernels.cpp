@@ -224,6 +224,10 @@ private:
             asDecls, newFuncType,
             /*argConventions=*/{}, KGEN::impl::FnEffects::Capturing);
 
+    // propagates the capturing effect to the kernel too.
+    auto genFuncType = gen.getFuncTypeGenerator().getBody();
+    genFuncType.getFnEffects().setCapturing(true);
+
     std::string name = (Twine(gen.getSymName()) + Twine("_OUTLINED")).str();
     auto outlinedFunction = builder.create<KGEN::GeneratorOp>(
         gen.getLoc(), builder.getStringAttr(name), sigType, newFuncType,
