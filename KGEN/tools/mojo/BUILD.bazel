@@ -1,11 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
-load(
-    "//bazel:api.bzl",
-    "driver_option_tablegen",
-    "modular_cc_binary",
-    "rpath_shim",
-    "td_library",
-)
+load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "pkg_files", "rpath_shim", "td_library")
 
 [
     driver_option_tablegen(
