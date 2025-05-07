@@ -1313,9 +1313,9 @@ struct PythonObject(
         var cpython = Python().cpython()
         var result = cpython.PyObject_Length(self.py_object)
         if result == -1:
-            # TODO: Improve error message so we say
-            # "object of type 'int' has no len()" function to match Python
-            raise Error("object has no len()")
+            # Custom types may return -1 even in non-error cases.
+            if cpython.PyErr_Occurred():
+                raise cpython.unsafe_get_error()
         return result
 
     fn __hash__(self) -> UInt:

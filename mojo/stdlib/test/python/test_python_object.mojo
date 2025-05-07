@@ -326,6 +326,10 @@ def test_len():
     var l2 = Python.evaluate("[42,42.0]")
     assert_equal(len(l2), 2)
 
+    var x = PythonObject(42)
+    with assert_raises(contains="object of type 'int' has no len()"):
+        _ = len(x)
+
 
 def test_is():
     var x = PythonObject(500)
