@@ -6042,19 +6042,12 @@ class TransferOp(max._core.Operation):
     to whether the result tensor is a copy or alias of the operand tensor; if
     this flag is true, transfers to the same device never result in a copy.
 
-    It is also valid for the source or destination devices to be unspecified
-    (i.e. null). This means that the device has not been assigned yet.
-
     Example:
 
     ```mlir
       %arg : !mo.tensor<[N, 8], f32, gpu:3>
       %onOtherDevice = mo.transfer %arg : !mo.tensor<[N, 8], f32, gpu:3> to <"gpu", 1>
       %onHost = mo.transfer %arg : !mo.tensor<[N, 8], f32, gpu:0> to <"cpu", 1>
-      %onUnspecified = mo.transfer %arg : !mo.tensor<[N, 8], f32, gpu:0> to unspecified
-
-      %arg2 : !mo.tensor<[N, 8], f32>
-      %fromUnspecified = mo.transfer %arg2 : !mo.tensor<[N, 8], f32> to <"gpu", 0>
     ```
     """
 
