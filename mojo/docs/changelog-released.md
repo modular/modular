@@ -434,6 +434,9 @@ Special thanks to our community contributors:
 [@thatstoasty](https://github.com/thatstoasty), and
 [@winding-lines](https://github.com/winding-lines).
 
+- [#4492](https://github.com/modular/modular/issues/4488) - Fix `StringSlice.replace`
+  seg fault.
+
 ## v25.2 (2025-03-25)
 
 ### ✨ Highlights
