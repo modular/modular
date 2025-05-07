@@ -80,7 +80,7 @@ fn case_raise_empty_error(
 
     cpython.PyErr_SetNone(error_type)
 
-    return PythonObject(PyObjectPtr())
+    return PythonObject(from_owned_ptr=PyObjectPtr())
 
 
 @export
@@ -94,7 +94,7 @@ fn case_raise_string_error(
 
     cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
 
-    return PythonObject(PyObjectPtr())
+    return PythonObject(from_owned_ptr=PyObjectPtr())
 
 
 @export
@@ -148,7 +148,7 @@ struct Person(Defaultable, Representable):
             Person
         ]()
 
-        return PythonObject(self0[].name).steal_data()
+        return PythonObject(self0[].name)
 
     @staticmethod
     fn change_name(
@@ -274,4 +274,4 @@ fn create_string__wrapper(
         result
     )
 
-    return PythonObject(string_obj_raw_ptr)
+    return PythonObject(from_owned_ptr=string_obj_raw_ptr)
