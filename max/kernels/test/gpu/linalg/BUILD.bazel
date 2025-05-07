@@ -4,13 +4,13 @@ lit_tests(
     name = "lit",
     size = "large",
     srcs = glob(["**/*.mojo"]),
-    data = ["//open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs"],
+    data = ["@mojo//:test_utils_srcs"],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:test_utils_srcs)",
     },
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
         "@mojo//:linalg",
         "@mojo//:stdlib",
     ],

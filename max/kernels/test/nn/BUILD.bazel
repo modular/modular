@@ -3,15 +3,15 @@ load("//bazel:api.bzl", "lit_tests")
 lit_tests(
     name = "lit",
     srcs = glob(["*.mojo"]),
-    data = ["//open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs"],
+    data = ["@mojo//:test_utils_srcs"],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:test_utils_srcs)",
     },
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:internal_utils",
         "@mojo//:nn",
-        "//open-source/max/max/kernels/src/internal_utils",
-        "//open-source/max/max/kernels/test/testdata",
+        "@mojo//:stdlib",
+        "@mojo//:testdata",
     ],
     tools = [
         "//KGEN/tools/mojo",

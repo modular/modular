@@ -9,11 +9,11 @@ lit_tests(
         "python/custom_indexable.py",
         "python/module_for_test_python_object_dunder_contains.py",
         "python/my_module.py",
-        "//open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs",
+        "@mojo//:test_utils_srcs",
     ],
     env = {
         "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/stdlib/test/test_utils:test_utils_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:test_utils_srcs)",
     },
     generate_litcfg = False,
     mojo_deps = [

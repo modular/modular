@@ -5,7 +5,7 @@ lit_tests(
     srcs = glob(["**/*.mojo"]),
     mojo_deps = [
         "@mojo//:stdlib",
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
         "@mojo//:layout",
     ],
     tools = [

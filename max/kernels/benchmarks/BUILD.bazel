@@ -17,7 +17,7 @@ lit_tests(
     mojo_deps = [
         "@mojo//:layout",
         "@mojo//:nn",
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
         "@mojo//:stdlib",
     ],
     tools = [
@@ -38,7 +38,7 @@ lit_tests(
     mojo_deps = [
         "@mojo//:layout",
         "@mojo//:nn",
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],

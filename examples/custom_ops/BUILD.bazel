@@ -88,7 +88,7 @@ mojo_binary(
         ":kernels",
         "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/max/compiler",
+        "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
     ],
@@ -100,7 +100,7 @@ mojo_library(
     deps = [
         "//SDK/lib/API/mojo/max/max",
         "//SDK/lib/API/mojo/max/tensor",
-        "//open-source/max/max/compiler",
+        "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
     ],

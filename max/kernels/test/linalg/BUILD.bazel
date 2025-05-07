@@ -8,7 +8,7 @@ lit_tests(
     mojo_deps = [
         "@mojo//:stdlib",
         "@mojo//:linalg",
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
     ],
     tools = [
         "//KGEN/tools/mojo",

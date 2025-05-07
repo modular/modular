@@ -10,6 +10,11 @@ alias(
 )
 
 alias(
+    name = "test_utils_srcs",
+    actual = "@//{prefix}mojo/stdlib/test/test_utils:test_utils_srcs",
+)
+
+alias(
     name = "kv_cache",
     actual = "@//{prefix}max/kernels/src/kv_cache",
 )
@@ -67,6 +72,21 @@ alias(
 alias(
     name = "weights_registry",
     actual = "@//{prefix}max/kernels/src/weights_registry",
+)
+
+alias(
+    name = "internal_utils",
+    actual = "@//{prefix}max/kernels/src/internal_utils",
+)
+
+alias(
+    name = "testdata",
+    actual = "@//{prefix}max/kernels/test/testdata",
+)
+
+alias(
+    name = "compiler",
+    actual = "@//{prefix}max/compiler",
 )
 """.format(prefix = rctx.attr.prefix))
 

@@ -24,10 +24,10 @@ def custom_op_example_py_binary(
         use_sitecustomize = True,
         imports = ["."],
         mojo_deps = [
-            "@mojo//:layout",
-            "//open-source/max/max/compiler",
             "//SDK/lib/API/mojo/max/max",
             "//SDK/lib/API/mojo/max/tensor",
+            "@mojo//:compiler",
+            "@mojo//:layout",
             "@mojo//:stdlib",
         ],
         deps = [

@@ -16,7 +16,7 @@ lit_tests(
     ],
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
-        "//open-source/max/max/kernels/src/internal_utils",
+        "@mojo//:internal_utils",
         "@mojo//:linalg",
         "@mojo//:nn",
         "@mojo//:kv_cache",
