@@ -335,15 +335,6 @@ fn alloc_tensor[
     )
 
 
-fn row_major_dyn[
-    layout: Layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-](M: Int, N: Int) -> RuntimeLayout[layout]:
-    return RuntimeLayout[layout](
-        RuntimeTuple[layout.shape, unsigned=True](M, N),
-        RuntimeTuple[layout.stride, unsigned=True](N, 1),
-    )
-
-
 fn max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
     # this could be implemented more generically, e.g.
     # mapreduce-style?
