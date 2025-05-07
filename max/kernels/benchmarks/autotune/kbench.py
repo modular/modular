@@ -49,7 +49,7 @@ from rich.progress import (
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
-LINE = "-" * 80
+LINE = "\n" + 80 * "-"
 
 
 def store_pickle(path: Path | str, data: Any) -> None:
@@ -162,11 +162,9 @@ class ProcessOutput:
 
     def log(self):
         if self.stdout:
-            logging.debug(self.stdout)
-            logging.debug(LINE)
+            logging.debug("output" + self.stdout + LINE)
         if self.stderr:
-            logging.error(self.stderr)
-            logging.error(LINE)
+            logging.debug("error" + self.stderr + LINE)
 
 
 class KBENCH_MODE(Enum):
@@ -207,16 +205,15 @@ class KbenchCache:
         obj_path = str(self.data.get(key))
         return obj_path if Path(obj_path).exists() else None
 
-    def store(self, key: str, obj_path: Path, tmp_dir: Path) -> Path | None:
+    def store(self, key: str, obj_path: Path) -> Path | None:
         """Store object in cache and return its new path."""
         if not self.is_active:
             return None
-        obj_cache_path = tmp_dir / "kbench_cache"
-        obj_cache_path.mkdir(exist_ok=True)
-        obj_path_in_cache = obj_cache_path / obj_path.stem
-        self.data[key] = str(obj_path_in_cache)
-        out = _run_cmdline(["mv", str(obj_path), str(obj_path_in_cache)])
-        return obj_path_in_cache if not (out.stdout or out.stderr) else None
+        # TODO: revise the following conflict.
+        if obj_path in self.data.keys():
+            logging.debug(f"overwriting {key} already in obj-cache")
+        self.data[key] = str(obj_path)
+        return obj_path
 
 
 @dataclass(frozen=True)
@@ -261,31 +258,24 @@ class SpecInstance:
         self,
         *,
         output_dir: Path,
-        obj_cache: KbenchCache,
         build_opts: list[str] = [],
         dryrun: bool = False,
+        idx: int = -1,
     ) -> ProcessOutput:
         """Build the spec instance. Use set of compile-time
         parameters as path of the compiled binary and store
         the executable in 'output_dir'.
         """
 
-        binary_name = self.hash(with_variables=False)
+        bin_name = self.hash(with_variables=False)
+        bin_path = output_dir / Path(bin_name)
 
-        logging.info(f"building [{binary_name}]")
-        logging.info(f"defines: {self._get_defines}")
-        logging.info(f"vars   : {self._get_vars}")
-
-        if obj_cache.is_active:
-            bin_path = obj_cache.query(binary_name)
-            logging.info(f"in cache [{binary_name}]: {bool(bin_path)}")
-            if bin_path:
-                return ProcessOutput(None, None, Path(bin_path))
-
-        # Build the binary if:
-        # - cache is not active, or
-        # - could not find executable in the cache
-        bin_path = output_dir / Path(binary_name)
+        logging.info(f"building [{idx}][{bin_name}]")
+        logging.debug(
+            f"defines: {self._get_defines}"
+            + "\n"
+            + f"vars   : {self._get_vars}"
+        )
 
         # TODO: add mojo-specific functions and allow for further expansion to other executors.
         cmd = self.get_executor()
@@ -302,20 +292,7 @@ class SpecInstance:
         )
         out = _run_cmdline(cmd, dryrun)
         if out.stderr:
-            logging.error(out.stderr)
             return ProcessOutput(out.stdout, out.stderr, None)
-
-        # store the executable in cache if cache is active
-        if obj_cache.is_active:
-            # TODO: should rework internals of kbench-cache to avoid copying.
-            bin_path_in_cache = obj_cache.store(
-                binary_name, bin_path, output_dir.absolute()
-            )
-            assert bin_path_in_cache, (
-                "Running empty cache with --dryrun is not supported!"
-            )
-            bin_path = bin_path_in_cache
-
         return ProcessOutput(out.stdout, out.stderr, bin_path)
 
     def execute(
@@ -433,7 +410,7 @@ class Spec:
                 f'Unable to find the spec file at "{file}".'
             )
         try:
-            logging.info(f"Loading yaml [{file}]")
+            logging.info(f"Loading yaml [{file}]" + LINE)
             return Spec.loads(file.read_text())
         except Exception:
             raise ValueError(f"Could not load spec from {file}")
@@ -715,14 +692,14 @@ class Scheduler:
     Kbench singleton scheduler class to coordinate building and running all items in spec.
 
     Args:
-        cpu_count: number of cpu's (cores) used for building items
+        num_cpu: number of cpu's (cores) used for building items
         build_items: list of spec items to build (BuildItem's)
         obj_cache: kbench obj-cache
         output_dir: parent output directory for all results
         num_specs: total number of spec items added to scheduler (to build+run)
     """
 
-    cpu_count: int
+    num_cpu: int
     build_items: list[BuildItem]
     obj_cache: KbenchCache
     output_dir: Path
@@ -730,7 +707,7 @@ class Scheduler:
 
     def __init__(
         self,
-        cpu_count: int,
+        num_cpu: int,
         obj_cache: KbenchCache,
         spec_list: list[SpecInstance],
         output_dir: Path,
@@ -739,7 +716,7 @@ class Scheduler:
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
     ):
-        self.cpu_pool = Pool(cpu_count)
+        self.cpu_pool = Pool(num_cpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
         output_dir_list = [
@@ -780,47 +757,47 @@ class Scheduler:
         output_dir_list = [b.output_dir for b in self.build_items]
         res = self.cpu_pool.imap(self.kbench_mkdir, output_dir_list)
         [logging.debug(f"mkdir [{r}]") for r in res]
-        logging.debug("Created directories for all instances in spec.")
-        logging.debug(LINE)
+        logging.debug("Created directories for all instances in spec." + LINE)
 
-    def get_unique_build_items(self) -> list[dict]:
+    def schedule_unique_build_items(self) -> list[dict]:
         unique_build_items = {}
         unique_build_paths = {}
         for b in self.build_items:
             i = b.idx
             s = b.spec_instance
             bin_name = s.hash(with_variables=False)
-            logging.info(f"building [{i}][{bin_name}]")
-            logging.debug(f"defines: {s._get_defines}")
-            logging.debug(f"vars   : {s._get_vars}")
+            logging.info(f"schedule [{i}][{bin_name}]")
+            debug_msg = [
+                f"defines: {s._get_defines}",
+                f"vars   : {s._get_vars}",
+            ]
 
             # first, check cache for build from previous rounds
             bin_path = self.obj_cache.query(bin_name)
-            logging.info(f"in cache: {bool(bin_path)}")
+            debug_msg += [f"In cache: {bool(bin_path)}"]
             if bin_path:
                 unique_build_paths[bin_name] = bin_path
             else:
                 # Neither found in the cache, nor exists in the unique_build_items
                 if bin_name not in unique_build_items.keys():
                     unique_build_items[bin_name] = i
-                    logging.debug(f"Added to unique_build_items [ref_idx={i}]")
+                    debug_msg += [f"Added to schedule (ref_idx=[{i}])"]
                 else:
                     # Already in the unique_build_items list
                     idx = unique_build_items[bin_name]
-                    logging.debug(
-                        f"Currently in unique_build_items [ref_idx={idx}]"
-                    )
-            logging.debug(LINE)
+                    debug_msg += [f"Currently in schedule (ref_idx=[{idx}])"]
+            debug_msg = "\n".join(debug_msg)
+            logging.debug(debug_msg + LINE)
         return [unique_build_items, unique_build_paths]
 
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
         t_start_item = time()
         build_output = bi.spec_instance.build(
-            obj_cache=None,
             output_dir=bi.output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,
+            idx=bi.idx,
         )
         build_elapsed_time = int((time() - t_start_item) * 1e3)
 
@@ -830,22 +807,24 @@ class Scheduler:
 
     def build_all(self):
         """
-        Build all unique items in the scheduler
-        TODO: rename to build_unique_items
+        Build all unique items scheduled by the scheduler.
         """
 
-        unique_build_items, unique_build_paths = self.get_unique_build_items()
+        unique_build_items, unique_build_paths = (
+            self.schedule_unique_build_items()
+        )
         unique_build_items = [
             self.build_items[i] for i in list(unique_build_items.values())
         ]
 
         logging.info(
-            f"Building {len(unique_build_items)} unique items out of {self.num_specs}"
+            f"scheduled {len(unique_build_items)} unique build items out of {self.num_specs}"
+            + LINE
         )
+
         if unique_build_items:
             obj_cache = self.obj_cache
-            # NOTE: important to use lazy evaluation `imap` instead of `map`
-            build_result = self.cpu_pool.imap(
+            build_result = self.cpu_pool.map(
                 self._pool_build_wrapper, unique_build_items
             )
 
@@ -877,22 +856,13 @@ class Scheduler:
                 # - build_output path is found
                 if not build_output.stderr and build_output.path:
                     binary_path = build_output.path
-                    # TODO: should rework internals of kbench-cache to avoid copying.
-                    # TODO: remove absolute
-                    bin_path_in_cache = obj_cache.store(
-                        bin_name,
-                        binary_path,
-                        self.build_items[i].output_dir.absolute(),
-                    )
-                    if bin_path_in_cache:
-                        binary_path = bin_path_in_cache
-
+                    obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
 
                 self.progress.update(build_progress, advance=1)
         return unique_build_paths
 
-    def execute_all(self, unique_build_paths):
+    def execute_all(self, unique_build_paths, exec_prefix, exec_suffix):
         """Execute all the items in the scheduler"""
         exec_progress = self.progress.add_task(
             "run",
@@ -908,7 +878,11 @@ class Scheduler:
 
             if bin_path:
                 exec_output = s.execute(
-                    bin_path, b.output_path, dryrun=b.dryrun
+                    bin_path,
+                    b.output_path,
+                    dryrun=b.dryrun,
+                    exec_prefix=exec_prefix,
+                    exec_suffix=exec_suffix,
                 )
                 b.exec_output = b.exec_output
                 exec_output.log()
@@ -931,7 +905,8 @@ def run(
     dryrun: bool = False,
     obj_cache: KbenchCache | None = None,
     verbose=False,
-    tmp_path=None,
+    output_dir=None,
+    num_cpu=1,
 ):
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -953,17 +928,14 @@ def run(
         spec.filter(filter_list)
 
     if verbose:
-        print(spec)
-
-    output_path_list: Dict[int, Path] = {}
-    output_msg_list: Dict[int, ProcessOutput] = {}
-    spec_list: Dict[int, SpecInstance] = {}
-    elapsed_time_list: Dict[int, float] = {}
+        [logging.debug(f"[{i}]{s}") for i, s in enumerate(spec)]
+        logging.debug(LINE)
 
     # Generate a tmp path for intermediate results.
-    if not tmp_path:
-        tmp_path = _get_tmp_path(spec.file)
-    tmp_dir = Path(tmp_path)
+    if not output_dir:
+        output_dir = _get_tmp_path(spec.file)
+    output_dir = Path(output_dir)
+    logging.info(f"output-dir: [{output_dir}]")
 
     # Run the code over the mesh of param/values
     t_start_total = time()
@@ -975,70 +947,43 @@ def run(
         console=CONSOLE,
         expand=True,
     )
+
+    # Set num_cpu to the maximum number of available CPUs
+    if num_cpu == -1:
+        num_cpu = len(os.sched_getaffinity(0))
+
+    logging.info(f"num cpu's: {num_cpu}")
+    # Kbench Singleton Scheduler
+    scheduler = Scheduler(
+        num_cpu=num_cpu,
+        obj_cache=obj_cache,
+        spec_list=list(spec),
+        output_dir=output_dir,
+        build_opts=build_opts,
+        dryrun=dryrun,
+        output_suffix="output.csv",
+        progress=progress,
+    )
+
+    # Run the code over the mesh of param/values
+    t_start_total = time()
+
     with progress:
-        bench_progress = progress.add_task(
-            spec.name,
-            total=len(spec.mesh),
-        )
-
-        for i, s in enumerate(spec):
-            output_dir = Path(f"{tmp_dir}/out_{i}")
-            # "rm -rf {output_dir} && mkdir -p {output_dir}"
-            if os.path.exists(output_dir) and os.path.isdir(output_dir):
-                shutil.rmtree(output_dir)
-            os.makedirs(output_dir, exist_ok=False)
-
-            progress.update(bench_progress, description=str(s))
-
-            # Check for the failure here.
-            try:
-                output_file = output_dir / "output.csv"
-                t_start_item = time()
-
-                build_output = s.build(
-                    output_dir=output_dir,
-                    obj_cache=obj_cache,
-                    build_opts=build_opts,
-                    dryrun=dryrun,
+        try:
+            # Get the binary path for the unique list of build items
+            # Build the binary if:
+            # - could not find executable in the cache or cache is not active,
+            # - could not find executable in the unique list of scheduled build items
+            unique_build_paths = scheduler.build_all()
+            if mode == KBENCH_MODE.RUN:
+                scheduler.execute_all(
+                    unique_build_paths,
+                    exec_prefix=exec_prefix,
+                    exec_suffix=exec_suffix,
                 )
-
-                # If no errors detected and binary_path is valid run the binary
-                if (
-                    KBENCH_MODE.RUN
-                    and not build_output.stderr
-                    and build_output.path
-                ):
-                    out = s.execute(
-                        build_output.path,
-                        output_file,
-                        dryrun=dryrun,
-                        exec_prefix=exec_prefix,
-                        exec_suffix=exec_suffix,
-                    )
-                    out.log()
-
-                elapsed_time_list[i] = int((time() - t_start_item) * 1e3)
-                spec_list[i] = s
-                output_path_list[i] = output_file
-                output_msg_list[i] = build_output
-
-                # TODO: revise this part and separate build/exec errors.
-                if build_output.stdout:
-                    logging.debug(build_output.stdout)
-                if build_output.stderr:
-                    logging.error(build_output.stderr)
-                print(LINE)
-
-            except Exception as e:
-                raise e
-            except KeyboardInterrupt:
-                if obj_cache.is_active:
-                    obj_cache.dump()
-                sys.exit(0)
-
-            # When a benchmark is completed for one combination of parameters
-            # we advance progress by 1
-            progress.update(bench_progress, advance=1)
+        except KeyboardInterrupt:
+            obj_cache.dump()
+            sys.exit(0)
 
     t_elapsed_total = time() - t_start_total
     output_lines = []
@@ -1047,11 +992,14 @@ def run(
     # Elapsed time per spec
     build_df = pd.DataFrame(
         {
-            "name": [f"build/{str(s)}" for i, s in enumerate(spec)],
-            "spec": [f"{str(s)}" for i, s in enumerate(spec)],
+            "name": ["build" for b in scheduler.build_items],
+            "spec": [f"{str(b.spec_instance)}" for b in scheduler.build_items],
         }
     )
-    build_df.insert(len(build_df.columns), "met (ms)", elapsed_time_list)
+    build_elapsed_time_list = [
+        b.build_elapsed_time for b in scheduler.build_items
+    ]
+    build_df.insert(len(build_df.columns), "met (ms)", build_elapsed_time_list)
     build_df.insert(len(build_df.columns), "iters", 1)
     build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
 
@@ -1067,35 +1015,41 @@ def run(
     # Retrieve, sort, and pick top choices
     valid_specs = []
     invalid_specs = []
-    for i in spec_list.keys():
+    for b in scheduler.build_items:
+        i = b.idx
         try:
-            df = pd.read_csv(output_path_list[i], index_col=None, header=0)
+            df = pd.read_csv(b.output_path, index_col=None, header=0)
             if not df.empty:
                 df.insert(0, "mesh_idx", i)
                 df.insert(len(df.columns), "spec", str(spec.mesh[i]))
                 valid_specs.append(df)
             else:
-                invalid_specs.append([i, output_msg_list[i]])
+                invalid_specs.append([i, b.build_output])
 
         except:
-            invalid_specs.append([i, output_msg_list[i]])
+            invalid_specs.append([i, b.build_output])
 
     output_lines += [LINE]
     output_lines += [f"Running ['{spec.file}']"]
 
     if invalid_specs:
         output_lines += [LINE]
-        output_lines += [f"Number of invalid specs: {len(invalid_specs)}"]
+        output_lines += [
+            f"Number of invalid specs: {len(invalid_specs)} (out of {len(spec)})"
+        ]
         for idx, msg in invalid_specs:
+            s = scheduler.build_items[idx].spec_instance
             output_lines += [LINE]
-            output_lines += [f"mesh_idx: [{idx}][{spec_list[idx].to_obj()}]"]
+            output_lines += [f"mesh_idx: [{idx}][{s.to_obj()}]"]
             if msg.stdout:
                 output_lines.append(msg.stdout)
             if msg.stderr:
                 output_lines.append(msg.stderr)
 
     output_lines += [LINE]
-    output_lines += [f"Number of valid executed specs: {len(valid_specs)}"]
+    output_lines += [
+        f"Number of valid executed specs: {len(valid_specs)} (out of {len(spec)})"
+    ]
 
     if valid_specs:
         merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
@@ -1116,7 +1070,8 @@ def run(
             output_lines += ["Spec with the best measured time:"]
             output_lines += [LINE]
             output_lines += [f"mesh_idx: {top_spec_idx} Runtime: {runtime}"]
-            output_lines += [spec_list[top_spec_idx].to_obj()]
+            s = scheduler.build_items[top_spec_idx].spec_instance
+            output_lines += [s.to_obj()]
             output_lines += [LINE]
         else:
             output_lines += [merged_df.to_string(index=False)]
@@ -1147,6 +1102,7 @@ def run(
                 f.write(output_str + "\n")
 
         logging.info(f"wrote results to [{output_path}]")
+    logging.info(f"output-dir: [{output_dir}]")
     print(LINE + "\n\n")
 
 
@@ -1212,6 +1168,7 @@ def set_build_opts(
     optimization_level=None,
     use_experimental_kernels=None,
     target_accelerator=None,
+    disable_warnings=None,
 ):
     build_opts = []
     if debug_level:
@@ -1222,6 +1179,11 @@ def set_build_opts(
         build_opts.extend(["-D", "USE_EXPERIMENTAL_KERNELS=1"])
     if target_accelerator:
         build_opts.extend(["--target-accelerator", target_accelerator])
+    if disable_warnings:
+        build_opts.extend(["--disable-warnings"])
+    # TODO: add num_threads to CLI
+    # num_threads_per_build = 1
+    # build_opts.extend(["--num-threads", num_threads_per_build])
     return build_opts
 
 
@@ -1244,6 +1206,12 @@ help_str = (
 )
 @click.option(
     "--output", "-o", "output_path", default=None, help="Path to output file."
+)
+@click.option(
+    "--output-dir",
+    "output_dir",
+    default=None,
+    help="Path to output directory for all results (default='/tmp')",
 )
 @click.option(
     "--tune",
@@ -1283,6 +1251,12 @@ help_str = (
     default=None,
     help="Specifiy the mojo target accelerator.",
 )
+@click.option(
+    "--disable-warnings",
+    is_flag=True,
+    default=False,
+    help="Disable mojo build warnings.",
+)
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
     "--cached",
@@ -1297,6 +1271,11 @@ help_str = (
     is_flag=True,
     default=False,
     help="Clear Kbench cache.",
+)
+@click.option(
+    "--num-cpu",
+    default=1,
+    help="Set the total number of cpu cores for building. Set to -1 for max number of cores (default=1).",
 )
 @click.option(
     "--dryrun",
@@ -1343,6 +1322,7 @@ def cli(
     files: click.UNPROCESSED,
     filter,
     output_path,
+    output_dir,
     tune,
     build,
     param,
@@ -1350,9 +1330,11 @@ def cli(
     use_experimental_kernels,
     optimization_level,
     target_accelerator,
+    disable_warnings,
     force,
     cached,
     clear_cache,
+    num_cpu,
     dryrun,
     verbose,
     shapes,
@@ -1405,6 +1387,7 @@ def cli(
             optimization_level,
             use_experimental_kernels,
             target_accelerator,
+            disable_warnings,
         )
     )
 
@@ -1432,6 +1415,8 @@ def cli(
             dryrun=dryrun,
             obj_cache=obj_cache,
             verbose=verbose,
+            output_dir=output_dir,
+            num_cpu=num_cpu,
         )
         if obj_cache.is_active:
             obj_cache.dump()

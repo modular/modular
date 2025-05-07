@@ -554,7 +554,7 @@ fn array_equal[
 
 @value
 @register_passable("trivial")
-struct Mode:
+struct Mode(Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")
