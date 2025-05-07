@@ -158,7 +158,7 @@ def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
             tensor = Tensor.from_dlpack(arg)
         elif isinstance(arg, ScalarType):
             spec = self.input_metadata[idx]
-            tensor = Tensor.scalar(arg, spec.dtype, self.devices[0])
+            tensor = Tensor.scalar(arg, spec.dtype, self.input_devices[idx])
         else:
             raise ValueError(
                 "All positional arguments must be of the type"
