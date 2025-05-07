@@ -37,6 +37,18 @@ fn PyInit_mojo_module() -> PythonObject:
     b.def_function[takes_two_returns]("takes_two_returns")
     b.def_function[takes_three_returns]("takes_three_returns")
 
+    # def_function with no return, raising
+    b.def_function[takes_zero_raises]("takes_zero_raises")
+    b.def_function[takes_one_raises]("takes_one_raises")
+    b.def_function[takes_two_raises]("takes_two_raises")
+    b.def_function[takes_three_raises]("takes_three_raises")
+
+    # def_function with no return, not raising
+    b.def_function[takes_zero]("takes_zero")
+    b.def_function[takes_one]("takes_one")
+    b.def_function[takes_two]("takes_two")
+    b.def_function[takes_three]("takes_three")
+
     try:
         return b.finalize()
     except e:
@@ -109,3 +121,70 @@ fn takes_three_returns(
         return takes_three_raises_returns(a, b, c)
     except e:
         return abort[PythonObject]("Unexpected Python error: ", e)
+
+
+@export
+fn takes_zero_raises() raises:
+    var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
+    if s != "just a python string":
+        raise "`s` must be 'just a python string'"
+
+    _ = Python().eval(
+        "setattr(sys.modules[__name__], 's', 'Hark! A mojo function calling"
+        " into Python, called from Python!')"
+    )
+
+
+@export
+fn takes_one_raises(list_obj: PythonObject) raises:
+    if len(list_obj) != 3:
+        raise "list_obj must have length 3"
+    list_obj[PythonObject(0)] = PythonObject("baz")
+
+
+@export
+fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
+    if len(list_obj) != 3:
+        raise "list_obj must have length 3"
+    list_obj[PythonObject(0)] = obj
+
+
+@export
+fn takes_three_raises(
+    list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
+) raises:
+    if len(list_obj) != 3:
+        raise "list_obj must have length 3"
+    list_obj[PythonObject(0)] = obj + obj2
+
+
+@export
+fn takes_zero():
+    try:
+        takes_zero_raises()
+    except e:
+        abort("Unexpected Python error: ", e)
+
+
+@export
+fn takes_one(list_obj: PythonObject):
+    try:
+        takes_one_raises(list_obj)
+    except e:
+        abort("Unexpected Python error: ", e)
+
+
+@export
+fn takes_two(list_obj: PythonObject, obj: PythonObject):
+    try:
+        takes_two_raises(list_obj, obj)
+    except e:
+        abort("Unexpected Python error: ", e)
+
+
+@export
+fn takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
+    try:
+        takes_three_raises(list_obj, obj, obj2)
+    except e:
+        abort("Unexpected Python error: ", e)
