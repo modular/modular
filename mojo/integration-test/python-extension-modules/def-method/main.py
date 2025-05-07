@@ -63,6 +63,55 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
         self.assertEqual(person._with_first_last_name("Jane", "Doe"), person)
         self.assertEqual(person.get_name(), "Jane Doe")
 
+    def test_erase_name(self):
+        person = def_method.Person()
+
+        person.erase_name()
+        self.assertEqual(person.get_name(), "")
+
+        with self.assertRaises(Exception) as cm:
+            person.erase_name()
+        self.assertEqual(
+            cm.exception.args, ("cannot erase name if it's already empty",)
+        )
+
+    def test_set_age(self):
+        person = def_method.Person()
+        person.set_age(25)
+        self.assertEqual(person.get_age(), 25)
+
+        with self.assertRaises(Exception) as cm:
+            person.set_age("10.5")
+        self.assertEqual(cm.exception.args, ("cannot set age to 10.5",))
+
+    def test_set_name_and_age(self):
+        person = def_method.Person()
+        person.set_name_and_age("John Doe", 25)
+        self.assertEqual(person.get_name(), "John Doe")
+        self.assertEqual(person.get_age(), 25)
+
+        with self.assertRaises(Exception) as cm:
+            person.set_name_and_age("John Modular", "10.5")
+        self.assertEqual(cm.exception.args, ("cannot set age to 10.5",))
+
+    def test_reset(self):
+        person = def_method.Person()
+        person.set_name_and_age("John Doe", 25)
+
+        person.reset()
+        self.assertEqual(person.get_name(), "John Smith")
+        self.assertEqual(person.get_age(), 123)
+
+    def test_set_name(self):
+        person = def_method.Person()
+        person.set_name("John Doe")
+        self.assertEqual(person.get_name(), "John Doe")
+
+    def test_set_age_from_dates(self):
+        person = def_method.Person()
+        person._set_age_from_dates(1991, 2025)
+        self.assertEqual(person.get_age(), 34)
+
 
 if __name__ == "__main__":
     unittest.main()

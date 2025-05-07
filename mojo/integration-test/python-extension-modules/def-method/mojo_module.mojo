@@ -33,6 +33,14 @@ fn PyInit_mojo_module() -> PythonObject:
             .def_method[Person.get_age]("get_age")
             .def_method[Person._get_birth_year]("_get_birth_year")
             .def_method[Person._with_first_last_name]("_with_first_last_name")
+            # # def_method with no return, raising
+            .def_method[Person.erase_name]("erase_name")
+            .def_method[Person.set_age]("set_age")
+            .def_method[Person.set_name_and_age]("set_name_and_age")
+            # # def_method with no return, not raising
+            .def_method[Person.reset]("reset")
+            .def_method[Person.set_name]("set_name")
+            .def_method[Person._set_age_from_dates]("_set_age_from_dates")
         )
         return b.finalize()
     except e:
@@ -85,9 +93,7 @@ struct Person(Defaultable, Representable):
     fn _with(
         py_self: PythonObject, name: PythonObject, age: PythonObject
     ) raises -> PythonObject:
-        var self_ptr = Self._get_self_ptr(py_self)
-        self_ptr[].name = String(name)
-        self_ptr[].age = Int(age)
+        Self.set_name_and_age(py_self, name, age)
         return py_self
 
     @staticmethod
@@ -115,3 +121,51 @@ struct Person(Defaultable, Representable):
         except e:
             return abort[PythonObject]("failed to set name: ", e)
         return py_self
+
+    @staticmethod
+    fn erase_name(py_self: PythonObject) raises:
+        var self_ptr = Self._get_self_ptr(py_self)
+        if not self_ptr[].name:
+            raise "cannot erase name if it's already empty"
+
+        self_ptr[].name = String()
+
+    @staticmethod
+    fn set_age(py_self: PythonObject, age: PythonObject) raises:
+        var self_ptr = Self._get_self_ptr(py_self)
+        try:
+            self_ptr[].age = Int(age)
+        except e:
+            raise "cannot set age to " + String(age)
+
+    @staticmethod
+    fn set_name_and_age(
+        py_self: PythonObject, name: PythonObject, age: PythonObject
+    ) raises:
+        var self_ptr = Self._get_self_ptr(py_self)
+        self_ptr[].name = String(name)
+        Self.set_age(py_self, age)
+
+    @staticmethod
+    fn reset(py_self: PythonObject):
+        var self_ptr = Self._get_self_ptr(py_self)
+        self_ptr[].name = "John Smith"
+        self_ptr[].age = 123
+
+    @staticmethod
+    fn set_name(py_self: PythonObject, name: PythonObject):
+        # TODO: replace with property once we have them
+        try:
+            Self._get_self_ptr(py_self)[].name = String(name)
+        except e:
+            abort("failed to set name: ", e)
+
+    @staticmethod
+    fn _set_age_from_dates(
+        py_self: PythonObject, birth_year: PythonObject, this_year: PythonObject
+    ):
+        var self_ptr = Self._get_self_ptr(py_self)
+        try:
+            self_ptr[].age = Int(this_year) - Int(birth_year)
+        except e:
+            abort("failed to set age: ", e)
