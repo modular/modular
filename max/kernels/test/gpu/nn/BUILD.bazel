@@ -10,7 +10,7 @@ lit_tests(
         "@mojo//:linalg",
         "@mojo//:nn",
         "@mojo//:stdlib",
-        "//Kernels/test/testdata",
+        "//open-source/max/max/kernels/test/testdata",
     ],
     tags = ["gpu"],
     tools = ["//KGEN/tools/mojo"],

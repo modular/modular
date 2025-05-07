@@ -11,7 +11,7 @@ lit_tests(
         "@mojo//:stdlib",
         "@mojo//:nn",
         "//open-source/max/max/kernels/src/internal_utils",
-        "//Kernels/test/testdata",
+        "//open-source/max/max/kernels/test/testdata",
     ],
     tools = [
         "//KGEN/tools/mojo",
