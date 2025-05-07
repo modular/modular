@@ -22,7 +22,9 @@ fn standardize_string_slice(
     """
     standardized_x = InlineArray[UInt8, CONTAINER_SIZE](ord("0"))
     memcpy(
-        dest=(standardized_x.unsafe_ptr() + CONTAINER_SIZE - len(x)).bitcast[Int8](),
+        dest=(standardized_x.unsafe_ptr() + CONTAINER_SIZE - len(x)).bitcast[
+            Int8
+        ](),
         src=x.unsafe_ptr().bitcast[Int8](),
         count=len(x),
     )
@@ -117,5 +119,5 @@ fn get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
     result = InlineArray[UInt64, CONTAINER_SIZE](0)
     for i in range(4, CONTAINER_SIZE):
-        result[i] = 10**(CONTAINER_SIZE - i - 1)
+        result[i] = 10 ** (CONTAINER_SIZE - i - 1)
     return result

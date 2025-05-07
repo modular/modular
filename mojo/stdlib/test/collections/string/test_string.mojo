@@ -453,8 +453,6 @@ def test_atol_base_0():
         _ = atol("0of_", base=0)
 
 
-# TODO: Move those tests to
-# test_parsing_floats.mojo
 def test_atof():
     assert_equal(375.0, atof("375.f"))
     assert_equal(1.0, atof("001."))
@@ -497,10 +495,10 @@ def test_atof():
     assert_equal(0.123, atof("+.123"))
 
     # Tests for large exponents (overflow handling)
-    # assert_equal(
-    #    FloatLiteral.infinity, atof("1e309")
-    # )  # Overflows double precision
-    # assert_equal(0.0, atof("1e-309"))  # Underflows to zero
+    assert_equal(
+        FloatLiteral.infinity, atof("1e309")
+    )  # Overflows double precision
+    assert_equal(0.0, atof("1e-325"))  # Underflows to zero
 
     # Negative cases
     with assert_raises(contains="String is not convertible to float: ''"):

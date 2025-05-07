@@ -194,9 +194,7 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128:
     high_low = x_high * y_low
     high_high = x_high * y_high
 
-    carry = (low_low >> 32) + (low_high & 0xFFFFFFFF) + (
-        high_low & 0xFFFFFFFF
-    )
+    carry = (low_low >> 32) + (low_high & 0xFFFFFFFF) + (high_low & 0xFFFFFFFF)
 
     low = low_low + (low_high << 32) + (high_low << 32)
     high = high_high + (low_high >> 32) + (high_low >> 32) + (carry >> 32)
@@ -218,8 +216,10 @@ fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128:
 
     return first_product
 
+
 fn create_subnormal_float64(m: UInt64) -> Float64:
     return create_float64(m, -1023)
+
 
 fn create_float64(m: UInt64, p: Int64) -> Float64:
     m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
