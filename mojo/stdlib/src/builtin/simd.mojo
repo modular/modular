@@ -497,14 +497,25 @@ struct SIMD[dtype: DType, size: Int](
         """
         _simd_construction_checks[dtype, size]()
 
-        var tn1 = __mlir_attr[
-            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
-        ]
-        var t0 = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<si128>`
-        ](tn1)
-        var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](t0)
-        self = Scalar[dtype](casted)
+        @parameter
+        if dtype.is_unsigned():
+            var ui256 = __mlir_attr[
+                `#pop<int_literal_convert<`, value.value, `, 0>> : ui256`
+            ]
+            var val = __mlir_op.`pop.cast_from_builtin`[
+                _type = __mlir_type.`!pop.scalar<ui256>`
+            ](ui256)
+            var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](val)
+            self = Scalar[dtype](casted)
+        else:
+            var si256 = __mlir_attr[
+                `#pop<int_literal_convert<`, value.value, `, 0>> : si256`
+            ]
+            var val = __mlir_op.`pop.cast_from_builtin`[
+                _type = __mlir_type.`!pop.scalar<si256>`
+            ](si256)
+            var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](val)
+            self = Scalar[dtype](casted)
 
     @always_inline("nodebug")
     @implicit

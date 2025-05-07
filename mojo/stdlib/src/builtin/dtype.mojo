@@ -20,10 +20,10 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof, os_is_windows, sizeof
 from os import abort
 
-alias _mIsSigned = UInt8(1)
-alias _mIsInteger = UInt8(1 << 7)
-alias _mIsNotInteger = UInt8(~(1 << 7))
-alias _mIsFloat = UInt8(1 << 6)
+alias _mIsSigned = __mlir_attr.`#pop.simd<1> : !pop.scalar<ui8>`
+alias _mIsInteger = __mlir_attr.`#pop.simd<128> : !pop.scalar<ui8>`  # 1 << 7
+alias _mIsNotInteger = __mlir_attr.`#pop.simd<127> : !pop.scalar<ui8>`  # ~(1 << 7)
+alias _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`  # 1 << 6
 
 
 @value
@@ -464,8 +464,8 @@ struct DType(
             return False
         return Bool(
             __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsSigned.value),
-                UInt8(0).value,
+                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsSigned),
+                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
             )
         )
 
@@ -482,8 +482,8 @@ struct DType(
             return False
         return Bool(
             __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsSigned.value),
-                UInt8(0).value,
+                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsSigned),
+                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
             )
         )
 
@@ -496,8 +496,8 @@ struct DType(
         """
         return Bool(
             __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsInteger.value),
-                UInt8(0).value,
+                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsInteger),
+                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
             )
         )
 
@@ -524,8 +524,8 @@ struct DType(
             return False
         return Bool(
             __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsFloat.value),
-                UInt8(0).value,
+                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsFloat),
+                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
             )
         )
 
@@ -584,7 +584,7 @@ struct DType(
                         __mlir_op.`pop.sub`(
                             __mlir_op.`pop.shr`(
                                 __mlir_op.`pop.simd.and`(
-                                    self._as_i8(), _mIsNotInteger.value
+                                    self._as_i8(), _mIsNotInteger
                                 ),
                                 UInt8(1).value,
                             ),
