@@ -25,7 +25,7 @@ def custom_op_example_py_binary(
         imports = ["."],
         mojo_deps = [
             "@mojo//:layout",
-            "//SDK/lib/API/mojo/max/compiler",
+            "//open-source/max/max/compiler",
             "//SDK/lib/API/mojo/max/max",
             "//SDK/lib/API/mojo/max/tensor",
             "@mojo//:stdlib",
