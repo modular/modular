@@ -169,6 +169,8 @@ def while_loop(
             # carried values, so add loop_vars to the result list when building
             # the cond block.
             if is_cond_block:
+                # Condition is expected to be on CPU
+                result = result.to(DeviceRef.CPU())
                 return [result] + loop_vars
             else:
                 return result

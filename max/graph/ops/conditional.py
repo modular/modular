@@ -13,7 +13,7 @@ from typing import Callable
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import Type, _ChainType
+from ..type import DeviceRef, Type, _ChainType
 from ..value import TensorValue, TensorValueLike
 
 
@@ -85,6 +85,7 @@ def cond(
         maintain mutation ordering constraints
     """
     pred = TensorValue(pred)
+    pred = pred.to(DeviceRef.CPU())
     out_types_actual = [
         *(t.to_mlir() for t in out_types or []),
         _ChainType().to_mlir(),
