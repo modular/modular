@@ -848,7 +848,7 @@ struct PythonTypeBuilder:
         method: PyCFunction,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> Self:
+    ) -> ref [self] Self:
         """Declare a binding for a method with PyObjectPtr signature for the
         type.
 
@@ -872,7 +872,7 @@ struct PythonTypeBuilder:
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> Self:
+    ) -> ref [self] Self:
         """Declare a binding for a method with PyObject signature for the type.
 
         Parameters:
@@ -887,10 +887,34 @@ struct PythonTypeBuilder:
             The builder with the method binding declared.
         """
 
-        _ = self.def_py_c_method(
+        return self.def_py_c_method(
             py_c_function_wrapper[method], method_name, docstring
         )
-        return self
+
+    fn def_py_method[
+        method: PyFunctionRaising
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref [self] Self:
+        """Declare a binding for a method with PyObject signature for the type.
+
+        Parameters:
+            method: The method to declare a binding for.
+
+        Args:
+            method_name: The name with which the method will be exposed on the
+                type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
+        return self.def_py_c_method(
+            py_c_function_wrapper[method], method_name, docstring
+        )
 
     fn finalize(mut self, module: PythonModule) raises:
         """Finalize the builder, creating the type binding with the registered
