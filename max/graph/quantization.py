@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Quantization support for MAX Graph."""
 
 import enum
 from dataclasses import dataclass
@@ -12,6 +11,12 @@ from dataclasses import dataclass
 # Can't put this directly on the enum because it then becomes unhashable.
 @dataclass(frozen=True)
 class BlockParameters:
+    """Parameters describing the structure of a quantization block.
+
+    Block-based quantization stores elements in fixed-size blocks.
+    Each block contains a specific number of elements in a compressed format.
+    """
+
     elements_per_block: int
     block_size: int
 
@@ -19,7 +24,12 @@ class BlockParameters:
 # TODO: BlockParameters should be integrated into this class
 @dataclass(frozen=True)
 class QuantizationConfig:
-    """Configuration for specifying quantization parameters that affect inference."""
+    """Configuration for specifying quantization parameters that affect inference.
+
+    These parameters control how tensor values are quantized, including the method,
+    bit precision, grouping, and other characteristics that affect the trade-off
+    between model size, inference speed, and accuracy.
+    """
 
     quant_method: str
     bits: int
@@ -29,7 +39,11 @@ class QuantizationConfig:
 
 
 class QuantizationEncoding(enum.Enum):
-    """Quantization encodings supported by MAX Graph."""
+    """Quantization encodings supported by MAX Graph.
+
+    Each encoding represents a different method of quantizing model weights with
+    specific trade-offs between compression ratio, accuracy, and computational efficiency.
+    """
 
     Q4_0 = "Q4_0"
     Q4_K = "Q4_K"
@@ -39,6 +53,12 @@ class QuantizationEncoding(enum.Enum):
 
     @property
     def block_parameters(self) -> BlockParameters:
+        """Gets the block parameters for this quantization encoding.
+
+        Returns:
+            BlockParameters: The parameters describing how elements are organized
+                             and encoded in blocks for this quantization encoding.
+        """
         return _BLOCK_PARAMETERS[self]
 
     @property
@@ -49,6 +69,9 @@ class QuantizationEncoding(enum.Enum):
         block-based: groups of a fixed number of elements are formed, and each
         group is quantized together into a fixed-size output block.  This value
         is the number of elements gathered into a block.
+
+        Returns:
+            int: Number of original tensor elements in each quantized block.
         """
         return self.block_parameters.elements_per_block
 
@@ -60,15 +83,31 @@ class QuantizationEncoding(enum.Enum):
         block-based: groups of a fixed number of elements are formed, and each
         group is quantized together into a fixed-size output block.  This value
         is the number of bytes resulting after encoding a single block.
+
+        Returns:
+            int: Size in bytes of each encoded quantization block.
         """
         return self.block_parameters.block_size
 
     @property
     def name(self) -> str:
+        """Gets the lowercase name of the quantization encoding.
+
+        Returns:
+            str: Lowercase string representation of the quantization encoding.
+        """
         return self.value.lower()
 
     @property
     def is_gguf(self) -> bool:
+        """Checks if this quantization encoding is compatible with GGUF format.
+
+        GGUF is a format for storing large language models and compatible
+        quantized weights.
+
+        Returns:
+            bool: True if this encoding is compatible with GGUF, False otherwise.
+        """
         return self in [
             QuantizationEncoding.Q4_0,
             QuantizationEncoding.Q4_K,
