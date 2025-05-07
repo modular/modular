@@ -57,6 +57,7 @@ alias Py_tp_repr = 66
 alias Py_TPFLAGS_DEFAULT = 0
 
 alias Py_ssize_t = c_ssize_t
+alias Py_hash_t = Py_ssize_t
 
 # TODO(MOCO-1138):
 #   This should be a C ABI function pointer, not a Mojo ABI function.
@@ -1591,11 +1592,11 @@ struct CPython:
         """
         return Int(self.lib.call["PyObject_Length", Int](obj))
 
-    fn PyObject_Hash(self, obj: PyObjectPtr) -> Int:
+    fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_Hash).
         """
-        return Int(self.lib.call["PyObject_Hash", Int](obj))
+        return self.lib.call["PyObject_Hash", Py_hash_t](obj)
 
     fn PyObject_GetIter(
         self, traversable_py_object: PyObjectPtr
