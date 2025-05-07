@@ -99,6 +99,73 @@ def test_file_read_context():
         )
 
 
+def test_file_read_to_address():
+    alias DUMMY_FILE_SIZE = 954
+    # Test buffer size > file size
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
+        assert_equal(buffer[0], 76)  # L
+        assert_equal(buffer[1], 111)  # o
+        assert_equal(buffer[2], 114)  # r
+        assert_equal(buffer[3], 101)  # e
+        assert_equal(buffer[4], 109)  # m
+        assert_equal(buffer[5], 32)  # <space>
+        assert_equal(buffer[56], 10)  # <LF>
+
+    # Test buffer size < file size
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = InlineArray[UInt8, size=500](fill=0)
+        assert_equal(f.read(buffer), 500)
+
+    # Test buffer size == file size
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = InlineArray[UInt8, size=DUMMY_FILE_SIZE](fill=0)
+        assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
+
+    # Test buffer size 0
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = List[UInt8]()
+        assert_equal(f.read(buffer), 0)
+
+    # Test sequential reads of different sizes
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer_30 = InlineArray[UInt8, size=30](fill=0)
+        var buffer_1 = InlineArray[UInt8, size=1](fill=0)
+        var buffer_2 = InlineArray[UInt8, size=2](fill=0)
+        var buffer_100 = InlineArray[UInt8, size=100](fill=0)
+        var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer_30), 30)
+        assert_equal(f.read(buffer_1), 1)
+        assert_equal(f.read(buffer_2), 2)
+        assert_equal(f.read(buffer_100), 100)
+        assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE - (30 + 1 + 2 + 100))
+
+    # Test read after EOF
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE)
+        assert_equal(f.read(buffer_1000), 0)
+
+
 def test_file_seek():
     import os
 
@@ -223,6 +290,7 @@ def main():
     test_file_read_path()
     test_file_path_direct_read()
     test_file_read_context()
+    test_file_read_to_address()
     test_file_seek()
     test_file_open_nodir()
     test_file_write()

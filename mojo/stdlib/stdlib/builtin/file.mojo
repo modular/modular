@@ -180,6 +180,80 @@ struct FileHandle(Writer):
         var list = self.read_bytes(size)
         return String(bytes=list)
 
+    fn read[
+        dtype: DType, origin: Origin[True]
+    ](self, buffer: Span[Scalar[dtype], origin]) raises -> Int:
+        """Read data from the file into the Span.
+
+        This will read n bytes from the file into the input Span where
+        `0 <= n <= len(buffer)`.
+
+        0 is returned when the file is at EOF, or a 0-sized buffer is
+        passed in.
+
+        Parameters:
+            dtype: The type that the data will be represented as.
+            origin: The origin of the passed in Span.
+
+        Args:
+            buffer: The mutable Span to read data into.
+
+        Returns:
+            The total amount of data that was read in bytes.
+
+        Raises:
+            An error if this file handle is invalid, or if the file read
+            returned a failure.
+
+        Examples:
+
+        ```mojo
+        import os
+        from sys.info import sizeof
+
+        alias file_name = "/tmp/example.txt"
+        var file = open(file_name, "r")
+
+        # Allocate and load 8 elements
+        var ptr = UnsafePointer[Float32].alloc(8)
+        var buffer = InlineArray[Float32, size=8](fill=0)
+        var bytes = file.read(buffer)
+        print("bytes read", bytes)
+
+        var first_element = ptr[0]
+        print(first_element)
+
+        # Skip 2 elements
+        _ = file.seek(2 * sizeof[DType.float32](), os.SEEK_CUR)
+
+        # Allocate and load 8 more elements from file handle seek position
+        var ptr2 = UnsafePointer[Float32].alloc(8)
+        var buffer2 = InlineArray[Float32, size=8](fill=0)
+        var bytes2 = file.read(buffer2)
+
+        var eleventh_element = ptr2[0]
+        var twelvth_element = ptr2[1]
+        print(eleventh_element, twelvth_element)
+        ```
+        """
+
+        if not self.handle:
+            raise Error("invalid file handle")
+
+        var err_msg = _OwnedStringRef()
+
+        var bytes_read = external_call["KGEN_CompilerRT_IO_FileReadBytes", Int](
+            self.handle,
+            buffer.unsafe_ptr(),
+            len(buffer) * sizeof[dtype](),
+            Pointer(to=err_msg),
+        )
+
+        if err_msg:
+            raise (err_msg^).consume_as_error()
+
+        return bytes_read
+
     fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
         size is left as default of -1, it will read to the end of the file.
