@@ -215,7 +215,7 @@ fn b64encode_with_buffers(
 
         var input_vector = start_of_input_chunk.load[width=simd_width]()
 
-        result.extend(_to_b64_ascii(input_vector))
+        result.extend[unsafe_no_checks=True](_to_b64_ascii(input_vector))
         input_index += input_simd_width
 
     # We handle the last 0, 1 or 2 chunks
@@ -250,7 +250,9 @@ fn b64encode_with_buffers(
         ](
             nb_of_elements_to_load
         )
-        result.extend(result_vector_with_equals, count=nb_of_elements_to_store)
+        result.extend[unsafe_no_checks=True](
+            result_vector_with_equals, count=nb_of_elements_to_store
+        )
         input_index += input_simd_width
 
 
