@@ -7,19 +7,24 @@
 
 from __future__ import annotations
 
+from typing import Optional, get_args
+
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import DeviceRef, DimLike
-from ..value import TensorType, TensorValue, TensorValueLike
+from ..value import Numeric, TensorType, TensorValue, TensorValueLike
+from .constant import constant
 
 
 def range(
     start: TensorValueLike,
     stop: TensorValueLike,
     step: TensorValueLike,
-    out_dim: DimLike,
-    device: DeviceRef,
+    out_dim: Optional[DimLike] = None,
+    device: DeviceRef = DeviceRef.CPU(),
+    dtype: DType = DType.float32,
 ) -> TensorValue:
     """Creates a sequence of numbers. The sequence goes from `start` with
     increments of size `step` up to (but not including) `stop`. All arguments
@@ -40,6 +45,25 @@ def range(
     Returns:
         A symbolic tensor value containing the defined range of values.
     """
+    if out_dim is None:
+        if (
+            isinstance(start, get_args(Numeric))
+            and isinstance(stop, get_args(Numeric))
+            and isinstance(step, get_args(Numeric))
+        ):
+            out_dim = (stop - start) // step if step != 0 else 0
+        else:
+            raise ValueError(
+                "range expected out_dim for non-numeric values as inputs!"
+            )
+
+    if isinstance(start, get_args(Numeric)):
+        start = constant(start, dtype, DeviceRef.CPU())
+    if isinstance(stop, get_args(Numeric)):
+        stop = constant(stop, dtype, DeviceRef.CPU())
+    if isinstance(step, get_args(Numeric)):
+        step = constant(step, dtype, DeviceRef.CPU())
+
     start = TensorValue(start)
     stop = TensorValue(stop)
     step = TensorValue(step)

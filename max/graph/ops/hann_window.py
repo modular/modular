@@ -52,11 +52,12 @@ def hann_window(
         window_length += 1
 
     window = range(
-        constant(0, dtype, device=DeviceRef.CPU()),
-        constant(window_length, dtype, device=DeviceRef.CPU()),
-        constant(1, dtype, device=DeviceRef.CPU()),
+        0,
+        window_length,
+        1,
         out_dim=window_length,
         device=device,
+        dtype=dtype,
     )
     window = window * (2.0 * np.pi / np.float64(window_length - 1))
     window = cos(window) * (-0.5) + 0.5
