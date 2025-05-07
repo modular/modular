@@ -14,6 +14,9 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0, reason="repeat_interleave is not supported on GPU"
+)
 @pytest.mark.parametrize(
     "input,repeats", [([1, 2, 3], 2), ([[1, 2], [3, 4]], 3)]
 )
@@ -41,6 +44,9 @@ def test_repeat_interleave(
     np.testing.assert_equal(result.to_numpy(), expected)
 
 
+@pytest.mark.skipif(
+    accelerator_count() > 0, reason="repeat_interleave is not supported on GPU"
+)
 @pytest.mark.parametrize(
     "input,repeats,axis",
     [
@@ -64,7 +70,9 @@ def test_repeat_interleave_vector(
         input_types=[],
     ) as graph:
         x = ops.constant(np.array(input), DType.int64, device_ref)
-        repeat_vals = ops.constant(np.array(repeats), DType.int64, device_ref)
+        repeat_vals = ops.constant(
+            np.array(repeats), DType.int64, DeviceRef.CPU()
+        )
 
         if len(repeats) == 1:
             out_dim = x.shape[axis] * sum(repeats)
