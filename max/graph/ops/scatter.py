@@ -41,6 +41,13 @@ def scatter(
         axis, DType.int64, DeviceRef.CPU()
     )
 
+    # TODO(GEX-2197): Support scatter on GPU
+    old_device = input.device
+    input = input.to(DeviceRef.CPU())
+    updates = updates.to(DeviceRef.CPU())
+    indices = indices.to(DeviceRef.CPU())
+    axis = axis.to(DeviceRef.CPU())
+
     return Graph.current._add_op(
         rmo.mo_scatter,
         input.type.to_mlir(),
@@ -48,7 +55,7 @@ def scatter(
         updates,
         indices,
         axis,
-    )[0].tensor
+    )[0].tensor.to(old_device)
 
 
 def masked_scatter(
