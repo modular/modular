@@ -112,11 +112,11 @@ class VisionRotaryEmbedding(Module):
             n = (self.dim // self.n_heads) // 2
             # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
             iota = ops.range(
-                ops.constant(0, DType.float64, device=DeviceRef.CPU()),
-                ops.constant(n - 1, DType.float64, device=DeviceRef.CPU()),
-                ops.constant(2, DType.float64, device=DeviceRef.CPU()),
-                out_dim=n // 2,
+                0,
+                n - 1,
+                2,
                 device=DeviceRef.CPU(),
+                dtype=DType.float64,
             )
             inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
             self._inv_freqs = inv_freq
@@ -146,11 +146,12 @@ class VisionRotaryEmbedding(Module):
         """
         # Generate rot_embs assuming max number of patches.
         t = ops.range(
-            ops.constant(0, DType.float64, device=DeviceRef.CPU()),
-            ops.constant(max_grid_size, DType.float64, device=DeviceRef.CPU()),
-            ops.constant(1, DType.float64, device=DeviceRef.CPU()),
+            0,
+            max_grid_size,
+            1,
             out_dim=max_grid_size,
             device=DeviceRef.CPU(),
+            dtype=DType.float64,
         )
         rotary_pos_emb_full = ops.outer(t, self.inv_freqs)
         # Retrieve position embeddings for each patch in input images or videos.

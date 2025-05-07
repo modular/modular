@@ -161,10 +161,11 @@ class Transformer(Module):
         if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = ops.range(
                 return_n_logits[0],
-                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
-                ops.constant(-1, DType.int64, device=DeviceRef.CPU()),
+                0,
+                -1,
                 out_dim="return_n_logits_range",
                 device=DeviceRef.CPU(),
+                dtype=DType.int64,
             )
             offsets = (
                 ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
@@ -175,11 +176,12 @@ class Transformer(Module):
                 self.lm_head(self.norm(last_tokens)), DType.float32
             )
             offsets = ops.range(
-                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+                0,
                 TensorValue(last_indices.shape[0]) + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=DeviceRef.CPU(),
+                dtype=DType.int64,
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)

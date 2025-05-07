@@ -138,11 +138,12 @@ def token_sampler(
         if "existing_logits" in _input_dict:
             token_range = ops.reshape(
                 ops.range(
-                    ops.constant(0, dtype=DType.int64, device=device),
+                    0,
                     tokens.shape[0],
-                    ops.constant(1, dtype=DType.int64, device=device),
+                    1,
                     out_dim=Dim(tokens.shape[0]),
                     device=device,
+                    dtype=DType.int64,
                 ),
                 shape=tokens.shape,
             )
