@@ -4973,7 +4973,7 @@ struct Concat:
         axis: Scalar,
         inputs: FusedInputVariadicTensors[type, rank, *_],
         ctx: DeviceContextPtr,
-    ) raises:
+    ) capturing raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
