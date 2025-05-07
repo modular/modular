@@ -1556,6 +1556,16 @@ def test_python_object():
         _ = String(a)
 
 
+def test_buffer_constructor():
+    capacity_multiple_of_8 = List("12345678".as_bytes())  # alloc
+    result = String(buffer=capacity_multiple_of_8^)  # no allocation
+    assert_equal(result, "12345678")
+
+    capacity_NOT_multiple_of_8 = List("123".as_bytes())  # alloc
+    result = String(buffer=capacity_NOT_multiple_of_8^)  # alloc
+    assert_equal(result, "123")
+
+
 def main():
     test_constructors()
     test_copy()
@@ -1604,3 +1614,4 @@ def main():
     test_variadic_ctors()
     test_sso()
     test_python_object()
+    test_buffer_constructor()

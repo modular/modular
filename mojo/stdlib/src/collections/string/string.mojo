@@ -122,16 +122,14 @@ struct _StringCapacityField:
     # Initialize with a specified capacity.  Note that the provided value may
     # be rounded up, so clients should check the capacity() after construction.
     @always_inline("nodebug")
-    fn __init__(out self, capacity: UInt):
-        # Round the capacity to allocate up to the next multiple of 8.  Most
-        # memory allocators work on this granularity anyway, so we might as well
-        # use it. We store the capacity with the top 3 bits of the storage used
-        # for flags.
-        if capacity > Self.NUM_SSO_BYTES or is_compile_time():
-            self = Self(out_of_line_capacity=capacity)
-        else:
-            # If the capacity needed fits inline, use the inline form.
-            self._storage = Self.FLAG_IS_INLINE
+    fn __init__[allow_inline: Bool = True](out self, capacity: UInt):
+        @parameter
+        if allow_inline:
+            if capacity <= Self.NUM_SSO_BYTES and not is_compile_time():
+                # If the capacity needed fits inline, use the inline form.
+                self._storage = Self.FLAG_IS_INLINE
+                return
+        self = Self(out_of_line_capacity=capacity)
 
     @always_inline("nodebug")
     @staticmethod
@@ -384,6 +382,42 @@ struct String(
         if not self._capacity_or_data.is_inline():
             self._capacity_or_data.set_has_nul_terminator(True)
 
+    fn __init__(out self, *, owned buffer: List[Byte, *_, **_]):
+        """Construct an out-of-line string from a buffer of bytes, copying the
+        allocated data. Use the transfer operator `^` to avoid the copy.
+
+        Args:
+            buffer: The buffer.
+
+        Examples:
+
+        When the capacity is a multiple of 8
+        ```mojo
+        %# from testing import assert_equal
+        var capacity_multiple_of_8 = List("12345678".as_bytes()) # alloc
+        var result = String(buffer=capacity_multiple_of_8^) # no allocation
+        assert_equal(result, "12345678")
+        ```
+
+        When the capacity isn't a multiple of 8
+        ```mojo
+        %# from testing import assert_equal
+        var capacity_NOT_multiple_of_8 = List("123".as_bytes()) # alloc
+        var result = String(buffer=capacity_NOT_multiple_of_8^) # alloc
+        assert_equal(result, "123")
+        ```
+
+        Notes:
+            The buffer should have a capacity multiple of 8 to avoid a realloc.
+            The buffer should not be null terminated.
+        """
+        self._capacity_or_data = _StringCapacityField.__init__[
+            allow_inline=False
+        ](buffer.capacity)
+        buffer.reserve(self._capacity_or_data.get_capacity())
+        self._len_or_data = len(buffer)
+        self._ptr_or_data = buffer.steal_data()
+
     @always_inline
     fn __init__(out self, *, bytes: Span[Byte, *_]):
         """Construct a string by copying the data. This constructor is explicit
@@ -392,6 +426,9 @@ struct String(
         Args:
             bytes: The bytes to copy.
         """
+        # NOTE: this is intentionally not using String(buffer) constructor
+        # to avoid a redundant realloc if the span length isn't a multiple of 8.
+        # And also because this enables an inline string
         var length = len(bytes)
         self = Self(unsafe_uninit_length=length)
         memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
