@@ -190,7 +190,7 @@ def test_tensor_type_with_device_accessors(mlir_context: mlir.Context) -> None:
 
     assert _graph.tensor_type_get_device(cpu_tensor_type) == cpu_device
     assert _graph.tensor_type_get_device(cuda_tensor_type) == cuda_device0
-    assert not _graph.tensor_type_get_device(default_tensor_type)
+    assert _graph.tensor_type_get_device(default_tensor_type) == cpu_device
 
 
 def test_opaque_type(mlir_context) -> None:
@@ -276,7 +276,7 @@ def test_buffer_type_with_device_accessors(mlir_context) -> None:
 
     assert _graph.buffer_type_get_device(cpu_buffer_type) == cpu_device
     assert _graph.buffer_type_get_device(cuda_buffer_type) == cuda_device0
-    assert not _graph.buffer_type_get_device(default_buffer_type)
+    assert _graph.buffer_type_get_device(default_buffer_type) == cpu_device
 
 
 def test_chain_type(mlir_context):

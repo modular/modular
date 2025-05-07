@@ -59,7 +59,6 @@ def test_weight_sharding() -> None:
     """Tests weight sharding onto different devices.."""
     graph = create_sharded_weight_graph()
     # Check built graph
-    assert str(DeviceRef.CPU(0)) in str(graph)
     assert str(DeviceRef.GPU(0)) in str(graph)
     assert str(DeviceRef.GPU(1)) in str(graph)
     host = CPU()

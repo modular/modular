@@ -61,7 +61,6 @@ def test_cpu_io_graph_execution() -> None:
     """Tests multi-device transfers where inputs/outputs are on cpu."""
     graph = create_multi_device_graph_with_cpu_io()
     # Check built graph
-    assert str(DeviceRef.CPU(0)) in str(graph)
     assert str(DeviceRef.GPU(0)) in str(graph)
     assert str(DeviceRef.GPU(1)) in str(graph)
     host = CPU()
