@@ -37,11 +37,13 @@ from utils.variant import Variant
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_NVTX_LIBRARY_PATHS = List[Path](
+    "libnvToolsExt.so",
     "/usr/local/cuda/lib64/libnvToolsExt.so",
     "/usr/lib/x86_64-linux-gnu/libnvToolsExt.so.1",
 )
 alias ROCTX_LIBRARY_PATHS = List[Path](
-    "/opt/rocm/lib/librocprofiler-sdk-roctx.so"
+    "librocprofiler-sdk-roctx.so",
+    "/opt/rocm/lib/librocprofiler-sdk-roctx.so",
 )
 
 alias LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATHS

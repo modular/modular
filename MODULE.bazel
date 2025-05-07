@@ -1,0 +1,50 @@
+module(
+    name = "modular",
+    version = "0",
+)
+
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "rules_mojo", version = "0.1.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_python", version = "1.4.0-rc4")
+
+# TODO: Remove when 0.2.0 is released
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-oN9RMLe1l0rB5Fh/TP/QioJCSRYMz4JKg25W2grWYS8=",
+    strip_prefix = "rules_mojo-0.2.0",
+    urls = [
+        "https://github.com/modular/rules_mojo/releases/download/0.2.0/rules_mojo-0.2.0.tar.gz",
+    ],
+)
+
+bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
+
+mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
+
+mojo_aliases(name = "mojo")
+
+mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
+mojo.toolchain(
+    use_prebuilt_packages = False,
+)
+use_repo(mojo, "mojo_toolchains")
+
+register_toolchains("@mojo_toolchains//...")
+
+_DEFAULT_PYTHON_VERSION = "3.12"
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
+python.toolchain(
+    ignore_root_user_error = True,
+    is_default = True,
+    python_version = _DEFAULT_PYTHON_VERSION,
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip", dev_dependency = True)
+pip.parse(
+    hub_name = "modular_test_deps",
+    python_version = _DEFAULT_PYTHON_VERSION,
+    requirements_lock = "bazel/requirements.txt",
+)
+use_repo(pip, "modular_test_deps")

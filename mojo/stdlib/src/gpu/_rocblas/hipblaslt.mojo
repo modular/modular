@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
+from pathlib import Path
 from sys.ffi import (
     _get_dylib_function as _ffi_get_dylib_function,
     _Global,
@@ -196,7 +197,10 @@ struct hipblasLtMatmulHeuristicResult_t:
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias HIPBLASLT_LIBRARY_PATH = "/opt/rocm/lib/libhipblaslt.so.0"
+alias HIPBLASLT_LIBRARY_PATHS = List[Path](
+    "libhipblaslt.so.0",
+    "/opt/rocm/lib/libhipblaslt.so.0",
+)
 
 alias HIPBLASLT_LIBRARY = _Global[
     "HIPBLASLT_LIBRARY", _OwnedDLHandle, _init_dylib
@@ -204,7 +208,7 @@ alias HIPBLASLT_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["HIP BLAS LT library"](HIPBLASLT_LIBRARY_PATH)
+    return _find_dylib["HIP BLAS LT"](HIPBLASLT_LIBRARY_PATHS)
 
 
 @always_inline

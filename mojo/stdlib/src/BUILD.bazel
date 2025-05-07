@@ -73,7 +73,8 @@ LIBS = [
         renames = {
             lib + ".docs": lib,
         },
-        visibility = ["//visibility:public"],
+        tags = ["manual"],  # TODO: Make this build and remove this
+        visibility = ["//visibility:private"],
     )
     for lib in LIBS
 ]
@@ -84,4 +85,5 @@ pkg_filegroup(
         ":" + lib + "-doc-files"
         for lib in LIBS
     ],
+    tags = ["manual"],  # TODO: Make this build and remove this
 )

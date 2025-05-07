@@ -14,7 +14,7 @@
 from gridv2 import Grid
 from testing import *
 
-var data4x4 = List(
+alias data4x4 = List(
     List(0, 1, 1, 0),
     List(1, 1, 0, 0),
     List(0, 0, 1, 1),
@@ -82,3 +82,10 @@ def test_gridv2_evolve():
     for row in range(4):
         for col in range(4):
             assert_equal(data_gen3[row][col], grid_gen3[row, col])
+
+
+def main():
+    test_gridv2_init()
+    test_gridv2_index()
+    test_gridv2_str()
+    test_gridv2_evolve()

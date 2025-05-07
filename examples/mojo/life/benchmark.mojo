@@ -50,7 +50,7 @@ def main():
     )
 
     start_time = perf_counter_ns()
-    for i in range(benchmark_iterations):
+    for _ in range(benchmark_iterations):
         gridv2 = gridv2.evolve()
     stop_time = perf_counter_ns()
     elapsed = round((stop_time - start_time) / 1e6, 3)

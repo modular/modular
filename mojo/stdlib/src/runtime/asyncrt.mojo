@@ -551,7 +551,7 @@ struct DeviceContextPtr:
 
 
 @register_passable("trivial")
-struct DeviceContextPtrList[size: Int]:
+struct DeviceContextPtrList[size: Int](Sized):
     """A fixed-size collection of `DeviceContextPtr` objects.
 
     This struct provides a lightweight, register-passable container for a fixed number

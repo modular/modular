@@ -1121,7 +1121,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var old_len = old.byte_length()
         var new_len = new.byte_length()
 
-        var res = String(capacity=self_len + (old_len - new_len) * occurrences)
+        var res = String(capacity=self_len + (new_len - old_len) * occurrences)
 
         for _ in range(occurrences):
             var curr_offset = Int(self_ptr) - Int(self_start)

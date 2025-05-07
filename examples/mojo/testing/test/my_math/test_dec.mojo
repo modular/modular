@@ -25,3 +25,8 @@ def test_dec_min():
         # Assign the return value to the discard pattern to prevent the Mojo
         # compiler from warning that it is unused.
         _ = dec(Int.MIN)
+
+
+def main():
+    test_dec_valid()
+    test_dec_min()

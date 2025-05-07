@@ -137,9 +137,11 @@ struct _PyIter(Sized):
 
 
 alias PythonModule = TypedPythonObject["Module"]
-alias PyFunction = fn (PythonObject, TypedPythonObject["Tuple"]) -> PythonObject
+alias PyFunction = fn (
+    mut PythonObject, mut TypedPythonObject["Tuple"]
+) -> PythonObject
 alias PyFunctionRaising = fn (
-    PythonObject, TypedPythonObject["Tuple"]
+    mut PythonObject, mut TypedPythonObject["Tuple"]
 ) raises -> PythonObject
 
 
@@ -660,7 +662,7 @@ struct PythonObject(
             raise cpython.get_error()
         return PythonObject(result)
 
-    fn __setitem__(mut self, *args: PythonObject, value: PythonObject) raises:
+    fn __setitem__(self, *args: PythonObject, value: PythonObject) raises:
         """Set the value with the given key or keys.
 
         Args:
@@ -696,7 +698,14 @@ struct PythonObject(
     fn __call_single_arg_inplace_method__(
         mut self, owned method_name: String, rhs: PythonObject
     ) raises:
-        self = self.__getattr__(method_name^)(rhs)
+        var callable_obj: PythonObject
+        try:
+            callable_obj = self.__getattr__("__i" + method_name[2:])
+        except:
+            self = self.__getattr__(method_name^)(rhs)
+            return
+
+        self = callable_obj(rhs)
 
     fn __mul__(self, rhs: PythonObject) raises -> PythonObject:
         """Multiplication.

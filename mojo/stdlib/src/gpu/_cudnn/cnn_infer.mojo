@@ -27,7 +27,10 @@ from .infer import *
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libcudnn_cnn_infer.so.8"
+alias CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS = List[Path](
+    "libcudnn_cnn_infer.so.8",
+    "/usr/lib/x86_64-linux-gnu/libcudnn_cnn_infer.so.8",
+)
 
 alias CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
     "CUDA_CUDNN_CNN_INFER_LIBRARY", _OwnedDLHandle, _init_dylib
@@ -35,7 +38,9 @@ alias CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["CUDA CUDNN CNN Infer library"](CUDA_CUDNN_LIBRARY_PATH)
+    return _find_dylib["CUDA cuDNN CNN Infer"](
+        CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS
+    )
 
 
 @always_inline
