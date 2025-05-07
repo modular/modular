@@ -72,6 +72,9 @@ public:
 /// An evaluation context that exposes a LockedSymbolTableCollection.
 class SymTabEvaluationContext : public ParameterEvaluationContext {
 public:
+  Operation *module;
+  mlir::LockedSymbolTableCollection &symtab;
+
   SymTabEvaluationContext(Operation *module,
                           mlir::LockedSymbolTableCollection &symtab)
       : module(module), symtab(symtab) {}
@@ -79,8 +82,8 @@ public:
   FailureOr<TypedAttr>
   evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
 
-  Operation *module;
-  mlir::LockedSymbolTableCollection &symtab;
+private:
+  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr getWitness);
 };
 
 //===----------------------------------------------------------------------===//

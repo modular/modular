@@ -128,7 +128,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
   if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr)) {
     // Find the node for the instantiated type ref.
     SymbolRefAttr instanceRef =
-        getWitnessEntry.getTypeInstanceRef().getSymbol();
+        cast<TypeInstanceRefAttr>(getWitnessEntry.getTypeRefIfResolved())
+            .getSymbol();
     ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
     // Always look up witness tables from the StructGeneratorOp, since the
     // StructInstanceOp is undergoing elaboration, and we should not block on

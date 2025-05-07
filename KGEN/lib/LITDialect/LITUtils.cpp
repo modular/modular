@@ -11,6 +11,7 @@
 
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -1057,4 +1058,56 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
     return emitTooManyDefaults(numKwOnlyDefaults, numKwOnly, "keyword-only");
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EvaluatableAttrHandler
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
+    ContextuallyEvaluatedAttrInterface attr) {
+  if (auto getWitness = dyn_cast<GetWitnessAttr>(attr)) {
+    FailureOr<TypedAttr> simplified = evaluateGetWitness(getWitness);
+    if (succeeded(simplified))
+      return simplified.value();
+  }
+
+  // Delegate to base class logic.
+  return SymTabEvaluationContext::evaluateExpression(attr);
+}
+
+FailureOr<TypedAttr>
+LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
+  // We can only simplify if the type reference is resolved already.
+  auto typeParam = dyn_cast<TypeParamAttr>(getWitness.getTypeValue());
+  if (!typeParam)
+    return failure();
+
+  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  if (!structType)
+    return failure();
+
+  // Find the struct decl for the instance.
+  auto structDecl =
+      symtab.lookupSymbolIn<StructDeclOp>(module, structType.getSymbol());
+  if (!structDecl)
+    return failure();
+
+  auto conformance = symtab.lookupSymbolIn<ConformanceOp>(
+      structDecl, getWitness.getTraitName());
+  if (!conformance)
+    return failure();
+
+  ParameterEvaluator evaluator;
+  evaluator.setEvaluationContext(this);
+  for (auto [param, value] :
+       llvm::zip(structDecl.getInputParams(), structType.getParamValues()))
+    evaluator.setParameterValue(param, value);
+
+  FailureOr<TypedAttr> simplified =
+      getWitness.simplify(conformance, &evaluator);
+  if (failed(simplified) || !simplified.value())
+    return failure();
+
+  return simplified.value();
 }

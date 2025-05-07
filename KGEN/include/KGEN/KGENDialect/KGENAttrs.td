@@ -484,9 +484,10 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
   ];
 
   let extraClassDeclaration = [{
-    /// Extract the type instance reference if the type value field is already
-    /// resolved.
-    TypeInstanceRefAttr getTypeInstanceRef();
+    /// Extract the type reference if the type value field is already resolved.
+    /// This will return either a TypeGeneratorRefAttr / TypeInstanceRefAttr,
+    /// or a null attribute if the type value is not resolved.
+    TypedAttr getTypeRefIfResolved();
 
     /// Fold the attribute given the symbol table of the struct.
     /// An optional ParameterEvaluator can be provided to concretize the witness

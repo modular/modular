@@ -183,7 +183,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       for (Region &region : decl->getRegions())
         declRegions.emplace_back(&region, declRegions.size());
 
-    SymTabEvaluationContext evaluationContext(module, sharedSymtabs);
+    LIT::LITSymTabEvaluationContext evaluationContext(module, sharedSymtabs);
 
     // Because parameter simplification invokes the interpreter, we cannot
     // simplify in parallel: functions may be modified as they are being
