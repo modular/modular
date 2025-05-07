@@ -2372,13 +2372,15 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!lhsRV || !rhsRV)
     return {};
 
-  // Emit trait composition if both operands are traits.
+  // Emit trait composition if both operands have AnyTrait types.
   if (kind == kAnd) {
-    TraitType lhsTrait = dyn_cast_or_null<TraitType>(lhsRV.getIfTypeValue());
-    TraitType rhsTrait = dyn_cast_or_null<TraitType>(rhsRV.getIfTypeValue());
+    auto lhsTrait =
+        dyn_cast_or_null<AnyTraitType>(lhsRV.getRValueTypeIfResolvable());
+    auto rhsTrait =
+        dyn_cast_or_null<AnyTraitType>(rhsRV.getRValueTypeIfResolvable());
     if (lhsTrait && rhsTrait) {
-      SmallVector<SymbolRefAttr> symbols(lhsTrait.getSymbols());
-      llvm::append_range(symbols, rhsTrait.getSymbols());
+      SmallVector<SymbolRefAttr> symbols(lhsTrait.getTraitType().getSymbols());
+      llvm::append_range(symbols, rhsTrait.getTraitType().getSymbols());
       return emitter.emitResult(TraitType::get(emitter.getContext(), symbols),
                                 this, dest);
     }

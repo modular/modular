@@ -257,3 +257,40 @@ struct YourStruct:
 
     fn do_it[W: Writable & Defaultable](self, x: W):
         self.foo(x)  # make sure this doesn't crash
+
+# // -----
+
+# Check that composition works with trait parameters.
+
+trait Trait1:
+    fn f1(self):
+        ...
+
+trait Trait2:
+    fn f2(self):
+        ...
+
+trait Trait1C:
+    fn f1C(self):
+        ...
+
+@value
+struct Struct1C(Trait1C, Trait2):
+    fn f1(self):
+        pass
+
+    fn f2(self):
+        pass
+
+    fn f1C(self):
+        pass
+
+
+fn trait_param[A: __type_of(Trait1), T: A & Trait2](x: T):
+    x.f1()
+    x.f2()
+
+
+fn use_trait_param():
+    s1c = Struct1C()
+    trait_param[Trait1C, Struct1C](s1c)
