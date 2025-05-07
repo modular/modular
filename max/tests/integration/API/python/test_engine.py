@@ -217,7 +217,7 @@ def test_execute_noncontiguous_tensor(
     ):
         model.execute(subtensor)
 
-    device = CPU() if accelerator_count() == 0 else Accelerator()
+    device = CPU()
     output = model.execute(subtensor.contiguous().to(device))
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
@@ -282,13 +282,11 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     model = session.load(mo_model_path)
 
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
-    input_tensor = Tensor.from_numpy(arr).to(model.input_devices[0])
+    input_tensor = Tensor.from_numpy(arr).to(CPU())
     outputs = model.execute(input_tensor[0, :5])
     assert len(outputs) == 1
     output_tensor = outputs[0]
     assert isinstance(output_tensor, Tensor)
-    if accelerator_count() > 0:
-        assert not output_tensor.is_host
     host_tensor = output_tensor.to(CPU())
     expected = [3.0, 2.0, -4.0, 5.0, 9.0]
     for idx, elt in enumerate(expected):
@@ -299,7 +297,7 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
 
     # We need to also handle situations where we're creating tensors from numpy
     # arrays that have already been sliced.
-    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(model.input_devices[0])
+    presliced_input = Tensor.from_numpy(arr[0, ::2]).to(CPU())
     presliced_output = model.execute(presliced_input)
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
@@ -331,10 +329,8 @@ def test_scalar_inputs(
 ) -> None:
     # We should be able to execute models with scalar inputs.
     model = session.load(scalar_input_path)
-    scalar = Tensor.scalar(3, dtype=DType.int32).to(model.input_devices[0])
-    vector = Tensor.from_numpy(np.arange(1, 6, dtype=np.int32)).to(
-        model.input_devices[1]
-    )
+    scalar = Tensor.scalar(3, dtype=DType.int32).to(CPU())
+    vector = Tensor.from_numpy(np.arange(1, 6, dtype=np.int32)).to(CPU())
 
     output = model.execute(scalar, vector)[0]
     assert isinstance(output, Tensor)
@@ -369,7 +365,7 @@ def test_aliasing_output(
     model = session.load(aliasing_outputs_path)
     arr = np.arange(0, 5, dtype=np.int32)
 
-    device = CPU() if accelerator_count() == 0 else Accelerator()
+    device = CPU()
     input_tensor = Tensor.from_numpy(arr).to(device)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
