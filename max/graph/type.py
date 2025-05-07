@@ -605,6 +605,7 @@ class DeviceRef:
         )
 
     def to_device(self) -> Device:
+        """Convert device reference to a concrete driver Device."""
         if self.device_type is DeviceKind.CPU:
             return CPU(self.id)
         elif self.device_type is DeviceKind.GPU:
