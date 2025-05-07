@@ -20,6 +20,7 @@ filegroup(
     srcs = [
         ":tensor_internal.docs",
     ],
+    tags = ["manual"],  # TODO: Make this build and remove this tag
     visibility = ["//visibility:public"],
 )
 
@@ -28,5 +29,6 @@ pkg_files(
     srcs = [":extensibility/tensor_internal.doc_group"],
     prefix = "tensor_internal",
     strip_prefix = strip_prefix.from_pkg("tensor_internal.docs"),
+    tags = ["manual"],  # TODO: Make this build and remove this tag
     visibility = ["//visibility:public"],
 )
