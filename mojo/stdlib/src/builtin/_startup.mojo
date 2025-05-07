@@ -13,7 +13,7 @@
 """Implements functionality to start a mojo execution."""
 
 from sys import external_call
-from sys.ffi import OpaquePointer, _get_global
+from sys.ffi import OpaquePointer, c_char, c_int, _get_global
 
 from memory import UnsafePointer
 
@@ -42,12 +42,12 @@ fn _get_current_or_global_runtime() -> OpaquePointer:
     ]()
 
 
+alias _ArgV = UnsafePointer[UnsafePointer[c_char]]
+
+
 fn __wrap_and_execute_main[
     main_func: fn () -> None
-](
-    argc: Int32,
-    argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
-) -> Int32:
+](argc: c_int, argv: _ArgV) -> c_int:
     """Define a C-ABI compatible entry point for non-raising main function."""
 
     # Initialize the global runtime.
@@ -68,10 +68,7 @@ fn __wrap_and_execute_main[
 
 fn __wrap_and_execute_raising_main[
     main_func: fn () raises -> None
-](
-    argc: Int32,
-    argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
-) -> Int32:
+](argc: c_int, argv: _ArgV) -> c_int:
     """Define a C-ABI compatible entry point for a raising main function."""
 
     # Initialize the global runtime.
@@ -96,7 +93,5 @@ fn __wrap_and_execute_raising_main[
 
 # A prototype of the main entry point, used by the compiled when synthesizing
 # main.
-fn __mojo_main_prototype(
-    argc: Int32, argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`]
-) -> Int32:
+fn __mojo_main_prototype(argc: c_int, argv: _ArgV) -> c_int:
     return 0
