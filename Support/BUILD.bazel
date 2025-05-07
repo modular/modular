@@ -1,15 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
-load(
-    "//bazel:api.bzl",
-    "cc_autolink_deps",
-    "gentbl_cc_library",
-    "gentbl_mlir_dialect",
-    "gentbl_modular_passes",
-    "modular_cc_library",
-    "modular_nanobind_library",
-    "modular_shared_library",
-    "td_library",
-)
+load("//bazel:api.bzl", "cc_autolink_deps", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
 load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
 

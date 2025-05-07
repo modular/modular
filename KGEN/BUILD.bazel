@@ -1,16 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
-load(
-    "//bazel:api.bzl",
-    "copy_files",
-    "gentbl_cc_library",
-    "gentbl_mlir_dialect",
-    "gentbl_modular_passes",
-    "modular_cc_library",
-    "modular_py_binary",
-    "modular_shared_library",
-    "td_library",
-)
+load("//bazel:api.bzl", "copy_files", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_py_binary", "modular_shared_library", "pkg_files", "td_library")
 load(
     "//bazel:config.bzl",
     "ALLOW_UNUSED_TAG",
