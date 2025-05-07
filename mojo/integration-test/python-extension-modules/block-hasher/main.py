@@ -70,6 +70,8 @@ def python_tensor_hash(tokens: np.ndarray, block_size: int) -> list[int]:
 
         results.append(curr_hash)
 
+    return results
+
 
 def print_bench_run(
     name: str,
