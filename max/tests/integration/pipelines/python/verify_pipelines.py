@@ -547,31 +547,6 @@ PIPELINES = {
             kl_div_threshold=6.5,
         ),
     ),
-    "replit-code-v1_5-3b-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="replit",
-            encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation="torch_replit_golden/torch_replit-code-v1_5-3b_bfloat16_golden.json",
-            # TODO(AIPIPE-166): Replit on GPU currently has very large
-            # deviation between MAX and Torch, almost certainly a bug
-            # somewhere, so these thresholds are extremely high.  Once the
-            # deviation has been fixed, these thresholds should be adjusted
-            # down to be more reasonable.
-            absolute_tolerance=1.1,
-            relative_tolerance=0.19,
-            cos_dist_threshold=9.3e-4,
-            kl_div_threshold=1.2e-02,
-        ),
-    ),
     "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],

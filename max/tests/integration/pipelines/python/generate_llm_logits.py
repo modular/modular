@@ -24,7 +24,6 @@ import hf_repo_lock
 import huggingface_hub
 
 # Tests
-import replit_compat
 import requests
 import torch
 import transformers
@@ -234,85 +233,6 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-
-class ReplitPipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "cpu": ["float32"],
-            "gpu": ["bfloat16", "float32"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            model_path="modularai/replit-code-1.5",
-            trust_remote_code=True,
-            engine=PipelineEngine.MAX,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        # Need to use upstream instead of modularai/replit-code-1.5, because
-        # the modularai version does not have the custom Python code needed
-        # (also why trust_remote_code is needed).  Without this, we get:
-        #     ValueError: `attn_type` has to be either `multihead_attention` or
-        #     `multiquery_attention`. Received: grouped_query_attention
-        hf_repo_id = "replit/replit-code-v1_5-3b"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision, trust_remote_code=True
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision, trust_remote_code=True
-        )
-        replit_compat.monkeypatch_transformers()
-        # Ideally we would still use our GGUF weights:
-        # weight_path = replit.config.get_replit_huggingface_file(
-        #     pipelines.SupportedEncoding[encoding]
-        # ).download()
-        # model = transformers.AutoModelForCausalLM.from_pretrained(
-        #     "UNUSED",
-        #     config=config,
-        #     gguf_file=weight_path,
-        #     device_map=device,
-        #     trust_remote_code=True,
-        #     torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-        # )
-        # However we receive this error if we do:
-        #     ValueError: Architecture mpt not supported
-        # So we cannot use GGUF here.
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            device_map=device,
-            trust_remote_code=True,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-    @property
-    def prompts(self) -> Sequence[str]:
-        # Default prompts are too long for MAX Replit.
-        # Truncate the prompts so it fits.
-        prompt_length_limit = 2000
-        return [prompt[:prompt_length_limit] for prompt in super().prompts]
 
 
 class PixtralPipelineOracle(MultiModalPipelineOracle):
@@ -550,7 +470,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "replit": ReplitPipelineOracle(),
     "mistral": GenericOracle(
         model_path="mistralai/Mistral-Nemo-Instruct-2407",
         config_params={"max_length": 512},

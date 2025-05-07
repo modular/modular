@@ -35,7 +35,6 @@ modular_py_binary(
         "@torch_mistral_golden",
         "@torch_mpnet_golden",
         "@torch_pixtral_golden",
-        "@torch_replit_golden",
     ],
     env = {
         # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.
@@ -129,7 +128,6 @@ modular_py_binary(
     name = "generate_llm_logits",
     srcs = [
         "generate_llm_logits.py",
-        "replit_compat.py",
     ],
     data = [
         "//Kernels/tools/gpu-query",
