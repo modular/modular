@@ -293,6 +293,11 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
+        return_n_logits_type = TensorType(
+            DType.int64,
+            shape=["return_n_logits"],
+            device=DeviceRef.GPU(),
+        )
 
         huggingface_config = self.huggingface_config
         if self.adapter:
@@ -326,14 +331,18 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             input_types=[
                 tokens_type,
                 input_row_offsets_type,
+                return_n_logits_type,
                 *self.kv_manager.input_symbols()[0],
             ],
         ) as graph:
-            tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
+            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                graph.inputs
+            )
             outputs = nn_model(
                 tokens.tensor,
                 input_row_offsets.tensor,
                 [inp.tensor for inp in kv_cache_inputs],
+                return_n_logits=return_n_logits.tensor,
             )
             graph.output(*outputs)
         return graph
