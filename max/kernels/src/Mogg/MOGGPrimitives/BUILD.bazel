@@ -3,10 +3,10 @@ load("//bazel:api.bzl", "mojo_kgen_lib", "mojo_library")
 package(default_visibility = ["//visibility:public"])
 
 mogg_primitives_lib_deps = [
-    "@mojo//:register",
     "@mojo//:nn",
-    "//open-source/max/max/kernels/src/weights_registry",
+    "@mojo//:register",
     "@mojo//:stdlib",
+    "@mojo//:weights_registry",
 ]
 
 # TODO(GEX-924): can we remove O3 and debug level none?

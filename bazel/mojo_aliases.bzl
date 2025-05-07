@@ -6,65 +6,76 @@ package(default_visibility = ["//visibility:public"])
 
 alias(
     name = "stdlib",
-    actual = "@//mojo/stdlib/stdlib",
+    actual = "@//{prefix}mojo/stdlib/stdlib",
 )
 
 alias(
     name = "kv_cache",
-    actual = "@//max/kernels/src/kv_cache",
+    actual = "@//{prefix}max/kernels/src/kv_cache",
 )
 
 alias(
     name = "layout",
-    actual = "@//max/kernels/src/layout",
+    actual = "@//{prefix}max/kernels/src/layout",
 )
 
 alias(
     name = "linalg",
-    actual = "@//max/kernels/src/linalg",
+    actual = "@//{prefix}max/kernels/src/linalg",
 )
 
 alias(
     name = "nn",
-    actual = "@//max/kernels/src/nn",
+    actual = "@//{prefix}max/kernels/src/nn",
 )
 
 alias(
     name = "nvml",
-    actual = "@//max/kernels/src/nvml",
+    actual = "@//{prefix}max/kernels/src/nvml",
 )
 
 alias(
     name = "quantization",
-    actual = "@//max/kernels/src/quantization",
+    actual = "@//{prefix}max/kernels/src/quantization",
 )
 
 alias(
     name = "register",
-    actual = "@//max/kernels/src/register",
+    actual = "@//{prefix}max/kernels/src/register",
 )
 
 alias(
     name = "MOGGPrimitives",
-    actual = "@//max/kernels/src/Mogg/MOGGPrimitives",
+    actual = "@//{prefix}max/kernels/src/Mogg/MOGGPrimitives",
 )
 
 alias(
     name = "MOGGKernelAPI",
-    actual = "@//max/kernels/src/Mogg/MOGGKernelAPI",
+    actual = "@//{prefix}max/kernels/src/Mogg/MOGGKernelAPI",
 )
 
 alias(
     name = "tensor_internal",
-    actual = "@//max/kernels/src/extensibility/tensor_internal",
+    actual = "@//{prefix}max/kernels/src/extensibility/tensor_internal",
 )
 
 alias(
     name = "compiler_internal",
-    actual = "@//max/kernels/src/extensibility/compiler_internal",
+    actual = "@//{prefix}max/kernels/src/extensibility/compiler_internal",
 )
-""")
+
+alias(
+    name = "weights_registry",
+    actual = "@//{prefix}max/kernels/src/weights_registry",
+)
+""".format(prefix = rctx.attr.prefix))
 
 mojo_aliases = repository_rule(
     implementation = _mojo_aliases_impl,
+    attrs = {
+        "prefix": attr.string(
+            doc = "The prefix of the modular/modular repo root",
+            default = "",
+        ),
+    },
 )
