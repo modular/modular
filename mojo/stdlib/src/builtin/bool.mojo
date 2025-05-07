@@ -606,6 +606,7 @@ fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
     return False
 
 
+@always_inline
 fn any(value: SIMD) -> Bool:
     """Checks if **any** element in the simd vector is truthy.
 
@@ -663,6 +664,7 @@ fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
     return True
 
 
+@always_inline
 fn all(value: SIMD) -> Bool:
     """Checks if **all** elements in the simd vector are truthy.
 
