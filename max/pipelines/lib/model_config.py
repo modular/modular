@@ -138,18 +138,6 @@ class MAXModelConfig(MAXModelConfigBase):
             msg += f"\navailable devices: {available_devices}"
             raise ValueError(msg)
 
-        # Replit model_paths are kinda broken due to transformers
-        # version mismatch. We manually update trust_remote_code to True
-        # because the modularai version does not have the custom Python code needed
-        # Without this, we get:
-        #     ValueError: `attn_type` has to be either `multihead_attention` or
-        #     `multiquery_attention`. Received: grouped_query_attention
-        # Another reason why we override this flag here is because at PipelineConfig
-        # instantiation below, we'll call AutoConfig.from_pretrained, which will
-        # trigger the error above if not set to True.
-        if "replit" in self.model_path.lower():
-            self.trust_remote_code = True
-
         # Validate that if weight_paths are passed as strings, they are converted to Path.
         if isinstance(self.weight_path, tuple):
             self.weight_path = list(self.weight_path)
