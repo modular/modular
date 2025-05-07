@@ -4,8 +4,8 @@ modular_py_library(
     name = "lib",
     testonly = True,
     srcs = glob(
-        ["public/*.py"],
-        exclude = ["public/lit.cfg.py"],
+        ["*.py"],
+        exclude = ["lit.cfg.py"],
     ),
     deps = [
         requirement("numpy"),
@@ -13,8 +13,8 @@ modular_py_library(
 )
 
 mojo_test(
-    name = "public/hello_interop.mojo.test",
-    srcs = ["public/hello_interop.mojo"],
+    name = "hello_interop.mojo.test",
+    srcs = ["hello_interop.mojo"],
     target_compatible_with = select({
         # TODO: Debug asan failure with this test
         "//:asan": ["@platforms//:incompatible"],
@@ -45,7 +45,7 @@ mojo_test(
             "**/*.🔥",
         ],
         exclude = [
-            "public/hello_interop.mojo",
+            "hello_interop.mojo",
         ],
     )
 ]

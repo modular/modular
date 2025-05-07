@@ -11,46 +11,47 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-cwd = os.path.dirname(__file__)
-sys.path.append(cwd)
-
 import os
 from pathlib import Path
 
-import mojo_jupyter_runner
-from lit.llvm import llvm_config
+import lit.formats
+import lit.llvm
+
+config.test_format = lit.formats.ShTest(True)
 
 # name: The name of this test suite.
-config.name = "Mojo Examples"
+config.name = "Mojo Public Examples"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".ipynb", ".mojo", ".🔥"]
+# TODO: Enable notebooks
+config.suffixes = [".mojo", ".🔥"]
 
-example_code = Path(".") / "open-source" / "mojo" / "examples" / "public"
-llvm_config.with_environment("PYTHONPATH", str(example_code), append_path=True)
+config.excludes = [
+    # No RUN: directive, just bare examples
+    "hello_interop.mojo",
+] + [path.name for path in os.scandir("../examples/mojo") if path.is_dir()]
 
-# The below notebooks interop with python and have intermittent failures in CI testing.
-# They may work locally and in PR tests, but they will fail in all kinds of different
-# ways intermittently. Keep excluded from tests until a different solution is found.
-config.excludes.update(
-    [
-        ".ipynb_checkpoints",
-        # The programming manual is deprecated and should not be tested anymore
-        "programming-manual.ipynb",
-    ]
-)
+# Have the examples run in the build directory.
+# The `run-examples.sh` script creates the build directory.
+build_root = Path.cwd().parent.parent / "mojo" / "build"
+
+# Execute the examples inside this part of the build
+# directory to avoid polluting the source tree.
+config.test_exec_root = build_root / "examples" / "mojo"
 
 # test_source_root: The root path where tests are located.
-config.test_source_root = os.path.dirname(__file__)
+config.test_source_root = Path(__file__).parent.resolve()
 
-# test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join(
-    config.modular_obj_root, "open-source", "mojo", "examples"
+# Substitute %mojo for just `mojo` itself.
+config.substitutions.insert(0, ("%mojo", "mojo"))
+
+# Pass through several environment variables
+# to the underlying subprocesses that run the tests.
+lit.llvm.initialize(lit_config, config)
+lit.llvm.llvm_config.with_system_environment(
+    [
+        "MODULAR_HOME",
+        "MODULAR_MOJO_MAX_IMPORT_PATH",
+        "PATH",
+    ]
 )
-
-tool_dirs = [config.modular_tools_dir]
-tools = ["mojo-jupyter-executor", "mojo"]
-
-llvm_config.add_tool_substitutions(tools, tool_dirs)
-
-config.test_format = mojo_jupyter_runner.TestNotebook(config=config)
