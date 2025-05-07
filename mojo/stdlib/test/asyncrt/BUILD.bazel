@@ -15,6 +15,7 @@ lit_tests(
         "cuda.mojo",
         "elementwise.mojo",
         "function.mojo",
+        "function_mts.mojo",
         "function_regress.mojo",
         "hip.mojo",
         "host_mapped.mojo",
@@ -29,6 +30,8 @@ lit_tests(
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
         "@mojo//:stdlib",
+        "@mojo//:layout",
+        "//SDK/lib/API/mojo/max/tensor",
     ],
     tags = ["gpu"],
     tools = ["//KGEN/tools/mojo"],
