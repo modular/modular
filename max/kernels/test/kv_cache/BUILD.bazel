@@ -1,19 +1,15 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_test")
 
-lit_tests(
-    name = "lit",
-    srcs = glob(["**/*.mojo"]),
-    data = ["@mojo//:test_utils_srcs"],
-    env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:test_utils_srcs)",
-    },
-    mojo_deps = [
-        "@mojo//:kv_cache",
-        "@mojo//:nn",
-        "@mojo//:internal_utils",
-        "@mojo//:stdlib",
-    ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
-)
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]
