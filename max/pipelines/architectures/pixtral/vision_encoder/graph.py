@@ -44,7 +44,10 @@ def _patch_conv2d(
     # Conv2DV1 expects (height, width, in_channels, out_channels) = [16, 16, 3, 1024].
     filter_weights = ops.permute(
         weights.weight.allocate(
-            dtype, [out_channels, in_channels, patch_size, patch_size], None
+            dtype,
+            [out_channels, in_channels, patch_size, patch_size],
+            None,
+            device=DeviceRef.GPU(),
         ),
         [2, 3, 1, 0],
     )
