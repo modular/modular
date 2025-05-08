@@ -133,7 +133,7 @@ def download_weight_files(
 
     Args:
         huggingface_model_id:
-          The huggingface model identifier, ie. `modularai/llama-3.1`
+          The huggingface model identifier, ie. `modularai/Llama-3.1-8B-Instruct-GGUF`
 
         filenames:
           A list of file paths relative to the root of the HuggingFace repo.

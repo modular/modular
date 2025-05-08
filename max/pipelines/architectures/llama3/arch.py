@@ -33,7 +33,7 @@ llama_arch = SupportedArchitecture(
         "meta-llama/Llama-3.2-1B-Instruct",
         "meta-llama/Llama-3.2-3B-Instruct",
         "deepseek-ai/deepseek-coder-6.7b-instruct",
-        "modularai/llama-3.1",
+        "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
     default_encoding=SupportedEncoding.q4_k,
     supported_encodings={

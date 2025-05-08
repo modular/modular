@@ -48,7 +48,9 @@ def get_llama_huggingface_file(
             raise ValueError(
                 f"encoding does not have default hf file: {encoding}"
             )
-        return HuggingFaceFile("modularai/llama-3.1", filename, revision)
+        return HuggingFaceFile(
+            "modularai/Llama-3.1-8B-Instruct-GGUF", filename, revision
+        )
 
     else:
         raise ValueError(f"version {version} not supported for llama")
