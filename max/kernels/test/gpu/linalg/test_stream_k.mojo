@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv, isclose
 from os.atomic import Atomic

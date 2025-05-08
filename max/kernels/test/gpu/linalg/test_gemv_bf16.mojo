@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
+from testing import assert_false
 
 import gpu.warp as warp
 from gpu import WARP_SIZE
@@ -144,7 +142,6 @@ fn run_matvec[
         if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
 
-    # CHECK: Success
     if not failed:
         print("Success 🎉: results match")
         print(
@@ -154,6 +151,8 @@ fn run_matvec[
         )
     else:
         print("Failed ❌: results mismatch")
+
+    assert_false(failed)
 
     _ = a_device
     _ = b_device

@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: A100-GPU
-# RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck %s
 
 from gpu.host import DeviceContext
 from linalg.utils_gpu import select_config

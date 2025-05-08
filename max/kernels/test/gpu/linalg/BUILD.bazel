@@ -1,22 +1,73 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-lit_tests(
-    name = "lit",
-    size = "large",
-    srcs = glob(["**/*.mojo"]),
-    data = ["@mojo//:test_utils_srcs"],
-    env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:test_utils_srcs)",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:linalg",
-        "@mojo//:stdlib",
-    ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
-)
+_EXTRA_CONSTRAINTS = {
+    "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
+    "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_gemv2.mojo": select({
+        "//:h100_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_gemv_bf16.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_grouped_matmul.mojo": ["//:h100_gpu"],
+    "test_hopper_matmul_v0.mojo": ["//:h100_gpu"],
+    "test_hopper_matmul_v0_fp8.mojo": ["//:h100_gpu"],
+    "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
+    "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
+    "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
+    "test_stream_k.mojo": ["//:nvidia_gpu"],
+    "test_tma_wgmma.mojo": ["//:h100_gpu"],
+    "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
+    "test_vendor_blas.mojo": ["//:nvidia_gpu"],
+    "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
+    "test_warp_specialization_gemm_with_cluster.mojo": ["//:h100_gpu"],
+}
+
+_FILECHECK_TESTS = [
+    "test_batched_matmul.mojo",
+    "test_block_swizzle.mojo",
+    "test_matmul_selection_heuristic.mojo",
+    "test_matmul_tile_scheduler.mojo",
+    "test_gemv.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        tags = ["gpu"] + (
+            ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
+        ),
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]
 
 filegroup(
     name = "test-sources",

@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(#31429): Restore `--debug-level full` here
-# REQUIRES: NVIDIA-GPU
-# UNSUPPORTED: asan
-# RUN: %mojo-no-debug %s
 
 from math import ceildiv
 from random import random_float64

@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1480
-# UNSUPPORTED: NVIDIA-GPU
-# UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s
 
 from collections.optional import OptionalReg
 from math import ceildiv, isclose
