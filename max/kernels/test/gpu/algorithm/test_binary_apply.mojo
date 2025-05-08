@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug %s
 
 from pathlib import Path
 from sys.info import is_nvidia_gpu
+from testing import assert_equal
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
@@ -33,8 +34,7 @@ fn vec_func[
     out[tid] = op(in0[tid], in1[tid])
 
 
-# CHECK-LABEL: run_binary_add
-# COM: Force the capture to be captured instead of inlined away.
+# Force the capture to be captured instead of inlined away.
 @no_inline
 fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     print("== run_binary_add")
@@ -63,26 +63,21 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    # CHECK: number of captures: 1
     print(
         "number of captures:",
         ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
     )
+    assert_equal(
+        ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
+        1,
+    )
     ctx.synchronize()
 
     with out.map_to_host() as out_host:
-        # CHECK: at index 0 the value is 4.5
-        # CHECK: at index 1 the value is 5.5
-        # CHECK: at index 2 the value is 6.5
-        # CHECK: at index 3 the value is 7.5
-        # CHECK: at index 4 the value is 8.5
-        # CHECK: at index 5 the value is 9.5
-        # CHECK: at index 6 the value is 10.5
-        # CHECK: at index 7 the value is 11.5
-        # CHECK: at index 8 the value is 12.5
-        # CHECK: at index 9 the value is 13.5
+        expected = List(4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5)
         for i in range(10):
             print("at index", i, "the value is", out_host[i])
+            assert_equal(out_host[i], expected[i])
 
 
 def main():
