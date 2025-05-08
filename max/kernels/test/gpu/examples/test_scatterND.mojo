@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: DISABLED
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 
@@ -20,6 +18,7 @@ from buffer.dimlist import DimList
 from gpu import block_dim, block_idx, global_idx, thread_idx
 from gpu.host import DeviceContext
 from memory import UnsafePointer, memcpy
+from testing import assert_false
 
 from utils.index import Index
 
@@ -311,6 +310,7 @@ fn test_case[
         if output_ref[i] != output[i]:
             print("FAILURE: Mismatch at idx: ", end="")
             print(i)
+            assert_false(True)
 
 
 fn main():
@@ -386,6 +386,4 @@ fn main():
             output_ref,
         )
 
-    # CHECK-LABEL: test_scatternd_gpu
-    # CHECK-NOT: FAILURE
     test_scatternd_gpu()

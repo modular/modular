@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(#31429): Restore `--debug-level full` here
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 

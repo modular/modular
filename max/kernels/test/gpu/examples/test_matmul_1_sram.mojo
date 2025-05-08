@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import align_down, ceildiv
 
@@ -20,6 +19,7 @@ from gpu import barrier, block_dim, block_idx, global_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
+from testing import assert_false
 
 from utils.index import Index
 
@@ -128,7 +128,6 @@ fn matmul_sram(
         c[Index(row, col)] = result
 
 
-# CHECK-LABEL: run_matmul_sram
 fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul_sram")
 
@@ -193,7 +192,7 @@ fn run_matmul(ctx: DeviceContext) raises:
                 )
                 failed = True
 
-    # CHECK: succeed
+    assert_false(failed)
     if not failed:
         print("succeed")
 
