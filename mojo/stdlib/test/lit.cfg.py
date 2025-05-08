@@ -37,7 +37,7 @@ if has_not() or os.getenv("GITHUB_REPOSITORY"):
 
 # test_utils does not contain tests, just source code
 # that we run `mojo package` on to be used by other tests
-config.excludes = ["test_utils", "asyncrt"]
+config.excludes = ["test_utils", "asyncrt", "complex"]
 
 # Internal testing configuration.  This environment variable
 # is set by the internal `start-modular.sh` script.
