@@ -418,7 +418,8 @@ Type FnOp::getUserResultType() {
       getFuncTypeGenerator(), getArgumentTypes(), getMLIRResultType());
 }
 
-TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
+TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
+                                  ParameterExprArrayAttr bindings) {
   if (!bindings) // We allow null for convenience.
     bindings = ParameterExprArrayAttr::get(getContext(), {});
 
@@ -427,8 +428,8 @@ TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
   // bindings present on the access (in bindings), which typically concretizes
   // the signature.
   FnTypeGeneratorType resultType;
-  std::tie(resultType, bindings) =
-      getUnboundSpecializedSignature(getFullSignature(), bindings);
+  std::tie(resultType, bindings) = getUnboundSpecializedSignature(
+      getFullSignature(), bindings, &evalContext);
 
   if (ParamDeclAttr decl = getParamDeclAttr())
     return BindParamsAttr::get(ParamDeclRefAttr::get(decl), bindings);
@@ -437,8 +438,10 @@ TypedAttr FnOp::getBoundReference(ParameterExprArrayAttr bindings) {
                                  bindings);
 }
 
-SymbolConstantAttr FnOp::getBoundSymbolRef(ParameterExprArrayAttr bindings) {
-  return cast<SymbolConstantAttr>(getBoundReference(bindings));
+SymbolConstantAttr
+FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                        ParameterExprArrayAttr bindings) {
+  return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
 }
 
 bool FnOp::isSynthetic() { return getIsSynthetic(); }

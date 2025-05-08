@@ -12,10 +12,10 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
+#include "ParserEvaluationContext.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -78,7 +78,7 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
   // Construct the pack type without parameters so we re-infer the origin which
   // is different on the caller side (the union of the argument origins) than
   // the declared callee side (a parameter).
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(emitter.shared);
   for (auto [idx, currBinding] : llvm::enumerate(bindings)) {
     // Do not clear the `is_owned` parameter since it's not inferrable from the
     // operands to VariadicPack. It has to be set explicitly based on what

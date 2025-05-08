@@ -609,8 +609,11 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
-    if (!newBindings.empty())
-      candidateType = candidateType.getSpecializedGenerator(newBindings);
+    if (!newBindings.empty()) {
+      candidateType = candidateType.getSpecializedGenerator(
+          newBindings, /*emitErrorFn=*/{},
+          &declScope.getShared().getEvaluationContext());
+    }
 
     if (!candidateType)
       return {};
@@ -828,7 +831,8 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
     if (paramBindings.empty())
-      return cast<FnOp>(*fnDecls.front()).getBoundReference();
+      return cast<FnOp>(*fnDecls.front())
+          .getBoundReference(getShared().getEvaluationContext());
 
     // Bind the parameters.
     return getBoundConstantAttr();

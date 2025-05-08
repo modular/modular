@@ -359,7 +359,8 @@ Type getSignatureUserResultType(FnTypeGeneratorType sigType,
 /// the expected input parameter types.
 std::pair<FnTypeGeneratorType, ParameterExprArrayAttr>
 getUnboundSpecializedSignature(FnTypeGeneratorType type,
-                               ParameterExprArrayAttr bindings);
+                               ParameterExprArrayAttr bindings,
+                               ParameterEvaluationContext *evalContext);
 
 } // namespace M::KGEN::LIT
 

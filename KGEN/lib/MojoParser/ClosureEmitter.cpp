@@ -13,12 +13,12 @@
 #include "ExprEmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "ParserEvaluationContext.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -194,10 +194,12 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   if (dtor.empty() || copy.empty())
     return;
 
-  Value dtorRef =
-      b.create<CreateClosureOp>(cast<FnOp>(dtor.front()).getBoundReference());
-  Value copyRef =
-      b.create<CreateClosureOp>(cast<FnOp>(copy.front()).getBoundReference());
+  Value dtorRef = b.create<CreateClosureOp>(
+      cast<FnOp>(dtor.front())
+          .getBoundReference(shared.getEvaluationContext()));
+  Value copyRef = b.create<CreateClosureOp>(
+      cast<FnOp>(copy.front())
+          .getBoundReference(shared.getEvaluationContext()));
   storeField(b, self, dtorRef, b.getStringAttr("dtor"));
   storeField(b, self, copyRef, b.getStringAttr("_copy"));
 
@@ -241,7 +243,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   SmallVector<Type> fieldTypes{opaquePtrType};
 
   SmallVector<ParamDeclAttr> wrapperDecls;
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(shared);
   SmallVector<TypedAttr> paramValues;
   for (auto [i, type] :
        llvm::enumerate(dependentSignatureType.getInputParamTypes())) {
@@ -281,7 +283,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
   dependentSignatureType = dependentSignatureType.getSpecializedGenerator(
-      paramValues, translateLocation(nestedFunctionOrTypeLocation));
+      paramValues, translateLocation(nestedFunctionOrTypeLocation),
+      &shared.getEvaluationContext());
   auto sigMetadata =
       FnMetadataAttr::get(dependentSignatureType.getArgListAttrs(),
                           dependentSignatureType.getNumImplicitOriginDecls());
@@ -312,16 +315,19 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   FnOp destructor = stubs->dtor;
-  declOp.setDestructorAttr(destructor.getBoundSymbolRef());
+  declOp.setDestructorAttr(
+      destructor.getBoundSymbolRef(shared.getEvaluationContext()));
 
   FnOp copyCtr = stubs->copyCtr;
-  SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
+  SymbolConstantAttr copyCtrRef =
+      copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
   declOp.setCopyInitAttr(copyCtrRef);
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
 
   FnOp moveCtr = stubs->moveCtr;
-  SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
+  SymbolConstantAttr moveCtrRef =
+      moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
   declOp.setMoveInitAttr(moveCtrRef);
   ASTDecl *moveCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
@@ -580,8 +586,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
     // Declare an extra field to carry the parametric closure captures.
     ASTType clType = shared.getBuiltinCaptureListType(nestedFnDecl.getLoc());
-    TypedAttr bound = callFunc.getBoundReference(ParameterExprArrayAttr::get(
-        getContext(), cast<StructType>(structSelfType).getParamValues()));
+    TypedAttr bound = callFunc.getBoundReference(
+        shared.getEvaluationContext(),
+        ParameterExprArrayAttr::get(
+            getContext(), cast<StructType>(structSelfType).getParamValues()));
     clType = cast<LIT::StructType>(clType).bindAll(
         {TypeParamAttr::get(bound.getType(), TypeType::get(getContext())),
          bound});
@@ -601,11 +609,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   }
 
   FnOp copyCtr = stubs->copyCtr;
-  SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
+  SymbolConstantAttr copyCtrRef =
+      copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
   FnOp moveCtr = stubs->moveCtr;
-  SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
+  SymbolConstantAttr moveCtrRef =
+      moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
   ASTDecl *moveCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
 
@@ -622,10 +632,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     declOp.setMoveInitAttr(moveCtrRef);
 
   if (FnOp dtor = stubs->dtor)
-    declOp.setDestructorAttr(dtor.getBoundSymbolRef());
+    declOp.setDestructorAttr(
+        dtor.getBoundSymbolRef(shared.getEvaluationContext()));
 
   // Populate the body of the call op.
-  declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
+  declOp->setAttr(callMethodAttr,
+                  callFunc.getBoundReference(shared.getEvaluationContext()));
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(callFunc.getLocScope());
@@ -710,17 +722,17 @@ static Type makeClosureImplSelfType(StructDeclOp closureImpl,
   return closureImpl.bindReference(paramRefs);
 }
 
-static SymbolConstantAttr
-createTypedSymbol(SymbolConstantAttr symbol,
-                  ArrayRef<ParamDeclAttr> parameters) {
+static SymbolConstantAttr createTypedSymbol(SymbolConstantAttr symbol,
+                                            ArrayRef<ParamDeclAttr> parameters,
+                                            SharedState &shared) {
   SmallVector<TypedAttr> paramReferences =
       llvm::map_to_vector(parameters, [](ParamDeclAttr attr) -> TypedAttr {
         return ParamDeclRefAttr::get(attr);
       });
   auto paramRefs =
       ParameterExprArrayAttr::get(symbol.getContext(), paramReferences);
-  auto [specializedSignature, _] =
-      getUnboundSpecializedSignature(symbol.getType(), paramRefs);
+  auto [specializedSignature, _] = getUnboundSpecializedSignature(
+      symbol.getType(), paramRefs, &shared.getEvaluationContext());
   return SymbolConstantAttr::get(symbol.getSymbol(), specializedSignature,
                                  paramReferences);
 }
@@ -860,6 +872,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                        Type fieldType) {
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
     TypedAttr funcSymbol = topLevelFunc.getBoundReference(
+        shared.getEvaluationContext(),
         ParameterExprArrayAttr::get(ctx, totalParams));
     if (funcSymbol.getType() != fieldType)
       funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
@@ -988,7 +1001,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   assert(closureSignature.getResults().size() == 1);
   closureSignature = closureSignature.getSpecializedGenerator(
       ArrayRef(topLevelParamRefs).take_front(wrapperParamDecls.size()),
-      translateLocation(loc));
+      translateLocation(loc), &shared.getEvaluationContext());
 
   Type resultType = closureSignature.getResults().front();
 
@@ -1035,7 +1048,8 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
          i != e; ++i)
       args.push_back(topLevelCall.getArgument(i));
 
-    SymbolConstantAttr typedSymbol = createTypedSymbol(symbol, topLevelParams);
+    SymbolConstantAttr typedSymbol =
+        createTypedSymbol(symbol, topLevelParams, shared);
 
     SmallVector<TypedAttr> implicitOrigins;
     auto finalSig = cast<FnTypeGeneratorType>(typedSymbol.getType());

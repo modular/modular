@@ -13,6 +13,7 @@
 #include "DebugInfo.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "ParserEvaluationContext.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
@@ -23,7 +24,6 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -233,7 +233,7 @@ struct SharedState::Impl {
   Impl(SharedState &shared)
       : sourceNames(shared),
         bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false),
-        bytecodeRefResolutionWalker(shared) {}
+        bytecodeRefResolutionWalker(shared), evaluationContext(shared) {}
   virtual ~Impl() = default;
 
   /// This MLIR block is owned by SharedState, and vended to clients that have a
@@ -337,6 +337,9 @@ struct SharedState::Impl {
 
   /// An attribute walker used to resolve bytecode references.
   BytecodeResolutionReferenceWalker bytecodeRefResolutionWalker;
+
+  /// An evaluation context used to simplify attributes during parsing.
+  ParserEvaluationContext evaluationContext;
 };
 
 /// Ensure `stripFilePrefix` is an absolute path ending in a separator.
@@ -2110,11 +2113,15 @@ void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
            "to include more information in the hash key");
 }
 
+ParserEvaluationContext &SharedState::getEvaluationContext() {
+  return impl->evaluationContext;
+}
+
 namespace {
 /// This struct is used to fold @always_inline("builtin") functions.
 struct BuiltinFunctionFolder {
   SharedState &shared;
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator;
   bool doEmitError;
 
   // Keep track of the parameter values for each of the live SSA values in the
@@ -2128,7 +2135,7 @@ struct BuiltinFunctionFolder {
   SmallDenseMap<Value, TypedAttr> varDeclSoFar;
 
   BuiltinFunctionFolder(SharedState &shared, bool doEmitError)
-      : shared(shared), doEmitError(doEmitError) {}
+      : shared(shared), evaluator(shared), doEmitError(doEmitError) {}
 
   // This helper handles emitting an error (or not) as needed.
   // This helper handles emitting an error (or not) as needed.
