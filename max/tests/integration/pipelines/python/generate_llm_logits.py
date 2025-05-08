@@ -558,6 +558,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 8192},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "gemma3-multimodal": GenericOracle(
+        model_path="google/gemma-3-12b-it",
+        config_params={"max_length": 8192},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "deepseek-v2-lite": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V2-Lite-Chat",
         config_params={"max_length": 516, "trust_remote_code": True},
