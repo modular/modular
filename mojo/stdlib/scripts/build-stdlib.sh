@@ -19,7 +19,7 @@ REPO_ROOT=$(realpath "${SCRIPT_DIR}/../..")
 BUILD_DIR="${REPO_ROOT}"/build
 mkdir -p "${BUILD_DIR}"
 
-STDLIB_PATH="${REPO_ROOT}/stdlib"
+STDLIB_PATH="${REPO_ROOT}/stdlib/stdlib"
 
 echo "Packaging up the Standard Library."
 STDLIB_PACKAGE_NAME="stdlib.mojopkg"
