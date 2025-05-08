@@ -25,7 +25,21 @@ public:
 
   static void emitDiagLocSeverity(llvm::raw_ostream &os,
                                   const mlir::Diagnostic &diag);
-  static void emitDiagnosticToStream(llvm::raw_ostream &os,
+
+  /// Emit all details of the diagnostic to a single stream. Note that this
+  /// can be a very large message, so dump it to the console with care.
+  static void emitDiagnosticToStream(llvm::raw_ostream &fullOutputStream,
+                                     const mlir::Diagnostic &diag);
+
+  /// Emit the diagnostic to two streams: one for the minimal output and one
+  /// for the full output. The minimal output will include one line per
+  /// diagnostic, and the full output will include the entire diagnostic.
+  ///
+  /// The minimal output is intended to be used for display in a terminal, and
+  /// the full output is intended to be used for display in a file or other
+  /// non-terminal output.
+  static void emitDiagnosticToStream(llvm::raw_ostream &minimalOutputStream,
+                                     llvm::raw_ostream &fullOutputStream,
                                      const mlir::Diagnostic &diag);
 
 private:

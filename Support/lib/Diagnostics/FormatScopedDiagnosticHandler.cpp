@@ -46,16 +46,80 @@ void FormatScopedDiagnosticHandler::emitDiagLocSeverity(
   os << "\n";
 }
 
-void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
-    raw_ostream &os, const Diagnostic &diag) {
-  // First emit the diag itself.
-  emitDiagLocSeverity(os, diag);
+static void emitLocation(raw_ostream &minimalOutputStream,
+                         raw_ostream &fullOutputStream,
+                         const Diagnostic &diag) {
+  // Only display the location if it is meaningful.
+  std::string location = locationToString(diag.getLocation());
+  if (!location.empty()) {
+    minimalOutputStream << location << ": ";
+    fullOutputStream << location << ": ";
+  }
+}
 
-  // Then display each note, indented two spaces.
+static void emitSeverity(raw_ostream &minimalOutputStream,
+                         raw_ostream &fullOutputStream,
+                         const Diagnostic &diag) {
+  minimalOutputStream << severityToString(diag.getSeverity()) << ": ";
+  fullOutputStream << severityToString(diag.getSeverity()) << ": ";
+}
+
+static void emitDiagnostic(raw_ostream &minimalOutputStream,
+                           raw_ostream &fullOutputStream,
+                           const Diagnostic &diag) {
+  // First get the entire diagnostic as a string, so that we can inspect it.
+  std::string diagString;
+  llvm::raw_string_ostream diagStream(diagString);
+  diagStream << diag;
+  diagStream.flush();
+
+  size_t newlinePos = diagString.find('\n');
+  if (newlinePos != std::string::npos) {
+    // There is a new line, so emit the first line only to the minimal stream.
+    minimalOutputStream << diagString.substr(0, newlinePos);
+    if (newlinePos + 1 < diagString.size()) {
+      // There is more to the message that we didn't emit, add a note to the
+      // minimal stream to indicate that the message was elided.
+      minimalOutputStream << " (additional lines ("
+                          << (diagString.size() - newlinePos - 1)
+                          << " bytes) elided)";
+    }
+  } else {
+    // There is no new line, emit the entire message to the minimal stream.
+    minimalOutputStream << diagString;
+  }
+  minimalOutputStream << "\n";
+
+  // Always emit the entire message to the full stream.
+  fullOutputStream << diagString << "\n";
+}
+
+static void emitIndentation(raw_ostream &minimalOutputStream,
+                            raw_ostream &fullOutputStream,
+                            const Diagnostic &diag) {
   const char *indentation = "  ";
+  minimalOutputStream << indentation;
+  fullOutputStream << indentation;
+}
+
+void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+    raw_ostream &fullOutputStream, const Diagnostic &diag) {
+  llvm::raw_null_ostream nullStream;
+  emitDiagnosticToStream(nullStream, fullOutputStream, diag);
+}
+
+void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+    raw_ostream &minimalOutputStream, raw_ostream &fullOutputStream,
+    const Diagnostic &diag) {
+
+  emitLocation(minimalOutputStream, fullOutputStream, diag);
+  emitSeverity(minimalOutputStream, fullOutputStream, diag);
+  emitDiagnostic(minimalOutputStream, fullOutputStream, diag);
+
+  // Display each note, indented two spaces
   for (Diagnostic &note : diag.getNotes()) {
-    os << indentation;
-    emitDiagnosticToStream(os, note);
+    emitIndentation(minimalOutputStream, fullOutputStream, note);
+    emitDiagnosticToStream(minimalOutputStream, fullOutputStream, note);
   }
 }
 
