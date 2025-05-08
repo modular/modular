@@ -96,14 +96,16 @@ struct UMMAKind(Stringable, Writable):
         Args:
             writer: The writer to write the UMMA kind to.
         """
-        if self._value == 0:
+        if self == Self.KIND_TF32:
             writer.write("kind::tf32")
-        elif self._value == 2:
+        elif self == Self.KIND_F16:
             writer.write("kind::f16")
-        elif self._value == 3:
+        elif self == Self.KIND_F8F6F4:
             writer.write("kind::f8f6f4")
-        elif self._value == 4:
+        elif self == Self.KIND_I8:
             writer.write("kind::i8")
+        else:
+            writer.write("kind::unknown")
 
 
 @always_inline
