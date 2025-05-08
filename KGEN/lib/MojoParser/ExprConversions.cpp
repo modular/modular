@@ -219,10 +219,11 @@ bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
       assert(actualDeclOp);
       if (!actualDeclOp)
         return false;
-      std::optional<InflightDiag> x = std::nullopt;
-      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType, x)) {
+      // Get and emit the diagnostic.
+      std::optional<InflightDiag> diag = std::nullopt;
+      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType,
+                                                 /*allowImplicit=*/true, diag))
         continue;
-      }
 
       return false;
     }
@@ -1169,7 +1170,8 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.
   std::optional<InflightDiag> checkDiag;
-  if (!wrapperDecl->doesNominalTypeConformTo(trait, checkDiag)) {
+  if (!wrapperDecl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true,
+                                             checkDiag)) {
     InflightDiag diag =
         shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
         << mlirType << " to trait " << ASTType(trait)
@@ -1290,7 +1292,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                pval && LIT::isTypeExpr(pval)) {
       // Can only convert static types to traits, not existentials.
       if (ASTDecl *decl = ASTType(pval).getDecl(shared))
-        return cacheAndReturnVal(decl->doesNominalTypeConformTo(trait));
+        return cacheAndReturnVal(
+            decl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true));
     }
     return cacheAndReturnVal(result);
   }
@@ -1301,8 +1304,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (auto anyTrait = dyn_cast<AnyTraitType>(requiredType)) {
     if (auto fromAnyTrait = dyn_cast<AnyTraitType>(rvType))
       if (auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
-        return cacheAndReturnVal(
-            fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
+        return cacheAndReturnVal(fromDecl->doesNominalTypeConformTo(
+            anyTrait.getTraitType(), /*allowImplicit=*/true));
   }
 
   // Check for non-trivial function type conversions.

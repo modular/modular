@@ -2430,16 +2430,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
 
-  // TODO(MOCO-1468): Pull this out into a helper.
+  // Determine if there is an explicit conformance to AnyType.
   bool implicitlyDestructible = false;
-  for (SymbolRefAttr symbol : structOp.getCanonicalTrait().getSymbols()) {
-    ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
-    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-      if (parentTrait.getSymName() == "AnyType") {
-        implicitlyDestructible = true;
-        break;
-      }
-    }
+  if (auto anyTypeTrait =
+          dyn_cast_or_null<TraitDeclOp>(shared.lookupBuiltinTrait(
+              "AnyType", &structDecl, structDecl.getLoc()))) {
+    implicitlyDestructible =
+        structDecl.doesNominalTypeConformTo(anyTypeTrait.bindReference(),
+                                            /*allowImplicit=*/false);
   }
 
   // Check to see if there is a destructor and install it into the StructDeclOp
