@@ -101,8 +101,11 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return a reference for this function, optionally bound to a set of
     /// parameter bindings.
-    TypedAttr getBoundReference(ParameterExprArrayAttr bindings = {});
-    SymbolConstantAttr getBoundSymbolRef(ParameterExprArrayAttr bindings = {});
+    TypedAttr getBoundReference(ParameterEvaluationContext &evalContext,
+                                ParameterExprArrayAttr bindings = {});
+    SymbolConstantAttr
+    getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                      ParameterExprArrayAttr bindings = {});
 
     /// Return the SpecialFunctionKind ID that indicates if this is a special
     /// function like __init__ or __radd__.

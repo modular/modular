@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "ParserEvaluationContext.h"
 
 #include "ExprNodes.h"
 #include "MojoUtils.h"
@@ -23,7 +24,6 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -398,7 +398,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       //        use(X.a2) # Error: 'a' needs to be bound
       //
       // TODO: Should this return a parametric alias instead?
-      ParameterEvaluator evaluator(paramDecls, paramValues);
+      ParserParameterEvaluator evaluator(shared, paramDecls, paramValues);
       TypedAttr result = evaluator.getReboundAttribute(decl.getValueAttr());
       // Check to make sure that no unbound parameters were used.
       if (!result
@@ -445,8 +445,9 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
               ParamDeclRefAttr::get(paramDecl.getName(), paramValue.getType()));
         }
       }
-      evaluator = ParameterEvaluator(paramDecls, paramsToBind);
-      result = evaluator.getReboundAttribute(decl.getValueAttr());
+      ParserParameterEvaluator evaluatorForError(shared, paramDecls,
+                                                 paramsToBind);
+      result = evaluatorForError.getReboundAttribute(decl.getValueAttr());
 
       // Check to make sure that no unbound parameters were used.
       result.walk([&](ParamDeclRefAttr attr) -> WalkResult {
@@ -1030,7 +1031,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
     return {};
 
   // Use the bindings determined so far to specialize the type.
-  ParameterEvaluator evaluator(bindings);
+  ParserParameterEvaluator evaluator(emitter.shared, bindings);
   nextType = evaluator.getReboundType(nextType);
 
   // Unwrap the variadic element type.

@@ -338,7 +338,7 @@ LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                                  StringRef argOrParam);
 
 //===----------------------------------------------------------------------===//
-// EvaluatableAttrHandler
+// ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
 class LITSymTabEvaluationContext : public SymTabEvaluationContext {

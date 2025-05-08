@@ -11,6 +11,7 @@
 #include "KGEN/MojoParser/SharedState.h"
 #include "MojoUtils.h"
 #include "ParameterInference.h"
+#include "ParserEvaluationContext.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -50,7 +51,7 @@ using namespace M::KGEN::LIT;
 FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue) {
-  ParameterEvaluator traitAliasReplacer;
+  ParserParameterEvaluator traitAliasReplacer(declResolver.shared);
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
@@ -183,7 +184,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
                                        ASTType expectedType,
                                        size_t &numImplicitConversions,
                                        ExprEmitter &emitter,
-                                       ParameterEvaluator &evaluator) {
+                                       ParserParameterEvaluator &evaluator) {
 
   PValue bindingVal = binding.ir.getIfPValue();
   assert(bindingVal && "Parameters are always PValue's");
@@ -305,9 +306,9 @@ ParamBindings::verifyBindingsImpl(
   // the types of other parameters defined later in the list, e.g. in:
   //    [rank: Int, indices: StaticTuple[rank]]
   // the value provided to 'indices' should actually depend on the specified
-  // value of 'rank'.  We use a ParameterEvaluator to keep track of the
+  // value of 'rank'.  We use a ParserParameterEvaluator to keep track of the
   // mapping so far and remap types on demand.
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(shared);
 
   // This lambda installs the decl's value in the parameter evaluator and new
   // binding array.
@@ -678,7 +679,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                                      PogListAttr paramList,
                                                      bool partial) const {
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParameterEvaluator &evaluator) {
+                                    const ParserParameterEvaluator &evaluator) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
     ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
@@ -843,7 +844,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParameterEvaluator &evaluator) {
+                                    const ParserParameterEvaluator &evaluator) {
     ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
                                       evaluator, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
@@ -877,7 +878,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
     // If there are no parameters specified and if we allow unbound symbols,
     // just return the unbound symbol.
     if (empty())
-      return funcOp.getBoundReference();
+      return funcOp.getBoundReference(shared.getEvaluationContext());
 
     // Check that the signature can be rebound with our set of bindings.
     ParameterExprArrayAttr newBindings =
@@ -886,7 +887,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
       return {};
 
     // Now that we checked the types match, form the binding.
-    return funcOp.getBoundReference(newBindings);
+    return funcOp.getBoundReference(shared.getEvaluationContext(), newBindings);
   }
 
   // The first parameter to the fully bound signature will be the type (confined
@@ -912,10 +913,13 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
   signature = substituteTraitAliasesIntoSignature(
       *shared.declResolver, &traitDecl, funcOp, signature, selfExpr);
 
-  signature = signature.getSpecializedGenerator(paramValues, [&]() {
-    return mlir::emitError(shared.translateLocation(expr->getLoc()))
-           << "internal error: ";
-  });
+  signature = signature.getSpecializedGenerator(
+      paramValues,
+      [&]() {
+        return mlir::emitError(shared.translateLocation(expr->getLoc()))
+               << "internal error: ";
+      },
+      &shared.getEvaluationContext());
   assert(signature && "Error binding trait Self type");
 
   TypedAttr fnRef = ParamOperatorAttr::get(

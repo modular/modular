@@ -16,6 +16,7 @@
 #include "ExprNodes.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "ParserEvaluationContext.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -24,7 +25,6 @@
 #include "KGEN/LITDialect/LITUtils.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -733,7 +733,7 @@ static ASTType addImplicitTypeParams(ASTType type,
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(paramList.shared);
 
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name) {
@@ -1110,9 +1110,9 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
-  // Use a ParameterEvaluator to figure out which (rebound) types are needed,
-  // so we get the Bool type, the Origin type etc.
-  ParameterEvaluator evaluator;
+  // Use a ParserParameterEvaluator to figure out which (rebound) types are
+  // needed, so we get the Bool type, the Origin type etc.
+  ParserParameterEvaluator evaluator(emitter.shared);
   PValue isMut = emitter.emitPValue({refType.isMutable(), arg.typeExpr},
                                     EC_Type, isMutType);
   if (!isMut)

@@ -14,10 +14,10 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "MojoUtils.h"
+#include "ParserEvaluationContext.h"
 #include "StructEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -37,7 +37,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
-                          ParameterEvaluator &traitAliasReplacer) {
+                          ParserParameterEvaluator &traitAliasReplacer) {
   TraitType trait = TraitType::get(traitSymbol);
   FnTypeGeneratorType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
@@ -53,7 +53,9 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
     bindings.addPrechecked(expr, params.back());
   }
 
-  FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(params);
+  FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(
+      params, /*emitErrorFn=*/{},
+      &emitter.getDeclScope().getShared().getEvaluationContext());
 
   auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
 
@@ -212,7 +214,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     return failure();
   }
 
-  ParameterEvaluator traitAliasReplacer;
+  ParserParameterEvaluator traitAliasReplacer(shared);
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
   bool allMatchFound = true;
@@ -334,10 +336,10 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     return success();
   };
 
-  // TODO(MOCO-1143): this loop needs a ParameterEvaluator that is populated
-  // with the mappings of trait alias requirements to their matched values on
-  // the implementing struct, then you call getReboundType/Attribute when
-  // checking both the function and future alias requirements
+  // TODO(MOCO-1143): this loop needs a ParserParameterEvaluator that is
+  // populated with the mappings of trait alias requirements to their matched
+  // values on the implementing struct, then you call getReboundType/Attribute
+  // when checking both the function and future alias requirements
   // ```
   // trait Foo:
   //     alias N: Int
@@ -396,7 +398,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
       witnessTable.emplace_back(
           StringAttr::get(ctx, SpecialFunctionInfo::get(kind).name),
-          func.getBoundSymbolRef(ParameterExprArrayAttr::get(ctx, bindings)));
+          func.getBoundSymbolRef(shared.getEvaluationContext(),
+                                 ParameterExprArrayAttr::get(ctx, bindings)));
     }
   }
 
@@ -624,7 +627,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
-                           ParameterEvaluator &traitAliasReplacer,
+                           ParserParameterEvaluator &traitAliasReplacer,
                            const DenseMap<StringAttr, TypedAttr> &aliasValues,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
@@ -703,12 +706,14 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
 
   // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
   // used) not an UnboundAttr which remains an unbound parameter.
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(declResolver.shared);
   evaluator.addInputValue(UnknownAttr::get(signature.getInputParamTypes()[0]));
   // Use UnboundAttr for any other parameters so they remain in the result.
   for (Type type : signature.getInputParamTypes().drop_front())
     evaluator.addInputValue(UnboundAttr::get(evaluator.getReboundType(type)));
-  signature = signature.getSpecializedGenerator(evaluator.getInputParams());
+  signature = signature.getSpecializedGenerator(
+      evaluator.getInputParams(),
+      /*emitErrorFn=*/{}, &declResolver.shared.getEvaluationContext());
 
   return signature;
 }
@@ -792,7 +797,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   //         fn bork(self) -> SIMD[int]: ...
   // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
   // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
-  ParameterEvaluator traitAliasReplacer;
+  ParserParameterEvaluator traitAliasReplacer(shared);
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
   // If the struct (e.g. List[T]) has an alias that uses an input parameter,
@@ -800,8 +805,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // alias value while filling the above traitAliasReplacer.
   // FIXME: We need to reject accessing aliases of a partially bound type, until
   // ParameterizedType is a thing!
-  ParameterEvaluator implGenericsReplacer(structParamDecls,
-                                          type.getParamBindings());
+  ParserParameterEvaluator implGenericsReplacer(shared, structParamDecls,
+                                                type.getParamBindings());
 
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
@@ -892,7 +897,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
           getDeclScope(), type, value.expr, parentTraitType);
 
       // Leave the rest of the the parameters Unbound.
-      ParameterEvaluator evaluator;
+      ParserParameterEvaluator evaluator(shared);
       for (Type type : requirementSig.getInputParamTypes()) {
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
         evaluator.addInputValue(unbound);

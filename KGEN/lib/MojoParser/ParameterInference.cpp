@@ -116,7 +116,8 @@ void ParameterInferenceDiagnostics::attach(PogListAttr params,
 
 ParameterInferenceState::ParameterInferenceState(
     ASTDecl &declScope, const CallOperands &givenBindings,
-    ArrayRef<TypedAttr> bindingsSoFar, const ParameterEvaluator &evaluator,
+    ArrayRef<TypedAttr> bindingsSoFar,
+    const ParserParameterEvaluator &evaluator,
     ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
     : declScope(declScope), shared(declScope.getShared()),
       givenBindings(givenBindings), evaluator(evaluator),
@@ -835,14 +836,14 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
 template <typename... Ts>
 static std::tuple<Ts...>
 getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
-                                 ParameterEvaluator &evaluator,
+                                 ParserParameterEvaluator &evaluator,
                                  bool signatureScoped, Ts... args) {
   if (bindingsSoFar.empty())
     return std::make_tuple(args...);
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
-                ParameterEvaluator &evaluator, bool signatureScoped)
+                ParserParameterEvaluator &evaluator, bool signatureScoped)
         : bindingsSoFar(bindingsSoFar), evaluator(evaluator),
           signatureScoped(signatureScoped) {}
 
@@ -870,7 +871,7 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
     }
 
     ArrayRef<TypedAttr> bindingsSoFar;
-    ParameterEvaluator &evaluator;
+    ParserParameterEvaluator &evaluator;
     bool signatureScoped;
   } substitutor(bindingsSoFar, evaluator, signatureScoped);
 

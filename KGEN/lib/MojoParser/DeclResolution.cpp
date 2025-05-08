@@ -14,13 +14,13 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "ParserEvaluationContext.h"
 #include "Signatures.h"
 #include "StructEmitter.h"
 #include "Traits.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -434,7 +434,7 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
 
   // Figure out the callee.  We synthesize a bound reference to the callee
   // making up nonsense parameter bindings.
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(shared);
   SmallVector<TypedAttr> params;
   for (auto paramDecl : fnOp.collectAllParams(/*implOrigins*/ false)) {
     params.push_back(
@@ -442,7 +442,8 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
     evaluator.setParameterValue(paramDecl, params.back());
   }
   auto paramValueArray = ParameterExprArrayAttr::get(fnOp.getContext(), params);
-  operands.push_back(fnOp.getBoundReference(paramValueArray));
+  operands.push_back(
+      fnOp.getBoundReference(shared.getEvaluationContext(), paramValueArray));
 
   for (auto arg : fnOp.getBody()->getArguments())
     operands.push_back(
@@ -1352,7 +1353,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   // Bind the "is_owned" parameter, start by filling the parameter list with ?.
   if (refType) {
     SmallVector<TypedAttr> typeParams;
-    ParameterEvaluator evaluator;
+    ParserParameterEvaluator evaluator(emitter.shared);
     for (Type type : varListStruct.getSignature().getParamTypes()) {
       typeParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
       evaluator.addInputValue(typeParams.back());
@@ -2195,7 +2196,7 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
     shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
     return {};
   }
-  return func.getBoundSymbolRef();
+  return func.getBoundSymbolRef(shared.getEvaluationContext());
 }
 
 /// Look up a special method impl for the specified `type` when there is exactly
@@ -2210,7 +2211,8 @@ static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
   for (ASTDecl *candidate : inits.getIfSuccess()) {
     FnOp func = dyn_cast<FnOp>(candidate);
     if (func && func.getSpecialFunctionKind() == specialKind)
-      return func.getBoundSymbolRef();
+      return func.getBoundSymbolRef(
+          structDecl.getShared().getEvaluationContext());
   }
   return {};
 }
@@ -2311,7 +2313,8 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
   stubs->copyCtr = copyFunc;
 
   if (FnOp copyCtr = stubs->copyCtr) {
-    SymbolConstantAttr ref = copyCtr.getBoundSymbolRef();
+    SymbolConstantAttr ref =
+        copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
     ASTDecl *copyCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
@@ -2320,7 +2323,8 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
       declOp.setCopyInitAttr(ref);
   }
   if (FnOp moveCtr = stubs->moveCtr) {
-    SymbolConstantAttr ref = moveCtr.getBoundSymbolRef();
+    SymbolConstantAttr ref =
+        moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
     ASTDecl *moveCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
@@ -2450,9 +2454,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
              structDecl
                  .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
                  .empty()) {
-    structOp.setDestructorAttr(StructEmitter(shared)
-                                   .synthesizeEmptyDtor(structDecl)
-                                   .getBoundSymbolRef());
+    structOp.setDestructorAttr(
+        StructEmitter(shared)
+            .synthesizeEmptyDtor(structDecl)
+            .getBoundSymbolRef(shared.getEvaluationContext()));
   }
 
   // Look up move and copy constructors and record them.

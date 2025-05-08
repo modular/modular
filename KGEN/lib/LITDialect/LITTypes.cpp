@@ -1482,7 +1482,8 @@ Type LIT::getSignatureUserResultType(FnTypeGeneratorType sigType,
 /// the expected input parameter types.
 std::pair<FnTypeGeneratorType, ParameterExprArrayAttr>
 LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
-                                    ParameterExprArrayAttr bindings) {
+                                    ParameterExprArrayAttr bindings,
+                                    ParameterEvaluationContext *evalContext) {
   if (bindings.empty())
     return {type, bindings};
 
@@ -1490,6 +1491,7 @@ LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
   // parameters to the expected types.
   SmallVector<TypedAttr> unboundBindings;
   ParameterEvaluator evaluator;
+  evaluator.setEvaluationContext(evalContext);
   for (auto [binding, type] : llvm::zip(bindings, type.getInputParamTypes())) {
     TypedAttr value = binding;
     Type unboundType = evaluator.getReboundType(type);
@@ -1499,9 +1501,11 @@ LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
     unboundBindings.push_back(value);
   }
   type = type.getSpecializedGenerator(
-      unboundBindings, [&]() -> InFlightDiagnostic {
+      unboundBindings,
+      [&]() -> InFlightDiagnostic {
         return mlir::emitError(UnknownLoc::get(type.getContext()));
-      });
+      },
+      evalContext);
   assert(type && "bad bindings specified");
   return {type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};

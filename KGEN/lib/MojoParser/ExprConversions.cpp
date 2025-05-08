@@ -13,6 +13,7 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "MojoUtils.h"
+#include "ParserEvaluationContext.h"
 #include "StructEmitter.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -20,7 +21,6 @@
 #include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -307,7 +307,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   // (see TAPCPTTT) and the actual function's input parameters.
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramValues;
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(shared);
   ImplicitLocOpBuilder b(mlirLoc, ctx);
   for (auto [idx, type] :
        llvm::enumerate(thunkSignature.getInputParamTypes())) {
@@ -321,7 +321,11 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   }
   // Rebind the argument and result types into the scope of the body.
   FunctionType functionType =
-      thunkSignature.getSpecializedGenerator(paramValues).getBody().getValues();
+      thunkSignature
+          .getSpecializedGenerator(paramValues, /*emitErrorFn=*/{},
+                                   &shared.getEvaluationContext())
+          .getBody()
+          .getValues();
 
   // Add an additional parameter, representing the actual callee. Rebind the
   // actual function type into the scope of the body.
@@ -598,7 +602,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   // instead of an incorrect:
   //     mut s: Ship[foo's Z]
   // It also helps us generate some more general signatures for the thunk keys.
-  ParameterEvaluator paramRefsReplacer;
+  ParserParameterEvaluator paramRefsReplacer(emitter.shared);
   for (auto [i, ref] : llvm::enumerate(mentionedParamRefs)) {
     // Add these mentioned param refs as "clarifying" parameters to the thunk,
     // see TAPCPTTT.
@@ -671,7 +675,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
       ParamOperatorAttr::get(POC::Rebind, callee.get(), reducedActual);
 
   // Assemble the parameters (`ZC, read_ship[ZC]`) that we'll bind to the thunk.
-  ParameterEvaluator evaluator;
+  ParserParameterEvaluator evaluator(emitter.shared);
   for (ParamDeclRefAttr ref : mentionedParamRefs) {
     // Bind the clarifying parameter (see TAPCPTTT).
     evaluator.addInputParam(ref);
@@ -687,6 +691,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   evaluator.addInputParam(calleeParam);
 
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(
+      emitter.shared.getEvaluationContext(),
       ParameterExprArrayAttr::get(ctx, evaluator.getInputParams()));
 
   // Finally, cast the result back to the expected type.
@@ -728,8 +733,12 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
         toDecl.getClosureSignature().value_or(nullptr);
     if (fromSig && toSig) {
       // Compare the specialized signatures.
-      fromSig = fromSig.getSpecializedGenerator(fromType.getParamBindings());
-      toSig = toSig.getSpecializedGenerator(toType.getParamBindings());
+      fromSig = fromSig.getSpecializedGenerator(fromType.getParamBindings(),
+                                                /*emitErrorFn=*/{},
+                                                &shared.getEvaluationContext());
+      toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
+                                            /*emitErrorFn=*/{},
+                                            &shared.getEvaluationContext());
       return canZeroCostConvert(fromSig, toSig, shared);
     }
     return false;

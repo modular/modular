@@ -40,6 +40,7 @@ class ParserListener;
 class StructDeclOp;
 class TraitType;
 class CallOperands;
+class ParserEvaluationContext;
 struct ParserConfig;
 class CachedOriginFinder;
 enum class CallSyntax : uint8_t;
@@ -478,6 +479,9 @@ public:
   std::optional<bool> getCachedImplicitConvertibility(ASTType from, ASTType to);
   void cacheImplicitConvertibility(ASTType from, ASTType to,
                                    bool isConvertible);
+
+  /// Get the attribute evaluation context.
+  ParserEvaluationContext &getEvaluationContext();
 
 private:
   /// The internal state of an imported module or package.

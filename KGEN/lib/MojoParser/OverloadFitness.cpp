@@ -892,7 +892,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   };
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
-                                    const ParameterEvaluator &evaluator) {
+                                    const ParserParameterEvaluator &evaluator) {
     ParameterInferenceState inference(callable.paramBindings.declScope,
                                       callable.paramBindings.getParameters(),
                                       bindingsSoFar, evaluator, inferenceDiags,
@@ -956,8 +956,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
-  std::tie(signature, newBindings) =
-      getUnboundSpecializedSignature(signature, newBindings);
+  std::tie(signature, newBindings) = getUnboundSpecializedSignature(
+      signature, newBindings, &shared.getEvaluationContext());
 
   // This is the result we will return if we succeed.
   OverloadFitness result(newBindings);

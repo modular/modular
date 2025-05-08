@@ -1061,7 +1061,7 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// EvaluatableAttrHandler
+// ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
