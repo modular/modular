@@ -129,8 +129,9 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
 
         @parameter
         for i in range(Self._words_size):
+            alias step = min(init.size, _WORD_BITS)
             self._words.unsafe_get(i) = pack_bits(
-                init.slice[min(init.size, _WORD_BITS), offset=i]()
+                init.slice[step, offset = i * step]()
             ).cast[DType.uint64]()
 
     # --------------------------------------------------------------------- #
