@@ -125,31 +125,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
 
         @parameter
         if init.size == 1:
-            self._words = __type_of(self._words)(
-                fill=init[0].cast[DType.uint64]()
-            )
-            return
-        elif init.size == 2:
-            var res = __mlir_op.`pop.bitcast`[
-                _type = __mlir_type.`!pop.scalar<ui2>`
-            ](init.value)
-            alias U2 = Scalar[
-                __mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`
-            ]
-            self._words = __type_of(self._words)(
-                fill=U2(res).cast[DType.uint64]()
-            )
-            return
-        elif init.size == 4:
-            var res = __mlir_op.`pop.bitcast`[
-                _type = __mlir_type.`!pop.scalar<ui4>`
-            ](init.value)
-            alias U4 = Scalar[
-                __mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`
-            ]
-            self._words = __type_of(self._words)(
-                fill=U4(res).cast[DType.uint64]()
-            )
+            self._words = __type_of(self._words)(fill=Int(init[0]))
             return
         elif init.size <= _WORD_BITS:
             self._words = __type_of(self._words)(
@@ -157,11 +133,11 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
             )
             return
 
-        constrained[init.size % _WORD_BITS == 0]()
+        constrained[init.size // _WORD_BITS == Self._words_size]()
         self._words = __type_of(self._words)(uninitialized=True)
 
         @parameter
-        for i in range(0, init.size // _WORD_BITS):
+        for i in range(Int(Self._words_size)):
             self._words.unsafe_get(i) = pack_bits[new_type = DType.uint64](
                 init.slice[_WORD_BITS, offset=i]()
             )
