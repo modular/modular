@@ -56,8 +56,6 @@ class _Gemma3Attention(Module):
         linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = False,
-        use_rope: bool = True,
-        use_qk_norm: bool = False,
         qk_norm_eps: float = 1e-6,
     ):
         """Initializes the attention layer.
@@ -79,8 +77,6 @@ class _Gemma3Attention(Module):
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
-            use_rope: Whether to use rope in this layer. Defaults to True.
-            use_qk_norm: Whether to normalize the qk values. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
         """
 
@@ -95,9 +91,6 @@ class _Gemma3Attention(Module):
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.sliding_window_pattern = sliding_window_pattern
-        # rope unused for dense layers
-        self.use_rope = use_rope
-        self.use_qk_norm = self.use_rope and use_qk_norm
         self.qk_norm_eps = qk_norm_eps
 
         if not self.kv_params.cache_strategy.uses_opaque():
@@ -106,13 +99,8 @@ class _Gemma3Attention(Module):
                 " in Attention layer."
             )
 
-        if use_qk_norm is True:
-            self.q_norm = Gemma3RMSNorm(
-                self.kv_params.head_dim, self.qk_norm_eps
-            )
-            self.k_norm = Gemma3RMSNorm(
-                self.kv_params.head_dim, self.qk_norm_eps
-            )
+        self.q_norm = Gemma3RMSNorm(self.kv_params.head_dim, self.qk_norm_eps)
+        self.k_norm = Gemma3RMSNorm(self.kv_params.head_dim, self.qk_norm_eps)
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
@@ -206,42 +194,35 @@ class _Gemma3Attention(Module):
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if self.use_qk_norm:
-            # Apply QK norm to query and key states.
+        # Apply QK norm to query and key states.
+        xq = self.q_norm(xq)
+        rms_norm_key_cache(
+            self.kv_params,
+            kv_collection=kv_collection,
+            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
+                self.devices[0]
+            ),
+            epsilon=self.qk_norm_eps,
+            layer_idx=self.layer_idx,
+            total_seq_len=total_seq_len,
+            input_row_offsets=kwargs["input_row_offsets"],
+            weight_offset=1.0,
+        )
 
-            # TODO: Replace with Gemma3RMSNorm when available.
-
-            xq = self.q_norm(xq)
-
-            rms_norm_key_cache(
-                self.kv_params,
-                kv_collection=kv_collection,
-                gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                    self.devices[0]
-                ),
-                epsilon=self.qk_norm_eps,
-                layer_idx=self.layer_idx,
-                total_seq_len=total_seq_len,
-                input_row_offsets=kwargs["input_row_offsets"],
-                weight_offset=1.0,
-            )
-
-        if self.use_rope:
-            if xq.device is not None:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
-                    xq.device
-                )
-            else:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
-            xq = fused_qk_ragged_rope(
-                self.kv_params,
-                xq,
-                kwargs["input_row_offsets"],
-                kv_collection,
-                freqs_cis,
-                layer_idx,
-                interleaved=self.rope.interleaved,
-            )
+        # Apply rotary embedding.
+        if xq.device is not None:
+            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+        else:
+            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+        xq = fused_qk_ragged_rope(
+            self.kv_params,
+            xq,
+            kwargs["input_row_offsets"],
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved=self.rope.interleaved,
+        )
 
         # Calculate Flash Attention.
         mask_variant = (

@@ -69,17 +69,20 @@ class Gemma3Inputs(ModelInputs):
         self,
         tokens: np.ndarray | Tensor,
         input_row_offsets: np.ndarray | Tensor,
+        return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
         Args:
             tokens: Input token IDs.
             input_row_offsets: Input row offsets (ragged tensors).
+            return_n_logits: Number of logits to return.
             kv_cache_inputs: Inputs for the KV cache.
         """
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
         self.kv_cache_inputs = kv_cache_inputs
+        self.return_n_logits = return_n_logits
 
 
 class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
@@ -296,7 +299,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         return_n_logits_type = TensorType(
             DType.int64,
             shape=["return_n_logits"],
-            device=DeviceRef.GPU(),
+            device=DeviceRef.CPU(),
         )
 
         huggingface_config = self.huggingface_config
@@ -324,7 +327,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         )
         nn_model = Gemma3(model_config)
         nn_model.load_state_dict(state_dict, weight_alignment=1)
-        self.state_dict = nn_model.state_dict()
+        self.state_dict = nn_model.state_dict(auto_initialize=False)
 
         with Graph(
             getattr(self.huggingface_config, "model_type", "Gemma3"),
@@ -366,6 +369,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
+            model_inputs.return_n_logits,
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
@@ -420,6 +424,9 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
                 self.devices[0]
             ),
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ),
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -447,6 +454,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         return Gemma3Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 

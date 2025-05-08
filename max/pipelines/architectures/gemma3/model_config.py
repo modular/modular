@@ -65,7 +65,7 @@ class Gemma3ConfigBase(MAXModelConfigBase):
 
     hidden_activation: str
     """The non-linear activation function (function or string) in the decoder.
-    Will default to `"gelu_pytorch_tanh"` if not specified. `"gelu_pytorch_tanh"`
+    Will default to `"gelu_tanh"` if not specified. `"gelu_tanh"`
     uses an approximation of the `"gelu"` activation function."""
 
     max_position_embeddings: int
@@ -250,7 +250,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         # the output weights.
         tie_word_embeddings = (
             getattr(huggingface_config, "tie_word_embeddings", False)
-            or "lm_head.weight" not in state_dict
+            or "language_model.lm_head.weight" not in state_dict
         )
 
         rope_scaling_params = None
@@ -270,6 +270,11 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
                     factor=rope_scaling["factor"]
                 )
 
+        hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
+            huggingface_config.hidden_activation,
+            huggingface_config.hidden_activation,
+        )
+
         return Gemma3Config(
             vocab_size=huggingface_config.vocab_size,
             hidden_size=huggingface_config.hidden_size,
@@ -278,7 +283,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
-            hidden_activation=huggingface_config.hidden_activation,
+            hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             tie_word_embeddings=tie_word_embeddings,
@@ -302,3 +307,9 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
                 cache_dtype=cache_dtype,
             ),
         )
+
+
+_HIDDEN_ACTIVATION_MAP = {
+    "gelu_pytorch_tanh": "gelu_tanh",
+    "swish": "silu",
+}

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import Enum
-from typing import Callable, cast
+from typing import Callable, TypeVar, cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
@@ -87,6 +87,9 @@ class ReturnLogits(str, Enum):
     ALL = "all"
 
 
+Block = TypeVar("Block", bound=Module, covariant=True)
+
+
 class Transformer(Module):
     """Transformer model consisting for TransformerBlock layers."""
 
@@ -94,7 +97,7 @@ class Transformer(Module):
         self,
         dim: int,
         n_heads: int,
-        layers: list[TransformerBlock],
+        layers: list[Block],
         norm: Layer,
         output: LinearV1 | Linear,
         embedding: EmbeddingV1 | Embedding,
