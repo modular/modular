@@ -3,12 +3,11 @@
 This folder contains the open-source Mojo standard library! 🔥
 
 We're thrilled to have you join our community of developers eager to build a
-vibrant and supportive ecosystem. If you just want to *use* the Mojo Standard
-Library, it’s already included with Mojo—simply install the MAX SDK or the
-standalone Mojo SDK:
+vibrant and supportive ecosystem. If you just want to *use* the Mojo standard
+library, it’s already included with Mojo—simply install the Magic CLI and
+create a Mojo project:
 
-- [Get the MAX SDK.](https://docs.modular.com/engine/get-started)
-- [Get the Mojo SDK.](https://docs.modular.com/mojo/manual/get-started/)
+- [Get started with Magic.](https://docs.modular.com/magic/)
 
 ## Vision and roadmap
 
