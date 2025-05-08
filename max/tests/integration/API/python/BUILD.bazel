@@ -186,3 +186,27 @@ modular_run_binary_test(
         "no-sandbox",
     ],
 )
+
+modular_run_binary_test(
+    name = "pipelines_multi_gpu_smoke_test_with_subgraphs",
+    args = [
+        "generate",
+        "--model-path",
+        "hf-internal-testing/tiny-random-LlamaForCausalLM",
+        "--devices=gpu:0,1,2,3",
+        "--max-batch-size=1",
+        "--max-new-tokens=32",
+        "--max-num-steps=1",
+        "--max-length=512",
+        "--use-subgraphs",
+    ],
+    binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
+    env = {
+        "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
+    },
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+)
