@@ -666,34 +666,7 @@ struct UnsafePointer[
     fn store[
         I: Indexer,
         dtype: DType, //,
-        *,
-        alignment: Int = _default_alignment[dtype](),
-        volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], **_], offset: I, val: Scalar[dtype]):
-        """Stores a single element value at the given offset.
-
-        Constraints:
-            The width and alignment must be positive integer values.
-            The offset must be integer.
-
-        Parameters:
-            I: A type that can be used as an index.
-            dtype: The data type of SIMD vector elements.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
-
-        Args:
-            offset: The offset to store to.
-            val: The value to store.
-        """
-        constrained[mut, _must_be_mut_err]()
-        self.offset(offset)._store[alignment=alignment, volatile=volatile](val)
-
-    @always_inline("nodebug")
-    fn store[
-        I: Indexer,
-        dtype: DType,
-        width: Int, //,
+        width: Int = 1,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -726,40 +699,7 @@ struct UnsafePointer[
     fn store[
         dtype: DType,
         offset_type: DType, //,
-        *,
-        alignment: Int = _default_alignment[dtype](),
-        volatile: Bool = False,
-    ](
-        self: UnsafePointer[Scalar[dtype], **_],
-        offset: Scalar[offset_type],
-        val: Scalar[dtype],
-    ):
-        """Stores a single element value at the given offset.
-
-        Constraints:
-            The width and alignment must be positive integer values.
-
-        Parameters:
-            dtype: The data type of SIMD vector elements.
-            offset_type: The data type of the offset value.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
-
-        Args:
-            offset: The offset to store to.
-            val: The value to store.
-        """
-        constrained[mut, _must_be_mut_err]()
-        constrained[offset_type.is_integral(), "offset must be integer"]()
-        self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
-            val
-        )
-
-    @always_inline("nodebug")
-    fn store[
-        dtype: DType,
-        width: Int,
-        offset_type: DType, //,
+        width: Int = 1,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -775,8 +715,8 @@ struct UnsafePointer[
 
         Parameters:
             dtype: The data type of SIMD vector elements.
-            width: The size of the SIMD vector.
             offset_type: The data type of the offset value.
+            width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
 
@@ -793,30 +733,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn store[
         dtype: DType, //,
-        *,
-        alignment: Int = _default_alignment[dtype](),
-        volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], **_], val: Scalar[dtype]):
-        """Stores a single element value.
-
-        Constraints:
-            The width and alignment must be positive integer values.
-
-        Parameters:
-            dtype: The data type of SIMD vector elements.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
-
-        Args:
-            val: The value to store.
-        """
-        constrained[mut, _must_be_mut_err]()
-        self._store[alignment=alignment, volatile=volatile](val)
-
-    @always_inline("nodebug")
-    fn store[
-        dtype: DType,
-        width: Int, //,
+        width: Int = 1,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -885,7 +802,7 @@ struct UnsafePointer[
     fn strided_store[
         dtype: DType,
         T: Intable, //,
-        width: Int,
+        width: Int = 1,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         val: SIMD[dtype, width],
