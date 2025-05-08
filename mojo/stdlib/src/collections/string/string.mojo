@@ -77,6 +77,7 @@ from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
+from math import next_multiple_of
 from memory import Span, UnsafePointer, memcpy, memset
 from python import PythonObject, PythonConvertible
 from python._bindings import ConvertibleFromPython
@@ -136,7 +137,8 @@ struct _StringCapacityField:
     @always_inline("nodebug")
     @staticmethod
     fn __init__(out self, *, out_of_line_capacity: UInt):
-        self._storage = (out_of_line_capacity + 7) >> 3
+        var mul = next_multiple_of[8](out_of_line_capacity)
+        self._storage = mul >> 3
 
     @always_inline("nodebug")
     @staticmethod
