@@ -6,21 +6,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Callable, Optional, Union
 
-import max.graph
 import numpy.typing as npt
 from max import mlir
 from max._core_types.driver import DLPackArray
-from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 
 from . import graph
 from .quantization import QuantizationEncoding
-from .type import DeviceKind, DeviceRef, Shape, ShapeLike
+from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
 
 ShardingStrategy = Callable[["Weight", int], TensorValue]
@@ -208,65 +205,3 @@ def _add_weight_to_graph(weight: Weight):
     # return a new `TensorValue`. Otherwise, this will return the existing
     # `TensorValue`.
     return current_graph.add_weight(weight)
-
-
-# TODO(GEX-2126): Remove this
-def _reconcile_weights(
-    model: max.graph.Graph, weights_registry: Mapping[str, DLPackCompatible]
-) -> Mapping[str, Tensor]:
-    """Returns a new weight registry where weights are on the proper device.
-
-    This is mainly as a utility internal testing.
-
-    Args:
-        model: The model containing information on which device weights should be.
-        weights_registry: The weight registry. Not all weights have ot be on the
-            proper device.
-
-    Returns:
-        A new weight registry where all weights are on the proper device.
-
-    Raises:
-        ValueError: If model does not contain any weight metadata. If
-            weights_registry does not contain all weights in model, and
-            only weights in model. If an unknown device is required.
-            If model is not a max graph.
-    """
-    if not hasattr(model, "_weights"):
-        raise ValueError("Given model has no weights metadata!")
-
-    # TODO(GEX-2095): Enable this
-    # if weights_registry.keys() != model._weights.keys():
-    #     raise ValueError(
-    #         f"Weight registry passed contains keys {sorted(weights_registry.keys())} but model expects {sorted(model._weights.keys())}"
-    #     )
-
-    new_registry = dict()
-    for weight_name, weight in model._weights.items():
-        if weight_name not in weights_registry:
-            raise ValueError(
-                f"Weight '{weight_name}' is not in the weights registry."
-            )
-
-        # TODO: just use dlpack devices to handle translation layer between MAX and torch stack
-        def to_tensor() -> Tensor:
-            registered_weight = Tensor.from_dlpack(
-                weights_registry[weight_name]
-            )
-
-            expected_device = weight.value.device
-            assert expected_device is not None, (
-                "Expect all weights to have device now."
-            )
-            if expected_device.device_type is DeviceKind.CPU:
-                assert expected_device.id == 0, "Expect only one host device."
-                return registered_weight.to(CPU(expected_device.id))
-            elif expected_device.device_type is DeviceKind.GPU:
-                return registered_weight.to(Accelerator(expected_device.id))
-            else:
-                raise ValueError(
-                    f"Do not know how to handle device {expected_device}"
-                )
-
-        new_registry[weight_name] = to_tensor()
-    return new_registry
