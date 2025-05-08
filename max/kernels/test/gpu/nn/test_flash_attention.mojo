@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s
-
 from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import argv

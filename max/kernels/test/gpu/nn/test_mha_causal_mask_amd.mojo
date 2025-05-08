@@ -10,12 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1448
-# FIXME: KERN-1437
-# FIXME: KERN-1429
-# UNSUPPORTED: H100-GPU
-# RUN: %mojo-no-debug -D FLASH_ATTENTION_HW_SUPPORTED=False %s
-# REQUIRES: AMD-GPU
 
 from math import ceildiv, isclose, isqrt
 from random import rand

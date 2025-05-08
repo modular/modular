@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import OptionalReg
 from sys import argv
+from testing import assert_true
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
@@ -163,8 +163,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var output_host = _create_buffer_host[rank, dtype](output_shape)
     ctx.enqueue_copy(output_host.data, output_device)
 
-    # CHECK: Test passed
-    fn validate_results():
+    fn validate_results() raises:
         var validTest = True
         for i in range(d0):
             for j in range(d1):
@@ -195,6 +194,8 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             return
         else:
             print("✅ Test passed!")
+
+        assert_true(validTest)
 
     validate_results()
 
@@ -235,7 +236,6 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_host.data, output_device)
 
-    # CHECK: Test passed
     validate_results()
 
     _ = input_0_device

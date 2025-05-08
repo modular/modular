@@ -1,17 +1,75 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-lit_tests(
-    name = "lit",
-    size = "large",
-    srcs = glob(["**/*.mojo"]),
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:stdlib",
-        "@mojo//:testdata",
+_EXTRA_COPTS = {
+    "test_mha_causal_mask_amd.mojo": [
+        "-D",
+        "FLASH_ATTENTION_HW_SUPPORTED=False",
     ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
-)
+}
+
+_EXTRA_CONSTRAINTS = {
+    "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
+    "test_flash_attention_amd.mojo": ["//:amd_gpu"],
+    "test_gather_nd_oob.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1738
+    "test_mha_causal_mask.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1448
+    "test_mha_causal_mask_amd.mojo": ["//:amd_gpu"],  # FIXME: KERN-1448, KERN-1437, KERN-1429
+    "test_mha_mask.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_mla.mojo": ["//:nvidia_gpu"],
+    "test_padding_gpu.mojo": ["//:nvidia_gpu"],
+    "test_score_mod_mha.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_topk_gpu.mojo": select({
+        # FIXME: KERN-1437
+        "//:h100_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_toppminp_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+}
+
+_FILECHECK_TESTS = [
+    "test_mha_tile_scheduler.mojo",
+    "test_padding_gpu.mojo",
+    "test_gather.mojo",
+    "test_gather_nd_oob.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        expect_crash = src == "test_gather_nd_oob.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+            "@mojo//:testdata",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
+        enable_assertions = src != "test_layer_norm.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+            "@mojo//:testdata",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]

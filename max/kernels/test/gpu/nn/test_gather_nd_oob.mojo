@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1738
-# UNSUPPORTED: AMD-GPU
-# RUN: not --crash %mojo %s 2>&1 | FileCheck %s
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

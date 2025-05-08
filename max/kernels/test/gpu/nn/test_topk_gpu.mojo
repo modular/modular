@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1437
-# UNSUPPORTED: H100-GPU
-# RUN: %mojo-no-debug %s
-
 
 from collections import OptionalReg
 from math import ceildiv, iota

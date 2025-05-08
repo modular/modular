@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s
-
 from math import ceildiv, isclose, isqrt
 from random import rand, randn
 from sys import argv
