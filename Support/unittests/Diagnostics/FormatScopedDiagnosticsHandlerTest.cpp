@@ -72,3 +72,41 @@ TEST(FormatScopedDiagnosticHandler, FormatsAttachedNotes) {
                "foo.cpp:42:12: note: and the clocks were striking thirteen\n",
                diagnostics.formatMessage().c_str());
 }
+
+TEST(FormatScopedDiagnosticHandler, EmitsFirstLineToMinimalStream) {
+  MLIRContext context;
+
+  auto diagnostic =
+      mlir::emitRemark(mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                       "It was a bright cold day in April\nand the clocks were "
+                       "striking thirteen");
+
+  std::string minimalOutput;
+  llvm::raw_string_ostream minimalStream(minimalOutput);
+  llvm::raw_null_ostream nullSteam;
+  FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+      minimalStream, nullSteam, *diagnostic.getUnderlyingDiagnostic());
+
+  EXPECT_STREQ("foo.cpp:42:12: remark: It was a bright cold day in April "
+               "(additional lines (37 bytes) elided)\n",
+               minimalOutput.c_str());
+}
+
+TEST(FormatScopedDiagnosticHandler, EmitsFirstAndSecondLineToAdditionalStream) {
+  MLIRContext context;
+
+  auto diagnostic =
+      mlir::emitRemark(mlir::FileLineColLoc::get(&context, "foo.cpp", 42, 12),
+                       "It was a bright cold day in April\nand the clocks were "
+                       "striking thirteen");
+
+  llvm::raw_null_ostream nullSteam;
+  std::string fullOutput;
+  llvm::raw_string_ostream fullStream(fullOutput);
+  FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+      nullSteam, fullStream, *diagnostic.getUnderlyingDiagnostic());
+
+  EXPECT_STREQ("foo.cpp:42:12: remark: It was a bright cold day in April\n"
+               "and the clocks were striking thirteen\n",
+               fullOutput.c_str());
+}
