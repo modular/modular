@@ -908,7 +908,7 @@ fn prefix_sum[
     var res = x.cast[intermediate_type]().reduce_add()
 
     @parameter
-    for i in range(1, log2_floor(WARP_SIZE)):
+    for i in range(log2_floor(WARP_SIZE)):
         alias offset = 1 << i
         var n = shuffle_up(res, offset)
         if lane_id() >= offset:
