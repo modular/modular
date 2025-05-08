@@ -49,8 +49,8 @@ using namespace M::KGEN::LIT;
 /// Given a StringRef for an MLIR attribute, invoke the MLIR parser to resolve
 /// it into an Attribute (which may not be a TypedAttr) and return it.  On
 /// error, emit a diagnostic and return null.
-static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
-                                         SharedState &shared) {
+static ErrorOr<Attribute> parseMLIRAttrFromString(StringRef name, SMLoc loc,
+                                                  SharedState &shared) {
   Attribute result;
   std::string errorMsg;
   {
@@ -72,20 +72,41 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
     result = mlir::parseAttribute(StringRef(tmpBuf).drop_back(),
                                   shared.getContext(), Type(), &bytesRead);
   }
-  if (!result) {
-    auto diag = shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
+
+  if (!result)
+    return Error(errorMsg);
+
+  return result;
+}
+
+static Attribute parseMLIRAttrFromStringWithError(StringRef name, SMLoc loc,
+                                                  SharedState &shared) {
+  auto result = parseMLIRAttrFromString(name, loc, shared);
+  if (result.isError()) {
+    auto diag = shared.emitError(loc, "invalid MLIR attribute: ")
+                << result.takeError().get();
     diag.attachNote(loc) << "attempting to parse: '" << name << "'";
     return {};
   }
-
-  return result;
+  return result.takeValue();
 }
 
 /// This implements __mlir_attr.x lookup, synthesizing a PValue for the
 /// attribute on demand.
 static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
-                                           SharedState &shared) {
-  auto attr = parseMLIRAttrFromString(name, loc, shared);
+                                           SharedState &shared,
+                                           bool reportError = true) {
+  Attribute attr;
+  if (reportError) {
+    attr = parseMLIRAttrFromStringWithError(name, loc, shared);
+  } else {
+    // If we were not able to build a string right now, we will wrap this
+    // attribute with `#kgen.deferred` and let elaborator try to build attribute
+    // again.
+    auto res = parseMLIRAttrFromString(name, loc, shared);
+    attr = res.isError() ? nullptr : res.takeValue();
+  }
+
   if (!attr)
     return {};
 
@@ -155,6 +176,91 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
   return result;
 }
 
+static AttrCtorDeferredAttr
+buildAttrCtorDeferredAttrFromMLIRAttr(const SubscriptNode &node,
+                                      ExprEmitter &emitter) {
+  SmallVector<TypedAttr> strings;
+  SMLoc loc = node.getLoc();
+  for (const Operand &operand : node.operands) {
+    ExprNode *expr = operand.expr;
+    if (!operand.isPositional()) {
+      emitter.emitError(loc, "only positional operands allowed in mlir magic")
+          << expr->getRange();
+      return {};
+    }
+
+    // If the index is an identifier, and if it is a backtick identifier, we
+    // treat it as an interpolated literal string.  Otherwise we look it up as
+    // an expression.  Rationale: this allows using strings attributes, which
+    // could be useful someday, and keeps __mlir_attr.`thing` more consistent
+    // with __mlir_attr[`thing`].
+    if (auto *dre = dyn_cast<DeclRefNode>(expr))
+      if (dre->spelling.data()[dre->spelling.size()] == '`') {
+        strings.push_back(StringAttr::get(emitter.getContext(), dre->spelling));
+        continue;
+      }
+
+    bool elideType = false;
+    if (expr->kind == ExprNode::kPos) {
+      elideType = true;
+      expr = cast<UnaryOpNode>(expr)->subExpr;
+    }
+
+    auto indexVal = emitter.emitExprPValue(expr, EC_MLIRMagic);
+    if (!indexVal)
+      return {};
+
+    strings.push_back(ToStringDeferredAttr::get(indexVal.get(), elideType));
+  }
+
+  if (strings.empty())
+    emitter.emitError(loc, "mlir magic expanded to an empty string");
+
+  return AttrCtorDeferredAttr::get(strings);
+}
+
+#ifndef NDEBUG
+/// Return the string representation of the \p attr by concatenating strings it
+/// holds.
+/// Pass extra argument \p node to properly query how type information needs to
+/// be printed.
+static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  for (auto str : attr.getStrings()) {
+    if (auto strAttr = dyn_cast<StringAttr>(str)) {
+      os << strAttr.str();
+    } else if (auto toStrAttr = dyn_cast<ToStringDeferredAttr>(str)) {
+      auto val = cast<TypedAttr>(toStrAttr.getAttr());
+      bool elideType = toStrAttr.getNeedElideType() != nullptr;
+
+      if (isa<TraitType>(val.getType())) {
+        // values of trait type are printed in a kgen compatible way, e.g.
+        // "":!lit.trait<@stdlib::@builtin::@stubs::@AnyType> someParamValue"
+        if (!elideType)
+          os << ":" << ASTType(val.getType()).mlirType << " ";
+        os << ASTType(val).mlirType;
+      } else if (isa<TypeType, StructMetaType, AnyTraitType>(val.getType()))
+        os << ASTType(val).mlirType;
+      else // Otherwise print it as an attribute.
+        val.print(os, elideType);
+    } else {
+      llvm_unreachable("unexpected attribute type");
+    }
+  }
+
+  return result;
+}
+#endif // NDEBUG
+
+/// Report a warning to let user know that they should use __mlir_attr instead.
+static void emitMLIRDeferedAttrToMLIRAttrWarning(SMLoc loc,
+                                                 ExprEmitter &emitter) {
+  emitter.emitWarning(loc)
+      << "trivially constructable attribute. Use `__mlir_attr` "
+         "instead.";
+}
+
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
@@ -179,8 +285,8 @@ static Attribute getAttrFromExpr(StringRef name, ExprNode *node,
     if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
       if (attrRef->spelling.empty())
         return {};
-      return parseMLIRAttrFromString(attrRef->spelling, attrRef->getLoc(),
-                                     emitter.shared);
+      return parseMLIRAttrFromStringWithError(
+          attrRef->spelling, attrRef->getLoc(), emitter.shared);
     }
   }
 
@@ -192,8 +298,8 @@ static Attribute getAttrFromExpr(StringRef name, ExprNode *node,
       std::string result = substituteMLIRMagic(*subscript, emitter);
       if (result.empty())
         return {};
-      return parseMLIRAttrFromString(result, subscript->getLoc(),
-                                     emitter.shared);
+      return parseMLIRAttrFromStringWithError(result, subscript->getLoc(),
+                                              emitter.shared);
     }
   }
 
@@ -1426,6 +1532,14 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       PValue result = synthesizeMLIRAttrFromString(spelling, getLoc(), shared);
       return emitter.emitResult(result, this, dest);
     }
+    if (isa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(baseMLIRType)) {
+      /// `__mlir_deferred_attr` always behaves like `__mlir_attr` when used
+      /// with backticks. Don't want to strictly enforce that, but user should
+      /// be aware that use of `__mlir_attr` is preferred
+      emitMLIRDeferedAttrToMLIRAttrWarning(getLoc(), emitter);
+      PValue result = synthesizeMLIRAttrFromString(spelling, getLoc(), shared);
+      return emitter.emitResult(result, this, dest);
+    }
     if (isa<MagicMLIROpType>(baseMLIRType)) {
       PValue result = synthesizeMLIROpFromString(spelling, emitter);
       return emitter.emitResult(result, this, dest);
@@ -2106,12 +2220,45 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       ASTType type = parseMLIRType(result, this, emitter.shared);
       return emitter.emitResult(type, this, dest);
     }
-    if (isa<MagicMLIRAttrType>(typeValue)) {
+    if (isa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
-      PValue attr =
-          synthesizeMLIRAttrFromString(result, getLoc(), emitter.shared);
+      const bool fallbackToDeferredAttr =
+          isa<MagicMLIRDeferredAttrType>(typeValue);
+      // When we are not allowed to fallback to deferred attrobute, report an
+      // error if attribute cannot be constructed.
+      PValue attr = synthesizeMLIRAttrFromString(
+          result, getLoc(), emitter.shared,
+          /* reportError = */ !fallbackToDeferredAttr);
+#ifndef NDEBUG
+      {
+        // Ideally we want to build deferred attribute first and stringize it.
+        // This will help us to keep everything in sync. The downside of this is
+        // it will add unnecessary overhead as many attributes don't need to be
+        // deferred.
+        // Therefore, to make sure deferred attributes are built correctly, for
+        // non-production build do extra check.
+        auto deferredAttr =
+            buildAttrCtorDeferredAttrFromMLIRAttr(*this, emitter);
+        assert(result == getStringRepresentation(deferredAttr) &&
+               "string representations of an attribute don't match");
+      }
+#endif // NDEBUG
+      if (fallbackToDeferredAttr) {
+        if (!attr) {
+          auto deferredAttr =
+              buildAttrCtorDeferredAttrFromMLIRAttr(*this, emitter);
+          // Wrap this attribute with `#kgen.deferred` to let elaborator
+          // concretize attributes that are not concrete now.
+          attr = PValue(deferredAttr);
+        } else {
+          // If attribute can be constructed at this point, but user used
+          // `__mlir_deferred_attr`, let user know that regular `__mlir_attr`
+          // should be used instead.
+          emitMLIRDeferedAttrToMLIRAttrWarning(getLoc(), emitter);
+        }
+      }
       return emitter.emitResult(attr, this, dest);
     }
   }

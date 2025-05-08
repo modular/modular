@@ -3047,6 +3047,36 @@ DeferredAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// AttrCtorDeferredAttr
+//===----------------------------------------------------------------------===//
+
+Type AttrCtorDeferredAttr::getType() const {
+  return KGEN::DeferredType::get(getContext());
+}
+
+LogicalResult AttrCtorDeferredAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+    ArrayRef<TypedAttr> strings) {
+
+  for (TypedAttr attr : strings) {
+    if (!::isa<StringAttr, ToStringDeferredAttr>(attr))
+      return emitError()
+             << "`#kgen.attr_ctor_deferred` can only be used for 'StringAttr', "
+                "or '#kgen.to_string_deferred', but got '"
+             << attr << '\'';
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ToStringDeferredAttr
+//===----------------------------------------------------------------------===//
+
+Type ToStringDeferredAttr::getType() const {
+  return StringAttr::get(getContext()).getType();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

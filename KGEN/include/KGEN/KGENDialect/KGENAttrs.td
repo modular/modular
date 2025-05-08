@@ -1410,4 +1410,81 @@ def KGEN_DeferredAttr : KGENAttr<"Deferred", "deferred", [
   let genVerifyDecl = 1;  // Generate getChecked/verify.
 }
 
+//===----------------------------------------------------------------------===//
+// AttrCtorDeferredAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_AttrCtorDeferredAttr : KGENAttr<"AttrCtorDeferred",
+                                         "attr_ctor_deferred",
+     [TypedAttrInterface]> {
+  let summary = "Deferred construction of an attribute";
+  let description = [{
+    The `#kgen.attr_ctor_deferred` attribute holds an array of StringAttr
+    or `#kgen.to_string_deferred` attributes. In the elaborator, when
+    attributes are concrete, the `#kgen.attr_ctor_deferred` concatenates them
+    and builds and requested attribute.
+
+    Example:
+
+    ```mlir
+    #kgen.attr_ctor_deferred<"#index<", "cmp_predicate", "sle>">>
+    ```
+  }];
+
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$strings);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$strings), [{
+      return $_get(strings[0].getContext(), strings);
+    }]>
+  ];
+  let assemblyFormat = "`(` $strings `)`";
+  let extraClassDeclaration = [{ Type getType() const; }];
+
+  let genVerifyDecl = 1;  // Generate getChecked/verify.
+}
+
+//===----------------------------------------------------------------------===//
+// ToStringDeferredAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ToStringDeferredAttr : KGENAttr<"ToStringDeferred",
+                                         "to_string_deferred",
+    [TypedAttrInterface]> {
+  let summary = "Deferred string concatenation";
+  let description = [{
+    The `#kgen.to_string_deferred` attribute holds an array of StringAttr
+    and concatenates them into a single StringAttr in Elaborator
+
+    Example:
+
+    ```mlir
+    #kgen.to_string_deferred<"#index<", "cmp_predicate", "sle>">>
+    ```
+  }];
+
+  // NOTE: Cannot have TypedAttr as it will make impossible to use attribute
+  // replacer functions that do verify consistency of the replaced attribute.
+  // Since in elaborator the attr can become non-typed, use generic Attribute
+  // here.
+  // Cannot add verification to make sure attribute is typed until elaborator,
+  // as these replace functions do invoke verification to check consistency.
+  let parameters = (ins "Attribute":$attr,
+                        OptionalParameter<"UnitAttr">:$needElideType);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "Attribute":$attr, "bool":$needElideType), [{
+      if (needElideType)
+        return $_get(attr.getContext(), attr, UnitAttr::get(attr.getContext()));
+      return $_get(attr.getContext(), attr, UnitAttr());
+    }]>
+  ];
+  let assemblyFormat = [{
+    `(` $attr `)` (`elide_type` $needElideType^ )?
+  }];
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
+
+

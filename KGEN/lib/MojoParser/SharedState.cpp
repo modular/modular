@@ -530,6 +530,8 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   };
 
   addMagicMLIRDecl("__mlir_attr", MagicMLIRAttrType::get(context));
+  addMagicMLIRDecl("__mlir_deferred_attr",
+                   MagicMLIRDeferredAttrType::get(context));
   addMagicMLIRDecl("__mlir_op", MagicMLIROpType::get(context));
   addMagicMLIRDecl("__mlir_type", MagicMLIRTypeType::get(context));
 }

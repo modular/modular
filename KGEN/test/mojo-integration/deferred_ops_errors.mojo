@@ -23,3 +23,17 @@ def extra_attribute(a: Int, b: Int) -> Bool:
     # expected-error @below {{unexpected attribute 'foobar' on operation}}
     var res = __mlir_op.`index.cmp`[pred=pred_attr, foobar=pred_attr](a, b)
     return res
+
+
+@export
+fn invalid_predicate_passed(x: Int, y: Int) -> Bool:
+    fn pred() -> __mlir_type.`!kgen.string`:
+        return __mlir_attr[`"ne" : !kgen.string`]
+
+    fn get_pred() -> __mlir_type.`!kgen.deferred`:
+        return __mlir_deferred_attr[`#index<cmp_predicate `, pred(), `>`]
+
+    # expected-error @below {{invalid MLIR attribute: failed to parse IndexCmpPredicateAttr parameter 'value' which is to be a `::mlir::index::IndexCmpPredicate`}}
+    var z = __mlir_op.`index.cmp`[pred = get_pred()](x, y)
+
+    return z
