@@ -57,13 +57,6 @@ TypedAttr getOriginsAccessibleByParams(PogListAttr paramList,
                                        SharedState &shared,
                                        TypedAttr captureOrigins);
 
-/// Certain special methods have type-specific restrictions or need special
-/// handling. This function returns true if a given method can be synthesized
-/// for a type with the given passability; if so an appropriate entry is added
-/// to the given array of special function kinds.
-bool canSynthesizeIfMissing(StringRef name, bool rpTrivial, bool regPassable,
-                            bool implicitlyDestructible);
-
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);

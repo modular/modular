@@ -3,6 +3,11 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// This file contains the implementation of the trait conformance checking
+// and special function synthesis logic.
+//
+//===----------------------------------------------------------------------===//
 
 #include "Traits.h"
 #include "CallEmission.h"
@@ -70,6 +75,25 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
       cast<KGEN::FuncTypeGeneratorType>(replacer.replace(newSignature));
   newSignature = traitAliasReplacer.replace(newSignature);
   return {newSignature, bindings};
+}
+
+static bool canSynthesizeIfMissing(StringRef name, bool rpTrivial,
+                                   bool regPassable,
+                                   bool implicitlyDestructible) {
+  // Allow types that lack `__del__` to conform. A no-op destructor will be
+  // synthesized for them.
+  if (implicitlyDestructible && name == "__del__")
+    return true;
+  // Trivial types are not allowed to have explicit `__copyinit__` methods, so
+  // if the trait requires them, consider them automatically satisfied by
+  // trivial types.
+  if (rpTrivial && name == "__copyinit__")
+    return true;
+  // All register-passable types are not allowed to have move constructors, so
+  // permit them to conform.
+  if (regPassable && name == "__moveinit__")
+    return true;
+  return false;
 }
 
 /// Allow synthesizing default implementations of certain special functions.
@@ -554,4 +578,381 @@ void LIT::canonicalizeTraitCompositionSymbols(
   }
   symbols.assign(seen.begin(), seen.end());
   sortAndDeduplicateSymbols(symbols);
+}
+
+//===----------------------------------------------------------------------===//
+// ExprEmitter::emitMetaTypeToTraitConversion
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// The signature for a trait requirement will have a Self parameter first whose
+/// type is a TraitType for the trait it was found in.  We want to force
+/// substitute a new parameter for the Self references even though it has a
+/// different metatype.  This doesn't remove the parameter, that will be done
+/// later.
+struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
+  TypedAttr selfValue;
+
+  TraitSelfBinder(TypedAttr selfValue) : selfValue(selfValue) {}
+
+  // CRTP methods.
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    // Replace a reference to $(0,0) with the new selfValue.
+    auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
+    if (!paramRef || paramRef.getIndex() != 0 ||
+        paramRef.getDepth() + 1 != depth)
+      return {};
+    return selfValue;
+  }
+  Type tryReplace(Type type, size_t depth) { return {}; }
+};
+} // namespace
+
+/// Given a method from a trait like 'Movable.__del__', rebind the method to
+/// have a different self for a conforming type, e.g.
+/// 'RefinedMovableTrait.__del__' or 'Int.__del__'.  'newSelfType' is the
+/// struct or trait type to bind.  For example, AnyType.__del__'s signature
+/// looks like:
+///    !lit.generator<<trait<@AnyType>>[1]("self":
+///        !lit.ref<:trait<@AnyType> *(0,0), mut *[0,0]> owned_in_mem) -> none>
+/// When binding this down to some MTT conforming to Movable, this will give us
+/// something like:
+///    !lit.generator<[1]>("self":
+///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
+/// Resolving the *(0,0) into the Movable type, as well as the first param type.
+static FnTypeGeneratorType
+createRequirementSignature(FnOp traitFn, ASTType newSelfType,
+                           ParameterEvaluator &traitAliasReplacer,
+                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
+                           DeclResolver &declResolver) {
+  // Get the selfType as a TypedAttr since we'll be using it as a parameter
+  // value below.
+  TypedAttr newSelfValue = PValue(newSelfType).get();
+
+  // Start with the full signature for the trait requirement.
+  FnTypeGeneratorType signature = traitFn.getFullSignature();
+
+  if (auto paramType = dyn_cast<ParamType>(newSelfType.getMetaType())) {
+    auto simpleTraitType =
+        cast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
+    // Upcast from a parametric type of trait metatype value (e.g. "some
+    // type that conforms to Movable) to the simple trait type (Movable)
+    // so we can substitute the value into the signature.
+    newSelfValue =
+        UpcastAttr::get(simpleTraitType, PValue(newSelfType),
+                        VTableAttr::get(simpleTraitType.getContext(), {}));
+  }
+
+  // The requirement will have a Self parameter whose type will be of the
+  // current trait.  In order to get types to line up, we need to force it
+  // to the implementation type.  This changes the parameter value, but also
+  // changes the metatype of the value.  To support this, we use a custom
+  // replacer.
+  TraitSelfBinder selfBinder(newSelfValue);
+  signature = selfBinder.replace(signature);
+
+  // At this point, the first parameter is gone:
+  //    !lit.generator<[1]("self":
+  //        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
+
+  // Next we'll replace trait aliases that appear in the trait methods, such
+  // as:
+  //
+  //     trait MyTrait:
+  //         alias T: ATrait
+  //         fn bork(self) -> Something[T]: ...
+  //         fn zork(self) -> Something[Self.T]: ...
+  //
+  // We'll replace them with the struct's trait value, like the int in:
+  //
+  //     struct MyStruct(MyTrait):
+  //         alias T: ATrait = int
+  //         fn bork(self) -> SIMD[int]: ...
+
+  // bork's `T` is a regular paramRef, we use traitAliasReplacer to replace it.
+  signature = traitAliasReplacer.replace(signature);
+
+  // However, zork's `Self.T` is different, like: get_vtable_entry(Self, "T").
+  // And after the first step, that Self is actually the struct, so the
+  // requirementFn is really more like: get_vtable_entry(MyStruct, "T").
+  // We'll manually replace those entire get_vtable_entry calls.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
+    if (paramOp.getOpcode() == POC::GetVTableEntry &&
+        paramOp.getOperand(0) == PValue(newSelfType).get()) {
+      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
+      // The vtable entries have type !kgen.string, but the entries from the
+      // trait decl have a StringAttr with no type.  Reunique them to look up.
+      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
+      auto iter = aliasValues.find(aliasName);
+      if (iter != aliasValues.end())
+        return iter->second;
+    }
+    return paramOp;
+  });
+  signature = cast<FnTypeGeneratorType>(replacer.replace(signature));
+
+  // At this point, signature's `self` argument's type is the struct or
+  // trait.  For example when binding Self down to some "MTT: Movable", we have:
+  //    !lit.generator<<trait<@AnyType>>[1]("self":
+  //        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
+  // Now we need to drop the "<trait<@AnyType>" parameter, which we do by
+  // specializing it away.  We know all references to it are already gone.
+
+  // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
+  // used) not an UnboundAttr which remains an unbound parameter.
+  ParameterEvaluator evaluator;
+  evaluator.addInputValue(UnknownAttr::get(signature.getInputParamTypes()[0]));
+  // Use UnboundAttr for any other parameters so they remain in the result.
+  for (Type type : signature.getInputParamTypes().drop_front())
+    evaluator.addInputValue(UnboundAttr::get(evaluator.getReboundType(type)));
+  signature = signature.getSpecializedGenerator(evaluator.getInputParams());
+
+  return signature;
+}
+
+/// Emit a metatype conversion to a trait type by materializing the meta type
+/// of the specified CValue into a witness table for the trait.  For example,
+/// if 'value' has struct type, and the trait is Movable, then this forms a
+/// TypeParamAttr PValue with a vtable containing the __del__ and
+/// __moveinit__ methods from the struct.
+///
+/// If the input value has a derived trait type and the required type is a
+/// base trait, then this remaps each of the requirements into the expected
+/// format of the result vtable, e.g.:
+///   fn take_any_type[ATT: AnyType](x: ATT): pass
+///   fn pass_movable[MTT: Movable](x: MTT): take_any_type(x)
+///
+/// Yields something like:
+///     #kgen.type<!kgen.param<:trait<@Movable> MTT>, {
+///        "__del__" : !lit.generator<[1](
+///                    "self": !lit.ref<:trait<@Movable> MTT, ...)>
+///          = get_vtable_entry(:trait<@Movable> MTT, "__del__")
+///     }> : !lit.trait<@AnyType>
+///
+/// This maps from the Movable trait metatype into the AnyType trait metatype.
+PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
+                                                  TraitType trait) {
+  // Only static vtables are supported right now.
+  PValue typePValue = value.ir.getIfPValue();
+  if (!typePValue) {
+    emitError(value.expr->getLoc(), "existentials are not supported yet!");
+    return {};
+  }
+
+  // Get the StructMetaType or the TraitType of the value that we're checking
+  // for conversion to the trait type.  This can also bind empty variadic
+  // parameter lists and default parameters.
+  ASTType type = emitType({typePValue, value.expr}, /*allowUnbound*/ false);
+  if (!type)
+    return {};
+  value.ir = PValue(type); // update value.ir if the type was rebound.
+
+  // Check that the struct or super trait implements the trait.
+  ASTDecl *metaTypeDecl = type.getDecl(shared);
+  if (!metaTypeDecl) {
+    emitError(value.expr->getLoc(), "cannot get metatype of ")
+        << type << value.expr->getRange();
+    return {};
+  }
+
+  std::optional<InflightDiag> checkDiag;
+  if (!metaTypeDecl->doesNominalTypeConformTo(trait, checkDiag)) {
+    InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
+                        << type << " to trait " << ASTType(trait)
+                        << value.expr->getRange();
+    if (checkDiag)
+      diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
+    return {};
+  }
+
+  // Synthesize the vtable required for the trait from the struct. Make sure the
+  // trait body is fully resolved so we know what the methods are.
+  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+  if (failed(getDeclResolver().resolveBody(*traitDecl, value.expr->getLoc())))
+    return {};
+
+  // Determine if the conforming value is trivial or register passable.  If so,
+  // this will affect the methods we can synthesize in conformance. Values of
+  // trait type will already have been erased to a memory type.
+  ArrayRef<ParamDeclAttr> structParamDecls;
+  bool rpTrivial = false;
+  bool regPassable = false;
+  bool implicitlyDestructible = false;
+  if (auto structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl)) {
+    rpTrivial = structDeclOp.isRegisterPassable();
+    regPassable = structDeclOp.isRegisterPassableTrivial();
+    structParamDecls = structDeclOp.getParams();
+    // TODO(MOCO-1468): Pull out into a helper, or make a method like
+    // isRegisterPassable that can go on the structDeclOp.
+    for (SymbolRefAttr symbol : structDeclOp.getCanonicalTrait().getSymbols()) {
+      ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+        if (parentTrait.getSymName() == "AnyType") {
+          implicitlyDestructible = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // When we're looking for a trait's method in a certain struct, like:
+  //     trait TraitWithAliasMethod:
+  //         alias T: ATrait
+  //         fn bork(self) -> Something[T]: ...
+  // and a struct overrides it:
+  //     struct ExplicitStructWithAliasMethod(TraitWithAliasMethod):
+  //         alias T: ATrait = int
+  //         fn bork(self) -> SIMD[int]: ...
+  // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
+  // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
+  ParameterEvaluator traitAliasReplacer;
+  DenseMap<StringAttr, TypedAttr> aliasValues;
+
+  // If the struct (e.g. List[T]) has an alias that uses an input parameter,
+  // (e.g. `alias element_type = T`), then this will help us interpret that
+  // alias value while filling the above traitAliasReplacer.
+  // FIXME: We need to reject accessing aliases of a partially bound type, until
+  // ParameterizedType is a thing!
+  ParameterEvaluator implGenericsReplacer(structParamDecls,
+                                          type.getParamBindings());
+
+  // Bind each trait requirement into vtable entries.
+  SmallVector<VTableEntryAttr> vtable;
+  for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
+    // Each entry can have multiple overloads in 'decls'.
+    if (requirementDecls.empty())
+      continue;
+
+    // Find candidates in the implementing type (either a struct or trait) which
+    // also may have multiple overloads.
+    LookupResult result =
+        shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
+                                    /*searchParentScopes=*/false);
+    ArrayRef<ASTDecl *> impls = result.getIfSuccess();
+
+    if (auto traitAliasDecl = dyn_cast<AliasDeclOp>(requirementDecls.front())) {
+      // These asserts should be safe because we already know it correctly
+      // conforms because we called `doesNominalTypeConformTo` above.
+      assert(impls.size() == 1);
+      auto implAlias = cast<AliasDeclOp>(impls.front());
+
+      TypedAttr newValue = implAlias.getValueAttr();
+      if (newValue) {
+        newValue = implGenericsReplacer.replace(newValue);
+        // If a decl has a parameter "T : Trait" where Trait defines an
+        // associated type "U : Trait2", then when we emit vtable for T, we must
+        // also emit vtable for T.U.  We perform this by implicitly converting
+        // to the alias' declared type.
+        newValue = emitPValue({newValue, value.expr}, EC_Trait,
+                              traitAliasDecl.getType());
+      } else {
+        // Must come from a child trait. Simply forward the alias value with the
+        // child trait alias' type.
+        newValue = ParamOperatorAttr::get(
+            POC::GetVTableEntry,
+            {PValue(type),
+             StringAttr::get(name.getValue(), StringType::get(getContext()))},
+            implAlias.getType());
+      }
+
+      if (!newValue)
+        return {};
+
+      vtable.push_back(VTableEntryAttr::get(name, newValue));
+      traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
+                                           newValue);
+      aliasValues[name] = newValue;
+      continue;
+    }
+
+    // Traits shouldn't have var decls or other things.
+    if (!isa<FnOp>(requirementDecls.front()))
+      continue;
+
+    // Each requirement may be overloaded, resolve each individually.
+    for (ASTDecl *expected : requirementDecls) {
+      auto traitFn = dyn_cast<FnOp>(expected);
+      assert(traitFn && "trait has an alias and a fn with the same name!");
+
+      // For any given requirement, the implementing type may have multiple
+      // overloads.  Resolve which one we're using by forming an overload set
+      // and filtering it.  Start by finding a set of param bindings for the
+      // implementing function that get bound, including:
+      //
+      //  * The self type if the conforming type is a trait.
+      //  * The conforming struct's values for the trait's aliases.
+
+      // The requirement will have a Self parameter whose type will be of the
+      // current trait.  In order to get types to line up, we need to force it
+      // to the implementation type.  This changes the parameter value, but also
+      // changes the metatype of the value.  To support this, we use a custom
+      // replacer.
+      // TODO(MOCO-1789): This complicated logic will be removed once we have
+      // symbolized witness tables.
+      FnTypeGeneratorType requirementSig = createRequirementSignature(
+          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
+
+      // Form a set of bindings to plow into the impl signature by binding Self
+      // to the appropriate Struct or derived Trait type.
+      // We need to upcast the self type to the parent trait type, so that it
+      // can be marked prechecked in the bindings of trait functions that have
+      // parameters in their signature, e.g.:
+      // trait Writable:
+      //     fn write_to[W: Writer](self, mut writer: W): pass
+      auto parentTraitType = cast<TraitType>(
+          expected->getParentDecl()->getTypeDeclSelf().getMetaType());
+      auto implBindings = ParamBindings::getForDeclaredType(
+          getDeclScope(), type, value.expr, parentTraitType);
+
+      // Leave the rest of the the parameters Unbound.
+      ParameterEvaluator evaluator;
+      for (Type type : requirementSig.getInputParamTypes()) {
+        auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
+        evaluator.addInputValue(unbound);
+        implBindings.addPrechecked(value.expr, unbound);
+      }
+
+      // If the input type is a trait, no need to look through its methods since
+      // trait inheritance is always explicit.
+      if (isa<TraitType>(type.getDecl(shared)->getIfTypeValue())) {
+        TypedAttr result = ParamOperatorAttr::get(
+            POC::GetVTableEntry,
+            {PValue(type),
+             StringAttr::get(name.getValue(), StringType::get(getContext()))},
+            requirementSig);
+        vtable.push_back(VTableEntryAttr::get(name, result));
+        continue;
+      }
+
+      // Grab the matching function.  If the input type is a StructType, this
+      // will directly bind the method in question.  If the input type is
+      // something like "T: Movable" and we're binding __del__ then this will
+      // end up with `get_vtable_entry(T, "__del__")`.
+      OverloadSet ov(name, impls, std::move(implBindings), value.expr,
+                     CallSyntax::kMethodCallSynthetic);
+      auto result = ov.filterOverloadSetForValueType(
+          requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/false);
+      if (!result) {
+        // Don't error out if name is for the thunk functions that will be
+        // synthesized when conformance check happens.
+        if (canSynthesizeIfMissing(name, rpTrivial, regPassable,
+                                   implicitlyDestructible)) {
+          continue;
+        }
+
+        // The struct does not have the specified member and we cannot
+        // synthesize it. Re-emit the error to get a diagnostic.
+        (void)ov.filterOverloadSetForValueType(
+            requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/true);
+        return {};
+      }
+      assert(result.getType().mlirType == requirementSig &&
+             "didn't form a fn with signature of expected type");
+      vtable.push_back(VTableEntryAttr::get(name, result));
+    }
+  }
+
+  // Create the new type value with the vtable and the trait metatype.
+  return TypeParamAttr::get(type, trait, VTableAttr::get(getContext(), vtable));
 }
