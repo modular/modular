@@ -68,8 +68,6 @@ class _Gemma3Attention(Module):
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
             dtype: DType of the attention inputs and weights.
-            attn_temperature_tuning: int, used to improve accuracy for long
-                contexts.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
                 `DistributedAttentionWithRope` to use all devices during
