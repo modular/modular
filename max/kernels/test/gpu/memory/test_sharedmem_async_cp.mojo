@@ -10,11 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Todo: KERN-1531 this hangs with regular builds after cubin compilation.
-# REQUIRES: DISABLED
-# Hangs with debug mode Issue #24921
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
+
 import time
 
 import builtin
