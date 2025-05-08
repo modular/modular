@@ -50,7 +50,7 @@ release](/max/packages#nightly-release).
 
   For more information, see the
   [MAX AI kernels library reference](/mojo/lib#max-ai-kernels-library) and the
-  [MAX AI kernels source](https://github.com/modular/modular/tree/main/mojo/kernels).
+  [MAX AI kernels source](https://github.com/modular/modular/tree/main/max/kernels).
 
 - Trait compositions are now supported via the `&` syntax. A trait composition
   combines two traits into one logical trait whose constraint set is the union
