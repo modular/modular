@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from sys.info import simdwidthof
+from testing import assert_equal
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -57,7 +57,7 @@ fn pack_b(
     )
 
 
-fn test_pack_b():
+fn test_pack_b() raises:
     var packed_b = NDBuffer[
         type, 3, MutableAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
     ].stack_allocation[alignment=64]()
@@ -68,9 +68,8 @@ fn test_pack_b():
     b.fill(1)
     pack_b(packed_b, b)
 
-    # CHECK: 1.0
-    print(packed_b[0, 0, 0])
+    assert_equal(packed_b[0, 0, 0], 1.0)
 
 
-fn main():
+fn main() raises:
     test_pack_b()

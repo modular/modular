@@ -15,9 +15,6 @@
 # A^T.B where A and B are 16x16 Float32 matrices.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
-
-from sys.info import is_apple_silicon, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -75,7 +72,5 @@ def test_dot_at_b[type: DType, shape: Tuple[Int, Int]]():
 
 
 def main():
-    @parameter
-    if is_apple_silicon():
-        test_dot_at_b[DType.float32, (16, 16)]()
-        test_dot_at_b[DType.float16, (32, 32)]()
+    test_dot_at_b[DType.float32, (16, 16)]()
+    test_dot_at_b[DType.float16, (32, 32)]()

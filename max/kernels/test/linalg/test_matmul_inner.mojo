@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import align_up
 from sys import alignof, has_neon, has_vnni
+from testing import assert_equal
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -137,10 +137,9 @@ fn matmul_inner_loop[
     )
 
 
-# CHECK-LABEL: test_micro_kernel
 fn test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
-](m: Int, n: Int, k: Int):
+](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
     alias a_shape = DimList.create_unknown[2]()
     alias b_shape = DimList.create_unknown[2]()
@@ -182,19 +181,18 @@ fn test_micro_kernel[
 
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
-    # CHECK: 256
-    print(Int(c[0, 0]))
+    assert_equal(Int(c[0, 0]), 256)
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()
 
 
 @export(ABI="C")
-fn kernel_export_dynamic(m: Int, n: Int, k: Int):
+fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-fn main():
+fn main() raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[

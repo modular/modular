@@ -14,9 +14,6 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
-# NOTE: Takes ~20 minutes to run with asan
-# UNSUPPORTED: asan
-# RUN: %mojo %s
 
 from sys.info import has_avx2, has_neon_int8_matmul, os_is_macos
 

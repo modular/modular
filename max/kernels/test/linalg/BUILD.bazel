@@ -1,9 +1,70 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+_LIT_TESTS = [
+    "test_has_intel_amx.mojo",
+    "test_neon_dotprod_intrinsics.mojo",
+    "test_neon_matmul_intrinsics.mojo",
+    "test_vnni_intrinsics.mojo",
+]
+
+_FILECHECK_TESTS = [
+    "test_matrix.mojo",
+    "test_partition.mojo",
+    "test_prepack.mojo",
+    "test_transpose.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "test_apple_accelerate.mojo": ["@platforms//os:macos"],
+    "test_apple_amx.mojo": ["@platforms//os:macos"],
+    "test_apple_matmul.mojo": ["@platforms//os:macos"],
+    "test_matmul.mojo": select({
+        # NOTE: Takes ~20 minutes to run with asan
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_transpose.mojo": select({
+        # TODO: causes leak in elaborator
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _LIT_TESTS + _FILECHECK_TESTS,
+    )
+]
 
 lit_tests(
     name = "lit",  # NOTE: Name must stay as this to load lit.local.cfg
     size = "large",
-    srcs = glob(["**/*.mojo"]),
+    srcs = _LIT_TESTS,
     data = ["lit.local.cfg"],
     mojo_deps = [
         "@mojo//:stdlib",

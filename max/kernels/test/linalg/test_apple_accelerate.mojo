@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
-
-from sys.info import os_is_macos
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -54,10 +51,6 @@ def test_matmul(
     n: Int,
     k: Int,
 ):
-    @parameter
-    if not os_is_macos():
-        return
-
     var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
         m * n
     )
@@ -158,10 +151,6 @@ def test_batched_matmul(
     n: Int,
     k: Int,
 ):
-    @parameter
-    if not os_is_macos():
-        return
-
     var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
         batches * m * n
     )
@@ -256,9 +245,5 @@ def test_batched_matmul():
 
 
 def main():
-    @parameter
-    if not os_is_macos():
-        return
-
     test_matmul()
     test_batched_matmul()
