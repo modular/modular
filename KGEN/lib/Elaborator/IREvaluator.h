@@ -126,6 +126,11 @@ struct ImplNode {
   /// symbol.
   ImplNode(ParamNode *parent);
 
+  void initialize(InstantiatedOpInterface inst, ParameterUseDefGraph &&graph) {
+    this->inst = inst;
+    this->paramGraph = std::move(graph);
+  }
+
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
   void setToError(ErrorTree &&err) {
@@ -269,6 +274,7 @@ struct ParamNode {
             ParameterExprArrayAttr vals, size_t depth,
             ExpansionGraph *expansionGraph)
       : gen(gen), inputParams(vals), depth(depth),
+        impl(std::make_unique<ImplNode>(this)),
         paramCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
         expansionGraph(expansionGraph) {
     assert(expansionGraph && "Expansion graph cannot be null");

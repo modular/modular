@@ -135,19 +135,6 @@ ExpansionGraph::~ExpansionGraph() {
   AsyncRT::await(quiesceChain);
 }
 
-ParamNode *ExpansionGraph::getOrCreate(AsyncRT::Runtime &runtime,
-                                       ParameterExprArrayAttr values,
-                                       GeneratorOpInterface gen, size_t depth) {
-  // TODO: Split this into `get` and `create` methods, so that some can be
-  // read-only accesses.
-  return nodes.modify([&](auto &map) {
-    std::unique_ptr<ParamNode> &n = map[{values, gen}];
-    if (!n)
-      n = std::make_unique<ParamNode>(runtime, gen, values, depth, this);
-    return n.get();
-  });
-}
-
 void ExpansionGraph::didCompleteTask() {
   if (--numOutstandingResources == 0)
     quiesceChain.copy().emplace();
@@ -491,7 +478,7 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
       ParameterExprArrayAttr::get(loc.getContext(), symbol.getParamValues());
 
   // Lookup the node if it already exists.
-  ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
+  ParamNode *node = getOrCreateNode(vals, gen, /*depth=*/0);
   // If the node has already been elaborated, just use that result.
   ElaborationState result =
       specializeGenerator(parent, node, loc, /*addWaiter=*/true);
@@ -513,8 +500,7 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
 
   auto vals =
       ParameterExprArrayAttr::get(loc.getContext(), genref.getParamValues());
-  ParamNode *calleeNode =
-      g.getOrCreate(runtime, vals, gen, parent->parent->depth + 1);
+  ParamNode *calleeNode = getOrCreateNode(vals, gen, parent->parent->depth + 1);
 
   // Ensure elaboration is dispatched but return immediately. Track as an
   // eventual dependency.
@@ -686,7 +672,7 @@ Elaborator::instantiateGeneratorReference(
 
   // Find the tree node that corresponds to the thing we're calling.
   ParamNode *calleeNode =
-      g.getOrCreate(runtime, inputParamKey, gen, parent->parent->depth + 1);
+      getOrCreateNode(inputParamKey, gen, parent->parent->depth + 1);
   ElaborationState result = specializeGenerator(
       parent, calleeNode, user->getLoc(), shouldWait(calleeNode));
   if (result.shouldSkipNode())
@@ -1401,6 +1387,27 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
 // Elaborator::specializeGenerator
 //===----------------------------------------------------------------------===//
 
+ParamNode *Elaborator::getOrCreateNode(ParameterExprArrayAttr values,
+                                       GeneratorOpInterface gen, size_t depth) {
+  // TODO: Split this into `get` and `create` methods, so that some can be
+  // read-only accesses.
+  ParamNode *paramNode = g.nodes.modify([&](auto &map) {
+    std::unique_ptr<ParamNode> &n = map[{values, gen}];
+    if (!n)
+      n = std::make_unique<ParamNode>(runtime, gen, values, depth, &g);
+    return n.get();
+  });
+  // Add the node to the concrete nodes map regardless of whether it was
+  // created or not. This guarantees that both nodes (ParamNode and ImplNode)
+  // are in the corresponding maps (g.nodes and concreteNodes) when this
+  // function returns.
+  StringAttr name = paramNode->getMangledName();
+  ImplNode *implNode = paramNode->impl.get();
+  concreteNodes.modify(
+      [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  return paramNode;
+}
+
 ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                                                  ParamNode *genNode,
                                                  Location from,
@@ -1565,19 +1572,9 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   }
 
   addRegion(instance.getBodyRegion());
-  // The node for this new func is simply the child of the node for the
-  // generator.
-  auto childNode = std::make_unique<ImplNode>(
-      instance, genNode, std::move(childGraph), mangledName.str());
 
-  // Insert the newFunc into the symbol table which will then know about it,
-  // but it will also auto-rename the symbol for us in the case of conflicts.
-  concreteNodes.modify([mangledName, node = childNode.get()](auto &map) {
-    map.try_emplace(mangledName, node);
-  });
-
-  ImplNode *newFuncNode = childNode.get();
-  genNode->impl = std::move(childNode);
+  ImplNode *newFuncNode = genNode->impl.get();
+  newFuncNode->initialize(instance, std::move(childGraph));
 
   // Since the symbol will have a new name, we need to update the linkage name
   // in the subprogram information (if any).
@@ -2143,7 +2140,7 @@ Elaborator::run(ModuleOp theModule,
   for (auto [gen, params] : primaryGenerators) {
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
-    ParamNode *genNode = g.getOrCreate(runtime, params, gen, /*depth=*/0);
+    ParamNode *genNode = getOrCreateNode(params, gen, /*depth=*/0);
     primaryNodes.push_back(genNode);
 
     // Create a special root node for this primary generator.
