@@ -13,21 +13,19 @@
 
 from random import randn
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+
+from layout import Layout, LayoutTensor
 
 
 fn random_normal[
-    rank: Int,
     type: DType,
-    output_shape: DimList,
     mean: Float64,
     variance: Float64,
-](output: NDBuffer[mut=True, type, rank, _, output_shape]):
+](output: LayoutTensor[mut=True, type, *_, **_]):
     """
     Fill `output` with values generated from Normal(mean, variance) distribution.
 
     Args:
         output: The output buffer.
     """
-    randn(output.data, output.size(), mean, variance)
+    randn(output.ptr, output.size(), mean, variance)

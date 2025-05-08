@@ -203,7 +203,7 @@ fn randn_float64(
 fn randn[
     dtype: DType
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,

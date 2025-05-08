@@ -13,20 +13,18 @@
 
 from random import seed
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor
 from nn.randn import random_normal
 
 
 fn test_random_normal():
     seed(0)
 
-    alias out_shape = DimList(2, 2)
+    alias out_shape = Layout.row_major(2, 2)
     var output_stack = InlineArray[Float32, 4](uninitialized=True)
-    var output = NDBuffer[DType.float32, 2, _, out_shape](output_stack)
-    output.fill(0)
+    var output = LayoutTensor[DType.float32, out_shape](output_stack).fill(0)
 
-    random_normal[2, DType.float32, out_shape, 0.0, 1.0](output)
+    random_normal[DType.float32, 0.0, 1.0](output)
     # CHECK-LABEL: == test_random_normal
     print("== test_random_normal")
 
