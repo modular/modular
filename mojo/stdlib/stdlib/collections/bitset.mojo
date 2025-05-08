@@ -122,15 +122,8 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-
-        @parameter
-        if init.size == 1:
-            self._words = __type_of(self._words)(fill=Int(init[0]))
-            return
-
         constrained[
-            init.size <= _WORD_BITS
-            or init.size // _WORD_BITS == Self._words_size
+            max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
         ]()
         self._words = __type_of(self._words)(uninitialized=True)
 
