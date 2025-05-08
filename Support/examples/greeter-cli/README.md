@@ -17,4 +17,4 @@ For a more fundamental understanding of what's going on here, read the
 [CLI Guide].
 
 [`CMakeLists.txt`]: https://github.com/modularml/modular/blob/main/Support/examples/greeter-cli/CMakeLists.txt
-[CLI Guide]: docs/CLIGuide.md
+[CLI Guide]: docs/internal/CLIGuide.md
