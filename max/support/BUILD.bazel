@@ -5,5 +5,7 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = [],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints:mojo",
+    ],
 )
