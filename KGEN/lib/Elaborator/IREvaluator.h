@@ -118,33 +118,18 @@ private:
 struct ImplNode {
   /// Create a new generator implementation node.
   ImplNode(InstantiatedOpInterface inst, ParamNode *parent,
-           ParameterUseDefGraph &&graph, std::string &&baseName)
-      : inst(inst), parent(parent), paramGraph(std::move(graph)),
-        baseName(std::move(baseName)) {}
+           ParameterUseDefGraph &&graph)
+      : inst(inst), parent(parent), paramGraph(std::move(graph)) {}
 
-  /// Create a special root node. Root nodes can be identified with a null
-  /// symbol.
   ImplNode(ParamNode *parent);
 
-  void initialize(InstantiatedOpInterface inst, ParameterUseDefGraph &&graph) {
-    this->inst = inst;
-    this->paramGraph = std::move(graph);
-  }
+  /// Initialize the fields of the node if created with the single-argument
+  /// constructor above.
+  void initialize(InstantiatedOpInterface inst, ParameterUseDefGraph &&graph);
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
-  void setToError(ErrorTree &&err) {
-    if (error) {
-      llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: " << baseName
-                   << "\n";
-      std::move(*error).emit([](Location loc) { return mlir::emitError(loc); },
-                             "HERE");
-      abort();
-    }
-    assert(!error && "impl node already has an error");
-    hasError.store(true);
-    error = std::move(err);
-  }
+  void setToError(ErrorTree &&err);
 
   /// Get the current active evaluator instance.
   IREvaluator &getEvaluator() { return stack.back().evaluator; }
@@ -155,9 +140,6 @@ struct ImplNode {
   ParamNode *parent;
   /// Keep track of the nested parameter scopes within this symbol.
   ParameterUseDefGraph paramGraph;
-  /// The base name of the node to use to create derived names. This may differ
-  /// from the actual name of the symbol.
-  std::string baseName;
 
   /// An error contained by this node. This allows us to delay error handling in
   /// cases where an error is recoverable.
@@ -273,13 +255,15 @@ struct ParamNode {
   ParamNode(AsyncRT::Runtime &runtime, GeneratorOpInterface gen,
             ParameterExprArrayAttr vals, size_t depth,
             ExpansionGraph *expansionGraph)
-      : gen(gen), inputParams(vals), depth(depth),
-        impl(std::make_unique<ImplNode>(this)),
+      : gen(gen), inputParams(vals), depth(depth), impl(this),
         paramCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
         expansionGraph(expansionGraph) {
     assert(expansionGraph && "Expansion graph cannot be null");
   }
-  ParamNode() {}
+
+  /// Create a special root node. Root nodes can be identified with a null
+  /// symbol.
+  ParamNode() : impl(nullptr, this, ParameterUseDefGraph(nullptr)) {}
 
   /// Return the first concrete node in the subtree rooted on `this`. This is
   /// often called from a node that is either concrete, or only has one
@@ -310,7 +294,7 @@ struct ParamNode {
   size_t depth;
 
   /// The instantiation of the parametric function.
-  std::unique_ptr<ImplNode> impl;
+  ImplNode impl;
 
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;

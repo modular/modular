@@ -313,8 +313,7 @@ private:
                        DenseMap<StringAttr, ImplNode *> &map) {
     auto inst = cast<InstantiatedOpInterface>(*func);
     auto node = std::make_unique<ImplNode>(inst, /*parent=*/nullptr,
-                                           func.getBodyRegion(),
-                                           func.getSymName().str());
+                                           func.getBodyRegion());
     bool result = map.try_emplace(name, node.get()).second;
     g.elaboratedNodes.push_back(std::move(node));
     return result;
