@@ -270,7 +270,7 @@ trait Trait2:
     fn f2(self):
         ...
 
-trait Trait1C:
+trait Trait1C(Trait1):
     fn f1C(self):
         ...
 
