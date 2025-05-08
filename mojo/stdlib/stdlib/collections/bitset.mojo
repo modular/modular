@@ -33,6 +33,7 @@ Example:
 from .inline_array import InlineArray
 from sys import bitwidthof, simdwidthof
 from math import ceildiv
+from memory import pack_bits
 from bit import pop_count, log2_floor
 from algorithm import vectorize
 
@@ -113,20 +114,57 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
 
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
-        self._words = __type_of(self._words)(0)
+        self._words = __type_of(self._words)(fill=0)
 
-    fn __init__(init: SIMD[DType.bool], out self: BitSet[UInt(init.size)]):
+    fn __init__(init: SIMD[DType.bool, _], out self: BitSet[UInt(init.size)]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        self._words = __type_of(self._words)(0)
 
         @parameter
-        for i in range(Int(size)):
-            if init[i]:
-                self.set(i)
+        if init.size == 1:
+            self._words = __type_of(self._words)(
+                fill=init[0].cast[DType.uint64]()
+            )
+            return
+        elif init.size == 2:
+            var res = __mlir_op.`pop.bitcast`[
+                _type = __mlir_type.`!pop.scalar<ui2>`
+            ](init.value)
+            alias U2 = Scalar[
+                __mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`
+            ]
+            self._words = __type_of(self._words)(
+                fill=U2(res).cast[DType.uint64]()
+            )
+            return
+        elif init.size == 4:
+            var res = __mlir_op.`pop.bitcast`[
+                _type = __mlir_type.`!pop.scalar<ui4>`
+            ](init.value)
+            alias U4 = Scalar[
+                __mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`
+            ]
+            self._words = __type_of(self._words)(
+                fill=U4(res).cast[DType.uint64]()
+            )
+            return
+        elif init.size <= _WORD_BITS:
+            self._words = __type_of(self._words)(
+                fill=pack_bits(init).cast[DType.uint64]()
+            )
+            return
+
+        constrained[init.size % _WORD_BITS == 0]()
+        self._words = __type_of(self._words)(uninitialized=True)
+
+        @parameter
+        for i in range(0, init.size // _WORD_BITS):
+            self._words.unsafe_get(i) = pack_bits[new_type = DType.uint64](
+                init.slice[_WORD_BITS, offset=i]()
+            )
 
     # --------------------------------------------------------------------- #
     # Capacity queries
