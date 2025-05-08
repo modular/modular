@@ -19,12 +19,12 @@ from transformers import AutoConfig, AutoTokenizer
 
 
 def test_bitmask_sampling_vs_xgrammar(
-    session: InferenceSession, llama_3_1_8b_instruct_local_path
+    session: InferenceSession, modular_ai_llama_3_1_local_path
 ):
     # Get Tokenizer and Model Info
-    config = AutoConfig.from_pretrained(llama_3_1_8b_instruct_local_path)
+    config = AutoConfig.from_pretrained(modular_ai_llama_3_1_local_path)
     tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-        AutoTokenizer.from_pretrained(llama_3_1_8b_instruct_local_path),
+        AutoTokenizer.from_pretrained(modular_ai_llama_3_1_local_path),
         vocab_size=config.vocab_size,
     )
 

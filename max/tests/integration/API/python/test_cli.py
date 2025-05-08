@@ -56,7 +56,7 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=[
             "--model-path",
-            "modularai/llama-3.1",
+            "modularai/Llama-3.1-8B-Instruct-GGUF",
             "--trust-remote-code",
             "--devices",
             "cpu",
@@ -71,7 +71,7 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=[
             "--model-path",
-            "modularai/llama-3.1",
+            "modularai/Llama-3.1-8B-Instruct-GGUF",
             "--max-length",
             "10",
             "--devices",
@@ -88,7 +88,7 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=[
             "--model-path",
-            "modularai/llama-3.1",
+            "modularai/Llama-3.1-8B-Instruct-GGUF",
             "--weight-path",
             "model1.safetensors",
             "--weight-path",
@@ -100,7 +100,7 @@ TEST_COMMANDS = [
         ],
         expected={
             "model_config": {
-                "model_path": "modularai/llama-3.1",
+                "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
                 "trust_remote_code": False,
                 "weight_path": [
                     Path("model1.safetensors"),
@@ -117,7 +117,7 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=[
             "--model-path",
-            "modularai/llama-3.1",
+            "modularai/Llama-3.1-8B-Instruct-GGUF",
             "--devices",
             "gpu",
             "--gpu-profiling",
@@ -133,7 +133,7 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=[
             "--model-path",
-            "modularai/llama-3.1",
+            "modularai/Llama-3.1-8B-Instruct-GGUF",
             "--devices",
             "gpu",
             "--gpu-profiling",
@@ -149,7 +149,7 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=[
             "--model-path",
-            "modularai/llama-3.1",
+            "modularai/Llama-3.1-8B-Instruct-GGUF",
             "--devices",
             "gpu",
             "--gpu-profiling",
@@ -167,13 +167,13 @@ TEST_COMMANDS = [
     # CLITestCommand(
     #     args=[
     #         "--model-path",
-    #         "modularai/llama-3.1",
+    #         "modularai/Llama-3.1-8B-Instruct-GGUF",
     #         "--weight-path",
     #         "lama-3.1-8b-instruct-bf16.gguf",
     #     ],
     #     expected={
     #         "model_config": {
-    #             "model_path": "modularai/llama-3.1",
+    #             "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
     #             "trust_remote_code": False,
     #             "weight_path": [
     #                 Path("lama-3.1-8b-instruct-bf16.gguf"),
@@ -185,7 +185,7 @@ TEST_COMMANDS = [
     # CLITestCommand(
     #     args=[
     #         "--model-path",
-    #         "modularai/llama-3.1",
+    #         "modularai/Llama-3.1-8B-Instruct-GGUF",
     #         "--weight-path",
     #         "lama-3.1-8b-instruct-bf16.gguf",
     #         "--devices",
@@ -193,7 +193,7 @@ TEST_COMMANDS = [
     #     ],
     #     expected={
     #         "model_config": {
-    #             "model_path": "modularai/llama-3.1",
+    #             "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
     #             "trust_remote_code": False,
     #             "weight_path": [
     #                 Path("lama-3.1-8b-instruct-bf16.gguf"),

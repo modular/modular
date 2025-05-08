@@ -14,7 +14,7 @@ import pytest
 from max.engine import InferenceSession
 from max.pipelines.lib import generate_local_model_path
 
-MODULAR_AI_LLAMA_3_1_HF_REPO_ID = "modularai/llama-3.1"
+MODULAR_AI_LLAMA_3_1_HF_REPO_ID = "modularai/Llama-3.1-8B-Instruct-GGUF"
 MODULAR_AI_LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     MODULAR_AI_LLAMA_3_1_HF_REPO_ID
 )

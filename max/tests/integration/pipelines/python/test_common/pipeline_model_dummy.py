@@ -297,7 +297,7 @@ class DummyReplitPipelineModel(DummyPipelineModel):
 DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["modularai/llama-3.1"],
+    example_repo_ids=["modularai/Llama-3.1-8B-Instruct-GGUF"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
