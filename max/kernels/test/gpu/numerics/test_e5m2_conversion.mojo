@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(KERN-1723)
-# REQUIRES: DISABLED
-# REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import inf, nan
 
