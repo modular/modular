@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug %s
 
 from sys.param_env import is_defined
 
@@ -20,7 +18,6 @@ from gpu.mma import mma
 from testing import *
 
 
-# CHECK-LABEL: SM80_16x8x8_F16F16F16F16_TN
 fn SM80_16x8x8_F16F16F16F16_TN(
     a: SIMD[DType.float16, 4],
     b: SIMD[DType.float16, 2],
@@ -40,7 +37,6 @@ def test_SM80_16x8x8_F16F16F16F16_TN():
     assert_true("{%r4, %r5};" in asm)
 
 
-# CHECK-LABEL: SM80_m16n8k4_F32TF32TF32F32_TN
 fn SM80_m16n8k4_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 2],
     b: Float32,

@@ -1,15 +1,76 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+_LIT_TESTS = [
+    "test_amd_asan_oob.mojo",
+    "test_amd_block_sync_lds.mojo",
+    "test_compile_via_param.mojo",
+]
+
+_FILECHECK_TESTS = [
+    "test_amd_target.mojo",
+    "test_compile_gcn.mojo",
+    "test_compile_intrinsics.mojo",
+    "test_compile_nvptx.mojo",
+    "test_compile_nvptx_debuginfo.mojo",
+    "test_compile_to_llvm_codegen.mojo",
+]
+
+_EXTRA_COPTS = {
+    "test_compile_nvptx_debuginfo.mojo": [
+        "-debug-level",
+        "full",
+        "-O0",
+    ],
+}
+
+_EXTRA_CONSTRAINTS = {
+    "test_amd_target.mojo": ["//:amd_gpu"],
+    "test_compile_nvptx.mojo": ["//:nvidia_gpu"],
+    "test_cuda_target.mojo": ["//:nvidia_gpu"],
+    "test_simd.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_wmma_nvptx.mojo": ["//:nvidia_gpu"],
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _LIT_TESTS + _FILECHECK_TESTS,
+    )
+]
 
 lit_tests(
     name = "lit",
     size = "large",
-    srcs = glob(["**/*.mojo"]),
+    srcs = _LIT_TESTS,
     gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
         "@mojo//:stdlib",
     ],
-    tags = [
-        "gpu",
-    ],
+    tags = ["gpu"],
     tools = ["//KGEN/tools/mojo"],
 )

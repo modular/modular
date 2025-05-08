@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug %s
 
 from collections.string import StringSlice
 from math import erf
