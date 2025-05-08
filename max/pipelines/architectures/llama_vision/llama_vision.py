@@ -31,7 +31,6 @@ from max.graph import (
     Shape,
     TensorType,
     TensorValue,
-    _reconcile_weights,
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
@@ -1263,9 +1262,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             vision_model_graph = self._llama3_vision_vision_graph()
             vision_model = session.load(
                 vision_model_graph,
-                weights_registry=_reconcile_weights(
-                    vision_model_graph, self.weights.allocated_weights
-                ),
+                weights_registry=self.weights.allocated_weights,
             )
             after = time.perf_counter()
             logger.info(
@@ -1279,9 +1276,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             language_model_graph = self._llama3_vision_language_graph()
             language_model = session.load(
                 language_model_graph,
-                weights_registry=_reconcile_weights(
-                    language_model_graph, self.weights.allocated_weights
-                ),
+                weights_registry=self.weights.allocated_weights,
             )
             after = time.perf_counter()
             logger.info(
