@@ -1399,9 +1399,15 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       return {};
     }
 
-    // This is just the trait itself, not a conformance, so we can use an empty
-    // vtable, just upcast.
-    return TypeParamAttr::get(ASTType(typePValue), anyTrait);
+    if (auto rvAnyTrait = dyn_cast<AnyTraitType>(rvType)) {
+      auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
+      if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType(),
+                                             /*allowImplicit=*/true)) {
+        // This is just the trait itself, not a conformance, so we can use an
+        // empty vtable, just upcast.
+        return TypeParamAttr::get(ASTType(typePValue), anyTrait);
+      }
+    }
   }
 
   // Support implicit conversions of function types.
