@@ -77,22 +77,48 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
   return {newSignature, bindings};
 }
 
-static bool canSynthesizeIfMissing(StringRef name, bool rpTrivial,
-                                   bool regPassable,
-                                   bool implicitlyDestructible) {
-  // Allow types that lack `__del__` to conform. A no-op destructor will be
-  // synthesized for them.
-  if (implicitlyDestructible && name == "__del__")
-    return true;
+/// Decide if we can synthesize a missing method for the specified struct.
+static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
+                                        StringRef methodName) {
+  // We can only synthesize methods for structs.
+  auto structDeclOp = dyn_cast<StructDeclOp>(structDecl);
+  if (!structDeclOp)
+    return false;
+  SharedState &shared = structDecl.getShared();
+
+  // TODO: This should really be checking the signature of the method is what
+  // we expect as well?
+
+  // Allow types that lack `__del__` to conform if it conforms to AnyType. A
+  // no-op destructor will be synthesized for them.
+  if (methodName == "__del__") {
+    // Get the AnyType trait.
+    ASTDecl *anyTypeTrait =
+        shared.lookupBuiltinTrait("AnyType", &structDecl, structDecl.getLoc());
+    if (!anyTypeTrait)
+      return false;
+
+    // Don't synthesize a destructor if it doesn't conform to AnyType!
+    for (auto parentSymbol : structDeclOp.getCanonicalTrait().getSymbols()) {
+      ASTDecl &parentDecl =
+          shared.declResolver->getDeclForTypeSymbol(parentSymbol);
+      if (&parentDecl == anyTypeTrait)
+        return true;
+    }
+
+    return false;
+  }
+
   // Trivial types are not allowed to have explicit `__copyinit__` methods, so
   // if the trait requires them, consider them automatically satisfied by
   // trivial types.
-  if (rpTrivial && name == "__copyinit__")
-    return true;
-  // All register-passable types are not allowed to have move constructors, so
-  // permit them to conform.
-  if (regPassable && name == "__moveinit__")
-    return true;
+  if (methodName == "__copyinit__")
+    return structDeclOp.isRegisterPassableTrivial();
+
+  // Register-passable types are not allowed to have move constructors, but they
+  // are always synthesized. Permit them to conform.
+  if (methodName == "__moveinit__")
+    return structDeclOp.isRegisterPassable();
   return false;
 }
 
@@ -172,21 +198,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   MLIRContext *ctx = structDecl.getContext();
   auto structDeclOp = cast<StructDeclOp>(structDecl);
 
-  // TODO(MOCO-1468): Pull out into a helper method.
-  bool implicitlyDestructible = false;
-  for (auto parentSymbol : structDeclOp.getCanonicalTrait().getSymbols()) {
-    ASTDecl &parentDecl =
-        shared.declResolver->getDeclForTypeSymbol(parentSymbol);
-    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-      if (parentTrait.getSymName() == "AnyType") {
-        implicitlyDestructible = true;
-        break;
-      }
-    }
-  }
-
-  bool rpTrivial = structDeclOp.isRegisterPassableTrivial();
-  bool regPassable = structDeclOp.isRegisterPassable();
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
   ExprEmitter emitter(structDecl, EC_Trait);
@@ -202,7 +213,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (failed(shared.declResolver->resolveBody(traitDecl, structDecl.getLoc())))
     return failure();
 
-  if (traitDeclOp.isRegisterPassable() && !regPassable) {
+  if (traitDeclOp.isRegisterPassable() && !structDeclOp.isRegisterPassable()) {
     diag = shared.emitError(structDecl.getLoc(),
                             "a struct must be register passable in order to "
                             "inherit from a register passable trait");
@@ -227,8 +238,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     }
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
     if (decls.empty() || !isa<FnOp>(decls.front())) {
-      if (canSynthesizeIfMissing(name, rpTrivial, regPassable,
-                                 implicitlyDestructible)) {
+      if (canSynthesizeMethodForTrait(structDecl, name)) {
         specialFns.push_back(SpecialFunctionInfo::getKind(name));
         return success();
       }
@@ -776,25 +786,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // this will affect the methods we can synthesize in conformance. Values of
   // trait type will already have been erased to a memory type.
   ArrayRef<ParamDeclAttr> structParamDecls;
-  bool rpTrivial = false;
-  bool regPassable = false;
-  bool implicitlyDestructible = false;
-  if (auto structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl)) {
-    rpTrivial = structDeclOp.isRegisterPassable();
-    regPassable = structDeclOp.isRegisterPassableTrivial();
+  if (auto structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl))
     structParamDecls = structDeclOp.getParams();
-    // TODO(MOCO-1468): Pull out into a helper, or make a method like
-    // isRegisterPassable that can go on the structDeclOp.
-    for (SymbolRefAttr symbol : structDeclOp.getCanonicalTrait().getSymbols()) {
-      ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-        if (parentTrait.getSymName() == "AnyType") {
-          implicitlyDestructible = true;
-          break;
-        }
-      }
-    }
-  }
 
   // When we're looking for a trait's method in a certain struct, like:
   //     trait TraitWithAliasMethod:
@@ -915,7 +908,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
       // If the input type is a trait, no need to look through its methods since
       // trait inheritance is always explicit.
-      if (isa<TraitType>(type.getDecl(shared)->getIfTypeValue())) {
+      if (isa<TraitType>(metaTypeDecl->getIfTypeValue())) {
         TypedAttr result = ParamOperatorAttr::get(
             POC::GetVTableEntry,
             {PValue(type),
@@ -936,8 +929,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
-        if (canSynthesizeIfMissing(name, rpTrivial, regPassable,
-                                   implicitlyDestructible)) {
+        if (canSynthesizeMethodForTrait(*metaTypeDecl, name)) {
           continue;
         }
 
