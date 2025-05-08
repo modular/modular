@@ -10,16 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
 from memory import UnsafePointer
+from testing import assert_equal
 
 
-# CHECK-LABEL: test_external_shared_mem
 fn test_external_shared_mem(ctx: DeviceContext) raises:
     print("== test_external_shared_mem")
 
@@ -51,24 +50,27 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    # CHECK: 0.0
-    # CHECK: 1.0
-    # CHECK: 2.0
-    # CHECK: 3.0
-    # CHECK: 4.0
-    # CHECK: 5.0
-    # CHECK: 6.0
-    # CHECK: 7.0
-    # CHECK: 8.0
-    # CHECK: 9.0
-    # CHECK: 10.0
-    # CHECK: 11.0
-    # CHECK: 12.0
-    # CHECK: 13.0
-    # CHECK: 14.0
-    # CHECK: 15.0
+    var expected = List(
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+    )
     for i in range(16):
         print(res_host_ptr[i])
+        assert_equal(res_host_ptr[i], expected[i])
 
     _ = res_device
     res_host_ptr.free()

@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
+from testing import assert_equal
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
 
@@ -68,18 +68,10 @@ fn test(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    # CHECK: at index 0 the value is 7.0
-    # CHECK: at index 1 the value is 8.0
-    # CHECK: at index 2 the value is 9.0
-    # CHECK: at index 3 the value is 10.0
-    # CHECK: at index 4 the value is 11.0
-    # CHECK: at index 5 the value is 12.0
-    # CHECK: at index 6 the value is 13.0
-    # CHECK: at index 7 the value is 14.0
-    # CHECK: at index 8 the value is 15.0
-    # CHECK: at index 9 the value is 16.0
+    var expected = List(7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0)
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
+        assert_equal(out_host[i], expected[i])
 
     in_host.free()
     out_host.free()

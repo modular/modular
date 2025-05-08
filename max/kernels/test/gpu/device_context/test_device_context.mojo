@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import iota
 
@@ -80,18 +79,10 @@ fn test_basic(ctx: DeviceContext) raises:
     # Wait for the computation to be completed
     ctx.synchronize()
 
-    # CHECK: at index 0 the value is 7.0
-    # CHECK: at index 1 the value is 8.0
-    # CHECK: at index 2 the value is 9.0
-    # CHECK: at index 3 the value is 10.0
-    # CHECK: at index 4 the value is 11.0
-    # CHECK: at index 5 the value is 12.0
-    # CHECK: at index 6 the value is 13.0
-    # CHECK: at index 7 the value is 14.0
-    # CHECK: at index 8 the value is 15.0
-    # CHECK: at index 9 the value is 16.0
+    var expected = List(7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0)
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
+        assert_equal(out_host[i], expected[i])
 
     # Release the Host buffers
     in0_host.free()
@@ -118,15 +109,15 @@ def test_print(ctx: DeviceContext):
 
     iota(host_buffer.unsafe_ptr(), size)
 
-    # CHECK: HostBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
-    print(host_buffer)
+    var expected_host = "HostBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])"
+    assert_equal(String(host_buffer), expected_host)
 
     var dev_buffer = ctx.enqueue_create_buffer[DType.uint16](size)
     host_buffer.enqueue_copy_to(dev_buffer)
     ctx.synchronize()
 
-    # CHECK: DeviceBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
-    print(dev_buffer)
+    var expected_dev = "DeviceBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])"
+    assert_equal(String(dev_buffer), expected_dev)
 
     alias large_size = 1001
     var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
@@ -134,8 +125,8 @@ def test_print(ctx: DeviceContext):
 
     iota(large_buffer.unsafe_ptr(), large_size)
 
-    # CHECK: HostBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])
-    print(large_buffer)
+    var expected_large = "HostBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])"
+    assert_equal(String(large_buffer), expected_large)
 
 
 def main():

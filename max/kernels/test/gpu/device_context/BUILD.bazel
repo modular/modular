@@ -1,18 +1,46 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-lit_tests(
-    name = "lit",
-    size = "large",
-    srcs = glob(["**/*.mojo"]),
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
+_EXTRA_MOJO_TEST_CONSTRAINTS = {
+    "test_dump_sass.mojo": ["//:nvidia_gpu"],
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_MOJO_TEST_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = ["test_function_error.mojo"],
+    )
+]
+
+mojo_filecheck_test(
+    name = "test_function_error.mojo.test",
+    srcs = ["test_function_error.mojo"],
+    expect_crash = True,
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:h100_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
         "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
         "@mojo//:linalg",
         "@mojo//:nn",
-        "@mojo//:kv_cache",
         "@mojo//:quantization",
         "@mojo//:stdlib",
     ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
 )
