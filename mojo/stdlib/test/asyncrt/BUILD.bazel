@@ -1,38 +1,61 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_test")
 
-filegroup(
-    name = "common_test_sources",
-    srcs = [
-        "asyncrt_test_utils.mojo",
-    ],
-)
+_TEST_DATA = [
+    "asyncrt_test_utils.mojo",
+]
 
-lit_tests(
-    name = "test",
-    srcs = [
-        "capture.mojo",
-        "copies.mojo",
-        "cuda.mojo",
-        "elementwise.mojo",
-        "function.mojo",
-        "function_mts.mojo",
-        "function_regress.mojo",
-        "hip.mojo",
-        "host_mapped.mojo",
-        "memset.mojo",
-        "multi_context.mojo",
-        "multi_stream.mojo",
-        "multicast_memory.mojo",
-        "smoke.mojo",
-        "timing.mojo",
-    ],
-    data = [":common_test_sources"],
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
-        "@mojo//:stdlib",
-        "@mojo//:layout",
-        "//SDK/lib/API/mojo/max/tensor",
-    ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
-)
+_CPU_TESTS = [
+    "smoke.mojo",
+    "copies.mojo",
+    "host_mapped.mojo",
+    "timing.mojo",
+    "memset.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "hip.mojo": ["//:amd_gpu"],
+    "cuda.mojo": ["//:nvidia_gpu"],
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = _TEST_DATA + [src],
+        args = [
+            "-D",
+            "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//SDK/lib/API/mojo/max/tensor",
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _TEST_DATA,
+    )
+]
+
+[
+    mojo_test(
+        name = src + ".cpu.test",
+        srcs = _TEST_DATA + [src],
+        args = [
+            "-D",
+            "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//SDK/lib/API/mojo/max/tensor",
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _CPU_TESTS
+]
