@@ -1989,6 +1989,22 @@ struct LayoutTensor[
         alias alignment = alignof[SIMD[dtype, width]]()
         return self.ptr.store[alignment=alignment](self._offset(m, n), val)
 
+    @always_inline("nodebug")
+    fn size(self) -> Int:
+        """
+        Get the total number of elements that the tensor can contain.
+
+        Returns:
+          The total number of elements that can be stores in the tensor.
+        """
+
+        @parameter
+        if layout.all_dims_known():
+            alias size = layout.size()
+            return size
+        else:
+            return self.runtime_layout.size()
+
     @staticmethod
     @always_inline("nodebug")
     fn stack_allocation[

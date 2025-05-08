@@ -18,7 +18,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import product
+from layout.int_tuple import product, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import *
 from testing import assert_equal
@@ -1972,6 +1972,19 @@ fn test_vectorized_tile() raises:
     assert_equal(Int(vt.element_layout.shape[1]), 2)
 
 
+fn test_tensor_size() raises:
+    alias layout = Layout.row_major(4, 4)
+    var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
+    var tensor = LayoutTensor[DType.uint32, layout](stack)
+    assert_equal(tensor.size(), 16)
+    alias layout2 = Layout.row_major(4, UNKNOWN_VALUE)
+    var runtime_tensor = LayoutTensor[DType.uint32, layout2](
+        stack,
+        RuntimeLayout[layout2].row_major(IndexList[2](4, 4)),
+    )
+    assert_equal(runtime_tensor.size(), 16)
+
+
 fn main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -2003,3 +2016,4 @@ fn main() raises:
     # test_copy_from_vectorized_masked_read()
     test_binary_math_ops()
     test_vectorized_tile()
+    test_tensor_size()
