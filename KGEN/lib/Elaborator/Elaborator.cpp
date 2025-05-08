@@ -24,6 +24,7 @@
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
@@ -1768,14 +1769,79 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
 ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
   Location loc = op.getLoc();
   Attribute dict;
+  SmallVector<ErrorTree> errors;
   HANDLE_EVALUATOR_CONC(dict, inode, loc, op.getOpAttrs());
   assert(isa<DictionaryAttr>(dict) && "expected dictionary attribute");
   // At this poitn remove all deferred attrbutes by replacing them with their
   // content. It's essential to do this before operation is constructed,
   // otherwise attribute may not be set if it's not concretized.
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](DeferredAttr attr) { return attr.getAttr(); });
+  replacer.addReplacement(
+      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
+        return {attr.getAttr(), WalkResult::advance()};
+      });
   dict = replacer.replace(dict);
+
+  // Do have to call to attr replacer again as AttrTypeReplacer does not visit
+  // just replaced attribute and goes directly to its sub attributes. That
+  // probably has to be fixed in upstream.
+  mlir::AttrTypeReplacer concretizeAttrs;
+  concretizeAttrs.addReplacement([&errors, loc](AttrCtorDeferredAttr attr)
+                                     -> std::pair<Attribute, WalkResult> {
+    std::string attrString;
+    llvm::raw_string_ostream os(attrString);
+    for (Attribute str : attr.getStrings()) {
+      if (auto strAttr = dyn_cast<StringAttr>(str)) {
+        // Avoid strAttr.print as it will print quotes.
+        os << strAttr.str();
+      } else if (auto toStrAttr = dyn_cast<ToStringDeferredAttr>(str)) {
+        Attribute val = toStrAttr.getAttr();
+        bool elideType = toStrAttr.getNeedElideType() != nullptr;
+        // Special case when deferred attr was evaluated to a string, but
+        // user requested to omit the type. Likewise for a case above,
+        // printing of that StringAttr would also print quotes that will
+        // make parser fail.
+        if (auto strAttr = dyn_cast<StringAttr>(val); strAttr && elideType)
+          os << strAttr.str();
+        else
+          val.print(os, elideType);
+      } else {
+        llvm_unreachable("unexpected attribute type");
+      }
+    }
+    std::string errorMessage;
+    mlir::ScopedDiagnosticHandler handler(
+        attr.getContext(),
+        [&](Diagnostic &diag) { errorMessage = diag.str(); });
+
+    SmallString<64> tmpBuf(attrString.begin(), attrString.end());
+    tmpBuf.push_back(0);
+    size_t bytesRead;
+    Attribute resultAttr = mlir::parseAttribute(
+        StringRef(tmpBuf).drop_back(), attr.getContext(), Type(), &bytesRead);
+    if (!resultAttr) {
+      errors.push_back(
+          ErrorTree(loc, "invalid MLIR attribute: " + errorMessage));
+      return {nullptr, WalkResult::interrupt()};
+    }
+    return {resultAttr, WalkResult::advance()};
+  });
+
+  {
+    // MLIRContext is not thread safe for ScopedDiagnosticHandler, so if
+    // multiple deferred operations are being processed and have issues (either
+    // attribute cannot be constructed or operation), the content of error
+    // message can be corrupted.
+    std::lock_guard<std::mutex> lock(scopedDiagnosticHandleMutex);
+    dict = concretizeAttrs.replace(dict);
+  }
+
+  if (!errors.empty()) {
+    // FIXME: Should report all errors encountered during construction of
+    // attributes. Cannot do this now as ImplNode can only have one error.
+    inode->setToError(std::move(errors[0]));
+    return failure();
+  }
 
   OperationState state(loc, op.getOpName(), op.getOperands(),
                        op.getResultTypes());
@@ -1796,12 +1862,14 @@ ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
 
   {
     // MLIRContext is not thread safe for ScopedDiagnosticHandler, so if
-    // multiple deferred operations are being verified and failed, the content
-    // of error message can be corrupted.
+    // multiple deferred operations are being processed and have issues (either
+    // attribute cannot be constructed or operation), the content of error
+    // message can be corrupted.
     std::lock_guard<std::mutex> lock(scopedDiagnosticHandleMutex);
     std::string errorMessage;
     mlir::ScopedDiagnosticHandler handler(
         op.getContext(), [&](Diagnostic &diag) { errorMessage = diag.str(); });
+
     // Verify that the resulting op is correctly constructed. If not, we fail.
     if (failed(mlir::verify(resultOp))) {
       inode->setToError(
