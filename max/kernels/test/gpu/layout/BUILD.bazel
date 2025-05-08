@@ -1,30 +1,116 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-lit_tests(
-    name = "lit",
-    size = "large",
-    srcs = glob(
+_EXTRA_COPTS = {
+    "test_layout_tensor_copy.mojo": [
+        "--debug-level",
+        "full",
+    ],
+    "test_layout_tensor_copy_amd.mojo": [
+        "--debug-level",
+        "full",
+    ],
+    "test_layout_tensor_copy_nvidia.mojo": [
+        "--debug-level",
+        "full",
+    ],
+}
+
+_H100_TESTS = [
+    "test_cublaslt_matmul.mojo",
+    "test_stmatrix.mojo",
+    "test_tensor_core_sm90.mojo",
+    "test_tensormap_replace_insts.mojo",
+    "test_tma_3d_async_copy.mojo",
+    "test_tma_async.mojo",
+    "test_tma_async_mc.mojo",
+    "test_tma_mc_swizzle.mojo",
+    "test_tma_swizzle.mojo",
+    "test_wgmma.mojo",
+    "test_wgmma_e4m3_e5m2_layouts.mojo",
+    "test_wgmma_int8_uint8_layouts.mojo",
+    "test_wgmma_layouts.mojo",
+    "test_wgmma_with_static_tuple_output_bf16.mojo",
+    "test_wgmma_with_static_tuple_output_fp8.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    src: ["//:h100_gpu"]
+    for src in _H100_TESTS
+} | {
+    "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
+    "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_ldmatrix.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_tensor_core_amd.mojo": ["//:amd_gpu"],
+    "test_tensor_core_amd2.mojo": ["//:amd_gpu"],
+    "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+}
+
+_FILECHECK_TESTS = [
+    "test_codegen_to_llvm.mojo",
+    "test_layout_tensor_copy.mojo",
+    "test_layout_tensor_copy_amd.mojo",
+    "test_layout_tensor_copy_nvidia.mojo",
+    "test_tensor_builder.mojo",
+    "test_tensor_core_amd.mojo",
+    "test_tensor_core_amd2.mojo",
+    "test_tensor_core_nvidia.mojo",
+    "test_tensor_core_sm90.mojo",
+    "test_tiled_matmul_gpu.mojo",
+    "test_wgmma_e4m3_e5m2_layouts.mojo",
+    "test_wgmma_int8_uint8_layouts.mojo",
+    "test_wgmma_layouts.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [
+            src,
+            "matmul_kernels.mojo",
+        ],
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
         ["**/*.mojo"],
-        exclude = [
+        exclude = _FILECHECK_TESTS + [
             "matmul_kernels.mojo",  # Imported source, not a test
+            "tensor_core_kernels.mojo",  # Imported source, not a test
+        ],
+    )
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [
+            src,
             "tensor_core_kernels.mojo",
         ],
-    ),
-    data = [
-        "matmul_kernels.mojo",
-        "tensor_core_kernels.mojo",
-    ],
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:kv_cache",
-        "@mojo//:quantization",
-        "@mojo//:stdlib",
-    ],
-    tags = [
-        "gpu",
-    ],
-    tools = ["//KGEN/tools/mojo"],
-)
+        copts = _EXTRA_COPTS.get(src, []),
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]

@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s
-# ALLOW_RETRIES: 5
 
 from math import ceildiv
 

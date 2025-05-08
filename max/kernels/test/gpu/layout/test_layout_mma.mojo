@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose
 from os import abort
