@@ -66,25 +66,6 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   return OriginSetAttr::get(shared.getContext(), origins);
 }
 
-bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
-                                 bool regPassable,
-                                 bool implicitlyDestructible) {
-  // Allow types that lack `__del__` to conform. A no-op destructor will be
-  // synthesized for them.
-  if (implicitlyDestructible && name == "__del__")
-    return true;
-  // Trivial types are not allowed to have explicit `__copyinit__` methods, so
-  // if the trait requires them, consider them automatically satisfied by
-  // trivial types.
-  if (rpTrivial && name == "__copyinit__")
-    return true;
-  // All register-passable types are not allowed to have move constructors, so
-  // permit them to conform.
-  if (regPassable && name == "__moveinit__")
-    return true;
-  return false;
-}
-
 void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
   // Erase bottom up to avoid deleting an op while something uses its results.
   for (Operation &op :
