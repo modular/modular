@@ -118,12 +118,8 @@ class RejectionSampler(nn.Module):
         sampled_target_tokens = ops.custom(
             "topk_fused_sampling",
             [
-                ops.constant(
-                    self.top_k, dtype=DType.int64, device=DeviceRef.CPU()
-                ),
-                ops.gather(target_logits, rejected_offsets, axis=0).to(
-                    DeviceRef.CPU()
-                ),
+                ops.constant(self.top_k, dtype=DType.int64, device=self.device),
+                ops.gather(target_logits, rejected_offsets, axis=0),
             ],
             [
                 TensorType(

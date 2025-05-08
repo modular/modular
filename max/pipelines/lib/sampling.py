@@ -118,14 +118,12 @@ def token_sampler(
             "topk_fused_sampling",
             [
                 ops.constant(
-                    sampling_config.top_k,
-                    dtype=DType.int64,
-                    device=DeviceRef.CPU(),
+                    sampling_config.top_k, dtype=DType.int64, device=device
                 ),
                 ops.constant(
                     sampling_config.temperature,
                     dtype=DType.float32,
-                    device=DeviceRef.CPU(),
+                    device=device,
                 ),
                 logits,
             ],
