@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides layout and layout tensor types that abstract memory
-layout for multidimensional data.
+"""Provides layout and layout tensor types, which abstract memory layout for
+multidimensional data.
 
 - The [`Layout`](/mojo/stdlib/layout/layout/Layout) type represents a mapping
   between a set of logical coordinates and a linear index. It can be used, for

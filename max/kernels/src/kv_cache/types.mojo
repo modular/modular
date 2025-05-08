@@ -10,6 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""
+This module contains the types for the key-value cache APIs.
+
+The module includes structs implementing several different types of
+[KV caches](/glossary/ai/kv-cache).
+
+This module defines two traits that define the roles of the different structs
+
+- `KVCacheT`: Defines the interface for a single (key or value) cache.
+- `KVCollectionT`: Defines the interface for a pair of caches (keys and values).
+"""
 
 from buffer import Dim, DimList, NDBuffer
 from layout import Layout, LayoutTensor
@@ -100,9 +111,7 @@ struct KVCacheStaticParams(EqualityComparable):
 trait KVCacheT(Copyable, Movable):
     """Trait for different KVCache types and implementations.
 
-    We have to expose a super-set of constructors to help with genericizing
-    the KVCollectionT and KVManagerT. Some trait implementations may
-    constrained-guard unused constructors.
+    Represents a single (key or value) cache.
     """
 
     alias type: DType
@@ -522,6 +531,8 @@ struct PagedKVCache[
 
 
 trait KVCollectionT(Copyable, Movable):
+    """Trait for a pair of caches (keys and values)."""
+
     alias CacheType: KVCacheT
     alias type: DType
     alias kv_params: KVCacheStaticParams

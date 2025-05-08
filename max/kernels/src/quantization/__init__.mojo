@@ -10,4 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""This package contains a set of APIs for quantizing tensor data.
+
+Quantization is a technique used to reduce the precision of floating-point
+numbers, which are used in most neural networks. Quantization is a type of
+lossy compression, which means that some precision is lost, but the resulting
+tensors take less memory and computations are faster.
+"""
+
 from .per_channel_grouped_4bit import *
