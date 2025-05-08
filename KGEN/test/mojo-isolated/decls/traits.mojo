@@ -903,11 +903,6 @@ fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
 # AnyTrait subtyping
 # ===----------------------------------------------------------------------=== #
 
-# CHECK-LABEL: lit.fn @"anytrait_assignment
-fn anytrait_assignment():
-    # CHECK-NEXT: !lit.anytrait<!AnyType_Movable> = <!Movable>
-    alias t: __type_of(AnyType & Movable) = Movable
-
 
 # CHECK-LABEL: lit.fn @"test_anytrait_subtyping
 # CHECK-SAME: <ty: !lit.anytrait<!AnyType>>

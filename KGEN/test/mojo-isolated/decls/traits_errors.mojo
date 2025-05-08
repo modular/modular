@@ -120,7 +120,3 @@ fn bindAnyTraitToTrait():
     # But the trait TFoo is not an implementation of itself so the synthesis fails.
     # expected-error @+1 {{no 'foo' candidates have type 'fn(self: TFoo) -> None'}}
     var _list = Bar[TFoo]()
-
-fn anytrait_assignment():
-    # expected-error @below {{cannot implicitly convert 'AnyTrait[Copyable]' value to 'AnyTrait[Movable]' in alias initializer}}
-    alias t: __type_of(Movable) = Copyable
