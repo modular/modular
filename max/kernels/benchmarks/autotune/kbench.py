@@ -682,9 +682,9 @@ class BuildItem:
     dryrun: bool = False
     output_path: Path = Path()
 
-    build_output: ProcessOutput = ProcessOutput()
+    build_output: ProcessOutput = field(default_factory=ProcessOutput)
     build_elapsed_time: int = 0
-    exec_output: ProcessOutput = ProcessOutput()
+    exec_output: ProcessOutput = field(default_factory=ProcessOutput)
 
 
 class Scheduler:
