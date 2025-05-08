@@ -1,15 +1,15 @@
-load("//bazel:api.bzl", "lit_tests", "pkg_files")
+load("//bazel:api.bzl", "mojo_test", "pkg_files")
 
-lit_tests(
-    name = "lit",
-    srcs = glob(["**/*.mojo"]),
-    mojo_deps = [
-        "@mojo//:stdlib",
-    ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
-)
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]
 
 pkg_files(
     name = "test_mandelbrot",

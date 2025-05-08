@@ -15,8 +15,6 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
-
 
 from complex import ComplexFloat32, ComplexSIMD
 from testing import assert_equal
