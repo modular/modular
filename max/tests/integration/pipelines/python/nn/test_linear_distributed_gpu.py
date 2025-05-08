@@ -18,7 +18,6 @@ from max.graph import (
     Graph,
     TensorType,
     TensorValue,
-    _reconcile_weights,
 )
 from max.nn import ColumnParallelLinear, Linear
 
@@ -53,9 +52,8 @@ def _single_gpu_linear(
             )
         ],
     )
-    final_dict = _reconcile_weights(graph, state_dict)
-    linear.load_state_dict(final_dict)
-    return session.load(graph, weights_registry=final_dict)
+    linear.load_state_dict(state_dict)
+    return session.load(graph, weights_registry=state_dict)
 
 
 def _multi_gpu_linear(
@@ -89,9 +87,7 @@ def _multi_gpu_linear(
 
     return session.load(
         distributed_graph,
-        weights_registry=_reconcile_weights(
-            distributed_graph, distributed_linear.state_dict()
-        ),
+        weights_registry=distributed_linear.state_dict(),
     )
 
 
