@@ -22,7 +22,6 @@ from test_common.mocks import mock_estimate_memory_footprint
 from test_common.pipeline_model_dummy import (
     DUMMY_ARCH,
     DUMMY_GPTQ_ARCH,
-    REPLIT_ARCH,
 )
 from test_common.registry import prepare_registry
 
@@ -61,7 +60,6 @@ def test_config__raises_with_unsupported_GPTQ_format():
 )
 def test_config__update_weight_paths(llama_3_1_8b_instruct_local_path):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
-    PIPELINE_REGISTRY.register(REPLIT_ARCH)
 
     temp_valid_kernels = [
         ("bf16", 1, 16),

@@ -310,19 +310,6 @@ DUMMY_ARCH = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
 )
 
-REPLIT_ARCH = SupportedArchitecture(
-    name="MPTForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["modularai/replit-code-1.5"],
-    default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
-    },
-    pipeline_model=DummyReplitPipelineModel,
-    tokenizer=TextTokenizer,
-    default_weights_format=WeightsFormat.gguf,
-)
 
 DUMMY_GPTQ_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
