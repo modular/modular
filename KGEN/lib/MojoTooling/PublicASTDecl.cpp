@@ -271,16 +271,35 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
   if (line >= lines.size())
     return {};
 
+  const size_t headerIndent = getIndentationLevel(lines[line]);
+  size_t cur = line + 1;
+
+  // Skip blank lines after the section header.
+  while (cur < lineEnd && lines[cur].trim().empty())
+    ++cur;
+
+  // If the next non-blank line is not more indented, section is empty.
+  if (cur >= lineEnd || getIndentationLevel(lines[cur]) <= headerIndent) {
+    line = cur - 1; // so the main loop can process the next section header
+    return {};
+  }
+
+  // Otherwise, collect all lines more indented than the header.
   std::string paragraph;
   llvm::raw_string_ostream paragraphOS(paragraph);
 
-  paragraphOS << lines[++line].trim();
-
-  // Merge in additional description lines that have equal or larger
-  // indentation.
-  size_t indent = getIndentationLevel(lines[line]);
-  while (++line < lineEnd && getIndentationLevel(lines[line]) >= indent)
+  paragraphOS << lines[cur].trim();
+  line = cur;
+  while (++line < lineEnd) {
+    if (lines[line].trim().empty()) {
+      paragraphOS << "\n";
+      continue;
+    }
+    if (getIndentationLevel(lines[line]) <= headerIndent)
+      break;
     paragraphOS << "\n" << lines[line].trim();
+  }
+  --line; // so the main loop can process the next section header
   return paragraphOS.str();
 }
 

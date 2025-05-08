@@ -124,7 +124,7 @@ async fn fn_that_async() -> Int:
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
 # CHECK:      "raises": true
-# CHECK:      "raisesDoc": "Raises an exeception when it wants to."
+# CHECK:      "raisesDoc": "Raises an exeception when it wants to.\n"
 # CHECK:      "returnsDoc": "An Int."
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
@@ -684,7 +684,7 @@ struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]:
 # CHECK:          "name": "*args",
 # CHECK:          "type": "Self"
 # CHECK:        }
-# CHECK:      "constraints": "This describes the method's constraints.",
+# CHECK:      "constraints": "This describes the method's constraints.\n",
 # CHECK:      "description": ""
 # CHECK:      "returnsDoc": "This is a by-ref return value.",
 # CHECK:      "signature": "fn_with_by_conventions(mut self, mut arg: Self, mut *args: Self) -> Self",
@@ -731,7 +731,7 @@ struct InMemoryStruct(Sized):
         return arg
 
 
-# CHECK:  "constraints": "This describes the struct's constraints.",
+# CHECK:  "constraints": "This describes the struct's constraints.\n",
 # CHECK:  "convention": "register_passable",
 # CHECK:  "description": "The is some kind of description.\n",
 # CHECK:      "kind": "function",
