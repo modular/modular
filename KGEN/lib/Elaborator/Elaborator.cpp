@@ -103,6 +103,32 @@ ConcreteFunction::CompiledRegion::compileIfNecessary(Region &region,
 ImplNode::ImplNode(ParamNode *parent)
     : parent(parent), paramGraph(parent->gen.getBodyRegion()) {}
 
+void ImplNode::initialize(InstantiatedOpInterface inst,
+                          ParameterUseDefGraph &&graph) {
+  this->inst = inst;
+  this->paramGraph = std::move(graph);
+}
+
+void ImplNode::setToError(ErrorTree &&err) {
+  if (error) {
+#ifndef MODULAR_PRODUCTION
+    llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: ";
+    if (parent && parent->gen)
+      llvm::errs() << parent->getMangledName().strref();
+    else if (inst)
+      llvm::errs() << inst.getName();
+    else
+      llvm::errs() << "[ROOT NODE]";
+    llvm::errs() << "\n";
+    std::move(*error).emit([](Location loc) { return mlir::emitError(loc); },
+                           "HERE");
+#endif // MODULAR_PRODUCTION
+    llvm_unreachable("impl node already has an error");
+  }
+  hasError.store(true);
+  error = std::move(err);
+}
+
 void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   expansionGraph->didAddTask();
   paramCh.andThenAsync([waiter = std::move(waiter), this]() mutable {
@@ -143,15 +169,13 @@ void ExpansionGraph::didCompleteTask() {
 void ExpansionGraph::didAddTask() { ++numOutstandingResources; }
 
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
-  if (!impl)
-    return ErrorTree(gen.getLoc(), "function instantiation failed");
-  if (!impl->error)
-    return impl.get();
+  if (!impl.error)
+    return &impl;
   // Propagate the error trivially if the current generator has no parameters.
   if (inputParams.empty())
-    return impl->error->copy();
+    return impl.error->copy();
   return ErrorTree(gen.getLoc(), "function instantiation failed",
-                   impl->error->copy());
+                   impl.error->copy());
 }
 
 ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
@@ -164,13 +188,13 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
 }
 
 ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
-  if (!impl->error)
+  if (!impl.error)
     return success();
   // Propagate the error trivially if the current generator has no parameters.
   if (inputParams.empty())
-    return impl->error->copy();
+    return impl.error->copy();
   return ErrorTree(gen.getLoc(), "function instantiation failed",
-                   impl->error->copy());
+                   impl.error->copy());
 }
 
 StringAttr ParamNode::getMangledName() {
@@ -1402,7 +1426,7 @@ ParamNode *Elaborator::getOrCreateNode(ParameterExprArrayAttr values,
   // are in the corresponding maps (g.nodes and concreteNodes) when this
   // function returns.
   StringAttr name = paramNode->getMangledName();
-  ImplNode *implNode = paramNode->impl.get();
+  ImplNode *implNode = &paramNode->impl;
   concreteNodes.modify(
       [name, implNode](auto &map) { map.try_emplace(name, implNode); });
   return paramNode;
@@ -1573,7 +1597,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
 
   addRegion(instance.getBodyRegion());
 
-  ImplNode *newFuncNode = genNode->impl.get();
+  ImplNode *newFuncNode = &genNode->impl;
   newFuncNode->initialize(instance, std::move(childGraph));
 
   // Since the symbol will have a new name, we need to update the linkage name
@@ -1823,7 +1847,7 @@ struct GraphEdge {
   /// This function returns the callee ParamNode by indexing into the
   /// appropriate dependency list.
   ParamNode *getPointee() const {
-    auto &inode = *pnode->impl;
+    auto &inode = pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].second;
     return inode.blocker->second;
@@ -1831,14 +1855,14 @@ struct GraphEdge {
   /// Return the location on the callee side representing where the edge
   /// originates from, to be used for diagnostic reporting.
   Location getLoc() const {
-    auto &inode = *pnode->impl;
+    auto &inode = pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].first;
     return inode.blocker->first;
   }
   /// Return true if this edge is a blocker/interpreter edge.
   bool isBlockerEdge() const {
-    auto &inode = *pnode->impl;
+    auto &inode = pnode->impl;
     return depIdx >= inode.dependencies.size();
   }
 
@@ -1859,7 +1883,7 @@ struct GraphEdge {
   /// equal to the number of dependencies.
   GraphEdge end() const {
     ParamNode *next = getPointee();
-    ImplNode &inode = *next->impl;
+    ImplNode &inode = next->impl;
     return {next, inode.dependencies.size() + inode.blocker.has_value()};
   }
 
@@ -1884,20 +1908,14 @@ struct PartialExpansionGraph {
   PartialExpansionGraph(ArrayRef<ParamNode *> roots) {
     // Gross hack to create a virtual root edge to all root generators.
     // This node has an edge to each of the root nodes.
-    virtualRoot.impl = std::make_unique<ImplNode>(
-        /*func=*/nullptr, &virtualRoot, ParameterUseDefGraph(&unused), "");
     for (ParamNode *root : roots)
-      virtualRoot.impl->dependencies.emplace_back(root->gen.getLoc(), root);
+      virtualRoot.impl.dependencies.emplace_back(root->gen.getLoc(), root);
 
     // The base node just has an edge to the virtual root.
-    baseNode.impl = std::make_unique<ImplNode>(
-        /*func=*/nullptr, &baseNode, ParameterUseDefGraph(&unused), "");
-    baseNode.impl->dependencies.emplace_back(roots.front()->gen.getLoc(),
-                                             &virtualRoot);
+    baseNode.impl.dependencies.emplace_back(roots.front()->gen.getLoc(),
+                                            &virtualRoot);
   }
 
-  /// Dummy region needed by the ParameterUseDefGraph constructor.
-  Region unused;
   ParamNode virtualRoot;
   ParamNode baseNode;
 };
@@ -2006,7 +2024,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
     // If we found an invalid edge, diagnose and set an error. Mark the node as
     // completed with an error.
     if (badEdge) {
-      ImplNode *inode = badEdge->pnode->impl.get();
+      ImplNode *inode = &badEdge->pnode->impl;
       inode->setToError(buildRecursionError(*badEdge, scc, inSCC));
       inode->stack.clear();
       reschedule.push_back(inode);
@@ -2015,7 +2033,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
     // Now, we break all the edges in the SCC for each node in the SCC.
     for (ParamNode *node : sccNodes) {
-      ImplNode *inode = node->impl.get();
+      ImplNode *inode = &node->impl;
       std::vector<std::pair<Location, ParamNode *>> newDeps;
       for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
         if (!inSCC.contains(GraphEdge{node, idx})) {
@@ -2033,12 +2051,12 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
     // When all of them are done as individual nodes, they will reset their
     // dependency counter to 1 and wait for all chains to complete.
-    AsyncRT::andThenAsyncMoving(
-        sccChains, [this, nodes = sccNodes.takeVector()](
-                       MutableArrayRef<AnyAsyncValueRef>) {
-          for (ParamNode *node : nodes)
-            completeImplNodeProcessing(node->impl.get());
-        });
+    AsyncRT::andThenAsyncMoving(sccChains,
+                                [this, nodes = sccNodes.takeVector()](
+                                    MutableArrayRef<AnyAsyncValueRef>) {
+                                  for (ParamNode *node : nodes)
+                                    completeImplNodeProcessing(&node->impl);
+                                });
   }
 
   // Now reschedule the nodes outside the loop to avoid races.
@@ -2263,13 +2281,13 @@ Elaborator::run(ModuleOp theModule,
     VerboseCompilerTimeTraceScope traceScope(
         "processGen", [name = node.gen.getName()] { return name.str(); });
     // Erase all erroneous instances.
-    if (node.impl->error) {
-      node.impl->inst.erase();
+    if (node.impl.error) {
+      node.impl.inst.erase();
       continue;
     }
 
     genInstantiations[node.gen].push_back(SuccessfulInstances{
-        mlir::debugString(node.inputParams), node.impl->inst});
+        mlir::debugString(node.inputParams), node.impl.inst});
   }
 
   // Now reorder all instantiations of each generator to be deterministic.
