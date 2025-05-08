@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t | FileCheck %s
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange

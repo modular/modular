@@ -1,0 +1,13 @@
+# Avoid PATH leaking into actions
+common --incompatible_strict_action_env
+
+# Force hermetic toolchain, make sure we don't accidentally used the default one
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
+# Include full test log in failed tests
+build --test_output=errors
+build --test_summary=terse
+
+# Silence warnings in external dependencies used in tests
+build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w

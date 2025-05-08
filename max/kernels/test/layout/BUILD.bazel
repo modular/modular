@@ -1,6 +1,6 @@
-load("//bazel:api.bzl", "lit_tests", "mojo_test")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-_LIT_TESTS = [
+_FILECHECK_TESTS = [
     "test_element.mojo",
     "test_layout.mojo",
     "test_nd_buffer_stub.mojo",
@@ -10,24 +10,11 @@ _LIT_TESTS = [
     "test_tensor_math.mojo",
     "test_tensor_runtime_layout.mojo",
     "test_tiled_matmul.mojo",
-    "test_tiled_matmul_backtoback.mojo",  # TODO: re-enable test and move to mojo_test
     "test_vectorized_matmul.mojo",
 ]
 
-lit_tests(
-    name = "lit",
-    srcs = _LIT_TESTS,
-    mojo_deps = [
-        "@mojo//:stdlib",
-        "@mojo//:layout",
-    ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
-)
-
 [
-    mojo_test(
+    mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
         deps = [
@@ -35,8 +22,21 @@ lit_tests(
             "@mojo//:stdlib",
         ],
     )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = (["manual"] if src == "test_tiled_matmul_backtoback.mojo" else []),  # TODO(MOCO-1523)
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+        ],
+    )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _LIT_TESTS,
+        exclude = _FILECHECK_TESTS,
     )
 ]

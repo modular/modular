@@ -3,6 +3,7 @@ module(
     version = "0",
 )
 
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "rules_mojo", version = "0.1.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -19,6 +20,7 @@ archive_override(
 )
 
 bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
+bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
 
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
@@ -48,3 +50,55 @@ pip.parse(
     requirements_lock = "bazel/requirements.txt",
 )
 use_repo(pip, "modular_test_deps")
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
+llvm.toolchain(llvm_version = "20.1.2")
+use_repo(llvm, "llvm_toolchain")
+
+register_toolchains("@llvm_toolchain//:all")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# This section is derived from the full LLVM workspace, available at
+# llvm-project/utils/bazel/WORKSPACE. If there are changes in
+# LLVM that require updating these dependencies, this file may also need to
+# be updated in the future.
+http_archive(
+    name = "llvm_zlib",
+    build_file = "@llvm-raw//utils/bazel/third_party_build:zlib-ng.BUILD",
+    dev_dependency = True,
+    sha256 = "e36bb346c00472a1f9ff2a0a4643e590a254be6379da7cddd9daeb9a7f296731",
+    strip_prefix = "zlib-ng-2.0.7",
+    urls = [
+        "https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.0.7.zip",
+    ],
+)
+
+http_archive(
+    name = "llvm_zstd",
+    build_file = "@llvm-raw//utils/bazel/third_party_build:zstd.BUILD",
+    dev_dependency = True,
+    sha256 = "7c42d56fac126929a6a85dbc73ff1db2411d04f104fae9bdea51305663a83fd0",
+    strip_prefix = "zstd-1.5.2",
+    urls = [
+        "https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.tar.gz",
+    ],
+)
+
+# NOTE: These versions don't particularly match what modular uses internally, this is only used for test dependencies
+LLVM_COMMIT = "6274cdb9a6714908c8a4e30d2ef0bf22a6949065"
+
+LLVM_SHA = "ee26cf9d90a87bd02f10f0846cda0f2e82e4d930a3704d5c790cb2ee76f44124"
+
+http_archive(
+    name = "llvm-raw",
+    build_file_content = "exports_files(glob([\"**\"]))",
+    dev_dependency = True,
+    sha256 = LLVM_SHA,
+    strip_prefix = "llvm-project-{}".format(LLVM_COMMIT),
+    url = "https://github.com/llvm/llvm-project/archive/{}.tar.gz".format(LLVM_COMMIT),
+)
+
+llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
+
+llvm_configure(name = "llvm-project")

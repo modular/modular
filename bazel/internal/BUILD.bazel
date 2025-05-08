@@ -1,0 +1,6 @@
+filegroup(
+    name = "mojo-filecheck-test",
+    testonly = True,
+    srcs = ["mojo-filecheck-test.sh"],
+    visibility = ["//visibility:public"],
+)

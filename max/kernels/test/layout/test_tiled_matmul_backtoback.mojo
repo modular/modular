@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(MOCO-1523): reenable
-# REQUIRES: DISABLED
-# RUN: %mojo-no-debug %s
 
 from math import fma, isclose
 from os import abort
