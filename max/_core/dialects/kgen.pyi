@@ -58,6 +58,31 @@ class ArgConventionAttr(max._core.Attribute):
     @property
     def value(self) -> ArgConvention: ...
 
+class AttrCtorDeferredAttr(max._core.Attribute):
+    """
+    The `#kgen.attr_ctor_deferred` attribute holds an array of StringAttr
+    or `#kgen.to_string_deferred` attributes. In the elaborator, when
+    attributes are concrete, the `#kgen.attr_ctor_deferred` concatenates them
+    and builds and requested attribute.
+
+    Example:
+
+    ```mlir
+    #kgen.attr_ctor_deferred<"#index<", "cmp_predicate", "sle>">>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, strings: Sequence[max._core.dialects.builtin.TypedAttr]
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, strings: Sequence[max._core.dialects.builtin.TypedAttr]
+    ) -> None: ...
+    @property
+    def strings(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+
 class BindParamsAttr(max._core.Attribute):
     """
     The `#kgen.bind_params` attribute is used to bind parameters onto a
@@ -3374,6 +3399,33 @@ class TargetType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
+
+class ToStringDeferredAttr(max._core.Attribute):
+    """
+    The `#kgen.to_string_deferred` attribute holds an array of StringAttr
+    and concatenates them into a single StringAttr in Elaborator
+
+    Example:
+
+    ```mlir
+    #kgen.to_string_deferred<"#index<", "cmp_predicate", "sle>">>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, attr: max._core.Attribute, need_elide_type: bool
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        attr: max._core.Attribute,
+        need_elide_type: max._core.dialects.builtin.UnitAttr,
+    ) -> None: ...
+    @property
+    def attr(self) -> max._core.Attribute | None: ...
+    @property
+    def need_elide_type(self) -> max._core.dialects.builtin.UnitAttr: ...
 
 class TypeGeneratorRefAttr(max._core.Attribute):
     """
