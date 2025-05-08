@@ -1,6 +1,19 @@
+load("//bazel:api.bzl", "mojo_library")
+
+# TODO: Phase this target out and use the mojo_library target instead.
 filegroup(
     name = "test_utils_srcs",
     testonly = True,
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
+)
+
+mojo_library(
+    name = "test_utils",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@mojo//:stdlib",
+    ],
 )

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from internal_utils import HostNDBuffer
 from nn._ragged_utils import get_batch_from_row_offsets

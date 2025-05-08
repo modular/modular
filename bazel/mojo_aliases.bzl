@@ -15,6 +15,11 @@ alias(
 )
 
 alias(
+    name = "test_utils",
+    actual = "@//{prefix}mojo/stdlib/test/test_utils",
+)
+
+alias(
     name = "kv_cache",
     actual = "@//{prefix}max/kernels/src/kv_cache",
 )
