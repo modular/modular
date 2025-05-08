@@ -12,39 +12,63 @@
 # ===----------------------------------------------------------------------=== #
 """String formatting utilities for Mojo.
 
-This module provides string formatting functionality similar to Python's `str.format()` method.
-It implements curly brace `{}` based string formatting with support for positional arguments,
-named arguments, format specifiers and conversion flags.
+This module provides string formatting functionality similar to Python's
+`str.format()` method. The `format()` method (available on the
+[`String`](/mojo/stdlib/collections/string/string/String#format) and
+[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice#format)
+types) takes the current string as a template (or "format string"), which can
+contain literal text and/or replacement fields delimited by curly braces (`{}`).
+The replacement fields are replaced with the values of the arguments.
 
-Key Features:
-- Curly brace `{}` based string formatting
-- Support for positional and named arguments
-- Format specifiers for controlling output format
-- Conversion flags for `str()` and `repr()` conversions
-- Automatic and manual argument indexing
-- Fill, align, sign and other formatting options
+Replacement fields can mapped to the arguments in one of two ways:
+
+- Automatic indexing by argument position:
+
+  ```mojo
+  var s = String("{} is {}").format("Mojo", "🔥")
+  ```
+
+- Manual indexing by argument position:
+
+  ```mojo
+  var s = String("{1} is {0}").format("hot", "🔥")
+  ```
+
+The replacement fields can also contain the `!r` or `!s` conversion flags, to
+indicate whether the argument should be formatted using `repr()` or `String()`,
+respectively:
+
+```mojo
+var s = String("{!r}").format(myComplicatedObject)
+```
+
+Note that the following features from Python's `str.format()` are
+**not yet supported**:
+
+- Named arguments (for example `"{name} is {adjective}"`).
+- Accessing the attributes of an argument value (for example, `"{0.name}"`.
+- Accessing an indexed value from the argument (for example, `"{1[0]}"`).
+- Format specifiers for controlling output format (width, precision, and so on).
 
 Example:
+
 ```mojo
 from collections.string import String
 
 # Basic formatting
-var s1 = "Hello {0}!".format("World")  # Hello World!
+var s1 = String("Hello {0}!").format("World")  # Hello World!
 
 # Multiple arguments
-var s2 = "{0} plus {1} equals {2}".format(1, 2, 3)  # 1 plus 2 equals 3
-
-# Format specifiers
-var s3 = "{:>10}".format("test")  # '      test'
+var s2 = String("{0} plus {1} equals {2}").format(1, 2, 3)  # 1 plus 2 equals 3
 
 # Conversion flags
-var s4 = "{!r}".format("test")  # "'test'"
+var s4 = String("{!r}").format("test")  # "'test'"
 ```
 
-Note:
-
-This is an internal implementation module. Users should use the `format()` methods
-provided by the `String` and `StringSlice` types rather than using these utilities directly.
+This module has no public API; its functionality is available through the
+[`String.format()`](/mojo/stdlib/collections/string/string/String#format) and
+[`StringSlice.format()`](/mojo/stdlib/collections/string/string_slice/StringSlice#format)
+methods.
 """
 
 from collections import Optional

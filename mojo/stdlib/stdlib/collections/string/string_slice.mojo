@@ -12,40 +12,40 @@
 # ===----------------------------------------------------------------------=== #
 """The `StringSlice` type implementation for efficient string operations.
 
-This module provides the `StringSlice` type, which is a lightweight view into string data
-that enables zero-copy string operations. `StringSlice` is designed for high-performance
-string manipulation while maintaining memory safety and UTF-8 awareness.
-
-Key Features:
-- Zero-copy string views and operations
-- UTF-8 aware string slicing and manipulation
-- Memory-safe string operations
-- Efficient string comparison and search
-- Unicode-aware string operations
+This module provides the `StringSlice` type, which is a lightweight view into
+string data that enables zero-copy string operations. `StringSlice` is designed
+for high-performance string manipulation while maintaining memory safety and
+UTF-8 awareness.
 
 The `StringSlice` type is particularly useful for:
-- High-performance string operations without copying
-- Efficient string parsing and tokenization
-- Memory-safe string manipulation
-- Unicode-aware text processing
+- High-performance string operations without copying.
+- Efficient string parsing and tokenization.
+
+`StaticString` is an alias for an immutable constant `StringSlice`.
+
+`StringSlice` and `StaticString` are in the prelude, so they are automatically
+imported into every Mojo program.
 
 Example:
-    ```mojo
 
+```mojo
+# Create a string slice
+var text = StringSlice("Hello, 世界")
 
-    # Create a string slice
-    var text = StringSlice("Hello, 世界")
+# Zero-copy slicing
+var hello = text[0:5] # Hello
 
-    # Zero-copy slicing
-    var hello = text[0:5] # Hello
+# Unicode-aware operations
+var world = text[7:13]  # "世界"
 
-    # Unicode-aware operations
-    var world = text[7:13]  # "世界"
+# String comparison
+if text.startswith("Hello"):
+    print("Found greeting")
 
-    # String comparison
-    if text.startswith("Hello"):
-        print("Found greeting")
-    ```
+# String formatting
+var format_string = StaticString("{}: {}")
+print(format_string.format("bats", 6)) # bats: 6
+```
 """
 
 from collections import List, Optional
@@ -470,6 +470,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     This type is guaranteed to have the same ABI (size, alignment, and field
     layout) as the `llvm::StringRef` type.
+
+    See the
+    [`string_slice` module](/mojo/stdlib/collections/string/string_slice/)
+    for more information and examples.
 
     Parameters:
         mut: Whether the slice is mutable.
@@ -1183,7 +1187,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # Splitting with maxsplit
         _ = StringSlice("1,2,3").split(",", 1) # ['1', '2,3']
         ```
-        .
         """
         var output = List[Self.Immutable]()
 
@@ -1243,7 +1246,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
         ).split()  # ["hello", "world"]
         ```
-        .
         """
 
         return self._split_whitespace()
@@ -1303,12 +1305,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the string with no leading or trailing characters.
 
-        Examples:
+        Example:
 
         ```mojo
         print("himojohi".strip("hi")) # "mojo"
         ```
-        .
         """
 
         return self.lstrip(chars).rstrip(chars)
@@ -1322,12 +1323,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the string with no leading or trailing whitespaces.
 
-        Examples:
+        Example:
 
         ```mojo
         print("  mojo  ".strip()) # "mojo"
         ```
-        .
         """
         return self.lstrip().rstrip()
 
@@ -1341,12 +1341,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the string with no trailing characters.
 
-        Examples:
+        Example:
 
         ```mojo
         print("mojohi".strip("hi")) # "mojo"
         ```
-        .
         """
 
         var r_idx = self.byte_length()
@@ -1364,12 +1363,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the string with no trailing whitespaces.
 
-        Examples:
+        Example:
 
         ```mojo
         print("mojo  ".strip()) # "mojo"
         ```
-        .
         """
         var r_idx = self.byte_length()
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
@@ -1393,12 +1391,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the string with no leading characters.
 
-        Examples:
+        Example:
 
         ```mojo
         print("himojo".strip("hi")) # "mojo"
         ```
-        .
         """
 
         var l_idx = 0
@@ -1416,12 +1413,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the string with no leading whitespaces.
 
-        Examples:
+        Example:
 
         ```mojo
         print("  mojo".strip()) # "mojo"
         ```
-        .
         """
         var l_idx = 0
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
@@ -1600,13 +1596,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A boolean indicating if `index` gives the position of the first
             byte in a UTF-8 codepoint sequence, or is at the end of the string.
 
-        # Examples
+        Examples:
 
         Check if particular byte positions are codepoint boundaries:
 
         ```mojo
-
-        from testing import assert_equal, assert_true
+        from testing import assert_equal, assert_true, assert_false
         var abc = StringSlice("abc")
         assert_equal(len(abc), 3)
         assert_true(abc.is_codepoint_boundary(0))
@@ -1651,7 +1646,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         The following program verifies the above diagram:
 
         ```mojo
-
         from testing import assert_true, assert_false
 
         var text = StringSlice("a©➇𝄞")
@@ -1667,7 +1661,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         assert_false(text.is_codepoint_boundary(9))
         assert_true(text.is_codepoint_boundary(10))
         ```
-        .
         """
         # TODO: Example: Print the byte indices that are codepoints boundaries:
 
@@ -1774,7 +1767,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @always_inline
     fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
-        """Format a template with `*args`.
+        """Produce a formatted string using the current string as a template.
+
+        The template, or "format string" can contain literal text and/or
+        replacement fields delimited with curly braces (`{}`). Returns a copy of
+        the format string with the replacement fields replaced with string
+        representations of the `args` arguments.
+
+        For more information, see the discussion in the
+        [`format` module](/mojo/stdlib/collections/string/format/).
 
         Args:
             args: The substitution values.
@@ -1790,11 +1791,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         ```mojo
         # Manual indexing:
-        print("{0} {1} {0}".format("Mojo", 1.125)) # Mojo 1.125 Mojo
+        print(StringSlice("{0} {1} {0}").format("Mojo", 1.125)) # Mojo 1.125 Mojo
         # Automatic indexing:
-        print("{} {}".format(True, "hello world")) # True hello world
+        print(StringSlice("{} {}").format(True, "hello world")) # True hello world
         ```
-        .
         """
         return _FormatCurlyEntry.format(self, args)
 
@@ -1879,12 +1879,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             True if the whole StringSlice is made up of whitespace characters
             listed above, otherwise False.
 
-        Examples:
+        Example:
 
         Check if a string contains only whitespace:
 
         ```mojo
-
         from testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
@@ -1897,7 +1896,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # Contains non-space characters
         assert_false(StringSlice(" abc  ").isspace())
         ```
-        .
         """
 
         if self.byte_length() == 0:

@@ -17,25 +17,26 @@ A codepoint represents a single Unicode character, restricted to valid Unicode s
 values in the ranges 0 to 0xD7FF and 0xE000 to 0x10FFFF inclusive.
 
 The `Codepoint` type provides functionality for:
-- Converting between codepoints and UTF-8 encoded bytes
+- Converting between codepoints and UTF-8 encoded bytes.
 - Testing character properties like ASCII, digits, whitespace etc.
-- Converting between codepoints and strings
-- Safe construction from integers with validation
+- Converting between codepoints and strings.
+- Safe construction from integers with validation.
 
 Example:
+
 ```mojo
-    from collections.string import Codepoint
-    from testing import assert_true
+from collections.string import Codepoint
+from testing import assert_true
 
-    # Create a codepoint from a character
-    var c = Codepoint.ord('A')
+# Create a codepoint from a character
+var c = Codepoint.ord('A')
 
-    # Check properties
-    assert_true(c.is_ascii())
-    assert_true(c.is_ascii_upper())
+# Check properties
+assert_true(c.is_ascii())
+assert_true(c.is_ascii_upper())
 
-    # Convert to string
-    var s = String(c)  # "A"
+# Convert to string
+var s = String(c)  # "A"
 ```
 """
 
@@ -81,7 +82,7 @@ struct Codepoint(
 
     [1]: https://www.unicode.org/glossary/#unicode_scalar_value
 
-    # Codepoints vs Scalar Values
+    **Codepoints versus Scalar Values**
 
     Formally, Unicode defines a codespace of values in the range 0 to
     0x10FFFF inclusive, and a

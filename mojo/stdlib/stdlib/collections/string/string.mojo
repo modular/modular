@@ -13,46 +13,64 @@
 """The core `String` type implementation for Mojo.
 
 This module provides the primary `String` type and its fundamental operations.
-The `String` type is designed to handle UTF-8 encoded text efficiently while
-providing a safe and ergonomic interface for string manipulation.
+The `String` type is a mutable string, and is designed to handle UTF-8 encoded
+text efficiently while providing a safe and ergonomic interface for string
+manipulation.
+
+Related types:
+
+- [`StringSlice`](/mojo/stdlib/collections/string/string_slice/). A non-owning
+  view of string data, which can be either mutable or immutable.
+- [`StaticString`](/mojo/stdlib/collections/string/string_slice/#aliases). An
+  alias for an immutable constant `StringSlice`.
+- [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral/). A
+  string literal. String literals are compile-time values. For use at runtime,
+  you usually want wrap a `StringLiteral` in a `String` (for a mutable string)
+  or `StaticString` (for an immutable constant string).
 
 Key Features:
 - Short string optimization (SSO) and lazy copying of constant string data.
 - O(1) copy operation.
-- UTF-8 encoded string storage
-- Memory-safe string operations
-- Efficient string concatenation and slicing
-- String-to-number conversions (atof, atol)
-- ASCII string utilities
-- Character code conversions (chr, ord)
+- Memory-safe string operations.
+- Efficient string concatenation and slicing.
+- String-to-number conversions (
+  [`atof()`](/mojo/stdlib/collections/string/string/atof),
+  [`atol()`](/mojo/stdlib/collections/string/string/atol)).
+- Character code conversions (
+  [`chr()`](/mojo/stdlib/collections/string/string/chr),
+  [`ord()`](/mojo/stdlib/collections/string/string/ord)).
+- String formatting with
+  [`format()`](/mojo/stdlib/collections/string/string/String/#format).
 
-The `String` type is the main interface for text manipulation in Mojo, providing:
-- Mutable string data
-- Efficient string operations optimized for common cases
-- Unicode support through UTF-8 encoding. A handful of operations are known to
-  not be Unicode / UTF-8 compliant yet, but will be fixed as time permits.
-- Safe memory management and bounds checking
+The `String` type has Unicode support through UTF-8 encoding. A handful of
+operations are known to not be Unicode / UTF-8 compliant yet, but will be fixed
+as time permits.
+
+This type is in the prelude, so it is automatically imported into every Mojo
+program.
 
 Example:
-    ```mojo
-    from collections.string import String
 
-    # String creation and basic operations
-    var s1 = String("Hello")
-    var s2 = String("World")
-    var combined = s1 + " " + s2  # "Hello World"
+```mojo
+# String creation and basic operations
+var s1 = String("Hello")
+var s2 = String("World")
+var combined = s1 + " " + s2  # "Hello World"
 
-    # String-to-number conversion
-    var num = atof("3.14")
-    var int_val = atol("42")
+# String-to-number conversion
+var num = atof("3.14")
+var int_val = atol("42")
 
-    # Character operations
-    var char = chr(65)  # "A"
-    var code = ord("A")  # 65
+# Character operations
+var char = chr(65)  # "A"
+var code = ord("A")  # 65
 
-    # ASCII utilities
-    var ascii_str = ascii("Hello")  # ASCII-only string
-    ```
+# String formatting
+print(String("Codepoint {} is {}").format(code, char)) # Codepoint 65 is A
+
+# ASCII utilities
+var ascii_str = ascii("Hello")  # ASCII-only string
+```
 """
 
 from collections import KeyElement, List, Optional
@@ -277,7 +295,11 @@ struct String(
     PythonConvertible,
     ConvertibleFromPython,
 ):
-    """Represents a mutable string."""
+    """Represents a mutable string.
+
+    See the [`string` module](/mojo/stdlib/collections/string/string/) for
+    more information and examples.
+    """
 
     # Fields: String has two forms - the declared form here, and the "inline"
     # form when '_capacity_or_data.is_inline()' is true. The inline form
@@ -1613,7 +1635,15 @@ struct String(
 
     @always_inline
     fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
-        """Format a template with `*args`.
+        """Produce a formatted string using the current string as a template.
+
+        The template, or "format string" can contain literal text and/or
+        replacement fields delimited with curly braces (`{}`). Returns a copy of
+        the format string with the replacement fields replaced with string
+        representations of the `args` arguments.
+
+        For more information, see the discussion in the
+        [`format` module](/mojo/stdlib/collections/string/format/).
 
         Args:
             args: The substitution values.
@@ -1625,7 +1655,7 @@ struct String(
         Returns:
             The template with the given values substituted.
 
-        Examples:
+        Example:
 
         ```mojo
         # Manual indexing:
@@ -1633,7 +1663,6 @@ struct String(
         # Automatic indexing:
         print(String("{} {}").format(True, "hello world")) # True hello world
         ```
-        .
         """
         return _FormatCurlyEntry.format(self, args)
 
@@ -1830,6 +1859,8 @@ fn ord(s: StringSlice) -> Int:
     representing the codepoint of that character. For example, `ord("a")`
     returns the integer `97`. This is the inverse of the `chr()` function.
 
+    This function is in the prelude, so you don't need to import it.
+
     Args:
         s: The input string, which must contain only a single- character.
 
@@ -1848,17 +1879,18 @@ fn chr(c: Int) -> String:
     """Returns a String based on the given Unicode code point. This is the
     inverse of the `ord()` function.
 
+    This function is in the prelude, so you don't need to import it.
+
     Args:
         c: An integer that represents a code point.
 
     Returns:
         A string containing a single character based on the given code point.
 
-    Examples:
+    Example:
     ```mojo
     print(chr(97), chr(8364)) # "a €"
     ```
-    .
     """
 
     if c < 0b1000_0000:  # 1 byte ASCII char
@@ -1961,12 +1993,17 @@ fn ascii(value: StringSlice) -> String:
 fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     """Parses and returns the given string as an integer in the given base.
 
-    If base is set to 0, the string is parsed as an Integer literal, with the
+    If base is set to 0, the string is parsed as an integer literal, with the
     following considerations:
     - '0b' or '0B' prefix indicates binary (base 2)
     - '0o' or '0O' prefix indicates octal (base 8)
     - '0x' or '0X' prefix indicates hexadecimal (base 16)
     - Without a prefix, it's treated as decimal (base 10)
+
+    This follows [Python's integer literals format](
+    https://docs.python.org/3/reference/lexical_analysis.html#integers).
+
+    This function is in the prelude, so you don't need to import it.
 
     Args:
         str_slice: A string to be parsed as an integer in the given base.
@@ -1980,18 +2017,17 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
         incorrect base is provided.
 
     Examples:
-        >>> atol("32")
-        32
-        >>> atol("FF", 16)
-        255
-        >>> atol("0xFF", 0)
-        255
-        >>> atol("0b1010", 0)
-        10
 
-    Notes:
-        This follows [Python's integer literals](
-        https://docs.python.org/3/reference/lexical_analysis.html#integers).
+    ```text
+    >>> atol("32")
+    32
+    >>> atol("FF", 16)
+    255
+    >>> atol("0xFF", 0)
+    255
+    >>> atol("0b1010", 0)
+    10
+    ```
     """
 
     if (base != 0) and (base < 2 or base > 36):
@@ -2203,6 +2239,8 @@ fn atof(str_slice: StringSlice) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
     For example, `atof("2.25")` returns `2.25`.
+
+    This function is in the prelude, so you don't need to import it.
 
     Raises:
         If the given string cannot be parsed as an floating point value, for
