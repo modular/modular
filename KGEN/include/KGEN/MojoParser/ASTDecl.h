@@ -134,11 +134,11 @@ public:
   /// to the specified trait type.  On failure, this *might* set 'diag' to an
   /// inflight diagnostic that explains why this doesn't conform.  It can be
   /// reported or abandoned based on the client's needs.
-  bool doesNominalTypeConformTo(TraitType trait,
+  bool doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
                                 std::optional<InflightDiag> &diag);
 
   /// Helper for clients that don't care about the diagnostic.
-  bool doesNominalTypeConformTo(TraitType trait);
+  bool doesNominalTypeConformTo(TraitType trait, bool allowImplicit);
 
   /// If this is a method of a struct or trait, return the decl for the struct
   /// or trait.

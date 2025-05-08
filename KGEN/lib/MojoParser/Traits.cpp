@@ -93,25 +93,17 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
   // no-op destructor will be synthesized for them.
   if (methodName == "__del__") {
     // Get the AnyType trait.
-    ASTDecl *anyTypeTrait =
-        shared.lookupBuiltinTrait("AnyType", &structDecl, structDecl.getLoc());
+    auto anyTypeTrait = dyn_cast_or_null<TraitDeclOp>(
+        shared.lookupBuiltinTrait("AnyType", &structDecl, structDecl.getLoc()));
     if (!anyTypeTrait)
       return false;
 
     // Don't synthesize a destructor if it doesn't conform to AnyType!
-    for (auto parentSymbol : structDeclOp.getCanonicalTrait().getSymbols()) {
-      ASTDecl &parentDecl =
-          shared.declResolver->getDeclForTypeSymbol(parentSymbol);
-      if (&parentDecl == anyTypeTrait)
-        return true;
-    }
-
-    return false;
+    return structDecl.doesNominalTypeConformTo(anyTypeTrait.bindReference(),
+                                               /*allowImplicit=*/false);
   }
 
-  // Trivial types are not allowed to have explicit `__copyinit__` methods, so
-  // if the trait requires them, consider them automatically satisfied by
-  // trivial types.
+  // We can synthesize a copy constructor if all the fields are copyable.
   if (methodName == "__copyinit__")
     return structDeclOp.isRegisterPassableTrivial();
 
@@ -415,7 +407,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 /// to the specified trait type.  On failure, this may set 'diag' to an inflight
 /// diagnostic that explains why this doesn't conform.  It can be reported or
 /// abandoned based on the client's needs.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
                                        std::optional<InflightDiag> &diag) {
   if (failed(shared.declResolver->resolveBody(*this, getLoc())))
     return false; // Error emitted.
@@ -475,7 +467,7 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
 
   // Only structs can implicitly conform to traits.
   auto structOp = dyn_cast<StructDeclOp>(*this);
-  if (!structOp)
+  if (!structOp || !allowImplicit)
     return false;
 
   // TODO(MOCO-1788): Deprecate the following logic for implicit conformance.
@@ -547,9 +539,9 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
 }
 
 /// Helper for clients that don't care about the diagnostic.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit) {
   std::optional<InflightDiag> diag;
-  auto result = doesNominalTypeConformTo(trait, diag);
+  auto result = doesNominalTypeConformTo(trait, allowImplicit, diag);
   if (diag)
     diag->abandon();
   return result;
@@ -767,7 +759,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   std::optional<InflightDiag> checkDiag;
-  if (!metaTypeDecl->doesNominalTypeConformTo(trait, checkDiag)) {
+  if (!metaTypeDecl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true,
+                                              checkDiag)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();
