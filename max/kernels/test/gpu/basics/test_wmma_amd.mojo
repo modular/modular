@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from random import random_si64
+from testing import assert_equal
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
@@ -230,11 +229,12 @@ fn run_mma_fp32_fp32(
     c_host.free()
     c_host_ref.free()
 
-    # CHECK: Success
     if errors == 0:
         print("Success 🎉: Results match.")
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_equal(errors, 0)
 
 
 fn run_mma_fp32_fp16[
@@ -316,11 +316,12 @@ fn run_mma_fp32_fp16[
     c_host.free()
     c_host_ref.free()
 
-    # CHECK: Success
     if errors == 0:
         print("Success 🎉: Results match.")
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_equal(errors, 0)
 
 
 fn run_mma_fp32_bf16[
@@ -407,11 +408,12 @@ fn run_mma_fp32_bf16[
     c_host.free()
     c_host_ref.free()
 
-    # CHECK: Success
     if errors == 0:
         print("Success 🎉: Results match.")
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_equal(errors, 0)
 
 
 def main():

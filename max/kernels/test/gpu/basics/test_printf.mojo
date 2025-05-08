@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin._location import __source_location
 from builtin.io import _printf

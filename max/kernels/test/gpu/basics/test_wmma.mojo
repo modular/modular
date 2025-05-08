@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from random import random_si64
+from testing import assert_false
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
@@ -328,7 +327,6 @@ fn run_mma_fp32_tf32(
             failed = True
             print(i, outVal, outRef)
 
-    # CHECK: Success
     if not failed:
         print("Success 🎉: Results match.")
         print(
@@ -338,6 +336,8 @@ fn run_mma_fp32_tf32(
         )
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_false(failed)
 
     _ = a_device
     _ = b_device
@@ -469,7 +469,6 @@ fn run_mma_fp32_bf16(
             failed = True
             print(i, outVal, outRef)
 
-    # CHECK: Success
     if not failed:
         print("Success 🎉: Results match.")
         print(
@@ -479,6 +478,8 @@ fn run_mma_fp32_bf16(
         )
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_false(failed)
 
     _ = a_device
     _ = b_device
@@ -610,7 +611,6 @@ fn run_mma_fp32_bf16_2(
             failed = True
             print(i, outVal, outRef)
 
-    # CHECK: Success
     if not failed:
         print("Success 🎉: Results match.")
         print(
@@ -620,6 +620,8 @@ fn run_mma_fp32_bf16_2(
         )
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_false(failed)
 
     _ = a_device
     _ = b_device
@@ -751,7 +753,6 @@ fn run_mma_fp32_fp16(
             failed = True
             print(i, outVal, outRef)
 
-    # CHECK: Success
     if not failed:
         print("Success 🎉: Results match.")
         print(
@@ -761,6 +762,8 @@ fn run_mma_fp32_fp16(
         )
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_false(failed)
 
     _ = a_device
     _ = b_device
@@ -893,7 +896,6 @@ fn run_mma_fp16_fp16(
             failed = True
             print(i, outVal, outRef)
 
-    # CHECK: Success
     if not failed:
         print("Success 🎉: Results match.")
         print(
@@ -903,6 +905,8 @@ fn run_mma_fp16_fp16(
         )
     else:
         print("Failed ❌: results mismatch.")
+
+    assert_false(failed)
 
     _ = a_device
     _ = b_device

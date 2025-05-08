@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1489
-# RUN: %mojo-no-debug %s | FileCheck %s
+
 from buffer import NDBuffer
 from gpu import thread_idx
 from gpu.host import DeviceContext
@@ -64,12 +63,10 @@ def trait_repro(ctx: DeviceContext):
 
     for i in range(size):
         print(host_buf.tensor[i])
-    print("yay!")
 
     _ = device_buf^
 
 
-# CHECK: yay!
 def main():
     with DeviceContext() as ctx:
         trait_repro(ctx)
