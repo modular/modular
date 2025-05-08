@@ -98,7 +98,6 @@ class NextWordFrequency:
         return self.word_frequencies[idx]
 
 
-# Example usage
 def main():
     parser = argparse.ArgumentParser(
         description="Top-K sampling with custom ops"
@@ -125,44 +124,30 @@ def main():
 
     # Place the graph on a GPU, if available. Fall back to CPU if not.
     device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
+    device_ref = DeviceRef.from_device(device)
+
+    # The dtype and shape of the probabilities being passed in
+    vals_type = TensorType(DType.float32, [batch_size, K], device_ref)
+    # The shape of the probabilities, but with int32 for the index dtype
+    idx_type = TensorType(DType.int32, [batch_size, K], device_ref)
 
     # Configure our simple one-operation graph.
     with Graph(
         "top_k_sampler",
-        # The dtype and shape of the probabilities being passed in
-        input_types=[
-            TensorType(
-                DType.float32,
-                shape=[batch_size, K],
-                device=DeviceRef.from_device(device),
-            )
-        ],
+        input_types=[vals_type],
         custom_extensions=[mojo_kernels],
     ) as graph:
         # Take the probabilities as a single input to the graph.
-        probs, *_ = graph.inputs
-
+        in_vals = graph.inputs[0]
         results = ops.custom(
             # This is the custom op name defined in `kernels/top_k.mojo`.
             name="top_k_custom",
             # Passes `K` as a compile-time Mojo `Int`.
             parameters={"K": K},
             # Passes the probabilities as a single input to the graph.
-            values=[probs],
-            out_types=[
-                # The output values dtype and shape
-                TensorType(
-                    probs.tensor.dtype,
-                    probs.tensor.shape,
-                    device=DeviceRef.from_device(device),
-                ),
-                # The output indices dtype and shape
-                TensorType(
-                    DType.int32,
-                    probs.tensor.shape,
-                    device=DeviceRef.from_device(device),
-                ),
-            ],
+            values=[in_vals],
+            # The output tensors shape, dtype, and device for the custom op
+            out_types=[vals_type, idx_type],
         )
         graph.output(*results)
 
@@ -174,7 +159,6 @@ def main():
 
     # Create a driver tensor from the next word probabilities
     input_tensor = Tensor.from_numpy(probabilities).to(device)
-
     print(f"Sampling top k: {K} for batch size: {batch_size}")
 
     values, indices = model.execute(input_tensor)
