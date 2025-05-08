@@ -397,17 +397,18 @@ fn test_setitem() raises:
 
 
 fn test_dict() raises:
-    var d = Dict[PythonObject, PythonObject]()
-    d["food"] = "remove this"
-    d["fries"] = "yes"
-    d["food"] = 123  # intentionally replace to ensure keys stay in order
-
-    var dd = PythonObject(d)
+    # Test Python.dict from keyword arguments.
+    var dd = Python.dict(food=123, fries="yes")
     assert_equal(String(dd), "{'food': 123, 'fries': 'yes'}")
 
     dd["food"] = "salad"
-    dd[42] = Python.evaluate("[4, 2]")
+    dd[42] = Python.list(4, 2)
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
+
+    # Test Python.dict from a Span of tuples.
+    var tuples = List((123, PythonObject("food")), (42, PythonObject("42")))
+    dd = Python.dict(tuples)
+    assert_equal(String(dd), "{123: 'food', 42: '42'}")
 
     # Also test that Python.dict() creates the right object.
     var empty = Python.dict()
@@ -602,13 +603,10 @@ def test_contains_dunder():
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
-    var y = Dict[PythonObject, PythonObject]()
-    y["A"] = "A"
-    y["B"] = 5
-    x = PythonObject(y)
-    assert_true("A" in x)
-    assert_false("C" in x)
-    assert_true("B" in x)
+    var y = Python.dict(A="A", B=5)
+    assert_true("A" in y)
+    assert_false("C" in y)
+    assert_true("B" in y)
 
 
 def main():

@@ -479,20 +479,6 @@ struct PythonObject(
         """
         self.py_object = _slice_to_py_object_ptr(slice)
 
-    @implicit
-    fn __init__(out self, value: Dict[Self, Self]):
-        """Initialize the object from a dictionary of PythonObjects.
-
-        Args:
-            value: The dictionary value.
-        """
-        var cpython = Python().cpython()
-        self.py_object = cpython.PyDict_New()
-        for entry in value.items():
-            _ = cpython.PyDict_SetItem(
-                self.py_object, entry[].key.py_object, entry[].value.py_object
-            )
-
     fn __copyinit__(out self, existing: Self):
         """Copy the object.
 
@@ -1279,23 +1265,13 @@ struct PythonObject(
             if result != 0:
                 raise Error("internal error: PyTuple_SetItem failed")
 
-        var dict_obj = cpython.PyDict_New()
-        for entry in kwargs.items():
-            var key = cpython.PyUnicode_DecodeUTF8(
-                entry[].key.as_string_slice()
-            )
-            var result = cpython.PyDict_SetItem(
-                dict_obj, key, entry[].value.py_object
-            )
-            if result != 0:
-                raise Error("internal error: PyDict_SetItem failed")
-
+        var dict_ptr = Python._dict(kwargs)
         var callable_obj = self.py_object
         cpython.Py_IncRef(callable_obj)
-        var result = cpython.PyObject_Call(callable_obj, tuple_obj, dict_obj)
+        var result = cpython.PyObject_Call(callable_obj, tuple_obj, dict_ptr)
         cpython.Py_DecRef(callable_obj)
         cpython.Py_DecRef(tuple_obj)
-        cpython.Py_DecRef(dict_obj)
+        cpython.Py_DecRef(dict_ptr)
         if result.is_null():
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
@@ -1313,7 +1289,7 @@ struct PythonObject(
         var cpython = Python().cpython()
         var result = cpython.PyObject_Length(self.py_object)
         if result == -1:
-            # Custom types may return -1 even in non-error cases.
+            # Custom python types may return -1 even in non-error cases.
             if cpython.PyErr_Occurred():
                 raise cpython.unsafe_get_error()
         return result

@@ -23,6 +23,7 @@ from collections import Dict
 from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global
+from collections.dict import OwnedKwargsDict
 
 from memory import UnsafePointer
 
@@ -32,6 +33,7 @@ from ._cpython import (
     Py_file_input,
     Py_ssize_t,
     PyMethodDef,
+    PyObjectPtr,
 )
 from .python_object import PythonObject, TypedPythonObject, PythonModule
 
@@ -364,14 +366,94 @@ struct Python:
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_private
     @staticmethod
-    fn dict() -> PythonObject:
-        """Construct an empty Python dictionary.
+    fn _dict[
+        V: PythonConvertible & Copyable & Movable = PythonObject
+    ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
+        var cpython = Python().cpython()
+        var dict_obj_ptr = cpython.PyDict_New()
+        if dict_obj_ptr.is_null():
+            raise Error("internal error: PyDict_New failed")
+
+        for entry in kwargs.items():
+            var key_ptr = cpython.PyUnicode_DecodeUTF8(
+                entry[].key.as_string_slice()
+            )
+            if key_ptr.is_null():
+                raise Error("internal error: PyUnicode_DecodeUTF8 failed")
+
+            var val_obj = entry[].value.to_python_object()
+            var result = cpython.PyDict_SetItem(
+                dict_obj_ptr, key_ptr, val_obj.py_object
+            )
+            if result != 0:
+                raise Error("internal error: PyDict_SetItem failed")
+
+        return dict_obj_ptr
+
+    @staticmethod
+    fn dict[
+        V: PythonConvertible & Copyable & Movable = PythonObject
+    ](**kwargs: V) raises -> PythonObject:
+        """Construct an Python dictionary from keyword arguments.
+
+        Parameters:
+            V: The type of the values in the dictionary. Must implement the
+                `PythonConvertible`, `Copyable`, and `Movable` traits.
+
+        Args:
+            kwargs: The keyword arguments to construct the dictionary with.
 
         Returns:
-            The constructed empty Python dictionary.
+            The constructed Python dictionary.
+
+        Raises:
+            On failure to construct the dictionary or convert the values to
+            Python objects.
         """
-        return PythonObject(Dict[PythonObject, PythonObject]())
+        return PythonObject(from_owned_ptr=Self._dict(kwargs))
+
+    @staticmethod
+    fn dict[
+        K: PythonConvertible & Copyable & Movable = PythonObject,
+        V: PythonConvertible & Copyable & Movable = PythonObject,
+    ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
+        """Construct an Python dictionary from a list of key-value tuples.
+
+        Parameters:
+            K: The type of the keys in the dictionary. Must implement the
+                `PythonConvertible`, `Copyable`, and `Movable` traits.
+            V: The type of the values in the dictionary. Must implement the
+                `PythonConvertible`, `Copyable`, and `Movable` traits.
+
+        Args:
+            tuples: The list of key-value tuples to construct the dictionary
+                with.
+
+        Returns:
+            The constructed Python dictionary.
+
+        Raises:
+            On failure to construct the dictionary or convert the keys or values
+            to Python objects.
+        """
+
+        var cpython = Python().cpython()
+        var dict_obj_ptr = cpython.PyDict_New()
+        if dict_obj_ptr.is_null():
+            raise Error("internal error: PyDict_New failed")
+
+        for i in range(len(tuples)):
+            var key_obj = tuples[i][0].to_python_object()
+            var val_obj = tuples[i][1].to_python_object()
+            var result = cpython.PyDict_SetItem(
+                dict_obj_ptr, key_obj.py_object, val_obj.py_object
+            )
+            if result != 0:
+                raise Error("internal error: PyDict_SetItem failed")
+
+        return PythonObject(from_owned_ptr=dict_obj_ptr)
 
     @staticmethod
     fn list[
