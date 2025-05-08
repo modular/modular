@@ -134,11 +134,6 @@ struct ExpansionGraph {
   std::atomic<size_t> numOutstandingResources = 1;
   /// If quiesce() has been called, the chain it returned. Otherwise null.
   AsyncValueRef<Chain> quiesceChain;
-
-  /// Get or create the node for a generator instantiation.
-  ParamNode *getOrCreate(AsyncRT::Runtime &runtime,
-                         ParameterExprArrayAttr values,
-                         GeneratorOpInterface gen, size_t depth);
 };
 
 //===----------------------------------------------------------------------===//
@@ -409,6 +404,9 @@ private:
   //===--------------------------------------------------------------------===//
   // Specialization
   //===--------------------------------------------------------------------===//
+
+  ParamNode *getOrCreateNode(ParameterExprArrayAttr values,
+                             GeneratorOpInterface gen, size_t depth);
 
   /// Request specialization of the generator at `genNode`. If the node is ready
   /// complete, then the function returns `advance` and the concrete functions
