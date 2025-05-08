@@ -18,7 +18,6 @@ from hashlib._hasher import _hash_with_hasher, _HashableWithHasher, _Hasher
 from pathlib import Path
 
 from memory import UnsafePointer
-from python import Python, PythonObject
 from testing import assert_equal, assert_true
 
 
@@ -165,9 +164,6 @@ def test_hash_hashable_with_hasher_types():
         3806818604433176740,
     )
     assert_equal(_hash_with_hasher(Path("/tmp")), 16491058316913697698)
-    # Hash value of PythonObject is randomized by default
-    # can be deterministic if env var PYTHONHASHSEED is set
-    assert_true(_hash_with_hasher(PythonObject("hello")) != 0)
 
 
 def main():

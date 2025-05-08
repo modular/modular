@@ -278,11 +278,12 @@ struct TypedPythonObject[type_hint: StaticString](
 
 @register_passable
 struct PythonObject(
-    KeyElement,
+    Copyable,
+    Movable,
+    EqualityComparable,
     SizedRaising,
     Writable,
     PythonConvertible,
-    _HashableWithHasher,
 ):
     """A Python object."""
 
@@ -1294,7 +1295,7 @@ struct PythonObject(
                 raise cpython.unsafe_get_error()
         return result
 
-    fn __hash__(self) -> UInt:
+    fn __hash__(self) raises -> Int:
         """Returns the length of the object.
 
         Returns:
@@ -1302,20 +1303,11 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_Hash(self.py_object)
-        # TODO: make this function raise when we can raise parametrically.
-        debug_assert(result != -1, "object is not hashable")
+        if result == -1:
+            # Custom python types may return -1 even in non-error cases.
+            if cpython.PyErr_Occurred():
+                raise cpython.unsafe_get_error()
         return result
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
-        """Updates hasher with this python object hash value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self.__hash__())
 
     fn __int__(self) raises -> PythonObject:
         """Convert the PythonObject to a Python `int`.
