@@ -62,6 +62,10 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils_gpu import MatmulConfig
 from memory import stack_allocation
@@ -86,6 +90,9 @@ def test_warp_specialize_gemm_with_multicasting[
     partitioned_multicast: Bool = False,
     grid_shape: OptionalReg[IndexList[2]] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -209,7 +216,12 @@ def test_warp_specialize_gemm_with_multicasting[
         config=matmul_config,
         schedule=schedule,
         grid_shape=grid_shape,
-        elementwise_lambda_fn=epilogue_fn,
+        # Pass the compute lambda if defined, otherwise use the epilogue lambda.
+        elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+            epilogue_fn
+        ) if elementwise_compute_lambda_fn
+        is None else None,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ](
         c_device.tensor,
         a_device.tensor,
@@ -236,6 +248,17 @@ def test_warp_specialize_gemm_with_multicasting[
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
+
+    @parameter
+    if elementwise_compute_lambda_fn:
+        # Apply the compute lambda directly on the reference tensor
+        alias compute_lambda = elementwise_compute_lambda_fn.value()
+        for i in range(M):
+            for j in range(N):
+                c_host_ref.tensor[Index(i, j)] = compute_lambda(
+                    IndexList[2](i, j),
+                    c_host_ref.tensor[Index(i, j)],
+                )
 
     alias rtol = 1e-2
     assert_almost_equal(
@@ -399,6 +422,57 @@ def main():
             partitioned_multicast=False,
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[4096](), static[8192](), static[7168]())
+
+        @parameter
+        @always_inline
+        fn test_lambda_fn_square[
+            _type: DType,
+            width: Int,
+            *,
+            alignment: Int = alignof[SIMD[_type, width]](),
+        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
+            _type, width
+        ]:
+            return val * val
+
+        test_warp_specialize_gemm_with_multicasting[
+            256,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_consumer=2,
+            elementwise_compute_lambda_fn = OptionalReg[
+                elementwise_compute_lambda_type
+            ](test_lambda_fn_square),
+        ](ctx, dynamic(277), static[2560](), static[128]())
+
+        @parameter
+        @always_inline
+        fn test_lambda_add_coords[
+            _type: DType,
+            width: Int,
+            *,
+            alignment: Int = alignof[SIMD[_type, width]](),
+        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
+            _type, width
+        ]:
+            # Cast indices between 0-1 to avoid accuracy issues
+            var i = Float32(idx[0]) / 277.0
+            var j = Float32(idx[1] - idx[1] % 8) / 2560.0
+            return val + i.cast[_type]() + 2 * j.cast[_type]()
+
+        test_warp_specialize_gemm_with_multicasting[
+            256,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(1, 1, 1),
+            num_consumer=2,
+            elementwise_compute_lambda_fn = OptionalReg[
+                elementwise_compute_lambda_type
+            ](test_lambda_add_coords),
+        ](ctx, dynamic(277), static[2560](), static[128]())
 
         @parameter
         for wgmma_n in range(8, 264, 8):

@@ -39,6 +39,10 @@ alias elementwise_epilogue_type = fn[
     type: DType, width: Int, *, alignment: Int = 1
 ] (IndexList[2], SIMD[type, width]) capturing -> None
 
+alias elementwise_compute_lambda_type = fn[
+    type: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
+
 
 struct KernelConfig:
     """Static configuration of the matmul inner kernel."""
