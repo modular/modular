@@ -172,7 +172,6 @@ def generate_max_outputs(
         kv_params=kv_params,
         dtype=dtype,
         devices=[device_ref],
-        use_qk_norm=True,
         layer_idx=0,
         sliding_window_pattern=text_config.sliding_window_pattern,
     )
