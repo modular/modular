@@ -1,6 +1,5 @@
 """A test rule that executes a mojo_binary, passing its output to FileCheck."""
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
 
 def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = True, expect_crash = False, main = None, size = None, **kwargs):
@@ -38,7 +37,6 @@ def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = T
         name = name,
         srcs = ["//bazel/internal:mojo-filecheck-test"],
         size = size,
-        args = [paths.join(native.package_name(), filecheck_src)],
         data = srcs + [
             name + ".binary",
             "@llvm-project//llvm:FileCheck",
@@ -49,6 +47,7 @@ def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = T
             "EXPECT_CRASH": "1" if expect_crash else "0",
             "FILECHECK": "$(location @llvm-project//llvm:FileCheck)",
             "NOT": "$(location @llvm-project//llvm:not)",
+            "SOURCE": "$(location {})".format(filecheck_src),
         },
         **kwargs
     )

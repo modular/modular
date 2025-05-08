@@ -15,7 +15,7 @@
 set -euo pipefail
 
 if [[ "$EXPECT_CRASH" == "1" ]]; then
-  exec "$NOT" --crash "$BINARY" | "$FILECHECK" "$@"
+  exec "$NOT" --crash "$BINARY" "$@" | "$FILECHECK" "$SOURCE"
 else
-  exec "$BINARY" | "$FILECHECK" "$@"
+  exec "$BINARY" "$@" | "$FILECHECK" "$SOURCE"
 fi
