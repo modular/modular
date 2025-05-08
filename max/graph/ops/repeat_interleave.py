@@ -108,9 +108,6 @@ def repeat_interleave(
     """
     x = TensorValue(x)
 
-    if x.device == DeviceRef.GPU():
-        raise ValueError("repeat_interleave is not supported on GPU")
-
     if axis is not None and not -x.rank <= axis < x.rank:
         raise ValueError(
             f"repeat_interleave: {axis=} out of bounds for {x.rank=}"
