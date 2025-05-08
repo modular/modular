@@ -105,7 +105,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
     lookup speed are critical.
     """
 
-    alias _words_size = max(1, ceildiv(size, _WORD_BITS))
+    alias _words_size: Int = max(1, ceildiv(size, _WORD_BITS))
     var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
@@ -127,20 +127,18 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
         if init.size == 1:
             self._words = __type_of(self._words)(fill=Int(init[0]))
             return
-        elif init.size <= _WORD_BITS:
-            self._words = __type_of(self._words)(
-                fill=pack_bits(init).cast[DType.uint64]()
-            )
-            return
 
-        constrained[init.size // _WORD_BITS == Self._words_size]()
+        constrained[
+            init.size <= _WORD_BITS
+            or init.size // _WORD_BITS == Self._words_size
+        ]()
         self._words = __type_of(self._words)(uninitialized=True)
 
         @parameter
-        for i in range(Int(Self._words_size)):
-            self._words.unsafe_get(i) = pack_bits[new_type = DType.uint64](
-                init.slice[_WORD_BITS, offset=i]()
-            )
+        for i in range(Self._words_size):
+            self._words.unsafe_get(i) = pack_bits(
+                init.slice[min(init.size, _WORD_BITS), offset=i]()
+            ).cast[DType.uint64]()
 
     # --------------------------------------------------------------------- #
     # Capacity queries
