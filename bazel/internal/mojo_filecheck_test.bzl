@@ -3,12 +3,13 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
 
-def mojo_filecheck_test(name, srcs, deps = [], enable_assertions = True, expect_crash = False, **kwargs):
+def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = True, expect_crash = False, size = None, **kwargs):
     if len(srcs) != 1:
         fail("Only a single source file may be passed")
 
     mojo_binary(
         name = name + ".binary",
+        copts = copts,
         srcs = srcs,
         deps = deps,
         testonly = True,
@@ -20,6 +21,7 @@ def mojo_filecheck_test(name, srcs, deps = [], enable_assertions = True, expect_
         name = name,
         srcs = ["//bazel/internal:mojo-filecheck-test"],
         args = [paths.join(native.package_name(), src) for src in srcs],
+        size = size,
         data = srcs + [
             name + ".binary",
             "@llvm-project//llvm:FileCheck",
