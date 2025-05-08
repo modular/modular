@@ -3,12 +3,12 @@ load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 _LIT_TESTS = [
     "test_accelerator_arch_cli.mojo",
     "test_accelerator_arch_cli_kernels.mojo",
-    "test_debug_assert_gpu_error.mojo",
-    "test_grid_dependence_control.mojo",
 ]
 
 _FILECHECK_TESTS = [
     "test_cluster_dims_attribute.mojo",
+    "test_debug_assert_gpu_error.mojo",
+    "test_grid_dependence_control.mojo",
     "test_kernel_with_list.mojo",
     "test_print.mojo",
     "test_printf.mojo",
@@ -17,30 +17,37 @@ _FILECHECK_TESTS = [
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
 
-_EXTRA_FILECHECK_CONSTRAINTS = {
+_EXTRA_COPTS = {
+    "test_grid_dependence_control.mojo": [
+        "-D",
+        "PDL_LEVEL=1",
+    ],
+}
+
+_EXTRA_CONSTRAINTS = {
+    "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled
     "test_cluster_dims_attribute.mojo": ["//:h100_gpu"],
+    "test_cluster_sync.mojo": ["//:h100_gpu"],
+    "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_debug_assert_gpu_error.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1738
+    "test_grid_dependence_control.mojo": ["//:h100_gpu"],
+    "test_has_amd_gpu.mojo": ["//:amd_gpu"],
+    "test_has_nvidia_gpu.mojo": ["//:nvidia_gpu"],
     "test_kernel_with_list.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377 remove this
     "test_producer_consumer.mojo": ["//:h100_gpu"],
     "test_tbc_launch_config.mojo": ["//:h100_gpu"],
     "test_tensor_core_fp8_mma_sync.mojo": ["//:h100_gpu"],
-}
-
-_EXTRA_MOJO_TEST_CONSTRAINTS = {
-    "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_has_nvidia_gpu.mojo": ["//:nvidia_gpu"],
     "test_wmma.mojo": ["//:nvidia_gpu"],
-    "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled
-    "test_has_amd_gpu.mojo": ["//:amd_gpu"],
     "test_wmma_amd.mojo": ["//:amd_gpu"],
-    "test_cluster_sync.mojo": ["//:h100_gpu"],
 }
 
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_MOJO_TEST_CONSTRAINTS.get(src, []),
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:kv_cache",
@@ -60,8 +67,10 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
     mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
+        expect_crash = src == "test_debug_assert_gpu_error.mojo",
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_FILECHECK_CONSTRAINTS.get(src, []),
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:kv_cache",
