@@ -65,6 +65,7 @@ def irfft(
     n: int | None = None,
     axis: int = -1,
     normalization: Normalization | str = Normalization.BACKWARD,
+    input_is_complex: bool = False,
 ):
     """Compute the inverse real FFT of the input tensor.
 
@@ -78,6 +79,9 @@ def irfft(
             Can be "backward", "ortho", or "forward". When "backward", the
             output is divided by `n`. When "ortho", the output is divided by
             `sqrt(n)`. When "forward", no normalization is applied.
+        input_is_complex: Whether the input tensor is already interleaved
+            complex. The last dimension of the input tensor must be 2, and is
+            excluded from the dimension referred to by `axis`.
 
     Returns:
         The inverse real FFT of the input tensor. The shape of the output tensor
@@ -90,30 +94,47 @@ def irfft(
         )
     if input_tensor.device.device_type != DeviceKind.GPU:
         raise ValueError("IRFFT is currently only supported on GPU.")
+    if input_is_complex and input_tensor.shape[-1] != 2:
+        raise ValueError(
+            "Input tensor is marked as complex, but last dimension is not 2. "
+            f"Got input shape {input_tensor.shape}."
+        )
 
-    if not n:
-        n = 2 * (int(input_tensor.shape[axis]) - 1)
-    input_tensor = _process_input_signal(input_tensor, n, axis)
+    # Exclude last dimension from the rank if input tensor is complex.
+    rank = input_tensor.rank - 1 if input_is_complex else input_tensor.rank
 
     # Transpose the input tensor so that the axis that the inverse real FFT is
     # computed over is the last axis.
-    orig_axis = axis % input_tensor.rank
-    if orig_axis != input_tensor.rank - 1:
-        input_tensor = transpose(input_tensor, orig_axis, -1)
+    orig_axis = axis % rank
+    axis = rank - 1
+    if orig_axis != axis:
+        input_tensor = transpose(input_tensor, orig_axis, axis)
 
-    output_shape = list(input_tensor.shape)
+    # Store the new input shape, which is used for computations later.
+    input_shape = list(
+        input_tensor.shape[:-1] if input_is_complex else input_tensor.shape
+    )
+
+    if not n:
+        n = 2 * (int(input_shape[-1]) - 1)
+    input_tensor = _process_input_signal(input_tensor, n, axis=axis)
+
+    output_shape = input_shape.copy()
     output_shape[-1] = Dim(n)
 
-    # Convert input tensor to a complex tensor.
-    # Since we don't support complex tensors, we represent the complex values as
-    # interleaved real and imaginary parts.
-    x_re = unsqueeze(input_tensor, -1)
-    x_im = constant(0, input_tensor.dtype, input_tensor.device).broadcast_to(
-        x_re.shape
-    )
-    x = concat([x_re, x_im], -1).reshape(
-        (*input_tensor.shape[:-1], input_tensor.shape[-1] * 2)
-    )
+    if not input_is_complex:
+        # Convert input tensor to a complex tensor.
+        # Since we don't support complex dtypes, we represent the complex values
+        # as interleaved real and imaginary parts.
+        x_re = unsqueeze(input_tensor, -1)
+        x_im = constant(
+            0, input_tensor.dtype, input_tensor.device
+        ).broadcast_to(x_re.shape)
+        x = concat([x_re, x_im], -1)
+    else:
+        x = input_tensor
+
+    x = x.reshape((*x.shape[:axis], x.shape[axis] * 2))
     irfft_out = custom(
         "irfft",
         [x],
@@ -137,6 +158,6 @@ def irfft(
         raise ValueError(f"Invalid normalization: {normalization}")
 
     # Transpose the output tensor back to the original axis.
-    if orig_axis != input_tensor.rank - 1:
-        irfft_out = transpose(irfft_out, -1, orig_axis)
+    if orig_axis != axis:
+        irfft_out = transpose(irfft_out, axis, orig_axis)
     return irfft_out
