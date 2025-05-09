@@ -22,6 +22,8 @@ from math import ceildiv
 from builtin._stubs import (
     _IntIter,
     _IntIterable,
+    _UIntIter,
+    _UIntIterable,
     _StridedIterable,
     _UIntStridedIterable,
 )
@@ -49,6 +51,7 @@ fn _sign(x: Int) -> Int:
 
 @register_passable("trivial")
 struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
+    alias _IndexType = Int
     var curr: Int
     var end: Int
 
@@ -89,6 +92,7 @@ struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
 @value
 @register_passable("trivial")
 struct _SequentialRange(Sized, ReversibleRange, _IntIterable, Movable):
+    alias _IndexType = Int
     var start: Int
     var end: Int
 
@@ -123,6 +127,7 @@ struct _SequentialRange(Sized, ReversibleRange, _IntIterable, Movable):
 @value
 @register_passable("trivial")
 struct _StridedRangeIterator(Sized, _IntIter):
+    alias _IndexType = Int
     var start: Int
     var end: Int
     var step: Int
@@ -150,6 +155,7 @@ struct _StridedRangeIterator(Sized, _IntIter):
 @value
 @register_passable("trivial")
 struct _StridedRange(Sized, ReversibleRange, _StridedIterable):
+    alias _IndexType = Int
     var start: Int
     var end: Int
     var step: Int
@@ -388,14 +394,15 @@ fn range(
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(UIntSized):
+struct _UIntZeroStartingRange(UIntSized, _UIntIterable):
+    alias _IndexType = UInt
     var curr: UInt
     var end: UInt
 
     @always_inline
     @implicit
     fn __init__(out self, end: UInt):
-        self.curr = max(0, end)
+        self.curr = end
         self.end = self.curr
 
     @always_inline
@@ -424,7 +431,8 @@ struct _UIntZeroStartingRange(UIntSized):
 
 @value
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(UIntSized):
+struct _UIntStridedRangeIterator(UIntSized, _UIntIter):
+    alias _IndexType = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -447,6 +455,7 @@ struct _UIntStridedRangeIterator(UIntSized):
 @value
 @register_passable("trivial")
 struct _UIntStridedRange(UIntSized, _UIntStridedIterable):
+    alias _IndexType = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -530,6 +539,7 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 
 @register_passable("trivial")
 struct _ZeroStartingScalarRange[dtype: DType]:
+    alias _IndexType = Scalar[dtype]
     var curr: Scalar[dtype]
     var end: Scalar[dtype]
 
@@ -573,6 +583,7 @@ struct _ZeroStartingScalarRange[dtype: DType]:
 @value
 @register_passable("trivial")
 struct _SequentialScalarRange[dtype: DType]:
+    alias _IndexType = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
 
@@ -607,6 +618,7 @@ struct _SequentialScalarRange[dtype: DType]:
 @value
 @register_passable("trivial")
 struct _StridedScalarRangeIterator[dtype: DType]:
+    alias _IndexType = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
     var step: Scalar[dtype]
@@ -632,6 +644,7 @@ struct _StridedScalarRangeIterator[dtype: DType]:
 @value
 @register_passable("trivial")
 struct _StridedScalarRange[dtype: DType]:
+    alias _IndexType = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
     var step: Scalar[dtype]
