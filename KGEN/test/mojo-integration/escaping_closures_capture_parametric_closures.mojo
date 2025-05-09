@@ -14,15 +14,9 @@ fn use(lhs: Int, rhs: Int) -> Int:
 
 # COM: Verify that the Closure Impl defined in `main` copies the captures x, y on the heap in the init and frees in the del.
 
-# CHECK:  kgen.func @"{{.*}}::`_CI_{{.*}}::__copyinit__{{.*}}"
-# CHECK: pop.aligned_alloc
-
 # COM: check inlined __init__
 # CHECK:  kgen.func @"{{.*}}::makeEscapingClosure{{.*}}(%arg0: index, %arg1: {{.*}}, %arg2: {{.*}}, %arg3: {{.*}} byref_result)
-# CHECK:         [[MY_CAPTURE_FIELD_ALLOC:%.*]] = pop.stack_allocation 1 x struct<(pointer<none>, index) memoryOnly>
-# CHECK:         lifetime.start([[MY_CAPTURE_FIELD_ALLOC]])
-# CHECK-NEXT:    [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep [[MY_CAPTURE_FIELD_ALLOC]][0]
-# CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(index, index)>>
+# CHECK:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(index, index)>>
 # CHECK-NEXT:    [[HEAP_CAPTURE_LIST_0:%.*]] = kgen.struct.gep [[HEAP_CAPTURE_LISTS_PTR]][0] : <struct<(index, index)>>
 # CHECK-NEXT:    pop.store %arg1, [[HEAP_CAPTURE_LIST_0]] : !kgen.pointer<index>
 
@@ -30,9 +24,11 @@ fn use(lhs: Int, rhs: Int) -> Int:
 # CHECK-NEXT:    pop.store %arg2, [[HEAP_CAPTURE_LIST_1]]
 
 # CHECK-NEXT:    [[OPAQUE_CAPTURE_LIST:%.*]] = pop.pointer.bitcast [[HEAP_CAPTURE_LISTS_PTR]]
-# CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[MY_CAPTURE_FIELD_ADD]]
-# CHECK-NEXT:    [[NONPARAMETRIC_CAPTURE_ADD:%.*]] = kgen.struct.gep [[MY_CAPTURE_FIELD_ALLOC]][1]
-# CHECK-NEXT:    pop.store %arg0, [[NONPARAMETRIC_CAPTURE_ADD]] : !kgen.pointer<index>
+
+# CHECK:    [[ALLOC:%.*]] = pop.aligned_alloc %index8, %index16 : <struct<(pointer<none>, index) memoryOnly>>
+# CHECK-NEXT:    [[ALLOC_PTR:%.*]] = kgen.struct.gep [[ALLOC]][0]
+# CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[ALLOC_PTR]]
+
 
 # COM: check inlined __del__
 # CHECK: kgen.func @"{{.*}}_dtor_`_CI_{{.*}}"

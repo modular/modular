@@ -2259,14 +2259,12 @@ static std::pair<FnOp, FnOp> preprocessValueDecorator(ASTDecl &structDecl) {
           break;
         StructEmitter emitter(structDecl.getShared());
         FnOp moveFunc, copyFunc;
-        if (!declOp.isRegisterPassable() && !info->hasMove()) {
-          moveFunc = emitter.synthesizeEmptyMoveInit(structDecl);
-          moveFunc.setInlineLevel(InlineLevel::AlwaysNoDebug);
-        }
-        if (!declOp.isRegisterPassableTrivial() && !info->hasCopy()) {
-          copyFunc = emitter.synthesizeEmptyCopyInit(structDecl);
-          copyFunc.setInlineLevel(InlineLevel::AlwaysNoDebug);
-        }
+        if (!declOp.isRegisterPassable() && !info->hasMove())
+          moveFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
+                                                           /*isMove=*/true);
+        if (!declOp.isRegisterPassableTrivial() && !info->hasCopy())
+          copyFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
+                                                           /*isMove=*/false);
         return {moveFunc, copyFunc};
       }
     }

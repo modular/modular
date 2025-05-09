@@ -117,10 +117,16 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
 }
 
 /// Allow synthesizing default implementations of certain special functions.
-static ASTDecl *synthesizeSpecialFunction(ASTDecl &structDecl,
-                                          SpecialFunctionKind kind) {
-  auto &shared = structDecl.getShared();
+static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
+                                      SpecialFunctionKind kind) {
   StructEmitter gen(structDecl.getShared());
+  // Use a "_thunk" suffix so we don't tell CheckLifetimes that this type has
+  // a destructor.
+  // FIXME: This is a really weird way to do this!
+  if (kind == SpecialFunctionKind::kDel)
+    return gen.synthesizeEmptyDtor(structDecl, "_thunk");
+
+  auto &shared = structDecl.getShared();
   auto selfRefType =
       structDecl.getTypeDeclSelf().getRefForArgument("self", /*isMut=*/true);
   MLIRContext *ctx = structDecl.getContext();
@@ -129,60 +135,50 @@ static ASTDecl *synthesizeSpecialFunction(ASTDecl &structDecl,
   // Synthesize the required special method. Importantly, don't mark the struct
   // as actually having this method so that destructors et al. are not
   // needlessly emitted.
+
+  // Determine the name and argument conventions of the function.
+  ArgConvention existingConv;
+  switch (kind) {
+  case SpecialFunctionKind::kCopyInit:
+    existingConv = ArgConvention::ReadMem;
+    break;
+  case SpecialFunctionKind::kMoveInit:
+    existingConv = ArgConvention::OwnedMem;
+    break;
+  default:
+    llvm_unreachable("unexpected special function kind to synthesize");
+  }
+  StringRef name = SpecialFunctionInfo::get(kind).name;
+  Type existingType;
+  bool isMut = existingConv == ArgConvention::OwnedMem;
+  existingType =
+      structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
+
   FnOp func;
   ASTDecl *decl = nullptr;
-  if (kind == SpecialFunctionKind::kDel) {
-    // Synthesize an empty destructor. Don't do anything special, because we
-    // want check origins to insert a call to the real destructor here, if it
-    // has one.
-    std::tie(func, decl) = gen.synthesizeMethodInStruct(
-        "__del__", selfRefType, ArgConvention::OwnedMem,
-        PogListAttr::get(ctx, {empty}, {PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
-        FnEffects(), "_thunk");
-    if (!func)
-      return nullptr;
-  } else {
-    // Determine the name and argument conventions of the function.
-    ArgConvention existingConv;
-    switch (kind) {
-    case SpecialFunctionKind::kCopyInit:
-      existingConv = ArgConvention::ReadMem;
-      break;
-    case SpecialFunctionKind::kMoveInit:
-      existingConv = ArgConvention::OwnedMem;
-      break;
-    default:
-      llvm_unreachable("unexpected special function kind to synthesize");
-    }
-    StringRef name = SpecialFunctionInfo::get(kind).name;
-    Type existingType;
-    bool isMut = existingConv == ArgConvention::OwnedMem;
-    existingType =
-        structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
-    std::tie(func, decl) = gen.synthesizeMethodInStruct(
-        name, {existingType, selfRefType},
-        {existingConv, ArgConvention::ByRefResult},
-        PogListAttr::get(ctx, {empty, empty},
-                         {PassingKind::PosOnly, PassingKind::Implicit}),
-        shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
-        FnEffects(), "_thunk");
-    if (!func)
-      return nullptr;
-    // In every case, the implementation is a load+store.
-    auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
-    Value value;
-    if (kind == SpecialFunctionKind::kMoveInit)
-      value = b.create<LIT::LoadConsumeOp>(func.getArgument(0));
-    else
-      value = b.create<RefLoadOp>(func.getArgument(0));
-    b.create<RefStoreOp>(value, func.getArgument(1));
-  }
+  std::tie(func, decl) = gen.synthesizeMethodInStruct(
+      name, {existingType, selfRefType},
+      {existingConv, ArgConvention::ByRefResult},
+      PogListAttr::get(ctx, {empty, empty},
+                       {PassingKind::PosOnly, PassingKind::Implicit}),
+      shared.getNoneType(), structDecl, structDecl.getLoc(), kind, FnEffects(),
+      "_thunk");
+  if (!func)
+    return {};
+  // In every case, the implementation is a load+store.
+  auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
+  Value value;
+  if (kind == SpecialFunctionKind::kMoveInit)
+    value = b.create<LIT::LoadConsumeOp>(func.getArgument(0));
+  else
+    value = b.create<RefLoadOp>(func.getArgument(0));
+  b.create<RefStoreOp>(value, func.getArgument(1));
+
   func.setInlineLevel(InlineLevel::AlwaysNoDebug);
-  auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
+  b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
   b.create<KGEN::ReturnOp>(
       Value(b.create<ParamConstantOp>(b.getAttr<NoneAttr>())));
-  return decl;
+  return func;
 }
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
@@ -389,10 +385,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (hadErrors)
     return failure();
   for (SpecialFunctionKind kind : specialFns) {
-    if (ASTDecl *decl = synthesizeSpecialFunction(structDecl, kind)) {
+    if (FnOp func = synthesizeSpecialFunction(structDecl, kind)) {
       ASTType selfType = structDecl.getTypeDeclSelf();
       SmallVector<TypedAttr> bindings(selfType.getParamBindings());
-      FnOp func = cast<FnOp>(decl);
       for (auto param : func.getInputParams())
         bindings.push_back(ParamDeclRefAttr::get(param));
 
