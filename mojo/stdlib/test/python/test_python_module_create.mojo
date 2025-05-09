@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(MSTDL-875): Fix and un-XFAIL this
-# XFAIL: asan && !system-darwin
-# RUN: %mojo %s
 
 from python import Python, PythonObject
 from testing import assert_equal

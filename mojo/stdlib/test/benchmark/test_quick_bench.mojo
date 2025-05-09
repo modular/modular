@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s --format tabular --no-progress| FileCheck %s
 
 import math
 from random import randint

@@ -1,25 +1,266 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test", "requirement")
+
+_DATA = [
+    "builtin/test_file_dummy_input.txt",
+    "python/custom_indexable.py",
+    "python/my_module.py",
+]
+
+_TEST_UTILS = [
+    "test_utils/__init__.mojo",
+    "test_utils/compare_helpers.mojo",
+    "test_utils/math_helpers.mojo",
+    "test_utils/test_utils.mojo",
+    "test_utils/types.mojo",
+]
+
+_LIT_TESTS = [
+    "benchmark/test_mojobench.mojo",
+    "builtin/test_issue_3908.mojo",
+    "builtin/test_print_long_string.mojo",
+    "builtin/test_print_stderr.mojo",
+    "builtin/test_stdin.mojo",
+    "builtin/test_uint_error.mojo",
+    "os/test_no_trap.mojo",
+    "runtime/test_tracing.mojo",
+    "sys/test_dlhandle.mojo",
+    "sys/test_exit_1.mojo",
+    "sys/test_invalid_paramenv.mojo",
+]
+
+_NO_ASAN = [
+    "builtin/test_bool.mojo",
+    "builtin/test_format_float.mojo",
+    "builtin/test_int.mojo",
+    "collections/string/test_string.mojo",
+    "python/test_ownership.mojo",
+    "python/test_python_cpython.mojo",
+    "python/test_python_error_handling.mojo",
+    "python/test_python_info.mojo",
+    "python/test_python_interop.mojo",
+    "python/test_python_module_create.mojo",
+    "python/test_python_object.mojo",
+    "python/test_python_to_mojo.mojo",
+    "subprocess/test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
+    "testing/test_assertion.mojo",
+]
+
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+} | {
+    "benchmark/test_benchmark.mojo": ["@platforms//:incompatible"],  # TODO (#34267): reenable
+    "math/test_erf.mojo": ["@platforms//os:linux"],
+    "math/test_tanh.mojo": ["@platforms//os:linux"],
+    "os/path/test_islink.mojo": ["@platforms//:incompatible"],  # TODO(#33762): This is causing recursive dirs to be created.
+    "sys/test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
+    "sys/test_linux_target.mojo": ["@platforms//os:linux"],
+    "sys/test_macos_target.mojo": ["@platforms//os:macos"],
+    "sys/test_windows_target.mojo": ["@platforms//:incompatible"],
+}
+
+_TEST_RUNTIME_ARGS = {
+    "benchmark/test_quick_bench.mojo": [
+        "--format",
+        "tabular",
+        "--no-progress",
+    ],
+}
+
+_MOJO_COMPILE_OPTS = {
+    "algorithm/test_parallelize.mojo": [
+        "-D",
+        "ASSERT=warn",
+    ],
+    "collections/test_index_normalization.mojo": [
+        "-D",
+        "ASSERT=warn",
+    ],
+    "collections/test_list_getitem_invalid_index.mojo": [
+        "-D",
+        "BUILD_TYPE=debug",
+    ],
+    "logger/test_logger_with_env.mojo": [
+        "-D",
+        "LOGGING_LEVEL=DEBUG",
+    ],
+    "sys/test_compile.mojo": [
+        "--debug-level",
+        "none",
+    ],
+    "sys/test_build_info_debug.mojo": [
+        "-D",
+        "BUILD_TYPE=debug",
+    ],
+    "sys/test_paramenv.mojo": [
+        "-D",
+        "bar=99",
+        "-D",
+        "baz=hello",
+        "-D",
+        "foo=11",
+        "-D",
+        "my_true=True",
+        "-D",
+        "my_false=false",
+        "-D",
+        "my_on=on",
+        "-D",
+        "my_off=off",
+    ],
+    "sys/test_compile_debug.mojo": [
+        "-O0",
+        "--debug-level",
+        "none",
+    ],
+    "builtin/test_debug_assert_mode_none.mojo": [
+        "-D",
+        "ASSERT=none",
+    ],
+    "builtin/test_debug_assert_warning.mojo": [
+        "-D",
+        "ASSERT=warn",
+    ],
+}
+
+_ENV = {
+    "os/test_env.mojo": {"TEST_MYVAR": "MyValue"},
+}
+
+_DISABLED_ASSERTIONS = [
+    "algorithm/test_parallelize.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    "bit/test_bit.mojo",
+    "builtin/test_debug_assert_mode_none.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    "builtin/test_debug_assert_warning.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    "collections/test_index_normalization.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    "json/test_json.mojo",
+]
+
+_EXPECT_CRASH = [
+    "builtin/test_range_out_of_bounds.mojo",
+    "builtin/test_debug_assert_default_error.mojo",
+    "builtin/test_range_uint_reverse_range_bad.mojo",
+    "builtin/test_debug_assert_mode_all_error.mojo",
+    "collections/test_list_getitem_invalid_index.mojo",
+    "logger/test_logger_critical.mojo",
+    "os/test_trap.mojo",
+    "os/test_trap_stringable.mojo",
+]
+
+_FILECHECK_TESTS = [
+    "algorithm/test_elementwise.mojo",
+    "algorithm/test_elementwise_1d.mojo",
+    "algorithm/test_map.mojo",
+    "algorithm/test_parallelize.mojo",
+    "algorithm/test_reductions.mojo",
+    "algorithm/test_stencil.mojo",
+    "algorithm/test_tile.mojo",
+    "algorithm/test_vectorize.mojo",
+    "benchmark/test_benchmark.mojo",
+    "benchmark/test_quick_bench.mojo",
+    "buffer/test_dimlist.mojo",
+    "buffer/test_naive_matmul.mojo",
+    "buffer/test_ndbuffer.mojo",
+    "buffer/test_ndbuffer_dynamic_shape.mojo",
+    "buffer/test_ndbuffer_dynamic_stride.mojo",
+    "buffer/test_ndbuffer_indexing.mojo",
+    "buffer/test_partial_load_store.mojo",
+    "buffer/test_strsv.mojo",
+    "builtin/test_debug_assert.mojo",
+    "builtin/test_debug_assert_default_error.mojo",
+    "builtin/test_debug_assert_mode_all.mojo",
+    "builtin/test_debug_assert_mode_all_error.mojo",
+    "builtin/test_debug_assert_mode_none.mojo",
+    "builtin/test_debug_assert_warning.mojo",
+    "builtin/test_range_out_of_bounds.mojo",
+    "builtin/test_range_uint_reverse_range_bad.mojo",
+    "builtin/test_rebind.mojo",
+    "builtin/test_sort_issue_1018.mojo",
+    "collections/test_index_normalization.mojo",
+    "collections/test_list_getitem_invalid_index.mojo",
+    "logger/test_logger.mojo",
+    "logger/test_logger_alias.mojo",
+    "logger/test_logger_critical.mojo",
+    "logger/test_logger_with_env.mojo",
+    "os/test_trap.mojo",
+    "os/test_trap_stringable.mojo",
+    "runtime/test_asyncrt.mojo",
+    "runtime/test_locks.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        args = _TEST_RUNTIME_ARGS.get(src, []),
+        copts = [
+            "--debug-level",
+            "full",
+        ] + _MOJO_COMPILE_OPTS.get(src, []),
+        data = _DATA,
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
+        env = _ENV.get(src, {}),
+        expect_crash = src in _EXPECT_CRASH,
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        args = _TEST_RUNTIME_ARGS.get(src, []),
+        copts = [
+            "--debug-level",
+            "full",
+        ] + _MOJO_COMPILE_OPTS.get(src, []),
+        data = _DATA + [src],  # NOTE: some tests attempt to read their source files
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
+        env = _ENV.get(src, {}),
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+            requirement("numpy"),
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS + _LIT_TESTS + _TEST_UTILS,
+    )
+]
+
+mojo_test(
+    name = "test_hash_O0",  # Issue #31111 -- run this test with -O0 also.
+    srcs = ["hashlib/test_hash.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+        "-O0",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
 
 lit_tests(
     name = "test",
     size = "large",
-    srcs = glob(["**/*.mojo"]),
-    data = [
-        "builtin/test_file_dummy_input.txt",
-        "python/custom_indexable.py",
-        "python/my_module.py",
-        "@mojo//:test_utils_srcs",
-    ],
+    srcs = _LIT_TESTS,
     env = {
         "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:test_utils_srcs)",
     },
     generate_litcfg = False,
     mojo_deps = [
         "@mojo//:stdlib",
-    ],
-    tags = [
-        "resources:cpu:4",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

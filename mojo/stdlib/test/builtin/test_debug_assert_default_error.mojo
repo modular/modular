@@ -14,16 +14,14 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash %bare-mojo %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
 
-# CHECK-FAIL-LABEL: test_fail
+# CHECK-LABEL: test_fail
 fn main():
     print("== test_fail")
-    # CHECK-FAIL: formatted failure message: 2, 4
+    # CHECK: formatted failure message: 2, 4
     debug_assert[assert_mode="safe"](
         False, "formatted failure message: ", 2, ", ", Scalar[DType.uint8](4)
     )
-    # CHECK-FAIL-NOT: is never reached
+    # CHECK-NOT: is never reached
     print("is never reached")

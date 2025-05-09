@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
-# UNSUPPORTED: asan
-# RUN: %mojo-no-debug %s
 
 from subprocess import run
 

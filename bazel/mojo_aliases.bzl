@@ -10,11 +10,6 @@ alias(
 )
 
 alias(
-    name = "test_utils_srcs",
-    actual = "@//{prefix}mojo/stdlib/test/test_utils:test_utils_srcs",
-)
-
-alias(
     name = "test_utils",
     actual = "@//{prefix}mojo/stdlib/test/test_utils",
 )

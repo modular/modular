@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash mojo -D ASSERT=all %s 2>&1
 
 from testing import assert_equal
 
 
+# CHECK: test_range_getitem_uint_out_of_bounds
 def test_range_getitem_uint_out_of_bounds():
+    print("== test_range_getitem_uint_out_of_bounds ==")
     assert_equal(range(UInt(0), UInt.MAX)[0], UInt(0), "range(0, UInt.MAX)[0]")
     assert_equal(
         range(UInt(0), UInt.MAX)[UInt.MAX - 1],

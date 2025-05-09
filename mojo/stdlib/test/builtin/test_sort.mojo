@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from pathlib import Path, _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed

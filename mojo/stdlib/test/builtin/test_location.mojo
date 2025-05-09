@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-# RUN: %mojo -debug-level full %s
 
 from builtin._location import (
     __call_location,
@@ -68,10 +66,10 @@ fn get_four_locs_inlined() -> (
 
 fn test_builtin_source_loc() raises:
     var source_loc = __source_location()
-    check_source_loc(70, 39, source_loc)
-    check_source_loc(72, 47, __source_location())
+    check_source_loc(68, 39, source_loc)
+    check_source_loc(70, 47, __source_location())
 
-    var l = (33, 34, 41, 42)
+    var l = (31, 32, 39, 40)
     var c = (26, 30, 26, 30)
     var loc_pair = get_locs()
     check_source_loc(l[0], c[0], loc_pair[0])
@@ -120,9 +118,9 @@ fn test_parameter_context() raises:
     assert_equal(cloc.file_name, "<unknown location in parameter context>")
 
     alias iloc = get_inner_location_statically()
-    check_source_loc(98, 29, iloc)
+    check_source_loc(96, 29, iloc)
     alias iloc2 = get_inner_location_statically_with_debug()
-    check_source_loc(102, 33, iloc2)
+    check_source_loc(100, 33, iloc2)
 
 
 @always_inline
@@ -193,7 +191,7 @@ fn get_four_call_locs_inlined() -> (
 
 
 fn test_builtin_call_loc() raises:
-    var l = (150, 151, 160, 161)
+    var l = (148, 149, 158, 159)
     var c = (25, 33, 32, 40)
     var loc_pair = get_call_locs()
     check_source_loc(l[0], c[0], loc_pair[0])
@@ -204,8 +202,8 @@ fn test_builtin_call_loc() raises:
     check_source_loc(l[3], c[3], loc_pair[1])
 
     loc_pair = get_call_locs_inlined_twice[2]()
-    check_source_loc(169, 40, loc_pair[0])
-    check_source_loc(169, 40, loc_pair[1])
+    check_source_loc(167, 40, loc_pair[0])
+    check_source_loc(167, 40, loc_pair[1])
 
     var loc_quad = get_four_call_locs()
     check_source_loc(l[0], c[0], loc_quad[0])

@@ -10,19 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(#33762): This is causing recursive dirs to be created.
-# REQUIRES: DISABLED
-# RUN: rm -rf %t && mkdir -p %t
-# RUN: ln -s %S %t/tmp
-# RUN: %mojo  -D TEMP_DIR=%t/tmp %s
 
+import os
 from os.path import isdir, islink
 from pathlib import Path
 from sys import env_get_string
 
 from testing import assert_false, assert_true
 
-alias TEMP_DIR = env_get_string["TEMP_DIR"]()
+alias TEMP_DIR = os.getenv("TEST_TMPDIR")
 
 
 def main():

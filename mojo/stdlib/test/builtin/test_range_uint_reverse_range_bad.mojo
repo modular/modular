@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash mojo -D ASSERT=all %s 2>&1
 
 from testing import assert_equal
 
 
+# CHECK: test_range_uint_bad_step_size
 def test_range_uint_bad_step_size():
+    print("== test_range_uint_bad_step_size ==")
     # Ensure constructing a range with a "-1" step size (i.e. reverse range)
     # with UInt is rejected and aborts now via `debug_assert` handler.
     _ = range(UInt(0), UInt(10), UInt(Int(-1)))

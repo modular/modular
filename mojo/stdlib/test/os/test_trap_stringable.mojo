@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash mojo --debug-level full %s 2>&1 | FileCheck %s -check-prefix=CHECK
 
 from os import abort
 

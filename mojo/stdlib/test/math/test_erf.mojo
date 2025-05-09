@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: system-linux
-# RUN: %mojo-no-debug %s
-
 
 from collections import InlineArray
 from math import erf

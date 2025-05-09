@@ -14,8 +14,6 @@
 # This file is only run on windows targets.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: system-windows
-# RUN: mojo.exe %s
 
 
 from os._windows import (

@@ -10,16 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash %bare-mojo -D BUILD_TYPE=debug %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
 
-# CHECK-FAIL-LABEL: test_fail_list_index
+# CHECK-LABEL: test_fail_list_index
 fn main():
     print("== test_fail_list_index")
-    # CHECK-FAIL: index: 4 is out of bounds for `List` of length: 3
+    # CHECK: index: 4 is out of bounds for `List` of length: 3
     nums = List[Int](1, 2, 3)
     print(nums[4])
 
-    # CHECK-FAIL-NOT: is never reached
+    # CHECK-NOT: is never reached
     print("is never reached")

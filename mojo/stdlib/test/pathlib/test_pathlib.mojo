@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo  -D TEMP_FILE=%t %s
 
 import os
 from pathlib import DIR_SEPARATOR, Path, cwd
@@ -19,8 +18,6 @@ from tempfile import NamedTemporaryFile, gettempdir
 
 from builtin._location import __source_location
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
-
-alias TEMP_FILE = env_get_string["TEMP_FILE"]()
 
 
 def test_cwd():
@@ -84,8 +81,9 @@ def test_joinpath():
 
 
 def test_read_write():
-    Path(TEMP_FILE).write_text("hello")
-    assert_equal(Path(TEMP_FILE).read_text(), "hello")
+    var temp_file = Path(os.getenv("TEST_TMPDIR")) / "foo.txt"
+    temp_file.write_text("hello")
+    assert_equal(temp_file.read_text(), "hello")
 
 
 def test_read_write_bytes():
