@@ -38,7 +38,6 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.core import LogProbabilities, TextContext
-from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -47,10 +46,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities,
-    compute_log_probabilities_ragged,
-)
+from max.pipelines.lib.log_probabilities import compute_log_probabilities_ragged
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -68,12 +64,12 @@ class Llama3Inputs(ModelInputs):
     execution.
     """
 
-    tokens: np.ndarray | Tensor
+    tokens: Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets_or_attn_mask: np.ndarray | Tensor
-    """Tensor containing the offsets for each row in the ragged input sequence,
-    or the attention mask for the padded input sequence."""
+    input_row_offsets: Tensor
+    """Tensor containing the offsets for each row in the ragged input
+    sequence."""
 
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
@@ -82,8 +78,8 @@ class Llama3Inputs(ModelInputs):
 
     def __init__(
         self,
-        tokens: np.ndarray | Tensor,
-        input_row_offsets_or_attn_mask: np.ndarray | Tensor,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
         signal_buffers: list[Tensor],
         return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
@@ -91,22 +87,15 @@ class Llama3Inputs(ModelInputs):
         """
         Args:
             tokens: Input token IDs.
-            input_row_offsets_or_attn_mask: Input row offsets (ragged tensors)
-                or attention mask (padded tensors).
+            input_row_offsets: Input row offsets (ragged tensors).
             signal_buffers: Device buffers used for synchronization in
                 communication collectives.
         """
         self.tokens = tokens
-        self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.input_row_offsets = input_row_offsets
         self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
         self.return_n_logits = return_n_logits
-
-    @property
-    def input_row_offsets(self) -> np.ndarray | Tensor:
-        """Gets the row offsets of the ragged input sequence."""
-        # TODO(bduke): this should implement a ragged tensor interface.
-        return self.input_row_offsets_or_attn_mask
 
 
 class LlamaModelBase(PipelineModel[TextContext]):
@@ -212,54 +201,34 @@ class LlamaModelBase(PipelineModel[TextContext]):
         kv_inputs = self.kv_manager.input_symbols()
 
         # Construct Graph Inputs
-        if self.kv_cache_config.cache_strategy.uses_opaque():
-            tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=device_ref
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-            )
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
 
-            if len(self.devices) > 1:
-                # Flatten kv types for each device
-                flattened_kv_types = [
-                    kv_type for sublist in kv_inputs for kv_type in sublist
-                ]
+        if len(self.devices) > 1:
+            # Flatten kv types for each device
+            flattened_kv_types = [
+                kv_type for sublist in kv_inputs for kv_type in sublist
+            ]
 
-                signals = Signals(
-                    devices=(DeviceRef(d.label, d.id) for d in self.devices)
-                )
-
-                return (
-                    tokens_type,
-                    input_row_offsets_type,
-                    return_n_logits_type,
-                    *signals.input_types(),
-                    *flattened_kv_types,
-                )
-            else:
-                return (
-                    tokens_type,
-                    input_row_offsets_type,
-                    return_n_logits_type,
-                    *kv_inputs[0],
-                )
-
-        else:
-            tokens_type = TensorType(
-                DType.int64,
-                shape=["batch_size", "seq_len"],
-                device=DeviceRef.from_device(self.devices[0]),
-            )
-            attn_mask_type = TensorType(
-                DType.float32,
-                shape=["batch_size", "seq_len", "post_seq_len"],
-                device=DeviceRef.from_device(self.devices[0]),
+            signals = Signals(
+                devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
 
             return (
                 tokens_type,
-                attn_mask_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *signals.input_types(),
+                *flattened_kv_types,
+            )
+        else:
+            return (
+                tokens_type,
+                input_row_offsets_type,
                 return_n_logits_type,
                 *kv_inputs[0],
             )
@@ -269,7 +238,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         model_outputs = self.model.execute(
             model_inputs.tokens,
-            model_inputs.input_row_offsets_or_attn_mask,
+            model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
@@ -291,12 +260,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 next_token_logits=model_outputs[0],
             )
 
-    def _prepare_ragged_initial_token_inputs(
+    def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
+        """Prepare the inputs for the first pass in multistep execution."""
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
@@ -309,80 +279,14 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         return Llama3Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets_or_attn_mask=Tensor.from_numpy(
-                input_row_offsets
-            ).to(self.devices[0]),
+            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
+                self.devices[0]
+            ),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
-        )
-
-    def _prepare_padded_initial_token_inputs(
-        self,
-        context_batch: Sequence[TextContext],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> Llama3Inputs:
-        # Get tokens and seq_ids
-        tokens = [ctx.next_tokens for ctx in context_batch]
-
-        # Pad tokens and compute attention mask for the batch.
-        max_cache_len = max(ctx.start_idx for ctx in context_batch)
-        start_pos = [max_cache_len] * len(context_batch)
-        next_tokens_batch, _, attn_mask = batch_padded_tokens_and_mask(
-            start_pos=start_pos,
-            tokens=tokens,
-            pad_to_multiple_of=self.pipeline_config.pad_to_multiple_of,
-        )
-
-        return Llama3Inputs(
-            tokens=next_tokens_batch,
-            input_row_offsets_or_attn_mask=attn_mask,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-        )
-
-    def prepare_initial_token_inputs(
-        self,
-        context_batch: Sequence[TextContext],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> Llama3Inputs:
-        """Prepare the inputs for the first pass in multistep execution."""
-        if self.kv_cache_config.cache_strategy.uses_opaque():
-            return self._prepare_ragged_initial_token_inputs(
-                context_batch,
-                kv_cache_inputs,
-                return_n_logits,
-            )
-        else:
-            return self._prepare_padded_initial_token_inputs(
-                context_batch,
-                kv_cache_inputs,
-                return_n_logits,
-            )
-
-    def _prepare_ragged_next_token_inputs(
-        self,
-        next_tokens: Tensor,
-        prev_model_inputs: Llama3Inputs,
-    ) -> Llama3Inputs:
-        row_offsets_size = (
-            prev_model_inputs.input_row_offsets_or_attn_mask.shape[0]
-        )
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        return Llama3Inputs(
-            tokens=next_tokens,
-            input_row_offsets_or_attn_mask=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
         )
 
     def prepare_next_token_inputs(
@@ -394,14 +298,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         assert isinstance(prev_model_inputs, Llama3Inputs)
-        if self.kv_cache_config.cache_strategy.uses_opaque():
-            return self._prepare_ragged_next_token_inputs(
-                next_tokens, prev_model_inputs
-            )
-        else:
-            # TODO(MODELS-407): Consider deleting the padded path entirely.
-            msg = "multistep unsupported for padded token batches"
-            raise ValueError(msg)
+        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
+        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
+
+        return Llama3Inputs(
+            tokens=next_tokens,
+            input_row_offsets=next_row_offsets,
+            signal_buffers=self.signal_buffers,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            return_n_logits=prev_model_inputs.return_n_logits,
+        )
 
     @classmethod
     def calculate_max_seq_len(
@@ -655,56 +561,17 @@ class LlamaModelBase(PipelineModel[TextContext]):
         llama3_inputs: Llama3Inputs = model_inputs
 
         sampled_tokens = next_tokens.to_numpy()
-        tokens = llama3_inputs.tokens
-        if isinstance(tokens, Tensor):
-            tokens = tokens.to_numpy()
-        if self.kv_cache_config.cache_strategy.uses_opaque():
-            # Handle the ragged inputs
-            input_row_offsets = llama3_inputs.input_row_offsets
-            if isinstance(input_row_offsets, Tensor):
-                input_row_offsets = input_row_offsets.to_numpy()
+        tokens = llama3_inputs.tokens.to_numpy()
+        input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
 
-            return compute_log_probabilities_ragged(
-                input_row_offsets=input_row_offsets,
-                logits=logits,
-                tokens=tokens,
-                sampled_tokens=sampled_tokens,
-                batch_top_n=batch_top_n,
-                batch_echo=batch_echo,
-            )
-
-        else:
-            # Handle batched inputs. Llama pads them to the right so the seq
-            # lengths can be computed by finding the first 0 token.
-            seq_lens = np.sum(tokens > 0, axis=1)
-
-            assert model_outputs.next_token_logits is not None
-            next_token_logits = model_outputs.next_token_logits.to_numpy()
-
-            def _get_logits_and_samples(
-                batch_index: int, echo: bool
-            ) -> tuple[np.ndarray, np.ndarray]:
-                if echo:
-                    seq_len = seq_lens[batch_index]
-                    padded_tokens = tokens[batch_index]
-
-                    batch_logits = logits[batch_index, :seq_len, :]
-                    samples = np.concatenate(
-                        (
-                            padded_tokens[1:seq_len],
-                            sampled_tokens[batch_index : batch_index + 1],
-                        )
-                    )
-                else:
-                    batch_logits = next_token_logits[
-                        batch_index : batch_index + 1, :
-                    ]
-                    samples = sampled_tokens[batch_index : batch_index + 1]
-                return batch_logits, samples
-
-            return compute_log_probabilities(
-                _get_logits_and_samples, batch_top_n, batch_echo
-            )
+        return compute_log_probabilities_ragged(
+            input_row_offsets=input_row_offsets,
+            logits=logits,
+            tokens=tokens,
+            sampled_tokens=sampled_tokens,
+            batch_top_n=batch_top_n,
+            batch_echo=batch_echo,
+        )
 
 
 class Llama3Model(LlamaModelBase):
