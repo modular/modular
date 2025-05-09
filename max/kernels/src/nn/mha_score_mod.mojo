@@ -23,6 +23,8 @@ trait ScoreModTrait:
     """The ScoreMod trait desctribes score_mod for mha kernel like alibi bias.
     """
 
+    alias name_str: String
+
     fn score_mod[
         type: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
@@ -49,6 +51,8 @@ struct AlibiScoreMod[
 ](ScoreModTrait):
     """AlibiScoreMod adds the appropriate ALiBi constant bias to attention score.
     """
+
+    alias name_str: String = "alibi"
 
     @always_inline
     fn _generate_alibi_bias[
@@ -122,6 +126,8 @@ struct AlibiScoreMod[
 @register_passable("trivial")
 struct IdentityScoreMod(ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
+
+    alias name_str: String = "identity"
 
     @always_inline
     fn score_mod[

@@ -123,9 +123,8 @@ from nn.index_tensor import (
     index_tensor,
 )
 from nn.kv_cache import (
-    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
-    generic_flash_attention_kv_cache_causal_mask_continuous_batch,
-    generic_flash_attention_kv_cache_continuous_batch,
+    generic_flash_attention_kv_cache_padded,
+    generic_flash_attention_kv_cache_padded_materialized_mask,
     generic_fused_qk_rope_bshd_continuous_batch,
     generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
     generic_get_continuous_cache,
@@ -7021,7 +7020,9 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     scale: Float32,
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_continuous_batch[target](
+    generic_flash_attention_kv_cache_padded_materialized_mask[
+        target=target, score_mod_str="identity"
+    ](
         managed_tensor_slice_to_ndbuffer(q),
         kv_collection,
         layer_idx,
@@ -7076,7 +7077,9 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     scale: Float32,
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
+    generic_flash_attention_kv_cache_padded[
+        target=target, mask_str="causal", score_mod_str="identity"
+    ](
         managed_tensor_slice_to_ndbuffer(q),
         kv_collection,
         layer_idx,

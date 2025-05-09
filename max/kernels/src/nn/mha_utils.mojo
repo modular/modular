@@ -32,6 +32,18 @@ from layout.swizzle import make_ldmatrix_swizzle
 from math import ceildiv, align_up
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
+from buffer import NDBuffer
+from nn.mha_mask import (
+    MaskName,
+    CausalMask,
+    ChunkedMask,
+    NullMask,
+    MHAMask,
+    SlidingWindowCausalMask,
+    ChunkedCausalMask,
+    MaterializedMask,
+)
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -506,3 +518,99 @@ fn get_start_and_end_for_partitions[
     # var start = num_keys_per_partition * partition_idx
     # var end = min(num_keys, start + num_keys_per_partition)
     # return (start, end)
+
+
+alias callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait] (
+    mask: mask_t, score_mod: score_mod_t
+) raises capturing -> None
+
+
+@always_inline
+fn dispatch_mask_and_score_mod[
+    mask_type: String,
+    score_mod_type: String,
+    callback_fn: callback_fn_type,
+    local_window_size: Int = -1,
+    num_heads: Int = -1,
+]() raises -> None:
+    @always_inline
+    @parameter
+    fn outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
+        @always_inline
+        @parameter
+        fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
+            return callback_fn(mask, score_mod)
+
+        return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
+
+    # TODO: attach string constants to mask types themselves.
+    @parameter
+    if MaskName.CAUSAL == mask_type:
+        return outer_wrapper(CausalMask())
+    elif MaskName.CHUNKED == mask_type:
+        constrained[
+            local_window_size > 0,
+            "You muse specify local_window_size for ChunkedMask",
+        ]()
+        return outer_wrapper(ChunkedMask[local_window_size]())
+    elif MaskName.NULL == mask_type:
+        return outer_wrapper(NullMask())
+    elif MaskName.SLIDING_WINDOW == mask_type:
+        constrained[
+            local_window_size > 0,
+            "You muse specify local_window_size for SlidingWindowCausalMask",
+        ]()
+        return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+    elif MaskName.CHUNKED_CAUSAL == mask_type:
+        constrained[
+            local_window_size > 0,
+            "You muse specify local_window_size for ChunkedCausalMask",
+        ]()
+        return outer_wrapper(ChunkedCausalMask[local_window_size]())
+    else:
+        constrained[False, "Unsupported mask type: " + mask_type]()
+
+
+@always_inline
+fn dispatch_materialized_mask_and_score_mod[
+    score_mod_type: String, callback_fn: callback_fn_type, num_heads: Int = -1
+](
+    mask_nd: NDBuffer,
+    start_pos_nd: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ] = None,
+) raises -> None:
+    var mask = MaterializedMask(mask_nd, start_pos_nd)
+
+    @always_inline
+    @__copy_capture(mask)
+    @parameter
+    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
+        return callback_fn(mask, score_mod)
+
+    return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
+
+
+@always_inline
+fn _dispatch_score_mod[
+    score_mod_type: String,
+    callback_fn: fn[score_mod_t: ScoreModTrait] (
+        score_mod: score_mod_t
+    ) raises capturing -> None,
+    num_heads: Int = -1,
+]() raises -> None:
+    @always_inline
+    @parameter
+    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
+        return callback_fn(score_mod)
+
+    @parameter
+    if score_mod_type == AlibiScoreMod.name_str:
+        constrained[
+            num_heads > 0, "You muse specify num_heads for AlibiScoreMod"
+        ]()
+        return wrapper(AlibiScoreMod[num_heads]())
+    elif score_mod_type == IdentityScoreMod.name_str:
+        return wrapper(IdentityScoreMod())
+    else:
+        constrained[False, "Unsupported score mod type: " + score_mod_type]()

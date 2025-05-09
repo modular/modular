@@ -22,6 +22,39 @@ from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
+# MaskName
+# ===-----------------------------------------------------------------------===#
+
+
+struct MaskName(Stringable):
+    """A tile's masking status."""
+
+    var name: String
+
+    alias NULL = Self("null")
+    alias CAUSAL = Self("causal")
+    alias CHUNKED = Self("chunked")
+    alias SLIDING_WINDOW = Self("sliding_window")
+    alias MATERIALIZED = Self("materialized")
+    alias CHUNKED_CAUSAL = Self("chunked_causal")
+
+    fn __init__(out self, name: String):
+        self.name = name
+
+    fn __str__(self) -> String:
+        return self.name
+
+    fn __eq__(self, rhs: Self) -> Bool:
+        return self.name == rhs.name
+
+    fn __eq__(self, rhs: String) -> Bool:
+        return self.name == rhs
+
+    fn __ne__(self, rhs: Self) -> Bool:
+        return self.name != rhs.name
+
+
+# ===-----------------------------------------------------------------------===#
 # TileMaskStatus
 # ===-----------------------------------------------------------------------===#
 
@@ -658,7 +691,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
 
 # ===-----------------------------------------------------------------------===#
-# ChunkedLocalMask
+# ChunkedCausalMask
 # ===-----------------------------------------------------------------------===#
 
 

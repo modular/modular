@@ -36,12 +36,17 @@ from nn.flash_attention import (
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, MaterializedMask, NullMask
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
+from nn.mha_mask import MHAMask, MaterializedMask
+from nn.mha_score_mod import ScoreModTrait, IdentityScoreMod
+from nn.mha_utils import (
+    dispatch_materialized_mask_and_score_mod,
+    dispatch_mask_and_score_mod,
+)
 from nn.normalization import _rms_norm_impl
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
+from sys.intrinsics import _type_is_eq
 
 from utils import Index, IndexList
 from layout.layout_tensor import LayoutTensor
@@ -373,11 +378,76 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_continuous_batch[
-    target: StaticString, type: DType
+fn generic_flash_attention_kv_cache_padded[
+    collection_t: KVCollectionT,
+    type: DType, //,
+    *,
+    target: StaticString,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
+    local_window_size: Int = -1,
+    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 4, *_],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    scale: Float32,
+    output: NDBuffer[mut=True, type, 4, *_],
+    context: DeviceContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q", q),
+            trace_slice_arg("valid_lengths", valid_lengths),
+            "scale=" + String(scale),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(collection_t.kv_params.num_heads),
+            "head_size=" + String(collection_t.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.mha.padded.continuous_batching."
+        + mask_str
+        + "."
+        + score_mod_str
+        + ".nhead_"
+        + String(collection_t.kv_params.num_heads)
+        + ".hdim_"
+        + String(collection_t.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_dispatch[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+            num_heads=num_heads,
+        ](
+            q,
+            kv_collection,
+            layer_idx,
+            valid_lengths,
+            scale,
+            output,
+            context,
+        )
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_padded_materialized_mask[
+    collection_t: KVCollectionT,
+    type: DType, //,
+    *,
+    target: StaticString,
+    score_mod_str: StaticString,
+    local_window_size: Int = -1,
+    num_heads: Int = -1,
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: collection_t,
     layer_idx: UInt32,
     mask: NDBuffer[type, *_],
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -394,19 +464,24 @@ fn generic_flash_attention_kv_cache_continuous_batch[
             trace_slice_arg("valid_lengths", valid_lengths),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            "num_heads=" + String(collection_t.kv_params.num_heads),
+            "head_size=" + String(collection_t.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continunous_batching.tensor_mask.no_pos.nhead_"
-        + String(kv_collection.kv_params.num_heads)
+        "mo.mha.padded.continuous_batching.tensor_mask."
+        + score_mod_str
+        + ".nhead_"
+        + String(collection_t.kv_params.num_heads)
         + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        return _flash_attention_kv_cache[
-            kv_collection.CacheType, target=target
+        return _flash_attention_dispatch_materialized_mask[
+            target=target,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+            num_heads=num_heads,
         ](
             q,
             kv_collection,
@@ -419,459 +494,103 @@ fn generic_flash_attention_kv_cache_continuous_batch[
         )
 
 
-@always_inline
-fn _flash_attention_kv_cache[
+fn _flash_attention_dispatch[
     type: DType,
     collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
+    *,
     target: StaticString,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
+    local_window_size: Int = -1,
+    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 4, *_],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    mask: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: DeviceContextPtr,
-) raises:
-    """Performs flash attention using k and v caches from KVCacheT custom types.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        mask: The attention mask to apply to the score matrix.
-        valid_lengths: The unpadded lengths of the sequences contained in q
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: Pointer containing the runtime context for the target device.
-    """
-    var cuda_ctx: Optional[DeviceContext] = None
-
-    @parameter
-    if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
-
-    _flash_attention_kv_cache_impl[cache_t, target=target](
-        q,
-        kv_collection,
-        layer_idx,
-        mask,
-        valid_lengths,
-        scale,
-        output,
-        cuda_ctx,
-    )
-
-
-@always_inline
-fn _flash_attention_kv_cache_impl[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
-    target: StaticString,
-](
-    q: NDBuffer[type, 4, *_],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    mask: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: Optional[DeviceContext],
-) raises:
-    """Performs flash attention using k and v caches from KVCacheT custom custom types.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        mask: The attention mask to apply to the score matrix.
-        valid_lengths: The unpadded lengths of the sequences contained in q
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: CUDA DeviceContext. This is not used if is_cpu[target]()
-    """
-
-    var layer_idx_cast = Int(layer_idx)
-    var k = kv_collection.get_key_cache(layer_idx_cast)
-    var v = kv_collection.get_value_cache(layer_idx_cast)
-
-    @parameter
-    if is_cpu[target]():
-        return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
-    else:
-        return _flash_attention_kv_cache_gpu[target=target](
-            q, k, v, mask, valid_lengths, scale, output, context.value()
-        )
-
-
-@always_inline
-fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
-    target: StaticString, type: DType
-](
-    q: NDBuffer[type, 4, *_],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_cache: collection_t,
     layer_idx: UInt32,
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
-    @always_inline
+    var k = kv_cache.get_key_cache(Int(layer_idx))
+    var v = kv_cache.get_value_cache(Int(layer_idx))
+
     @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_arg("q", q),
-            trace_slice_arg("valid_lengths", valid_lengths),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-        )
+    @__copy_capture(k, v)
+    fn _dispatch_flash_attention[
+        mask_t: MHAMask, score_mod_t: ScoreModTrait
+    ](mask: mask_t, score_mod: score_mod_t) raises:
+        @parameter
+        if is_cpu[target]():
+            return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
+        else:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+            gpu_flash_attention[use_score_mod=use_score_mod](
+                output,
+                q,
+                k,
+                v,
+                mask,
+                score_mod,
+                valid_lengths,
+                scale,
+                context.get_device_context(),
+            )
 
-    with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching.causal_mask.no_pos.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        return _flash_attention_kv_cache_causal_mask[
-            kv_collection.CacheType, target=target
-        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
+    return dispatch_mask_and_score_mod[
+        mask_str, score_mod_str, _dispatch_flash_attention, num_heads
+    ]()
 
 
-@always_inline
-fn _flash_attention_kv_cache_causal_mask[
+fn _flash_attention_dispatch_materialized_mask[
     type: DType,
     collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
+    *,
     target: StaticString,
+    score_mod_str: String,
+    local_window_size: Int = -1,
+    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 4, *_],
-    kv_collection: collection_t,
+    kv_cache: collection_t,
     layer_idx: UInt32,
+    mask_nd: NDBuffer[type, *_],
     valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
-    """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        valid_lengths: The unpadded lengths of the sequences contained in q
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: Pointer containing the runtime context for the target device.
-    """
-    var cuda_ctx: Optional[DeviceContext] = None
+    var k = kv_cache.get_key_cache(Int(layer_idx))
+    var v = kv_cache.get_value_cache(Int(layer_idx))
 
     @parameter
-    if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+    fn _dispatch_flash_attention[
+        mask_t: MHAMask, score_mod_t: ScoreModTrait
+    ](mask: mask_t, score_mod: score_mod_t) raises:
+        @parameter
+        if is_cpu[target]():
+            return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
+        else:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+            gpu_flash_attention[use_score_mod=use_score_mod](
+                output,
+                q,
+                k,
+                v,
+                mask,
+                score_mod,
+                valid_lengths,
+                scale,
+                context.get_device_context(),
+            )
 
-    _flash_attention_kv_cache_causal_mask_impl[cache_t, target=target](
-        q, kv_collection, layer_idx, valid_lengths, scale, output, cuda_ctx
-    )
-
-
-@always_inline
-fn _flash_attention_kv_cache_causal_mask_impl[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
-    target: StaticString,
-](
-    q: NDBuffer[type, 4, *_],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: Optional[DeviceContext],
-) raises:
-    """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        valid_lengths: The unpadded lengths of the sequences contained in q
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: CUDA DeviceContext. This is not used if is_cpu[target]()
-    """
-    var layer_idx_cast = Int(layer_idx)
-    var k = kv_collection.get_key_cache(layer_idx_cast)
-    var v = kv_collection.get_value_cache(layer_idx_cast)
-
-    @parameter
-    if is_cpu[target]():
-        return flash_attention_kv_cache_cpu(
-            q, k, v, CausalMask(), scale, output
-        )
-    else:
-        return _flash_attention_kv_cache_causal_mask_gpu[target=target](
-            q, k, v, valid_lengths, scale, output, context.value()
-        )
-
-
-# TODO: Change this as needed when plumbed with pipelines.
-#       This is a copy of _flash_attention_kv_cache_gpu with the difference that
-#       it calls gpu_flash_attention with the option to use mask tensor and
-#       passing CausalMask().
-@always_inline
-fn _flash_attention_kv_cache_causal_mask_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StaticString
-](
-    q: NDBuffer[type, 4, *_],
-    k: cache_t,
-    v: cache_t,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: DeviceContext,
-) raises:
-    # GPU flash attention kernel gets the cache length from the k tensor shape
-    # TODO remove this and instead pass in explicit KVCache lengths to the GPU kernel.
-    # KERN-725
-    gpu_flash_attention(
-        output,
-        q,
-        k,
-        v,
-        CausalMask(),
-        IdentityScoreMod(),
-        valid_lengths,
-        scale,
-        context,
-    )
-
-
-@always_inline
-fn _flash_attention_kv_cache_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StaticString
-](
-    q: NDBuffer[type, 4, *_],
-    k: cache_t,
-    v: cache_t,
-    mask: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: DeviceContext,
-) raises:
-    alias wrapped_mask_rank = mask.rank if mask.rank == 4 else 3
-    var mask_nd: NDBuffer[
-        type,
-        wrapped_mask_rank,
-        MutableAnyOrigin,
-        DimList.create_unknown[wrapped_mask_rank](),
-    ]
-
-    @parameter
-    if mask.rank == 2:
-        mask_nd = NDBuffer[
-            type,
-            wrapped_mask_rank,
-            MutableAnyOrigin,
-            DimList.create_unknown[wrapped_mask_rank](),
-        ](
-            mask.data,
-            IndexList[wrapped_mask_rank](
-                q.dim[0](), mask.dim[0](), mask.dim[1]()
-            ),
-        )
-    else:
-        mask_nd = rebind[
-            NDBuffer[
-                type,
-                wrapped_mask_rank,
-                MutableAnyOrigin,
-                DimList.create_unknown[wrapped_mask_rank](),
-            ]
-        ](mask)
-
-    # GPU flash attention kernel gets the cache length from the k tensor shape
-    # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
-    # KERN-725
-    gpu_flash_attention(
-        output,
-        q,
-        k,
-        v,
-        MaterializedMask(mask_nd, start_pos=k.cache_lengths_nd()),
-        IdentityScoreMod(),
-        valid_lengths,
-        scale,
-        context,
-    )
-
-
-@always_inline
-fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
-    target: StaticString, type: DType
-](
-    q: NDBuffer[type, 4, *_],
-    kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: DeviceContextPtr,
-) raises:
-    @always_inline
-    @parameter
-    fn description_fn() -> String:
-        return String(";").join(
-            trace_arg("q", q),
-            trace_slice_arg("valid_lengths", valid_lengths),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching.causal_mask.alibi_pos.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        return _flash_attention_kv_cache_causal_alibi_mask[
-            kv_collection.CacheType, target=target
-        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
-
-
-@always_inline
-fn _flash_attention_kv_cache_causal_alibi_mask[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
-    target: StaticString,
-](
-    q: NDBuffer[type, 4, *_],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: DeviceContextPtr,
-) raises:
-    """Performs flash attention using k and v caches from KVCacheT
-    custom types, with the causal mask and alibi mask materialized inside the kernel.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        valid_lengths: The unpadded lengths of the sequences contained in q
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: Pointer containing the runtime context for the target device.
-    """
-    var cuda_ctx: Optional[DeviceContext] = None
-
-    @parameter
-    if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
-
-    _flash_attention_kv_cache_causal_alibi_mask_impl[cache_t, target=target](
-        q, kv_collection, layer_idx, valid_lengths, scale, output, cuda_ctx
-    )
-
-
-@always_inline
-fn _flash_attention_kv_cache_causal_alibi_mask_impl[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
-    target: StaticString,
-](
-    q: NDBuffer[type, 4, *_],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: Optional[DeviceContext],
-) raises:
-    """Performs flash attention using k and v caches from KVCacheT
-    custom types, with the causal mask and alibi mask materialized inside the kernel.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        valid_lengths: The unpadded lengths of the sequences contained in q
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: CUDA DeviceContext. This is not used if is_cpu[target]()
-    """
-    var layer_idx_cast = Int(layer_idx)
-    var k = kv_collection.get_key_cache(layer_idx_cast)
-    var v = kv_collection.get_value_cache(layer_idx_cast)
-
-    @parameter
-    if is_cpu[target]():
-        return flash_attention_kv_cache_cpu(
-            q, k, v, CausalMask(), scale, output
-        )
-    else:
-        return _flash_attention_kv_cache_causal_alibi_mask_gpu[target=target](
-            q, k, v, valid_lengths, scale, output, context.value()
-        )
-
-
-# TODO: Change this as needed when plumbed with pipelines.
-#       This is a copy of _flash_attention_kv_cache_gpu with the difference that
-#       it calls gpu_flash_attention with the option to use mask tensor and
-#       passing CausalMask() and AlibiScoreMod().
-@always_inline
-fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StaticString
-](
-    q: NDBuffer[type, 4, *_],
-    k: cache_t,
-    v: cache_t,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
-    scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
-    context: DeviceContext,
-) raises:
-    var mask_nd = NDBuffer[
-        type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
-    ](UnsafePointer[Scalar[type]](), IndexList[4]())
-
-    # This assumes that, the q tensor is static in the 1 dim.
-    alias num_q_heads = Int(q.shape.at[1]())
-
-    # GPU flash attention kernel gets the cache length from the k tensor shape
-    # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
-    # KERN-725
-    gpu_flash_attention[use_score_mod=True](
-        output,
-        q,
-        k,
-        v,
-        MaterializedMask(mask_nd, start_pos=k.cache_lengths_nd()),
-        AlibiScoreMod[num_q_heads](),
-        valid_lengths,
-        scale,
-        context,
-    )
+    return dispatch_materialized_mask_and_score_mod[
+        score_mod_str, _dispatch_flash_attention, num_heads
+    ](mask_nd)
 
 
 # ===-----------------------------------------------------------------------===#
