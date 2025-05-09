@@ -4755,9 +4755,7 @@ struct RepeatInterleave:
 @compiler.register("mo.random.normal")
 struct RandomNormal:
     @staticmethod
-    fn execute[
-        mean_var_type: DType
-    ](
+    fn execute(
         output: OutputTensor,
         shape: InputTensor[rank=1],
         mean: Scalar,
@@ -4795,9 +4793,7 @@ struct RandomNormal:
 @compiler.register("mo.static.random.normal")
 struct StaticRandomNormal:
     @staticmethod
-    fn execute[
-        mean_var_type: DType
-    ](
+    fn execute(
         output: OutputTensor,
         mean: Scalar,
         variance: Scalar,
