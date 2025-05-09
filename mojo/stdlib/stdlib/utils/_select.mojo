@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 fn _select_register_value[
     T: AnyTrivialRegType
 ](condition: Bool, lhs: T, rhs: T) -> T:
