@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import copy
 import csv
 import functools
 import os
@@ -862,12 +863,17 @@ class Scheduler:
                 self.progress.update(build_progress, advance=1)
         return unique_build_paths
 
-    def execute_all(self, unique_build_paths, exec_prefix, exec_suffix):
+    def execute_all(
+        self, unique_build_paths, profile, exec_prefix, exec_suffix
+    ):
         """Execute all the items in the scheduler"""
         exec_progress = self.progress.add_task(
             "run",
             total=len(self.build_items),
         )
+
+        exec_prefix_in = copy.deepcopy(exec_prefix)
+        exec_suffix_in = copy.deepcopy(exec_suffix)
 
         for b in self.build_items:
             s = b.spec_instance
@@ -875,6 +881,22 @@ class Scheduler:
             bin_path = unique_build_paths.get(bin_name, None)
 
             self.progress.update(exec_progress, description=f"run {str(s)}")
+
+            exec_prefix = copy.deepcopy(exec_prefix_in)
+            exec_suffix = copy.deepcopy(exec_suffix_in)
+
+            profile_output = f"{b.output_dir}/{bin_name}_profile"
+            if profile in ["ncu", "ncu-single"]:
+                exec_prefix.extend(["ncu", "-o", profile_output])
+                if profile == "ncu-single":
+                    exec_suffix.extend(
+                        ["--bench-max-iters=0", "--bench-max-batch-size=1"]
+                    )
+            if profile in ["rocm", "rocprof-compute"]:
+                exec_prefix.extend(
+                    f"rocprof-compute profile --name NAME -p {profile_output} --".split()
+                )
+                logging.info(f"writing profiling results to {profile_output}")
 
             if bin_path:
                 exec_output = s.execute(
@@ -900,6 +922,7 @@ def run(
     shape: SpecInstance | None = None,
     filter_list=None,
     build_opts: list[str] = [],
+    profile: str = "",
     exec_prefix: list[str] = [],
     exec_suffix: list[str] = [],
     dryrun: bool = False,
@@ -978,6 +1001,7 @@ def run(
             if mode == KBENCH_MODE.RUN:
                 scheduler.execute_all(
                     unique_build_paths,
+                    profile=profile,
                     exec_prefix=exec_prefix,
                     exec_suffix=exec_suffix,
                 )
@@ -1393,26 +1417,6 @@ def cli(
 
     exec_suffix = exec_suffix.split(" ") if exec_suffix else []
     exec_prefix = exec_prefix.split(" ") if exec_prefix else []
-    if profile in ["ncu", "ncu-single"]:
-        exec_prefix.extend(["ncu"])
-        if profile == "ncu-single":
-            exec_suffix.extend(
-                ["--bench-max-iters=0", "--bench-max-batch-size=1"]
-            )
-    if profile in ["rocm", "rocprof-compute"]:
-        # TODO: This solution doesn't scale beyond one config as it
-        # overwrites the data to the same directory. This should be
-        # revised and moved inside scheduler loop, with exclusive dir
-        # per parameter combination.
-        profile_dir = "profile"
-        exec_prefix.extend(
-            f"rocprof-compute profile -n {profile_dir} --".split()
-        )
-
-        profile_dir_path = Path(
-            string.Template(f"./workloads/{profile_dir}").substitute(os.environ)
-        ).absolute()
-        logging.info(f"writing profiling results to {profile_dir_path}")
 
     files = FileGlobArg(files) if files else []
     for i, shape in enumerate(shape_list):
@@ -1424,6 +1428,7 @@ def cli(
             shape=shape,
             filter_list=filter,
             build_opts=build_opts,
+            profile=profile,
             exec_prefix=exec_prefix,
             exec_suffix=exec_suffix,
             dryrun=dryrun,
