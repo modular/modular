@@ -183,6 +183,7 @@ modular_run_binary_test(
         "gpu",
         "manual",
         "no-sandbox",
+        "requires-network",
     ],
 )
 
@@ -206,5 +207,6 @@ modular_run_binary_test(
         "gpu",
         "manual",
         "no-sandbox",
+        "requires-network",
     ],
 )
