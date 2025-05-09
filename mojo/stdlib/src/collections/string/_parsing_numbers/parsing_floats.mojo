@@ -44,7 +44,7 @@ from .parsing_integers import to_integer
 
 @value
 @register_passable
-struct UInt128:
+struct UInt128Decomposed:
     var high: UInt64
     var low: UInt64
 
@@ -177,7 +177,7 @@ fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
         return Float64(w) / POWERS_OF_10[-q]
 
 
-fn full_multiplication(x: UInt64, y: UInt64) -> UInt128:
+fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # Note that there are assembly instructions to
     # do all that on some architectures.
     # That should speed things up.
@@ -196,10 +196,10 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128:
     low = low_low + (low_high << 32) + (high_low << 32)
     high = high_high + (low_high >> 32) + (high_low >> 32) + (carry >> 32)
 
-    return UInt128(high, low)
+    return UInt128Decomposed(high, low)
 
 
-fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128:
+fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     alias bit_precision = MANTISSA_EXPLICIT_BITS + 3
     index = 2 * (q - SMALLEST_POWER_OF_5)
     first_product = full_multiplication(w, get_power_of_5(Int(index)))

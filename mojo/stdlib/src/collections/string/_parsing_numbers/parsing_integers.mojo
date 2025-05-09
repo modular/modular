@@ -100,7 +100,7 @@ fn to_integer(
         ascii_vector = (standardized_x.unsafe_ptr() + i * simd_width).load[
             width=simd_width
         ]()
-        as_digits = ascii_vector - SIMD[DType.Byte, simd_width](ord("0"))
+        as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
         as_digits_index = as_digits.cast[DType.uint64]()
         alias vector_slice = (
             vector_with_exponents.unsafe_ptr() + i * simd_width
