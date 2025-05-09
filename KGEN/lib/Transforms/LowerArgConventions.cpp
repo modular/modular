@@ -12,8 +12,7 @@
 //    passed in register.
 // 2. Promote register passable `byref_result` arguments to function results.
 //    - This also handles functions that throw.
-// 3. Sets all argument conventions to `none`, i.e. only `none`
-//    conventions are legal after this in the pipeline.
+// 3. Unpacks kgen.pack typed arguments.
 //
 //===----------------------------------------------------------------------===//
 
@@ -26,6 +25,7 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 using namespace KGEN;
@@ -60,44 +60,6 @@ static Type lowerPointerType(Type type) {
   return elType;
 }
 
-namespace {
-struct LoweredSignature {
-  FuncType newSig;
-  enum ArgLoweringStatus { PointerRemoved, PointerAdded };
-  SmallVector<std::pair<size_t, ArgLoweringStatus>> changedIndices;
-  SmallVector<Type> newResTypes;
-
-  int valIdx = -1, errIdx = -1;
-  /// This enum indicates whether a byref_result argument and/or a
-  /// byref_error argument were promoted.
-  enum ABI { Neither, ErrorOnly, ValueOnly, Both };
-  int abiLowering = Neither;
-
-  /// Drop elements in a vector corresponding to the original input signature's
-  /// arguments.
-  template <typename T>
-  void dropOperandsFrom(SmallVectorImpl<T> &operands) {
-    // Drop error or result arguments that were dropped, starting with the
-    // greatermost so the indices remain valid.
-    int eIdx = errIdx, vIdx = valIdx;
-    if (eIdx > vIdx)
-      std::swap(eIdx, vIdx);
-    if (vIdx != -1)
-      operands.erase(operands.begin() + vIdx);
-    if (eIdx != -1)
-      operands.erase(operands.begin() + eIdx);
-  }
-
-  unsigned mapOperandIndex(unsigned index) {
-    if (valIdx != -1 && static_cast<unsigned>(valIdx) < index)
-      return index - 1;
-    return index;
-  }
-
-  bool isBoth() { return abiLowering == Both; }
-};
-} // namespace
-
 /// Return the pointer to the given type. For now, only support struct types
 /// with a pointer, but it can be extended if needed.
 static Type lowerTypeForGPU(Type type) {
@@ -117,142 +79,452 @@ static Type lowerTypeForGPU(Type type) {
   return PointerType::get(type);
 }
 
-/// Lowers the given signature if needed, and returns the non-result argument
-/// indices (on the input signature) that needed to be changed. A flag is also
-/// returned to indicate if the result of a signature with `byref_result` was
-/// changed, in which case the func type will no longer have that argument.
-static LoweredSignature lowerSignature(FuncType sig, TargetInfoAttr target) {
-  ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
-  SmallVector<ArgConvention> newConvs(oldConvs);
+namespace {
 
-  ArrayRef<Type> oldInputTypes = sig.getArguments();
-  SmallVector<Type> newInputTypes(oldInputTypes);
+enum ABI { Neither, ErrorOnly, ValueOnly, Both };
+struct TransformResult {
+  SmallVector<Type> newResultTypes;
+  SmallVector<ArgConvention> newArgConventions;
+  int abiLowering = ABI::Neither;
+};
+class Transform {
+public:
+  Transform(TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr)
+      : target(target), spAttr(spAttr) {}
+  virtual ~Transform() = default;
+  virtual Type typeOfValueAt(unsigned operandIndex) = 0;
+  virtual void performResultTransform(TransformResult const &result,
+                                      unsigned operandIndex,
+                                      Type loweredType) = 0;
+  /// respond to a transform from PTR<X> to X
+  virtual void applyPointerTransform(unsigned operandIndex, Type elType) = 0;
+  /// respond to a transform from PACK<X,Y> to X,Y
+  virtual void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
+                                  PackType type) = 0;
+  /// respond to a transform from X to PTR<X>
+  virtual void applyValueTransform(unsigned operandIndex, Type ptrType) = 0;
+  Location addDI(Location loc);
+  TargetInfoAttr target;
+  DebugInfo::DISubprogramAttr spAttr;
+};
+class CallsiteTransform : public Transform {
+public:
+  CallsiteTransform(ImplicitLocOpBuilder &b, Operation *callOp,
+                    TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr)
+      : Transform(target, spAttr), b(b), callOp(callOp) {}
+  Type typeOfValueAt(unsigned operandIndex) override;
+  void performResultTransform(TransformResult const &result,
+                              unsigned operandIndex, Type loweredType) override;
+  void applyPointerTransform(unsigned operandIndex, Type elType) override;
+  void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
+                          PackType type) override;
+  void applyValueTransform(unsigned operandIndex, Type ptrType) override;
+  ImplicitLocOpBuilder &b;
+  Operation *callOp;
+  Value errorOperand;
+  Value resultOperand;
+};
 
-  LoweredSignature s;
-  Type errType, valType;
-  s.newResTypes.assign(sig.getResults().begin(), sig.getResults().end());
-  for (auto [idx, argTy, convention] :
-       llvm::enumerate(sig.getArguments(), oldConvs)) {
-    if (convention == ArgConvention::ReadMem ||
-        convention == ArgConvention::OwnedMem) {
-      if (Type newArgTy = lowerPointerType(argTy)) {
-        // Update the info needed for the func type.
-        newConvs[idx] = convention == ArgConvention::OwnedMem
-                            ? ArgConvention::OwnedReg
-                            : ArgConvention::ReadReg;
-        newInputTypes[idx] = newArgTy;
-        s.changedIndices.push_back(
-            {idx, LoweredSignature::ArgLoweringStatus::PointerRemoved});
-      }
-      // Don't alter the result convention for async functions. The coroutine
-      // lowering expects this ABI.
-    } else if (isResultSlot(convention) && !sig.isAsync()) {
-      Type loweredByrefResTy = lowerPointerType(argTy);
-      if (!loweredByrefResTy)
+class SignatureTransform : public Transform {
+public:
+  SignatureTransform(FuncType oldSig, TargetInfoAttr target,
+                     DebugInfo::DISubprogramAttr spAttr)
+      : Transform(target, spAttr), oldSig(oldSig) {
+    llvm::append_range(newInputs, oldSig.getValues().getInputs());
+  }
+  Type typeOfValueAt(unsigned operandIndex) override;
+  void performResultTransform(TransformResult const &result,
+                              unsigned operandIndex, Type loweredType) override;
+  void applyPointerTransform(unsigned operandIndex, Type elType) override;
+  void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
+                          PackType type) override;
+  void applyValueTransform(unsigned operandIndex, Type ptrType) override;
+  FuncType oldSig;
+  SmallVector<Type> newInputs;
+};
+
+class FuncTransform : public Transform {
+public:
+  FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp, TargetInfoAttr target);
+  void performResultTransform(TransformResult const &result,
+                              unsigned operandIndex, Type loweredType) override;
+  Type typeOfValueAt(unsigned operandIndex) override;
+  void applyPointerTransform(unsigned operandIndex, Type elType) override;
+  void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
+                          PackType type) override;
+  void applyValueTransform(unsigned operandIndex, Type ptrType) override;
+  ImplicitLocOpBuilder &b;
+
+  Block &block;
+  Value newResPtr;
+  Value newErrPtr;
+
+private:
+  void applyOneToOneTransform(unsigned operandIndex, Type newType,
+                              llvm::function_ref<Value(Location, Value)> apply);
+};
+} // namespace
+
+static void
+insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
+                           unsigned argConventionIndex, ArrayRef<Type> types,
+                           int depth) {
+  if (types.size() == 0) {
+    conventions[argConventionIndex] = ArgConvention::ReadReg;
+    return;
+  }
+  unsigned packSize = types.size();
+  conventions.resize(conventions.size() + packSize - 1);
+  for (unsigned i = conventions.size() - 1; i >= argConventionIndex + packSize;
+       i--)
+    conventions[i] = conventions[i - (packSize - 1)];
+  for (unsigned i = 0; i < packSize; i++) {
+    ArgConvention newConvention = ArgConvention::ReadReg;
+    if (auto ptr = dyn_cast<PointerType>(types[i])) {
+      // if the depth is 0 then this is a top level kgen.pack and we do not know
+      // if it holds an address that is potentially written to.
+      if (depth == 0)
+        newConvention = ArgConvention::Mut;
+      else if (!isa<KGEN::NoneType>(ptr.getElementType()))
+        newConvention = ArgConvention::ReadMem;
+    }
+    conventions[argConventionIndex + i] = newConvention;
+  }
+}
+
+static void transformNonResultValue(Transform *transform, unsigned operandIndex,
+                                    SmallVector<ArgConvention> &conventions,
+                                    unsigned argConventionIndex,
+                                    int depth = 0) {
+
+  Type type = transform->typeOfValueAt(operandIndex);
+  ArgConvention convention = conventions[argConventionIndex];
+  bool needsGPUTransform =
+      transform->target && isGPUTriple(transform->target.getTriple());
+
+  /// LOWER PTR
+  if (isa<PointerType>(type) && !(convention == ArgConvention::ReadMem ||
+                                  convention == ArgConvention::OwnedMem))
+    return;
+
+  if (auto elType = lowerPointerType(type)) {
+    // Do not promote if we're going to demote next iteration.
+    if (needsGPUTransform && lowerTypeForGPU(elType))
+      return;
+    transform->applyPointerTransform(operandIndex, elType);
+    conventions[argConventionIndex] =
+        conventions[argConventionIndex] == ArgConvention::OwnedMem
+            ? ArgConvention::OwnedReg
+            : ArgConvention::ReadReg;
+    transformNonResultValue(transform, operandIndex, conventions,
+                            argConventionIndex, ++depth);
+  }
+
+  /// LOWER PACK
+  auto packType = dyn_cast<PackType>(type);
+  if (packType && !(convention == ArgConvention::OwnedReg ||
+                    convention == ArgConvention::ReadReg))
+    return;
+
+  if (packType) {
+    auto variadic = cast_or_null<VariadicAttr>(packType.getVariadic());
+    assert(variadic && "expected variadic pack type");
+    SmallVector<Type> types;
+    for (auto member : variadic.getValues()) {
+      Type memberType = member.getType();
+      if (auto typeValue = dyn_cast<KGEN::TypeParamAttr>(member))
+        memberType = typeValue.getMlirType();
+      types.push_back(memberType);
+    }
+    transform->applyPackTransform(operandIndex, types, packType);
+    insertAndUpdateConventions(conventions, argConventionIndex, types, depth);
+    transformNonResultValue(transform, operandIndex, conventions,
+                            argConventionIndex, ++depth);
+  }
+
+  /// LIFT REG (GPU ONLY)
+  if (!needsGPUTransform)
+    return;
+  if (Type newArgTy = lowerTypeForGPU(type)) {
+    transform->applyValueTransform(operandIndex, newArgTy);
+    conventions[argConventionIndex] = ArgConvention::ReadMem;
+  }
+}
+
+FuncTransform::FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp,
+                             TargetInfoAttr target)
+    : Transform(target, funcOp.getSubprogramScope()), b(b),
+      block(funcOp.getBodyRegion().front()) {}
+
+Location Transform::addDI(Location loc) {
+  if (!spAttr)
+    return loc;
+  return FusedLoc::get(loc.getContext(), loc, spAttr);
+}
+
+Type FuncTransform::typeOfValueAt(unsigned operandIndex) {
+  return block.getArgument(operandIndex).getType();
+}
+
+void FuncTransform::performResultTransform(TransformResult const &result,
+                                           unsigned operandIndex,
+                                           Type loweredType) {
+  Value argVal = block.getArgument(operandIndex);
+  auto alloc = b.create<POP::StackAllocationOp>(addDI(argVal.getLoc()),
+                                                argVal.getType());
+  argVal.replaceAllUsesWith(alloc);
+  block.eraseArgument(operandIndex);
+  if (result.abiLowering == ErrorOnly)
+    newErrPtr = alloc;
+  else if (result.abiLowering == Both || result.abiLowering == ValueOnly)
+    newResPtr = alloc;
+}
+
+void FuncTransform::applyOneToOneTransform(
+    unsigned operandIndex, Type newType,
+    llvm::function_ref<Value(Location, Value)> apply) {
+  auto point = b.saveInsertionPoint();
+  auto resetState =
+      llvm::make_scope_exit([&] { b.restoreInsertionPoint(point); });
+  b.setInsertionPointToStart(&block);
+  Location originalLocation = block.getArgument(operandIndex).getLoc();
+  BlockArgument arg =
+      block.insertArgument(operandIndex + 1, newType, originalLocation);
+  Location location = addDI(block.getArgument(operandIndex).getLoc());
+  auto image = apply(location, arg);
+  block.getArgument(operandIndex).replaceAllUsesWith(image);
+  block.eraseArgument(operandIndex);
+}
+
+void FuncTransform::applyPointerTransform(unsigned operandIndex, Type elType) {
+  auto application = [&](Location location, Value newArg) -> Value {
+    auto ptr = b.create<POP::StackAllocationOp>(
+        location, PointerType::get(newArg.getType()));
+    b.create<POP::StoreOp>(location, newArg, ptr);
+    return ptr;
+  };
+  applyOneToOneTransform(operandIndex, elType, application);
+}
+
+void FuncTransform::applyValueTransform(unsigned operandIndex, Type ptrType) {
+  auto application = [&](Location location, Value newArg) -> Value {
+    return b.create<POP::LoadOp>(location, newArg).getResult();
+  };
+  applyOneToOneTransform(operandIndex, ptrType, application);
+}
+
+void FuncTransform::applyPackTransform(unsigned operandIndex,
+                                       ArrayRef<Type> types, PackType type) {
+  auto point = b.saveInsertionPoint();
+  auto resetState =
+      llvm::make_scope_exit([&] { b.restoreInsertionPoint(point); });
+  Location originalLocation = block.getArgument(operandIndex).getLoc();
+  b.setInsertionPointToStart(&block);
+  SmallVector<Value> newArgs;
+  unsigned curr = operandIndex;
+  for (auto member : types)
+    newArgs.push_back(block.insertArgument(++curr, member, originalLocation));
+  auto pack =
+      b.create<KGEN::PackCreateOp>(addDI(originalLocation), type, newArgs);
+  block.getArgument(operandIndex).replaceAllUsesWith(pack);
+  if (newArgs.empty())
+    block.insertArgument(++curr, KGEN::NoneType::get(type.getContext()),
+                         originalLocation);
+  block.eraseArgument(operandIndex);
+}
+
+void CallsiteTransform::performResultTransform(TransformResult const &result,
+                                               unsigned operandIndex,
+                                               Type loweredType) {
+  if (result.abiLowering == ErrorOnly)
+    errorOperand = callOp->getOperand(operandIndex);
+  else if (result.abiLowering == Both || result.abiLowering == ValueOnly)
+    resultOperand = callOp->getOperand(operandIndex);
+  callOp->eraseOperand(operandIndex);
+}
+
+void CallsiteTransform::applyPointerTransform(unsigned operandIndex,
+                                              Type elType) {
+  b.setInsertionPoint(callOp);
+  Value arg = callOp->getOperands()[operandIndex];
+  Value newArg = b.create<POP::LoadOp>(arg);
+  callOp->setOperand(operandIndex, newArg);
+}
+
+void CallsiteTransform::applyValueTransform(unsigned operandIndex,
+                                            Type ptrType) {
+  b.setInsertionPoint(callOp);
+  Value arg = callOp->getOperands()[operandIndex];
+  Value newArg = b.create<POP::StackAllocationOp>(ptrType);
+  b.create<POP::StoreOp>(arg, newArg);
+  callOp->setOperand(operandIndex, newArg);
+}
+
+void CallsiteTransform::applyPackTransform(unsigned operandIndex,
+                                           ArrayRef<Type> types,
+                                           PackType type) {
+  b.setInsertionPoint(callOp);
+  Value operand = callOp->getOperands()[operandIndex];
+  SmallVector<Value> newArgs;
+  unsigned curr = 0;
+  for (auto member : types) {
+    newArgs.push_back(b.create<KGEN::PackExtractOp>(
+        member, operand, IntegerAttr::get(b.getIndexType(), curr++)));
+  }
+  SmallVector<Value> newOperands;
+  for (unsigned i = 0; i < operandIndex; i++)
+    newOperands.push_back(callOp->getOperand(i));
+
+  if (types.empty())
+    newOperands.push_back(b.create<ParamConstantOp>(b.getAttr<NoneAttr>()));
+  else
+    llvm::append_range(newOperands, newArgs);
+
+  for (unsigned i = operandIndex + 1; i < callOp->getNumOperands(); i++)
+    newOperands.push_back(callOp->getOperand(i));
+  callOp->setOperands(newOperands);
+}
+
+Type CallsiteTransform::typeOfValueAt(unsigned operandIndex) {
+  return callOp->getOperandTypes()[operandIndex];
+}
+
+void SignatureTransform::performResultTransform(TransformResult const &result,
+                                                unsigned operandIndex,
+                                                Type loweredType) {
+  newInputs.erase(newInputs.begin() + operandIndex);
+}
+
+void SignatureTransform::applyPointerTransform(unsigned operandIndex,
+                                               Type elType) {
+  newInputs[operandIndex] = elType;
+}
+
+void SignatureTransform::applyValueTransform(unsigned operandIndex,
+                                             Type ptrType) {
+  newInputs[operandIndex] = ptrType;
+}
+
+void SignatureTransform::applyPackTransform(unsigned operandIndex,
+                                            ArrayRef<Type> types,
+                                            PackType type) {
+  if (types.empty()) {
+    newInputs[operandIndex] = KGEN::NoneType::get(type.getContext());
+    return;
+  }
+  auto erase_it = newInputs.begin() + operandIndex;
+  newInputs.erase(erase_it);
+  auto insert_it =
+      newInputs.begin() + operandIndex; // Position where the erased element was
+  newInputs.insert(insert_it, types.begin(), types.end());
+}
+
+Type SignatureTransform::typeOfValueAt(unsigned operandIndex) {
+  return newInputs[operandIndex];
+}
+
+static TransformResult lowerSignature(FuncType oldSig,
+                                      unsigned operandIndexInitial,
+                                      Transform *transform) {
+  unsigned operandIndex = operandIndexInitial;
+  unsigned argConventionIndex = 0;
+
+  TransformResult result;
+  if (oldSig.isThrows())
+    llvm::append_range(result.newResultTypes, oldSig.getResults());
+  llvm::append_range(result.newArgConventions, oldSig.getArgConventions());
+  SmallVector<ArgConvention> &argConventions = result.newArgConventions;
+  while (argConventionIndex < argConventions.size()) {
+    ArgConvention convention = argConventions[argConventionIndex];
+    bool isResult = isResultSlot(convention);
+    if (!isResult) {
+      transformNonResultValue(transform, operandIndex, argConventions,
+                              argConventionIndex);
+    } else if (!oldSig.isAsync()) {
+      if (Type loweredType =
+              lowerPointerType(transform->typeOfValueAt(operandIndex))) {
+        argConventions.erase(argConventions.begin() + argConventionIndex);
+        result.abiLowering |= convention == ArgConvention::ByRefError
+                                  ? ABI::ErrorOnly
+                                  : ABI::ValueOnly;
+        transform->performResultTransform(result, operandIndex, loweredType);
+        switch (result.abiLowering) {
+        case ABI::ErrorOnly:
+          result.newResultTypes.push_back(loweredType);
+          break;
+        case ABI::Both: {
+          Type errorType = result.newResultTypes.back();
+          result.newResultTypes.clear();
+          result.newResultTypes.push_back(
+              VariantType::get({errorType, loweredType}));
+        } break;
+        case ABI::ValueOnly:
+          result.newResultTypes.push_back(loweredType);
+          break;
+        default:
+          break;
+        }
         continue;
-      bool isError = convention == ArgConvention::ByRefError;
-      s.abiLowering |=
-          isError ? LoweredSignature::ErrorOnly : LoweredSignature::ValueOnly;
-      (isError ? errType : valType) = loweredByrefResTy;
-      (isError ? s.errIdx : s.valIdx) = idx;
-    } else if (target && isGPUTriple(target.getTriple())) {
-      if (Type newArgTy = lowerTypeForGPU(argTy)) {
-        newConvs[idx] = ArgConvention::ReadMem;
-        newInputTypes[idx] = newArgTy;
-        s.changedIndices.push_back(
-            {idx, LoweredSignature::ArgLoweringStatus::PointerAdded});
       }
     }
+    argConventionIndex++;
+    operandIndex++;
   }
+  return result;
+}
 
-  if (s.abiLowering != LoweredSignature::Neither) {
-    if (!sig.isThrows()) {
-      s.newResTypes[0] = valType;
-    } else {
-      // Make sure the error type always comes first.
-      if (errType)
-        s.newResTypes.push_back(errType);
-      if (valType)
-        s.newResTypes.push_back(valType);
-      // If both are being rewritten, pack them into a variant.
-      if (s.isBoth())
-        s.newResTypes.assign(1, VariantType::get({errType, valType}));
-    }
-  }
-
-  if (s.abiLowering != LoweredSignature::Neither || !s.changedIndices.empty()) {
-    // Erase mut results promoted to register results from the argument list.
-    s.dropOperandsFrom(newInputTypes);
-    s.dropOperandsFrom(newConvs);
-
-    auto newFnType =
-        FunctionType::get(sig.getContext(), newInputTypes, s.newResTypes);
-    s.newSig = FuncType::get(newFnType, newConvs, sig.getFnEffects(),
-                             sig.getMetadata());
-  }
-
-  return s;
+/// Lowers the given signature if needed
+static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
+                               DebugInfo::DISubprogramAttr spAttr) {
+  SignatureTransform transform(sig, target, spAttr);
+  TransformResult result = lowerSignature(sig, 0, &transform);
+  FuncType newSig = FuncType::get(
+      sig.getContext(),
+      FunctionType::get(sig.getContext(), transform.newInputs,
+                        result.newResultTypes.empty() ? sig.getResults()
+                                                      : result.newResultTypes),
+      result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
+  return newSig;
 }
 
 /// Helper to perform the bulk of the lowering for `kgen.call` and
 /// `kgen.call_indirect` ops.
-static void lowerCallOpImpl(
-    Operation *op, Operation::operand_range oldOperands, FuncType oldSig,
-    function_ref<void(Operation *, FuncType, ValueRange)> updateArgs,
-    TargetInfoAttr target) {
-  LoweredSignature s = lowerSignature(oldSig, target);
-  FuncType newSig = s.newSig;
-  if (!newSig)
-    return;
+static void lowerCallOpImpl(Operation *op, FuncType oldSig,
+                            DebugInfo::DISubprogramAttr spAttr) {
 
-  // Calculate the new operands, accounting for a potentially promoted result.
   ImplicitLocOpBuilder b(op->getLoc(), op);
-  SmallVector<Value> newOperands(oldOperands);
-  s.dropOperandsFrom(newOperands);
-  for (auto [idx, status] : s.changedIndices) {
-    Value operand = oldOperands[idx];
-    switch (status) {
-    case LoweredSignature::ArgLoweringStatus::PointerRemoved:
-      newOperands[s.mapOperandIndex(idx)] = b.create<POP::LoadOp>(operand);
-      break;
-    case LoweredSignature::ArgLoweringStatus::PointerAdded: {
-      auto ptr = b.create<POP::StackAllocationOp>(
-          newSig.getArguments()[s.mapOperandIndex(idx)]);
-      b.create<POP::StoreOp>(operand, ptr);
-      newOperands[s.mapOperandIndex(idx)] = ptr;
-    } break;
-    }
-  }
+  unsigned operandIndex = isa<CallIndirectOp>(op) ? 1 : 0;
+  CallsiteTransform transform(b, op, lookupTargetInfo(op), spAttr);
+  TransformResult result = lowerSignature(oldSig, operandIndex, &transform);
+  int abiLowering = result.abiLowering;
 
   // Now update the result, if needed.
-  if (s.abiLowering != LoweredSignature::Neither) {
+  if (abiLowering != Neither) {
     b.setInsertionPointAfter(op);
-
     OpResult res = op->getResult(0);
-    if (newSig.isThrows()) {
+    if (oldSig.isThrows()) {
       // If the callee throws and both error and result were rewritten into a
       // variant, then we have to extract the relevant values from the variant.
-      if (s.isBoth()) {
+      if (abiLowering == ABI::Both) {
         // Replace the i1 with a variant check.
-        res.setType(newSig.getResults()[0]);
+        res.setType(result.newResultTypes[0]);
         auto isError = b.create<VariantIsOp>(res, 0);
         res.replaceAllUsesExcept(isError, isError);
 
         auto ifOp = b.create<HLCF::IfOp>(isError);
         b.createBlock(&ifOp.getThenRegion());
         b.create<POP::StoreOp>(b.create<VariantGetOp>(res, 0),
-                               oldOperands[s.errIdx]);
+                               transform.errorOperand);
         b.create<HLCF::YieldOp>();
 
         b.createBlock(&ifOp.getElseRegion());
         b.create<POP::StoreOp>(b.create<VariantGetOp>(res, 1),
-                               oldOperands[s.valIdx]);
+                               transform.resultOperand);
         b.create<HLCF::YieldOp>();
       } else {
         // In this case, we need to reallocate the operation with a different
-        // number of results.
         OperationState state(op->getLoc(), op->getName(), op->getOperands(),
-                             s.newResTypes);
+                             result.newResultTypes);
         state.attributes = op->getAttrDictionary();
         Operation *newOp = b.create(state);
         res.replaceAllUsesWith(newOp->getResult(0));
@@ -264,10 +536,11 @@ static void lowerCallOpImpl(
         b.create<HLCF::YieldOp>();
         Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
         b.create<HLCF::YieldOp>();
-        bool errorOnly = s.abiLowering == LoweredSignature::ErrorOnly;
+        bool errorOnly = abiLowering == ErrorOnly;
         b.setInsertionPointToStart(errorOnly ? thenBlock : elseBlock);
         b.create<POP::StoreOp>(newOp->getResult(1),
-                               oldOperands[errorOnly ? s.errIdx : s.valIdx]);
+                               errorOnly ? transform.errorOperand
+                                         : transform.resultOperand);
         op->erase();
         op = newOp;
       }
@@ -279,37 +552,23 @@ static void lowerCallOpImpl(
       }
 
       // Then just store the new callee result into the old memory result.
-      res.setType(newSig.getResults()[0]);
-      b.create<POP::StoreOp>(res, oldOperands[s.valIdx]);
+      res.setType(result.newResultTypes[0]);
+      b.create<POP::StoreOp>(res, transform.resultOperand);
     }
+  } else {
+    result.newResultTypes.clear();
+    llvm::append_range(result.newResultTypes, oldSig.getResults());
   }
 
-  // Update the callee type and the operands.
-  updateArgs(op, newSig, newOperands);
-}
-
-/// Lower the input conventions for a KGEN::CallOp if needed.
-static void lowerCallOp(CallOp callOp, TargetInfoAttr target) {
-  lowerCallOpImpl(
-      callOp, callOp.getOperands(),
-      callOp.getCalleeSignature().getInstantiatedBody(),
-      [](Operation *op, FuncType newSig, ValueRange newOperands) {
-        auto callOp = cast<CallOp>(op);
-        callOp->setOperands(newOperands);
-      },
-      target);
-}
-
-/// Lower the input conventions for a KGEN::CallIndirectOp if needed.
-static void lowerCallIndirectOp(CallIndirectOp callOp, TargetInfoAttr target) {
-  FuncType oldSig = callOp.getCallee().getType().getBody();
-  lowerCallOpImpl(
-      callOp, callOp.getArguments(), oldSig,
-      [&oldSig](Operation *op, FuncType newSig, ValueRange newOperands) {
-        auto callOp = cast<CallIndirectOp>(op);
-        callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
-      },
-      target);
+  if (auto callOp = dyn_cast<CallOp>(op)) {
+    FuncType newSig = FuncType::get(
+        op->getContext(),
+        FunctionType::get(op->getContext(), op->getOperandTypes(),
+                          result.newResultTypes),
+        result.newArgConventions, oldSig.getFnEffects(), oldSig.getMetadata());
+    callOp.setCalleeAttr(SymbolConstantAttr::get(
+        callOp.getCallee().getSymbol(), GeneratorType::get({}, newSig)));
+  }
 }
 
 /// Emit IR for repacking the returned variant in the body of a throwing
@@ -358,61 +617,23 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   return ifOp.getResult(0);
 }
 
-/// Lower the input conventions for a KGEN::FuncOp if needed.
-static void lowerFuncOp(FuncOp funcOp, TargetInfoAttr target) {
-  FuncType oldSig = funcOp.getFuncTypeGenerator().getBody();
-  LoweredSignature s = lowerSignature(oldSig, target);
-  FuncType newSig = s.newSig;
-  if (!newSig)
-    return;
-
-  // Argument locations do not have subprogram scopes. If we have debuginfo,
-  // make sure to add it.
-  DebugInfo::DISubprogramAttr spAttr = funcOp.getSubprogramScope();
-  auto addDI = [&](Location loc) -> Location {
-    if (!spAttr)
-      return loc;
-    return FusedLoc::get(loc.getContext(), loc, spAttr);
-  };
-
-  Region &body = funcOp.getBodyRegion();
-  auto b = OpBuilder::atBlockBegin(&body.front());
-  for (auto [idx, status] : s.changedIndices) {
-    BlockArgument arg = body.getArgument(idx);
-    Location loc = addDI(arg.getLoc());
-    switch (status) {
-    case LoweredSignature::ArgLoweringStatus::PointerRemoved: {
-      auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType());
-      auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
-      arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
-      arg.replaceAllUsesExcept(ptr, storeOp);
-    } break;
-    case LoweredSignature::ArgLoweringStatus::PointerAdded: {
-      arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
-      auto load = b.create<POP::LoadOp>(loc, arg);
-      arg.replaceAllUsesExcept(load, load);
-    } break;
-    }
-  }
-
-  Value newResPtr, newErrPtr;
-  auto dropAlloca = [&b, &body, &addDI](std::pair<Value *, int> pair) {
-    if (pair.second == -1)
-      return;
-    BlockArgument arg = body.getArgument(pair.second);
-    *pair.first =
-        b.create<POP::StackAllocationOp>(addDI(arg.getLoc()), arg.getType());
-    arg.replaceAllUsesWith(*pair.first);
-    body.eraseArgument(pair.second);
-  };
-  std::pair<Value *, int> valPair{&newResPtr, s.valIdx},
-      errPair{&newErrPtr, s.errIdx};
-  if (errPair.second > valPair.second)
-    std::swap(errPair, valPair);
-  dropAlloca(valPair);
-  dropAlloca(errPair);
-
-  if (s.abiLowering != LoweredSignature::Neither) {
+static void lowerFuncOp(FuncOp funcOp) {
+  FuncType sig = funcOp.getFuncTypeGenerator().getBody();
+  ImplicitLocOpBuilder b(funcOp.getLoc(), funcOp);
+  b.setInsertionPoint(&funcOp.getBodyRegion().front().front());
+  FuncTransform transform(b, funcOp, lookupTargetInfo(funcOp));
+  TransformResult result = lowerSignature(sig, 0, &transform);
+  FuncType newSig = FuncType::get(
+      funcOp.getContext(),
+      FunctionType::get(funcOp->getContext(),
+                        funcOp.getBodyRegion().front().getArgumentTypes(),
+                        result.newResultTypes.empty() ? sig.getResults()
+                                                      : result.newResultTypes),
+      result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
+  funcOp.setFuncTypeGenerator(
+      GeneratorType::get(/*inputParamTypes=*/{}, newSig));
+  if (result.abiLowering != Neither) {
+    Block &body = funcOp.getBodyRegion().front();
     // Find all return sites in the function and rewrite them.
     body.walk([&](ReturnOp returnOp) {
       b.setInsertionPoint(returnOp);
@@ -420,7 +641,8 @@ static void lowerFuncOp(FuncOp funcOp, TargetInfoAttr target) {
       // If the function doesn't throw, we just load and return the new
       // result.
       if (!newSig.isThrows()) {
-        auto newRes = b.create<POP::LoadOp>(returnOp.getLoc(), newResPtr);
+        auto newRes =
+            b.create<POP::LoadOp>(returnOp.getLoc(), transform.newResPtr);
         returnOp.setOperand(0, newRes);
         return;
       }
@@ -428,17 +650,18 @@ static void lowerFuncOp(FuncOp funcOp, TargetInfoAttr target) {
       // If the function throws and we rewrote both the error and the
       // byref_result, we need to potentially unpack and repack the
       // result/error variant.
-      if (s.isBoth()) {
+      if (result.abiLowering == Both) {
         auto newVariantTy = cast<VariantType>(newSig.getResults()[0]);
-        Value newRetVal = repackFuncVariantResult(returnOp, newVariantTy,
-                                                  newResPtr, newErrPtr);
+        Value newRetVal = repackFuncVariantResult(
+            returnOp, newVariantTy, transform.newResPtr, transform.newErrPtr);
         returnOp.setOperand(0, newRetVal);
         return;
       }
 
       // Otherwise, we load either the error or the result, depending on which
       // got rewritten.
-      Value toLoad = s.errIdx != -1 ? newErrPtr : newResPtr;
+      Value toLoad =
+          transform.newErrPtr ? transform.newErrPtr : transform.newResPtr;
       assert(toLoad && "should have been rewritten");
       Value newRes = b.create<POP::LoadOp>(returnOp.getLoc(), toLoad);
       returnOp->insertOperands(1, newRes);
@@ -448,25 +671,26 @@ static void lowerFuncOp(FuncOp funcOp, TargetInfoAttr target) {
 
 void LowerArgConventionsPass::runOnOperation() {
   FuncOp func = getOperation();
-  TargetInfoAttr target = lookupTargetInfo(func);
-  lowerFuncOp(func, target);
+  lowerFuncOp(func);
 
   // Lower the ops in the function body.
-  func.walk([target](Operation *op) {
+  DebugInfo::DISubprogramAttr spAttr = func.getSubprogramScope();
+  func.walk([&](Operation *op) {
     if (auto callOp = dyn_cast<CallOp>(op))
-      return lowerCallOp(callOp, target);
+      return lowerCallOpImpl(
+          callOp, callOp.getCalleeSignature().getInstantiatedBody(), spAttr);
     if (auto callOp = dyn_cast<CallIndirectOp>(op))
-      return lowerCallIndirectOp(callOp, target);
+      return lowerCallOpImpl(callOp, callOp.getCallee().getType().getBody(),
+                             spAttr);
   });
 
   // We must do this in a second pass, otherwise ops like kgen.call_indirect
   // would be difficult to identify for lowering (since their argument types
   // would be lowered already).
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([target](FuncType sig) {
-    FuncType newSig = lowerSignature(sig, target).newSig;
-    return newSig ? newSig : sig;
-  });
+  TargetInfoAttr target = lookupTargetInfo(func);
+  replacer.addReplacement(
+      [&](FuncType sig) { return lowerSignature(sig, target, spAttr); });
   auto metatype = TypeType::get(&getContext());
   replacer.addReplacement([&](TypeParamAttr type) {
     // Canonicalize metatypes.
