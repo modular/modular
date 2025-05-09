@@ -20,7 +20,7 @@ from gpu.host.info import Info, is_cpu, is_gpu
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 from utils.index import IndexList

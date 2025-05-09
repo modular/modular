@@ -86,11 +86,10 @@ mojo_binary(
     ],
     deps = [
         ":kernels",
-        "//SDK/lib/API/mojo/max/max",
-        "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
     ],
 )
 
@@ -98,10 +97,9 @@ mojo_library(
     name = "kernels",
     srcs = [":kernel_sources"],
     deps = [
-        "//SDK/lib/API/mojo/max/max",
-        "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
     ],
 )
