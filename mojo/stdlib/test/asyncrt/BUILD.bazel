@@ -21,7 +21,7 @@ _EXTRA_CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         srcs = _TEST_DATA + [src],
-        args = [
+        copts = [
             "-D",
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu",
         ],
@@ -44,7 +44,7 @@ _EXTRA_CONSTRAINTS = {
     mojo_test(
         name = src + ".cpu.test",
         srcs = _TEST_DATA + [src],
-        args = [
+        copts = [
             "-D",
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu",
         ],
