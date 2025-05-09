@@ -1,9 +1,14 @@
 # Avoid PATH leaking into actions
 common --incompatible_strict_action_env
 
+# Enable --config=(macos|windows|linux) based on the host OS
+common --enable_platform_specific_config
+
 # Force hermetic toolchain, make sure we don't accidentally used the default one
-common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
+common --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 
 # Use a custom platform to detect GPU hardware
 common --platforms=@modular_host_platform
