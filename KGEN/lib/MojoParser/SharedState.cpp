@@ -2197,6 +2197,18 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return failure();
   };
 
+  // Handle the select operation.
+  auto foldSelectOp = [&](POP::SelectOp selectOp) -> FailureOr<TypedAttr> {
+    auto cond = findValue(selectOp.getCondition());
+    auto trueVal = findValue(selectOp.getTrueValue());
+    auto falseVal = findValue(selectOp.getFalseValue());
+
+    if (cond && trueVal && falseVal)
+      return ParamOperatorAttr::get(POC::Cond, {cond, trueVal, falseVal},
+                                    trueVal.getType());
+    return failure();
+  };
+
   // Many index binops fold directly to POC binops.
   if (auto add = dyn_cast<mlir::index::AddOp>(op))
     return foldBinOp(POC::Add);
@@ -2218,6 +2230,9 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldBinOp(POC::Or);
   if (auto xorOp = dyn_cast<POP::XOrOp>(op))
     return foldBinOp(POC::Xor);
+
+  if (auto selectOp = dyn_cast<POP::SelectOp>(op))
+    return foldSelectOp(selectOp);
 
   // Sub doesn't have a POC opcode: "x-y" is "x+(y*-1)".
   if (auto sub = dyn_cast<mlir::index::SubOp>(op)) {
