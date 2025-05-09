@@ -37,3 +37,8 @@ repos:
     hooks:
       - id: markdownlint
         args: ["--config", "mojo/stdlib/scripts/.markdownlint.yaml", "--fix"]
+  - repo: https://github.com/keith/pre-commit-buildifier
+    rev: 8.0.3
+    hooks:
+    -   id: buildifier
+    -   id: buildifier-lint

@@ -1,6 +1,7 @@
 """A test rule that executes a mojo_binary, passing its output to FileCheck."""
 
 load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 def mojo_filecheck_test(
         name,
@@ -47,8 +48,7 @@ def mojo_filecheck_test(
         enable_assertions = enable_assertions,
         **kwargs
     )
-
-    native.sh_test(
+    sh_test(
         name = name,
         srcs = ["//bazel/internal:mojo-filecheck-test"],
         size = size,
