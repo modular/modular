@@ -409,7 +409,9 @@ fn generic_flash_attention_kv_cache_padded[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching."
+        "mo.mha.padded."
+        + collection_t.name_str
+        + "."
         + mask_str
         + "."
         + score_mod_str

@@ -538,6 +538,7 @@ trait KVCollectionT(Copyable, Movable):
     """Trait for a pair of caches (keys and values)."""
 
     alias CacheType: KVCacheT
+    alias name_str: StaticString
     alias type: DType
     alias kv_params: KVCacheStaticParams
 
@@ -564,6 +565,7 @@ struct ContinuousBatchingKVCacheCollection[
     It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
     """
 
+    alias name_str = "continuous_batching"
     alias type = type_
     alias kv_params = kv_params_
     alias CacheType = ContinuousBatchingKVCache[
@@ -670,6 +672,7 @@ struct PagedKVCacheCollection[
     page_size: Int,
     assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](KVCollectionT):
+    alias name_str = "paged"
     alias type = type_
     alias kv_params = kv_params_
     alias CacheType = PagedKVCache[

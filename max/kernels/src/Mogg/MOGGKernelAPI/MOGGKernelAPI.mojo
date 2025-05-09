@@ -142,14 +142,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decompress_k_cache_ragged_paged,
     generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
-    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
-    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
-    generic_flash_attention_kv_cache_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged,
-    generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged,
-    generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
+    generic_flash_attention_kv_cache_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
@@ -7093,7 +7086,9 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[target](
+    generic_flash_attention_kv_cache_ragged[
+        target=target, mask_str="causal", score_mod_str="identity"
+    ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
         kv_collection,
@@ -7117,7 +7112,12 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[target](
+    generic_flash_attention_kv_cache_ragged[
+        target=target,
+        mask_str="causal",
+        score_mod_str="alibi",
+        num_heads = kv_collection.kv_params.num_heads,
+    ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
         kv_collection,
@@ -7203,7 +7203,9 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
+    generic_flash_attention_kv_cache_ragged[
+        target=target, mask_str="causal", score_mod_str="identity"
+    ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
         kv_collection,
@@ -7264,8 +7266,11 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged_kernel
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged[
-        local_window_size, target
+    generic_flash_attention_kv_cache_ragged[
+        target=target,
+        mask_str="chunked_causal",
+        score_mod_str="identity",
+        local_window_size=local_window_size,
     ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
@@ -7328,8 +7333,11 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged[
-        local_window_size=local_window_size, target=target
+    generic_flash_attention_kv_cache_ragged[
+        target=target,
+        mask_str="chunked_causal",
+        score_mod_str="identity",
+        local_window_size=local_window_size,
     ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
@@ -7392,8 +7400,11 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_sliding_window_causal_mask_cont_batch_ragged[
-        local_window_size, target
+    generic_flash_attention_kv_cache_ragged[
+        target=target,
+        local_window_size=local_window_size,
+        mask_str="sliding_window",
+        score_mod_str="identity",
     ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
@@ -7456,8 +7467,11 @@ fn generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged_kern
     output: ManagedTensorSlice[type=type, rank=3],
     context: DeviceContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_sliding_window_causal_mask_paged_ragged[
-        local_window_size=local_window_size, target=target
+    generic_flash_attention_kv_cache_ragged[
+        target=target,
+        local_window_size=local_window_size,
+        mask_str="sliding_window",
+        score_mod_str="identity",
     ](
         managed_tensor_slice_to_ndbuffer(q),
         input_row_offsets,
