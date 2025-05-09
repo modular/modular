@@ -1698,7 +1698,6 @@ class CustomOp(max._core.Operation):
         operands: Sequence[max._core.Value],
         symbol: max._core.dialects.builtin.StringAttr,
         function: max._core.dialects.builtin.StringAttr,
-        operand_devices: DeviceIndexArrayAttrAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -1713,10 +1712,6 @@ class CustomOp(max._core.Operation):
     def function(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
-    @property
-    def operand_devices(self) -> Sequence[DeviceIndexAttr]: ...
-    @operand_devices.setter
-    def operand_devices(self, arg: DeviceIndexArrayAttrAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -1832,49 +1827,6 @@ class DebugTensorUnsafePrintOp(max._core.Operation):
     def label(self) -> str: ...
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
-
-class DeviceIndexArrayAttrAttr(max._core.Attribute):
-    """
-    Associates several indices with a device. This is useful for things like
-    mapping operands of operations to devices.
-
-    Example:
-    #mo<DeviceIndex[(4 : index, <"cpu", 0>), (4 : index, <"cpu", 0>)]>
-    """
-
-    def __init__(self, value: Sequence[DeviceIndexAttr]) -> None: ...
-    @property
-    def value(self) -> Sequence[DeviceIndexAttr]: ...
-
-class DeviceIndexAttr(max._core.Attribute):
-    """
-    Associates an index with a device. This is useful for things like mapping
-    operands of operations to devices.
-
-    Example:
-    (4 : index, <"cpu", 0>)
-    """
-
-    @overload
-    def __init__(
-        self,
-        index: max._core.dialects.builtin.IntegerAttr,
-        device: max._core.dialects.m.DeviceRefAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self, index: int, device: max._core.dialects.m.DeviceRefAttr
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        index: max._core.dialects.builtin.IntegerAttr,
-        device: max._core.dialects.m.DeviceRefAttr,
-    ) -> None: ...
-    @property
-    def index(self) -> max._core.dialects.builtin.IntegerAttr: ...
-    @property
-    def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
 
 class DistributedAllgatherOp(max._core.Operation):
     """
