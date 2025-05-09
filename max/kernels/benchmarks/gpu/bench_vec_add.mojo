@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
 
 from pathlib import Path
 from sys import env_get_int
@@ -94,7 +93,6 @@ fn bench_vec_add(
     out_host.free()
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     alias block_dim = env_get_int["block_dim", 32]()
     var m = Bench()

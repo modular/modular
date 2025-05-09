@@ -1,49 +1,98 @@
-load("//bazel:api.bzl", "lit_tests", "pkg_files", "strip_prefix")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("//bazel:api.bzl", "mojo_binary", "mojo_test", "pkg_files", "strip_prefix")
 
-lit_tests(
-    name = "benchmarks",
-    size = "enormous",
-    srcs = glob(
-        ["**/*.mojo"],
-        exclude = [
-            "**/*.yaml",
-            "autotune/**",
-            "demos/**",
-            "gpu/**",
-            "misc/**",
-            "packages/**",
-        ],
-    ),
-    mojo_deps = [
-        "@mojo//:layout",
-        "@mojo//:nn",
-        "@mojo//:internal_utils",
-        "@mojo//:stdlib",
-    ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
+_RUN_BENCHMARKS = [
+    "algorithm/parallelize_overhead.mojo",
+    "nn/bench_gather_reduce.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "algorithm/parallelize_overhead.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): reenable and remove this tag
+}
+
+_CPU_TESTS = glob(
+    ["**/*.mojo"],
+    exclude = [
+        "**/*.yaml",
+        "autotune/**",
+        "demos/**",
+        "gpu/**",
+        "misc/**",
+        "packages/**",
+    ] + _RUN_BENCHMARKS,
 )
 
-lit_tests(
-    name = "gpu-benchmarks",
-    size = "enormous",
-    srcs = glob(
-        ["gpu/*.mojo"],
-        exclude = [
-            "gpu/bench_daolabs_fa3.mojo",
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:layout",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
         ],
-    ),
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
-        "@mojo//:layout",
-        "@mojo//:nn",
-        "@mojo//:internal_utils",
-        "@mojo//:stdlib",
-    ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
-)
+    )
+    for src in _CPU_TESTS
+]
+
+[
+    build_test(
+        name = src + ".test",
+        targets = [src.split(".")[0]],
+    )
+    for src in _CPU_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "enormous",
+        srcs = [src],
+        args = ["-t"],
+        enable_assertions = False,
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:layout",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _RUN_BENCHMARKS
+]
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:layout",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["gpu/*.mojo"])
+]
+
+[
+    build_test(
+        name = src + ".test",
+        tags = ["gpu"],
+        targets = [src.split(".")[0]],
+    )
+    for src in glob(["gpu/*.mojo"])
+]
 
 pkg_files(
     name = "kernel_benchmark_files",

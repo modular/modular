@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
 
 from collections.string import StaticString
 from math import align_up, ceildiv, erf, exp, fma, isqrt, log, sin, sqrt, tanh

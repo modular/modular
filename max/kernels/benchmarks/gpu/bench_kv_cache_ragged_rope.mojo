@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
+
 from collections import Set
 from random import random_ui64, seed
 from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
