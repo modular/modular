@@ -610,7 +610,9 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
 // TryOp
 //===----------------------------------------------------------------------===//
 
-def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
+def LIT_TryOp : LITOp<"try",
+  [DeclareOpInterfaceMethods<ControlFlowNode>,
+   DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "A try-except-else block.";
   let description = [{
     The `lit.try` operation represents a try-except-else statement. When inside
@@ -657,6 +659,9 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
   ];
 
   let extraClassDeclaration = [{
+    // The region indices of the try operation.
+    enum { kTRY, kEXCEPT, kELSE, kFINALLY };
+
     /// Get the finally region, assuming it is present.
     Region &getFinallyRegion() { return getFinallyRegions().front(); }
 
@@ -670,7 +675,8 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
 //===----------------------------------------------------------------------===//
 
 def LIT_TryYieldOp : LITOp<"try.yield", [Pure, Terminator,
-    HasParent<"TryOp">, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+    HasParent<"TryOp">, DeclareOpInterfaceMethods<ControlFlowTerminator>,
+                        DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Try block terminator.";
   let description = [{
     The `lit.try.yield` operation is used as a terminator to `lit.try` regions.
@@ -686,7 +692,8 @@ def LIT_TryYieldOp : LITOp<"try.yield", [Pure, Terminator,
 //===----------------------------------------------------------------------===//
 
 def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+    DeclareOpInterfaceMethods<ControlFlowTerminator>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Try block raise an error.";
   let description = [{
     The `lit.try.raise` operation is used within a `lit.try` try region to
