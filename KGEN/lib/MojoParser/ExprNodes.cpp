@@ -359,9 +359,9 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// "x" or an AttributeRefNode "x.y"), return the PValue for the result.
 ///
 /// 'decl' is the alias declaration to resolve.
-static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
-                                    ArrayRef<TypedAttr> paramValues,
-                                    SMLoc errLoc, SharedState &shared) {
+PValue M::KGEN::LIT::resolveAliasReference(AliasDeclOp decl, StringRef declName,
+                                           ArrayRef<TypedAttr> paramValues,
+                                           SMLoc errLoc, SharedState &shared) {
 
   // If the param is declared in a function, then just directly use it.
   Operation *parent = decl->getParentOp();

@@ -25,6 +25,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 
+#include "KGEN/MojoParser/ASTType.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -1106,6 +1107,33 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   return parseForElse(curIndent, seqExpr, target, smLoc, targetLoc);
 }
 
+// Given a struct type T, return T._IndexType if it exists.
+static std::optional<Type> getIndexType(SharedState &shared, Type structType,
+                                        SMLoc smLoc) {
+  StringRef spelling("_IndexType");
+  LookupResult lookup =
+      shared.lookupAndResolveDecl(spelling, smLoc, structType,
+                                  /*searchParentScopes=*/false);
+  ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
+  if (memberDecls.empty()) {
+    // Just in case if the input happens to be not a range but something else,
+    // do not fail, just proceed.
+    return std::nullopt;
+  }
+  // This is a contract with the standard library -- the range types
+  // should provide an _IndexType member, and there cannot be many candidates.
+  assert(memberDecls.size() == 1);
+  auto aliasDeclOpParam = dyn_cast<AliasDeclOp>(memberDecls[0]);
+  if (!aliasDeclOpParam) {
+    return std::nullopt;
+  }
+  ArrayRef<TypedAttr> paramBindings{};
+  PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
+                                        paramBindings, smLoc, shared);
+  ASTType type(result);
+  return type;
+}
+
 ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
                                       StringAttr target, SMLoc smLoc,
                                       SMLoc targetLoc) {
@@ -1135,12 +1163,17 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
     return failure();
 
   // Sniff the type of the induction variable and create its declaration.
-  // TODO: Expand the induction variable to support other types.
-  Type intType = shared.lookupNamedType("Int", scope, smLoc);
-  if (!intType)
+  // We expect that the struct returned by the range() call has an _IndexType
+  // alias.
+  std::optional<Type> indexType =
+      getIndexType(shared, seqPValue.getType(), smLoc);
+  if (!indexType)
+    indexType = shared.lookupNamedType("Int", scope, smLoc);
+  if (!indexType)
     return failure();
-  auto indVarDecl =
-      ParamDeclAttr::get(scope.mangleParamName(target.getValue()), intType);
+
+  auto indVarDecl = ParamDeclAttr::get(scope.mangleParamName(target.getValue()),
+                                       indexType.value());
 
   // Create the loop and parse the body into it.
   auto paramFor =

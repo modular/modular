@@ -23,6 +23,8 @@
 #include "Support/Compiler/Diags.h"
 #include "llvm/ADT/StringExtras.h"
 
+#include "KGEN/LITDialect/LITOps.h"
+
 namespace M::KGEN {
 class FuncTypeGeneratorType;
 } // namespace M::KGEN
@@ -30,6 +32,10 @@ class FuncTypeGeneratorType;
 namespace M::KGEN::LIT {
 struct ParsedArgument;
 class SRValue;
+
+PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
+                             ArrayRef<TypedAttr> paramValues, SMLoc errLoc,
+                             SharedState &shared);
 
 /// The ExprEmitter depends on ExprNode to provide a location and emit IR for
 /// its value. In the case of synthetic code, there is a source sequence that
