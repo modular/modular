@@ -162,6 +162,117 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
     return all(has_error == 0)
 
 
+fn _validate_utf8_simd_slice[
+    width: Int, remainder: Bool = False
+](ptr: UnsafePointer[UInt8], length: Int, mut iter_len: UInt) -> Bool:
+    """Internal method to validate utf8, use _is_valid_utf8_comptime.
+
+    Parameters:
+        width: The width of the SIMD vector to build for validation.
+        remainder: Whether it is computing the remainder that doesn't fit in the
+            SIMD vector.
+
+    Args:
+        ptr: Pointer to the data.
+        length: The length of the items in the pointer.
+        iter_len: The amount of items to still iterate through.
+
+    Returns:
+        Whether the slice is valid.
+    """
+    var idx = length - iter_len
+    while iter_len > 0 and (iter_len >= width or remainder):
+        var d: SIMD[DType.uint8, width]  # use a vector of the specified width
+
+        @parameter
+        if not remainder:
+            d = ptr.offset(idx).load[width=width]()
+        else:
+            d = SIMD[DType.uint8, width](0)
+            for i in range(iter_len):
+                d[i] = ptr[idx + i]
+
+        var is_ascii = d < 0b1000_0000
+        if is_ascii.reduce_and():  # skip all ASCII bytes
+
+            @parameter
+            if not remainder:
+                idx += width
+                iter_len -= width
+                continue
+            else:
+                iter_len = 0
+                return True
+        elif is_ascii[0]:
+            for i in range(1, width):
+                if is_ascii[i]:
+                    continue
+                idx += i
+                iter_len -= i
+                break
+            continue
+
+        var byte_types = _utf8_byte_type(d.slice[4]())
+        var first_byte_type = byte_types[0]
+
+        # byte_type has to match against the amount of continuation bytes
+        alias Vec = SIMD[DType.uint8, 4]
+        # FIXME(#4144): these should be compile time constants
+        var n4_byte_types = Vec(4, 1, 1, 1)
+        var n3_byte_types = Vec(3, 1, 1, 0)
+        var n3_mask = Vec(0b111, 0b111, 0b111, 0)
+        var n2_byte_types = Vec(2, 1, 0, 0)
+        var n2_mask = Vec(0b111, 0b111, 0, 0)
+        var valid_n4 = (byte_types == n4_byte_types).reduce_and()
+        var valid_n3 = ((byte_types & n3_mask) == n3_byte_types).reduce_and()
+        var valid_n2 = ((byte_types & n2_mask) == n2_byte_types).reduce_and()
+        if not (valid_n4 or valid_n3 or valid_n2):
+            return False
+
+        # special unicode ranges
+        var b0 = d[0]
+        var b1 = d[1]
+        if first_byte_type == 2 and b0 < UInt8(0b1100_0010):
+            return False
+        elif b0 == 0xE0 and not (UInt8(0xA0) <= b1 <= UInt8(0xBF)):
+            return False
+        elif b0 == 0xED and not (UInt8(0x80) <= b1 <= UInt8(0x9F)):
+            return False
+        elif b0 == 0xF0 and not (UInt8(0x90) <= b1 <= UInt8(0xBF)):
+            return False
+        elif b0 == 0xF4 and not (UInt8(0x80) <= b1 <= UInt8(0x8F)):
+            return False
+
+        # amount of bytes evaluated
+        idx += Int(first_byte_type)
+        iter_len -= Int(first_byte_type)
+
+    return True
+
+
+fn _is_valid_utf8_comptime(span: Span[Byte]) -> Bool:
+    var ptr = span.unsafe_ptr()
+    var length = len(span)
+    var iter_len = UInt(length)
+    if iter_len >= 64 and simdwidthof[DType.uint8]() >= 64:
+        if not _validate_utf8_simd_slice[64](ptr, length, iter_len):
+            return False
+    if iter_len >= 32 and simdwidthof[DType.uint8]() >= 32:
+        if not _validate_utf8_simd_slice[32](ptr, length, iter_len):
+            return False
+    if iter_len >= 16 and simdwidthof[DType.uint8]() >= 16:
+        if not _validate_utf8_simd_slice[16](ptr, length, iter_len):
+            return False
+    if iter_len >= 8:
+        if not _validate_utf8_simd_slice[8](ptr, length, iter_len):
+            return False
+    if iter_len >= 4:
+        if not _validate_utf8_simd_slice[4](ptr, length, iter_len):
+            return False
+    return _validate_utf8_simd_slice[4, True](ptr, length, iter_len)
+
+
+@always_inline("nodebug")
 fn _is_valid_utf8(span: Span[Byte]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
@@ -187,7 +298,10 @@ fn _is_valid_utf8(span: Span[Byte]) -> Bool:
     U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
     U+100000..U+10FFFF | F4         | 80..***8F***| 80..BF     | 80..BF      |
     """
-    return _is_valid_utf8_runtime(span)
+    if is_compile_time():
+        return _is_valid_utf8_comptime(span)
+    else:
+        return _is_valid_utf8_runtime(span)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -254,7 +368,16 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return count_leading_zeros(~b)
+    # FIXME(#4273): delete after it's solved
+    if is_compile_time():
+        return 4 - (
+            __type_of(b)(b < 0b1000_0000)
+            + __type_of(b)(b < 0b1100_0000)
+            + __type_of(b)(b < 0b1110_0000)
+            + __type_of(b)(b < 0b1111_0000)
+        )
+    else:
+        return count_leading_zeros(~b)
 
 
 @always_inline
