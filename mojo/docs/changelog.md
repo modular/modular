@@ -35,6 +35,8 @@ what we publish.
 
 ### Language changes
 
+- `try` and `raise` now work at comptime.
+
 ### Standard library changes
 
 - The `CollectionElement` trait has been removed.
