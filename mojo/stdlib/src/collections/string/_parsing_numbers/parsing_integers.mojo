@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,16 +39,12 @@ fn standardize_string_slice(
 # to the simd width and the base, but Mojo's compile-time
 # computation is not yet powerful enough yet.
 # For now we focus on base 10.
-fn to_integer(x: String) raises -> UInt64:
-    return to_integer(x.as_string_slice())
-
-
 fn to_integer(x: StringSlice) raises -> UInt64:
     """The input does not need to be padded with "0" on the left.
     The function returns the integer value represented by the input string.
     """
     if len(x) > len(MAXIMUM_UINT64_AS_STRING):
-        raise Error("The string size too big. '" + String(x) + "'")
+        raise Error("The string size too big. '", x, "'")
     return to_integer(standardize_string_slice(x))
 
 
@@ -74,9 +70,7 @@ fn to_integer(
             for j in range(CONTAINER_SIZE):
                 number_as_string += chr(Int(standardized_x[j]))
             raise Error(
-                "Invalid character(s) in the number: '"
-                + String(number_as_string^)
-                + "'"
+                "Invalid character(s) in the number: '", number_as_string, "'"
             )
 
     # 24 is not divisible by 16, so we stop at 8. Later on,

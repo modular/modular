@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -84,9 +84,9 @@ fn _get_w_and_q_from_float_string(
 
     if not (ord_0 <= buffer[0] <= ord_9) and buffer[0] != ord_dot:
         raise Error(
-            "The first character of '"
-            + String(input_string)
-            + "' should be a digit or dot to convert it to a float."
+            "The first character of '",
+            input_string,
+            "' should be a digit or dot to convert it to a float.",
         )
 
     if (
@@ -94,9 +94,9 @@ fn _get_w_and_q_from_float_string(
         and buffer[len(input_string) - 1] != ord_dot
     ):
         raise Error(
-            "The last character of '"
-            + String(input_string)
-            + "' should be a digit or dot to convert it to a float."
+            "The last character of '",
+            input_string,
+            "' should be a digit or dot to convert it to a float.",
         )
 
     dot_or_e_found = False
@@ -105,9 +105,9 @@ fn _get_w_and_q_from_float_string(
         array_index -= 1
         if array_index < 0:
             raise Error(
-                "The number is too long, it's not supported yet. '"
-                + String(input_string)
-                + "'"
+                "The number is too long, it's not supported yet. '",
+                input_string,
+                "'",
             )
         if buffer[i] == ord_dot:
             dot_or_e_found = True
@@ -135,9 +135,7 @@ fn _get_w_and_q_from_float_string(
             prt_to_array[][array_index] = buffer[i]
         else:
             raise Error(
-                "Invalid character(s) in the number: '"
-                + String(input_string)
-                + "'"
+                "Invalid character(s) in the number: '", input_string, "'"
             )
 
     if not dot_or_e_found:
