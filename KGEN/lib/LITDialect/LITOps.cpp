@@ -10,6 +10,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/CODialect/COUtils.h"
+#include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -1335,6 +1336,12 @@ ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
   return getRegion(*target).getArguments();
 }
 
+ErrorTreeOrSuccess TryOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  state.transferControlFlowTo(getTryRegion(), operands);
+  return success();
+}
+
 bool TryOp::hasTrivialFinally() {
   Block &finally = getFinallyRegion().front();
   return llvm::hasSingleElement(finally) &&
@@ -1355,22 +1362,42 @@ void TryYieldOp::getBranchTargets(
   if (!isa<TryOp>(region->getParentOp()))
     region = region->getParentRegion();
 
-  // The region indices of the try operation.
-  enum { TRY, EXCEPT, ELSE, FINALLY };
   switch (region->getRegionNumber()) {
-  case TRY:
+  case TryOp::kTRY:
     // Yield from the 'try' region branches to the 'else' region.
-    targets.emplace_back(ELSE, getOperands());
+    targets.emplace_back(TryOp::kELSE, getOperands());
     break;
-  case EXCEPT:
-  case ELSE:
+  case TryOp::kEXCEPT:
+  case TryOp::kELSE:
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent operation.
     targets.emplace_back(std::nullopt, getOperands());
     break;
-  case FINALLY:
+  case TryOp::kFINALLY:
     // The finally region is a no-op according to HLCF.
     break;
+  default:
+    llvm_unreachable("unknown lit.try region");
+  }
+}
+
+ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  // There should always be a parent TryOp.
+  auto tryOp = cast<TryOp>((*this)->getParentOp());
+
+  switch ((*this)->getParentRegion()->getRegionNumber()) {
+  case TryOp::kTRY:
+    // Yield from the 'try' region branches to the 'else' region.
+    state.transferControlFlowTo(tryOp.getElseRegion(), operands);
+    return success();
+  case TryOp::kELSE:
+    // Yield from either the 'except' or 'else' regions branches back to the
+    // parent region which continues after the try.
+    state.transferControlFlowTo(tryOp, operands);
+    return success();
+  case TryOp::kFINALLY:
+    llvm_unreachable("Should be processed by LowerSemanticCF");
   default:
     llvm_unreachable("unknown lit.try region");
   }
@@ -1390,6 +1417,16 @@ void TryRaiseOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   targets.emplace_back(1, getOperands());
+}
+
+ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  // There should always be a parent TryOp.
+  auto tryOp = (*this)->getParentOfType<TryOp>();
+  assert(tryOp && "LowerSemanticCF ensures this before elaboration");
+
+  state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
