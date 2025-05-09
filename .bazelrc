@@ -9,6 +9,10 @@ common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common --platforms=@modular_host_platform
 common --host_platform=@modular_host_platform
 
+# Disable legacy duplicate runfiles creation
+common --legacy_external_runfiles=false
+common --build_runfile_links=false
+
 # Include full test log in failed tests
 build --test_output=errors
 build --test_summary=terse
