@@ -1,0 +1,19 @@
+load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
+
+mojo_binary(
+    name = "vector_addition",
+    srcs = [
+        "vector_addition.mojo",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+    ],
+)
+
+modular_run_binary_test(
+    name = "vector_addition_test",
+    binary = "vector_addition",
+    tags = ["gpu"],
+)
