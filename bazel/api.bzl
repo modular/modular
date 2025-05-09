@@ -68,3 +68,6 @@ mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
 pkg_files = _noop
+proto_library = _noop
+py_grpc_library = _noop
+py_proto_library = _noop

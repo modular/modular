@@ -1,7 +1,4 @@
-load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library")
-load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "proto_library", "py_grpc_library", "py_proto_library", "requirement")
 
 modular_py_library(
     name = "kvcache_agent",
