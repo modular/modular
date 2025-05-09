@@ -578,8 +578,11 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
           checkEndOfBodyCursor(lexer);
         })
-        .Case<PackageOp, ConformanceOp>(
-            [&](auto op) { (void)resolveBody(op, decl); })
+        .Case<ConformanceOp>([&](auto op) {
+          if (failed(resolveBody(op, decl)))
+            decl.setErroneous();
+        })
+        .Case<PackageOp>([&](auto op) { (void)resolveBody(op, decl); })
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {

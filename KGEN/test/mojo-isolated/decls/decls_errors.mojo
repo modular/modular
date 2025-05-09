@@ -888,7 +888,6 @@ fn non_copyable_trait[T: CFMTrait](value: T):
 fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
     pass
 
-# expected-error @+1 {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
 fn dont_crash_pvalue_convert(x: CFMStructFail):
     # expected-error @below {{invalid call to 'trait_fn_infer': could not deduce parameter 'T' of callee 'trait_fn_infer'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'CFMStructFail' does not conform to trait 'CFMTrait'}}
