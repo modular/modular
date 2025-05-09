@@ -20,7 +20,7 @@ from max.pipelines.core import TokenGenerator
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
-from .zmq_queue import ZmqDeque, ZmqQueue
+from .zmq_queue import ZmqPullSocket, ZmqSocket
 
 
 @dataclass
@@ -40,7 +40,7 @@ class DecodeScheduler(Scheduler):
         process_control: ProcessControl,
         pipeline: TokenGenerator,
         scheduler_config: DecodeSchedulerConfig,
-        queues: Mapping[str, ZmqQueue],
+        queues: Mapping[str, ZmqSocket],
         paged_manager: PagedKVCacheManager,
     ):
         # Initialize Pipeline and Config
@@ -66,10 +66,10 @@ class DecodeScheduler(Scheduler):
                 "CANCEL queue must be provided to Decode Scheduler."
             )
 
-        # TODO: Initialize ZmqQueue as Client/Server
+        # TODO: Initialize ZmqSocket as Client/Server
 
         # Initialize Queues
-        self.request_queue = ZmqDeque(queues["REQUEST"])
+        self.request_queue = ZmqPullSocket(queues["REQUEST"])
         self.response_q = queues["RESPONSE"]
         self.cancel_q = queues["CANCEL"]
 

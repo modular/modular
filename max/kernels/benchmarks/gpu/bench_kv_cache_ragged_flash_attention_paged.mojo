@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
+
 from collections import Set
 from math import ceildiv, isqrt
 from random import random_ui64, seed

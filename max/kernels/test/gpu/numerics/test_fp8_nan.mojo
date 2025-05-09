@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: L4-GPU || H100-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.simd import *
 from gpu.host import DeviceContext

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import isclose
 from random import rand, random_float64, seed
@@ -24,12 +23,11 @@ from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer
 from nn.softmax import _online_softmax_kernel, _softmax_cpu, _softmax_gpu
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_true
 
 from utils import IndexList
 
 
-# CHECK-LABEL: test_gpu_softmax
 fn test_gpu_softmax(ctx: DeviceContext) raises:
     print("== test_gpu_softmax")
 
@@ -92,7 +90,6 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     ctx.synchronize()
     ctx.enqueue_copy(out_host_ptr, out_device_ptr)
 
-    # CHECK-NOT: ERROR
     for i in range(shape.flattened_length()):
         if not isclose(
             out_ref.flatten()[i],
@@ -101,6 +98,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
             rtol=1e-5,
         ):
             print("ERROR. Mismatch at flattened idx:", i)
+            assert_true(False)
 
     in_host_ptr.free()
     out_host_ptr.free()
@@ -112,7 +110,6 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     _ = out_device_ptr
 
 
-# CHECK-LABEL: test_gpu_softmax_half
 def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     print("== test_gpu_softmax_half")
     alias seed_val = 42

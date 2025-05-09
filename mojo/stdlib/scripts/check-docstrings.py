@@ -27,7 +27,7 @@ def main():
         "--diagnose-missing-doc-strings",
         "-o",
         "/dev/null",
-        "./mojo/stdlib/src",
+        "./mojo/stdlib/stdlib",
     ]
     result = subprocess.run(command, capture_output=True)
     if result.returncode != 0:

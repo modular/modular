@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
 
 from sys import env_get_bool, env_get_dtype, env_get_int, env_get_string
 from time import sleep

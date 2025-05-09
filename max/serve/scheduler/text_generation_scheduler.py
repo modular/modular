@@ -33,7 +33,7 @@ from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
 from .queues import STOP_STREAM
-from .zmq_queue import ZmqDeque, ZmqQueue
+from .zmq_queue import ZmqPullSocket, ZmqSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -80,8 +80,7 @@ class TokenGenerationSchedulerConfig:
     each batch contains exactly `target_tokens_per_batch_ce` tokens."""
 
     enable_in_flight_batching: bool = False
-    """When enabled, prioritizes token generation by batching it with context encoding requests.
-    Requires chunked prefill."""
+    """When enabled, prioritizes token generation by batching it with context encoding requests."""
 
     def __post_init__(self) -> None:
         if (
@@ -96,10 +95,6 @@ class TokenGenerationSchedulerConfig:
                 "Prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
             )
             self.max_forward_steps_ce = 1
-
-        if self.enable_in_flight_batching and not self.enable_chunked_prefill:
-            msg = "Requires chunked prefill for in-flight batching."
-            raise ValueError(msg)
 
 
 class SchedulerOutput:
@@ -150,7 +145,7 @@ class TokenGenerationScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
-        queues: Mapping[str, ZmqQueue],
+        queues: Mapping[str, ZmqSocket],
         paged_manager: Optional[PagedKVCacheManager] = None,
     ):
         self.scheduler_config = scheduler_config
@@ -159,9 +154,13 @@ class TokenGenerationScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q = ZmqDeque(queues["REQUEST"])
-        self.response_q = queues["RESPONSE"]
-        self.cancel_q = ZmqDeque(queues["CANCEL"])
+        self.request_q = ZmqPullSocket[tuple[str, InputContext]](
+            queues["REQUEST"]
+        )
+        self.response_q: ZmqSocket[list[dict[str, TextResponse]]] = queues[
+            "RESPONSE"
+        ]
+        self.cancel_q = ZmqPullSocket[list[str]](queues["CANCEL"])
 
         # Initialize Scheduler state.
         self.active_batch: dict[str, InputContext] = {}
@@ -731,7 +730,8 @@ class TokenGenerationScheduler(Scheduler):
                         )
                         del self.active_batch[req_id]
 
-                        self.response_q.put_nowait([{req_id: STOP_STREAM}])
+                        stop_stream = cast(TextResponse, STOP_STREAM)
+                        self.response_q.put_nowait([{req_id: stop_stream}])
                 except queue.Empty:
                     break
         except Exception:
@@ -760,9 +760,8 @@ class TokenGenerationScheduler(Scheduler):
                 responses[token_idx][request_id] = text_response
 
             if response.is_done:
-                responses[len(response.tokens)][request_id] = cast(
-                    TextResponse, STOP_STREAM
-                )
+                stop_stream = cast(TextResponse, STOP_STREAM)
+                responses[len(response.tokens)][request_id] = stop_stream
 
         self.response_q.put_nowait(responses)
 

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_binary", "mojo_test")
+load("//bazel:api.bzl", "mojo_binary", "mojo_test", "requirement")
 
 mojo_binary(
     name = "lifev1",
@@ -8,6 +8,7 @@ mojo_binary(
     ],
     deps = [
         "@mojo//:stdlib",
+        requirement("pygame"),
     ],
 )
 
@@ -19,6 +20,7 @@ mojo_binary(
     ],
     deps = [
         "@mojo//:stdlib",
+        requirement("pygame"),
     ],
 )
 

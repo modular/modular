@@ -10,3 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""
+Contains implementations for several types of key-value caches.
+
+[KV caches](/glossary/ai/kv-cache) are used in transformer models to store
+key-value tensors output from self-attention layers.
+
+These APIs are used in the higher-level functions in the
+[`nn`](/mojo/kernels/nn) package.
+"""

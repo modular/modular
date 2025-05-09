@@ -26,6 +26,7 @@ def register_all_models():
     from .deepseekV2 import deepseekV2_arch
     from .exaone import exaone_arch
     from .gemma3 import gemma3_arch
+    from .gemma3multimodal import gemma3_multimodal_arch
     from .granite import granite_arch
     from .llama3 import llama_arch
     from .llama4 import llama4_arch
@@ -37,12 +38,12 @@ def register_all_models():
     from .phi3 import phi3_arch
     from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
-    from .replit import replit_arch
 
     architectures = [
         exaone_arch,
         deepseekV2_arch,
         gemma3_arch,
+        gemma3_multimodal_arch,
         llama_arch,
         llama4_arch,
         llama_vision_arch,
@@ -53,7 +54,6 @@ def register_all_models():
         phi3_arch,
         pixtral_arch,
         qwen2_arch,
-        replit_arch,
         granite_arch,
     ]
 

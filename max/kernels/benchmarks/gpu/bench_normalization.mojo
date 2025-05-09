@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-build-no-debug-no-assert %s
-
 from random import random_float64
 from sys import env_get_dtype, env_get_int
 

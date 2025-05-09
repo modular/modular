@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from sys.info import _accelerator_arch
 
@@ -26,5 +25,7 @@ def main():
         or accelerator_arch == "nvidia:86"
         or accelerator_arch == "nvidia:89"
         or accelerator_arch == "nvidia:90"
-        or accelerator_arch == "amdgpu:94"
+        or accelerator_arch == "nvidia:90a"
+        or accelerator_arch == "amdgpu:94",
+        "Expected specific accelerator_archs, got: " + accelerator_arch,
     )

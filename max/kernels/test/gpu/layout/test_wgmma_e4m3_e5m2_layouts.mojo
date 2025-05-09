@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from sys.info import _is_sm_8x, _is_sm_9x
 

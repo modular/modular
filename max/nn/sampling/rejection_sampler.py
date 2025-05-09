@@ -34,14 +34,15 @@ class RejectionSampler(nn.Module):
         # Get Proper Indices for Tokens
         broadcasted_range = ops.broadcast_to(
             ops.range(
-                ops.constant(0, dtype=DType.int64, device=DeviceRef.CPU()),
+                0,
                 ops.cast(
                     draft_tokens.shape[1],
                     dtype=DType.int64,
                 ),
-                ops.constant(1, dtype=DType.int64, device=DeviceRef.CPU()),
+                1,
                 out_dim=Dim("num_steps"),
                 device=self.device,
+                dtype=DType.int64,
             ),
             shape=[Dim("batch_size"), Dim("num_steps")],
         )

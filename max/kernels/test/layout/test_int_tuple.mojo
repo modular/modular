@@ -10,14 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
-# CHECK-LABEL: test_tuple_basic
 def test_tuple_basic():
     print("== test_tuple_basic")
 
@@ -79,7 +77,6 @@ def test_tuple_basic():
     )
 
 
-# CHECK-LABEL: test_tuple_slicing
 def test_tuple_slicing():
     print("== test_tuple_slicing")
 
@@ -104,7 +101,6 @@ def test_tuple_slicing():
     assert_equal(String(sl8), "(0, 1, 2, 3)")
 
 
-# CHECK-LABEL: test_tuple_basic_ops
 def test_tuple_basic_ops():
     print("== test_tuple_basic_ops")
 
@@ -168,7 +164,6 @@ def test_tuple_basic_ops():
     )
 
 
-# CHECK-LABEL: test_sorted
 def test_sorted():
     print("== test_sorted")
 
@@ -184,7 +179,6 @@ def test_sorted():
     assert_true(IntTuple(4, 6, 8) < IntTuple(5, 6, 7))
 
 
-# CHECK-LABEL: test_product
 def test_product():
     print("== test_product")
 
@@ -193,7 +187,6 @@ def test_product():
     assert_equal(product(product(IntTuple(IntTuple(2, 3), 4))), 24)
 
 
-# CHECK-LABEL: test_inner_product
 def test_inner_product():
     print("== test_inner_product")
 
@@ -205,7 +198,6 @@ def test_inner_product():
     )
 
 
-# CHECK-LABEL: test_shape_div
 def test_shape_div():
     print("== test_shape_div")
 
@@ -220,7 +212,6 @@ def test_shape_div():
     )
 
 
-# CHECK-LABEL: test_prefix_product
 def test_prefix_product():
     print("== test_prefix_product")
 
@@ -242,7 +233,6 @@ def test_prefix_product():
     )
 
 
-# CHECK-LABEL: test_crd2idx
 def test_crd2idx():
     print("== test_crd2idx")
 
@@ -264,7 +254,6 @@ def test_crd2idx():
     assert_equal(cx7, 7)
 
 
-# CHECK-LABEL: test_idx2crd
 def test_idx2crd():
     print("== test_idx2crd")
 
@@ -286,7 +275,6 @@ def test_idx2crd():
     assert_equal(String(xc7), "(3, 1)")
 
 
-# CHECK-LABEL: test_weakly_congruent
 def test_weakly_congruent():
     print("== test_weakly_congruent")
     alias a = IntTuple(1)
@@ -334,7 +322,6 @@ def test_weakly_congruent():
     assert_true(weakly_congruent(a2, b3))
 
 
-# CHECK-LABEL: test_weakly_compatible
 def test_weakly_compatible():
     print("== test_weakly_compatible")
     alias a = IntTuple(16)
@@ -380,7 +367,6 @@ def test_weakly_compatible():
     assert_false(weakly_compatible(a3, a2))
 
 
-# CHECK-LABEL: test_fill_like
 def test_fill_like():
     print("== test_fill_like")
     alias t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
@@ -389,7 +375,6 @@ def test_fill_like():
     assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
 
 
-# CHECK-LABEL: test_reverse
 def test_reverse():
     print("== test_reverse")
     alias t1 = IntTuple(2, IntTuple(3, 4))
@@ -398,7 +383,6 @@ def test_reverse():
     assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
 
 
-# CHECK-LABEL: test_depth
 def test_depth():
     print("== test_depth")
     assert_equal(depth(IntTuple(1)), 0)
@@ -406,7 +390,6 @@ def test_depth():
     assert_equal(depth(IntTuple(1, IntTuple(2, 3))), 2)
 
 
-# CHECK-LABEL: test_unknown_value_arith
 def test_unknown_value_arith():
     print("== test_unknown_value_arith")
     var t = IntTuple(UNKNOWN_VALUE, IntTuple(2, 3), 4)

@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin._location import __source_location
 from builtin.io import _printf
@@ -49,7 +47,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:53:32
+        # CHECK: test_print.mojo:51:32
         print(__source_location())
 
         # ------------------------------

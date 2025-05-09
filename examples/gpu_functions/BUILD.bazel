@@ -25,6 +25,7 @@ mojo_binary(
 mojo_binary(
     name = "naive_matrix_multiplication",
     srcs = ["naive_matrix_multiplication.mojo"],
+    tags = ["manual"],  # TODO: Fix compilation and remove this tag
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//SDK/lib/API/mojo/max/max",

@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from typing import Callable, Union, cast
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import TensorType, TensorValue, ops
 from max.nn import Linear, ReturnLogits
 from max.nn.layer import Module
 
@@ -205,10 +205,11 @@ class GenerationModel(Module):
         if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = ops.range(
                 return_n_logits[0],
-                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
-                ops.constant(-1, DType.int64, device=DeviceRef.CPU()),
+                0,
+                -1,
                 out_dim="return_n_logits_range",
                 device=inputs_embeds.device,
+                dtype=DType.int64,
             )
             offsets = (
                 ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
@@ -217,11 +218,12 @@ class GenerationModel(Module):
             last_tokens = ops.gather(h, last_indices, axis=0)
             logits = ops.cast(self.lm_head(last_tokens), DType.float32)
             offsets = ops.range(
-                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+                0,
                 TensorValue(last_indices.shape[0]) + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=inputs_embeds.device,
+                dtype=DType.int64,
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(h), DType.float32)

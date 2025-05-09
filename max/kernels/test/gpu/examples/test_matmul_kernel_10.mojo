@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO (#33518): -t flag is required right now because the kernel assumes C is zeroed
-# RUN: %mojo-no-debug %s -t | FileCheck %s
 
 from collections import OptionalReg
 from math import ceildiv
@@ -319,7 +317,6 @@ fn matmul_naive(
     c[Index(x, y)] = accum
 
 
-# CHECK-LABEL: run_matmul_kernel_10
 fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     print("== run_matmul_kernel_10")
 

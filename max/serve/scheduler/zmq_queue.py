@@ -13,6 +13,8 @@
 
 """Multi-process queue based on ZeroMQ. Tested for SPSC case."""
 
+from __future__ import annotations
+
 import logging
 import queue
 import tempfile
@@ -20,7 +22,7 @@ import threading
 import uuid
 import weakref
 from collections import deque
-from typing import Any, Optional, Union
+from typing import Generic, Optional, TypeVar, Union
 
 import psutil
 import zmq
@@ -29,6 +31,8 @@ import zmq.constants
 from max.profiler import traced
 
 logger = logging.getLogger("max.serve")
+
+T = TypeVar("T")
 
 
 def _generate_zmq_ipc_path() -> str:
@@ -75,7 +79,7 @@ def _open_zmq_socket(
     return socket
 
 
-class ZmqQueue:
+class ZmqSocket(Generic[T]):
     # One zmq context should be created per process AFTER process forks.
     # The Python GC is responsible for cleaning up the zmq context when the
     # process exits. A lock is needed to ensure that the zmq context is only
@@ -108,10 +112,10 @@ class ZmqQueue:
             self.zmq_push_socket = None
 
     def _get_or_init_zmq_ctx(self) -> zmq.Context:
-        with ZmqQueue.mutex:
-            if ZmqQueue.zmq_ctx is None:
-                ZmqQueue.zmq_ctx = zmq.Context(io_threads=2)
-        return ZmqQueue.zmq_ctx
+        with ZmqSocket.mutex:
+            if ZmqSocket.zmq_ctx is None:
+                ZmqSocket.zmq_ctx = zmq.Context(io_threads=2)
+        return ZmqSocket.zmq_ctx
 
     def _get_or_init_pull_socket(self) -> zmq.Socket:
         zmq_ctx = self._get_or_init_zmq_ctx()
@@ -131,13 +135,13 @@ class ZmqQueue:
 
         return self.zmq_push_socket
 
-    def get_nowait(self) -> Any:
+    def get_nowait(self) -> T:
         return self.get(flags=zmq.NOBLOCK)
 
-    def put_nowait(self, item: Any) -> None:
+    def put_nowait(self, item: T) -> None:
         self.put(item, flags=zmq.NOBLOCK)
 
-    def get(self, *args, **kwargs) -> Any:
+    def get(self, *args, **kwargs) -> T:
         pull_socket = self._get_or_init_pull_socket()
 
         try:
@@ -179,40 +183,40 @@ class ZmqQueue:
                 raise e
 
 
-class ZmqDeque:
-    """A wrapper around the ZmqQueue that adds a local queue.
+class ZmqPullSocket(Generic[T]):
+    """A wrapper around the ZmqSocket that adds a local buffer.
 
-    This allows the user to add requests to the front of the queue and check
-    the queue size. This should probably only be used on the PULL side.
+    This allows the user to add requests to the front of the buffer and check
+    the buffer size. This should probably only be used on the PULL side.
     """
 
-    def __init__(self, queue: ZmqQueue):
+    def __init__(self, queue: ZmqSocket[T]):
         self.queue = queue
-        self.local_queue: deque[Any] = deque()
+        self.local_queue: deque[T] = deque()
 
-    def put_front_nowait(self, item: Any):
+    def put_front_nowait(self, item: T):
         """A new method that allows us to add requests to the front of the queue."""
         self.local_queue.append(item)
 
     def put(self, *args, **kwargs) -> None:
         return self.queue.put(*args, **kwargs)
 
-    def put_nowait(self, item: Any) -> None:
+    def put_nowait(self, item: T) -> None:
         return self.queue.put_nowait(item)
 
-    def get(self, *args, **kwargs) -> Any:
+    def get(self, *args, **kwargs) -> T:
         if self.local_queue:
             return self.local_queue.pop()
         return self.queue.get(*args, **kwargs)
 
     @traced
-    def get_nowait(self) -> Any:
+    def get_nowait(self) -> T:
         if self.local_queue:
             return self.local_queue.pop()
         return self.queue.get_nowait()
 
     def qsize(self) -> int:
-        """Return the size of the queue by repeatedly polling the ZmqQueue and
+        """Return the size of the queue by repeatedly polling the ZmqSocket and
         adding the items to the local queue."""
         while True:
             try:

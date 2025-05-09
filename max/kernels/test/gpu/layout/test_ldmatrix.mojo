@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from random import random_si64
@@ -303,7 +300,6 @@ fn check_ldmatrix(
     _ = c_host_ref
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     with DeviceContext() as ctx:
         check_ldmatrix(16, 8, 8, -100, 100, ctx)

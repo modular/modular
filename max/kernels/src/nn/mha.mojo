@@ -320,17 +320,6 @@ fn flash_attention[
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
 
-        # If it's paged attention, we temporarily disable split-k mha.
-        # TODO: remove this parameter once the restriction is lifted.
-        alias is_paged = _type_is_eq[
-            cache_t,
-            PagedKVCache[
-                type,
-                cache_t.kv_params,
-                cache_t.max_tile_size(),
-            ],
-        ]()
-
         var k_operand = KVCacheMHAOperand(k)
         var v_operand = KVCacheMHAOperand(v)
 
@@ -340,7 +329,6 @@ fn flash_attention[
             config=config,
             ragged=ragged,
             _is_flash_attention_applicable=flash_attention_applicable,
-            _is_paged=is_paged,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
             output,
@@ -384,8 +372,6 @@ fn flash_attention_dispatch[
     # valid_length is needed for KV cache inputs and is empty for NDBuffer inputs
     # to avoid overhead in benchmark.
     _use_valid_length: Bool = True,
-    # This is to temporarily avoid using split-k with paged attention.
-    _is_paged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],

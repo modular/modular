@@ -1,13 +1,33 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_filecheck_test")
 
-lit_tests(
-    name = "lit",
-    size = "large",
-    srcs = glob(["**/*.mojo"]),
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"] + (
+            ["manual"] if src == "test_e5m2_conversion.mojo" else []  # TODO(KERN-1723)
+        ),
+        target_compatible_with = ["//:h100_gpu"],
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in [
+        "test_e4m3fn_conversion.mojo",
+        "test_e5m2_conversion.mojo",
+        "test_fp8_nan.mojo",
+    ]
+]
+
+mojo_filecheck_test(
+    name = "test_fp8fnuz_amd.mojo.test",
+    srcs = ["test_fp8fnuz_amd.mojo"],
+    tags = [
+        "gpu",
+        "manual",  # TODO(KERN-1377)
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
         "@mojo//:stdlib",
     ],
-    tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
 )

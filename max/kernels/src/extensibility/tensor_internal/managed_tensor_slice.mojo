@@ -35,6 +35,7 @@ from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import RuntimeTensorSpec, TensorSpec
+from builtin.device_passable import DevicePassable
 
 from utils import IndexList, StaticTuple
 from utils._serialize import _serialize
@@ -368,7 +369,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[type, rank],
-](Copyable, Movable, Stringable, Writable):
+](Copyable, DevicePassable, Movable, Stringable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -379,6 +380,42 @@ struct ManagedTensorSlice[
     custom operations where memory is managed by an external runtime like in
     MAX's inference stack.
     """
+
+    # `trait DevicePassable` implementation
+    alias device_type: AnyTrivialRegType = LayoutTensor[
+        type, static_spec.to_layout(), MutableAnyOrigin
+    ]
+
+    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+        target.bitcast[Self.device_type]()[] = self.to_layout_tensor()
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return (
+            "ManagedTensorSlice[mut = "
+            + String(mut)
+            + ", type = "
+            + String(type)
+            + ", rank = "
+            + String(rank)
+            + ", static_spec (as Layout) = "
+            + String(static_spec.to_layout())
+            + "]"
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return (
+            "LayoutTensor[mut = "
+            + String(Self.device_type.mut)
+            + ", dtype = "
+            + String(Self.device_type.dtype)
+            + ", layout = "
+            + String(Self.device_type.layout)
+            + ", address_space = "
+            + String(Self.device_type.address_space)
+            + "]"
+        )
 
     alias address_space = static_spec.address_space
     alias alignment = static_spec.alignment

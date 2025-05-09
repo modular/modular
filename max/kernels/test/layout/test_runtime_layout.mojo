@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import coalesce as coalesce_layout
@@ -26,7 +25,6 @@ from layout.runtime_layout import (
 from testing import assert_equal
 
 
-# CHECK-LABEL: test_runtime_layout_const
 def test_runtime_layout_const():
     print("== test_runtime_layout_const")
 
@@ -50,7 +48,6 @@ def test_runtime_layout_const():
     assert_equal(String(layout_r), "((16, 8):(8, 1))")
 
 
-# CHECK-LABEL: test_static_and_dynamic_size
 def test_static_and_dynamic_size():
     print("== test_static_and_dynamic_size")
     alias d_layout = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
@@ -63,7 +60,6 @@ def test_static_and_dynamic_size():
     assert_equal(layout.size(), 32)
 
 
-# CHECK-LABEL: test_tiled_layout_indexing
 def test_tiled_layout_indexing():
     print("== test_tiled_layout_indexing")
 
@@ -97,7 +93,6 @@ def test_tiled_layout_indexing():
                     )
 
 
-# CHECK-LABEL: test_tiled_layout_indexing
 def test_tiled_layout_indexing_linear_idx():
     print("== test_tiled_layout_indexing_linear_idx")
 
@@ -128,7 +123,6 @@ def test_tiled_layout_indexing_linear_idx():
         )
 
 
-# CHECK-LABEL: test_sublayout_indexing
 def test_sublayout_indexing():
     print("== test_sublayout_indexing")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -142,7 +136,6 @@ def test_sublayout_indexing():
     assert_equal(String(layout.sublayout[1]()), "(4:1)")
 
 
-# CHECK-LABEL: test_coalesce
 def test_coalesce():
     print("== test_coalesce")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -177,7 +170,6 @@ def test_coalesce():
     )
 
 
-# CHECK-LABEL: test_make_layout
 def test_make_layout():
     print("== test_make_layout")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)

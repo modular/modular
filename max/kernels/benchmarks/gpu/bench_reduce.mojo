@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
 
 from sys import alignof, env_get_int, env_get_string, simdwidthof
 

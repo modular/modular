@@ -271,6 +271,8 @@ class Module(Layer, ABC):
             prefix = f"{name}." if name else ""
 
             for weight_name, weight in layer.layer_weights.items():
+                if weight_name in layer._shared_weights:
+                    continue
                 state_dict[f"{prefix}{weight_name}"] = weight
         return state_dict
 

@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(MOCO-1523): reenable
-# REQUIRES: DISABLED
-# RUN: %mojo-no-debug %s
 
 from math import fma, isclose
 from os import abort
@@ -332,15 +329,6 @@ fn alloc_tensor[
     return LayoutTensor[elt, layout, MutableAnyOrigin](
         UnsafePointer[Scalar[elt], alignment=64].alloc(rtlayout.size()),
         rtlayout,
-    )
-
-
-fn row_major_dyn[
-    layout: Layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-](M: Int, N: Int) -> RuntimeLayout[layout]:
-    return RuntimeLayout[layout](
-        RuntimeTuple[layout.shape, unsigned=True](M, N),
-        RuntimeTuple[layout.stride, unsigned=True](N, 1),
     )
 
 

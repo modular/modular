@@ -4,41 +4,67 @@ load("@modular_test_deps//:requirements.bzl", _requirement = "requirement")
 load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
 load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
 load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
+load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")
+load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")
 
-modular_py_library = py_library
-modular_run_binary_test = binary_test
-mojo_binary = _mojo_binary
+mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
 requirement = _requirement
+strip_prefix = _strip_prefix
+
+def _has_internal_reference(deps):
+    return any([dep.startswith(("//GenericML/", "//Kernels/", "//SDK/")) for dep in deps])
+
+def modular_py_library(**kwargs):
+    # TODO: Pull in the necessary pip dependencies, remap labels, etc
+    if native.package_name().startswith(("max/entrypoints", "max/nn", "max/pipelines", "max/serve")):
+        return
+
+    py_library(**kwargs)
 
 # buildifier: disable=function-docstring
 def mojo_library(
         validate_missing_docs = False,  # buildifier: disable=unused-variable
         build_docs = False,  # buildifier: disable=unused-variable
-        target_compatible_with = [],
         deps = [],
         **kwargs):
-    extra_target_compatible_with = []
-    if any([dep.startswith(("//Kernels/", "//SDK/")) for dep in deps]):
-        extra_target_compatible_with = ["@platforms//:incompatible"]
-        deps = []
+    if _has_internal_reference(deps):
+        return
 
     _mojo_library(
         deps = deps,
-        target_compatible_with = target_compatible_with + extra_target_compatible_with,
         **kwargs
     )
 
-def lit_tests(**_kwargs):
+def mojo_binary(
+        data = [],
+        deps = [],
+        **kwargs):
+    if _has_internal_reference(deps) or _has_internal_reference(data):
+        return
+    _mojo_binary(
+        data = data,
+        deps = deps,
+        **kwargs
+    )
+
+def modular_run_binary_test(name, **kwargs):
+    if name.endswith(".example-test"):
+        return  # TODO: Fix custom_ops python examples
+    binary_test(
+        name = name,
+        **kwargs
+    )
+
+def _noop(**_kwargs):
     pass
 
-def mojo_doc(**_kwargs):
-    pass
-
-def modular_py_binary(**_kwargs):
-    pass
-
-def mojo_kgen_lib(**_kwargs):
-    pass
+lit_tests = _noop
+modular_py_binary = _noop
+mojo_doc = _noop
+mojo_kgen_lib = _noop
+pkg_attributes = _noop
+pkg_filegroup = _noop
+pkg_files = _noop

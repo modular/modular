@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from sys.info import alignof, sizeof
+from testing import assert_true
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -66,24 +66,27 @@ fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     return allPass
 
 
-fn test_fake_quant_error[l2_tolerance: Float32]():
+fn test_fake_quant_error[l2_tolerance: Float32]() raises:
     # Tests round-trippability of encoding/decoding groups of numbers
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
     var g8_result = _run_test_quant[8, l2_tolerance]()
     print("G08 PASS" if g8_result else "G08 FAIL")
     print()
+    assert_true(g8_result)
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _run_test_quant[16, l2_tolerance]()
     print("G16 PASS" if g16_result else "G16 FAIL")
     print()
+    assert_true(g16_result)
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _run_test_quant[32, l2_tolerance]()
     print("------------end test_fake_quant_error------------")
     print("G32 PASS" if g32_result else "G32 FAIL")
     print()
+    assert_true(g32_result)
 
 
 fn test_alignment_and_size():
@@ -212,42 +215,37 @@ fn _read_write_to_tensors[
     return allClose
 
 
-fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
+fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print("------------test_read_write_to_tensors------------")
 
     print("********** GROUP SIZE 08 **********")
     var g8_result = _read_write_to_tensors[8, rtol, atol]()
     print("G08 PASS" if g8_result else "G08 FAIL")
     print()
+    assert_true(g8_result)
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _read_write_to_tensors[16, rtol, atol]()
     print("G16 PASS" if g16_result else "G16 FAIL")
     print()
+    assert_true(g16_result)
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _read_write_to_tensors[32, rtol, atol]()
     print("G32 PASS" if g32_result else "G32 FAIL")
     print()
+    assert_true(g32_result)
 
     print("------------end test_read_write_to_tensors------------")
     print()
 
 
-fn main():
+fn main() raises:
     alias l2_tolerance = 0.1
 
-    # CHECK: G08 PASS
-    # CHECK: G16 PASS
-    # CHECK: G32 PASS
     test_fake_quant_error[l2_tolerance]()
 
-    # CHECK-LABEL: test_read_write_to_tensors
-    # CHECK: G08 PASS
-    # CHECK: G16 PASS
-    # CHECK: G32 PASS
     test_read_write_to_tensors[rtol=0.1, atol=1.0]()
 
     # Tests via compile-time constraints on sizeof(Q4Sym)
-    # CHECK-LABEL: test_alignment_and_size
     test_alignment_and_size()

@@ -27,7 +27,7 @@ from typing import Generic, Optional, TypeVar
 import sentinel
 from max.serve.process_control import ProcessControl
 
-from .zmq_queue import ZmqDeque, ZmqQueue
+from .zmq_queue import ZmqPullSocket, ZmqSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -87,9 +87,11 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     ):
         super().__init__()
         self.context = context
-        self.request_q = ZmqQueue()
-        self.response_q = ZmqDeque(ZmqQueue())
-        self.cancel_q = ZmqQueue()
+        self.request_q = ZmqSocket[tuple[ReqId, ReqInput]]()
+        self.response_q = ZmqPullSocket(
+            ZmqSocket[list[dict[ReqId, ReqOutput]]]()
+        )
+        self.cancel_q = ZmqPullSocket(ZmqSocket[list[ReqId]]())
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
         self._proc: Optional[multiprocessing.process.BaseProcess] = None

@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: asan
-# COM: causes leak in elaborator
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

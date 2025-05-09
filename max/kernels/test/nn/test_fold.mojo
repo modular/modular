@@ -50,8 +50,6 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 
 ```
 """
-# RUN: %mojo-no-debug %s | FileCheck %s
-
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

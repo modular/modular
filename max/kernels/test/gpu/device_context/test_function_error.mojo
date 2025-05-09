@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: H100-GPU
-# RUN: not --crash %mojo-no-debug %s
 
 from gpu.host import DeviceContext
 from memory import UnsafePointer
@@ -25,6 +23,7 @@ fn kernel(res: UnsafePointer[UInt32]):
 # Here the argument is a host pointer and not a device pointer, so we expect
 # an error about an illegal memory address.
 def test_function_error(ctx: DeviceContext):
+    # CHECK: test_function_error
     print("== test_function_error")
     try:
         var res_host = UnsafePointer[UInt32].alloc(1)

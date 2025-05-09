@@ -10,12 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
-
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
+from testing import assert_equal
 
 from utils.numerics import inf, nan, neg_inf
 
@@ -31,7 +30,6 @@ fn id(
     output[tid] = Float32(BFloat16(input[tid]))
 
 
-# CHECK-LABEL: run_vec_add
 @no_inline
 fn run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
@@ -63,19 +61,22 @@ fn run_vec_add(ctx: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
+    var expected = List[Float32](
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        nan[DType.float32](),
+        inf[DType.float32](),
+        neg_inf[DType.float32](),
+        -0.0,
+        8.0,
+        9.0,
+    )
     with out_device.map_to_host() as out_host:
-        # CHECK: at index 0 the value is 0.0
-        # CHECK: at index 1 the value is 1.0
-        # CHECK: at index 2 the value is 2.0
-        # CHECK: at index 3 the value is 3.0
-        # CHECK: at index 4 the value is nan
-        # CHECK: at index 5 the value is inf
-        # CHECK: at index 6 the value is -inf
-        # CHECK: at index 7 the value is -0.0
-        # CHECK: at index 8 the value is 8.0
-        # CHECK: at index 9 the value is 9.0
         for i in range(10):
             print("at index", i, "the value is", out_host[i])
+            assert_equal(expected[i], out_host[i])
 
     _ = in_device
 

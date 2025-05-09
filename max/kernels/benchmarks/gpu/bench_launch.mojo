@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
 
 from benchmark import Bench, Bencher, BenchId
 from gpu.host import DeviceContext, Dim

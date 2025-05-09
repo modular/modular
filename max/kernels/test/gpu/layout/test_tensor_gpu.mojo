@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
 from gpu import barrier, block_idx, grid_dim, thread_idx
@@ -27,7 +26,6 @@ from memory import UnsafePointer
 from testing import assert_true
 
 
-# CHECK-LABEL: test_copy_dram_to_sram_async
 def test_copy_dram_to_sram_async(ctx: DeviceContext):
     print("== test_copy_dram_to_sram_async")
     alias tensor_layout = Layout.row_major(4, 16)

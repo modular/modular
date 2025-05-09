@@ -15,9 +15,9 @@
 # Matmul.mojo functions
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
+
 from collections import OptionalReg
-from sys.info import bitwidthof, os_is_macos
+from sys.info import bitwidthof
 
 import benchmark
 from buffer import NDBuffer
@@ -493,10 +493,6 @@ def test_batched_matmul[
     n: Int,
     k: Int,
 ):
-    @parameter
-    if not os_is_macos():
-        return
-
     var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
         batches * m * n
     )
@@ -649,10 +645,6 @@ def test_batched_matmul():
 
 
 def main():
-    @parameter
-    if not os_is_macos():
-        return
-
     test_types[b_packed=True, mixed_kernels=False]()
     test_types[b_packed=True, mixed_kernels=True]()
     test_types[b_packed=False, mixed_kernels=False]()

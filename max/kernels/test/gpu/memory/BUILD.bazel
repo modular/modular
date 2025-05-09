@@ -1,20 +1,126 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
-lit_tests(
-    name = "lit",
-    size = "large",
-    srcs = glob(["**/*.mojo"]),
-    gpu_constraints = ["//:has_gpu"],
-    mojo_deps = [
+_FILECHECK_TESTS = [
+    "test_memory.mojo",
+    "test_sharedmem_async_cp.mojo",
+]
+
+_OTHER_TESTS = [
+    "test_shared_mem_barrier.mojo",
+    "test_async_cpy_wait_group.mojo",
+    "test_buffer_io.mojo",
+    "test_copy_async.mojo",
+    "test_ldg_intrinsics.mojo",
+    "test_ldmatrix_fp8.mojo",
+    "test_load_cache.mojo",
+    "test_semaphore_reduction.mojo",
+    "test_tma.mojo",
+]
+
+mojo_filecheck_test(
+    name = "test_shared_mem_barrier.mojo.test",
+    srcs = ["test_shared_mem_barrier.mojo"],
+    enable_assertions = False,
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
         "@mojo//:layout",
         "@mojo//:linalg",
         "@mojo//:stdlib",
     ],
-    tags = [
-        "gpu",
-    ],
-    tools = ["//KGEN/tools/mojo"],
 )
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"] + (
+            ["manual"] if src in "test_sharedmem_async_cp.mojo" else []  # TODO: KERN-1531 this hangs with regular builds after cubin compilation, Hangs with debug mode Issue #24921
+        ),
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:nvidia_gpu"],
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in [
+        "test_async_cpy_wait_group.mojo",
+        "test_ldg_intrinsics.mojo",
+        "test_copy_async.mojo",
+        "test_semaphore_reduction.mojo",  # FIXME: KERN-1377 and move to the globbed mojo_test
+        "test_load_cache.mojo",  # FIXME: KERN-1377 and move to the globbed mojo_test
+    ]
+]
+
+mojo_test(
+    name = "test_buffer_io.mojo.test",
+    srcs = ["test_buffer_io.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_ldmatrix_fp8.mojo.test",
+    srcs = ["test_ldmatrix_fp8.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:h100_gpu"],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_filecheck_test(
+    name = "test_tma.mojo.test",
+    srcs = ["test_tma.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:h100_gpu"],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS + _OTHER_TESTS,
+    )
+]
 
 filegroup(
     name = "test-sources",

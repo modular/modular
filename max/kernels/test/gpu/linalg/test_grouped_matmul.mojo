@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: asan
-# REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s
 
 from collections.optional import Optional, OptionalReg
 from math import ceildiv

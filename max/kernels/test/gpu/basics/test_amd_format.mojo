@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
-# REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import InlineArray
 from collections.string import StaticString
@@ -101,10 +97,8 @@ fn test_format_float8_e4m3fn():
 def main():
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
-        # CHECK-LABEL: == test_format_float8_e5m2
         print("== test_format_float8_e5m2")
         ctx.enqueue_function[test_format_float8_e5m2](grid_dim=1, block_dim=1)
 
-        # CHECK-LABEL: == test_format_float8_e4m3fn
         print("== test_format_float8_e4m3fn")
         ctx.enqueue_function[test_format_float8_e4m3fn](grid_dim=1, block_dim=1)

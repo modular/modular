@@ -11,11 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# TODO(KERN-464): reenable
-# REQUIRES: DISABLED
-# RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
-# CHECK: Benchmark results
-
 from random import random_si64
 from sys import simdwidthof, sizeof
 

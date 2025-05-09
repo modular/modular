@@ -49,11 +49,11 @@ class Qwen2_5VLRotaryEmbedding(Module):
         n = self.dim // self.n_heads
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         iota = ops.range(
-            ops.constant(0, DType.float64, device=DeviceRef.CPU()),
-            ops.constant(n - 1, DType.float64, device=DeviceRef.CPU()),
-            ops.constant(2, DType.float64, device=DeviceRef.CPU()),
-            out_dim=n // 2,
+            0,
+            n - 1,
+            2,
             device=DeviceRef.CPU(),
+            dtype=DType.float64,
         )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
         return inv_freq

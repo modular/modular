@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug-no-assert %s
 
 from pathlib import Path
 from sys import env_get_int
@@ -245,7 +244,6 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     d_host.free()
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     alias length = env_get_int["length", 4096]()
     var m = Bench()

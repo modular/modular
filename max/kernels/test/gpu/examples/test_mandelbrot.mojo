@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from math import ceildiv, iota
 from sys.info import simdwidthof
@@ -122,7 +121,6 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     _ = out_host
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     with DeviceContext() as ctx:
         run_mandelbrot(ctx)

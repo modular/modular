@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
-
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import thread_idx

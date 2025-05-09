@@ -1,5 +1,11 @@
-filegroup(
-    name = "test_utils_srcs",
+load("//bazel:api.bzl", "mojo_library")
+
+mojo_library(
+    name = "test_utils",
+    testonly = True,
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
+    deps = [
+        "@mojo//:stdlib",
+    ],
 )

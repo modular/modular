@@ -94,7 +94,7 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from .utils import elementwise_epilogue_type
+from .utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from .utils_gpu import MatmulConfig, block_swizzle
 
 alias WARP_GROUP_SIZE = 128
@@ -437,6 +437,9 @@ fn warp_specialized_gemm_output[
     num_consumer: Int = 1,
     use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
 ](
     c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
@@ -559,11 +562,55 @@ fn warp_specialized_gemm_output[
             var c_gmem_wg_tile = c_gmem_tile.tile[BM, WG_BN](0, sub_wg_bn_id)
 
             @parameter
-            if elementwise_lambda_fn:
+            if elementwise_compute_lambda_fn:
+                alias compute_lambda = elementwise_compute_lambda_fn.value()
                 alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[
                     c_type, WG_BN
                 ]()
+
+                # Output dimensions in global memory.
+                alias N = c_layout.shape[1].value()
+                var M: UInt = c.dim[0]()
+
+                var c_gmem_frag = c_gmem_wg_tile.vectorize[
+                    1, simd_size
+                ]().distribute[thread_layout](local_thread_idx)
+                var c_smem_frag = c_smem_tile.vectorize[
+                    1, simd_size
+                ]().distribute[thread_layout, swizzle=st_matrix_vec_swizzle](
+                    local_thread_idx
+                )
+
+                var thread_offset = c_gmem_frag.distance(c.ptr)
+
+                alias num_stores_per_thread = __type_of(
+                    c_gmem_frag
+                ).layout.size()
+
+                @parameter
+                for i in range(num_stores_per_thread):
+                    alias src_idx = __type_of(c_smem_frag).layout(i)
+                    alias dst_idx = __type_of(c_gmem_frag).layout(i)
+
+                    var m = Int((thread_offset + dst_idx) // N)
+                    var n = Int((thread_offset + dst_idx) % N)
+                    alias alignment = alignof[SIMD[c_type, simd_size]]()
+
+                    if m < M and n < N:
+                        var reg_val = compute_lambda[alignment=alignment](
+                            (m, n),
+                            c_smem_frag[i, 0],
+                        )
+                        c_smem_frag[i, 0] = reg_val
+
+                named_barrier[num_consumer_threads, 10]()
+
+            @parameter
+            if elementwise_lambda_fn:
                 alias epilogue = elementwise_lambda_fn.value()
+                alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[
+                    c_type, WG_BN
+                ]()
 
                 # Output dimensions in global memory.
                 alias N = c_layout.shape[1].value()
@@ -643,9 +690,10 @@ fn warp_specialized_gemm_output[
     else:
 
         @parameter
-        if elementwise_lambda_fn:
-            alias epilogue = elementwise_lambda_fn.value()
-
+        if (
+            elementwise_lambda_fn is not None
+            or elementwise_compute_lambda_fn is not None
+        ):
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
             var M: UInt = c.dim[0]()
@@ -681,10 +729,25 @@ fn warp_specialized_gemm_output[
 
                         alias alignment = alignof[SIMD[c_type, 2]]()
                         if m < M and n < N:
-                            epilogue[alignment=alignment](
-                                (m, n),
-                                c_frag_vec2[mma_id, i].cast[c_type](),
-                            )
+
+                            @parameter
+                            if elementwise_lambda_fn:
+                                alias epilogue = elementwise_lambda_fn.value()
+                                epilogue[alignment=alignment](
+                                    (m, n),
+                                    c_frag_vec2[mma_id, i].cast[c_type](),
+                                )
+                            else:
+                                alias compute_lambda = elementwise_compute_lambda_fn.value()
+                                var reg_val = compute_lambda[
+                                    alignment=alignment
+                                ](
+                                    (m, n),
+                                    c_frag_vec2[mma_id, i].cast[c_type](),
+                                )
+                                c.ptr.store[alignment=alignment](
+                                    thread_offset + dst_idx, reg_val
+                                )
 
         else:
 
@@ -748,6 +811,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     promotion_frequency: Int = 1,
     pdl_level: PDLLevel = PDLLevel(),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -994,6 +1060,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             num_consumer=num_consumer,
             use_tma_store=use_tma_store,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](
             c_tma_op,
             c,
@@ -1052,6 +1119,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     promotion_frequency: Int = 1,
     pdl_level: PDLLevel = PDLLevel(),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -1302,6 +1372,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 num_consumer=num_consumer,
                 use_tma_store=use_tma_store,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             ](
                 c_tma_op,
                 c,
@@ -1696,6 +1767,9 @@ fn warp_specialize_gemm_with_multicasting[
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
@@ -1725,6 +1799,11 @@ fn warp_specialize_gemm_with_multicasting[
     constrained[
         a_type != DType.float8_e4m3fn or BK == 128,
         "BK must be 128 for fp8 data type for numerical accuracy correctness",
+    ]()
+
+    constrained[
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
+        "Either the epilogue lambda or the compute lambda can be used",
     ]()
 
     @parameter
@@ -1843,6 +1922,7 @@ fn warp_specialize_gemm_with_multicasting[
             use_tma_store=use_tma_store,
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ]
 
         ctx.enqueue_function[kernel](
@@ -1885,6 +1965,7 @@ fn warp_specialize_gemm_with_multicasting[
             use_tma_store=use_tma_store,
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ]
 
         ctx.enqueue_function[kernel](

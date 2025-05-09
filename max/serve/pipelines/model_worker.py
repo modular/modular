@@ -56,7 +56,7 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
-from max.serve.scheduler.zmq_queue import ZmqQueue
+from max.serve.scheduler.zmq_queue import ZmqSocket
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
@@ -79,7 +79,7 @@ def _model_worker_process_fn(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     batch_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqQueue],
+    queues: Mapping[str, ZmqSocket],
     settings: Settings,
     metric_client_factory: Callable[
         [], AbstractAsyncContextManager[MetricClient]
@@ -252,7 +252,7 @@ async def model_worker_run_v3(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqQueue],
+    queues: Mapping[str, ZmqSocket],
     settings: Settings,
     metric_client_factory: Callable[
         [], AbstractAsyncContextManager[MetricClient]
@@ -309,7 +309,7 @@ def _create_decode_scheduler(
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqQueue],
+    queues: Mapping[str, ZmqSocket],
 ) -> DecodeScheduler:
     # Initialize Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
@@ -391,7 +391,7 @@ def _create_token_generation_scheduler(
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqQueue],
+    queues: Mapping[str, ZmqSocket],
 ) -> TokenGenerationScheduler:
     config = pipeline_config
     max_batch_size_tg = config.token_generation.size
@@ -456,7 +456,7 @@ def _create_embeddings_scheduler(
     pipeline: EmbeddingsGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqQueue],
+    queues: Mapping[str, ZmqSocket],
 ) -> EmbeddingsScheduler:
     config = pipeline_config
     max_batch_size = config.token_generation.size

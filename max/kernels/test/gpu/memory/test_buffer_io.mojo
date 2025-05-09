@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug %s
 
 from math import ceildiv
 

@@ -10,17 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1738
-# UNSUPPORTED: AMD-GPU
-# RUN: not --crash %bare-mojo -D ASSERT=all %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
 from gpu.host import DeviceContext
 
 
-# CHECK-FAIL-LABEL: test_fail
+# CHECK-LABEL: test_fail
 def main():
     print("== test_fail")
-    # CHECK-FAIL: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure
+    # CHECK: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure
     with DeviceContext() as ctx:
 
         fn fail_assert():

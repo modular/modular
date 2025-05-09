@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t
-
 from collections import Set
 from math import ceildiv, isclose, isqrt
 from random import random_ui64, seed

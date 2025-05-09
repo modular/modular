@@ -11,10 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s
-
 from collections.optional import OptionalReg
 from math import ceildiv, isclose
 from pathlib import Path

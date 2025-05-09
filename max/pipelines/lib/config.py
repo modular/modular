@@ -78,7 +78,7 @@ class PipelineConfig(MAXConfig):
 
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context
-    encoding requests. Requires chunked prefill."""
+    encoding requests."""
 
     max_num_steps: int = -1
     """The number of steps to run for multi-step scheduling. -1 specifies a default value based on
@@ -475,7 +475,7 @@ class PipelineConfig(MAXConfig):
             "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 32.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
             "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
-            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Requires chunked prefill.",
+            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests.",
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",

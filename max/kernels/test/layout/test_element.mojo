@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s | FileCheck %s
-
 from sys import alignof, bitwidthof
 
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple

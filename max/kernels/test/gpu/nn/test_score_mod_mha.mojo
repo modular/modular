@@ -11,11 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s -t
-
-
 from collections import Set
 from math import exp2, iota, isclose, isqrt
 from random import random_ui64, seed

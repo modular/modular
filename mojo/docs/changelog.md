@@ -72,6 +72,15 @@ Changes to Python-Mojo interoperability:
   The new `Python.str` function can also be used to convert an arbitrary
   `PythonObject` to a Python `str` object.
 
+- `PythonObject` no longer implements the `KeyElement` trait. Since Python
+  objects may not be hashable, and even if they are, could theoretically raise
+  in the `__hash__` method, `PythonObject` cannot conform to `Hashable`.
+  This has no effect on accessing Python `dict` objects with `PythonObject`
+  keys, since `__getitem__` and `__setitem__` should behave correctly and raise
+  as needed. Two overloads of the `Python.dict` factory function have been added
+  to allow constructing dictionaries from a list of key-value tuples and from
+  keyword arguments.
+
 - `String` and `Bool` now implement `ConvertibleFromPython`.
 
 - A new `def_function` API is added to `PythonModuleBuilder` to allow declaring

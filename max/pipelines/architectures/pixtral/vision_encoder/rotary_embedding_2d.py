@@ -25,18 +25,20 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
     height = Dim(height)
     width = Dim(width)
     row_indices = ops.range(
-        ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+        0,
         TensorValue(height),
-        ops.constant(1, DType.int64, device=DeviceRef.CPU()),
+        1,
         out_dim=height,
+        dtype=DType.int64,
         device=DeviceRef.GPU(),
     )
     col_indices = ops.range(
-        ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+        0,
         TensorValue(width),
-        ops.constant(1, DType.int64, device=DeviceRef.CPU()),
+        1,
         out_dim=width,
         device=DeviceRef.GPU(),
+        dtype=DType.int64,
     )
 
     # repeat row indices for each row [[0, ..., 0], ..., [width=n_cols-1, ..., width-1]]
@@ -111,11 +113,12 @@ class RotaryEmbedding2D(Layer):
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # 1D tensor of length head_dim // 2 = 32
         iota = ops.range(
-            ops.constant(0, DType.float64, device=DeviceRef.CPU()),
-            ops.constant(head_dim, DType.float64, device=DeviceRef.CPU()),  # type: ignore
-            ops.constant(2, DType.float64, device=DeviceRef.CPU()),
+            0,
+            head_dim,
+            2,
             out_dim=head_dim // 2,
             device=DeviceRef.GPU(),
+            dtype=DType.float64,
         )
         # 1D tensor of length head_dim // 2 = 32
         freqs = ops.cast(1.0 / (self.theta ** (iota / head_dim)), DType.float32)
@@ -123,23 +126,19 @@ class RotaryEmbedding2D(Layer):
         # Indices of patches in each side (height and width) of image.
         # 1D tensor of length max_patches_per_side = 64
         h = ops.range(
-            ops.constant(0, DType.float32, device=DeviceRef.CPU()),
-            ops.constant(
-                self.max_patches_per_side, DType.float32, device=DeviceRef.CPU()
-            ),
-            ops.constant(1, DType.float32, device=DeviceRef.CPU()),
-            out_dim=self.max_patches_per_side,
+            0,
+            self.max_patches_per_side,
+            1,
             device=DeviceRef.GPU(),
+            dtype=DType.float32,
         )
         # 1D tensor of length max_patches_per_side = 64
         w = ops.range(
-            ops.constant(0, DType.float32, device=DeviceRef.CPU()),
-            ops.constant(
-                self.max_patches_per_side, DType.float32, device=DeviceRef.CPU()
-            ),
-            ops.constant(1, DType.float32, device=DeviceRef.CPU()),
-            out_dim=self.max_patches_per_side,
+            0,
+            self.max_patches_per_side,
+            1,
             device=DeviceRef.GPU(),
+            dtype=DType.float32,
         )
         # create matrices of freqs = outer product of height and width indices with their respective frequency.
         # 2D tensors mapping patch positions to rotary embeddings. shape =(max_patches_per_side = 64, head_dim//4 =16)

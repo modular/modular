@@ -10,10 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
-# REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.host import DeviceContext
 from memory import UnsafePointer

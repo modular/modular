@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 
@@ -103,7 +102,6 @@ fn matmul(
             c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 
-# CHECK-LABEL: run_matmul
 fn run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 

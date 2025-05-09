@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: asan
 
-# RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
-# CHECK: No benchmarks recorded...
 from sys.info import num_physical_cores
+from testing import assert_true
 
 from algorithm import parallelize, sync_parallelize
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
@@ -44,4 +42,4 @@ def main():
     var m = Bench()
     m.bench_function[bench_empty_sync_parallelize](BenchId("sync_parallelize"))
     m.bench_function[bench_empty_parallelize](BenchId("parallelize"))
-    m.dump_report()
+    assert_true("No benchmarks recorded..." in String(m))

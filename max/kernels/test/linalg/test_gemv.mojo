@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import isclose
 from random import rand
 from sys import simdwidthof, sizeof
+from testing import assert_false
 
 import benchmark
 from buffer import NDBuffer
@@ -35,7 +35,6 @@ fn bench_run[
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
-# CHECK-LABEL: test_gemv
 def test_gemv():
     print("== test_gemv")
     alias type = DType.float32
@@ -89,7 +88,7 @@ def test_gemv():
         ):
             print(out[i], "!=", ref_out[i], "@", i)
             print("Serial Error")
-    # CHECK-NOT: Error
+            assert_false(True)
 
     alias threads = 0
 
@@ -105,7 +104,7 @@ def test_gemv():
         ):
             print(out[i], "!=", ref_out[i], "@", i)
             print("Parallel Error")
-    # CHECK-NOT: Error
+            assert_false(True)
 
     alias bytes_per_iteration = 2 * m * k * sizeof[type]()
     alias gigabyte = 1024 * 1024 * 1024

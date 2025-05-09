@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from os import abort
 from sys import simdwidthof
@@ -70,7 +69,6 @@ fn test_dual_matmul[
         mat_c01.device_tensor(),
         ctx,
     )
-    # CHECK: returned from test_elementwise_print
     print("returned from test_elementwise_print")
     _ = mat_c01^
 

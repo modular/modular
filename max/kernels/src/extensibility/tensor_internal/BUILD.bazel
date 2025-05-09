@@ -1,5 +1,4 @@
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("//bazel:api.bzl", "mojo_library")
+load("//bazel:api.bzl", "mojo_library", "pkg_files", "strip_prefix")
 
 exports_files(["__init__.mojo"])
 
@@ -29,6 +28,5 @@ pkg_files(
     srcs = [":extensibility/tensor_internal.doc_group"],
     prefix = "tensor_internal",
     strip_prefix = strip_prefix.from_pkg("tensor_internal.docs"),
-    tags = ["manual"],  # TODO: Make this build and remove this tag
     visibility = ["//visibility:public"],
 )
