@@ -20,10 +20,10 @@ bazel_dep(name = "rules_shell", version = "0.4.1")
 # TODO: Remove when 0.3.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-Sd4WsUQOjze/LH34Q7f38E+auIe/aEc/yns3OAChjM4=",
-    strip_prefix = "rules_mojo-669dab899d9797f2d36cbe1bfcf50d60170708b6",
+    integrity = "sha256-dH3c36ID639D1vbXkOK2hOxRjB0UUnQwkr2CeKF7GWQ=",
+    strip_prefix = "rules_mojo-fcfda29454093baff7901178d4dae91a9a042178",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/669dab899d9797f2d36cbe1bfcf50d60170708b6.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/fcfda29454093baff7901178d4dae91a9a042178.tar.gz",
     ],
 )
 
@@ -44,6 +44,7 @@ mojo_aliases(name = "mojo")
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
     use_prebuilt_packages = False,
+    version = "25.4.0.dev2025050919",
 )
 use_repo(mojo, "mojo_toolchains")
 
