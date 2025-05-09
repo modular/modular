@@ -233,25 +233,16 @@ from tensor_internal._indexing import (
 )
 from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import (
+    _FusedComputeOutputTensor,
     _FusedInputTensor as FusedInputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedOutputTensor as FusedOutputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
-)
-from tensor_internal.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
+    get_kernel_simd_width,
 )
-from tensor_internal.managed_tensor_slice import get_kernel_simd_width
-from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
+from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -620,32 +611,6 @@ fn managed_tensor_slice_to_ndbuffer_primitive[
     return NDBuffer[type, rank, MutableAnyOrigin](
         tensor._ptr, tensor._spec.shape, tensor._runtime_strides
     )
-
-
-@always_inline
-fn managed_tensor_slice_to_ndbuffer[
-    spec: StaticTensorSpec, //
-](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.type,
-    spec.rank,
-    MutableAnyOrigin,
-    spec.shape,
-    spec.strides,
-    alignment = spec.alignment,
-    address_space = spec.address_space,
-    exclusive = spec.exclusive,
-]:
-    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
-    return NDBuffer[
-        spec.type,
-        spec.rank,
-        _,
-        spec.shape,
-        spec.strides,
-        alignment = spec.alignment,
-        address_space = spec.address_space,
-        exclusive = spec.exclusive,
-    ](ptr, tensor.shape(), tensor._runtime_strides)
 
 
 @always_inline
