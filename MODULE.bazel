@@ -18,10 +18,10 @@ bazel_dep(name = "rules_shell", version = "0.4.1")
 # TODO: Remove when 0.3.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-M+N5i6LqT7kDtRQ4QqS4mK0HnaO7JNrqwDYKwqaNWMk=",
-    strip_prefix = "rules_mojo-7d906beee4f1d01e761925247121ae9f1d138e9e",
+    integrity = "sha256-Sd4WsUQOjze/LH34Q7f38E+auIe/aEc/yns3OAChjM4=",
+    strip_prefix = "rules_mojo-669dab899d9797f2d36cbe1bfcf50d60170708b6",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/7d906beee4f1d01e761925247121ae9f1d138e9e.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/669dab899d9797f2d36cbe1bfcf50d60170708b6.tar.gz",
     ],
 )
 
