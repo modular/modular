@@ -6,7 +6,7 @@ on:
     # explicitly override here so that PR titles are re-linted when the PR text content is edited.
     #
     # Possible values: https://help.github.com/en/actions/reference/events-that-trigger-workflows#pull-request-event-pull_request
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    types: [opened, edited, reopened, synchronize]
 
 jobs:
   check-pr-title:

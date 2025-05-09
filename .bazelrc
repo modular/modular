@@ -19,3 +19,16 @@ build --test_summary=terse
 
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
+
+# Buildbuddy cache optimization recommendations
+build --experimental_profile_include_primary_output
+build --experimental_profile_include_target_label
+build --experimental_remote_cache_compression_threshold=100
+build --legacy_important_outputs=false
+build --remote_cache_compression
+build --slim_profile=false
+
+build:ci --bes_results_url=https://modular-public.buildbuddy.io/invocation/
+build:ci --bes_backend=grpcs://modular-public.buildbuddy.io
+build:ci --remote_cache=grpcs://modular-public.buildbuddy.io
+build:ci --remote_timeout=10m

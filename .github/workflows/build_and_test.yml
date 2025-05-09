@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-name: Run pre-commit
+name: Build and Test
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -21,10 +21,19 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency: # Only allow a single build/test run at a time for a PR.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
-  lint:
-    runs-on: "ubuntu-latest"
-    timeout-minutes: 30
+  build-and-test:
+    name: Build and Test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-15"]
+
+    runs-on: ${{ matrix.os }}
 
     defaults:
       run:
@@ -36,16 +45,8 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Download Magic CLI
+      - name: Build and Test
         run: |
-          curl -ssL https://magic.modular.com/cfba4c92-2390-4b86-93de-04b2f47114d5 | bash
-          # Add magic to PATH
-          echo "$HOME/.modular/bin" >> $GITHUB_PATH
-
-      - name: Install pre-commit
-        run: |
-          pip install pre-commit
-          pre-commit install
-
-      - name: Run pre-commit
-        run: magic run --manifest-path mojo pre-commit run --all-files
+          ./bazelw test --config=ci --build_tag_filters=-skip-external-ci-${{ matrix.os }} --test_tag_filters=-skip-external-ci-${{ matrix.os }} --remote_header=$BUILDBUDDY_TOKEN -- //... -//max/serve/...
+        env:
+          BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

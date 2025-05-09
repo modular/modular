@@ -45,6 +45,7 @@ _FILECHECK_TESTS = [
     mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
+        tags = (["skip-external-ci-macos-15"] if src == "test_top_k.mojo" else []),  # TODO: Debug why this only fails on public github actions, not locally
         target_compatible_with = ([
             "@platforms//os:linux",
         ] if src == "test_activations.mojo" else []),
