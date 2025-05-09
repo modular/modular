@@ -7,7 +7,6 @@ lit_tests(
     data = [
         "builtin/test_file_dummy_input.txt",
         "python/custom_indexable.py",
-        "python/module_for_test_python_object_dunder_contains.py",
         "python/my_module.py",
         "@mojo//:test_utils_srcs",
     ],
