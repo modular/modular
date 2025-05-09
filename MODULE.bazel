@@ -102,3 +102,7 @@ http_archive(
 llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
 
 llvm_configure(name = "llvm-project")
+
+modular_host_platform = use_repo_rule("//bazel:modular_host_platform.bzl", "modular_host_platform")
+
+modular_host_platform(name = "modular_host_platform")
