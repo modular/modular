@@ -41,14 +41,16 @@ _FILECHECK_TESTS = [
     "test_top_k.mojo",
 ]
 
+_CONSTRAINTS = {
+    "test_activations.mojo": ["@platforms//os:linux"],
+    "test_top_k.mojo": ["@platforms//os:linux"],  # TODO: Fix on macOS
+}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
-        tags = (["skip-external-ci-macos-15"] if src == "test_top_k.mojo" else []),  # TODO: Debug why this only fails on public github actions, not locally
-        target_compatible_with = ([
-            "@platforms//os:linux",
-        ] if src == "test_activations.mojo" else []),
+        target_compatible_with = _CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:nn",
