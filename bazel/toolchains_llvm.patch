@@ -1,0 +1,63 @@
+diff --git a/toolchain/BUILD.llvm_repo b/toolchain/BUILD.llvm_repo
+index f2bbc76..1a4c985 100644
+--- a/toolchain/BUILD.llvm_repo
++++ b/toolchain/BUILD.llvm_repo
+@@ -41,7 +41,6 @@ filegroup(
+     srcs = [
+         "bin/ld.lld",
+         "bin/ld64.lld",
+-        "bin/wasm-ld",
+     ],
+ )
+ 
+@@ -146,20 +145,6 @@ filegroup(
+     srcs = ["bin/llvm-symbolizer"],
+ )
+ 
+-filegroup(
+-    name = "clang-tidy",
+-    srcs = ["bin/clang-tidy"],
+-)
+-
+-filegroup(
+-    name = "clang-format",
+-    srcs = ["bin/clang-format"],
+-)
+-
+-filegroup(
+-    name = "git-clang-format",
+-    srcs = ["bin/git-clang-format"],
+-)
+ 
+ filegroup(
+     name = "libclang",
+diff --git a/toolchain/aliases.bzl b/toolchain/aliases.bzl
+index 2754751..17a56d0 100644
+--- a/toolchain/aliases.bzl
++++ b/toolchain/aliases.bzl
+@@ -20,11 +20,4 @@ aliased_libs = [
+ ]
+ 
+ aliased_tools = [
+-    "clang-apply-replacements",
+-    "clang-format",
+-    "clang-tidy",
+-    "clangd",
+-    "llvm-cov",
+-    "llvm-profdata",
+-    "llvm-symbolizer",
+ ]
+diff --git a/toolchain/internal/common.bzl b/toolchain/internal/common.bzl
+index b5d8e57..f88d739 100644
+--- a/toolchain/internal/common.bzl
++++ b/toolchain/internal/common.bzl
+@@ -30,9 +30,6 @@ _toolchain_tools = {
+     name: name
+     for name in [
+         "clang-cpp",
+-        "clang-format",
+-        "clang-tidy",
+-        "clangd",
+         "ld.lld",
+         "llvm-ar",
+         "llvm-dwp",

@@ -29,6 +29,13 @@ archive_override(
 
 bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
 bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
+single_version_override(
+    module_name = "toolchains_llvm",
+    patch_strip = 1,
+    patches = [
+        "//bazel:toolchains_llvm.patch",
+    ],
+)
 
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
@@ -60,7 +67,25 @@ pip.parse(
 use_repo(pip, "modular_test_deps")
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
-llvm.toolchain(llvm_version = "20.1.2")
+llvm.toolchain(
+    name = "llvm_toolchain",
+    llvm_versions = {
+        "linux-aarch64": "20.1.1",
+        "linux-x86_64": "20.1.1",
+    },
+    sha256 = {
+        "linux-aarch64": "86314680f7abea8e054d635c0e54b3f3f6993f8e826df0da8cfd02e456976625",
+        "linux-x86_64": "58d7a1a8fa22a001794e82a8e9ca441e12fb6d62fd8b7d47040df58a459dec8e",
+    },
+    stdlib = {
+        "linux-aarch64": "dynamic-stdc++",
+        "linux-x86_64": "dynamic-stdc++",
+    },
+    urls = {
+        "linux-aarch64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_arm64.tar.xz"],
+        "linux-x86_64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_amd64.tar.xz"],
+    },
+)
 use_repo(llvm, "llvm_toolchain")
 
 register_toolchains("@llvm_toolchain//:all")
