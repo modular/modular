@@ -1556,17 +1556,11 @@ struct String(
         """
         return self.as_string_slice().endswith(suffix, start, end)
 
-    fn removeprefix(self, prefix: StringSlice, /) -> String:
+    @always_inline
+    fn removeprefix(
+        self, prefix: StringSlice, /
+    ) -> StringSlice[__origin_of(self)]:
         """Returns a new string with the prefix removed if it was present.
-
-        For example:
-
-        ```mojo
-        print(String('TestHook').removeprefix('Test'))
-        # 'Hook'
-        print(String('BaseTestCase').removeprefix('Test'))
-        # 'BaseTestCase'
-        ```
 
         Args:
             prefix: The prefix to remove from the string.
@@ -1574,22 +1568,21 @@ struct String(
         Returns:
             `string[len(prefix):]` if the string starts with the prefix string,
             or a copy of the original string otherwise.
-        """
-        if self.startswith(prefix):
-            return self[prefix.byte_length() :]
-        return self
 
-    fn removesuffix(self, suffix: StringSlice, /) -> String:
-        """Returns a new string with the suffix removed if it was present.
-
-        For example:
+        Examples:
 
         ```mojo
-        print(String('TestHook').removesuffix('Hook'))
-        # 'Test'
-        print(String('BaseTestCase').removesuffix('Test'))
-        # 'BaseTestCase'
+        print(String('TestHook').removeprefix('Test')) # 'Hook'
+        print(String('BaseTestCase').removeprefix('Test')) # 'BaseTestCase'
         ```
+        """
+        return self.as_string_slice().removeprefix(prefix)
+
+    @always_inline
+    fn removesuffix(
+        self, suffix: StringSlice, /
+    ) -> StringSlice[__origin_of(self)]:
+        """Returns a new string with the suffix removed if it was present.
 
         Args:
             suffix: The suffix to remove from the string.
@@ -1597,10 +1590,15 @@ struct String(
         Returns:
             `string[:-len(suffix)]` if the string ends with the suffix string,
             or a copy of the original string otherwise.
+
+        Examples:
+
+        ```mojo
+        print(String('TestHook').removesuffix('Hook')) # 'Test'
+        print(String('BaseTestCase').removesuffix('Test')) # 'BaseTestCase'
+        ```
         """
-        if suffix and self.endswith(suffix):
-            return self[: -suffix.byte_length()]
-        return self
+        return self.as_string_slice().removesuffix(suffix)
 
     @always_inline
     fn __int__(self) raises -> Int:
