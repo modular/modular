@@ -82,11 +82,19 @@ fn bitcast[
     ](val.value)
 
 
+alias _uint1 = DType(__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`)
+alias _uint2 = DType(__mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`)
+alias _uint4 = DType(__mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`)
+
+
 @always_inline("builtin")
 fn _uint(n: Int) -> DType:
     # fmt: off
     return (
-        DType.uint8 if n == 8
+        _uint1 if n == 1
+        else _uint2 if n == 2
+        else _uint4 if n == 4
+        else DType.uint8 if n == 8
         else DType.uint16 if n == 16
         else DType.uint32 if n == 32
         else DType.uint64 if n == 64
@@ -100,8 +108,8 @@ fn _uint(n: Int) -> DType:
 @always_inline("nodebug")
 fn pack_bits[
     width: Int, //,
-    new_type: DType = _uint(width),
-](val: SIMD[DType.bool, width]) -> Scalar[new_type]:
+    dtype: DType = _uint(width),
+](val: SIMD[DType.bool, width]) -> Scalar[dtype]:
     """Packs a SIMD vector of `bool` values into an integer.
 
     Examples:
@@ -122,7 +130,7 @@ fn pack_bits[
 
     Parameters:
         width: The source width.
-        new_type: The target type.
+        dtype: The target type.
 
     Args:
         val: The source value.
@@ -131,7 +139,7 @@ fn pack_bits[
         A new integer scalar which has the same bitwidth as the bool vector.
     """
     constrained[
-        width == bitwidthof[Scalar[new_type]](),
+        dtype in (_uint1, _uint2, _uint4) or bitwidthof[dtype]() == width,
         (
             "the width of the bool vector must be the same as the bitwidth of"
             " the target type. "
@@ -139,6 +147,4 @@ fn pack_bits[
         "Scalar bool (width=1) is not supported." if width == 1 else "",
     ]()
 
-    return __mlir_op.`pop.bitcast`[_type = Scalar[new_type]._mlir_type](
-        val.value
-    )
+    return __mlir_op.`pop.bitcast`[_type = Scalar[dtype]._mlir_type](val.value)
