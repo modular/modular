@@ -47,4 +47,7 @@ jobs:
 
       - name: Build and Test
         run: |
-          ./bazelw test //... --test_tag_filters=-skip-external-ci-${{ matrix.os }}
+          ./bazelw test --config=ci //... --test_tag_filters=-skip-external-ci-${{ matrix.os }} --remote_header=$BUILDBUDDY_TOKEN
+        env:
+          BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}
+
