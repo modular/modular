@@ -198,8 +198,7 @@ fn byte_swap[
         width: SIMD width used for the computation.
 
     Constraints:
-        The element type of the input vector must be an integral type with an
-        even number of bytes (Bitwidth % 16 == 0).
+        The element type of the input vector must be an integral type.
 
     Args:
         val: The input value.
@@ -209,6 +208,10 @@ fn byte_swap[
         element at position `i` of the input value with its bytes swapped.
     """
     constrained[dtype.is_integral(), "must be integral"]()
+
+    @parameter
+    if dtype.bitwidth() < 16:
+        return val
     return llvm_intrinsic["llvm.bswap", __type_of(val), has_side_effect=False](
         val
     )
