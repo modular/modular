@@ -1713,6 +1713,10 @@ def quantize_static_scaled_float8(
         msg = f"expected input rank to be 2, but got {x.rank}"
         raise ValueError(msg)
 
+    if scale.device != DeviceRef.CPU():
+        msg = f"expected scale to be on CPU, but got {scale.device}"
+        raise ValueError(msg)
+
     return ops.custom(
         "mo.quantize_static_scaled_float8",
         values=[x, scale.reshape([])],
@@ -1870,6 +1874,16 @@ def matmul_static_scaled_float8(
 
     if input.shape[1] != weight.shape[1]:
         raise ValueError("K dimension does not match for matmul")
+
+    if input_scale.device != DeviceRef.CPU():
+        msg = f"expected input_scale to be on CPU, but got {input_scale.device}"
+        raise ValueError(msg)
+
+    if weight_scale.device != DeviceRef.CPU():
+        msg = (
+            f"expected weight_scale to be on CPU, but got {weight_scale.device}"
+        )
+        raise ValueError(msg)
 
     return ops.custom(
         "mo.matmul_static_scaled_float8",

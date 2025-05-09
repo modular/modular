@@ -225,7 +225,7 @@ class Linear(Module):
                     name=f"{name}.input_scale" if name else "input_scale",
                     dtype=float8_config.input_scale.dtype,
                     shape=[1],
-                    device=device,
+                    device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
             if (
@@ -236,7 +236,7 @@ class Linear(Module):
                     name=f"{name}.weight_scale" if name else "weight_scale",
                     dtype=float8_config.weight_scale.dtype,
                     shape=[1],
-                    device=device,
+                    device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
 
@@ -269,15 +269,10 @@ class Linear(Module):
         elif self.float8_config:
             assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
-            if self.device:
-                weight_scale = weight_scale.to(self.device)
-
             if self.input_scale is not None:
                 x = quantize_static_scaled_float8(x, self.input_scale)
 
                 input_scale: TensorValue = self.input_scale
-                if self.device:
-                    input_scale = input_scale.to(self.device)
                 res = matmul_static_scaled_float8(
                     x, weight, input_scale, weight_scale
                 )
