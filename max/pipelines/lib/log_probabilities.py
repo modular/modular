@@ -13,11 +13,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import Callable
 
 import numpy as np
 from max.pipelines.core import LogProbabilities
+
+logger = logging.getLogger(__name__)
 
 
 def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
@@ -136,7 +139,8 @@ def compute_log_probabilities(
 def compute_log_probabilities_ragged(
     *,
     input_row_offsets: np.ndarray,
-    logits: np.ndarray,
+    logits: np.ndarray | None,
+    next_token_logits: np.ndarray,
     tokens: np.ndarray,
     sampled_tokens: np.ndarray,
     batch_top_n: Sequence[int],
@@ -150,6 +154,8 @@ def compute_log_probabilities_ragged(
             is token indices [input_row_offsets[n], input_row_offsets[n+1])).
         logits: (tokens, vocab_dim) tensor full of tensor logits.  Token
             dimension mapped to batches using input_row_offsets.
+        next_token_logits: (batch, vocab_dim) tensor full of logits for next
+            tokens per batch.
         sampled_tokens: (batch_dim,) tensor of sampled token per batch
         batch_top_n: Number of top log probabilities to return per input in
             the batch. For any element where `top_n == 0`, the
@@ -161,12 +167,22 @@ def compute_log_probabilities_ragged(
         Computed log probabilities for each item in the batch.
     """
 
+    if logits is None and any(batch_echo):
+        logger.warning(
+            "Could not get logprobs with echo because the full logits "
+            "were not returned by the model. Please ensure that the model is "
+            "started with `--enable-echo`."
+        )
+
     def get_logits_and_samples(
         batch_index: int, echo: bool
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray] | None:
         start_offset = input_row_offsets[batch_index]
         end_offset = input_row_offsets[batch_index + 1]
         if echo:
+            if logits is None:
+                # Insufficient data to fulfill this request -- warned earlier.
+                return None
             batch_logits = logits[start_offset:end_offset]
             samples = np.concatenate(
                 (
@@ -175,7 +191,7 @@ def compute_log_probabilities_ragged(
                 )
             )
         else:
-            batch_logits = logits[end_offset - 1 : end_offset]
+            batch_logits = next_token_logits[batch_index : batch_index + 1]
             samples = sampled_tokens[batch_index : batch_index + 1]
         return batch_logits, samples
 

@@ -543,19 +543,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None] | None:
-        if any(echo for echo in batch_echo):
-            if model_outputs.logits is None:
-                logger.warning(
-                    "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_config.model_path}"
-                    " model. Please ensure that this model is started with "
-                    "`--enable-echo`."
-                )
-                assert not self.pipeline_config.enable_echo, (
-                    "Echo was enabled but logits were not returned."
-                )
-                return None
+        if model_outputs.logits is not None:
             logits = model_outputs.logits.to_numpy()
+        else:
+            logits = None
+        assert model_outputs.next_token_logits is not None
+        next_token_logits = model_outputs.next_token_logits.to_numpy()
 
         assert isinstance(model_inputs, Llama3Inputs)
         llama3_inputs: Llama3Inputs = model_inputs
@@ -567,6 +560,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         return compute_log_probabilities_ragged(
             input_row_offsets=input_row_offsets,
             logits=logits,
+            next_token_logits=next_token_logits,
             tokens=tokens,
             sampled_tokens=sampled_tokens,
             batch_top_n=batch_top_n,
