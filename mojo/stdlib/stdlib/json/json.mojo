@@ -1043,12 +1043,12 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
             while self._peek_slice().is_ascii_digit():
                 self._idx += 1
 
-        var sl = Span[Byte, __origin_of(self._slice)](
+        var sl = StringSlice[__origin_of(self._slice)](
             ptr=self._slice.unsafe_ptr() + start,
             length=self._idx - start,
         )
 
-        return atof(String(bytes=sl))
+        return atof(sl)
 
     fn _parse_array(mut self) raises -> List[JSONValue[origin]]:
         """
@@ -1090,12 +1090,10 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
                 break
             else:
                 # Create a string from a single character for the error message
-                var char_bytes = Span[Byte, origin](
+                var char = StringSlice[origin](
                     ptr=self._slice.unsafe_ptr() + (self._idx - 1), length=1
                 )
-                raise Error(
-                    "Expected ',' or ']', got '", String(bytes=char_bytes), "'"
-                )
+                raise Error("Expected ',' or ']', got '", char, "'")
 
         return arr
 
@@ -1130,14 +1128,10 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
             # Parse key (must be a string)
             if self._peek() != QUOTE:
                 # Create a string from a single character for the error message
-                var char_bytes = Span[Byte, origin](
+                var char = StringSlice[origin](
                     ptr=self._slice.unsafe_ptr() + self._idx, length=1
                 )
-                raise Error(
-                    "Expected string key in object, got '",
-                    String(bytes=char_bytes),
-                    "'",
-                )
+                raise Error("Expected string key in object, got '", char, "'")
 
             var key = self._parse_string()
             self._skip_whitespace()
@@ -1163,12 +1157,10 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
                 break
             else:
                 # Create a string from a single character for the error message
-                var char_bytes = Span[Byte, origin](
+                var char = StringSlice[origin](
                     ptr=self._slice.unsafe_ptr() + (self._idx - 1), length=1
                 )
-                raise Error(
-                    "Expected ',' or '}', got '", String(bytes=char_bytes), "'"
-                )
+                raise Error("Expected ',' or '}', got '", char, "'")
 
         return JSONDict[origin](obj)
 
