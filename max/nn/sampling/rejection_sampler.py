@@ -20,12 +20,9 @@ from max.graph import DeviceRef, Dim, Shape, TensorType, TensorValue, ops
 class RejectionSampler(nn.Module):
     """A simple rejection sampler."""
 
-    def __init__(
-        self, device: DeviceRef, top_k: int = 1, temperature: float = 1
-    ):
+    def __init__(self, device: DeviceRef, top_k: int = 1):
         self.device = device
         self.top_k = top_k
-        self.temperature = temperature
 
     def __call__(
         self,
@@ -122,11 +119,6 @@ class RejectionSampler(nn.Module):
             "topk_fused_sampling",
             [
                 ops.constant(self.top_k, dtype=DType.int64, device=self.device),
-                ops.constant(
-                    self.temperature,
-                    dtype=DType.float32,
-                    device=self.device,
-                ),
                 ops.gather(target_logits, rejected_offsets, axis=0),
             ],
             [
