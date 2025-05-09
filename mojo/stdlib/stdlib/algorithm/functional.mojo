@@ -107,23 +107,25 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
+    from memory import UnsafePointer
 
     # The amount of elements to loop through
     alias size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simdwidthof[DType.int32]()
+    alias simd_width = simdwidthof[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = UnsafePointer[Int32].alloc(size)
 
         # @parameter allows the closure to capture the `p` pointer
         @parameter
-        fn closure[simd_width: Int](i: Int):
-            print("storing", simd_width, "els at pos", i)
-            p.store[width=simd_width](i, i)
+        fn closure[width: Int](i: Int):
+            print("storing", width, "els at pos", i)
+            p.store[width=width](i, i)
 
         vectorize[closure, simd_width](size)
-        print(p.load[width=size]())
+        print(p.load[width=simd_width]())
+        print(p.load[width=simd_width](simd_width))
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -141,7 +143,7 @@ fn vectorize[
     You can also unroll the loop to potentially improve performance at the cost
     of binary size:
 
-    ```mojo
+    ```
     vectorize[closure, width, unroll_factor=2](size)
     ```
 
@@ -149,7 +151,7 @@ fn vectorize[
     fewer arithmetic, comparison, and conditional jump operations. The assembly
     would look like this in psuedocode:
 
-    ```mojo
+    ```
     closure[4](0)
     closure[4](4)
     # Remainder loop won't unroll unless `size` is passed as a parameter
@@ -163,13 +165,26 @@ fn vectorize[
     exponent of 2 (2, 4, 8, 16, ...). The remainder loop will still unroll for
     performance improvements if not an exponent of 2.
     """
+    constrained[simd_width > 0, "simd width must be > 0"]()
+    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
+    debug_assert(size >= 0, "size must be >= 0")
 
-    var vector_end_simd = align_down(UInt(size), UInt(simd_width))
-    _perfect_vectorized_impl[
-        func, simd_width=simd_width, unroll_factor=unroll_factor
-    ](size, vector_end_simd)
+    alias unrolled_simd_width = simd_width * unroll_factor
+    var simd_end = align_down(UInt(size), UInt(simd_width))
+    var unrolled_end = align_down(UInt(size), UInt(unrolled_simd_width))
 
-    for i in range(vector_end_simd, size):
+    for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
+
+        @parameter
+        for idx in range(unroll_factor):
+            func[simd_width](unrolled_idx + idx * simd_width)
+
+    @parameter
+    if unroll_factor > 1:
+        for simd_idx in range(unrolled_end, simd_end, simd_width):
+            func[simd_width](simd_idx)
+
+    for i in range(simd_end, size):
         func[1](i)
 
 
@@ -201,23 +216,25 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
+    from memory import UnsafePointer
 
     # The amount of elements to loop through
     alias size = 10
-    # How many Dtype.int32 elements fit in SIMD register (4 on 128bit)
-    alias simd_width = simdwidthof[DType.int32]()
+    # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
+    alias simd_width = simdwidthof[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = UnsafePointer[Int32].alloc(size)
 
         # @parameter allows the closure to capture the `p` pointer
         @parameter
-        fn closure[simd_width: Int](i: Int):
-            print("storing", simd_width, "els at pos", i)
-            p.store[width=simd_width](i, i)
+        fn closure[width: Int](i: Int):
+            print("storing", width, "els at pos", i)
+            p.store[width=width](i, i)
 
-        vectorize[closure, simd_width, size=size]()
-        print(p.load[width=size]())
+        vectorize[closure, simd_width](size)
+        print(p.load[width=simd_width]())
+        print(p.load[width=simd_width](simd_width))
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -238,7 +255,7 @@ fn vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```mojo
+    ```
     vectorize[closure, width, size=size, unroll_factor=2]()
     ```
 
@@ -246,79 +263,43 @@ fn vectorize[
     fewer arithmetic, comparison, and conditional jump operations. The assembly
     would look like this in psuedocode:
 
-    ```mojo
+    ```
     closure[4](0)
     closure[4](4)
     closure[2](8)
     ```
     """
-
     constrained[simd_width > 0, "simd width must be > 0"]()
     constrained[unroll_factor > 0, "unroll factor must be > 0"]()
-    alias vector_end_simd = align_down(size, simd_width)
+    constrained[size >= 0, "size must be >= 0"]()
 
     alias unrolled_simd_width = simd_width * unroll_factor
-    alias vector_end_unrolled_simd = align_down(size, unrolled_simd_width)
+    alias simd_end = align_down(size, simd_width)
+    alias unrolled_end = align_down(size, unrolled_simd_width)
 
     @parameter
-    for unrolled_simd_idx in range(
-        0, vector_end_unrolled_simd, unrolled_simd_width
-    ):
+    for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
 
         @parameter
         for idx in range(unroll_factor):
-            func[simd_width](unrolled_simd_idx + idx * simd_width)
+            func[simd_width](unrolled_idx + idx * simd_width)
 
     @parameter
-    if unroll_factor != 1:
-        for simd_idx in range(
-            vector_end_unrolled_simd, vector_end_simd, simd_width
-        ):
+    if unroll_factor > 1:
+        for simd_idx in range(unrolled_end, simd_end, simd_width):
             func[simd_width](simd_idx)
 
     @parameter
-    if size != vector_end_simd:
+    if size > simd_end:
 
         @parameter
-        if (size - vector_end_simd).is_power_of_two():
-            func[size - vector_end_simd](vector_end_simd)
+        if (size - simd_end).is_power_of_two():
+            func[size - simd_end](simd_end)
         else:
 
             @parameter
-            for i in range(vector_end_simd, size):
+            for i in range(simd_end, size):
                 func[1](i)
-
-
-@always_inline
-fn _perfect_vectorized_impl[
-    origins: OriginSet, //,
-    func: fn[width: Int] (Int) capturing [origins] -> None,
-    /,
-    *,
-    simd_width: Int,
-    unroll_factor: Int,
-](size: Int, vector_end_simd: Int):
-    constrained[simd_width > 0, "simd width must be > 0"]()
-    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
-
-    alias unrolled_simd_width = simd_width * unroll_factor
-    var vector_end_unrolled_simd = align_down(
-        UInt(size), UInt(unrolled_simd_width)
-    )
-    for unrolled_simd_idx in range(
-        0, vector_end_unrolled_simd, unrolled_simd_width
-    ):
-
-        @parameter
-        for idx in range(unroll_factor):
-            func[simd_width](unrolled_simd_idx + idx * simd_width)
-
-    @parameter
-    if unroll_factor != 1:
-        for simd_idx in range(
-            vector_end_unrolled_simd, vector_end_simd, simd_width
-        ):
-            func[simd_width](simd_idx)
 
 
 # ===-----------------------------------------------------------------------===#
