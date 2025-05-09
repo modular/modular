@@ -50,7 +50,6 @@ _EXTRA_CONSTRAINTS = {
         ],
         main = src,
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "//SDK/lib/API/mojo/max/tensor",
             "@mojo//:layout",
