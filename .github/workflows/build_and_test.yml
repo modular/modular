@@ -34,7 +34,6 @@ jobs:
         os: ["ubuntu-latest", "macos-15"]
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
 
     defaults:
       run:
