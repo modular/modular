@@ -48,6 +48,10 @@ struct UInt128Decomposed:
     var high: UInt64
     var low: UInt64
 
+    fn __init__(out self, value: UInt128):
+        self.high = UInt64(value >> 64)
+        self.low = UInt64(value & 0xFFFFFFFFFFFFFFFF)
+
     fn most_significant_bit(self) -> UInt64:
         return self.high >> 63
 
@@ -181,22 +185,8 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # Note that there are assembly instructions to
     # do all that on some architectures.
     # That should speed things up.
-    x_low = x & 0xFFFFFFFF
-    x_high = x >> 32
-    y_low = y & 0xFFFFFFFF
-    y_high = y >> 32
-
-    low_low = x_low * y_low
-    low_high = x_low * y_high
-    high_low = x_high * y_low
-    high_high = x_high * y_high
-
-    carry = (low_low >> 32) + (low_high & 0xFFFFFFFF) + (high_low & 0xFFFFFFFF)
-
-    low = low_low + (low_high << 32) + (high_low << 32)
-    high = high_high + (low_high >> 32) + (high_low >> 32) + (carry >> 32)
-
-    return UInt128Decomposed(high, low)
+    result = UInt128(x) * UInt128(y)
+    return UInt128Decomposed(result)
 
 
 fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
