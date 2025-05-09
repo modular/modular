@@ -263,6 +263,17 @@ def test_merge():
     assert_equal(b, List[Int](0, 5, 10))
 
 
+def test_count_func():
+    @parameter
+    fn is_2[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+        return v == 2
+
+    var data = Span(List[Byte](0, 1, 2, 1, 2, 1, 2))
+    assert_equal(3, data.count[func=is_2]())
+    assert_equal(2, data[:-1].count[func=is_2]())
+    assert_equal(1, data[:3].count[func=is_2]())
+
+
 def main():
     test_span_list_int()
     test_span_list_str()
@@ -278,3 +289,4 @@ def main():
     test_reversed()
     test_swap_elements()
     test_merge()
+    test_count_func()
