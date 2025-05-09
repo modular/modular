@@ -1135,22 +1135,34 @@ fn iota[
     """
 
     @parameter
-    if simd_width == 1:
-        return offset
-    elif dtype.is_integral():
-        var step = llvm_intrinsic[
-            "llvm.stepvector",
-            SIMD[dtype, simd_width],
-            has_side_effect=False,
-        ]()
-        return step + offset
+    if is_amd_gpu():
+        # We can't use llvm.stepvector on AMD GPUs, because of a bug in the
+        # amd backend. See https://github.com/llvm/llvm-project/issues/139317
+        var out = SIMD[dtype, simd_width]()
+
+        @parameter
+        for i in range(simd_width):
+            out[i] = i
+        return out + offset
     else:
-        var it = llvm_intrinsic[
-            "llvm.stepvector",
-            SIMD[DType.index, simd_width],
-            has_side_effect=False,
-        ]()
-        return it.cast[dtype]() + offset
+
+        @parameter
+        if simd_width == 1:
+            return offset
+        elif dtype.is_integral():
+            var step = llvm_intrinsic[
+                "llvm.stepvector",
+                SIMD[dtype, simd_width],
+                has_side_effect=False,
+            ]()
+            return step + offset
+        else:
+            var it = llvm_intrinsic[
+                "llvm.stepvector",
+                SIMD[DType.index, simd_width],
+                has_side_effect=False,
+            ]()
+            return it.cast[dtype]() + offset
 
 
 fn iota[
