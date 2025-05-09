@@ -1208,9 +1208,12 @@ def print_kv_cache_paged_generic_cpu[
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
+    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
+    kv_collection: PagedKVCacheCollection[
+        type, kv_params, page_size, assert_write_mode
+    ],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -1334,9 +1337,12 @@ def print_kv_cache_paged_generic_gpu[
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
+    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
+    kv_collection: PagedKVCacheCollection[
+        type, kv_params, page_size, assert_write_mode
+    ],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -1455,19 +1461,14 @@ fn generic_get_continuous_cache[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     max_lengths: NDBuffer[DType.uint32, 2],
-) -> ContinuousBatchingKVCacheCollection[
-    type,
-    kv_params,
-]:
+) -> ContinuousBatchingKVCacheCollection[type, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
 fn generic_get_paged_cache[
-    type: DType,
-    kv_params: KVCacheStaticParams,
-    page_size: Int,
+    type: DType, kv_params: KVCacheStaticParams, page_size: Int
 ](
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],

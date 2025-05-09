@@ -8365,9 +8365,14 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
 fn print_kv_cache_paged_generic_kernel_api[
     type: DType, //,
     target: StaticString,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
+    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: InputTensor[type = DType.uint32, rank=1],
-    kv_collection: PagedKVCacheCollection[type, *_],
+    kv_collection: PagedKVCacheCollection[
+        type, kv_params, page_size, assert_write_mode
+    ],
     layer_idx: UInt32,
     is_print_compact: InputTensor[type = DType.bool, rank=1],
     context: DeviceContextPtr,

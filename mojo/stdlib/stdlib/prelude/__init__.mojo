@@ -41,7 +41,12 @@ from builtin.comparable import (
 )
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
-from builtin.debug_assert import debug_assert
+from builtin.debug_assert import (
+    debug_assert,
+    WRITE_MODE,
+    WRITE_MODE_MEM,
+    WRITE_MODE_REG,
+)
 from builtin.dtype import DType
 from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error

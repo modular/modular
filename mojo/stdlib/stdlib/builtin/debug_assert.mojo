@@ -27,6 +27,9 @@ from builtin._location import __call_location, _SourceLocation
 from utils.write import WritableVariadicPack
 
 alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+alias WRITE_MODE = Int
+alias WRITE_MODE_REG = 0
+alias WRITE_MODE_MEM = 1
 
 
 @no_inline
@@ -59,6 +62,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 @always_inline
 fn debug_assert[
     cond: fn () capturing [_] -> Bool,
+    write_mode: WRITE_MODE = WRITE_MODE_REG,
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
@@ -134,6 +138,7 @@ fn debug_assert[
 
     Parameters:
         cond: The function to invoke to check if the assertion holds.
+        write_mode: Determines whether to keep values in register or not.
         assert_mode: Determines when the assert is turned on.
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
@@ -149,11 +154,23 @@ fn debug_assert[
     if _assert_enabled[assert_mode, cpu_only]():
         if cond():
             return
-        _debug_assert_msg(messages, __call_location())
+
+        # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
+        @parameter
+        if write_mode == WRITE_MODE_MEM and not (is_gpu() and is_amd_gpu()):
+            var str: String = ""
+
+            @parameter
+            for i in range(messages.__len__()):
+                messages[i].write_to(str)
+            _debug_assert_msg_mem(__call_location(), str)
+        else:
+            _debug_assert_msg(messages, __call_location())
 
 
 @always_inline
 fn debug_assert[
+    write_mode: WRITE_MODE = WRITE_MODE_REG,
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
@@ -228,6 +245,7 @@ fn debug_assert[
     [`constrained()`](/mojo/stdlib/builtin/constrained/constrained).
 
     Parameters:
+        write_mode: Determines whether to keep values in register or not.
         assert_mode: Determines when the assert is turned on.
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
@@ -244,7 +262,68 @@ fn debug_assert[
     if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
-        _debug_assert_msg(messages, __call_location())
+
+        # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
+        @parameter
+        if write_mode == WRITE_MODE_MEM and not (is_gpu() and is_amd_gpu()):
+            var str: String = ""
+
+            @parameter
+            for i in range(messages.__len__()):
+                messages[i].write_to(str)
+            _debug_assert_msg_mem(__call_location(), str)
+        else:
+            _debug_assert_msg(messages, __call_location())
+
+
+@no_inline
+fn _debug_assert_msg_mem(loc: _SourceLocation, message: String):
+    """This version of debug assert is needed to enable a register allocator optimization.
+    """
+
+    alias kind_str = StaticString(
+        "Warning: "
+    ) if ASSERT_MODE == "warn" else "Error: "
+
+    @parameter
+    if is_gpu():
+
+        @parameter
+        if is_amd_gpu():
+            # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
+            print("Assert failed")
+        else:
+            var str: String = ""
+            var info = _GPUThreadInfo()
+            str.write("At", loc, ": ", info, " Assert ", kind_str, message)
+            print(str)
+    else:
+        var str: String = "At " + loc.__str__() + ": Assert " + kind_str + message
+        print(str)
+
+    @parameter
+    if ASSERT_MODE != "warn":
+        abort()
+
+
+@value
+struct _GPUThreadInfo(Writable):
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "block: [",
+            block_idx.x,
+            ",",
+            block_idx.y,
+            ",",
+            block_idx.z,
+            "] thread: [",
+            thread_idx.x,
+            ",",
+            thread_idx.y,
+            ",",
+            thread_idx.z,
+            "]",
+        )
 
 
 @no_inline
@@ -296,23 +375,3 @@ fn _debug_assert_msg[
     @parameter
     if ASSERT_MODE != "warn":
         abort()
-
-
-@value
-struct _GPUThreadInfo(Writable):
-    fn write_to[W: Writer](self, mut writer: W):
-        writer.write(
-            "block: [",
-            block_idx.x,
-            ",",
-            block_idx.y,
-            ",",
-            block_idx.z,
-            "] thread: [",
-            thread_idx.x,
-            ",",
-            thread_idx.y,
-            ",",
-            thread_idx.z,
-            "]",
-        )
