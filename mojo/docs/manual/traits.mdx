@@ -187,7 +187,7 @@ anywhere that you'd use a single trait:
 
 ```mojo
 trait Flyable:
-    fn fly(): ...
+    fn fly(self): ...
 
 fn quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.quack()
