@@ -445,6 +445,7 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
   if (requiredSymbols.empty()) {
     // If this is a struct decl, we need to verify explicit conformances by
     // fully resolving each conformance decl (see CALROC for more).
+    bool conforms = true;
     if (auto structOp = dyn_cast<StructDeclOp>(*this)) {
       SmallVector<SymbolRefAttr> fullRequiredSymbols(trait.getSymbols());
       canonicalizeTraitCompositionSymbols(shared, fullRequiredSymbols);
@@ -459,13 +460,12 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
           continue;
         }
         assert(witnessTables.size() == 1);
-        if (failed(shared.declResolver->resolveBody(*witnessTables.front(),
-                                                    getLoc())))
-          return false;
+        conforms &= succeeded(
+            shared.declResolver->resolveBody(*witnessTables.front(), getLoc()));
       }
     }
 
-    return true;
+    return conforms;
   }
 
   // Only structs can implicitly conform to traits.
