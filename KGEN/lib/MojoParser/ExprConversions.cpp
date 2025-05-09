@@ -1292,17 +1292,20 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     TraitType trait = anyTrait.getTraitType();
     bool result = false;
 
-    // MLIR types can conform to traits that have limited requirements.
-    // AnyTraitType (the type of all traits) conforms to traits with only a
-    // destructor (e.g. AnyType) since all traits have that.
     if (isa<TypeType>(rvType)) {
+      // MLIR types can conform to traits that have limited requirements.
+      // AnyTraitType (the type of all traits) conforms to traits with only a
+      // destructor (e.g. AnyType) since all traits have that.
       result = checkMLIRTypeConformance(shared, value.expr->getLoc(), trait);
-    } else if (auto pval = value.ir.getIfPValue();
-               pval && LIT::isTypeExpr(pval)) {
-      // Can only convert static types to traits, not existentials.
-      if (ASTDecl *decl = ASTType(pval).getDecl(shared))
-        return cacheAndReturnVal(
-            decl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true));
+    } else if (isa<StructMetaType>(rvType) ||
+               isa_and_nonnull<AnyTraitType>(rvType.getMetaType())) {
+      // Only a struct or a trait instance can be converted to a trait.
+      if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
+        // Can only convert static types to traits, not existentials.
+        if (ASTDecl *decl = ASTType(pval).getDecl(shared))
+          return cacheAndReturnVal(
+              decl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true));
+      }
     }
     return cacheAndReturnVal(result);
   }
@@ -1389,13 +1392,16 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   if (auto anyTrait =
           dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
     TraitType trait = anyTrait.getTraitType();
-    PValue result;
-    if (isa<TypeType>(rvType)) // Conversions from MLIR types.
-      result = bindMLIRTypeToTrait(valueExpr, trait, *this);
-    else // Conversions from everything else.
-      result = emitMetaTypeToTraitConversion(valueExpr, trait);
-
-    return emitCResult(result, expr, dest);
+    if (isa<TypeType>(rvType)) {
+      // Conversions from MLIR types.
+      PValue result = bindMLIRTypeToTrait(valueExpr, trait, *this);
+      return emitCResult(result, expr, dest);
+    } else if (isa<StructMetaType>(rvType) ||
+               isa_and_nonnull<AnyTraitType>(rvType.getMetaType())) {
+      // Conversions from structs or traits.
+      PValue result = emitMetaTypeToTraitConversion(valueExpr, trait);
+      return emitCResult(result, expr, dest);
+    }
   }
 
   // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].

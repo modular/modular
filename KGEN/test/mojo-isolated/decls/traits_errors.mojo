@@ -106,7 +106,6 @@ struct StructViolation3(MemTraitViolation):
 
 @explicit_destroy
 trait TFoo():
-    # expected-note @+1 {{candidate declared here with type 'fn[TFoo](self: $0) -> None'}}
     fn foo(self):
         ...
 
@@ -115,10 +114,7 @@ struct Bar[T:TFoo]:
     pass
 
 fn bindAnyTraitToTrait():
-    # COM: binding the trait type to the parameter T triggers the building of a parameter with a vtable.
-    # This vtable is built from the constraints on T. In this case, the constraint is "fn foo(self):"
-    # But the trait TFoo is not an implementation of itself so the synthesis fails.
-    # expected-error @+1 {{no 'foo' candidates have type 'fn(self: TFoo) -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'TFoo' type as a value to an instance of 'TFoo' in type parameter; did you mean to instantiate 'TFoo'?}}
     var _list = Bar[TFoo]()
 
 fn anytrait_assignment():
