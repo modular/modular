@@ -9,7 +9,6 @@ load("@rules_python//python:py_library.bzl", "py_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")
 
-modular_py_library = py_library
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
 requirement = _requirement
@@ -17,6 +16,13 @@ strip_prefix = _strip_prefix
 
 def _has_internal_reference(deps):
     return any([dep.startswith(("//GenericML/", "//Kernels/", "//SDK/")) for dep in deps])
+
+def modular_py_library(**kwargs):
+    # TODO: Pull in the necessary pip dependencies, remap labels, etc
+    if native.package_name().startswith(("max/entrypoints", "max/nn", "max/pipelines", "max/serve")):
+        return
+
+    py_library(**kwargs)
 
 # buildifier: disable=function-docstring
 def mojo_library(
