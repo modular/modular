@@ -72,7 +72,7 @@ methods.
 """
 
 from collections import Optional
-from collections.string.string import _chr_ascii
+from collections.string._ascii import _chr_ascii
 from memory import UnsafePointer
 from utils import Variant
 
