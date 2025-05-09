@@ -27,7 +27,7 @@ from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import is_cpu
+from gpu.host.info import is_cpu, is_gpu as _is_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
@@ -1121,9 +1121,11 @@ struct VariadicTensors[
 
 @doc_private
 fn get_kernel_simd_width[type: DType, target: StaticString]() -> Int:
-    return simdwidthof[type]() if is_cpu[target]() else simdwidthof[
-        type, target = _get_gpu_target()
-    ]()
+    @parameter
+    if _is_gpu[target]():
+        return simdwidthof[type, target = _get_gpu_target()]()
+
+    return simdwidthof[type]()
 
 
 @__mogg_intrinsic_attr("mogg.for_each")

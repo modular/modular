@@ -10,28 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from max._tensor_utils import foreach
-from max.driver import DynamicTensor, ManagedTensorSlice, Tensor
-from max.tensor import TensorShape, TensorSpec
+from tensor_internal import (
+    foreach,
+    DynamicTensor,
+    ManagedTensorSlice,
+    Tensor,
+    TensorShape,
+    TensorSpec,
+)
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_equal
 
 from utils import Index, IndexList
 
 
-# CHECK-LABEL: == test_foreach
 fn test_foreach() raises:
     print("== test_foreach")
     var shape = (10, 2)
 
-    var tensor1 = Tensor[DType.float32, 2](TensorShape(shape))
+    var tensor1 = Tensor[DType.float32](TensorShape(shape))
     var unsafe_slice1 = DynamicTensor[DType.float32, 2].Type(
         tensor1.unsafe_ptr(), shape
     )
 
-    var tensor2 = Tensor[DType.float32, 2](TensorShape(shape))
+    var tensor2 = Tensor[DType.float32](TensorShape(shape))
     var unsafe_slice2 = DynamicTensor[DType.float32, 2].Type(
         tensor2.unsafe_ptr(), shape
     )
