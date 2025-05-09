@@ -17,10 +17,10 @@ from memory import memcpy, memcmp
 
 fn standardize_string_slice(
     x: StringSlice,
-) -> InlineArray[UInt8, CONTAINER_SIZE]:
+) -> InlineArray[Byte, CONTAINER_SIZE]:
     """Put the input string in an inline array, aligned to the right and padded with "0" on the left.
     """
-    standardized_x = InlineArray[UInt8, CONTAINER_SIZE](ord("0"))
+    standardized_x = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
     memcpy(
         dest=(standardized_x.unsafe_ptr() + CONTAINER_SIZE - len(x)).bitcast[
             Int8
@@ -49,7 +49,7 @@ fn to_integer(x: StringSlice) raises -> UInt64:
 
 
 fn to_integer(
-    standardized_x: InlineArray[UInt8, CONTAINER_SIZE]
+    standardized_x: InlineArray[Byte, CONTAINER_SIZE]
 ) raises -> UInt64:
     """Takes a inline array containing the ASCII representation of a number.
     It must be padded with "0" on the left. Using an InlineArray makes
@@ -64,7 +64,7 @@ fn to_integer(
 
     # This could be done with simd if we see it's a bottleneck.
     for i in range(CONTAINER_SIZE):
-        if not (UInt8(ord("0")) <= standardized_x[i] <= UInt8(ord("9"))):
+        if not (Byte(ord("0")) <= standardized_x[i] <= Byte(ord("9"))):
             # We make a string out of this number. +1 for the null terminator.
             number_as_string = String()
             for j in range(CONTAINER_SIZE):
@@ -100,7 +100,7 @@ fn to_integer(
         ascii_vector = (standardized_x.unsafe_ptr() + i * simd_width).load[
             width=simd_width
         ]()
-        as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
+        as_digits = ascii_vector - SIMD[DType.Byte, simd_width](ord("0"))
         as_digits_index = as_digits.cast[DType.uint64]()
         alias vector_slice = (
             vector_with_exponents.unsafe_ptr() + i * simd_width

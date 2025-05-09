@@ -63,20 +63,20 @@ fn _get_w_and_q_from_float_string(
     "123.2481e-5" -> (1232481, -9)
     """
     # We read the number from right to left.
-    alias ord_0 = UInt8(ord("0"))
-    alias ord_9 = UInt8(ord("9"))
-    alias ord_dot = UInt8(ord("."))
-    alias ord_minus = UInt8(ord("-"))
-    alias ord_plus = UInt8(ord("+"))
-    alias ord_e = UInt8(ord("e"))
-    alias ord_E = UInt8(ord("E"))
+    alias ord_0 = Byte(ord("0"))
+    alias ord_9 = Byte(ord("9"))
+    alias ord_dot = Byte(ord("."))
+    alias ord_minus = Byte(ord("-"))
+    alias ord_plus = Byte(ord("+"))
+    alias ord_e = Byte(ord("e"))
+    alias ord_E = Byte(ord("E"))
 
     additional_exponent = 0
     exponent_multiplier = 1
 
     # We'll assume that we'll never go over 24 digit for each number.
-    exponent = InlineArray[UInt8, CONTAINER_SIZE](ord("0"))
-    significand = InlineArray[UInt8, CONTAINER_SIZE](ord("0"))
+    exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+    significand = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
 
     prt_to_array = UnsafePointer(to=exponent)
     array_index = CONTAINER_SIZE
@@ -114,7 +114,7 @@ fn _get_w_and_q_from_float_string(
             if prt_to_array == UnsafePointer(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent
-                exponent = InlineArray[UInt8, CONTAINER_SIZE](ord("0"))
+                exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
                 prt_to_array = UnsafePointer(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
@@ -141,7 +141,7 @@ fn _get_w_and_q_from_float_string(
     if not dot_or_e_found:
         # We were reading the significand
         significand = exponent
-        exponent = InlineArray[UInt8, CONTAINER_SIZE](ord("0"))
+        exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
 
     exponent_as_integer = (
         exponent_multiplier * to_integer(exponent) - additional_exponent
