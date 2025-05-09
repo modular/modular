@@ -29,6 +29,7 @@ from sys import (
     llvm_intrinsic,
     simdwidthof,
     sizeof,
+    is_compile_time,
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
@@ -1102,20 +1103,6 @@ fn isclose[
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: Remove this when `iota` works at compile-time
-fn _compile_time_iota[
-    dtype: DType, simd_width: Int
-]() -> SIMD[dtype, simd_width]:
-    constrained[
-        dtype.is_integral(),
-        "_compile_time_iota can only be used with integer dtypes.",
-    ]()
-    var a = SIMD[dtype, simd_width](0)
-    for i in range(simd_width):
-        a[i] = i
-    return a
-
-
 @always_inline
 fn iota[
     dtype: DType, simd_width: Int
@@ -1137,20 +1124,20 @@ fn iota[
     @parameter
     if simd_width == 1:
         return offset
-    elif dtype.is_integral():
-        var step = llvm_intrinsic[
-            "llvm.stepvector",
-            SIMD[dtype, simd_width],
-            has_side_effect=False,
-        ]()
-        return step + offset
+
+    alias step_dtype = dtype if dtype.is_integral() else DType.index
+    var step: SIMD[step_dtype, simd_width]
+    if is_compile_time():
+        step = 0
+        for i in range(simd_width):
+            step[i] = i
     else:
-        var it = llvm_intrinsic[
+        step = llvm_intrinsic[
             "llvm.stepvector",
-            SIMD[DType.index, simd_width],
+            SIMD[step_dtype, simd_width],
             has_side_effect=False,
         ]()
-        return it.cast[dtype]() + offset
+    return step.cast[dtype]() + offset
 
 
 fn iota[
