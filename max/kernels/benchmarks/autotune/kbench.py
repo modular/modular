@@ -1302,7 +1302,7 @@ help_str = (
 @click.option(
     "--profile",
     default=(),
-    help="Set the profiler [ncu, ncu-single].",
+    help="Set the profiler [ncu, ncu-single, rocm, rocprof-compute].",
     multiple=False,
 )
 @click.option(
@@ -1399,6 +1399,20 @@ def cli(
             exec_suffix.extend(
                 ["--bench-max-iters=0", "--bench-max-batch-size=1"]
             )
+    if profile in ["rocm", "rocprof-compute"]:
+        # TODO: This solution doesn't scale beyond one config as it
+        # overwrites the data to the same directory. This should be
+        # revised and moved inside scheduler loop, with exclusive dir
+        # per parameter combination.
+        profile_dir = "profile"
+        exec_prefix.extend(
+            f"rocprof-compute profile -n {profile_dir} --".split()
+        )
+
+        profile_dir_path = Path(
+            string.Template(f"./workloads/{profile_dir}").substitute(os.environ)
+        ).absolute()
+        logging.info(f"writing profiling results to {profile_dir_path}")
 
     files = FileGlobArg(files) if files else []
     for i, shape in enumerate(shape_list):
