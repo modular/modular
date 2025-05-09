@@ -14,6 +14,8 @@
 # This file is only run on linux targets.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: system-linux
+# RUN: %mojo %s
 
 from sys import os_is_linux, os_is_macos
 

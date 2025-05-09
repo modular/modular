@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
 
 from collections.string._utf8 import (
     _count_utf8_continuation_bytes,

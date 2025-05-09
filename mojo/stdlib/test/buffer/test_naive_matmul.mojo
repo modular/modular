@@ -15,6 +15,8 @@
 # Lit and its standard library.
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo-no-debug %s | FileCheck %s
+
 
 # Corresponds to the following Python code:
 #

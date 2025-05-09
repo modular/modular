@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv, erf, exp, tanh
 from sys.info import num_physical_cores, simdwidthof

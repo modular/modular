@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo-no-debug -debug-level full %s | FileCheck %s
 
 from math import iota
 from pathlib import Path

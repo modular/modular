@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
 
 from sys import os_is_windows
 from time import monotonic, perf_counter, perf_counter_ns, sleep, time_function

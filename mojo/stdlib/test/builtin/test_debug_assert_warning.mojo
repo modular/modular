@@ -14,14 +14,15 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: %bare-mojo -D ASSERT=warn %s 2>&1 | FileCheck %s
 
 
 # CHECK-LABEL: test_ok
 fn main():
     print("== test_ok")
-    # CHECK: test_debug_assert_warning.mojo:23:17: Assert Warning: failed, but we don't terminate
+    # CHECK: test_debug_assert_warning.mojo:24:17: Assert Warning: failed, but we don't terminate
     debug_assert(False, "failed, but we don't terminate")
-    # CHECK: test_debug_assert_warning.mojo:25:17: Assert Warning: also failed, but in a Boolable
+    # CHECK: test_debug_assert_warning.mojo:26:17: Assert Warning: also failed, but in a Boolable
     debug_assert(0, Error("also failed, but in a Boolable"))
     # CHECK: is reached
     print("is reached")

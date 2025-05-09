@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# XFAIL: asan && !system-darwin
+# RUN: %mojo %s
 
 from python.python import Python, PythonObject
 from testing import assert_equal, assert_raises, assert_true

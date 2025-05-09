@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %bare-mojo -D ASSERT=warn %s | FileCheck %s
 
 from collections._index_normalization import normalize_index
 

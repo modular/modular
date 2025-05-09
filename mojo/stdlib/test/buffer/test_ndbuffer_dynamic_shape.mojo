@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.dimlist import Dim, DimList

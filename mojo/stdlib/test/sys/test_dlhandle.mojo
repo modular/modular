@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: has_not
 # RUN: not mojo %s 2>&1
 
 from pathlib import Path

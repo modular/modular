@@ -14,6 +14,7 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: %bare-mojo -D ASSERT=none %s 2>&1 | FileCheck %s
 
 
 def main():

@@ -10,6 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# COM: TODO (17471): Not all aarch64 have neon, so we need to guard against that,
+# for now just require Apple Silicon.
+# REQUIRES: system-darwin
+# RUN: %mojo %s
 
 from sys import alignof, has_avx512f, has_neon, simdbitwidth
 

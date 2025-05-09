@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
 # Test for https://github.com/modular/modular/issues/1505
 
 from random import random_ui64

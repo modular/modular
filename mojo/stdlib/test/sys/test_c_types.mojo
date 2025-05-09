@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
 
 from sys.ffi import c_int, c_long, c_long_long
 from sys.info import is_32bit, is_64bit, os_is_linux, os_is_macos, os_is_windows

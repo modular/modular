@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# TODO (#34267): reenable
+# REQUIRES: disabled
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from time import sleep, time_function
 

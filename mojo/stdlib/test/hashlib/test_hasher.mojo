@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
+
 
 from hashlib._ahash import AHasher
 from hashlib._hasher import _hash_with_hasher, _HashableWithHasher, _Hasher

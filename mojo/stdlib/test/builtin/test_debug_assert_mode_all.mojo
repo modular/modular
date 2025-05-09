@@ -14,6 +14,7 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s | FileCheck %s
 
 
 def main():

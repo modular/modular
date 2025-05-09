@@ -14,6 +14,9 @@
 # This file is only run on macos targets.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: system-darwin
+# RUN: %mojo %s
+
 
 from sys import (
     is_big_endian,

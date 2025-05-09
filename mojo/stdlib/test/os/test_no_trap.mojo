@@ -20,7 +20,6 @@ from sys import argv
 
 # CHECK-LABEL: OK
 fn main():
-    print(len(argv()))
-    if len(argv()) == 1:
+    if len(argv()) == 0:
         abort()
     print("== OK")
