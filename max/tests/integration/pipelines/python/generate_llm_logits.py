@@ -555,7 +555,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "gemma3-1b": GenericOracle(
         model_path="google/gemma-3-1b-it",
-        config_params={"max_length": 8192},
+        config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "gemma3-multimodal": GenericOracle(

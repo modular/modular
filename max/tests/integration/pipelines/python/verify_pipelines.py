@@ -887,6 +887,25 @@ PIPELINES = {
             kl_div_threshold=18,
         ),
     ),
+    "Gemma-3-1B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="gemma3-1b",
+            encoding="bfloat16",
+            # TODO(MODELS-525): Investigate need for high tolerances here.
+            absolute_tolerance=54,
+            relative_tolerance=2.1,
+            cos_dist_threshold=0.24,
+            kl_div_threshold=21,
+        ),
+    ),
 }
 
 
