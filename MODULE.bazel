@@ -1,3 +1,5 @@
+"""Define bazel dependencies."""
+
 module(
     name = "modular",
     version = "0",

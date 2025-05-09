@@ -6,8 +6,8 @@ load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
 load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_python//python:py_library.bzl", "py_library")
-load("//bazel/internal:binary_test.bzl", "binary_test")
-load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")
+load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
