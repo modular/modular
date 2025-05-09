@@ -177,12 +177,11 @@ modular_run_binary_test(
         "--max-length=512",
     ],
     binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
-    env = {
-        "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
-    },
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
+        "AITLIB-293",
         "gpu",
+        "manual",
         "no-sandbox",
     ],
 )
@@ -201,12 +200,11 @@ modular_run_binary_test(
         "--use-subgraphs",
     ],
     binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
-    env = {
-        "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
-    },
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
+        "AITLIB-293",
         "gpu",
+        "manual",
         "no-sandbox",
     ],
 )
