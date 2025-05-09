@@ -3,21 +3,22 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements ops used when staging a graph.
+"""Implements operations used when staging a graph.
 
-Although the following modules provide a lot of the ops you want when building
-a graph, you can also use functions in
-[`Graph`](/max/api/python/graph/graph/Graph) to add constant values,
-such as [`constant()`](/max/api/python/graph/graph/Graph#constant),
-[`vector()`](/max/api/python/graph/graph/Graph#vector), and
-[`scalar()`](/max/api/python/graph/graph/Graph#scalar).
+This module provides operations for building computational graphs in MAX. These
+operations create, transform, and manipulate tensor values within the graph.
 
-The [`TensorValue`](/max/api/python/graph/value/TensorValue) type (returned
-by most ops) also implements various dunder methods to support operations
-between TensorValues, such as `+` add, `*` multiply, and `@` matmul, plus
-convenience methods such as
-[`reshape()`](/max/api/python/graph/value/TensorValue#reshape) and
-[`swapaxes()`](/max/api/python/graph/value/TensorValue#swapaxes).
+You can also use functions in [`Graph`](/max/api/python/graph/Graph) to add
+constant values to your graph with operations like
+[`constant()`](/max/api/python/graph/ops#max.graph.ops.constant).
+
+The [`TensorValue`](/max/api/python/graph/TensorValue/) type (returned by most
+operations) implements various dunder methods to support operations between
+TensorValues, such as `+` for addition, `*` for multiplication, and `@` for
+matrix multiplication. It also provides convenience methods like
+[`reshape()`](/max/api/python/graph/TensorValue/#max.graph.TensorValue.reshape)
+and
+[`flatten()`](/max/api/python/graph/TensorValue/#max.graph.TensorValue.flatten).
 """
 
 from __future__ import annotations

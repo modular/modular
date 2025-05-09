@@ -86,17 +86,14 @@ class _GraphWeight:
 class Graph:
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in MAX Engine. Like
-    functions, graphs have a name and signature. Unlike a function, which
-    follows an imperative programming model, a `Graph` follows a
-    [dataflow](https://en.wikipedia.org/wiki/Dataflow_programming) programming
-    model, using lazily-executed, parallel operations instead of sequential
-    instructions.
+    A `Graph` is a callable routine in MAX Engine. Like functions, graphs have a
+    name and signature. Unlike a function, which follows an imperative
+    programming model, a `Graph` follows a dataflow programming model, using
+    lazily-executed, parallel operations instead of sequential instructions.
 
-    When you instantiate a graph, you must specify the input shapes
-    as one or more :obj:`TensorType` values. Then, build a
-    sequence of ops and set the graph output with :obj:`output()`. For
-    example:
+    When you instantiate a graph, you must specify the input shapes as one or
+    more :obj:`TensorType` values. Then, build a sequence of ops and set the
+    graph output with :obj:`output()`. For example:
 
     .. code-block:: python
 
