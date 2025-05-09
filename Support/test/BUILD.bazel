@@ -1,3 +1,4 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_shared_library")
 
 modular_shared_library(
