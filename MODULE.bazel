@@ -44,7 +44,7 @@ mojo_aliases(name = "mojo")
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
     use_prebuilt_packages = False,
-    version = "25.4.0.dev2025050905",
+    version = "25.4.0.dev2025050919",
 )
 use_repo(mojo, "mojo_toolchains")
 
