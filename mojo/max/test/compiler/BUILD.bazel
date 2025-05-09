@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "test",
+    srcs = glob(["**/*.mojo"]),
+    mojo_deps = [
+        "//SDK/lib/API/mojo/max/max",
+        "@mojo//:stdlib",
+    ],
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+)

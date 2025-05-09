@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "_mlir_srcs",
+    srcs = glob(["**/*.mojo"]),
+)
+
+mojo_library(
+    name = "_mlir",
+    srcs = glob(["**/*.mojo"]),
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
