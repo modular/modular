@@ -1126,16 +1126,17 @@ fn iota[
         return offset
 
     alias step_dtype = dtype if dtype.is_integral() else DType.index
-
+    var step: SIMD[step_dtype, simd_width]
     if is_compile_time():
-        var a = SIMD[step_dtype, simd_width](0)
+        step = 0
         for i in range(simd_width):
-            a[i] = i
-        return a.cast[dtype]() + offset
-
-    var step = llvm_intrinsic[
-        "llvm.stepvector", SIMD[step_dtype, simd_width], has_side_effect=False
-    ]()
+            step[i] = i
+    else:
+        step = llvm_intrinsic[
+            "llvm.stepvector",
+            SIMD[step_dtype, simd_width],
+            has_side_effect=False,
+        ]()
     return step.cast[dtype]() + offset
 
 
