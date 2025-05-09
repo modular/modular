@@ -8623,7 +8623,7 @@ struct Struct_topk_fused_sampling:
     ](
         out_idxs: OutputTensor[type=out_idx_type, rank=rank],
         K: Scalar,
-        temperature: Float32,
+        temperature: Scalar[type],
         input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
@@ -8641,7 +8641,9 @@ struct Struct_topk_fused_sampling:
                 if K == 1:
                     argmax(input_buf, rank - 1, out_idxs_buf)
                     return
-                _topk_fused_sampling_cpu(Int(K), input_buf, out_idxs_buf)
+                _topk_fused_sampling_cpu(
+                    Int(K), input_buf, out_idxs_buf, temperature
+                )
             else:
                 var cuda_ctx = ctx.get_device_context()
                 _topk_fused_sampling_gpu(
@@ -8649,6 +8651,7 @@ struct Struct_topk_fused_sampling:
                     Int(K),
                     input_buf,
                     out_idxs_buf,
+                    temperature=temperature,
                 )
 
 
