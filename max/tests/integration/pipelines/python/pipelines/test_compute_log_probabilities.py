@@ -180,6 +180,13 @@ def test_compute_log_probabilities_ragged() -> None:
                 [32, 33],  # batch 2 token 2
             ]
         ),
+        next_token_logits=np.array(
+            [
+                [12, 13],  # batch 0 token 2
+                [21, 22],  # batch 1 token 1
+                [32, 33],  # batch 2 token 2
+            ]
+        ),
         tokens=np.array([1, 1, 0, 1, 0, 1, 0, 1], dtype=np.int32),
         sampled_tokens=np.array([0, 1, 0], dtype=np.int32),
         batch_top_n=[1, 0, 1],
