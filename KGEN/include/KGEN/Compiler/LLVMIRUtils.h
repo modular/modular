@@ -70,7 +70,7 @@ void splitPerExported(LLVMModuleAndContext module,
 void splitPerFunction(
     LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
-    unsigned numFunctionBase = 0);
+    int64_t inputModuleIdx = 0, unsigned numFunctionBase = 0);
 
 } // namespace M::KGEN
 

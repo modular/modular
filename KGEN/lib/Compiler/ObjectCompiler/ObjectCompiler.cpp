@@ -596,7 +596,8 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
           cacheResults.push_back(launchCompilation(
               std::move(produceModule), idx, numFunctions, isParLLC));
         },
-        symbolAndMirInfo.symbolLinkageTypes, numFunctionBase);
+        symbolAndMirInfo.symbolLinkageTypes, moduleIdx ? *moduleIdx : 0,
+        numFunctionBase);
   }
   return cacheResults;
 }
