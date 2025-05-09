@@ -15,7 +15,7 @@ requirement = _requirement
 strip_prefix = _strip_prefix
 
 def _has_internal_reference(deps):
-    return any([dep.startswith(("//GenericML/", "//Kernels/", "//SDK/")) for dep in deps])
+    return any([dep.startswith(("//GenericML", "//Kernels/", "//SDK/")) for dep in deps])
 
 def modular_py_library(**kwargs):
     # TODO: Pull in the necessary pip dependencies, remap labels, etc
