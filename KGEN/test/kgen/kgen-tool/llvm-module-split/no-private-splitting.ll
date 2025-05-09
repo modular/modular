@@ -9,7 +9,7 @@
 ; DUMP: global .memset_pattern cannot be split
 
 ; CHECK-NOT: @.memset_pattern = external.*
-; CHECK: @.memset_pattern = weak dso_local constant [1 x float] zeroinitializer
+; CHECK: @.memset_pattern_0 = weak dso_local constant [1 x float] zeroinitializer
 ; CHECK-NOT: @.memset_pattern = external.*
 
 @image_info = external global ptr

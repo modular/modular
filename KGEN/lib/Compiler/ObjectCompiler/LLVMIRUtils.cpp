@@ -525,7 +525,7 @@ public:
   void
   split(LLVMSplitProcessFn processFn,
         llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
-        unsigned numFunctionBase);
+        int64_t moduleIdx, unsigned numFunctionBase);
 
 private:
   struct ValueInfo {
@@ -570,10 +570,10 @@ removeDuplicates(llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
 void KGEN::splitPerFunction(
     LLVMModuleAndContext module, LLVMSplitProcessFn processFn,
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
-    unsigned numFunctionBase) {
+    int64_t inputModuleIdx, unsigned numFunctionBase) {
   CompilerTimeTraceScope traceScope("splitPerFunction");
   LLVMModulePerFunctionSplitterImpl impl(std::move(module));
-  impl.split(processFn, symbolLinkageTypes, numFunctionBase);
+  impl.split(processFn, symbolLinkageTypes, inputModuleIdx, numFunctionBase);
 }
 
 /// Split the LLVM module into multiple modules using the provided process
@@ -581,7 +581,7 @@ void KGEN::splitPerFunction(
 void LLVMModulePerFunctionSplitterImpl::split(
     LLVMSplitProcessFn processFn,
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
-    unsigned numFunctionBase) {
+    int64_t inputModuleIdx, unsigned numFunctionBase) {
   // Compute the value info for each global in the module.
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
@@ -655,6 +655,19 @@ void LLVMModulePerFunctionSplitterImpl::split(
     splitValues.insert(splitDeps.begin(), splitDeps.end());
   };
 
+  // This is a set of special private symbol name that need to be renamed (e.g.,
+  // those inserted by llvm optimizer) in order to avoid symbol override during
+  // linking. Since each split goes through its own LLVM optimization, private
+  // symbol with the same name (but different values) could be inserted by LLVM
+  // (e.g., when detecting the same optimization pattern the transformation
+  // leads to an insertion of global).
+  // We have to do the renaming now before codegen because we need to ensure
+  // name consistency between MCSymbols and global symbol names.
+  //
+  // Explanation on the entries:
+  // - ".memset_pattern": MacOS specific, introduced by `LoopIdiomRecognize`.
+  const llvm::StringSet<> namesToRename{".memset_pattern"};
+
   [[maybe_unused]] int64_t count = 0;
   SmallVector<const llvm::GlobalValue *> toSplit;
   unsigned unnamedGlobal = numFunctionBase;
@@ -666,6 +679,13 @@ void LLVMModulePerFunctionSplitterImpl::split(
         // values can be different in each splits (for X86 backend.)
         // asan build inserts these unnamed GlobalVariables.
         global.setName("__mojo_unnamed" + Twine(unnamedGlobal++));
+      }
+
+      for (StringRef prefix : namesToRename.keys()) {
+        if (global.getName().starts_with(prefix)) {
+          global.setName(global.getName() + "_" + Twine(inputModuleIdx));
+          break;
+        }
       }
 
       symbolLinkageTypes.insert({global.getName().str(), global.getLinkage()});
