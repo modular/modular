@@ -2,13 +2,26 @@
 
 load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
 
-def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = True, expect_crash = False, main = None, size = None, **kwargs):
+def mojo_filecheck_test(
+        name,
+        srcs,
+        copts = [],
+        data = [],
+        deps = [],
+        enable_assertions = True,
+        env = {},
+        expect_crash = False,
+        main = None,
+        size = None,
+        **kwargs):
     """Creates a test that runs a mojo_binary and checks its output with FileCheck.
 
     Args:
         name: The name of the test.
         copts: Compiler options for the mojo_binary.
+        data: Files needed by the test at runtime
         enable_assertions: Whether to enable assertions for the mojo_binary.
+        env: Environment variables to set for the binary and test.
         expect_crash: Whether to expect the mojo_binary to crash.
         srcs: The source files for the mojo_binary.
         size: The size of the test.
@@ -28,6 +41,8 @@ def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = T
         srcs = srcs,
         main = main,
         deps = deps,
+        data = data,
+        env = env,
         testonly = True,
         enable_assertions = enable_assertions,
         **kwargs
@@ -37,12 +52,12 @@ def mojo_filecheck_test(name, srcs, copts = [], deps = [], enable_assertions = T
         name = name,
         srcs = ["//bazel/internal:mojo-filecheck-test"],
         size = size,
-        data = srcs + [
+        data = data + srcs + [
             name + ".binary",
             "@llvm-project//llvm:FileCheck",
             "@llvm-project//llvm:not",
         ],
-        env = {
+        env = env | {
             "BINARY": "$(location :{}.binary)".format(name),
             "EXPECT_CRASH": "1" if expect_crash else "0",
             "FILECHECK": "$(location @llvm-project//llvm:FileCheck)",
