@@ -408,6 +408,8 @@ FnOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
   auto [func, _] = synthesizeMethodInStruct(
       prefix, params, paramListAttrs, argTypes, argConventions, argListAttrs,
       shared.getNoneType(), structDecl, structDecl.getLoc(), kind);
+  if (!func)
+    return {};
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -430,7 +432,7 @@ FnOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                        /*paramListAttrs=*/PogListAttr::get(getContext()));
 }
 
-FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
+FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix) {
   auto structOp = cast<StructDeclOp>(structDecl);
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
@@ -447,7 +449,7 @@ FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
       "__del__", selfType.mlirType, ArgConvention::OwnedMem,
       PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, structDecl.getLoc(),
-      SpecialFunctionKind::kDel);
+      SpecialFunctionKind::kDel, FnEffects(), suffix);
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -460,11 +462,11 @@ FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   return funcOp;
 }
 
-static FnOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
-                                          ASTDecl &structDecl, bool isMove) {
+FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl,
+                                                  bool isMove) {
   ASTType selfType = structDecl.getTypeDeclSelf();
   StringRef name = isMove ? "__moveinit__" : "__copyinit__";
-  MLIRContext *ctx = emitter.shared.getContext();
+  MLIRContext *ctx = shared.getContext();
   Builder b(ctx);
   StringAttr existingName = b.getStringAttr("other");
 
@@ -484,10 +486,16 @@ static FnOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
   auto argListAttrs =
       PogListAttr::get(ctx, {existingName, b.getStringAttr("self")},
                        {PassingKind::PosOnly, PassingKind::Implicit});
-  return emitter.addVoidMethod(
+  auto result = addVoidMethod(
       structDecl, name, {existingArgType, selfArgType},
       {existingConv, ArgConvention::ByRefResult}, argListAttrs,
       isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit);
+  if (!result)
+    return {};
+
+  // TODO: Should only do this if the type is RP or small?
+  result.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  return result;
 }
 
 FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
@@ -569,14 +577,6 @@ FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
   emitter.emitNormalReturn(structDeclOp.getLoc(), resultToReturn);
 
   return copyFunc;
-}
-
-FnOp StructEmitter::synthesizeEmptyMoveInit(ASTDecl &structDecl) {
-  return synthesizeEmptyMoveOrCopyInit(*this, structDecl, /*isMove=*/true);
-}
-
-FnOp StructEmitter::synthesizeEmptyCopyInit(ASTDecl &structDecl) {
-  return synthesizeEmptyMoveOrCopyInit(*this, structDecl, /*isMove=*/false);
 }
 
 std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
@@ -744,12 +744,12 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
 
   FnOp copyFunc;
   if (!valueInfo->hasCopy() && !declOp.isRegisterPassableTrivial())
-    copyFunc = synthesizeEmptyCopyInit(structDecl);
+    copyFunc = synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
   addCopyOrMoveBuiltinTrait("Copyable");
 
   FnOp moveFunc;
   if (!valueInfo->hasMove() && !declOp.isRegisterPassable())
-    moveFunc = synthesizeEmptyMoveInit(structDecl);
+    moveFunc = synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
   addCopyOrMoveBuiltinTrait("Movable");
 
   FnOp explicitCopyFunc;

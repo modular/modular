@@ -98,11 +98,10 @@ public:
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
   /// field dels as needed, and makes sure that anything that refers to this
   /// struct properly runs its destructor.
-  FnOp synthesizeEmptyDtor(ASTDecl &structDecl);
-  /// Add an empty `__moveinit__` stub for this struct, to be filled in later.
-  FnOp synthesizeEmptyMoveInit(ASTDecl &structDecl);
-  /// Add an empty `__copyinit__` stub for this struct, to be filled in later.
-  FnOp synthesizeEmptyCopyInit(ASTDecl &structDecl);
+  FnOp synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix = "");
+  /// Add an empty `__moveinit__` or `__copyinit__` stub for this struct, to be
+  /// filled in later.
+  FnOp synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl, bool isMove);
   /// Add `copy()` method for this struct.
   FnOp synthesizeExplicitCopy(ASTDecl &structDecl);
 
