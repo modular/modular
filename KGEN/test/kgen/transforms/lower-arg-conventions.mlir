@@ -18,10 +18,10 @@ kgen.func @lower_args(
   %arg2: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
   %arg3: !kgen.pointer<index> owned
 ) {
-  // CHECK: %[[P0:.*]] = pop.stack_allocation 1 x index
-  // CHECK: pop.store %arg0, %[[P0]] : !kgen.pointer<index>
   // CHECK: %[[P1:.*]] = pop.stack_allocation 1 x struct<(index, index)>
   // CHECK: pop.store %arg1, %[[P1]] : !kgen.pointer<struct<(index, index)>>
+  // CHECK: %[[P0:.*]] = pop.stack_allocation 1 x index
+  // CHECK: pop.store %arg0, %[[P0]] : !kgen.pointer<index>
   // CHECK: "some.use"(%[[P0]], %[[P1]])
   "some.use"(%arg0, %arg1) : (!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>>) -> ()
   kgen.return
@@ -138,8 +138,8 @@ kgen.func @byref_throws(
   %__error__: !kgen.pointer<!Error> byref_error,
   %__result__: !kgen.pointer<index> byref_result
 ) throws -> i1 {
-  // CHECK: %[[VALUE:.*]] = pop.stack_allocation 1 x index
   // CHECK: %[[ERROR:.*]] = pop.stack_allocation 1 x struct<(f32)>
+  // CHECK: %[[VALUE:.*]] = pop.stack_allocation 1 x index
 
   // CHECK: %[[COND:.*]] = kgen.param.constant: i1 = <?>
   %0 = kgen.param.constant: i1 = <?>
@@ -293,4 +293,114 @@ kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_
   // CHECK: kgen.call_indirect %arg0() : () -> index
   kgen.call_indirect %arg0(%1) : (!kgen.pointer<index> byref_result) -> !kgen.none
   kgen.return
+}
+
+#type_value = #kgen.type<typevalue<#kgen.instref<@"IntPackable">>, index, {"doIt" : (index) -> !kgen.none = @"delete-me::IntPackable::doIt(delete-me::IntPackable)"}> : !kgen.type
+#type_value1 = #kgen.type<typevalue<#kgen.instref<@"BoolPackable">>, i1, {"doIt" : (i1) -> !kgen.none = @"delete-me::BoolPackable::doIt(delete-me::BoolPackable)"}> : !kgen.type
+
+#type_value2 = #kgen.type<pointer<typevalue<#type_value>>, pointer<index>> : !kgen.type
+#type_value3 = #kgen.type<pointer<typevalue<#type_value1>>, pointer<i1>> : !kgen.type
+
+// CHECK-LABEL: kgen.func @lower_args1
+// CHECK-SAME: (%arg0: index, %arg1: i1, %arg2: index, %arg3: i1)
+kgen.func @lower_args1(
+ %arg0: !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> read_mem
+) -> !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> {
+    // CHECK: [[V0:%.*]] = pop.stack_allocation 1 x i1
+    // CHECK-NEXT: pop.store %arg3, [[V0]] : !kgen.pointer<i1>
+    // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x index
+    // CHECK-NEXT: pop.store %arg2, [[V1]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V2:%.*]] = pop.stack_allocation 1 x i1
+    // CHECK-NEXT: pop.store %arg1, [[V2]] : !kgen.pointer<i1>
+    // CHECK-NEXT: [[V3:%.*]] = pop.stack_allocation 1 x index
+    // CHECK-NEXT: pop.store %arg0, [[V3]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V4:%.*]] = kgen.pack.create([[V3]], [[V2]], [[V1]], [[V0]]) : !kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V5:%.*]] = pop.stack_allocation 1 x !kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: pop.store [[V4]], [[V5]] : !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
+    // CHECK-NEXT: kgen.return [[V5]] : !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
+ kgen.return %arg0 : !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
+}
+// CHECK-LABEL: kgen.func @main
+kgen.func @main() {
+    // CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x !kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
+    // CHECK-NEXT: [[V2:%.*]] = kgen.pack.extract [[V1]][0] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V3:%.*]] = kgen.pack.extract [[V1]][1] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V4:%.*]] = kgen.pack.extract [[V1]][2] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V5:%.*]] = kgen.pack.extract [[V1]][3] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V6:%.*]] = pop.load [[V2]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V7:%.*]] = pop.load [[V3]] : !kgen.pointer<i1>
+    // CHECK-NEXT: [[V8:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
+    // CHECK-NEXT: [[V9:%.*]] = pop.load [[V5]] : !kgen.pointer<i1>
+    // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
+    %0 = pop.stack_allocation 1 x !kgen.pack<[pointer<index>, pointer<i1>, #type_value2, #type_value3]>
+    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, #type_value2, #type_value3]>> read_mem) -> !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
+    kgen.return
+}
+
+// CHECK-LABEL: kgen.func @lower_empty
+// CHECK-SAME: (%arg0: !kgen.none) -> !kgen.pointer<!kgen.pack<[]>>
+kgen.func @lower_empty(
+ %arg0: !kgen.pointer<!kgen.pack<[]>> read_mem
+) -> !kgen.pointer<!kgen.pack<[]>> {
+ kgen.return %arg0 : !kgen.pointer<!kgen.pack<[]>>
+}
+// CHECK-LABEL: kgen.func @main_empty
+kgen.func @main_empty() {
+    %0 = pop.stack_allocation 1 x !kgen.pack<[]>
+    // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<!kgen.pack<[]>>
+    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<!kgen.pack<[]>> read_mem) -> !kgen.pointer<!kgen.pack<[]>>
+    kgen.return
+}
+
+// CHECK-LABEL: kgen.func @none_with_res
+// CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none
+kgen.func @none_with_res(%arg0: !kgen.pointer<!kgen.pack<[]>> owned_in_mem, %arg1: !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+}
+// CHECK-LABEL: kgen.func @call_none_with_res
+kgen.func @call_none_with_res(%arg0: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> read_mem, %arg1: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> byref_result) -> !kgen.none {
+    %2 = pop.stack_allocation 1 x !kgen.pack<[]>
+    %3 = pop.stack_allocation 1 x struct<(!kgen.pack<[]>) memoryOnly>
+    // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none
+    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<!kgen.pack<[]>> owned_in_mem, !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: kgen.func @recursive_ptr
+// CHECK-SAME: (%arg0: !kgen.pointer<none>)
+kgen.func @recursive_ptr(%arg0: !kgen.pointer<pointer<none>> read_mem){
+    kgen.return
+}
+// CHECK-LABEL: kgen.func @call_recursive_ptr
+// CHECK: kgen.call @recursive_ptr(%{{.*}}) : (!kgen.pointer<none>) -> ()
+kgen.func @call_recursive_ptr(%arg0: !kgen.pointer<pointer<none>> read_mem){
+    kgen.call @recursive_ptr(%arg0) : (!kgen.pointer<pointer<none>> read_mem) -> ()
+    kgen.return
+}
+
+// COM: Do not promote types inside a pack not known to be read only.
+
+// CHECK-LABEL: kgen.func @lower_args_no_ptr
+// CHECK-SAME: (%arg0: !kgen.pointer<index> mut)
+kgen.func @lower_args_no_ptr(
+ %arg0: !kgen.pack<[!kgen.pointer<index>]>
+) -> !kgen.pack<[!kgen.pointer<index>]> {
+    %0 = kgen.pack.extract %arg0[0] : !kgen.pack<[!kgen.pointer<index>]>
+    %1 = kgen.param.constant:index = <9>
+    pop.store %1, %0 : !kgen.pointer<index>
+ kgen.return %arg0 : !kgen.pack<[!kgen.pointer<index>]>
+}
+
+// CHECK-LABEL: kgen.func @callIt
+kgen.func @callIt() -> index {
+    %0 = pop.stack_allocation 1 x index
+    %1 = kgen.pack.create(%0) : !kgen.pack<[!kgen.pointer<index>]>
+    // CHECK: kgen.call @lower_args_no_ptr(%{{.*}}) : (!kgen.pointer<index> mut) -> !kgen.pack<[pointer<index>]>
+    %2 = kgen.call @lower_args_no_ptr(%1) : (!kgen.pack<[pointer<index>]>) -> !kgen.pack<[!kgen.pointer<index>]>
+    %3 = kgen.pack.extract %2[0] : !kgen.pack<[!kgen.pointer<index>]>
+    %4 = pop.load %3 : !kgen.pointer<index>
+    kgen.return %4 : index
 }
