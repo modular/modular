@@ -52,10 +52,10 @@ def pad(
         input.dtype, _compute_result_shape(input.shape, paddings), input.device
     )
 
-    device = input.device or DeviceRef.CPU()
-
     promoted = [
-        dtype_promotion._promote_to_strong(np.array([x]), DType.int64, device)
+        dtype_promotion._promote_to_strong(
+            np.array([x]), DType.int64, DeviceRef.CPU()
+        )
         for x in paddings
     ]
 
@@ -66,5 +66,7 @@ def pad(
         result=result_type.to_mlir(),
         input=TensorValue(input),
         paddings=padding_tensor,
-        constant=dtype_promotion._promote_to_strong(value, input.dtype, device),
+        constant=dtype_promotion._promote_to_strong(
+            value, input.dtype, DeviceRef.CPU()
+        ),
     )[0].tensor
