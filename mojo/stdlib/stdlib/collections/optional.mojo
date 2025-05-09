@@ -425,8 +425,7 @@ struct Optional[T: Copyable & Movable](
 
         var opt = Optional(Pointer(to=data))
 
-        # TODO(MOCO-1522): Drop `[T=String]` after fixing param inference issue.
-        var opt_owned: Optional[String] = opt.copied[T=String]()
+        var opt_owned: Optional[String] = opt.copied()
         ```
         .
         """

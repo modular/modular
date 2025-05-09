@@ -754,9 +754,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             otherwise an empty Optional.
         """
 
-        # TODO(MOCO-604): push usage through
-        # TODO(MOCO-1522): Drop `[T=V]` after fixing param inference issue.
-        return self.get_ptr(key).copied[T=V]()
+        try:
+            return self._find_ref(key)
+        except:
+            return Optional[V](None)
 
     fn _find_ref(
         ref self, key: K
@@ -770,35 +771,18 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        if entry := self.get_ptr(key):
-            # SAFETY: We just checked that `entry` is populated.
-            return entry.unsafe_value()[]
-        else:
-            raise "KeyError"
-
-    fn get_ptr(
-        ref self, key: K
-    ) -> Optional[Pointer[V, __origin_of(self._entries[0].value().value)]]:
-        """Get a pointer to a value in the dictionary by key.
-
-        Args:
-            key: The key to search for in the dictionary.
-
-        Returns:
-            An optional value containing a pointer to the value if it is
-            present, otherwise an empty Optional.
-        """
         var hash = hash(key)
         var found: Bool
         var index: Int
         found, _, index = self._find_index(hash, key)
+
         if found:
             var entry = Pointer(to=self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
             # SAFETY: We just checked that `entry` is present.
-            return Pointer(to=entry[].unsafe_value().value)
+            return entry[].unsafe_value().value
 
-        return None
+        raise "KeyError"
 
     fn get(self, key: K) -> Optional[V]:
         """Get a value from the dictionary by key.
