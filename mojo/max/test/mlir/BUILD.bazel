@@ -9,7 +9,7 @@ lit_tests(
     },
     mojo_deps = [
         "@mojo//:stdlib",
-        "//open-source/max/max/_mlir/src:_mlir",
+        "//open-source/max/mojo/max/src/_mlir",
     ],
     tools = [
         "//KGEN/tools/mojo",

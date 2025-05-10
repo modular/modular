@@ -86,12 +86,7 @@ alias(
 
 alias(
     name = "compiler",
-    actual = "@//{prefix}max/compiler/src:compiler",
-)
-
-alias(
-    name = "_mlir",
-    actual = "@//{prefix}max/_mlir/src:_mlir",
+    actual = "@//{prefix}max/compiler",
 )
 """.format(prefix = rctx.attr.prefix))
 
