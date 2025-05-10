@@ -118,10 +118,18 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
 
 /// Allow synthesizing default implementations of certain special functions.
 static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
-                                      SpecialFunctionKind kind) {
+                                      StringRef methodName) {
+  if (!canSynthesizeMethodForTrait(structDecl, methodName))
+    return {};
+
   StructEmitter gen(structDecl.getShared());
+  auto kind = SpecialFunctionInfo::getKind(methodName);
   if (kind == SpecialFunctionKind::kDel)
     return gen.synthesizeEmptyDtor(structDecl);
+
+  if (kind != SpecialFunctionKind::kCopyInit &&
+      kind != SpecialFunctionKind::kMoveInit)
+    return {};
 
   auto &shared = structDecl.getShared();
   auto selfRefType =
@@ -182,16 +190,12 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                      std::optional<InflightDiag> &diag,
                                      WitnessTable &witnessTable) {
   auto &shared = structDecl.getShared();
-  MLIRContext *ctx = structDecl.getContext();
   auto structDeclOp = cast<StructDeclOp>(structDecl);
 
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
   ExprEmitter emitter(structDecl, EC_Trait);
   ASTType selfType = structDecl.getTypeDeclSelf();
-
-  // These are the special methods that need to be synthesized.
-  SmallVector<SpecialFunctionKind> specialFns;
 
   ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(parent);
   TraitDeclOp traitDeclOp = cast<TraitDeclOp>(traitDecl);
@@ -217,22 +221,25 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
          << ASTType(TraitType::get(parent));
 
   // Returns failure() to stop the verifyConformance loop.
-  auto checkMethod = [&](const mlir::StringAttr &name, ASTDecl *traitFnDecl,
+  auto checkMethod = [&](StringAttr name, ASTDecl *traitFnDecl,
                          FnOp traitFn) -> LogicalResult {
-    if (traitFn.getInheritedFrom()) {
-      // Skip inherited methods, they're checked at a different time.
+    // Skip inherited methods, they're checked at a different time.
+    if (traitFn.getInheritedFrom())
       return success();
-    }
+
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
     if (decls.empty() || !isa<FnOp>(decls.front())) {
-      if (canSynthesizeMethodForTrait(structDecl, name)) {
-        specialFns.push_back(SpecialFunctionInfo::getKind(name));
-        return success();
+      // See if this is a method like __copyinit__ that can be synthesized on
+      // demand.
+      if (!synthesizeSpecialFunction(structDecl, name)) {
+        diag->attachNote(traitFnDecl->getLoc())
+            << "required function '" + name.str() + "' is not implemented";
+        allMatchFound = false;
+        return failure(); // Stop the outer loop.
       }
-      diag->attachNote(traitFnDecl->getLoc())
-          << "required function '" + name.str() + "' is not implemented";
-      allMatchFound = false;
-      return failure(); // Stop the outer loop.
+      // Yep, we synthesized it.
+      decls = structDecl.lookupInCurrentScope(name);
+      assert(!decls.empty() && "didn't synthesize a method");
     }
 
     // Signature resolve the found decls first, so they can be checked.
@@ -275,7 +282,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     return success();
   };
 
-  auto checkAlias = [&](const mlir::StringAttr &name, ASTDecl *traitAliasDecl,
+  auto checkAlias = [&](StringAttr name, ASTDecl *traitAliasDecl,
                         AliasDeclOp traitAlias) -> LogicalResult {
     // TODO(MOCO-1140): check traitAlias.getInheritedFrom(); implement
     // inheritance of alias decls.
@@ -381,19 +388,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
   if (hadErrors)
     return failure();
-  for (SpecialFunctionKind kind : specialFns) {
-    if (FnOp func = synthesizeSpecialFunction(structDecl, kind)) {
-      ASTType selfType = structDecl.getTypeDeclSelf();
-      SmallVector<TypedAttr> bindings(selfType.getParamBindings());
-      for (auto param : func.getInputParams())
-        bindings.push_back(ParamDeclRefAttr::get(param));
-
-      witnessTable.emplace_back(
-          StringAttr::get(ctx, SpecialFunctionInfo::get(kind).name),
-          func.getBoundSymbolRef(shared.getEvaluationContext(),
-                                 ParameterExprArrayAttr::get(ctx, bindings)));
-    }
-  }
 
   return success();
 }
@@ -919,9 +913,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
-        if (canSynthesizeMethodForTrait(*metaTypeDecl, name)) {
+        if (synthesizeSpecialFunction(*metaTypeDecl, name))
           continue;
-        }
 
         // The struct does not have the specified member and we cannot
         // synthesize it. Re-emit the error to get a diagnostic.
