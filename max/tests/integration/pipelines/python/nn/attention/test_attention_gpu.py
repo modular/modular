@@ -17,10 +17,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import Attention
-from max.nn.kernels import (
-    MHAMaskVariant,
-    flare_mla_prefill_ragged,
-)
+from max.nn.kernels import MHAMaskVariant, flare_mla_prefill_ragged
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -33,6 +30,7 @@ from max.nn.kv_cache import (
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
+from max.support.math import ceildiv
 from modular_graph_test import are_all_tensor_values
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
@@ -272,7 +270,7 @@ def test_aspect_ratio_mask() -> None:
 class CrossAttentionModel:
     """Model containing fetch and cross attention layers."""
 
-    fetch: FetchContinuousBatchingKVCacheCollection
+    fetch: FetchPagedKVCacheCollection
     """Layer for fetching a kv cache collection."""
 
     cross_attention: CrossSdpaAttention
@@ -291,7 +289,7 @@ class CrossAttentionModel:
         """Inits fetch and cross attention layers using the torch model."""
         self.dtype = dtype
 
-        self.fetch = FetchContinuousBatchingKVCacheCollection(kv_params)
+        self.fetch = FetchPagedKVCacheCollection(kv_params)
 
         # Use torch model weights to initialize MAX graph cross attention
         # shapes.
@@ -423,8 +421,14 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
         DType.uint32, shape=[1], device=DeviceRef.CPU()
     )
 
+    page_size = ceildiv(cross_seq_len, 128) * 128
+
     kv_params = KVCacheParams(
-        dtype=dtype, n_kv_heads=config.num_key_value_heads, head_dim=head_dim
+        dtype=dtype,
+        n_kv_heads=config.num_key_value_heads,
+        head_dim=head_dim,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
     )
     kv_manager = load_kv_manager(
         params=kv_params,
@@ -433,6 +437,8 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
         num_layers=config.num_hidden_layers,
         session=session,
         devices=[cuda],
+        available_cache_memory=8 * 1024 * 1024 * 1024,
+        page_size=page_size,
     )
 
     # Phase 1: op staging.

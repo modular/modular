@@ -14,22 +14,18 @@ from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    Weight,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
 from max.nn import LinearV1, RMSNormV1
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
+    KVCacheStrategy,
     load_kv_manager,
 )
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
+from max.support.math import ceildiv
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
@@ -40,7 +36,7 @@ from transformers.models.mllama.modeling_mllama import (
 class CrossAttentionModel:
     """Model containing fetch and cross attention layers."""
 
-    fetch: FetchContinuousBatchingKVCacheCollection
+    fetch: FetchPagedKVCacheCollection
     """Layer for fetching a kv cache collection."""
 
     cross_attention: CrossSdpaAttention
@@ -59,7 +55,7 @@ class CrossAttentionModel:
         """Inits fetch and cross attention layers using the torch model."""
         self.dtype = dtype
 
-        self.fetch = FetchContinuousBatchingKVCacheCollection(kv_params)
+        self.fetch = FetchPagedKVCacheCollection(kv_params)
 
         # Use torch model weights to initialize MAX graph cross attention
         # shapes.
@@ -183,10 +179,13 @@ def test_cross_attention(
     )
     hidden_max_seq_len_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
 
+    page_size = ceildiv(cross_seq_len, 128) * 128
     kv_params = KVCacheParams(
         dtype=dtype,
         n_kv_heads=config.num_key_value_heads,
         head_dim=head_dim,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
     )
     kv_manager = load_kv_manager(
         params=kv_params,
@@ -195,6 +194,7 @@ def test_cross_attention(
         num_layers=config.num_hidden_layers,
         session=session,
         devices=[CPU()],
+        available_cache_memory=4 * 1024 * 1024 * 1024,
     )
 
     # Phase 1: op staging.

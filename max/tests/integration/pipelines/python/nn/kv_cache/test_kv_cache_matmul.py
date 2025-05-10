@@ -21,8 +21,6 @@ from max.nn.kernels import (
     matmul_kv_cache_ragged,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
@@ -37,7 +35,8 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -63,15 +62,17 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        page_size=128,
+        cache_memory=1024 * 1024 * 1024,
     )
-    fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_op = FetchPagedKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
     )
@@ -168,7 +169,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
 class MatmulKVRaggedModel:
     """Model containing a single matmul KV ragged op."""
 
-    fetch_layer: FetchContinuousBatchingKVCacheCollection
+    fetch_layer: FetchPagedKVCacheCollection
     """Layer for fetching a kv cache collection."""
 
     kv_params: KVCacheParams
@@ -220,7 +221,8 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -246,15 +248,17 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
         num_layers=1,
         devices=[CPU()],
         session=session,
+        page_size=128,
+        cache_memory=1024 * 1024 * 1024,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
@@ -340,12 +344,7 @@ class MatmulKRaggedModel:
         )
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        DType.float32,
-    ],
-)
+@pytest.mark.parametrize("dtype", [DType.float32])
 def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     """Tests the matmul_k_cache_ragged custom op."""
     # Set up hyperparameters for the test.
@@ -503,7 +502,8 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
     )
 
     # Set MLIR types for the graph.
@@ -526,15 +526,17 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = ContinuousBatchingKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=1,
         max_seq_len=1,
         num_layers=1,
         devices=[CPU()],
         session=InferenceSession(),
+        page_size=128,
+        cache_memory=1024 * 1024 * 1024,
     )
-    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
         "matmul_kv_cache_ragged",
