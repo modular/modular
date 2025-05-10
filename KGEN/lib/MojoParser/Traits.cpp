@@ -214,7 +214,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   ParserParameterEvaluator traitAliasReplacer(shared);
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
-  bool allMatchFound = true;
   // Prepare an error. It will be abandoned if the check succeeds.
   diag = shared.emitError(structDecl.getLoc(), "struct ")
          << selfType << " does not implement all requirements for "
@@ -234,7 +233,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       if (!synthesizeSpecialFunction(structDecl, name)) {
         diag->attachNote(traitFnDecl->getLoc())
             << "required function '" + name.str() + "' is not implemented";
-        allMatchFound = false;
         return failure(); // Stop the outer loop.
       }
       // Yep, we synthesized it.
@@ -258,27 +256,18 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
     // Match against the transformed calling convention if the struct is
     // register-passable.
-
-    // Omit errors for certain special functions where the parser will
-    // specifically verify their signatures if present.
-    bool emitError = !llvm::is_contained({SpecialFunctionKind::kMoveInit,
-                                          SpecialFunctionKind::kCopyInit,
-                                          SpecialFunctionKind::kDel},
-                                         SpecialFunctionInfo::getKind(name));
-
     OverloadSet ov(name, decls, std::move(bindings), node,
                    CallSyntax::kMethodCallSynthetic);
     PValue result = ov.filterOverloadSetForValueType(
         traitSignature, emitter.getDeclScope(),
-        emitError ? function_ref<InflightDiag &(SMLoc)>(
-                        [&](SMLoc loc) -> InflightDiag & {
-                          return diag->attachNote(traitFnDecl->getLoc());
-                        })
-                  : nullptr);
-    if (!result && emitError)
-      allMatchFound = false;
+        function_ref<InflightDiag &(SMLoc)>([&](SMLoc loc) -> InflightDiag & {
+          return diag->attachNote(traitFnDecl->getLoc());
+        }));
     if (result)
       witnessTable.emplace_back(name, result.get());
+    else {
+      return failure();
+    }
     return success();
   };
 
@@ -299,7 +288,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     if (decls.empty() || !isa<LIT::AliasDeclOp>(decls.front())) {
       diag->attachNote(traitAlias->getLoc())
           << "required alias '" << name.str() << "' is not specified";
-      allMatchFound = false;
       return failure(); // Stop the outer loop.
     }
     ASTDecl *structAliasDecl = decls.front();
@@ -325,8 +313,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
           << "alias '" + name.str() + "' type " << structAliasType
           << " doesn't conform to trait's alias '" << name.str() << "' type "
           << traitAliasType;
-      allMatchFound = false;
-      return success();
+      return failure();
     }
 
     ValueDest dest(traitAliasType, EC_AliasValue);
@@ -353,16 +340,21 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   //     fn foo(self, x: SIMD[DType.float32, 4]):
   //         pass
   // ```
+  bool allMatchFound = true;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       // Skip any children that aren't methods or aliases.
       if (auto traitFn = dyn_cast<FnOp>(*decl)) {
-        if (failed(checkMethod(name, decl, traitFn)))
+        if (failed(checkMethod(name, decl, traitFn))) {
+          allMatchFound = false;
           break;
+        }
       }
       if (AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl)) {
-        if (failed(checkAlias(name, decl, traitAlias)))
+        if (failed(checkAlias(name, decl, traitAlias))) {
+          allMatchFound = false;
           break;
+        }
       }
     }
   }
