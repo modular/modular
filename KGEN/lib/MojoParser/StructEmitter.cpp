@@ -406,6 +406,12 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     emitter.emitStoreToLValue({src, SyntheticNode(location)},
                               MLValue(targetFieldOp), EC_AttributeRefBase);
   }
+  SymbolConstantAttr ref =
+      func.getBoundSymbolRef(shared.getEvaluationContext());
+  if (isMove)
+    declOp.setMoveInitAttr(ref);
+  else
+    declOp.setCopyInitAttr(ref);
   return success();
 }
 
