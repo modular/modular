@@ -165,7 +165,7 @@ def test_optional_copied():
     )
 
     # Copy the optional Pointer value.
-    var opt_owned: Optional[String] = opt_ref.copied[T=String]()
+    var opt_owned: Optional[String] = opt_ref.copied()
 
     assert_equal(opt_owned.value(), String("foo"))
 

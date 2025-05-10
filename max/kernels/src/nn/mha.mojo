@@ -227,6 +227,7 @@ fn flash_attention[
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],

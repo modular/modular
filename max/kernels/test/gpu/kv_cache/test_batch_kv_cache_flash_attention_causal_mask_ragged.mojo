@@ -51,10 +51,12 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[
+        type, kv_params, WRITE_MODE_MEM
+    ]
 
     var batch_size = len(valid_lengths)
-    debug_assert(
+    debug_assert[WRITE_MODE_MEM](
         batch_size < num_blocks,
         "batch_size passed to unit test (",
         batch_size,
@@ -62,7 +64,7 @@ def execute_ragged_flash_attention[
         num_blocks,
         ")",
     )
-    debug_assert(
+    debug_assert[WRITE_MODE_MEM](
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
     )
