@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["**/*.py"]),
+    # TODO(SDLR-2038): Put this on max/entrypoints:mojo
+    mojo_deps = [
+        "//open-source/max/mojo/stdlib/stdlib",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/support",
+        requirement("hypothesis"),
+        requirement("ipython"),
+    ],
+)
