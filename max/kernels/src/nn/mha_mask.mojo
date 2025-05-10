@@ -61,7 +61,7 @@ struct MaskName(Stringable):
 
 @value
 @register_passable("trivial")
-struct TileMaskStatus(Stringable, Writable):
+struct TileMaskStatus(EqualityComparable, Stringable, Writable):
     """A tile's masking status."""
 
     var status: UInt8
