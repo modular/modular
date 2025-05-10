@@ -318,14 +318,12 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   FnOp copyCtr = stubs->copyCtr;
   SymbolConstantAttr copyCtrRef =
       copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
-  declOp.setCopyInitAttr(copyCtrRef);
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
 
   FnOp moveCtr = stubs->moveCtr;
   SymbolConstantAttr moveCtrRef =
       moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
-  declOp.setMoveInitAttr(moveCtrRef);
   ASTDecl *moveCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
 
@@ -347,12 +345,10 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder)
       diScopeGuard = shared.diBuilder->pushScopeGuard(copyCtr.getLocScope());
-    Location translatedLocation =
-        shared.translateLocation(copyCtrDecl->getLoc());
     // we want to insert before return at end of function. LIT::ReturnOp is not
     // a terminator though, so let's find it and set it.
-    ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
-        translatedLocation, copyCtr.getBody());
+    ImplicitLocOpBuilder b =
+        ImplicitLocOpBuilder::atBlockBegin(copyCtr.getLoc(), copyCtr.getBody());
     auto returnOps = copyCtr.getBody()->getOps<LIT::ReturnOp>();
     assert(std::distance(returnOps.begin(), returnOps.end()) == 1 &&
            "copy should have exactly one return op.");
@@ -375,10 +371,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder)
       diScopeGuard = shared.diBuilder->pushScopeGuard(moveCtr.getLocScope());
-    Location translatedLocation =
-        shared.translateLocation(moveCtrDecl->getLoc());
-    ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
-        translatedLocation, moveCtr.getBody());
+    ImplicitLocOpBuilder b =
+        ImplicitLocOpBuilder::atBlockBegin(moveCtr.getLoc(), moveCtr.getBody());
     Value moveExisting = moveCtr.getBody()->getArgument(0);
     auto opaquePointerTypeAttr = M::PointerAttr::get(ctx, 0, opaquePtrType);
     Value nullPtr =
@@ -617,17 +611,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   ASTDecl *moveCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
 
-  // Try to create a closure copy constructor if possible.
-  if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
-    shared.deleteDecl(*copyCtrDecl);
-  else
-    declOp.setCopyInitAttr(copyCtrRef);
-
-  // Try to create a closure move constructor if possible.
-  if (failed(populateMoveCopy(*moveCtrDecl, true)))
-    shared.deleteDecl(*moveCtrDecl);
-  else
-    declOp.setMoveInitAttr(moveCtrRef);
+  // Try to create a closure copy + move constructors.
+  if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)) ||
+      failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
+    return {};
 
   // Populate the body of the call op.
   declOp->setAttr(callMethodAttr,

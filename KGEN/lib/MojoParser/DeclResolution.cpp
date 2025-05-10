@@ -2315,20 +2315,14 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
         copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
     ASTDecl *copyCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
-    if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
-      shared.deleteDecl(*copyCtrDecl);
-    else
-      declOp.setCopyInitAttr(ref);
+    (void)structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false);
   }
   if (FnOp moveCtr = stubs->moveCtr) {
     SymbolConstantAttr ref =
         moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
     ASTDecl *moveCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
-    if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
-      shared.deleteDecl(*moveCtrDecl);
-    else
-      declOp.setMoveInitAttr(ref);
+    (void)structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true);
   }
 }
 
@@ -2453,7 +2447,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     (void)StructEmitter(shared).synthesizeEmptyDtor(structDecl);
   }
 
-  // Look up move and copy constructors and record them.
+  // Look up move and copy constructors and record them if declared.
   if (!structOp.isRegisterPassable()) {
     if (auto copyInitAttr =
             lookupSpecialMethod(structDecl, SpecialFunctionKind::kCopyInit))
