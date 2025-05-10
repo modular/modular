@@ -37,8 +37,10 @@ struct S1[X: Int](R1, Movable):
     fn f2(self, x: Int):
         pass
 
+    # CHECK: lit.fn @"__del__[[DEL_NAME:.+]]"[
+
     # CHECK: kgen.conformance @{{.*}}AnyType
-    # CHECK-NEXT: kgen.witness "__del__" : {{.*}} = {{.*}}@S1::@"__del__[[DEL_NAME:.+]]"<:!Int X>
+    # CHECK-NEXT: kgen.witness "__del__" : {{.*}} = {{.*}}@S1::@"__del__[[DEL_NAME]]"<:!Int X>
 
     # CHECK: kgen.conformance @{{.*}}Movable
     # CHECK-NEXT: kgen.witness "__moveinit__" : {{.*}} = {{.*}}@S1::@"__moveinit__[[MOVEINIT_NAME:.+]]"<:!Int X>
@@ -47,8 +49,6 @@ struct S1[X: Int](R1, Movable):
     # CHECK-NEXT: kgen.witness "N" : !Int = X
     # CHECK-NEXT: kgen.witness "f1" : {{.*}} = {{.*}}@S1::@"f1[[F1_BOOL_NAME]]"<:!Int X>
     # CHECK-NEXT: kgen.witness "f1" : {{.*}} = {{.*}}@S1::@"f1[[F1_INT_NAME]]"<:!Int X>
-
-    # CHECK: lit.fn @"__del__[[DEL_NAME]]"[
 
     # CHECK: kgen.conformance @{{.*}}R2
     # CHECK-NEXT: kgen.witness "T" : !AnyType = [!Int

@@ -12,13 +12,15 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "MojoUtils.h"
+#include "ParserBase.h"
+#include "ParserEvaluationContext.h"
+#include "Traits.h"
+
 #include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "MojoUtils.h"
-#include "ParserBase.h"
-#include "Traits.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -432,7 +434,7 @@ FnOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                        /*paramListAttrs=*/PogListAttr::get(getContext()));
 }
 
-FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix) {
+FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   auto structOp = cast<StructDeclOp>(structDecl);
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
@@ -440,6 +442,9 @@ FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix) {
   // Figure out the type of the 'self' argument, which is always indirect since
   // it is owned.
   ASTType selfType = structDecl.getTypeDeclSelf();
+  if (!selfType)
+    return {};
+
   selfType = selfType.getRefForArgument("self", /*isMut*/ true);
   StringAttr selfName = builder.getStringAttr("self");
 
@@ -449,7 +454,9 @@ FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix) {
       "__del__", selfType.mlirType, ArgConvention::OwnedMem,
       PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, structDecl.getLoc(),
-      SpecialFunctionKind::kDel, FnEffects(), suffix);
+      SpecialFunctionKind::kDel);
+  if (!funcOp)
+    return {};
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -459,6 +466,10 @@ FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix) {
   // Finish off the function with a return + lit.endfunc.
   builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
   ExprEmitter::emitNormalReturn(builder);
+
+  // Remember this as the destructor for the struct.
+  structOp.setDestructorAttr(
+      funcOp.getBoundSymbolRef(shared.getEvaluationContext()));
   return funcOp;
 }
 
@@ -732,7 +743,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   }
 
   FnOp destructorFunc;
-  if (!valueInfo->hasDestructor() && forceGenerateDestructor)
+  if (!valueInfo->hasNontrivialDestructor() && forceGenerateDestructor)
     destructorFunc = synthesizeEmptyDtor(structDecl);
 
   auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {

@@ -806,7 +806,6 @@ fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[REF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
   # CHECK-NEXT: lit.call {{.*}}__iadd__{{.*}}([[XREF]], [[ONE]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
   # CHECK-NEXT: lifetime.end %mems_0
   mems[0].x += 1
 

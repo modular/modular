@@ -171,6 +171,9 @@ struct ThrowingExit:
     fn __enter__(self):
         pass
 
+    fn __del__(owned self):
+        pass
+
     fn __exit__(self) raises:
         pass
 
@@ -297,6 +300,8 @@ fn testErrorReturn() raises:
 struct Field:
     fn __copyinit__(out self, existing: Self):
         pass
+    fn __del__(owned self):
+        pass
 
 
 # CHECK-LABEL: lit.struct.decl @DestructSome
@@ -384,6 +389,9 @@ fn raising_use(owned value: MemExample):
 # CHECK-LABEL: lit.struct.decl @ThrowingSelfInit
 struct ThrowingSelfInit:
     var x: Int
+
+    fn __del__(owned self):
+        pass
 
     # CHECK-LABEL: lit.fn @"__init__
     fn __init__(out self) raises:

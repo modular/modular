@@ -120,11 +120,8 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
 static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
                                       SpecialFunctionKind kind) {
   StructEmitter gen(structDecl.getShared());
-  // Use a "_thunk" suffix so we don't tell CheckLifetimes that this type has
-  // a destructor.
-  // FIXME: This is a really weird way to do this!
   if (kind == SpecialFunctionKind::kDel)
-    return gen.synthesizeEmptyDtor(structDecl, "_thunk");
+    return gen.synthesizeEmptyDtor(structDecl);
 
   auto &shared = structDecl.getShared();
   auto selfRefType =

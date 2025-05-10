@@ -92,7 +92,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
 # ===----------------------------------------------------------------------=== #
 
 
-trait KeyElement:
+trait KeyElement(Copyable, Movable):
     pass
 
 
@@ -103,6 +103,9 @@ struct Error:
 
     @implicit
     fn __init__(out self, value: StringLiteral):
+        pass
+
+    fn __del__(owned self):
         pass
 
     fn __copyinit__(out self, existing: Self):
@@ -950,6 +953,9 @@ fn _generator[
 
 
 struct Optional[T: Copyable & Movable]:
+    fn __del__(owned self):
+        pass
+
     fn __init__(out self):
         pass
 

@@ -114,7 +114,7 @@ public:
 
   /// Return true if this type needs to be destroyed.  This is false for trivial
   /// types like Int.  Note: this resolves the body of a struct type.
-  bool hasDestructor(llvm::SMLoc loc, SharedState &shared) const;
+  bool hasNontrivialDestructor(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is copyable, either because it is trivial or has
   /// a copy constructor. Note: this resolves the body of a struct type.
