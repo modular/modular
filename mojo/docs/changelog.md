@@ -51,11 +51,6 @@ what we publish.
 - A new `json` module was added the provides a way to deserialize JSON objects
   into Mojo.
 
-- A new `regex` module was added. The regex module provides functionality
-  for pattern matching and manipulation of strings using regular
-  expressions. This is a simple implementation that supports basic regex
-  operations.
-
 Changes to Python-Mojo interoperability:
 
 - `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
