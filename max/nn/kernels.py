@@ -469,7 +469,7 @@ def matmul_kv_cache_ragged(
     hidden_states: TensorValue,
     input_row_offsets: TensorValue,
     weight: TensorValue,
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: PagedKVCacheCollection,
     layer_idx: int | np.integer,
 ) -> None:
     """Computes key and value projections with ragged input.
@@ -500,7 +500,7 @@ def matmul_kv_cache_ragged(
         )
         raise ValueError(msg)
 
-    if kv_params.cache_strategy != KVCacheStrategy.CONTINUOUS:
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
         msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 

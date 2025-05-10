@@ -137,7 +137,7 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
 )
 from nn.kv_cache_ragged import (
-    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
+    generic_cross_attention_kv_cache_null_mask_paged_ragged,
     generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged,
     generic_flare_mla_decompress_k_cache_ragged_paged,
     generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged,
@@ -150,7 +150,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     k_matmul_ragged_paged,
-    kv_matmul_ragged_continuous_batching,
+    kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
 from nn.mha import flash_attention
@@ -7767,7 +7767,7 @@ struct Struct_kv_cache_get_max_seq_len_paged:
 
 
 @always_inline
-fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
+fn generic_cross_attention_kv_cache_null_mask_paged_ragged_kernel_api[
     type: DType, //, target: StaticString
 ](
     output: ManagedTensorSlice[type=type, rank=3],
@@ -7775,12 +7775,12 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     q_max_seq_len: ManagedTensorSlice[type = DType.uint32, rank=1],
     kv_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
     context: DeviceContextPtr,
 ) raises:
-    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
+    generic_cross_attention_kv_cache_null_mask_paged_ragged[target=target](
         managed_tensor_slice_to_ndbuffer(q),
         q_input_row_offsets,
         managed_tensor_slice_to_ndbuffer(q_max_seq_len),
@@ -7793,28 +7793,32 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     )
 
 
-@compiler.register(
-    "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos"
-)
-struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
+@compiler.register("mo.cross_attention.ragged.paged.null_mask.no_pos")
+struct Struct_cross_attention_ragged_paged_null_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
         q_input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         q_max_seq_len: InputTensor[type = DType.uint32, rank=1],
         kv_input_row_offsets: InputTensor[type = DType.uint32, rank=1],
-        kv_collection: ContinuousBatchingKVCacheCollection[
-            type, KVCacheStaticParams(num_heads=num_heads, head_size=head_dim)
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
+        generic_cross_attention_kv_cache_null_mask_paged_ragged_kernel_api[
             target=target
         ](
             output,
@@ -8478,24 +8482,29 @@ struct Struct_kv_collection_ctor_paged:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.kv_matmul.ragged.continuous_batching")
-struct Struct_kv_matmul_ragged_continuous_batching:
+@compiler.register("mo.kv_matmul.ragged.paged")
+struct Struct_kv_matmul_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
     ](
         hidden_state: InputTensor[type=type, rank=2],
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
         weight: InputTensor[type=type, rank=2],
-        kv_collection: ContinuousBatchingKVCacheCollection[
+        kv_collection: PagedKVCacheCollection[
             type,
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
         ],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
-        kv_matmul_ragged_continuous_batching[target=target](
+        kv_matmul_ragged_paged[target=target](
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
             managed_tensor_slice_to_ndbuffer(weight),

@@ -27,9 +27,7 @@ llama_vision_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["meta-llama/Llama-3.2-11B-Vision-Instruct"],
     default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS]
-    },
+    supported_encodings={SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED]},
     pipeline_model=LlamaVision,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,

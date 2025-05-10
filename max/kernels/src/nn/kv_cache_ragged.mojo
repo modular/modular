@@ -1011,15 +1011,20 @@ fn _qmatmul_common[
 # ===-----------------------------------------------------------------------===#
 
 
-fn kv_matmul_ragged_continuous_batching[
-    type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+fn kv_matmul_ragged_paged[
+    type: DType,
+    num_heads: Int,
+    head_dim: Int,
+    page_size: Int, //,
+    target: StaticString,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _, _],
-    kv_collection: ContinuousBatchingKVCacheCollection[
+    kv_collection: PagedKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        page_size,
     ],
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
@@ -1049,7 +1054,7 @@ fn kv_matmul_ragged_continuous_batching[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.kv_matmul.ragged.continuous_batching.nhead_"
+        "mo.kv_matmul.ragged.paged.nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
@@ -1072,7 +1077,7 @@ fn _matmul_kv_cache_ragged[
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _, _],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     context: DeviceContextPtr,
 ) raises:
@@ -2390,14 +2395,14 @@ fn _cross_attention_kv_cache_ragged[
 
 
 @always_inline
-fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
+fn generic_cross_attention_kv_cache_null_mask_paged_ragged[
     type: DType, //, target: StaticString
 ](
     q: NDBuffer[mut=True, type, 3, *_],
     q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
@@ -2417,7 +2422,7 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos.nhead_"
+        "mo.cross_attention.ragged.paged.null_mask.no_pos.nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),

@@ -31,7 +31,7 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
 )
 from max.nn.layer import Layer
@@ -50,6 +50,7 @@ class TextModel(Layer):
 
     dtype: DType
     kv_params: KVCacheParams
+    vision_kv_params: KVCacheParams
     embed_tokens: EmbeddingV1
     layers: list[CrossAttentionDecoderLayer | TransformerBlock]
     norm: RMSNormV1
@@ -74,13 +75,18 @@ class TextModel(Layer):
 
         # Assume that text and vision KV caches have the same KV params for now.
         # So they can share the KV collection constructor object.
-        kv_collection_constructor = FetchContinuousBatchingKVCacheCollection(
+        text_kv_collection_constructor = FetchPagedKVCacheCollection(
             self.kv_params
+        )
+        vision_kv_collection_constructor = FetchPagedKVCacheCollection(
+            self.vision_kv_params
         )
 
         # Construct text and vision KV collections with their distinct inputs.
-        text_kv_collection = kv_collection_constructor(*text_kv_cache_inputs)
-        vision_kv_collection = kv_collection_constructor(
+        text_kv_collection = text_kv_collection_constructor(
+            *text_kv_cache_inputs
+        )
+        vision_kv_collection = vision_kv_collection_constructor(
             *vision_kv_cache_inputs
         )
 
@@ -155,6 +161,7 @@ def cross_attention_decoder_layer(
     num_key_value_heads: int,
     rms_norm_eps: float,
     kv_params: KVCacheParams,
+    vision_kv_params: KVCacheParams,
     intermediate_size: int,
     weights: Weights,
     layer_idx: int,
@@ -163,7 +170,7 @@ def cross_attention_decoder_layer(
     head_dim = hidden_size // num_attention_heads
     sdpa_attn = CrossSdpaAttention(
         n_heads=num_attention_heads,
-        kv_params=kv_params,
+        vision_kv_params=vision_kv_params,
         layer_idx=layer_idx,
         q_proj=LinearV1(
             weights.cross_attn.q_proj.weight.allocate(
@@ -374,6 +381,7 @@ def instantiate_language_model(
     num_key_value_heads: int,
     intermediate_size: int,
     kv_params: KVCacheParams,
+    vision_kv_params: KVCacheParams,
     weights: Weights,
     device: DeviceRef,
 ) -> CausalLanguageModel:
@@ -409,6 +417,7 @@ def instantiate_language_model(
                     num_key_value_heads=num_key_value_heads,
                     rms_norm_eps=rms_norm_eps,
                     kv_params=kv_params,
+                    vision_kv_params=vision_kv_params,
                     intermediate_size=intermediate_size,
                     weights=curr_layer_weight,
                     layer_idx=cross_kv_layer_idx,
@@ -437,6 +446,7 @@ def instantiate_language_model(
     text_model = TextModel(
         dtype=dtype,
         kv_params=kv_params,
+        vision_kv_params=vision_kv_params,
         embed_tokens=EmbeddingV1(
             weights.language_model.model.embed_tokens.weight.allocate(
                 dtype,
