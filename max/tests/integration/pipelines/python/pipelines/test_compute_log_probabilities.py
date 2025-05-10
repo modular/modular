@@ -7,7 +7,6 @@
 import numpy as np
 from max.pipelines.core import LogProbabilities
 from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities,
     compute_log_probabilities_ragged,
     log_softmax,
 )
@@ -21,20 +20,29 @@ def _check_log_probabilities_equal(
 
 
 def test_compute_log_probabilities() -> None:
+    input_row_offsets = np.array([0, 2], dtype=np.uint32)
     batch_logits = np.array(
         [
             [0.5, 0.25, 0.7, 0.3, 1, 0.05],  # top-3 index = 0, 2, 4
             [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # top-3 index = 2, 3, 4
         ]
     )
-    batch_tokens = np.array([1, 4])
+    batch_tokens = np.array([0, 1, 4])
     get_logits_and_samples = lambda x, y: (batch_logits, batch_tokens)
     batch_echo = [True]  # Value doesn't matter
 
     log_probs = log_softmax(batch_logits, axis=-1)
 
     # Check top 3
-    output = compute_log_probabilities(get_logits_and_samples, [3], batch_echo)
+    output = compute_log_probabilities_ragged(
+        input_row_offsets=input_row_offsets,
+        logits=batch_logits,
+        next_token_logits=batch_logits[-1:],
+        tokens=batch_tokens[:-1],
+        sampled_tokens=batch_tokens[-1:],
+        batch_top_n=[3],
+        batch_echo=batch_echo,
+    )
     assert len(output) == 1
     expected_log_probs = LogProbabilities(
         token_log_probabilities=[log_probs[0][1], log_probs[1][4]],
@@ -58,7 +66,15 @@ def test_compute_log_probabilities() -> None:
     _check_log_probabilities_equal(output[0], expected_log_probs)
 
     # Check top 1
-    output = compute_log_probabilities(get_logits_and_samples, [1], batch_echo)
+    output = compute_log_probabilities_ragged(
+        input_row_offsets=input_row_offsets,
+        logits=batch_logits,
+        next_token_logits=batch_logits[-1:],
+        tokens=batch_tokens[:-1],
+        sampled_tokens=batch_tokens[-1:],
+        batch_top_n=[1],
+        batch_echo=batch_echo,
+    )
     assert len(output) == 1
     expected_log_probs = LogProbabilities(
         token_log_probabilities=[log_probs[0][1], log_probs[1][4]],
@@ -81,53 +97,44 @@ def test_compute_log_probabilities() -> None:
 
 
 def test_compute_log_probabilities_batch() -> None:
-    batch1_logits = np.array(
+    input_row_offsets = np.array([0, 2, 3, 4], dtype=np.uint32)
+    batch_logits = np.array(
         [
-            [0.5, 0.25, 0.7, 0.3, 1, 0.05],  # top index: 4
-            [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # top index: 2
+            [0.5, 0.25, 0.7, 0.3, 1, 0.05],  # batch 1 token 1; top index: 4
+            [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # batch 1 token 2; top index: 2
+            [0.4, 0.42, 0.3, 0.89, 0.07, 0.5],  # b. 2; top 5 idx: 0, 1, 2, 3, 5
+            [100, 100, 100, 100, 100, 100],  # batch 3
         ]
     )
-    batch1_tokens = np.array([1, 4])
-
-    batch2_logits = None
-    batch2_tokens = None
-
-    batch3_logits = np.array(
+    batch_next_token_logits = np.array(
         [
-            [0.4, 0.42, 0.3, 0.89, 0.07, 0.5],  # top 5 index: 0, 1, 2, 3, 5
+            [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # batch 1; top index: 2
+            [0.4, 0.42, 0.3, 0.89, 0.07, 0.5],  # b. 2; top 5 idx: 0, 1, 2, 3, 5
+            [100, 100, 100, 100, 100, 100],  # batch 3
         ]
     )
-    batch3_tokens = np.array([3])
+    # batch 1 = [0, 1]; batch 2 = [0]; batch 3 = [0]
+    batch_tokens = np.array([0, 1, 0, 0])
+    batch_sampled_tokens = np.array([4, 3, 3])
+    batch_top_n = [1, 5, 0]
+    batch_echo = [True, False, True]
 
-    batch4_logits = np.array(
-        [
-            [100, 100, 100, 100, 100, 100],
-        ]
+    log_probs1 = log_softmax(batch_logits[0:2], axis=-1)
+    log_probs2 = log_softmax(batch_logits[2:3], axis=-1)
+
+    output = compute_log_probabilities_ragged(
+        input_row_offsets=input_row_offsets,
+        logits=batch_logits,
+        next_token_logits=batch_next_token_logits,
+        tokens=batch_tokens,
+        sampled_tokens=batch_sampled_tokens,
+        batch_top_n=batch_top_n,
+        batch_echo=batch_echo,
     )
-    batch4_tokens = np.array([3])
+    assert len(output) == 3
+    assert output[2] is None  # Top N was 0, so output[2] should be None.
 
-    batch_logits = [batch1_logits, batch2_logits, batch3_logits, batch4_logits]
-    batch_tokens = [batch1_tokens, batch2_tokens, batch3_tokens, batch4_tokens]
-    batch_top_n = [1, 3, 5, 0]
-    batch_echo = [True, True, False, True]
-
-    def get_logits_and_samples(batch_index, echo):
-        assert echo == batch_echo[batch_index]
-        if batch_logits[batch_index] is None:
-            return None
-        return batch_logits[batch_index], batch_tokens[batch_index]
-
-    log_probs1 = log_softmax(batch1_logits, axis=-1)
-    log_probs3 = log_softmax(batch3_logits, axis=-1)
-
-    output = compute_log_probabilities(
-        get_logits_and_samples, batch_top_n, batch_echo
-    )
-    assert len(output) == 4
-    assert output[1] is None  # Batch was None, so output[1] should be None.
-    assert output[3] is None  # Top N was 0, so output[3] should be None.
-
-    assert isinstance(output[0], LogProbabilities)
+    assert output[0] is not None
     _check_log_probabilities_equal(
         output[0],
         LogProbabilities(
@@ -147,18 +154,18 @@ def test_compute_log_probabilities_batch() -> None:
             ],
         ),
     )
-    assert isinstance(output[2], LogProbabilities)
+    assert output[1] is not None
     _check_log_probabilities_equal(
-        output[2],
+        output[1],
         LogProbabilities(
-            token_log_probabilities=[log_probs3[0][3]],
+            token_log_probabilities=[log_probs2[0][3]],
             top_log_probabilities=[
                 {
-                    0: log_probs3[0][0].item(),
-                    1: log_probs3[0][1].item(),
-                    2: log_probs3[0][2].item(),
-                    3: log_probs3[0][3].item(),
-                    5: log_probs3[0][5].item(),
+                    0: log_probs2[0][0].item(),
+                    1: log_probs2[0][1].item(),
+                    2: log_probs2[0][2].item(),
+                    3: log_probs2[0][3].item(),
+                    5: log_probs2[0][5].item(),
                 },
             ],
         ),
