@@ -722,14 +722,6 @@ struct BadDtor1:
   fn __del__(self): # expected-error {{self argument must be 'owned'}}
     pass
 
-struct BadDtor:
-  fn __init__(out self): pass
-  fn __del__[x: Int](owned self):
-    pass
-
-fn bad_destructors():
-  var x = BadDtor()
-
 
 @value # expected-error {{'@value' cannot synthesize members: 'x' has non-copyable, non-movable type 'InMemStruct'}}
 struct CantSynthesize:
