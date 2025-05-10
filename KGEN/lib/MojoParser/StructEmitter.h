@@ -39,7 +39,9 @@ public:
   };
 
   static std::optional<ValueInfo> createValueInfo(ASTDecl &structDecl);
-  bool hasDestructor() const { return existingFunctions[FuncIndex::Destruct]; }
+  bool hasNontrivialDestructor() const {
+    return existingFunctions[FuncIndex::Destruct];
+  }
   bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
   bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }
   bool hasExplicitCopy() const {
@@ -98,7 +100,7 @@ public:
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
   /// field dels as needed, and makes sure that anything that refers to this
   /// struct properly runs its destructor.
-  FnOp synthesizeEmptyDtor(ASTDecl &structDecl, StringRef suffix = "");
+  FnOp synthesizeEmptyDtor(ASTDecl &structDecl);
   /// Add an empty `__moveinit__` or `__copyinit__` stub for this struct, to be
   /// filled in later.
   FnOp synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl, bool isMove);

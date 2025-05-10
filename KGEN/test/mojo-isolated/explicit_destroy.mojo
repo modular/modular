@@ -10,12 +10,14 @@
 struct MyAffine:
     fn __init__(out self):
         pass
+    fn __del__(owned self):
+        pass
 
 # CHECK-LABEL: @"testAffineThing
 fn testAffineThing():
     _ = MyAffine()
-    # CHECK: __del__
-
+    # CHECK: lit.call {{.*}}MyAffine::@"__del__
+    # CHECK: kgen.return
 
 @explicit_destroy
 struct EmptyExplicit:

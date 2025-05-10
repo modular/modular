@@ -203,7 +203,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
 struct SelfRefTest:
   fn __init__(out self): pass
-
+  fn __del__(owned self): pass
   # CHECK-LABEL: lit.fn @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
   fn method(ref self) -> Pointer[Self, __origin_of(self)]:
@@ -355,12 +355,10 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK-NEXT: [[ELTREF:%.*]] = lit.call {{.*}}__next__{{.*}}(%iter)
 
   # Iterator is destroyed as soon as we're done with it.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%iter)
   # CHECK-NEXT: lifetime.end %iter
 
   ## NOTE: This destruction should be ordered after the destroy of the iterator
   ## Since the iterator can refer to the mems struct.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mems_0)
   # CHECK-NEXT: lifetime.end %mems_0
 
   # __next__ returns a Pointer which needs to turn in to !lit.ref

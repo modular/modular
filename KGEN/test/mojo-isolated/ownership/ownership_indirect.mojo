@@ -16,6 +16,9 @@ struct MyList[T: Copyable & Movable]:
     fn __init__(out self):
         self.data = UnsafePointer[T]()
 
+    fn __del__(owned self):
+        pass
+
     fn mutate(mut self): pass
 
     fn __getitem__(ref self, idx: Int) -> ref [self.data.get_unique_item_ref(idx)] T:

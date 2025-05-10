@@ -264,18 +264,21 @@ bool ASTType::mightBeRegisterPassable(llvm::SMLoc loc,
 
 /// Return true if this type needs to be destroyed.  This is false for trivial
 /// types like Int.  Note: this resolves the body of a struct type.
-bool ASTType::hasDestructor(llvm::SMLoc loc, SharedState &shared) const {
+bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
+                                      SharedState &shared) const {
   ASTDecl *decl = getDecl(shared);
   if (!decl) // MLIR types are assumed to be register-passable + Trivial.
     return false;
 
+  // Generic types are assumed to have a destructor unless they are trivial.
+  if (isa<TraitType>(getMetaType())) {
+    return getRegisterPassability(loc, shared) !=
+           TypeConvention::RegisterPassableTrivial;
+  }
+
   // Make sure we know about the signature of the type.
   if (failed(shared.declResolver->resolveBody(*decl, loc)))
     return false;
-
-  // Generic types are always destructable.
-  if (isa<TraitDeclOp>(decl))
-    return true;
 
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");

@@ -314,9 +314,6 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       structDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
-  FnOp destructor = stubs->dtor;
-  declOp.setDestructorAttr(
-      destructor.getBoundSymbolRef(shared.getEvaluationContext()));
 
   FnOp copyCtr = stubs->copyCtr;
   SymbolConstantAttr copyCtrRef =
@@ -334,6 +331,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
   // Populate destructor.
   {
+    FnOp destructor = stubs->dtor;
     ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         destructor.getLoc(), destructor.getBody());
     Value dtorSelf = destructor.getBody()->getArgument(0);
@@ -630,10 +628,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     shared.deleteDecl(*moveCtrDecl);
   else
     declOp.setMoveInitAttr(moveCtrRef);
-
-  if (FnOp dtor = stubs->dtor)
-    declOp.setDestructorAttr(
-        dtor.getBoundSymbolRef(shared.getEvaluationContext()));
 
   // Populate the body of the call op.
   declOp->setAttr(callMethodAttr,

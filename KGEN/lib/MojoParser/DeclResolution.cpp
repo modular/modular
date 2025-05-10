@@ -2444,18 +2444,13 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // Check to see if there is a destructor and install it into the StructDeclOp
   // if so.
+  bool synthesizedDtor = false;
   if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
-  } else if (structDecl.getTypeDeclSelf() && implicitlyDestructible &&
-             !structOp.isRegisterPassableTrivial() &&
-             structDecl
-                 .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
-                 .empty()) {
-    structOp.setDestructorAttr(
-        StructEmitter(shared)
-            .synthesizeEmptyDtor(structDecl)
-            .getBoundSymbolRef(shared.getEvaluationContext()));
+  } else if (implicitlyDestructible) {
+    synthesizedDtor = true;
+    (void)StructEmitter(shared).synthesizeEmptyDtor(structDecl);
   }
 
   // Look up move and copy constructors and record them.
@@ -2477,6 +2472,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.
   bool hasBadField = false;
+  bool hasNonTrivialDestructor = false;
   SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
   for (StructFieldOp field : structOp.getFieldDecls()) {
     // Make sure the field is signature resolved so we can get its type.
@@ -2487,8 +2483,17 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       hasBadField = true;
       continue;
     }
+    if (ASTType(field.getType())
+            .hasNontrivialDestructor(fieldASTDecl.getLoc(), shared))
+      hasNonTrivialDestructor = true;
     structFields.push_back({field, &fieldASTDecl});
   }
+
+  // If we synthesized a destructor but the fields are all trivial, just drop
+  // the destructor so CheckLifetimes doesn't need to worry about emitting calls
+  // to it.
+  if (synthesizedDtor && !hasNonTrivialDestructor)
+    structOp.setDestructorAttr({});
 
   // If the struct is @register_passable, check invariants imposed by it before
   // checking other decorators.  This ensures that we reject invalid
