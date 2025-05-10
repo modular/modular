@@ -366,19 +366,43 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
   Value existingArg = func.getBody()->getArgument(0);
   Value selfArg = func.getBody()->getArgument(1);
 
-  // copyinit/moveinit of a register passable value will pass the value as a
-  // register, not a reference.
-  bool isMemory = !declOp.isRegisterPassableTrivial();
+  // If the value is RP trivial, or if it is RP and this is a move constructor,
+  // then we can just load and store the whole thing in one shot instead of
+  // breaking it down into fields because we know all the underlying copy/move
+  // operations are trivial.
+  // TODO: Use memcpy for memory trivial types when we have them.
+  if (declOp.isRegisterPassableTrivial() ||
+      (isMove && declOp.isRegisterPassable())) {
+    Value value;
+    // "owned" register passable values are passed in memory at this phase.
+    if (isMove && declOp.isRegisterPassable())
+      value = b.create<LIT::LoadConsumeOp>(existingArg);
+    else
+      value = existingArg;
+    b.create<RefStoreOp>(value, selfArg);
+
+    // Remove the "lit.ownership.mark_destroyed" from the body of a __moveinit__
+    // since we consumed the whole thing with load.consume.
+    if (isMove) {
+      for (auto &op : func.getBody()->getOperations()) {
+        if (isa<OwnershipMarkDestroyedOp>(op)) {
+          op.erase();
+          break;
+        }
+      }
+    }
+
+    return success();
+  }
+
+  // Otherwise, memory and register passable values are both passed by-reference
+  // so we need to copy/move them fieldwise, invoking the copy/move ctors as
+  // appropriate.
   for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
     auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
-    CValue src;
-    if (isMemory) {
-      Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
-      src = isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-    } else {
-      // The value is trivial, so no copy ctor is needed.
-      src = SRValue(b.create<StructExtractOp>(existingArg, fieldOp));
-    }
+    Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
+    CValue src =
+        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
     emitter.emitStoreToLValue({src, SyntheticNode(location)},
                               MLValue(targetFieldOp), EC_AttributeRefBase);
   }

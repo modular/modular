@@ -86,24 +86,6 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
   auto structDeclOp = dyn_cast<StructDeclOp>(structDecl);
   if (!structDeclOp)
     return false;
-  SharedState &shared = structDecl.getShared();
-
-  // TODO: This should really be checking the signature of the method is what
-  // we expect as well?
-
-  // Allow types that lack `__del__` to conform if it conforms to AnyType. A
-  // no-op destructor will be synthesized for them.
-  if (methodName == "__del__") {
-    // Get the AnyType trait.
-    auto anyTypeTrait = dyn_cast_or_null<TraitDeclOp>(
-        shared.lookupBuiltinTrait("AnyType", &structDecl, structDecl.getLoc()));
-    if (!anyTypeTrait)
-      return false;
-
-    // Don't synthesize a destructor if it doesn't conform to AnyType!
-    return structDecl.doesNominalTypeConformTo(anyTypeTrait.bindReference(),
-                                               /*allowImplicit=*/false);
-  }
 
   // We can synthesize a copy constructor if all the fields are copyable.
   if (methodName == "__copyinit__")
@@ -119,19 +101,53 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
 /// Allow synthesizing default implementations of certain special functions.
 static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
                                       StringRef methodName) {
+  auto kind = SpecialFunctionInfo::getKind(methodName);
+  StructEmitter gen(structDecl.getShared());
+
+  // Allow types that lack `__del__` to conform if it conforms to AnyType. A
+  // no-op destructor will be synthesized for them.
+  if (kind == SpecialFunctionKind::kDel) {
+    auto anyTypeTrait =
+        dyn_cast_or_null<TraitDeclOp>(gen.shared.lookupBuiltinTrait(
+            "AnyType", &structDecl, structDecl.getLoc()));
+    // Don't synthesize a destructor if it doesn't conform to AnyType!
+    if (!anyTypeTrait ||
+        !structDecl.doesNominalTypeConformTo(anyTypeTrait.bindReference(),
+                                             /*allowImplicit=*/false))
+      return {};
+    return gen.synthesizeEmptyDtor(structDecl);
+  }
+
+  // We can only synthesize methods for structs.
+  auto structDeclOp = dyn_cast<StructDeclOp>(structDecl);
+  if (!structDeclOp)
+    return {};
+
   if (!canSynthesizeMethodForTrait(structDecl, methodName))
     return {};
 
-  StructEmitter gen(structDecl.getShared());
-  auto kind = SpecialFunctionInfo::getKind(methodName);
-  if (kind == SpecialFunctionKind::kDel)
-    return gen.synthesizeEmptyDtor(structDecl);
+  bool isMove = kind == SpecialFunctionKind::kMoveInit;
+  assert((isMove || kind == SpecialFunctionKind::kCopyInit) &&
+         "Unknown thing to synthesize");
 
-  if (kind != SpecialFunctionKind::kCopyInit &&
-      kind != SpecialFunctionKind::kMoveInit)
-    return {};
+  // FIXME: Enable this for copy as well once the synthesis problems are fixed.
+  if (isMove) {
+    FnOp result = gen.synthesizeEmptyMoveOrCopyInit(structDecl, isMove);
+    if (!result)
+      return {};
 
-  auto &shared = structDecl.getShared();
+    SymbolConstantAttr ref =
+        result.getBoundSymbolRef(gen.shared.getEvaluationContext());
+    ASTDecl *moveCtrDecl =
+        gen.getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
+
+    if (failed(gen.populateMoveCopy(*moveCtrDecl, isMove)))
+      return {};
+
+    return result;
+  }
+
+  // FIXME: Eliminate this in favor of the above.
   auto selfRefType =
       structDecl.getTypeDeclSelf().getRefForArgument("self", /*isMut=*/true);
   MLIRContext *ctx = structDecl.getContext();
@@ -142,32 +158,19 @@ static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
   // needlessly emitted.
 
   // Determine the name and argument conventions of the function.
-  ArgConvention existingConv;
-  switch (kind) {
-  case SpecialFunctionKind::kCopyInit:
-    existingConv = ArgConvention::ReadMem;
-    break;
-  case SpecialFunctionKind::kMoveInit:
-    existingConv = ArgConvention::OwnedMem;
-    break;
-  default:
-    llvm_unreachable("unexpected special function kind to synthesize");
-  }
   StringRef name = SpecialFunctionInfo::get(kind).name;
-  Type existingType;
-  bool isMut = existingConv == ArgConvention::OwnedMem;
-  existingType =
-      structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
+  Type existingType =
+      structDecl.getTypeDeclSelf().getRefForArgument("existing", false);
 
   FnOp func;
   ASTDecl *decl = nullptr;
   std::tie(func, decl) = gen.synthesizeMethodInStruct(
       name, {existingType, selfRefType},
-      {existingConv, ArgConvention::ByRefResult},
+      {ArgConvention::ReadMem, ArgConvention::ByRefResult},
       PogListAttr::get(ctx, {empty, empty},
                        {PassingKind::PosOnly, PassingKind::Implicit}),
-      shared.getNoneType(), structDecl, structDecl.getLoc(), kind, FnEffects(),
-      "_thunk");
+      gen.shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
+      FnEffects(), "_thunk");
   if (!func)
     return {};
   // In every case, the implementation is a load+store.
@@ -385,9 +388,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 }
 
 /// Given a decl for a struct or trait type, return true if this type conforms
-/// to the specified trait type.  On failure, this may set 'diag' to an inflight
-/// diagnostic that explains why this doesn't conform.  It can be reported or
-/// abandoned based on the client's needs.
+/// to the specified trait type.  On failure, this may set 'diag' to an
+/// inflight diagnostic that explains why this doesn't conform.  It can be
+/// reported or abandoned based on the client's needs.
 bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
                                        std::optional<InflightDiag> &diag) {
   if (failed(shared.declResolver->resolveBody(*this, getLoc())))

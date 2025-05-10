@@ -1009,12 +1009,12 @@ struct ValueMemHasMove:
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
-# CHECK: lit.fn @"__moveinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem,
-# CHECK-SAME: %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
-# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %0
-# CHECK-NEXT: lit.ref.store [[V0]], %1
+# CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem,
+# CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
+# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %other
+# CHECK-NEXT: lit.ref.store [[V0]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT: kgen.return %none : !kgen.none
+# CHECK-NEXT: lit.return %none : !kgen.none
 
 
 @value
