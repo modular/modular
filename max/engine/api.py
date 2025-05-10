@@ -12,12 +12,7 @@ from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import (
-    Any,
-    Optional,
-    Union,
-    cast,
-)
+from typing import Any, Optional, Union, cast
 
 import numpy as np
 import numpy.typing as npt
