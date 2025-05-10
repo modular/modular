@@ -15,7 +15,7 @@ lit_tests(
     ),
     data = glob(["inputs/**/*.mojo"]),
     mojo_deps = [
-        "//open-source/max/mojo/max/src/_mlir",
+        "//open-source/max/max/_mlir/src:_mlir",
         "@mojo//:stdlib",
     ],
     tags = ["gpu"],
@@ -39,11 +39,11 @@ lit_tests(
     # not require them
     srcs = glob(["*.test"]),
     data = glob(["inputs/**/*.mojo"]) + [
-        "//open-source/max/mojo/max/src/_mlir:_mlir_srcs",
+        "//open-source/max/max/_mlir/src:_mlir_srcs",
         "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/mojo/max/src/_mlir:_mlir_srcs) $(locations //open-source/max/mojo/stdlib/stdlib:stdlib_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //open-source/max/max/_mlir/src:_mlir_srcs) $(locations //open-source/max/mojo/stdlib/stdlib:stdlib_srcs)",
     },
     mojo_deps = [
         "@mojo//:stdlib",
