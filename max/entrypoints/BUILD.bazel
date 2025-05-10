@@ -37,6 +37,9 @@ modular_py_library(
 modular_py_library(
     name = "mojo",
     srcs = ["mojo.py"],
+    data = [
+        "//KGEN/tools/mojo",
+    ],
     visibility = ["//visibility:public"],
 )
 
