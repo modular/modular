@@ -589,44 +589,74 @@ fn _matmul_gpu[
 
                 @always_inline
                 @parameter
+                fn scheduler_hint_helper[m: Int, n: Int]() -> IndexList[3]:
+                    @parameter
+                    if m == n == 256:
+                        return Index(4, 8, 2)
+                    elif m == 224 and n == 256:
+                        return Index(4, 7, 2)
+                    elif m == 192 and n == 256:
+                        return Index(4, 6, 2)
+                    elif m == 128 and n == 256:
+                        return Index(2, 4, 2)
+                    elif m == 128 and n == 128:
+                        return Index(2, 2, 2)
+                    else:
+                        return Index(2, 2, 2)
+
+                @always_inline
+                @parameter
                 fn kernel_helper[
-                    amd_config: MatmulConfig[
-                        a_type, b_type, c_type, transpose_b
-                    ]
+                    m: Int,
+                    n: Int,
+                    *,
+                    num_k_partitions: Int = 1,
+                    num_pipeline_stages: Int = 1,
                 ]() raises:
+                    alias config = MatmulConfig[
+                        a_type, b_type, c_type, transpose_b
+                    ](
+                        block_tile_shape=Index(m, n, _bk_base[a_type, True]()),
+                        warp_tile_shape=Index(
+                            m // 2, n // 2, _bk_base[a_type, True]()
+                        ),
+                        num_pipeline_stages=num_pipeline_stages,
+                        scheduler_hint=scheduler_hint_helper[m, n](),
+                        num_k_partitions=num_k_partitions,
+                    )
                     multistage_gemm[
                         transpose_b=transpose_b,
-                        config=amd_config,
+                        config=config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
                         rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                         rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        amd_config,
+                        config,
                         ctx,
                     )
 
                 @parameter
                 if not transpose_b:
-                    kernel_helper[kernels.mi300x_128x128_2]()
+                    kernel_helper[128, 128, num_pipeline_stages=2]()
                 elif static_N >= 28672 and static_K >= 4096:
                     if m >= 1024:
-                        kernel_helper[kernels.mi300x_224x256_1]()
+                        kernel_helper[224, 256]()
                     elif m >= 128:
-                        kernel_helper[kernels.mi300x_128x128_1]()
+                        kernel_helper[128, 128]()
                     else:
-                        kernel_helper[kernels.mi300x_64x64_1]()
+                        kernel_helper[64, 64]()
                 elif static_N >= 4096 and static_K >= 4096:
                     if m >= 4096:
-                        kernel_helper[kernels.mi300x_224x256_1]()
+                        kernel_helper[224, 256]()
                     elif m >= 512:
-                        kernel_helper[kernels.mi300x_128x128_1]()
+                        kernel_helper[128, 128]()
                     elif static_K == 14336:
-                        kernel_helper[kernels.mi300x_64x64_splitk_1]()
+                        kernel_helper[64, 64, num_k_partitions=4]()
                     else:
-                        kernel_helper[kernels.mi300x_64x64_1]()
+                        kernel_helper[64, 64]()
                 else:
-                    kernel_helper[kernels.mi300x_128x128_1]()
+                    kernel_helper[128, 128]()
                 return
 
             @parameter
