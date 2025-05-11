@@ -385,32 +385,13 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   Value existingArg = fn.getBody()->getArgument(0);
   Value selfArg = fn.getBody()->getArgument(1);
 
-  // If the value is RP trivial, or if it is RP and this is a move constructor,
-  // then we can just load and store the whole thing in one shot instead of
-  // breaking it down into fields because we know all the underlying copy/move
-  // operations are trivial.
+  // If the value is RP trivial then we can just load and store the whole thing
+  // in one shot instead of breaking it down into fields because we know all the
+  // underlying copy/move operations are trivial.
   // TODO: Use memcpy for memory trivial types when we have them.
-  if (structOp.isRegisterPassableTrivial() ||
-      (isMove && structOp.isRegisterPassable())) {
-    Value value;
-    // "owned" register passable values are passed in memory at this phase.
-    if (isMove && structOp.isRegisterPassable())
-      value = b.create<LIT::LoadConsumeOp>(existingArg);
-    else
-      value = existingArg;
+  if (structOp.isRegisterPassableTrivial()) {
+    Value value = b.create<LIT::RefLoadOp>(existingArg);
     b.create<RefStoreOp>(value, selfArg);
-
-    // Remove the "lit.ownership.mark_destroyed" from the body of a __moveinit__
-    // since we consumed the whole thing with load.consume.
-    if (isMove) {
-      for (auto &op : fn.getBody()->getOperations()) {
-        if (isa<OwnershipMarkDestroyedOp>(op)) {
-          op.erase();
-          break;
-        }
-      }
-    }
-
     return success();
   }
 
@@ -548,15 +529,9 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl,
 
   // If the type is register passable trivial, the 'existing' value will be
   // passed as a register, otherwise a reference.
-  Type existingArgType;
-  ArgConvention existingConv;
-  if (cast<StructDeclOp>(structDecl).isRegisterPassableTrivial() && !isMove) {
-    existingArgType = selfType;
-    existingConv = ArgConvention::ReadReg;
-  } else {
-    existingArgType = selfType.getRefForArgument("existing", isMove);
-    existingConv = isMove ? ArgConvention::OwnedMem : ArgConvention::ReadMem;
-  }
+  Type existingArgType = selfType.getRefForArgument("existing", isMove);
+  ArgConvention existingConv =
+      isMove ? ArgConvention::OwnedMem : ArgConvention::ReadMem;
 
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);
   auto argListAttrs =

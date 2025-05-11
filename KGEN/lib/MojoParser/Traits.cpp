@@ -87,14 +87,12 @@ static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
   if (!structDeclOp)
     return false;
 
-  // We can synthesize a copy constructor if all the fields are copyable.
   if (methodName == "__copyinit__")
     return structDeclOp.isRegisterPassableTrivial();
 
-  // Register-passable types are not allowed to have move constructors, but they
-  // are always synthesized. Permit them to conform.
   if (methodName == "__moveinit__")
     return structDeclOp.isRegisterPassable();
+
   return false;
 }
 
@@ -130,63 +128,19 @@ static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
   assert((isMove || kind == SpecialFunctionKind::kCopyInit) &&
          "Unknown thing to synthesize");
 
-  // FIXME: Enable this for copy as well once the synthesis problems are fixed.
-  if (isMove) {
-    FnOp result = gen.synthesizeEmptyMoveOrCopyInit(structDecl, isMove);
-    if (!result)
-      return {};
-
-    SymbolConstantAttr ref =
-        result.getBoundSymbolRef(gen.shared.getEvaluationContext());
-    ASTDecl *moveCtrDecl =
-        gen.getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
-
-    if (failed(gen.populateMoveCopy(*moveCtrDecl, isMove)))
-      return {};
-
-    return result;
-  }
-
-  // FIXME: Eliminate this in favor of the above.
-  auto selfRefType =
-      structDecl.getTypeDeclSelf().getRefForArgument("self", /*isMut=*/true);
-  MLIRContext *ctx = structDecl.getContext();
-  auto empty = StringAttr::get(ctx);
-
-  // Synthesize the required special method. Importantly, don't mark the struct
-  // as actually having this method so that destructors et al. are not
-  // needlessly emitted.
-
-  // Determine the name and argument conventions of the function.
-  StringRef name = SpecialFunctionInfo::get(kind).name;
-  Type existingType =
-      structDecl.getTypeDeclSelf().getRefForArgument("existing", false);
-
-  FnOp func;
-  ASTDecl *decl = nullptr;
-  std::tie(func, decl) = gen.synthesizeMethodInStruct(
-      name, {existingType, selfRefType},
-      {ArgConvention::ReadMem, ArgConvention::ByRefResult},
-      PogListAttr::get(ctx, {empty, empty},
-                       {PassingKind::PosOnly, PassingKind::Implicit}),
-      gen.shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
-      FnEffects(), "_thunk");
-  if (!func)
+  FnOp result = gen.synthesizeEmptyMoveOrCopyInit(structDecl, isMove);
+  if (!result)
     return {};
-  // In every case, the implementation is a load+store.
-  auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
-  Value value;
-  if (kind == SpecialFunctionKind::kMoveInit)
-    value = b.create<LIT::LoadConsumeOp>(func.getArgument(0));
-  else
-    value = b.create<RefLoadOp>(func.getArgument(0));
-  b.create<RefStoreOp>(value, func.getArgument(1));
 
-  func.setInlineLevel(InlineLevel::AlwaysNoDebug);
-  b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
-  b.create<KGEN::ReturnOp>(
-      Value(b.create<ParamConstantOp>(b.getAttr<NoneAttr>())));
-  return func;
+  SymbolConstantAttr ref =
+      result.getBoundSymbolRef(gen.shared.getEvaluationContext());
+  ASTDecl *moveCtrDecl =
+      gen.getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
+
+  if (failed(gen.populateMoveCopy(*moveCtrDecl, isMove)))
+    return {};
+
+  return result;
 }
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
