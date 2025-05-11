@@ -1772,6 +1772,20 @@ class POC(enum.Enum):
 
     function_get_arg_types = 43
 
+    div_s = 44
+
+    div_u = 45
+
+    ceil_div_s = 46
+
+    ceil_div_u = 47
+
+    floor_div_s = 48
+
+    rem_s = 49
+
+    rem_u = 50
+
 class POCAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: POC, /) -> None: ...
     @property
