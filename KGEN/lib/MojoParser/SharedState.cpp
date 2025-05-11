@@ -2230,6 +2230,22 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldBinOp(POC::Or);
   if (auto xorOp = dyn_cast<POP::XOrOp>(op))
     return foldBinOp(POC::Xor);
+  if (auto div = dyn_cast<mlir::index::DivSOp>(op))
+    return foldBinOp(POC::DivS);
+  if (auto div = dyn_cast<mlir::index::DivUOp>(op))
+    return foldBinOp(POC::DivU);
+  if (auto div = dyn_cast<mlir::index::CeilDivSOp>(op))
+    return foldBinOp(POC::CeilDivS);
+  if (auto div = dyn_cast<mlir::index::CeilDivUOp>(op))
+    return foldBinOp(POC::CeilDivU);
+  if (auto div = dyn_cast<mlir::index::FloorDivSOp>(op))
+    return foldBinOp(POC::FloorDivS);
+  if (auto remSOp = dyn_cast<mlir::index::RemSOp>(op))
+    return foldBinOp(POC::RemS);
+  if (auto remUOp = dyn_cast<mlir::index::RemUOp>(op))
+    return foldBinOp(POC::RemU);
+  if (auto divOp = dyn_cast<POP::DivOp>(op))
+    return foldBinOp(POC::Div);
 
   if (auto selectOp = dyn_cast<POP::SelectOp>(op))
     return foldSelectOp(selectOp);

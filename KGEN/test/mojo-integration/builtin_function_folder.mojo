@@ -9,7 +9,15 @@
 from utils._select import _select_register_value as select
 
 
-struct T[x: Int]:
+struct IntT[x: Int]:
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+struct UIntT[x: UInt]:
     fn __init__(out self):
         pass
 
@@ -22,7 +30,21 @@ struct T[x: Int]:
 ##===----------------------------------------------------------------------===##
 
 
-fn fold_select_op[B: Int = 4, C: Int = 3]() -> T[B]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@T<:!Int B>, mut *"a`1">
-    var a = T[select(True, B, C)]()
+fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@IntT<:!Int B>, mut *"a`1">
+    var a = IntT[select(True, B, C)]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold UInt/index type ops
+##===----------------------------------------------------------------------===##
+
+
+@always_inline
+fn fold_index_ceildiv() -> UIntT[2]:
+    alias A: UInt = 5
+    alias B: UInt = 3
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
+    var a = UIntT[A.__ceildiv__(B)]()
     return a

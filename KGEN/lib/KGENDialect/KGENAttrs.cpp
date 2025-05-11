@@ -1206,6 +1206,13 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Shr:
   case POC::Div:
   case POC::Mod:
+  case POC::DivS:
+  case POC::DivU:
+  case POC::CeilDivS:
+  case POC::CeilDivU:
+  case POC::FloorDivS:
+  case POC::RemS:
+  case POC::RemU:
     if (operands.size() != 2)
       return emitError() << stringifyEnum(opcode) << " must have two operands";
     if (type != operands[0].getType())
@@ -2077,6 +2084,61 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.sdiv(b); });
 }
 
+static llvm::APInt ceilSDiv(const llvm::APInt &a, const llvm::APInt &b) {
+  assert(!b.isZero() && "Division by zero!");
+  llvm::APInt q = a.sdiv(b);
+  llvm::APInt r = a.srem(b);
+  if (!r.isZero() && ((a.isNegative() == b.isNegative())))
+    q += llvm::APInt(a.getBitWidth(), 1);
+  return q;
+}
+
+static llvm::APInt ceilUDiv(const llvm::APInt &a, const llvm::APInt &b) {
+  assert(!b.isZero() && "Division by zero!");
+  return (a + b - llvm::APInt(a.getBitWidth(), 1)).udiv(b);
+}
+
+static Attribute simplifyCeilDiv(SmallVectorImpl<TypedAttr> &operands) {
+  simplifyDivOperands(operands);
+
+  // Implement support for identities like `x/1 = x` and guard against `x/0`
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+    if (rhs.getValue().isOne())
+      return operands[0];
+    if (rhs.getValue().isZero())
+      return {};
+  }
+
+  return foldBinaryOp(
+      operands, [](auto a, auto b) { return ceilUDiv(a, b); },
+      [](auto a, auto b) { return ceilSDiv(a, b); });
+}
+
+static llvm::APInt floorSDiv(const llvm::APInt &a, const llvm::APInt &b) {
+  assert(!b.isZero() && "Division by zero!");
+  llvm::APInt q = a.sdiv(b);
+  llvm::APInt r = a.srem(b);
+  if (!r.isZero() && ((a.isNegative() != b.isNegative())))
+    q -= llvm::APInt(a.getBitWidth(), 1);
+  return q;
+}
+
+static Attribute simplifyFloorDiv(SmallVectorImpl<TypedAttr> &operands) {
+  simplifyDivOperands(operands);
+
+  // Implement support for identities like `x/1 = x` and guard against `x/0`
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+    if (rhs.getValue().isOne())
+      return operands[0];
+    if (rhs.getValue().isZero())
+      return {};
+  }
+
+  return foldBinaryOp(
+      operands, [](auto a, auto b) { return floorSDiv(a, b); },
+      [](auto a, auto b) { return floorSDiv(a, b); });
+}
+
 static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr lhs = operands[0];
   TypedAttr rhs = operands[1];
@@ -2698,6 +2760,27 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::Div:
     result = simplifyDiv(operands);
+    break;
+  case POC::DivS:
+    result = simplifyDiv(operands);
+    break;
+  case POC::DivU:
+    result = simplifyDiv(operands);
+    break;
+  case POC::CeilDivS:
+    result = simplifyCeilDiv(operands);
+    break;
+  case POC::CeilDivU:
+    result = simplifyCeilDiv(operands);
+    break;
+  case POC::FloorDivS:
+    result = simplifyFloorDiv(operands);
+    break;
+  case POC::RemS:
+    result = simplifyMod(operands);
+    break;
+  case POC::RemU:
+    result = simplifyMod(operands);
     break;
   case POC::Mod:
     result = simplifyMod(operands);

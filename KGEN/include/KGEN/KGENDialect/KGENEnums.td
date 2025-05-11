@@ -99,6 +99,15 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Get the arguments from a function signature as a kgen.variadic.
   I32EnumAttrCase<"FunctionGetArgTypes", 43, "function_get_arg_types">,
 
+  /// Division and remainder operations from `mlir.index`.
+  I32EnumAttrCase<"DivS", 44, "div_s">,
+  I32EnumAttrCase<"DivU", 45, "div_u">,
+  I32EnumAttrCase<"CeilDivS", 46, "ceil_div_s">,
+  I32EnumAttrCase<"CeilDivU", 47, "ceil_div_u">,
+  I32EnumAttrCase<"FloorDivS", 48, "floor_div_s">,
+  I32EnumAttrCase<"RemS", 49, "rem_s">,
+  I32EnumAttrCase<"RemU", 50, "rem_u">,
+
   /// HELLO INTREPID COMPILER DEVELOPER!  Are you thinking about adding another
   /// POC opcode for something that isn't a trivial expression like add or sub?
   /// The list above ^^^ is massively out of control, these things are not
