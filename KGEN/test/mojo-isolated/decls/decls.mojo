@@ -1002,18 +1002,19 @@ struct ValueMemHasMove:
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
 # CHECK-SAME: (!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility) register_passable_trivial
 
-# CHECK: lit.fn @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
-# CHECK-SAME: %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
-# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %0 : <!ValueRegTrivial
-# CHECK-NEXT: lit.ref.store [[V0]], %1
+# CHECK: lit.fn @"__copyinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
+# CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %other : <!ValueRegTrivial
+# CHECK-NEXT: lit.ref.store [[V0]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT: kgen.return %none : !kgen.none
+# CHECK-NEXT: lit.return %none : !kgen.none
 
 # CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
-# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %other
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %other : <!ValueRegTrivial
 # CHECK-NEXT: lit.ref.store [[V0]], %self
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT: lit.ownership.mark_destroyed %other
 # CHECK-NEXT: lit.return %none : !kgen.none
 
 
