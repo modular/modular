@@ -237,6 +237,7 @@ private:
   /// for further references.
   LogicalResult resolveSignature(FnOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(FnOp op, Lexer &lexer, ASTDecl &decl);
+  void resolveSyntheticBody(FnOp op, ASTDecl &decl);
 
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(PackageOp op, ASTDecl &decl);

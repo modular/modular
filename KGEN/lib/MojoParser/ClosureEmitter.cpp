@@ -46,11 +46,25 @@ ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {}
 
-static void addFieldsToStruct(StructDeclOp structOp, ArrayRef<Type> fields) {
+static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
+                                       StructDeclOp structOp,
+                                       ASTDecl &structDecl, OpBuilder &b,
+                                       DeclResolver &declResolver) {
+  auto field = b.create<StructFieldOp>(structOp.getLoc(), name, type);
+  declResolver.addFullyResolvedDecl(&*field, field.getNameAttr(),
+                                    structDecl.getLoc(), &structDecl);
+  return field;
+}
+
+static void addFieldsToStruct(StructDeclOp structOp, ASTDecl &structDecl,
+                              ArrayRef<Type> fields,
+                              DeclResolver &declResolver) {
   OpBuilder b(structOp.getRegion());
   b.setInsertionPointToStart(&structOp.getFields().front());
-  for (auto [i, type] : llvm::enumerate(fields))
-    b.create<StructFieldOp>(structOp.getLoc(), "field" + Twine(i), type);
+  for (auto [i, type] : llvm::enumerate(fields)) {
+    addFieldOpAndDecl(StringAttr::get(b.getContext(), "field" + Twine(i)), type,
+                      structOp, structDecl, b, declResolver);
+  }
 }
 
 static Value loadField(ImplicitLocOpBuilder &b, Value self,
@@ -256,7 +270,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
   auto [structDecl, declOp] =
       createStruct(shared, moduleDecl, name, wrapperDecls, moduleDecl.getLoc());
-  addFieldsToStruct(declOp, opaquePtrType);
+  addFieldsToStruct(declOp, structDecl, opaquePtrType, *shared.declResolver);
   declOp.setClosureSignature(dependentSignatureType);
 
   StructFieldOp impl = *declOp.getFieldDecls().begin();
@@ -269,7 +283,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       /*inputParamTypes=*/{}, b.getFunctionType(opaquePtrType, noneType),
       ArgConvention::ReadReg,
       /*effects=*/{}, dtorMetadata, PogListAttr::get(ctx));
-  auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
+
+  auto dtor = addFieldOpAndDecl(dtorFieldAttr, dtorSig, declOp, structDecl, b,
+                                getDeclResolver());
 
   // Create Copy Member.
   auto fnType =
@@ -279,8 +295,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto cpySignatureType = FuncTypeGeneratorType::get(
       /*inputParamTypes=*/{}, fnType, {ArgConvention::ReadReg},
       /*effects=*/{}, metadata, PogListAttr::get(ctx));
-  auto copy =
-      b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
+  auto copy = addFieldOpAndDecl(copyFieldAttr, cpySignatureType, declOp,
+                                structDecl, b, getDeclResolver());
 
   dependentSignatureType = dependentSignatureType.getSpecializedGenerator(
       paramValues, translateLocation(nestedFunctionOrTypeLocation),
@@ -301,14 +317,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   FnTypeGeneratorType callMemberSignatureType =
       addClosureSelfArgToFunctionSignature(
           opaquePtrType, ArgConvention::ReadReg, signatureType);
-  auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
-                                            callMemberSignatureType);
-
-  for (StructFieldOp field : declOp.getFieldDecls()) {
-    shared.declResolver->addFullyResolvedDecl(field.getOperation(),
-                                              field.getNameAttr(),
-                                              structDecl.getLoc(), &structDecl);
-  }
+  auto callMember = addFieldOpAndDecl(callFieldAttr, callMemberSignatureType,
+                                      declOp, structDecl, b, getDeclResolver());
 
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/false,
@@ -511,11 +521,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   callFunc.setInlineLevel(InlineLevel::Always);
 
   // Add and register its fields as fully resolved decls.
-  addFieldsToStruct(declOp, fieldTypes);
-  for (StructFieldOp field : declOp.getFieldDecls()) {
-    shared.declResolver->addFullyResolvedDecl(&*field, field.getNameAttr(),
-                                              structDecl.getLoc(), &structDecl);
-  }
+  addFieldsToStruct(declOp, structDecl, fieldTypes, *shared.declResolver);
 
   // Build the init method. This only needs the captured arguments. Populate the
   // function argument information.
@@ -563,6 +569,9 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       structDecl, initSigTypes, initSigConventions,
       PogListAttr::get(ctx, initSigNames, initSigPassingKinds),
       shared.getNoneType());
+  if (!initFunc) // This can fail when the members aren't copy/moveable.
+    return {};
+
   builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
 
@@ -587,7 +596,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
          bound});
     auto b = OpBuilder::atBlockBegin(declOp.getBody());
     paramField =
-        b.create<StructFieldOp>(initFunc.getLoc(), "param_capture", clType);
+        addFieldOpAndDecl(StringAttr::get(ctx, "param_capture"), clType, declOp,
+                          structDecl, b, getDeclResolver());
 
     // Emit IR to generate the capture list and store it into self. Bind the
     // call function reference to itself.
@@ -812,9 +822,10 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   ASTDecl &closureDecl =
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared);
-  FnOp init = addVoidMethod(closureDecl, "__init__", argTypes, argConventions,
-                            argListAttrsOfInit, SpecialFunctionKind::kInit,
-                            initParams, paramListAttrsOfInit);
+  auto [initTmp, _] = addVoidMethod(
+      closureDecl, "__init__", argTypes, argConventions, argListAttrsOfInit,
+      SpecialFunctionKind::kInit, initParams, paramListAttrsOfInit);
+  auto init = initTmp;
   init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;

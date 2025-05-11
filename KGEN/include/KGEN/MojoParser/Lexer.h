@@ -220,6 +220,9 @@ public:
     lexer.lastLineIndent = lastLineIndent;
   }
 
+  /// Return true if this cursor is default constructed, not valid for lexing.
+  bool isInvalid() const { return curPtr == nullptr; }
+
   /// Return an internal pointer that represents the cursor state without the
   /// current token.
   const char *getState() const { return curPtr; }

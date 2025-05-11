@@ -302,7 +302,24 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
   }
 
   // Emit a bunch of stores to fields indexing our 'out self' result.
-  for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
+  for (auto [idx, fieldOp] : llvm::enumerate(structOp.getFieldDecls())) {
+    ASTType fieldType = fieldOp.getType();
+
+    // TODO: Add a nicer accessor.
+    auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
+    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
+    ASTDecl &fieldASTDecl = *fieldEntries[0];
+
+    // Verify that this will work so we get a tailored error message.
+    if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
+        !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
+      auto diag = emitError(fieldASTDecl.getLoc())
+                  << "cannot synthesize memberwise init because field '"
+                  << fieldOp.getName()
+                  << "' has non-copyable and non-movable type " << fieldType;
+      return {};
+    }
+
     // Add the block argument, get it as an RValue since it is owned. Skip the
     // self argument.
     BlockArgument arg = body->getArgument(idx);
@@ -322,7 +339,7 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
     }
 
     // Project self to the right field and store the RValue.
-    auto fieldRef = builder.create<RefStructGEROp>(selfValue, field);
+    auto fieldRef = builder.create<RefStructGEROp>(selfValue, fieldOp);
     emitter.emitStoreToLValue({argVal, SyntheticNode(structDecl.getLoc())},
                               MLValue(fieldRef), EC_AttributeRefBase);
   }
@@ -346,36 +363,38 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
 ///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
 ///   %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
 ///   copyinit_of_type_of_field0(%targetField0, %field)
-LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
-                                              bool isMove) {
-  auto func = cast<FnOp>(functionDecl);
-  ASTDecl *declScope = functionDecl.getParentDecl();
-  StructDeclOp declOp = cast<StructDeclOp>(declScope);
+LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
+  // This method body resolves the decl.
+  fnDecl.resolvedness = DeclResolvedness::body;
+
+  auto fn = cast<FnOp>(fnDecl);
+  ASTDecl *structDecl = fnDecl.getParentDecl();
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
 
   // We want to populate a move but the move/copy should be a method!
-  SMLoc location = functionDecl.getLoc();
+  SMLoc location = fnDecl.getLoc();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
-    diScopeGuard = shared.diBuilder->pushScopeGuard(func.getLocScope());
+    diScopeGuard = shared.diBuilder->pushScopeGuard(fn.getLocScope());
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
-      shared.translateLocation(location), func.getBody());
-  ExprEmitter emitter(*declScope, b);
+      shared.translateLocation(location), fn.getBody());
+  ExprEmitter emitter(*structDecl, b);
 
-  assert(func.getNumArguments() == 2 &&
+  assert(fn.getNumArguments() == 2 &&
          "copy and move functions should have two arguments");
-  Value existingArg = func.getBody()->getArgument(0);
-  Value selfArg = func.getBody()->getArgument(1);
+  Value existingArg = fn.getBody()->getArgument(0);
+  Value selfArg = fn.getBody()->getArgument(1);
 
   // If the value is RP trivial, or if it is RP and this is a move constructor,
   // then we can just load and store the whole thing in one shot instead of
   // breaking it down into fields because we know all the underlying copy/move
   // operations are trivial.
   // TODO: Use memcpy for memory trivial types when we have them.
-  if (declOp.isRegisterPassableTrivial() ||
-      (isMove && declOp.isRegisterPassable())) {
+  if (structOp.isRegisterPassableTrivial() ||
+      (isMove && structOp.isRegisterPassable())) {
     Value value;
     // "owned" register passable values are passed in memory at this phase.
-    if (isMove && declOp.isRegisterPassable())
+    if (isMove && structOp.isRegisterPassable())
       value = b.create<LIT::LoadConsumeOp>(existingArg);
     else
       value = existingArg;
@@ -384,7 +403,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     // Remove the "lit.ownership.mark_destroyed" from the body of a __moveinit__
     // since we consumed the whole thing with load.consume.
     if (isMove) {
-      for (auto &op : func.getBody()->getOperations()) {
+      for (auto &op : fn.getBody()->getOperations()) {
         if (isa<OwnershipMarkDestroyedOp>(op)) {
           op.erase();
           break;
@@ -398,7 +417,27 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
   // Otherwise, memory and register passable values are both passed by-reference
   // so we need to copy/move them fieldwise, invoking the copy/move ctors as
   // appropriate.
-  for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
+  for (StructFieldOp fieldOp : structOp.getFieldDecls()) {
+    ASTType fieldType = fieldOp.getType();
+
+    // TODO: Add a nicer accessor.
+    auto fieldEntries = structDecl->lookupInCurrentScope(fieldOp.getNameAttr());
+    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
+    ASTDecl &fieldASTDecl = *fieldEntries[0];
+    if (failed(getDeclResolver().resolveSignature(fieldASTDecl,
+                                                  fieldASTDecl.getLoc())))
+      return failure();
+
+    // Verify that this will work so we get a tailored error message.
+    if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
+        !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
+      auto diag = emitError(fieldASTDecl.getLoc())
+                  << "cannot synthesize " << fn.getSpecialFunctionInfo().name
+                  << " because field '" << fieldOp.getName()
+                  << "' has non-copyable and non-movable type " << fieldType;
+      return failure();
+    }
+
     auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
     Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
     CValue src =
@@ -406,12 +445,11 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     emitter.emitStoreToLValue({src, SyntheticNode(location)},
                               MLValue(targetFieldOp), EC_AttributeRefBase);
   }
-  SymbolConstantAttr ref =
-      func.getBoundSymbolRef(shared.getEvaluationContext());
+  SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
   if (isMove)
-    declOp.setMoveInitAttr(ref);
+    structOp.setMoveInitAttr(ref);
   else
-    declOp.setCopyInitAttr(ref);
+    structOp.setCopyInitAttr(ref);
   return success();
 }
 
@@ -430,14 +468,12 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 ///   lit.end_fn
 /// }
 /// ```
-FnOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                                  ArrayRef<Type> argTypes,
-                                  ArrayRef<ArgConvention> argConventions,
-                                  PogListAttr argListAttrs,
-                                  SpecialFunctionKind kind,
-                                  ArrayRef<ParamDeclAttr> params,
-                                  PogListAttr paramListAttrs) {
-  auto [func, _] = synthesizeMethodInStruct(
+std::pair<FnOp, ASTDecl *> StructEmitter::addVoidMethod(
+    ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
+    SpecialFunctionKind kind, ArrayRef<ParamDeclAttr> params,
+    PogListAttr paramListAttrs) {
+  auto [func, funcDecl] = synthesizeMethodInStruct(
       prefix, params, paramListAttrs, argTypes, argConventions, argListAttrs,
       shared.getNoneType(), structDecl, structDecl.getLoc(), kind);
   if (!func)
@@ -450,14 +486,13 @@ FnOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
   ExprEmitter::emitNormalReturn(b);
-  return func;
+  return {func, funcDecl};
 }
 
-FnOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                                  ArrayRef<Type> argTypes,
-                                  ArrayRef<ArgConvention> argConventions,
-                                  PogListAttr argListAttrs,
-                                  SpecialFunctionKind kind) {
+std::pair<FnOp, ASTDecl *> StructEmitter::addVoidMethod(
+    ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
+    SpecialFunctionKind kind) {
 
   return addVoidMethod(structDecl, prefix, argTypes, argConventions,
                        argListAttrs, kind, /*params=*/{},
@@ -527,16 +562,17 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl,
   auto argListAttrs =
       PogListAttr::get(ctx, {existingName, b.getStringAttr("self")},
                        {PassingKind::PosOnly, PassingKind::Implicit});
-  auto result = addVoidMethod(
+  auto [resultFn, resultDecl] = addVoidMethod(
       structDecl, name, {existingArgType, selfArgType},
       {existingConv, ArgConvention::ByRefResult}, argListAttrs,
       isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit);
-  if (!result)
+  if (!resultFn)
     return {};
+  resultDecl->resolvedness = DeclResolvedness::signature;
 
   // TODO: Should only do this if the type is RP or small?
-  result.setInlineLevel(InlineLevel::AlwaysNoDebug);
-  return result;
+  resultFn.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  return resultFn;
 }
 
 FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {

@@ -566,13 +566,20 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp, TraitDeclOp,
               GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
+          // If this is a synthetic decl, complete it specially.
+          if (decl.getCursor().isInvalid()) {
+            if constexpr (std::is_same_v<FnOp, decltype(op)>) {
+              resolveSyntheticBody(op, decl);
+              return;
+            }
+          }
+
           // Parse the body of the declaration from the correct point.
           Lexer lexer(shared.diags, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
           LexerCrashReporter crashReporter(lexer, decl.getLoc(),
                                            "resolving decl body");
-
           if (resolveBody(op, lexer, decl))
             return;
 

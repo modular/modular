@@ -17,13 +17,13 @@ struct StringNoCopy:
 
 
 fn makes_escaping_closurenocopy(m: StringNoCopy):
-    # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
-    # expected-error @below {{'StringNoCopy' is not copyable or movable because it has no '__copyinit__' or '__moveinit__' member}}
+    # expected-error @below {{cannot synthesize __moveinit__ because field 'field0' has non-copyable and non-movable type 'StringNoCopy'}}
+    # expected-error @below {{cannot synthesize __copyinit__ because field 'field0' has non-copyable and non-movable type 'StringNoCopy'}}
+    # expected-error @below {{cannot synthesize memberwise init because field 'field0' has non-copyable and non-movable type 'StringNoCopy'}}
     fn myclosure() -> StringNoCopy:
         # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
         return m
 
-    # expected-error @below {{cannot implicitly convert 'fn() escaping -> StringNoCopy' value to 'fn() escaping -> None'}}
     var y: fn () escaping -> None = myclosure
 
 

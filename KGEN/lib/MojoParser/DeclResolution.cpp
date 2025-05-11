@@ -1007,6 +1007,8 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   StructDeclOp closureImpl =
       emitter.replaceNestedFunctionWithClosureImplStructDecl(
           captures, paramCaptures, nestedFnDecl, wrapperSig);
+  if (!closureImpl)
+    return {};
 
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, loc);
 
@@ -1399,6 +1401,20 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     return {};
   }
   return varDecl;
+}
+
+void DeclResolver::resolveSyntheticBody(FnOp op, ASTDecl &decl) {
+  StructEmitter gen(shared);
+  switch (op.getSpecialFunctionKind()) {
+  default:
+    llvm_unreachable("unknown synthetic function to synthesize");
+  case SpecialFunctionKind::kMoveInit:
+    (void)gen.populateMoveCopy(decl, /*isMove*/ true);
+    return;
+  case SpecialFunctionKind::kCopyInit:
+    (void)gen.populateMoveCopy(decl, /*isMove*/ false);
+    return;
+  }
 }
 
 ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
@@ -2274,28 +2290,6 @@ static std::pair<FnOp, FnOp> preprocessValueDecorator(ASTDecl &structDecl) {
 
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
                                                  FnOp moveFunc, FnOp copyFunc) {
-  // Check to see the classification of the fields, the result type will be
-  // copyable/movable iff all the fields are.
-  bool isCopyable = true, isMovable = true;
-  for (auto [fieldOp, fieldDecl] : structFields) {
-    ASTType fieldType(fieldOp.getType());
-    isCopyable &= fieldType.isCopyable(fieldDecl->getLoc(), shared);
-    isMovable &= fieldType.isMovable(fieldDecl->getLoc(), shared);
-
-    // If this field is neither copyable or movable, then we cannot do
-    // anything in this decorator.
-    if (!isCopyable && !isMovable) {
-      auto diag =
-          emitError(decoratorLoc, "'@value' cannot synthesize members: ")
-          << fieldOp.getNameAttr() << " has non-copyable, non-movable type "
-          << fieldType;
-      diag.attachNote(fieldDecl->getLoc())
-          << fieldOp.getNameAttr() << " declared here";
-      structDecl.setErroneous();
-      return;
-    }
-  }
-
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = dyn_cast<StructDeclOp>(structDecl);
   std::optional<GeneratedStubs> stubs =
@@ -2317,6 +2311,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     (void)structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false);
   }
+
   if (FnOp moveCtr = stubs->moveCtr) {
     SymbolConstantAttr ref =
         moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
