@@ -722,10 +722,12 @@ struct BadDtor1:
   fn __del__(self): # expected-error {{self argument must be 'owned'}}
     pass
 
-
-@value # expected-error {{'@value' cannot synthesize members: 'x' has non-copyable, non-movable type 'InMemStruct'}}
+@value
 struct CantSynthesize:
-  var x : InMemStruct # expected-note {{'x' declared here}}
+# expected-error @below {{cannot synthesize memberwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
+  var x : InMemStruct 
 
 
 @value # expected-error {{'@value' cannot synthesize members of struct 'ResolveErrorIsBubbled'}}
@@ -769,10 +771,13 @@ struct NotRegisterPassable:
 
 # https://github.com/modularml/modular/issues/34551
 # Don't crash on emitting methods when the struct itself is erroneous.
+
 @value
 @register_passable
 struct Outer34551: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
-    var _inner: NotRegisterPassable # expected-note {{'_inner' declared with type 'NotRegisterPassable'}}
+# expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
+# expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
+    var _inner: NotRegisterPassable
     fn __init__(out self):
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
@@ -1003,9 +1008,12 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
-@value # expected-error {{cannot synthesize members: 'value' has non-copyable, non-movable type 'T'}}
+@value
 struct AnyTypeMember[T: AnyType]:
-    var value: T # expected-note {{'value' declared here}}
+# expected-error @below {{cannot synthesize memberwise init because field 'value' has non-copyable and non-movable type 'T'}}
+# expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
+# expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable and non-movable type 'T'}}
+    var value: T
 
 
 # Issue https://github.com/modular/mojo/issues/1675

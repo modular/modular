@@ -85,16 +85,15 @@ public:
 
   /// Create a FnOp within the scope of the given struct and add function
   /// terminators.
-  FnOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                     ArrayRef<Type> argTypes,
-                     ArrayRef<ArgConvention> argConventions,
-                     PogListAttr argListAttrs, SpecialFunctionKind kind,
-                     ArrayRef<ParamDeclAttr> params,
-                     PogListAttr paramListAttrs);
-  FnOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
-                     ArrayRef<Type> argTypes,
-                     ArrayRef<ArgConvention> argConventions,
-                     PogListAttr argListAttrs, SpecialFunctionKind kind);
+  std::pair<FnOp, ASTDecl *>
+  addVoidMethod(ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
+                ArrayRef<ArgConvention> argConventions,
+                PogListAttr argListAttrs, SpecialFunctionKind kind,
+                ArrayRef<ParamDeclAttr> params, PogListAttr paramListAttrs);
+  std::pair<FnOp, ASTDecl *>
+  addVoidMethod(ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
+                ArrayRef<ArgConvention> argConventions,
+                PogListAttr argListAttrs, SpecialFunctionKind kind);
 
   /// Given a struct that has no explicitly defined `__del__` member, define a
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
