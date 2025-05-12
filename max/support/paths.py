@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from max.entrypoints.mojo import subprocess_run_mojo
+
 
 def _eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -152,13 +154,18 @@ def _build_mojo_source_package(path: Path) -> Path:
     # Ensure parent directories exist
     tmp_path.parent.mkdir(parents=True, exist_ok=True)
 
-    args = ["mojo", "package", str(path), "-o", str(tmp_path)]
+    args = [
+        # `mojo` command argument is impliict.
+        "package",
+        str(path),
+        "-o",
+        str(tmp_path),
+    ]
 
     try:
-        # TODO(GEX-2033): Either locate `mojo` more robustly, so this still
-        #   works when `mojo` is not on the users runtime `PATH`, or call
-        #   directly into the lower-level Mojo compiler packaging code.
-        package_result = subprocess.run(args, capture_output=True, check=True)
+        package_result = subprocess_run_mojo(
+            args, capture_output=True, check=True
+        )
     except subprocess.CalledProcessError as e:
         error = MojoCompilationError.from_subprocess_error(path, args, e)
         logging.error(str(error))
