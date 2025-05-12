@@ -37,7 +37,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
 
     ```mojo
     from collections import Counter
-    var c = Counter[String](List("a", "a", "a", "b", "b", "c", "d", "c", "c"))
+    var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
     print(c["a"]) # prints 3
     print(c["b"]) # prints 2
     ```
@@ -56,13 +56,40 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
         """Create a new, empty Counter object."""
         self._data = Dict[V, Int]()
 
-    # TODO: Change List to Iterable when it is supported in Mojo
+    fn __init__(out self, owned *values: V):
+        """Create a new Counter from a list of values.
+
+        Args:
+            values: A list of values to count.
+
+        Usage:
+        ```mojo
+        from collections import Counter
+        var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
+        print(c["a"])  # print 3
+        print(c["b"])  # print 2
+        ```
+        """
+        self._data = Dict[V, Int]()
+        for item_ref in values:
+            var item = item_ref[]
+            self._data[item] = self._data.get(item, 0) + 1
+
     @implicit
     fn __init__(out self, items: List[V, *_]):
         """Create a from an input iterable.
 
         Args:
             items: A list of items to count.
+
+        Usage:
+
+        ```mojo
+        from collections import Counter
+        var c = Counter[String](List("a", "a", "a", "b", "b", "c", "d", "c", "c"))
+        print(c["a"]) # prints 3
+        print(c["b"]) # prints 2
+        ```
         """
         self._data = Dict[V, Int]()
         for item_ref in items:
@@ -525,7 +552,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
 
     # Special methods for counter
 
-    fn total(self) -> Int:
+    fn total(self) -> UInt:
         """Return the total of all counts in the Counter.
 
         Returns:
@@ -536,7 +563,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
             total += count_ref[]
         return total
 
-    fn most_common(self, n: Int) -> List[CountTuple[V]]:
+    fn most_common(self, n: UInt) -> List[CountTuple[V]]:
         """Return a list of the `n` most common elements and their counts from
         the most common to the least.
 
@@ -557,7 +584,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
             return a < b
 
         sort[comparator](items)
-        return items[:n]
+        return items[: Int(n)]
 
     fn elements(self) -> List[V]:
         """Return an iterator over elements repeating each as many times as its
@@ -615,7 +642,7 @@ struct CountTuple[V: KeyElement](
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self, value: V, count: Int):
+    fn __init__(out self, value: V, count: UInt):
         """Create a new CountTuple.
 
         Args:
