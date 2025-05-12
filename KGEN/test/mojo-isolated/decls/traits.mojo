@@ -496,12 +496,7 @@ struct RegSpecial(AnyType, Copyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
 struct MemoryOnlySpecial(AnyType, Copyable, Movable):
-    fn __copyinit__(out self, existing: Self):
-        pass
-
-    fn __moveinit__(out self, owned existing: Self):
-        pass
-
+    pass
     # CHECK: lit.fn @"__del__
     # CHECK-SAME: [{{.*}} owned_in_mem, |) -> !kgen.none
     # CHECK: return %none

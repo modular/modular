@@ -990,13 +990,9 @@ struct ValueMemHasCopy:
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 @value
-struct ValueMemHasMove:
+struct ValueMemHasMove(Movable, Copyable):
     var a: Int
     var b: StructExample
-
-    fn __moveinit__(out self, owned other: Self):
-        self.a = other.a
-        self.b = other.b
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial

@@ -711,6 +711,8 @@ struct OtherInMemStruct:
 @register_passable("trivial")
 struct InvalidMember:
   var x: __mlir_type.index
+  # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
+  fn __moveinit__(out self, owned existing: Self): pass
   # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
   fn __copyinit__(out self, existing: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
@@ -775,8 +777,8 @@ struct NotRegisterPassable:
 @value
 @register_passable
 struct Outer34551: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
-# expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
-# expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
+    # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
+    # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
     var _inner: NotRegisterPassable
     fn __init__(out self):
         self._inner = NotRegisterPassable()

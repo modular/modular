@@ -60,3 +60,27 @@ struct DtorExample4[T: RPTTrait]:
 struct DtorExample5[T: AnyType]:
     var thing: T
 
+# ===----------------------------------------------------------------------=== #
+# Copy/Move synthesis tests
+# ===----------------------------------------------------------------------=== #
+
+struct IntPair(Copyable, Movable):
+  var x: Int
+  var y: Int
+
+struct IntPairWrapper(Copyable, Movable):
+  var value: IntPair
+
+# CHECK-LABEL: lit.fn @"testCopyMoveSynth
+fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
+  # CHECK: lit.call {{.*}}IntPair::@"__copyinit__{{.*}}({{.*}}, %aCopy)
+  var aCopy = a
+
+  # CHECK: lit.call {{.*}}IntPair::@"__moveinit__{{.*}}({{.*}}, %aMove)
+  var aMove = a^
+
+  # CHECK: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}({{.*}}, %bCopy)
+  var bCopy = b
+
+  # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
+  var bMove = b^
