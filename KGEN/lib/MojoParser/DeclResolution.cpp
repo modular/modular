@@ -2241,13 +2241,12 @@ struct StructBodyDecorators : public SharedStateUser {
       : SharedStateUser(resolver.shared), structOp(structOp),
         structDecl(structDecl), structFields(structFields) {}
 
-  LogicalResult processDecorator(ExprNode *decorator, StructDeclOp structOp,
-                                 FnOp moveFunc, FnOp copyFunc);
+  LogicalResult processDecorator(ExprNode *decorator, StructDeclOp structOp);
 
 private:
   /// Process the @value body decorator on structs.  This synthesizes the
   /// memberwise init, copy ctor and move ctor if requested.
-  void processValueDecorator(SMLoc decoratorLoc, FnOp moveFunc, FnOp copyFunc);
+  void processValueDecorator(SMLoc decoratorLoc);
 
   /// Get a constant symbol to a method, and return null if it is missing or
   /// something went wrong.
@@ -2265,8 +2264,9 @@ private:
 /// Synthesize the `__copyinit__` and `__moveinit__` stubs for `@value`
 /// decorated structs early to ensure their movability and copyability
 /// requirements are satisfied.
-static std::pair<FnOp, FnOp> preprocessValueDecorator(ASTDecl &structDecl) {
-  auto declOp = cast<StructDeclOp>(structDecl);
+/// FIXME: This should toss on the Copyable and Movable traits.
+static void preprocessValueDecorator(ASTDecl &structDecl) {
+  auto structOp = cast<StructDeclOp>(structDecl);
   for (ExprNode *decorator : structDecl.getBodyDecorators()) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "value") {
@@ -2275,49 +2275,28 @@ static std::pair<FnOp, FnOp> preprocessValueDecorator(ASTDecl &structDecl) {
           break;
         StructEmitter emitter(structDecl.getShared());
         FnOp moveFunc, copyFunc;
-        if (!declOp.isRegisterPassable() && !info->hasMove())
+        if (!structOp.isRegisterPassable() && !info->hasMove())
           moveFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
                                                            /*isMove=*/true);
-        if (!declOp.isRegisterPassableTrivial() && !info->hasCopy())
+        if (!structOp.isRegisterPassableTrivial() && !info->hasCopy())
           copyFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
                                                            /*isMove=*/false);
-        return {moveFunc, copyFunc};
       }
     }
   }
-  return {nullptr, nullptr};
 }
 
-void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
-                                                 FnOp moveFunc, FnOp copyFunc) {
+void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
+  // Generate the memberwise init.
   StructEmitter structEmitter(shared);
-  StructDeclOp declOp = dyn_cast<StructDeclOp>(structDecl);
-  std::optional<GeneratedStubs> stubs =
-      structEmitter.addMissingValueMemberStubsToStruct(
-          structDecl, /*generateFieldwiseInit=*/true);
+  StructDeclOp declOp = cast<StructDeclOp>(structDecl);
+  auto stubs = structEmitter.addMissingValueMemberStubsToStruct(
+      structDecl, /*generateFieldwiseInit=*/true);
   if (!stubs) {
-    emitError(decoratorLoc, "'@value' cannot synthesize members of struct '")
+    emitError(decoratorLoc, "'@value' cannot synthesize memberwise init for '")
         << declOp.getSymName() << "'";
     structDecl.setErroneous();
     return;
-  }
-  stubs->moveCtr = moveFunc;
-  stubs->copyCtr = copyFunc;
-
-  if (FnOp copyCtr = stubs->copyCtr) {
-    SymbolConstantAttr ref =
-        copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
-    ASTDecl *copyCtrDecl =
-        getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
-    (void)structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false);
-  }
-
-  if (FnOp moveCtr = stubs->moveCtr) {
-    SymbolConstantAttr ref =
-        moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
-    ASTDecl *moveCtrDecl =
-        getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
-    (void)structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true);
   }
 }
 
@@ -2345,13 +2324,11 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
 }
 
 LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
-                                                     StructDeclOp structOp,
-                                                     FnOp moveFunc,
-                                                     FnOp copyFunc) {
+                                                     StructDeclOp structOp) {
   // @value decorator
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "value") {
-      processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
+      processValueDecorator(decorator->getRangeStart());
       return success();
     }
     if (declRef->spelling == "explicit_destroy") {
@@ -2452,11 +2429,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structOp.setMoveInitAttr(moveInitAttr);
   }
 
-  // If the struct is decorated with `@value`, make sure to synthesize the copy
-  // and move constructors before the field types are signature resolved to
-  // ensure that the Copyable and Movable trait requirements are satisfied.
+  // If the struct is decorated with `@value`, synthesize the copy and move
+  // constructors before the field types are signature resolved to ensure that
+  // the Copyable and Movable trait requirements are satisfied.
   // FIXME: The order of decorator resolution here is a bit gross.
-  auto [moveFunc, copyFunc] = preprocessValueDecorator(structDecl);
+  preprocessValueDecorator(structDecl);
 
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.
@@ -2503,12 +2480,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If there are any body decorators, resolve them now.
   StructBodyDecorators structDecorators(structOp, structDecl, *this,
                                         structFields);
-  Decorators(structDecl)
-      .applyBodyDecorators(
-          [&, moveFunc = moveFunc, copyFunc = copyFunc](ExprNode *decorator) {
-            return structDecorators.processDecorator(decorator, structOp,
-                                                     moveFunc, copyFunc);
-          });
+  Decorators(structDecl).applyBodyDecorators([&](ExprNode *decorator) {
+    return structDecorators.processDecorator(decorator, structOp);
+  });
 
   if (structDecl.isErroneous())
     return success();

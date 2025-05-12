@@ -730,7 +730,7 @@ struct CantSynthesize:
   var x : InMemStruct 
 
 
-@value # expected-error {{'@value' cannot synthesize members of struct 'ResolveErrorIsBubbled'}}
+@value # expected-error {{'@value' cannot synthesize memberwise init for 'ResolveErrorIsBubbled'}}
 struct ResolveErrorIsBubbled:
    var x: Int
    @implicit
