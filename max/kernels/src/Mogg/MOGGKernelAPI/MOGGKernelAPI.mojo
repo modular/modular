@@ -137,10 +137,10 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
 )
 from nn.kv_cache_ragged import (
-    generic_cross_attention_kv_cache_null_mask_paged_ragged,
-    generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged,
+    generic_cross_attention_kv_cache,
+    generic_flare_mla_decode_kv_cache_ragged,
+    generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_decompress_k_cache_ragged_paged,
-    generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
@@ -6963,12 +6963,12 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
 # MHA
 #
 # Expected kernel name format:
-# mo.mha.<padded/ragged>.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>
+# mo.mha.<padded/ragged>.<continuous_batching/paged>
 # ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("mo.mha.padded.continuous_batching.tensor_mask")
-struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
+struct Struct_mha_padded_continuous_batching_tensor_mask:
     @always_inline
     @staticmethod
     fn execute[
@@ -7006,7 +7006,7 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
 
 
 @compiler.register("mo.mha.padded.continuous_batching")
-struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
+struct Struct_mha_padded_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
@@ -7046,7 +7046,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
 
 
 @compiler.register("mo.mha.ragged.continuous_batching")
-struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
+struct Struct_mha_ragged_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
@@ -7131,12 +7131,12 @@ struct Struct_mha_ragged_paged:
 # MLA
 #
 # Expected kernel name format:
-# mo.mla.<prefill/decode>.ragged.paged.<MASK_TYPE>.<POS_TYPE>
+# mo.mla.<prefill/decode>.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.mla.decode.ragged.paged.causal.no_pos")
-struct Struct_mla_decode_ragged_paged_causal_no_pos:
+@compiler.register("mo.mla.decode.ragged.paged")
+struct Struct_mla_decode_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
@@ -7144,6 +7144,8 @@ struct Struct_mla_decode_ragged_paged_causal_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
@@ -7158,8 +7160,10 @@ struct Struct_mla_decode_ragged_paged_causal_no_pos:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged[
-            target=target
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
         ](
             managed_tensor_slice_to_ndbuffer(q),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -7171,8 +7175,8 @@ struct Struct_mla_decode_ragged_paged_causal_no_pos:
         )
 
 
-@compiler.register("mo.mla.prefill.init.ragged.paged.causal.no_pos")
-struct Struct_mla_prefill_init_ragged_paged_causal_no_pos:
+@compiler.register("mo.mla.prefill.init.ragged.paged")
+struct Struct_mla_prefill_init_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
@@ -7181,6 +7185,8 @@ struct Struct_mla_prefill_init_ragged_paged_causal_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
@@ -7200,8 +7206,12 @@ struct Struct_mla_prefill_init_ragged_paged_causal_no_pos:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
-            write_softmax_info=True, use_cascade_attention=False, target=target
+        generic_flare_mla_prefill_kv_cache_ragged[
+            write_softmax_info=True,
+            use_cascade_attention=False,
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
         ](
             managed_tensor_slice_to_ndbuffer(q),
             managed_tensor_slice_to_ndbuffer(k),
@@ -7218,8 +7228,8 @@ struct Struct_mla_prefill_init_ragged_paged_causal_no_pos:
         )
 
 
-@compiler.register("mo.mla.prefill.ragged.paged.causal.no_pos")
-struct Struct_mla_prefill_ragged_paged_causal_no_pos:
+@compiler.register("mo.mla.prefill.ragged.paged")
+struct Struct_mla_prefill_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
@@ -7229,6 +7239,8 @@ struct Struct_mla_prefill_ragged_paged_causal_no_pos:
         head_dim: Int,
         page_size: Int, //,
         target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         softmax_info: OutputTensor[type=softmax_type, rank=3],
@@ -7253,8 +7265,12 @@ struct Struct_mla_prefill_ragged_paged_causal_no_pos:
         var prev_softmax_info_nd = managed_tensor_slice_to_ndbuffer(
             prev_softmax_info
         )
-        generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
-            write_softmax_info=True, use_cascade_attention=True, target=target
+        generic_flare_mla_prefill_kv_cache_ragged[
+            write_softmax_info=True,
+            use_cascade_attention=True,
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
         ](
             managed_tensor_slice_to_ndbuffer(q),
             managed_tensor_slice_to_ndbuffer(k),
@@ -7369,39 +7385,12 @@ struct Struct_kv_cache_get_max_seq_len_paged:
 # Cross attention
 #
 # Expected kernel name format:
-# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>.<MASK_TYPE>.<POS_TYPE>
+# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-fn generic_cross_attention_kv_cache_null_mask_paged_ragged_kernel_api[
-    type: DType, //, target: StaticString
-](
-    output: ManagedTensorSlice[type=type, rank=3],
-    q: ManagedTensorSlice[type=type, rank=3],
-    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-    q_max_seq_len: ManagedTensorSlice[type = DType.uint32, rank=1],
-    kv_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
-    kv_collection: PagedKVCacheCollection,
-    layer_idx: UInt32,
-    scale: Float32,
-    context: DeviceContextPtr,
-) raises:
-    generic_cross_attention_kv_cache_null_mask_paged_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer(q),
-        q_input_row_offsets,
-        managed_tensor_slice_to_ndbuffer(q_max_seq_len),
-        managed_tensor_slice_to_ndbuffer(kv_input_row_offsets),
-        kv_collection,
-        layer_idx,
-        scale,
-        managed_tensor_slice_to_ndbuffer(output),
-        context,
-    )
-
-
-@compiler.register("mo.cross_attention.ragged.paged.null.no_pos")
-struct Struct_cross_attention_ragged_paged_null_no_pos:
+@compiler.register("mo.cross_attention.ragged.paged")
+struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
@@ -7409,7 +7398,10 @@ struct Struct_cross_attention_ragged_paged_null_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
         target: StaticString,
+        local_window_size: Int = -1,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7425,17 +7417,20 @@ struct Struct_cross_attention_ragged_paged_null_no_pos:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_cross_attention_kv_cache_null_mask_paged_ragged_kernel_api[
-            target=target
+        generic_cross_attention_kv_cache[
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+            target=target,
         ](
-            output,
-            q,
+            managed_tensor_slice_to_ndbuffer(q),
             q_input_row_offsets,
-            q_max_seq_len,
-            kv_input_row_offsets,
+            managed_tensor_slice_to_ndbuffer(q_max_seq_len),
+            managed_tensor_slice_to_ndbuffer(kv_input_row_offsets),
             kv_collection,
             layer_idx,
             scale,
+            managed_tensor_slice_to_ndbuffer(output),
             context,
         )
 

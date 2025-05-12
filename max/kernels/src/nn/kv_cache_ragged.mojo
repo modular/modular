@@ -1975,12 +1975,17 @@ fn _flash_attention_dispatch[
 
 
 @always_inline
-fn generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged[
-    target: StaticString, type: DType
+fn generic_flare_mla_decode_kv_cache_ragged[
+    collection_t: KVCollectionT,
+    type: DType, //,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
+    target: StaticString,
+    local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
@@ -1993,25 +1998,33 @@ fn generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged[
             trace_arg("q", q),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            "num_heads=" + String(collection_t.kv_params.num_heads),
+            "head_size=" + String(collection_t.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.decode.ragged.paged.causal_mask.no_pos.nhead_"
-        + String(kv_collection.kv_params.num_heads)
+        "mo.mla.decode.ragged."
+        + collection_t.name_str
+        + "."
+        + mask_str
+        + "."
+        + score_mod_str
+        + ".nhead_"
+        + String(collection_t.kv_params.num_heads)
         + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flare_mla_decode_kv_cache_ragged[
-            kv_collection.CacheType, target=target
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
         ](
             q,
             input_row_offsets,
             kv_collection,
             layer_idx,
-            CausalMask(),
             scale,
             output,
             context,
@@ -2021,16 +2034,16 @@ fn generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged[
 @always_inline
 fn _flare_mla_decode_kv_cache_ragged[
     type: DType,
-    collection_t: KVCollectionT,
-    mask_t: MHAMask, //,
-    cache_t: KVCacheT,
+    collection_t: KVCollectionT, //,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
     target: StaticString,
+    local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
@@ -2042,7 +2055,6 @@ fn _flare_mla_decode_kv_cache_ragged[
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        mask: Mask functor that computes a masked score vector and tile status from coords.
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
@@ -2050,30 +2062,46 @@ fn _flare_mla_decode_kv_cache_ragged[
     """
     constrained[is_gpu[target](), "MLA is only supported on GPU"]()
 
-    var cuda_ctx = context.get_device_context()
-
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
-    flare_mla_decoding[ragged=True](
-        output,
-        q,
-        k,
-        mask,
-        IdentityScoreMod(),
-        input_row_offsets,
-        scale,
-        cuda_ctx,
-    )
+    @parameter
+    @always_inline
+    @__copy_capture(k)
+    fn _dispatch_mla[
+        mask_t: MHAMask, score_mod_t: ScoreModTrait
+    ](mask: mask_t, score_mod: score_mod_t) raises:
+        flare_mla_decoding[ragged=True](
+            output,
+            q,
+            k,
+            mask,
+            score_mod,
+            input_row_offsets,
+            scale,
+            context.get_device_context(),
+        )
+
+    dispatch_mask_and_score_mod[
+        mask_str,
+        score_mod_str,
+        _dispatch_mla,
+        local_window_size,
+        collection_t.kv_params.num_heads,
+    ]()
 
 
 @always_inline
-fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
-    type: DType,
+fn generic_flare_mla_prefill_kv_cache_ragged[
+    collection_t: KVCollectionT,
+    type: DType, //,
     softmax_type: DType,
     write_softmax_info: Bool,
     use_cascade_attention: Bool,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
     target: StaticString,
+    local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     k: NDBuffer[type, 3, *_],
@@ -2081,7 +2109,7 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
     buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
     cache_offsets: NDBuffer[DType.uint32, 1, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
@@ -2104,22 +2132,30 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
             trace_arg("input_row_offsets", input_row_offsets),
             "scale=" + String(scale),
             "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            "num_heads=" + String(collection_t.kv_params.num_heads),
+            "head_size=" + String(collection_t.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged.paged.causal_mask.no_pos.nhead_"
-        + String(kv_collection.kv_params.num_heads)
+        "mo.mla.prefill.ragged."
+        + collection_t.name_str
+        + "."
+        + mask_str
+        + "."
+        + score_mod_str
+        + ".nhead_"
+        + String(collection_t.kv_params.num_heads)
         + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
-            kv_collection.CacheType,
             write_softmax_info=write_softmax_info,
             use_cascade_attention=use_cascade_attention,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
             target=target,
+            local_window_size=local_window_size,
         ](
             q,
             k,
@@ -2129,7 +2165,6 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
             input_row_offsets,
             kv_collection,
             layer_idx,
-            CausalMask(),
             scale,
             output,
             softmax_info,
@@ -2142,13 +2177,14 @@ fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
 @always_inline
 fn _flare_mla_prefill_kv_cache_ragged[
     type: DType,
+    collection_t: KVCollectionT, //,
     softmax_type: DType,
-    collection_t: KVCollectionT,
-    mask_t: MHAMask, //,
-    cache_t: KVCacheT,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
     write_softmax_info: Bool,
     use_cascade_attention: Bool,
     target: StaticString,
+    local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     k: NDBuffer[type, 3, *_],
@@ -2158,7 +2194,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
     softmax_info: NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin],
@@ -2179,7 +2214,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        mask: Mask functor that computes a masked score vector and tile status from coords.
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
@@ -2192,35 +2226,46 @@ fn _flare_mla_prefill_kv_cache_ragged[
     """
     constrained[is_gpu[target](), "MLA is only supported on GPU"]()
 
-    var cuda_ctx = context.get_device_context()
-
     var layer_idx_cast = Int(layer_idx)
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
 
-    flare_mla_prefill[
-        write_softmax_info=write_softmax_info,
-        use_cascade_attention=use_cascade_attention,
-    ](
-        output,
-        q,
-        k,
-        v,
-        k_rope,
-        mask,
-        IdentityScoreMod(),
-        input_row_offsets,
-        buffer_row_offsets,
-        scale,
-        cuda_ctx,
-        softmax_info=OptionalReg[NDBuffer[softmax_type, 3, MutableAnyOrigin]](
-            softmax_info
-        ),
-        cache_offsets=OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_offsets
-        ),
-        prev_output=prev_output,
-        prev_softmax_info=prev_softmax_info,
-    )
+    @parameter
+    @__copy_capture(k_rope)
+    fn _mla_dispatch[
+        mask_t: MHAMask, score_mod_t: ScoreModTrait
+    ](mask: mask_t, score_mod: score_mod_t) raises:
+        flare_mla_prefill[
+            write_softmax_info=write_softmax_info,
+            use_cascade_attention=use_cascade_attention,
+        ](
+            output,
+            q,
+            k,
+            v,
+            k_rope,
+            mask,
+            score_mod,
+            input_row_offsets,
+            buffer_row_offsets,
+            scale,
+            context.get_device_context(),
+            softmax_info=OptionalReg[
+                NDBuffer[softmax_type, 3, MutableAnyOrigin]
+            ](softmax_info),
+            cache_offsets=OptionalReg[
+                NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+            ](cache_offsets),
+            prev_output=prev_output,
+            prev_softmax_info=prev_softmax_info,
+        )
+
+    dispatch_mask_and_score_mod[
+        mask_str,
+        score_mod_str,
+        _mla_dispatch,
+        local_window_size,
+        collection_t.kv_params.num_heads,
+    ]()
 
 
 @always_inline
@@ -2321,85 +2366,94 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-fn _cross_attention_kv_cache_ragged[
+fn _cross_attention_dispatch[
     type: DType,
-    collection_t: KVCollectionT,
-    mask_t: MHAMask, //,
-    cache_t: KVCacheT,
+    collection_t: KVCollectionT, //,
+    *,
     target: StaticString,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
+    local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: NDBuffer[DType.uint32, 1],
-    kv_collection: collection_t,
+    kv_cache: collection_t,
     layer_idx: UInt32,
-    mask: mask_t,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
-    """Performs cross attention using k and v caches from KVCacheT custom types.
-
-    Args:
-        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        q_input_row_offsets: The start and end position of each Q entry in the batch.
-        q_max_seq_len: Maximum query sequence length.
-        kv_input_row_offsets: The start and end position of each KV entry in the batch.
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        mask: Mask functor that computes a masked score vector and tile status from coords.
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
-        output: The Pre-allocated output buffer to write results to. Has shape:
-            (batch_size, num_heads, seq_len, head_size).
-        context: Pointer containing the runtime context for the target device.
-    """
-    var layer_idx_cast = Int(layer_idx)
-    var k = kv_collection.get_key_cache(layer_idx_cast)
-    var v = kv_collection.get_value_cache(layer_idx_cast)
+    var k = kv_cache.get_key_cache(Int(layer_idx))
+    var v = kv_cache.get_value_cache(Int(layer_idx))
 
     @parameter
-    if is_cpu[target]():
-        return flash_attention_kv_cache_cpu(
-            q,
-            valid_length_managed_tensor_slice_to_ndbuffer(q_input_row_offsets),
-            # Use KV offsets for cross attention.
-            kv_input_row_offsets,
-            k,
-            v,
-            mask,
-            scale,
-            output,
-        )
-    else:
-        gpu_flash_attention[ragged=True](
-            output,
-            q,
-            k,
-            v,
-            mask,
-            IdentityScoreMod(),
-            q_input_row_offsets,
-            scale,
-            context.get_device_context(),
-            Int(q_max_seq_len),
-            OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                kv_input_row_offsets
-            ),
-            None,
-        )
+    @__copy_capture(
+        q, k, v, output, context, q_input_row_offsets, kv_input_row_offsets
+    )
+    fn _dispatch_flash_attention[
+        mask_t: MHAMask, score_mod_t: ScoreModTrait
+    ](mask: mask_t, score_mod: score_mod_t) raises:
+        @parameter
+        if is_cpu[target]():
+            return flash_attention_kv_cache_cpu(
+                q,
+                valid_length_managed_tensor_slice_to_ndbuffer(
+                    q_input_row_offsets
+                ),
+                # Use KV offsets for cross attention.
+                kv_input_row_offsets,
+                k,
+                v,
+                mask,
+                scale,
+                output,
+            )
+        else:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+            gpu_flash_attention[use_score_mod=use_score_mod, ragged=True](
+                output,
+                q,
+                k,
+                v,
+                mask,
+                IdentityScoreMod(),
+                q_input_row_offsets,
+                scale,
+                context.get_device_context(),
+                Int(q_max_seq_len),
+                OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                    kv_input_row_offsets
+                ),
+                None,
+            )
+
+    return dispatch_mask_and_score_mod[
+        mask_str,
+        score_mod_str,
+        _dispatch_flash_attention,
+        local_window_size,
+        collection_t.kv_params.num_heads,
+    ]()
 
 
 @always_inline
-fn generic_cross_attention_kv_cache_null_mask_paged_ragged[
-    type: DType, //, target: StaticString
+fn generic_cross_attention_kv_cache[
+    collection_t: KVCollectionT,
+    type: DType, //,
+    target: StaticString,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
+    local_window_size: Int = -1,
 ](
     q: NDBuffer[mut=True, type, 3, *_],
     q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
     q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     output: NDBuffer[mut=True, type, 3, *_],
@@ -2414,19 +2468,28 @@ fn generic_cross_attention_kv_cache_null_mask_paged_ragged[
             trace_slice_arg("q_input_row_offsets", q_input_row_offsets),
             trace_arg("kv_input_row_offsets", kv_input_row_offsets),
             "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(kv_collection.kv_params.num_heads),
-            "head_size=" + String(kv_collection.kv_params.head_size),
+            "num_heads=" + String(collection_t.kv_params.num_heads),
+            "head_size=" + String(collection_t.kv_params.head_size),
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.cross_attention.ragged.paged.null_mask.no_pos.nhead_"
-        + String(kv_collection.kv_params.num_heads)
+        "mo.cross_attention.ragged."
+        + collection_t.name_str
+        + "."
+        + mask_str
+        + "."
+        + score_mod_str
+        + ".nhead_"
+        + String(collection_t.kv_params.num_heads)
         + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-        return _cross_attention_kv_cache_ragged[
-            kv_collection.CacheType, target=target
+        return _cross_attention_dispatch[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
         ](
             q,
             q_input_row_offsets,
@@ -2434,7 +2497,6 @@ fn generic_cross_attention_kv_cache_null_mask_paged_ragged[
             kv_input_row_offsets,
             kv_collection,
             layer_idx,
-            NullMask(),
             scale,
             output,
             context,

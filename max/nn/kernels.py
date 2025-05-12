@@ -1032,14 +1032,16 @@ def flare_mla_decode_ragged(
         raise ValueError(msg)
 
     assert kv_params.page_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "page_size": kv_params.page_size,
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.mla.decode.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = "mo.mla.decode.ragged.paged"
 
     return ops.inplace_custom(
         op_name,
@@ -1140,15 +1142,17 @@ def flare_mla_prefill_ragged(
         raise ValueError(msg)
 
     assert kv_params.page_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "page_size": kv_params.page_size,
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     is_init_str = ".init" if prev_output is None else ""
-    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged"
 
     input_values = [
         input,
@@ -1367,6 +1371,7 @@ def cross_attention_ragged(
     kv_input_row_offsets: TensorValue,
     q_max_seq_len: TensorValue,
     scale: float,
+    local_window_size: int = -1,
 ) -> TensorValue:
     """Computes cross attention provided the `!mo.opaque` KV Cache.
 
@@ -1412,17 +1417,20 @@ def cross_attention_ragged(
         )
         raise ValueError(msg)
 
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
+        "local_window_size": local_window_size,
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.cross_attention.ragged.{cache_strategy_str}.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = f"mo.cross_attention.ragged.{cache_strategy_str}"
 
     return ops.inplace_custom(
         op_name,
