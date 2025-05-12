@@ -194,6 +194,18 @@ struct MojoKernelOperandAdaptor {
 
     return fused;
   }
+
+  bool isMutableTensorType() const {
+    if (!isTensorType())
+      return false;
+
+    bool isMutable;
+    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
+                  ListOfTensorOperandAdaptor>(
+        [&](auto &&obj) { isMutable = obj.mut; }, underlyingType);
+
+    return isMutable;
+  }
 };
 
 template <typename FuncOpType>
