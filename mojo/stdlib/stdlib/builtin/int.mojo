@@ -210,6 +210,7 @@ struct Int(
     DevicePassable,
     ExplicitlyCopyable,
     Hashable,
+    _HashableWithHasher,
     ImplicitlyBoolable,
     Indexer,
     KeyElement,
@@ -219,7 +220,6 @@ struct Int(
     Roundable,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """This type represents an integer value."""
 
@@ -256,10 +256,6 @@ struct Int(
         """
         return Self.get_type_name()
 
-    # Fields
-    var value: __mlir_type.index
-    """The underlying storage for the integer value."""
-
     alias BITWIDTH: Int = bitwidthof[DType.index]()
     """The bit width of the integer type."""
 
@@ -268,6 +264,9 @@ struct Int(
 
     alias MIN = Int(Scalar[DType.index].MIN)
     """Returns the minimum value of type."""
+
+    var value: __mlir_type.index
+    """The underlying storage for the integer value."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -328,7 +327,7 @@ struct Int(
         Args:
             value: The init value.
         """
-        self = Self(value.value)
+        self.value = value.value
 
     @always_inline("nodebug")
     fn __init__[T: Intable](out self, value: T):
@@ -474,7 +473,7 @@ struct Int(
             rhs: The other Int to compare against.
 
         Returns:
-            True if this Int is greater-than the RHS Int and False otherwise.
+            True if this Int is greater than the RHS Int and False otherwise.
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
@@ -597,7 +596,7 @@ struct Int(
         Returns:
             The remainder of dividing self by rhs.
         """
-        # This should raise an exception
+        # this should raise an exception
         var denom = select(rhs == 0, 1, rhs)
         var rem = self._positive_rem(denom)
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), rem + rhs, rem)
@@ -613,7 +612,7 @@ struct Int(
         Returns:
             The quotient and remainder as a tuple `(self // rhs, self % rhs)`.
         """
-        # This should raise an exception
+        # this should raise an exception
         var denom = select(rhs == 0, 1, rhs)
         var div = self._positive_div(denom)
         var rem = self._positive_rem(denom)
@@ -658,9 +657,7 @@ struct Int(
         Returns:
             `self << rhs`.
         """
-        return 0 if rhs < 0 else Int(
-            __mlir_op.`index.shl`(self.value, rhs.value)
-        )
+        return select(rhs < 0, 0, __mlir_op.`index.shl`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __rshift__(self, rhs: Int) -> Int:
@@ -672,9 +669,7 @@ struct Int(
         Returns:
             `self >> rhs`.
         """
-        return 0 if rhs < 0 else Int(
-            __mlir_op.`index.shrs`(self.value, rhs.value)
-        )
+        return select(rhs < 0, 0, __mlir_op.`index.shrs`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __and__(self, rhs: Int) -> Int:
@@ -743,6 +738,7 @@ struct Int(
         """
         self = self * rhs
 
+    @always_inline("nodebug")
     fn __itruediv__(mut self, rhs: Int):
         """Compute `self / rhs`, convert to int, and save the result in self.
 
@@ -763,6 +759,7 @@ struct Int(
         """
         self = self // rhs
 
+    @always_inline("nodebug")
     fn __imod__(mut self, rhs: Int):
         """Compute `self % rhs` and save the result in self.
 
@@ -841,7 +838,7 @@ struct Int(
         """
         return self + value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rsub__(self, value: Int) -> Int:
         """Return `value - self`.
 
@@ -901,7 +898,7 @@ struct Int(
         """
         return value**self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rlshift__(self, value: Int) -> Int:
         """Return `value << self`.
 
@@ -913,7 +910,7 @@ struct Int(
         """
         return value << self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rrshift__(self, value: Int) -> Int:
         """Return `value >> self`.
 
@@ -925,7 +922,7 @@ struct Int(
         """
         return value >> self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rand__(self, value: Int) -> Int:
         """Return `value & self`.
 
@@ -937,7 +934,7 @@ struct Int(
         """
         return value & self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ror__(self, value: Int) -> Int:
         """Return `value | self`.
 
@@ -949,7 +946,7 @@ struct Int(
         """
         return value | self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rxor__(self, value: Int) -> Int:
         """Return `value ^ self`.
 
@@ -983,16 +980,25 @@ struct Int(
         """
         return self.__bool__()
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
+
+        Returns:
+            The corresponding __mlir_type.index value.
+        """
+        return self.value
+
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """Gets the integral value (this is an identity function for Int).
 
         Returns:
             The value as an integer.
         """
-        return self
+        return self.value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __abs__(self) -> Self:
         """Return the absolute value of the Int value.
 
@@ -1001,7 +1007,7 @@ struct Int(
         """
         return select(self < 0, -self, self)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Return the ceiling of the Int value, which is itself.
 
@@ -1010,7 +1016,7 @@ struct Int(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Return the floor of the Int value, which is itself.
 
@@ -1019,7 +1025,7 @@ struct Int(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __round__(self) -> Self:
         """Return the rounded value of the Int value, which is itself.
 
@@ -1042,7 +1048,7 @@ struct Int(
             return self
         return self - (self % 10 ** -(ndigits))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __trunc__(self) -> Self:
         """Return the truncated Int value, which is itself.
 
@@ -1050,6 +1056,59 @@ struct Int(
             The Int value itself.
         """
         return self
+
+    @always_inline("nodebug")
+    fn __ceildiv__(self, denominator: Self) -> Self:
+        """Return the rounded-up result of dividing self by denominator.
+
+
+        Args:
+            denominator: The denominator.
+
+        Returns:
+            The ceiling of dividing numerator by denominator.
+        """
+        return -(self // -denominator)
+
+    @always_inline("builtin")
+    fn is_power_of_two(self) -> Bool:
+        """Check if the integer is a (non-zero) power of two.
+
+        Returns:
+            True if the integer is a power of two, False otherwise.
+        """
+        return (self & (self - 1) == 0) & (self > 0)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """Formats this integer to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        writer.write(Int64(self))
+
+    fn write_padded[W: Writer](self, mut writer: W, width: Int):
+        """Write the int right-aligned to a set padding.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+            width: The amount to pad to the left.
+        """
+        var int_width = self._decimal_digit_count()
+
+        # TODO: Assumes user wants right-aligned content.
+        if int_width < width:
+            for _ in range(width - int_width):
+                writer.write(" ")
+
+        writer.write(self)
 
     @no_inline
     fn __str__(self) -> String:
@@ -1104,19 +1163,6 @@ struct Int(
         """
         self = Int(Python.py_long_as_ssize_t(obj.__int__()))
 
-    @always_inline
-    fn __ceildiv__(self, denominator: Self) -> Self:
-        """Return the rounded-up result of dividing self by denominator.
-
-
-        Args:
-            denominator: The denominator.
-
-        Returns:
-            The ceiling of dividing numerator by denominator.
-        """
-        return -(self // -denominator)
-
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -1128,56 +1174,6 @@ struct Int(
             A PythonObject representing the value.
         """
         return PythonObject(self)
-
-    @always_inline("builtin")
-    fn is_power_of_two(self) -> Bool:
-        """Check if the integer is a (non-zero) power of two.
-
-        Returns:
-            True if the integer is a power of two, False otherwise.
-        """
-        return (self & (self - 1) == 0) & (self > 0)
-
-    fn write_to[W: Writer](self, mut writer: W):
-        """
-        Formats this integer to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
-
-        Args:
-            writer: The object to write to.
-        """
-
-        writer.write(Int64(self))
-
-    fn write_padded[W: Writer](self, mut writer: W, width: Int):
-        """Write the int right-aligned to a set padding.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
-
-        Args:
-            writer: The object to write to.
-            width: The amount to pad to the left.
-        """
-        var int_width = self._decimal_digit_count()
-
-        # TODO: Assumes user wants right-aligned content.
-        if int_width < width:
-            for _ in range(width - int_width):
-                writer.write(" ")
-
-        writer.write(self)
-
-    @always_inline("nodebug")
-    fn __index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            The corresponding __mlir_type.index value.
-        """
-        return self.value
 
     @always_inline("builtin")
     fn _positive_div(self, rhs: Int) -> Int:
