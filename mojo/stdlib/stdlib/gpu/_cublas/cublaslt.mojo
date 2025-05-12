@@ -504,7 +504,6 @@ fn cublasLtHeuristicsCacheSetCapacity(capacity: Int) -> Result:
     ]()(capacity)
 
 
-@value
 @register_passable("trivial")
 struct MatmulAlgorithmCapability:
     """Capabilities Attributes that can be retrieved from an initialized Algo structure

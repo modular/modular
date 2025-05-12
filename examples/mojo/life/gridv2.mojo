@@ -17,7 +17,7 @@ from collections import Optional
 from memory import UnsafePointer, memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](StringableRaising):
+struct Grid[rows: Int, cols: Int](StringableRaising, Movable, Copyable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -37,11 +37,6 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
         self.data = UnsafePointer[Int8].alloc(self.num_cells)
         memcpy(dest=self.data, src=existing.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.data = existing.data
-        # Then the lifetime of `existing` ends here, but
-        # Mojo does NOT call its destructor
 
     fn __del__(owned self):
         for i in range(self.num_cells):

@@ -250,7 +250,7 @@ alias _EMPTY = -1
 alias _REMOVED = -2
 
 
-struct _DictIndex:
+struct _DictIndex(Movable):
     """A compact dict-index type. Small dict indices are compressed
     to smaller integer types to use less memory.
 
@@ -570,17 +570,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         self._n_entries = existing._n_entries
         self._index = existing._index.copy(existing._reserved())
         self._entries = existing._entries
-
-    fn __moveinit__(out self, owned existing: Self):
-        """Move data of an existing dict into a new one.
-
-        Args:
-            existing: The existing dict.
-        """
-        self._len = existing._len
-        self._n_entries = existing._n_entries
-        self._index = existing._index^
-        self._entries = existing._entries^
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

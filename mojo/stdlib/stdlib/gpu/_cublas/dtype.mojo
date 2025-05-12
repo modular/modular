@@ -14,7 +14,6 @@
 from os import abort
 
 
-@value
 @register_passable("trivial")
 struct Property:
     var _value: Int32
@@ -46,7 +45,6 @@ struct Property:
         return Int(self._value)
 
 
-@value
 @register_passable("trivial")
 struct DataType:
     var _value: Int32

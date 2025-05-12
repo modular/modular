@@ -26,7 +26,7 @@ from nn.arange import arange
 from utils import IndexList
 
 
-struct TestTensor[rank: Int, type: DType]:
+struct TestTensor[rank: Int, type: DType](Movable):
     var storage: List[Scalar[type]]
     var shape: IndexList[rank]
 
@@ -35,10 +35,6 @@ struct TestTensor[rank: Int, type: DType]:
         self.storage = List[Scalar[type]](capacity=shape.flattened_length())
         self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.storage = existing.storage
-        self.shape = existing.shape
 
     fn to_ndbuffer(
         self,

@@ -305,6 +305,7 @@ struct _LayoutIter[origin: ImmutableOrigin]:
 
 
 struct Layout(
+    Copyable,
     LayoutTrait,
     Sized,
     Stringable,
@@ -631,33 +632,6 @@ struct Layout(
                 else:
                     shape_with_unknown.append(to_unknown(self.shape[i]))
             return Layout(shape_with_unknown, self.stride)
-
-    @always_inline("nodebug")
-    fn __moveinit__(out self, owned existing: Self):
-        """Move initializer for `Layout`.
-
-        Efficiently transfers ownership of the shape and stride tuples from an existing
-        `Layout` instance to this one without copying data. This is used when a `Layout`
-        is moved from one variable to another.
-
-        Args:
-            existing: The source `Layout` whose resources will be moved to this instance.
-        """
-        self.shape = existing.shape^
-        self.stride = existing.stride^
-
-    @always_inline("nodebug")
-    fn __copyinit__(out self, existing: Self):
-        """Copy initializer for `Layout`.
-
-        Creates a new `Layout` by copying the shape and stride tuples from an existing
-        `Layout` instance. This is used when a `Layout` is copied from one variable to another.
-
-        Args:
-            existing: The source `Layout` to copy from.
-        """
-        self.shape = existing.shape
-        self.stride = existing.stride
 
     @always_inline("nodebug")
     fn copy(self) -> Self:

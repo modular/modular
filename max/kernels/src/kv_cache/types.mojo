@@ -556,7 +556,7 @@ struct ContinuousBatchingKVCacheCollection[
     type_: DType,
     kv_params_: KVCacheStaticParams,
     assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
-](KVCollectionT):
+](KVCollectionT, Movable, Copyable):
     """This is a "view" of the cache for the given sequences
     in the batch.
 
@@ -610,24 +610,6 @@ struct ContinuousBatchingKVCacheCollection[
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
             _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
         )
-
-    fn __moveinit__(out self, owned other: Self):
-        self.blocks = other.blocks
-        self.cache_lengths = other.cache_lengths
-        self.lookup_table = other.lookup_table
-        self.max_seq_length = other.max_seq_length
-        self.max_cache_length = other.max_cache_length
-        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
-        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
-
-    fn __copyinit__(out self, other: Self):
-        self.blocks = other.blocks
-        self.cache_lengths = other.cache_lengths
-        self.lookup_table = other.lookup_table
-        self.max_seq_length = other.max_seq_length
-        self.max_cache_length = other.max_cache_length
-        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
-        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
 
     @always_inline
     fn copy(self) -> Self:
