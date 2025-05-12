@@ -3029,7 +3029,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var S = filter.dim[1]()
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
-    var C_out = output.dim[3]()  # channel_out
+    var C_out = output.dim[3]()  # channel_out or #F
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3223,9 +3223,9 @@ fn conv_gpu[
         maybe_epilogue_func,
     ]
 
-    var grid_dim_x = ceildiv(output.dim[2](), block_size)
-    var grid_dim_y = ceildiv(output.dim[1](), block_size)
-    var grid_dim_z = input.dim[0]()
+    var grid_dim_x = ceildiv(output.dim[2](), block_size)  # w
+    var grid_dim_y = ceildiv(output.dim[1](), block_size)  # h
+    var grid_dim_z = input.dim[0]()  # n
 
     ctx.enqueue_function[conv_gpu_n](
         input,
@@ -3237,3 +3237,100 @@ fn conv_gpu[
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size),
     )
+
+
+fn conv3d_gpu_naive_ndhwc_qrscf[
+    input_dim: DimList,
+    filter_dim: DimList,
+    output_dim: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    block_size: Int,
+    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
+](
+    input: NDBuffer[input_type, 5, MutableAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, 5, MutableAnyOrigin, filter_dim],
+    output: NDBuffer[output_type, 5, MutableAnyOrigin, output_dim],
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    padding: IndexList[3],
+):
+    var N = input.dim[0]()
+    var D = input.dim[1]()  # depth
+    var H = input.dim[2]()
+    var W = input.dim[3]()
+    var C_in = input.dim[4]()  # channel_input
+
+    var Q = filter.dim[0]()
+    var R = filter.dim[1]()
+    var S = filter.dim[2]()
+
+    var D_out = output.dim[1]()  # depth
+    var H_out = output.dim[2]()
+    var W_out = output.dim[3]()
+    var C_out = output.dim[4]()  # channel_output
+
+    var pad_d = padding[0]
+    var pad_h = padding[1]
+    var pad_w = padding[2]
+
+    var stride_d = stride[0]
+    var stride_h = stride[1]
+    var stride_w = stride[2]
+
+    var dil_d = dilation[0]
+    var dil_h = dilation[1]
+    var dil_w = dilation[2]
+
+    var n = block_idx.z  # batch dimension (unchanged)
+    # calculate the linear thread id in x-dimension (width*height)
+    var x_thread_id = block_idx.x * block_dim.x + thread_idx.x
+
+    # map back to separate height and width
+    var h_out_idx = x_thread_id // W_out  # integer division to get height
+    var w_out_idx = x_thread_id % W_out  # modulo to get width
+
+    # calculate depth from y-dimension
+    var d_out_idx = block_idx.y * block_dim.y + thread_idx.y
+
+    # bounds check
+    if n >= N or d_out_idx >= D_out or h_out_idx >= H_out or w_out_idx >= W_out:
+        return
+
+    # ============= convolution =============
+    for co in range(C_out):
+        alias accum_type = get_accum_type[output_type]()
+        var value = Scalar[accum_type](0)
+
+        for q in range(Q):
+            for r in range(R):
+                for s in range(S):
+                    var d_in = Int(d_out_idx * stride_d + q * dil_d - pad_d)
+                    var h_in = Int(h_out_idx * stride_h + r * dil_h - pad_h)
+                    var w_in = Int(w_out_idx * stride_w + s * dil_w - pad_w)
+
+                    # check all input bounds bro
+                    if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
+                        for ci in range(C_in):
+                            value += (
+                                input.load(
+                                    IndexList[5](n, d_in, h_in, w_in, ci)
+                                ).cast[accum_type]()
+                                * filter.load(
+                                    IndexList[5](q, r, s, ci, co)
+                                ).cast[accum_type]()
+                            )
+
+        @parameter
+        if maybe_epilogue_func:
+            alias epilogue_func = maybe_epilogue_func.value()
+            epilogue_func(
+                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
+                value.cast[output_type](),
+            )
+        else:
+            output.store(
+                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
+                value.cast[output_type](),
+            )

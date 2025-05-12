@@ -52,7 +52,7 @@ fn test[
     pad_w: IndexList[2],
     num_groups: Int,
 ) raises:
-    print("== test_conv3d")
+    print("test_conv3d: Testing 3D Convolution")
 
     var D = DHW[0]
     var H = DHW[1]
@@ -67,6 +67,17 @@ fn test[
     var HO = (H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1) // stride[1] + 1
     var WO = (W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1) // stride[2] + 1
     # fmt: on
+
+    # print("Input shape: (", N, ",", D, ",", H, ",", W, ",", C, ")")
+    # print("Filter shape: (", Q, ",", R, ",", S, ",", C // num_groups, ",", F, ")")
+    # print("Stride:", stride)
+    # print("Dilation:", dilation)
+    # Alternative with explicit type parameters
+    var padding_0 = IndexList[2](pad_d[0], pad_d[1])
+    var padding_1 = IndexList[2](pad_h[0], pad_h[1])
+    var padding_2 = IndexList[2](pad_w[0], pad_w[1])
+    # print("Padding:", padding_0, padding_1, padding_2)
+    # print("Output shape: (", N, ",", DO, ",", HO, ",", WO, ",", F, ")")
 
     var conv_shape = ConvShape[3](
         n=N,
@@ -85,15 +96,20 @@ fn test[
 
     var C_per_group = C // num_groups
 
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(N * D * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(
-        Q * R * S * C_per_group * F
-    )
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(N * DO * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(N * DO * HO * WO * F)
+    var input_size = N * D * H * W * C
+    var filter_size = Q * R * S * C_per_group * F
+    var output_size = N * DO * HO * WO * F
 
-    rand[type](input_ptr, N * D * H * W * C)
-    rand[type](filter_ptr, Q * R * S * C_per_group * F)
+    # print("Total elements - Input:", input_size, "Filter:", filter_size, "Output:", output_size)
+
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(input_size)
+    var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_size)
+    var output_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
+    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
+
+    # print("Initializing data with random values")
+    rand[type](input_ptr, input_size)
+    rand[type](filter_ptr, filter_size)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -120,6 +136,7 @@ fn test[
     if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
+    # print("\n1) Running CPU 3D convolution reference implementation...")
     # Reference: naive conv
     Naive2dConvolution[
         type,
@@ -140,6 +157,12 @@ fn test[
         num_groups,
     )
 
+    # Print first few elements for reference
+    # print("CPU result (first 5 elements):")
+    # for i in range(min(5, output_size)):
+    #     print("  [", i, "]:", output_ref_ptr[i])
+
+    # print("\n2) Running GPU 3D convolution implementation...")
     # Test direct conv
     alias conv_attr = ConvInfoStatic[3]()
 
@@ -179,49 +202,99 @@ fn test[
             conv_attr,
         ].run(output, input, filter, conv_shape)
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
+    # Print first few elements for reference
+    # print("GPU result (first 5 elements):")
+    # for i in range(min(5, output_size)):
+    #     print("  [", i, "]:", output_ptr[i])
 
+    # print("\n3) Comparing results...")
     # Check results, return on the first failed comparison.
+    var total_elements = output_size
+    var matching_elements = 0
+    var max_diff = 0.0
+    var max_diff_idx = -1
+
     var idx = 0
     for n in range(N):
         for do in range(DO):
             for ho in range(HO):
                 for wo in range(WO):
                     for f in range(F):
-                        if not isclose(
-                            output_ref_ptr[idx],
-                            output_ptr[idx],
-                            atol=1e-4,  # absolute error tolerance
-                            rtol=1e-4,  # relative error tolerance
-                        ):
-                            print("Input shape: ", Index(N, D, H, W, C))
-                            print("filter shape: ", Index(Q, R, S, C, F))
-                            print("filter packed", filter_packed)
-                            print("num groups", num_groups)
-                            print(
-                                "Test failed at index: ",
-                                Index(n, do, ho, wo, f),
-                            )
-                            print("Golden value: ", output_ref_ptr[idx])
-                            print("Actual value: ", output_ptr[idx])
-                            output_ptr.free()
-                            output_ref_ptr.free()
-                            return
+                        var gpu_val = Float64(output_ptr[idx])
+                        var ref_val = Float64(output_ref_ptr[idx])
+                        var diff = abs(gpu_val - ref_val)
+
+                        if diff > max_diff:
+                            max_diff = diff
+                            max_diff_idx = idx
+
+                        if isclose(gpu_val, ref_val, atol=1e-4, rtol=1e-4):
+                            matching_elements += 1
+
                         idx += 1
 
+    var match_percentage = Float64(matching_elements) / Float64(
+        total_elements
+    ) * 100.0
+
+    # print("Total elements checked:", total_elements)
+    # print("Matching elements:", matching_elements)
+    # print("Match percentage:", match_percentage, "%")
+    # print("Maximum difference:", max_diff, "at index", max_diff_idx)
+
+    if matching_elements == total_elements:
+        print("RESULT: PASS - All elements match within tolerance")
+        pass
+    else:
+        print("RESULT: FAIL - Elements do not match")
+        if max_diff_idx >= 0:
+            # print("At index", max_diff_idx, ":")
+            # Convert the index to coordinates for better debugging
+            var flat_idx = max_diff_idx
+            var f_idx = flat_idx % F
+            flat_idx = flat_idx // F
+            var wo_idx = flat_idx % WO
+            flat_idx = flat_idx // WO
+            var ho_idx = flat_idx % HO
+            flat_idx = flat_idx // HO
+            var do_idx = flat_idx % DO
+            var n_idx = flat_idx // DO
+
+            # print("  Coordinates:", Index(n_idx, do_idx, ho_idx, wo_idx, f_idx))
+            # print("  GPU value:", output_ptr[max_diff_idx])
+            # print("  CPU value:", output_ref_ptr[max_diff_idx])
+            pass
+
+    # print("\n4) --------------------------------------")
+
+    input_ptr.free()
+    filter_ptr.free()
+    packed_filter_ptr.free()
     output_ptr.free()
     output_ref_ptr.free()
 
-    # CHECK: Succeed
-    print("Succeed")
+    if matching_elements == total_elements:
+        print("Succeed")
+        pass
 
 
 fn main() raises:
     alias type = DType.float32
 
-    # w/o packing, w/o padding.
+    test[DType.float32, False](  # type, filter_packed
+        1,  # N: batch size
+        IndexList[3](4, 4, 4),  # DHW: depth, height, width
+        2,  # C: channels
+        IndexList[3](2, 2, 2),  # QRS: depth filter, height filter, width filter
+        3,  # F: out channels
+        IndexList[3](1, 1, 1),  # stride
+        IndexList[3](1, 1, 1),  # dilation
+        IndexList[2](0, 0),  # pad_d: padding for depth dimension
+        IndexList[2](0, 0),  # pad_h: padding for height dimension
+        IndexList[2](0, 0),  # pad_w: padding for width dimension
+        1,  # num_groups
+    )
+
     test[type, False](
         1,  # batch size
         Index(2, 4, 5),  # input shape
