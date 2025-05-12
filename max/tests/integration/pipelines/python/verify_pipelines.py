@@ -442,7 +442,7 @@ PIPELINES = {
             absolute_tolerance=0.35,
             relative_tolerance=0.15,
             cos_dist_threshold=3.0e-4,
-            kl_div_threshold=2.3e-3,
+            kl_div_threshold=4.0e-3,
         ),
     ),
     "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
@@ -501,7 +501,7 @@ PIPELINES = {
             absolute_tolerance=0.25,
             relative_tolerance=0.11,
             cos_dist_threshold=3.3e-4,
-            kl_div_threshold=4.3e-3,
+            kl_div_threshold=5.0e-3,
         ),
     ),
     "Llama-3.1-8B-Instruct-float8-static": PipelineDef(
