@@ -9,6 +9,7 @@
 
 #include "Support/AlignedAlloc.h"
 #include "Support/LogicalResult.h"
+#include "llvm/ADT/STLExtras.h"
 #include <type_traits>
 
 namespace M {
