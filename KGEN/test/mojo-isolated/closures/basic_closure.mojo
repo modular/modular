@@ -25,6 +25,17 @@ fn use(y: MemType, z: Int, u: Index):
 # CHECK-NEXT: lit.struct.field field1 : !Int
 # CHECK-NEXT: lit.struct.field field2 : index
 
+# CHECK-LABEL: lit.fn @"__init__
+# CHECK-NEXT:   [[Q0:%.*]] = lit.ref.struct.ger %self[field0]
+# CHECK-NEXT:   [[Q1:%.*]] = lit.call @{{.*}}::@"__copyinit__{{.*}}(%fld0, [[Q0]])
+# CHECK-NEXT:   [[Q2:%.*]] = lit.ref.struct.ger %self[field1]
+# CHECK-NEXT:   lit.ref.store %fld1, [[Q2]]
+# CHECK-NEXT:   [[Q3:%.*]] = lit.ref.struct.ger %self[field2]
+# CHECK-NEXT:   lit.ref.store %fld2, [[Q3]]
+# CHECK-NEXT:   [[Q4:%.*]] = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT:   lit.return [[Q4]] : !kgen.none
+# CHECK-NEXT:   lit.end_fn
+
 # CHECK:      lit.fn @"__del__
 # CHECK-NEXT:    [[VAR0:%.*]] = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:    lit.ownership.mark_destroyed %self
@@ -72,17 +83,6 @@ fn use(y: MemType, z: Int, u: Index):
 # CHECK-NEXT:   lit.return %none : !kgen.none
 # CHECK-NEXT:   lit.end_fn
 # CHECK-NEXT: }
-
-# CHECK-LABEL: lit.fn @"__init__
-# CHECK-NEXT:   [[Q0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:   [[Q1:%.*]] = lit.call @{{.*}}::@"__copyinit__{{.*}}(%fld0, [[Q0]])
-# CHECK-NEXT:   [[Q2:%.*]] = lit.ref.struct.ger %self[field1]
-# CHECK-NEXT:   lit.ref.store %fld1, [[Q2]]
-# CHECK-NEXT:   [[Q3:%.*]] = lit.ref.struct.ger %self[field2]
-# CHECK-NEXT:   lit.ref.store %fld2, [[Q3]]
-# CHECK-NEXT:   [[Q4:%.*]] = kgen.param.constant: none = <#kgen.none>
-# CHECK-NEXT:   lit.return [[Q4]] : !kgen.none
-# CHECK-NEXT:   lit.end_fn
 
 
 fn makes_escaping_closure(m: MemType, z: MemType, y: Bool):

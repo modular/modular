@@ -372,6 +372,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         existingImpl);
     storeField(b, copySelf, call.getResult(0), impl);
   }
+  // Copy all the fields over as well.
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
 
@@ -389,6 +390,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         b.create<ParamConstantOp>(opaquePtrType, opaquePointerTypeAttr);
     storeField(b, moveExisting, nullPtr, impl);
   }
+  // Move all the fields over as well.
   if (failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
     return {};
 
@@ -562,15 +564,17 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   initSigConventions.push_back(ArgConvention::ByRefResult);
   initSigPassingKinds.push_back(PassingKind::Implicit);
 
-  std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
-      structDecl, /*generateFieldwiseInit=*/false,
-      /*forceGenerateDestructor=*/true);
   FnOp initFunc = synthesizeMemberwiseInit(
       structDecl, initSigTypes, initSigConventions,
       PogListAttr::get(ctx, initSigNames, initSigPassingKinds),
       shared.getNoneType());
   if (!initFunc) // This can fail when the members aren't copy/moveable.
     return {};
+
+  // Add the copy and move constructors and dtor.
+  (void)addMissingValueMemberStubsToStruct(structDecl,
+                                           /*generateFieldwiseInit=*/false,
+                                           /*forceGenerateDestructor=*/true);
 
   builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
@@ -609,22 +613,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       diScopeGuard = shared.diBuilder->pushScopeGuard(initFunc.getLocScope());
     emitter.emitConstructorCall(clType, {}, loc, CallSyntax::kDirectCall, dest);
   }
-
-  FnOp copyCtr = stubs->copyCtr;
-  SymbolConstantAttr copyCtrRef =
-      copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
-  ASTDecl *copyCtrDecl =
-      shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
-  FnOp moveCtr = stubs->moveCtr;
-  SymbolConstantAttr moveCtrRef =
-      moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
-  ASTDecl *moveCtrDecl =
-      shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
-
-  // Try to create a closure copy + move constructors.
-  if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)) ||
-      failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
-    return {};
 
   // Populate the body of the call op.
   declOp->setAttr(callMethodAttr,

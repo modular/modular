@@ -365,6 +365,8 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
 ///   copyinit_of_type_of_field0(%targetField0, %field)
 LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // This method body resolves the decl.
+  // TODO: This is because clients are directly calling this instead of having
+  // declresolution do it.
   fnDecl.resolvedness = DeclResolvedness::body;
 
   auto fn = cast<FnOp>(fnDecl);

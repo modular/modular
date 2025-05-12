@@ -128,19 +128,7 @@ static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
   assert((isMove || kind == SpecialFunctionKind::kCopyInit) &&
          "Unknown thing to synthesize");
 
-  FnOp result = gen.synthesizeEmptyMoveOrCopyInit(structDecl, isMove);
-  if (!result)
-    return {};
-
-  SymbolConstantAttr ref =
-      result.getBoundSymbolRef(gen.shared.getEvaluationContext());
-  ASTDecl *moveCtrDecl =
-      gen.getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
-
-  if (failed(gen.populateMoveCopy(*moveCtrDecl, isMove)))
-    return {};
-
-  return result;
+  return gen.synthesizeEmptyMoveOrCopyInit(structDecl, isMove);
 }
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
