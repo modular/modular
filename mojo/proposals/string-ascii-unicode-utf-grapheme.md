@@ -1,8 +1,10 @@
 # String, ASCII, Unicode, UTF, Graphemes
 
-Edit 0: 2025-02-05. Created.
-Edit 1: 2025-04-27. Reduced the scope to only affect `StringSlice` and fixed
-some details after feedback.
+- Edit 0: 2025-02-05. Created.
+- Edit 1: 2025-04-27. Reduced the scope to only affect `StringSlice` and fixed
+  some details after feedback.
+- Edit 1: 2025-05-11. Reduced the scope even further and separated the work into
+  several much smaller phases.
 
 The current proposal will attempt to unify the handling of the standards.
 Providing nice ergonomics, as Python-like defaults as possible, and keeping the
@@ -27,15 +29,15 @@ with supporting only ASCII is that other encodings can get corrupted.
 - UTF-16 is 1-2 sets of 16 bits long
 - UTF-32 is 1 set of 32 bits long
 
-### When slicing by unicode codepoint e.g. "🔥🔥🔥" (\U0001f525\U0001f525\U0001f525)
+### When slicing by unicode codepoint e.g. "🔥🔥" (\U0001f525\U0001f525)
 
-- UTF-8: 12 sets (12 bytes) long. The first byte of each fire can be used to
-know the length, and the next bytes are what is known as a continuation byte.
-There are several approaches to achieve the slicing, they can be explored with
-benchmarking later on.
-- UTF-16: 6 sets long. It's very similar in procedure to UTF-8.
+- UTF-8: 8 sets (8 bytes) long. The first byte of each fire can be used to
+  know the length, and the next bytes are what is known as a continuation byte.
+  There are several approaches to achieve the slicing, they can be explored with
+  benchmarking later on.
+- UTF-16: 4 sets long. It's very similar in procedure to UTF-8.
 - UTF-32: It is fastest since it's direct index access. This is not the case
-when supporting graphemes.
+  when supporting graphemes.
 
 ## Graphemes
 
@@ -115,6 +117,7 @@ prefetching, and algorithmic tricks to make processing faster for languages
 which have mostly ASCII characters but still keep full unicode support.
 
 #### Grapheme support
+
 Grapheme support should exist but be opt-in due to their high compute cost.
 
 ### One concrete (tentative) way forward
@@ -128,12 +131,13 @@ their own merit.
 
 ```mojo
 struct Encoding:
-    alias UTF8 = 0
-    alias UTF16 = 1
-    alias UTF32 = 2
-    alias ASCII = 3
-    # maybe in the future we will even implement parsing for http header encoding
-    # alias ISO_8859_1 = 4
+    alias ASCII = 0
+    alias UTF8 = 1
+    # maybe we implement some of these at some point
+    # alias UTF32 = 2
+    # alias UTF16 = 3
+    # alias ISO_8859_1 = 4 # http header encoding
+    # alias UTF8_G = 4 # UTF-8 extension for fast grapheme ops.
 
 struct Indexing:
     alias RAW = 0
@@ -144,10 +148,9 @@ alias ASCIIString = StringSlice[encoding=Encoding.ASCII, indexing=Indexing.RAW]
 
 
 struct StringSlice[
-    encoding: Encoding = Encoding.UTF8,
-    indexing: Indexing = Indexing.RAW,
+    encoding: Encoding = Encoding.UTF8, indexing: Indexing = Indexing.RAW
 ]:
-    ... # data is bitcasted to bigger DTypes when encoding is 16 or 32 bits
+    ... # ptr is bitcasted to bigger DTypes when encoding is 16 or 32 bits
 
 struct String:
     fn as_string_slice(
@@ -156,30 +159,52 @@ struct String:
         ...
 ```
 
+#### Motivation for parameters instead of different types
+
+I am not a particular fan of creating new types because it means:
+- A lot of API docstrings and function duplication
+  - Several basic functions that everyone expects in a pythonic string type will
+    be duplicated for each new type.
+- Developing a whole set of traits to avoid having to allocate when going
+  from one type to the other
+  - Besides being a lot of work to come up with it, developing a set of traits
+    would also involve quite the function signature rewrite for several that
+    work agnostically regardless of encoding or indexing scheme.
+
 #### What this requires
 
-1. Phase 1: Add parameters and constraints.
+1. Phase 1: Add parameters and constraints for `Indexing` only.
+- Add the parameters and constraint on the supported indexing schemes.
+
+2. Phase 2: Add the implementations for each `Indexing` scheme for UTF-8.
+- Add the indexing schemes and fix all functions which assume one particular
+  kind.
+
+3. Phase 3: Add parameters and constraints for `Encoding`.
+- We can start with only UTF-8 (current) and ASCII.
 - Add the parameters and constraint on the supported encodings. This
-will enable progressive implementation for each encoding and indexing scheme
-without breaking any existing code, since our type currently already implements
-UTF-8 encoding and (to my chagrin) raw indexing.
+  will enable progressive implementation for each encoding without breaking any
+  existing code.
 
-2. Phase 2: Add parametric support for other encodings.
-- Rewrite every function signature that uses `StringSlice`s, where the code
-doesn't require them to be the defaults. This will be a lot of work because it
-basically affects every place `StringSlice` is used in a function signature with
-a specified origin or mutability.
+4. Phase 4: Add parsing for other encodings.
+- We will need to add parametrized `StringSlice` explicit constructors that
+  parse `StringSlice`s from another encoding. But the default same-encoding
+  internal methods will remain the same **(as long as the code is encoding and
+  indexing-agnostic)**.
 
-3. Phase 3: Add parsing for other encodings.
-- We will need to add parametrized `StringSlice` constructors that parse
-`StringSlice`s from another encoding. But the default same-encoding internal
-methods will remain the same **(as long as the code is encoding and
-indexing-agnostic)**.
+5. Phase 5: Add utility functions for each encoding.
+- Similarly to `stdlib/collections/string/_utf8.mojo` add functions to implement
+  optimized versions of different functions.
 
-4. Phase 4: Optimize for each encoding.
+6. Phase 6: Optimize for each encoding.
 - Add support for functions like `.isspace()`, `.split()` and `.splitlines()`
-for those encodings.
+  for those encodings.
 
+7. Phase 7: Add parametric support for other encodings.
+- Rewrite every function signature that uses `StringSlice`s, where the code
+  doesn't require them to be the defaults. This will be a lot of work because it
+  basically affects every place `StringSlice` is used in a function signature
+  with a specified origin or mutability.
 
 #### Adapt CodepointIter
 
@@ -229,16 +254,11 @@ ascii_val.uppercase() # incredibly fast due to bitflip trick
 
 ```mojo
 struct StringSlice[
-    encoding: Encoding = Encoding.UTF8,
-    indexing: Indexing = Indexing.RAW,
+    encoding: Encoding = Encoding.UTF8, indexing: Indexing = Indexing.RAW
 ]:
   fn __getitem__(self, slice: Slice) -> Self:
     @parameter
-    if encoding is Encoding.UTF32:
-      return Self(unsafe_from_utf32=rebind[Span[UInt32, origin]](self._slice)[slice])
-    elif encoding is Encoding.UTF16 and indexing is Indexing.RAW:
-      return Self(unsafe_from_utf16=rebind[Span[UInt16, origin]](self._slice)[slice])
-    elif encoding is Encoding.ASCII and indexing is not Indexing.GRAPHEME:
+    if encoding is Encoding.ASCII and indexing is not Indexing.GRAPHEME:
       return Self(unsafe_from_ascii=self._slice[slice])
     elif encoding is Encoding.UTF8 and indexing is Indexing.RAW:
       ... # current implementation
