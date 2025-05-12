@@ -89,7 +89,7 @@ class AddSingletonDimOp(max._core.Operation):
 
     Example:
     ```mlir
-      mo.add_singleton_dim[1: i64](%res): (!mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1, 3], f32>
+      mo.add_singleton_dim[1](%res): (!mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1, 3], f32>
     ```
     """
 
@@ -104,7 +104,7 @@ class AddSingletonDimOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.dialects.builtin.IntegerAttr: ...
+    def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
@@ -1612,7 +1612,7 @@ class CumsumOp(max._core.Operation):
     ```mlir
     %arg: !mo.tensor<[2, 3], f32>
     %axis: !mo.tensor<[], i64>
-    %res = mo.cumsum(%arg, %axis) {exclusive = 1 : i64, reverse = 0 : bool} : (
+    %res = mo.cumsum(%arg, %axis) {exclusive = 1 : index, reverse = 0 : index} : (
       !mo.tensor<[2, 3], f32>., !mo.tensor<[], i64>) -> !mo.tensor<[2, 3], f32>
     ```
     """
@@ -1632,13 +1632,13 @@ class CumsumOp(max._core.Operation):
     @property
     def axis(self) -> max._core.Value[TensorType]: ...
     @property
-    def exclusive(self) -> max._core.dialects.builtin.IntegerAttr: ...
+    def exclusive(self) -> int: ...
     @exclusive.setter
     def exclusive(
         self, arg: max._core.dialects.builtin.IntegerAttr, /
     ) -> None: ...
     @property
-    def reverse(self) -> max._core.dialects.builtin.IntegerAttr: ...
+    def reverse(self) -> int: ...
     @reverse.setter
     def reverse(
         self, arg: max._core.dialects.builtin.IntegerAttr, /
@@ -2034,7 +2034,7 @@ class GatherNdOp(max._core.Operation):
     @property
     def indices(self) -> max._core.Value[TensorType]: ...
     @property
-    def batch_dims(self) -> max._core.dialects.builtin.IntegerAttr: ...
+    def batch_dims(self) -> int: ...
     @batch_dims.setter
     def batch_dims(
         self, arg: max._core.dialects.builtin.IntegerAttr, /
@@ -3227,7 +3227,7 @@ class MergeDimOp(max._core.Operation):
 
     Example:
     ```mlir
-      %out = mo.merge_dim[1: i64](%res): (!mo.tensor<[1, 2, 3, 4], f32>) -> !mo.tensor<[1, 6, 4], f32>
+      %out = mo.merge_dim[1](%res): (!mo.tensor<[1, 2, 3, 4], f32>) -> !mo.tensor<[1, 6, 4], f32>
     ```
     """
 
@@ -3242,7 +3242,7 @@ class MergeDimOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.dialects.builtin.IntegerAttr: ...
+    def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
@@ -5491,7 +5491,7 @@ class SplitDimOp(max._core.Operation):
 
     Example:
     ```mlir
-      %out = mo.split_dim[0: i64](%res): (!mo.tensor<[4, 9], f32>) -> !mo.tensor<[2, 2, 9], f32>
+      %out = mo.split_dim[0](%res): (!mo.tensor<[4, 9], f32>) -> !mo.tensor<[2, 2, 9], f32>
     ```
     """
 
@@ -5506,7 +5506,7 @@ class SplitDimOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.dialects.builtin.IntegerAttr: ...
+    def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
