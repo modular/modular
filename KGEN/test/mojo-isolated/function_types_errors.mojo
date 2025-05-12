@@ -182,6 +182,30 @@ fn main():
 
 # // -----
 
+# Tests that we can properly reject a `raises` function when handed to a
+# non-raising input-parameter fn.
+
+
+fn device_func(a: Int, b: Bool) raises -> Int:
+    return 73
+
+
+# expected-note @below {{function declared here}}
+fn compile[
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyRPTrivialType, `>`], //,
+    func: fn (* args: * ArgTypes) -> Int,
+]():
+    pass
+
+
+fn main():
+    # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    compile[device_func]()
+
+
+# // -----
+
 
 # Tests a GPU-function-like case (see FTAGPUF) but this one catches when the
 # user hands in something of the wrong type.
