@@ -174,37 +174,31 @@ I am not a particular fan of creating new types because it means:
 #### What this requires
 
 1. Phase 1: Add parameters and constraints for `Indexing` only.
-- Add the parameters and constraint on the supported indexing schemes.
-
+  - Add the parameters and constraint on the supported indexing schemes.
 2. Phase 2: Add the implementations for each `Indexing` scheme for UTF-8.
-- Add the indexing schemes and fix all functions which assume one particular
-  kind.
-
+  - Add the indexing schemes and fix all functions which assume one particular
+    kind.
 3. Phase 3: Add parameters and constraints for `Encoding`.
-- We can start with only UTF-8 (current) and ASCII.
-- Add the parameters and constraint on the supported encodings. This
-  will enable progressive implementation for each encoding without breaking any
-  existing code.
-
+  - We can start with only UTF-8 (current) and ASCII.
+  - Add the parameters and constraint on the supported encodings. This
+    will enable progressive implementation for each encoding without breaking
+    any existing code.
 4. Phase 4: Add parsing for other encodings.
-- We will need to add parametrized `StringSlice` explicit constructors that
-  parse `StringSlice`s from another encoding. But the default same-encoding
-  internal methods will remain the same **(as long as the code is encoding and
-  indexing-agnostic)**.
-
+  - We will need to add parametrized `StringSlice` explicit constructors that
+    parse `StringSlice`s from another encoding. But the default same-encoding
+    internal methods will remain the same **(as long as the code is encoding and
+    indexing-agnostic)**.
 5. Phase 5: Add utility functions for each encoding.
-- Similarly to `stdlib/collections/string/_utf8.mojo` add functions to implement
-  optimized versions of different functions.
-
+  - Similarly to `stdlib/collections/string/_utf8.mojo` add functions to
+    implement optimized versions of different functions.
 6. Phase 6: Optimize for each encoding.
-- Add support for functions like `.isspace()`, `.split()` and `.splitlines()`
-  for those encodings.
-
+  - Add support for functions like `.isspace()`, `.split()` and `.splitlines()`
+    for those encodings.
 7. Phase 7: Add parametric support for other encodings.
-- Rewrite every function signature that uses `StringSlice`s, where the code
-  doesn't require them to be the defaults. This will be a lot of work because it
-  basically affects every place `StringSlice` is used in a function signature
-  with a specified origin or mutability.
+  - Rewrite every function signature that uses `StringSlice`s, where the code
+    doesn't require them to be the defaults. This will be a lot of work because
+    it basically affects every place `StringSlice` is used in a function
+    signature with a specified origin or mutability.
 
 #### Adapt CodepointIter
 
