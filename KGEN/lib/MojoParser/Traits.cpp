@@ -79,56 +79,43 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
   return {newSignature, bindings};
 }
 
-/// Decide if we can synthesize a missing method for the specified struct.
-static bool canSynthesizeMethodForTrait(ASTDecl &structDecl,
-                                        StringRef methodName) {
-  // We can only synthesize methods for structs.
-  auto structDeclOp = dyn_cast<StructDeclOp>(structDecl);
-  if (!structDeclOp)
-    return false;
-
-  if (methodName == "__copyinit__")
-    return structDeclOp.isRegisterPassableTrivial();
-
-  if (methodName == "__moveinit__")
-    return structDeclOp.isRegisterPassable();
-
-  return false;
-}
-
 /// Allow synthesizing default implementations of certain special functions.
 static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
                                       StringRef methodName) {
   auto kind = SpecialFunctionInfo::getKind(methodName);
   StructEmitter gen(structDecl.getShared());
 
+  auto conformsToTrait = [&](StringRef traitName) {
+    auto trait = dyn_cast_or_null<TraitDeclOp>(gen.shared.lookupBuiltinTrait(
+        traitName, &structDecl, structDecl.getLoc()));
+    if (!trait)
+      return false;
+    return structDecl.doesNominalTypeConformTo(trait.bindReference(),
+                                               /*allowImplicit=*/false);
+  };
+
   // Allow types that lack `__del__` to conform if it conforms to AnyType. A
   // no-op destructor will be synthesized for them.
   if (kind == SpecialFunctionKind::kDel) {
-    auto anyTypeTrait =
-        dyn_cast_or_null<TraitDeclOp>(gen.shared.lookupBuiltinTrait(
-            "AnyType", &structDecl, structDecl.getLoc()));
-    // Don't synthesize a destructor if it doesn't conform to AnyType!
-    if (!anyTypeTrait ||
-        !structDecl.doesNominalTypeConformTo(anyTypeTrait.bindReference(),
-                                             /*allowImplicit=*/false))
-      return {};
-    return gen.synthesizeEmptyDtor(structDecl);
+    if (conformsToTrait("AnyType"))
+      return gen.synthesizeEmptyDtor(structDecl);
   }
 
-  // We can only synthesize methods for structs.
-  auto structDeclOp = dyn_cast<StructDeclOp>(structDecl);
-  if (!structDeclOp)
-    return {};
+  // We can synthesize a copy constructor if all the fields are copyable and the
+  // struct explicitly conforms to Copyable.
+  if (kind == SpecialFunctionKind::kCopyInit) {
+    if (conformsToTrait("Copyable"))
+      return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
+  }
 
-  if (!canSynthesizeMethodForTrait(structDecl, methodName))
-    return {};
+  // We can synthesize a move constructor if all the fields are movable and the
+  // struct explicitly conforms to Movable.
+  if (kind == SpecialFunctionKind::kMoveInit) {
+    if (conformsToTrait("Movable"))
+      return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
+  }
 
-  bool isMove = kind == SpecialFunctionKind::kMoveInit;
-  assert((isMove || kind == SpecialFunctionKind::kCopyInit) &&
-         "Unknown thing to synthesize");
-
-  return gen.synthesizeEmptyMoveOrCopyInit(structDecl, isMove);
+  return {};
 }
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,

@@ -293,14 +293,24 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
     return true; // MLIR Types are copyable.
 
   // If the type is trivial, then it is copyable.
-  if (auto structDecl = dyn_cast<StructDeclOp>(*typeDecl);
-      structDecl && structDecl.isRegisterPassableTrivial())
+  if (isTrivial(loc, shared))
     return true;
 
   // Look for a copy constructor.
-  if (failed(shared.declResolver->resolveBody(*typeDecl, loc)))
+  // FIXME: Remove this, just rely on trait conformance.
+  if (shared.typeHasMember(*typeDecl, "__copyinit__", loc))
     return true;
-  return !typeDecl->lookupInCurrentScope("__copyinit__").empty();
+
+  // Check to see if the type conforms to Copyable.
+  if (auto copyableTrait =
+          dyn_cast_or_null<TraitDeclOp>(shared.lookupBuiltinTrait(
+              "Copyable", typeDecl, typeDecl->getLoc()))) {
+    if (typeDecl->doesNominalTypeConformTo(copyableTrait.bindReference(),
+                                           /*allowImplicit=*/false))
+      return true;
+  }
+
+  return false;
 }
 
 /// Return true if this type is movable from its own type, either because it
@@ -312,14 +322,23 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
     return true; // MLIR types are movable.
 
   // If the type is register-passable, it is trivially movable.
-  if (auto structDecl = dyn_cast<StructDeclOp>(*typeDecl);
-      structDecl && structDecl.isRegisterPassable())
+  if (isRegisterPassable(loc, shared))
     return true;
 
   // Look for a move constructor.
-  if (failed(shared.declResolver->resolveBody(*typeDecl, loc)))
+  // FIXME: Remove this, just rely on trait conformance.
+  if (shared.typeHasMember(*typeDecl, "__moveinit__", loc))
     return true;
-  return !typeDecl->lookupInCurrentScope("__moveinit__").empty();
+
+  // Check to see if the type conforms to Movable.
+  if (auto movableTrait = dyn_cast_or_null<TraitDeclOp>(
+          shared.lookupBuiltinTrait("Movable", typeDecl, typeDecl->getLoc()))) {
+    if (typeDecl->doesNominalTypeConformTo(movableTrait.bindReference(),
+                                           /*allowImplicit=*/false))
+      return true;
+  }
+
+  return false;
 }
 
 /// Return true if this type is movable, either because it is trivial, a
@@ -344,7 +363,7 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   if (!value.ir.getIfRValue())
     return false;
 
-  return shared.typeHasMember(*typeDecl, "__moveinit__", value.expr->getLoc());
+  return isMovable(value.expr->getLoc(), shared);
 }
 
 /// Given a reference, return the element as an ASTType.  This aborts
