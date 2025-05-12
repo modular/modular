@@ -755,8 +755,12 @@ def flash_attention(
         raise ValueError(msg)
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.mha.padded.{cache_strategy_str}.tensor_mask.no_pos"
-
+    op_name = f"mo.mha.padded.{cache_strategy_str}.tensor_mask"
+    parameters: dict[str, bool | int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "score_mod_str": PositionalEncodingVariant.NO_POS.value,
+    }
     return ops.inplace_custom(
         op_name,
         values=[
@@ -774,10 +778,7 @@ def flash_attention(
                 dtype=input.dtype, shape=input.shape, device=input.device
             )
         ],
-        parameters={
-            "num_heads": kv_params.n_kv_heads_per_device,
-            "head_dim": kv_params.head_dim,
-        },
+        parameters=parameters,
     )[0].tensor
 
 
@@ -819,8 +820,13 @@ def flash_attention_with_causal_mask(
         raise ValueError(msg)
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.mha.padded.{cache_strategy_str}.causal_mask.no_pos"
-
+    op_name = f"mo.mha.padded.{cache_strategy_str}"
+    parameters: dict[str, bool | int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "mask_str": MHAMaskVariant.CAUSAL_MASK.value,
+        "score_mod_str": PositionalEncodingVariant.NO_POS.value,
+    }
     return ops.inplace_custom(
         op_name,
         values=[
@@ -836,10 +842,7 @@ def flash_attention_with_causal_mask(
                 dtype=input.dtype, shape=input.shape, device=input.device
             )
         ],
-        parameters={
-            "num_heads": kv_params.n_kv_heads_per_device,
-            "head_dim": kv_params.head_dim,
-        },
+        parameters=parameters,
     )[0].tensor
 
 
@@ -850,11 +853,11 @@ class MHAMaskConfig:
 
 
 class AttentionMaskVariant(str, Enum):
-    NULL_MASK = "null_mask"
-    CAUSAL_MASK = "causal_mask"
+    NULL_MASK = "null"
+    CAUSAL_MASK = "causal"
     TENSOR_MASK = "tensor_mask"
-    CHUNKED_CAUSAL_MASK = "chunked_causal_mask"
-    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal_mask"
+    CHUNKED_CAUSAL_MASK = "chunked_causal"
+    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal"
 
 
 class PositionalEncodingVariant(str, Enum):
@@ -902,7 +905,7 @@ def flash_attention_ragged(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
-    local_window_size: int = 8192,
+    local_window_size: int = -1,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -952,15 +955,15 @@ def flash_attention_ragged(
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
-    if (
-        mask_variant == MHAMaskVariant.CHUNKED_CAUSAL_MASK
-        or mask_variant == MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-    ):
-        parameters["local_window_size"] = local_window_size
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.mha.ragged.{cache_strategy_str}.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = f"mo.mha.ragged.{cache_strategy_str}"
+
+    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
+    parameters["score_mod_str"] = (
+        mha_mask_config.positional_encoding_variant.value
+    )
+    parameters["local_window_size"] = local_window_size
 
     return ops.inplace_custom(
         op_name,

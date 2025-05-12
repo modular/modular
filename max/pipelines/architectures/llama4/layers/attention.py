@@ -73,6 +73,7 @@ class _Llama4TextAttention(Module):
         use_rope: bool = True,
         use_qk_norm: bool = False,
         qk_norm_eps: float = 1e-6,
+        local_window_size: int = 8192,
     ):
         """Initializes the attention layer.
 
@@ -98,6 +99,8 @@ class _Llama4TextAttention(Module):
             use_rope: Whether to use rope in this layer. Defaults to True.
             use_qk_norm: Whether to normalize the qk values. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            local_window_size: The size of the local window for the attention.
+                Defaults to 8192.
         """
 
         super().__init__()
@@ -110,6 +113,7 @@ class _Llama4TextAttention(Module):
         self.scale = (
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
+        self.local_window_size = local_window_size
         # rope unused for dense layers
         self.use_rope = use_rope
         self.use_qk_norm = self.use_rope and use_qk_norm
@@ -286,6 +290,7 @@ class _Llama4TextAttention(Module):
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=mask_variant,
+            local_window_size=self.local_window_size,
             scale=self.scale,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])

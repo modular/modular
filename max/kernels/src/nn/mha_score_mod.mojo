@@ -127,7 +127,7 @@ struct AlibiScoreMod[
 struct IdentityScoreMod(ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
-    alias name_str: String = "identity"
+    alias name_str: String = "no_pos"
 
     @always_inline
     fn score_mod[

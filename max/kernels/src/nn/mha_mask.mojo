@@ -34,7 +34,7 @@ struct MaskName(Stringable):
     alias NULL = Self("null")
     alias CAUSAL = Self("causal")
     alias CHUNKED = Self("chunked")
-    alias SLIDING_WINDOW = Self("sliding_window")
+    alias SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
     alias MATERIALIZED = Self("materialized")
     alias CHUNKED_CAUSAL = Self("chunked_causal")
 

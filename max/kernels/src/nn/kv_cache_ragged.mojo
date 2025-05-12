@@ -1856,7 +1856,6 @@ fn generic_flash_attention_kv_cache_ragged[
     mask_str: StaticString,
     score_mod_str: StaticString,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -1893,7 +1892,6 @@ fn generic_flash_attention_kv_cache_ragged[
             mask_str=mask_str,
             score_mod_str=score_mod_str,
             local_window_size=local_window_size,
-            num_heads=num_heads,
         ](
             q,
             input_row_offsets,
@@ -1913,7 +1911,6 @@ fn _flash_attention_dispatch[
     mask_str: StaticString,
     score_mod_str: StaticString,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -1968,7 +1965,7 @@ fn _flash_attention_dispatch[
         score_mod_str,
         _dispatch_flash_attention,
         local_window_size,
-        num_heads,
+        collection_t.kv_params.num_heads,
     ]()
 
 

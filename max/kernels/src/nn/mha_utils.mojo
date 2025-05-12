@@ -555,7 +555,7 @@ fn dispatch_mask_and_score_mod[
         return outer_wrapper(ChunkedMask[local_window_size]())
     elif MaskName.NULL == mask_type:
         return outer_wrapper(NullMask())
-    elif MaskName.SLIDING_WINDOW == mask_type:
+    elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
         constrained[
             local_window_size > 0,
             "You muse specify local_window_size for SlidingWindowCausalMask",

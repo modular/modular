@@ -426,7 +426,6 @@ fn generic_flash_attention_kv_cache_padded[
             mask_str=mask_str,
             score_mod_str=score_mod_str,
             local_window_size=local_window_size,
-            num_heads=num_heads,
         ](
             q,
             kv_collection,
@@ -483,7 +482,6 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
             target=target,
             score_mod_str=score_mod_str,
             local_window_size=local_window_size,
-            num_heads=num_heads,
         ](
             q,
             kv_collection,
@@ -504,7 +502,6 @@ fn _flash_attention_dispatch[
     mask_str: StaticString,
     score_mod_str: StaticString,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 4, *_],
     kv_cache: collection_t,
@@ -542,7 +539,7 @@ fn _flash_attention_dispatch[
             )
 
     return dispatch_mask_and_score_mod[
-        mask_str, score_mod_str, _dispatch_flash_attention, num_heads
+        mask_str, score_mod_str, _dispatch_flash_attention
     ]()
 
 
@@ -553,7 +550,6 @@ fn _flash_attention_dispatch_materialized_mask[
     target: StaticString,
     score_mod_str: String,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ](
     q: NDBuffer[type, 4, *_],
     kv_cache: collection_t,
@@ -591,7 +587,9 @@ fn _flash_attention_dispatch_materialized_mask[
             )
 
     return dispatch_materialized_mask_and_score_mod[
-        score_mod_str, _dispatch_flash_attention, num_heads
+        score_mod_str,
+        _dispatch_flash_attention,
+        collection_t.kv_params.num_heads,
     ](mask_nd)
 
 
