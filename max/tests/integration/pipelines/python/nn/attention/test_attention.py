@@ -336,6 +336,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
                 layer_idx,
                 mask_variant=mask_strategy,
                 scale=math.sqrt(1.0 / kv_params.head_dim),
+                local_window_size=8192,
             )
             g.output(result)
         return g
