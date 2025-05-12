@@ -132,3 +132,12 @@ modular_cc_test(
         "//Support:Globals",
     ],
 )
+
+modular_cc_test(
+    name = "NixlTest",
+    size = "small",
+    srcs = ["NixlTest.cpp"],
+    deps = [
+        "//AsyncRT:NIXL",
+    ],
+)

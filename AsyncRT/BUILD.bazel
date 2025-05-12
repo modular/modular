@@ -173,3 +173,27 @@ modular_cc_library(
         "//Support:Threading",
     ],
 )
+
+modular_cc_library(
+    name = "NIXL",
+    srcs = glob([
+        "lib/NIXL/**/*.cpp",
+    ]),
+    hdrs = glob([
+        "include/AsyncRT/NIXL/**/*.h",
+    ]),
+    include_prefix = "",
+    strip_include_prefix = "include",
+    # TODO(bduke): Remove maybe-unused once this is used outside of tests.
+    tags = ["maybe-unused"],
+    # Only compatible with Linux since this depends on liburing, at the least.
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//AsyncRT:Support",
+        "//Support:Threading",
+        "@llvm-project//llvm:Support",
+    ],
+)
