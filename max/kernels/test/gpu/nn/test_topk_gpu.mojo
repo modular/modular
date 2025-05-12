@@ -488,12 +488,6 @@ fn main() raises:
     with DeviceContext() as ctx:
         alias type = DType.float32
         alias bf16_type = DType.bfloat16
-        var N: Int
-        var K: Int
-        var block_size: Int
-        var batch_size: Int
-        var sampling: Bool
-        var num_blocks_per_input: Int
 
         # var test_cases: [TestCase] = []
         # var N_values = [1024, 32000, 128256]
