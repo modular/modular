@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 
 from max import mlir
 from max._core import graph as _graph
@@ -43,9 +43,9 @@ def _parameter_attribute(
 
 def custom(
     name: str,
-    values: list[Value],
-    out_types: list[Type],
-    parameters: dict[str, bool | int | str | DType] | None = None,
+    values: Sequence[Value],
+    out_types: Sequence[Type],
+    parameters: Mapping[str, bool | int | str | DType] | None = None,
     device: DeviceRef | None = None,
 ) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
