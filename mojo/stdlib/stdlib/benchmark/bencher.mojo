@@ -509,7 +509,7 @@ struct Mode:
         return self.value == other.value
 
 
-struct Bench(Writable):
+struct Bench(Writable, Stringable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
