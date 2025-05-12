@@ -720,10 +720,7 @@ class TensorType(Type):
     """The device of the tensor value."""
 
     def __init__(
-        self,
-        dtype: DType,
-        shape: ShapeLike,
-        device: DeviceRef,
+        self, dtype: DType, shape: ShapeLike, device: DeviceRef
     ) -> None:
         """Constructs a tensor type.
 
