@@ -14,10 +14,12 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
+from sys import _RegisterPackType
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 from memory import UnsafePointer, bitcast
 from gpu.memory import AddressSpace, external_memory
+from gpu.mma import _str_iota  # TODO: move to a string module
 
 alias check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
@@ -111,3 +113,218 @@ fn tcgen05_dealloc[cta_group: Int32](mut tmem: TensorMemory):
         constraints="r,r",
         has_side_effect=True,
     ](tmem.ptr[0], tmem.num_cols)
+
+
+@always_inline
+fn tcgen05_ld[
+    *,
+    datapaths: Int,
+    bits: Int,
+    repeat: Int,
+    type: DType,
+    pack: Bool,
+    width: Int = (datapaths * bits * repeat) // (32 * 32),
+](tmem: TensorMemory) -> SIMD[type, width]:
+    """Loads data from tensor memory into registers.
+
+    Parameters:
+        datapaths: The first dimension of the shape.
+        bits: The second dimension of the shape.
+        repeat: The repeat factor.
+        type: The data type to load.
+        pack: Whether to pack two 16-bit chunks of adjacent columns into a single 32-bit register.
+        width: The nubmer elements in the result vector.
+
+    Args:
+        tmem: TensorMemory struct to load from.
+
+    Returns:
+        The SIMD register containing the loaded data.
+    """
+    check_blackwell_constraint()
+
+    constrained[
+        (datapaths == 16 and bits == 64)
+        or (datapaths == 16 and bits == 128)
+        or (datapaths == 16 and bits == 256)
+        or (datapaths == 32 and bits == 32),
+        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
+    ]()
+
+    constrained[
+        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
+        "`repeat` must be a power of 2 in the range [1, 128].",
+    ]()
+
+    constrained[
+        width in [1, 2, 4, 8, 16, 32, 64],
+        "`width` must be a power of 2 in the range [1, 64].",
+    ]()
+
+    constrained[
+        width == (repeat * bits * datapaths) // (32 * 32)
+        and sizeof[type]() == 4,
+        (
+            "Only support 4B data type and width must be equal to (num * n * m)"
+            " // (32 * 32)."
+        ),
+    ]()
+
+    alias shape_str = String(datapaths) + "x" + String(bits)
+    alias num_str = String(repeat)
+    alias pack_str = ".pack::16b" if pack else ""
+    alias constraints_str = "=r," * width + "r"
+    alias output_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "},"
+    alias addr_str = "[$" + String(width) + "]"
+
+    @parameter
+    if width == 1:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            _RegisterPackType[UInt32],
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    elif width == 2:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            _RegisterPackType[UInt32, UInt32],
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    elif width == 4:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    elif width == 8:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            _RegisterPackType[
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ],
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    elif width == 16:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            # fmt: off
+            _RegisterPackType[
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ],
+            # fmt: on
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    elif width == 32:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            # fmt: off
+            _RegisterPackType[
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ],
+            # fmt: on
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    else:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            # fmt: off
+            _RegisterPackType[
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ],
+            # fmt: on
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem.ptr[])
+
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
