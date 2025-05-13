@@ -615,20 +615,19 @@ FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
   SmallVector<StringAttr> argNames;
   SmallVector<PassingKind> argPassingKinds;
 
-  // Add the `self` argument
+  // Add the `existing` argument
   //
-  // If the type is register passable trivial, the 'existing' `self` value will
+  // If the type is register passable trivial, the 'existing' value will
   // be passed as a register, otherwise a reference.
-
   if (selfType.isTrivial(structDecl.getLoc(), shared)) {
     // Self is register trivial
     argTypes.push_back(selfType);
     argConventions.push_back(ArgConvention::ReadReg);
   } else {
-    argTypes.push_back(selfType.getRefForArgument("self", /*isMut=*/false));
+    argTypes.push_back(selfType.getRefForArgument("existing", /*isMut=*/false));
     argConventions.push_back(ArgConvention::ReadMem);
   }
-  argNames.push_back(StringAttr::get(ctx, "self"));
+  argNames.push_back(StringAttr::get(ctx, "existing"));
   argPassingKinds.push_back(PassingKind::PosOnly);
 
   // Add result slot / return type
@@ -666,6 +665,8 @@ FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
   // Now generate the body of the copy() method
   SyntheticNode synthNode(structDecl.getLoc());
 
+  // FIXME: Should be invoking the recursive copy() method here if the element
+  // is ExplictlyCopyable but not Copyable.
   Value resultToReturn;
   if (structDeclOp.isRegisterPassableTrivial()) {
     resultToReturn = copyFunc.getArgument(0);
@@ -679,7 +680,6 @@ FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
     // resultToReturn remains null.
   }
   emitter.emitNormalReturn(structDeclOp.getLoc(), resultToReturn);
-
   return copyFunc;
 }
 
@@ -746,6 +746,12 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
         synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
   addCopyOrMoveBuiltinTrait("Movable");
 
+  // NOTE: The  behavior of this is scary: if there is no method named "copy"
+  // with any signature, then this will get called to synthesize the copy()
+  // method and get ExplicitlyCopyable.  If there is some method with this name
+  // then it doesn't get added, even if it has nothing to do with
+  // ExplicitlyCopyable.
+  // We should just remove @value.
   if (!valueInfo->copy) {
     valueInfo->copy = synthesizeExplicitCopy(structDecl);
     addCopyOrMoveBuiltinTrait("ExplicitlyCopyable");

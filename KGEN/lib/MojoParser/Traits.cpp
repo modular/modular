@@ -82,7 +82,6 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
 /// Allow synthesizing default implementations of certain special functions.
 static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
                                       StringRef methodName) {
-  auto kind = SpecialFunctionInfo::getKind(methodName);
   StructEmitter gen(structDecl.getShared());
 
   auto conformsToTrait = [&](StringRef traitName) {
@@ -94,26 +93,20 @@ static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
                                                /*allowImplicit=*/false);
   };
 
-  // Allow types that lack `__del__` to conform if it conforms to AnyType. A
-  // no-op destructor will be synthesized for them.
-  if (kind == SpecialFunctionKind::kDel) {
-    if (conformsToTrait("AnyType"))
-      return gen.synthesizeEmptyDtor(structDecl);
-  }
+  // Synthesize default implementations of special functions for well-known
+  // traits.
+  auto kind = SpecialFunctionInfo::getKind(methodName);
+  if (kind == SpecialFunctionKind::kDel && conformsToTrait("AnyType"))
+    return gen.synthesizeEmptyDtor(structDecl);
 
-  // We can synthesize a copy constructor if all the fields are copyable and the
-  // struct explicitly conforms to Copyable.
-  if (kind == SpecialFunctionKind::kCopyInit) {
-    if (conformsToTrait("Copyable"))
-      return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
-  }
+  if (kind == SpecialFunctionKind::kCopyInit && conformsToTrait("Copyable"))
+    return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
 
-  // We can synthesize a move constructor if all the fields are movable and the
-  // struct explicitly conforms to Movable.
-  if (kind == SpecialFunctionKind::kMoveInit) {
-    if (conformsToTrait("Movable"))
-      return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
-  }
+  if (kind == SpecialFunctionKind::kMoveInit && conformsToTrait("Movable"))
+    return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
+
+  if (methodName == "copy" && conformsToTrait("ExplicitlyCopyable"))
+    return gen.synthesizeExplicitCopy(structDecl);
 
   return {};
 }
