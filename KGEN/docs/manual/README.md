@@ -1,4 +1,5 @@
 ---
+title: Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-readme/
 ---
 
