@@ -41,10 +41,12 @@ mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
 
+MOJO_VERSION = "25.4.0.dev2025050919"
+
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
     use_prebuilt_packages = False,
-    version = "25.4.0.dev2025050919",
+    version = MOJO_VERSION,
 )
 use_repo(mojo, "mojo_toolchains")
 
