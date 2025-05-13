@@ -69,14 +69,12 @@ fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
     """
     debug_assert(
         idx < max_size,
-        String(
-            "BitSet index out of bounds when ",
-            operation_name,
-            " bit: ",
-            idx,
-            " >= ",
-            max_size,
-        ),
+        "BitSet index out of bounds when ",
+        operation_name,
+        " bit: ",
+        idx,
+        " >= ",
+        max_size,
     )
 
 
@@ -147,7 +145,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
 
         @parameter
         for i in range(Int(self._words_size)):
-            total += UInt(pop_count(self._words[i]))
+            total += UInt(pop_count(self._words.unsafe_get(i)))
 
         return total
 
@@ -191,7 +189,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
         """
         _check_index_bounds["set"](idx, size)
         var w = _word_index(idx)
-        self._words[w] |= _bit_mask(idx)
+        self._words.unsafe_get(w) |= _bit_mask(idx)
 
     @always_inline
     fn clear(mut self, idx: UInt):
@@ -205,7 +203,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
         """
         _check_index_bounds["clearing"](idx, size)
         var w = _word_index(idx)
-        self._words[w] &= ~_bit_mask(idx)
+        self._words.unsafe_get(w) &= ~_bit_mask(idx)
 
     @always_inline
     fn toggle(mut self, idx: UInt):
@@ -220,7 +218,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
         """
         _check_index_bounds["toggling"](idx, size)
         var w = _word_index(idx)
-        self._words[w] ^= _bit_mask(idx)
+        self._words.unsafe_get(w) ^= _bit_mask(idx)
 
     @always_inline
     fn test(self, idx: UInt) -> Bool:
@@ -237,7 +235,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
         """
         _check_index_bounds["testing"](idx, size)
         var w = _word_index(idx)
-        return (self._words[w] & _bit_mask(idx)) != 0
+        return (self._words.unsafe_get(w) & _bit_mask(idx)) != 0
 
     fn clear_all(mut self):
         """Clears all bits in the set, resetting the logical size to 0.
@@ -297,8 +295,8 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
             # Load a batch of words from both bitsets into SIMD vectors
             @parameter
             for i in range(simd_width):
-                left_vec[i] = left._words[offset + i]
-                right_vec[i] = right._words[offset + i]
+                left_vec[i] = left._words.unsafe_get(offset + i)
+                right_vec[i] = right._words.unsafe_get(offset + i)
 
             # Apply the provided operation (union, intersection, etc.) to the
             # vectors
@@ -307,7 +305,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
             # Store the results back into the result bitset
             @parameter
             for i in range(simd_width):
-                res._words[offset + i] = result_vec[i]
+                res._words.unsafe_get(offset + i) = result_vec[i]
 
         # Choose between vectorized or scalar implementation based on word count
         @parameter
@@ -319,7 +317,10 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
             # For small bitsets, use a simple scalar implementation
             @parameter
             for i in range(Int(Self._words_size)):
-                res._words[i] = func(left._words[i], right._words[i])
+                res._words.unsafe_get(i) = func(
+                    left._words.unsafe_get(i),
+                    right._words.unsafe_get(i),
+                )
 
         return res
 
@@ -412,7 +413,7 @@ struct BitSet[size: UInt](Stringable, Writable, Boolable, Sized):
 
         # Iterate through words rather than individual bits
         for word_idx in range(self._words_size):
-            var word = self._words[word_idx]
+            var word = self._words.unsafe_get(word_idx)
 
             # Skip empty words entirely
             if word == 0:
