@@ -41,8 +41,9 @@ what we publish.
 
 - The `CollectionElement` trait has been removed.
 
-- Added support for NVIDIA RTX 2060 GPUs, enabling Mojo programs to run
-  on a wider range of consumer-grade hardware.
+- Added support for a wider range of consumer-grade hardware, including:
+  - NVIDIA RTX 2060 GPUs
+  - NVIDIA RTX 4090 GPUs
 
 - The `bitset` datastructure was added to the `collections` package. This is a
   fixed `bitset` that simplifies working with a set of bits and perform bit
