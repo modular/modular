@@ -31,5 +31,6 @@ modular_py_test(
         requirement("sse-starlette"),
         requirement("sseclient-py"),
         requirement("transformers"),
+        requirement("pyzmq"),
     ],
 )

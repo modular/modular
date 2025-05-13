@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import tempfile
+import time
 from dataclasses import dataclass
 from queue import Queue
 from unittest.mock import Mock
@@ -13,6 +15,7 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -26,12 +29,16 @@ from max.pipelines.core import (
     TokenGenerator,
 )
 from max.serve.process_control import ProcessControl
+from max.serve.scheduler import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
-from max.support.math import ceildiv
+
+
+def ceildiv(a, b):
+    return -(a // -b)
 
 
 def create_process_control() -> ProcessControl:
@@ -127,7 +134,28 @@ def create_paged_manager(
     return kv_manager
 
 
+def request_zmq_endpoint():
+    return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
+
+
+def response_zmq_endpoint():
+    return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
+
+
+def cancel_zmq_endpoint():
+    return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
+
+
+@pytest.fixture(scope="session")
+def zmq_ctx():
+    return zmq.Context(io_threads=2)
+
+
 def create_paged_scheduler(
+    zmq_ctx,
+    request_zmq_endpoint,
+    response_zmq_endpoint,
+    cancel_zmq_endpoint,
     max_seq_len=2048,
     num_blocks=9999,
     max_batch_size=512,
@@ -141,6 +169,10 @@ def create_paged_scheduler(
     enable_chunked_prefill=True,
     enable_kvcache_swapping_to_host=False,
 ) -> TokenGenerationScheduler:
+    print("creating paged manager:")
+    print(f"    request_zmq_endpoint: {request_zmq_endpoint}")
+    print(f"    response_zmq_endpoint: {response_zmq_endpoint}")
+    print(f"    cancel_zmq_endpoint: {cancel_zmq_endpoint}")
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
@@ -168,8 +200,11 @@ def create_paged_scheduler(
         process_control=create_process_control(),
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
-        queues=create_queues(),  # type: ignore
         paged_manager=paged_manager,
+        request_zmq_endpoint=request_zmq_endpoint,
+        response_zmq_endpoint=response_zmq_endpoint,
+        cancel_zmq_endpoint=cancel_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
     )
     return scheduler
 
@@ -319,7 +354,7 @@ def run_until_completion(
 
 
 def enqueue_request(
-    scheduler: TokenGenerationScheduler,
+    socket: ZmqPushSocket[tuple[str, InputContext]],
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -331,11 +366,11 @@ def enqueue_request(
     )
     req_id = f"req{uuid4()}"
     assert context.active_length == prompt_len
-    scheduler.request_q.put((req_id, context))
+    socket.put_nowait((req_id, context))
 
 
 def enqueue_request_with_prompt(
-    scheduler: TokenGenerationScheduler,
+    socket: ZmqPushSocket[tuple[str, InputContext]],
     tokens: np.ndarray,
     max_seq_len: int,
 ):
@@ -345,7 +380,8 @@ def enqueue_request_with_prompt(
         tokens=tokens,
     )
     req_id = f"req{uuid4()}"
-    scheduler.request_q.put((req_id, context))
+
+    socket.put_nowait((req_id, context))
 
 
 CE = BatchType.ContextEncoding
@@ -353,16 +389,32 @@ TG = BatchType.TokenGeneration
 
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])
-def test_tg_request_exceed_max_seq_len(num_reqs):
+def test_paged_scheduler_tg_request_exceed_max_seq_len(
+    num_reqs,
+    zmq_ctx,
+):
     max_seq_len = 2048
     page_size = 128
     num_blocks = max_seq_len / page_size * num_reqs
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         max_seq_len=max_seq_len,
         max_batch_size=100,
         num_blocks=num_blocks,
         page_size=page_size,
     )
+
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    # Create this so the schedule process has a client to send to.
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     # Check that we would exceed max_seq_len during TG step
     prompt_len = 2040
@@ -375,7 +427,8 @@ def test_tg_request_exceed_max_seq_len(num_reqs):
 
     # Create a few requests with 2040 tokens
     for _ in range(num_reqs):
-        enqueue_request(scheduler, prompt_len, max_seq_len=max_seq_len)
+        enqueue_request(push_socket, prompt_len, max_seq_len=max_seq_len)
+    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -385,9 +438,10 @@ def test_tg_request_exceed_max_seq_len(num_reqs):
     ]
     actual = run_until_completion(scheduler)
     assert len(actual) == len(expected) and actual == expected
+    del push_socket
 
 
-def test_basic_chunked_prefill():
+def test_paged_scheduler_basic_chunked_prefill(zmq_ctx):
     max_seq_len = 99999  # unbounded length
     target_tokens_per_batch_ce = 1000
     max_forward_steps_tg = 10
@@ -396,6 +450,10 @@ def test_basic_chunked_prefill():
     output_tokens = 43
     num_blocks = ceildiv(prompt_len + output_tokens, page_size)
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         max_seq_len=max_seq_len,
         num_blocks=num_blocks,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
@@ -403,10 +461,20 @@ def test_basic_chunked_prefill():
         page_size=page_size,
         enable_chunked_prefill=True,
     )
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+    # Create this so the schedule process has a client to send to.
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     enqueue_request(
-        scheduler, prompt_len=prompt_len, max_seq_len=prompt_len + output_tokens
+        push_socket,
+        prompt_len=prompt_len,
+        max_seq_len=prompt_len + output_tokens,
     )
+    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -432,22 +500,36 @@ def test_basic_chunked_prefill():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_100_prompt_len_500_output_tokens_16():
+def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
+    zmq_ctx,
+):
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
     )
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
+    time.sleep(1)
 
     # We will schedule 8192 / 500 = 16.38 CE req per batch due to target_tokens_per_batch_ce.
     # This is rounded up to 17 due to chunked prefill.
@@ -468,16 +550,34 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
+def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384(
+    zmq_ctx,
+):
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
     prefix_len = 384
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
+    )
+
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
     )
 
     # set seed for reproducibility
@@ -486,11 +586,12 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
 
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
+    time.sleep(1)
 
     # We predict approx 384 tokens to be cache hit.
     # This means we encode 500 - 384 = 116 tokens per CE batch.
@@ -509,13 +610,19 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
+def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200(
+    zmq_ctx,
+):
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
     prefix_len = 200
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -525,13 +632,26 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
     np.random.seed(42)
     shared_prefix = rand(prefix_len)
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
+    time.sleep(1)
 
     # We predict 200 tokens to be cache hit.
     # This means we encode 500 - 200 = 300 tokens per CE request.
@@ -553,13 +673,19 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
+def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64(
+    zmq_ctx,
+):
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
     prefix_len = 64
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -569,13 +695,25 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
     np.random.seed(42)
     shared_prefix = rand(prefix_len)
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
+    time.sleep(1)
 
     # We predict 64 tokens to be cache hit.
     # This means we encode 500 - 64 = 436 tokens per CE request.
@@ -597,7 +735,9 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_basic():
+def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_basic(
+    zmq_ctx,
+):
     num_prompts = 10
     prompt_len = 100
     output_tokens = 100
@@ -607,6 +747,10 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_b
     num_blocks = 50  # this is enough for 500 tokens
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         max_seq_len=num_blocks * page_size,
         page_size=page_size,
         num_blocks=num_blocks,
@@ -619,13 +763,25 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_b
     np.random.seed(42)
     shared_prefix = rand(prefix_len)
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
+    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -653,7 +809,9 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_b
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_prefix_caching():
+def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_prefix_caching(
+    zmq_ctx,
+):
     num_prompts = 10
     prompt_len = 100
     output_tokens = 100
@@ -663,6 +821,10 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
     num_blocks = 50  # this is enough for 500 tokens
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         max_seq_len=num_blocks * page_size,
         page_size=page_size,
         num_blocks=num_blocks,
@@ -675,13 +837,25 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
     np.random.seed(42)
     shared_prefix = rand(prefix_len)
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
+    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -734,21 +908,40 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
+def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching(
+    zmq_ctx,
+):
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
 
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_in_flight_batching=True,
+    )
+
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
     )
 
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
+    time.sleep(1)
 
     # With inflight batching, the CE batches become bigger and bigger since they
     # now include TG requests.
@@ -769,13 +962,17 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_tg_preemption_basic():
+def test_paged_scheduler_tg_preemption_basic(zmq_ctx):
     num_prompts = 2
     prompt_len = 10
     output_tokens = 100
     page_size = 10
     num_blocks = 11  # enough for 110 tokens or exactly 1 request
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         num_blocks=num_blocks,
@@ -783,12 +980,26 @@ def test_tg_preemption_basic():
         page_size=page_size,
     )
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
+
+    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -817,7 +1028,7 @@ def test_tg_preemption_basic():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_oom():
+def test_paged_scheduler_oom(zmq_ctx):
     num_prompts = 2
     # one req is 110 tokens
     prompt_len = 10
@@ -826,6 +1037,10 @@ def test_oom():
     page_size = 10
     num_blocks = 10
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         num_blocks=num_blocks,
@@ -833,12 +1048,25 @@ def test_oom():
         page_size=page_size,
     )
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
+    time.sleep(1)
 
     actual: list[BatchInfo] = []
     with pytest.raises(RuntimeError) as e:
@@ -868,11 +1096,15 @@ def test_oom():
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_dont_oom_during_cow():
+def test_paged_scheduler_dont_oom_during_cow(zmq_ctx):
     # this can hold 512 tokens
     page_size = 128
     num_blocks = 3
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -884,24 +1116,38 @@ def test_dont_oom_during_cow():
 
     shared_prefix = rand(64)
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     # Request A needs 3 blocks
     enqueue_request(
-        scheduler,
+        push_socket,
         prompt_len=300,
         max_seq_len=300 + 16,
         shared_prefix=shared_prefix,
     )
+    time.sleep(1)
 
     batch_info = create_batch_and_execute(scheduler)
     assert batch_info == BatchInfo(CE, 1, 1, 1, 200)
 
     # Request B needs 1 block
     enqueue_request(
-        scheduler,
+        push_socket,
         prompt_len=64,
         max_seq_len=64 + 16,
         shared_prefix=shared_prefix,
     )
+    time.sleep(1)
 
     # Note that request A and request B share some common prefix tokens.
     # Request B will want to COW which requires allocating a new block.
@@ -922,7 +1168,9 @@ def test_dont_oom_during_cow():
 
 
 @pytest.mark.parametrize("enable_kvcache_swapping_to_host", [True, False])
-def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
+def test_paged_scheduler_paging_to_host(
+    enable_kvcache_swapping_to_host: bool, zmq_ctx
+):
     num_prompts = 3
     prompt_len = 550
     page_size = 128
@@ -930,6 +1178,10 @@ def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
     # We only have 5 gpu blocks which is only enough for 1 request.
     num_gpu_blocks = 5
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -943,21 +1195,35 @@ def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
 
     prompts = [rand(prompt_len) for _ in range(num_prompts)]
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     # Submit reqs for the first time
     for prompt in prompts:
         enqueue_request_with_prompt(
-            scheduler,
+            push_socket,
             tokens=prompt,
             max_seq_len=prompt_len + num_new_tokens,
         )
+    time.sleep(1)
 
     # Submit same reqs again to try to get cache hits
     for prompt in prompts:
         enqueue_request_with_prompt(
-            scheduler,
+            push_socket,
             tokens=prompt,
             max_seq_len=prompt_len + num_new_tokens,
         )
+    time.sleep(1)
 
     actual = run_until_completion(scheduler)
 
@@ -1017,7 +1283,7 @@ def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
         (100, 256, 1024, 1000, 8192, True, False),
     ],
 )
-def test_misc_sch_configs(
+def test_paged_scheduler_misc_sch_configs(
     num_prompts,
     input_tokens,
     output_tokens,
@@ -1025,12 +1291,17 @@ def test_misc_sch_configs(
     target_tokens_per_batch_ce,
     enable_chunked_prefill,
     enable_prefix_caching,
+    zmq_ctx,
 ):
     max_seq_len = input_tokens + output_tokens
     page_size = 128
     num_blocks = ceildiv(max_seq_len, page_size) * max(16, num_prompts)
     max_batch_size = ceildiv(num_prompts, 3)
     scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        request_zmq_endpoint=request_zmq_endpoint(),
+        response_zmq_endpoint=response_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
         max_seq_len=max_seq_len,
         page_size=page_size,
         max_batch_size=max_batch_size,
@@ -1045,13 +1316,26 @@ def test_misc_sch_configs(
     np.random.seed(42)
     shared_prefix = rand(prefix_len)
 
+    push_socket = ZmqPushSocket[tuple[str, InputContext]](
+        zmq_ctx, scheduler.request_q.zmq_endpoint
+    )
+
+    response_pull_socket = ZmqPullSocket[
+        list[dict[str, TextGenerationResponse]]
+    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+
+    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
+        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    )
+
     for _ in range(num_prompts):
         enqueue_request(
-            scheduler,
+            push_socket,
             input_tokens,
             max_seq_len,
             shared_prefix=shared_prefix,
         )
+    time.sleep(1)
 
     # make sure that we terminated within 1000 iterations
     actual = run_until_completion(scheduler, max_num_iters=1000)
