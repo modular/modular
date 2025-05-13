@@ -160,7 +160,6 @@ def test_sampling_return_logits(session: InferenceSession):
             assert numpy_logits[i, j] == logits[i, token_idx]
 
 
-@pytest.mark.skip("TODO(AITLIB-334): Fix this test")
 def test_rejection_sampler(session: InferenceSession):
     device = session.devices[0]
     graph = rejection_sampler(
