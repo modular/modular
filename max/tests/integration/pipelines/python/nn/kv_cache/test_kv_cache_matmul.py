@@ -430,9 +430,6 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         for i, s in enumerate(seq_ids)
     ]
     fetch_args = kv_manager.fetch(batch)[0]
-    kv_blocks = fetch_args[0]
-    # First check that the KV cache was zeroed out on initialization.
-    assert not kv_blocks.to_numpy().any()
 
     hidden_states = torch.randn(
         size=[total_seq_len, num_q_heads * kv_params.head_dim],
@@ -441,52 +438,25 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     wk = torch.randn(size=wk_type.shape.static_dims, dtype=torch_dtype)
     model(hidden_states, input_row_offsets, wk, *fetch_args)
 
-    ref_results = (hidden_states @ wk.T).numpy()
+    ref_results = hidden_states @ wk.T
 
-    # Check that the matmul wrote output to the KV cache.
-    host_kv_blocks = kv_blocks.to_numpy()
-    host_page_table = fetch_args[2].to_numpy()
-
-    for batch_idx in range(batch_size):
-        # Calculate starting position for this batch
-        batch_start = (
-            int(np.cumsum(prompt_lens[:batch_idx])) if batch_idx != 0 else 0
-        )
-        batch_len = prompt_lens[batch_idx]
-        num_pages = int(np.ceil(batch_len / float(page_size)))
-
-        # Validate each page in the batch
-        for page_idx in range(num_pages):
-            block = host_page_table[batch_idx, page_idx]
-            tokens_in_page = min(page_size, batch_len - page_idx * page_size)
-
-            # Validate each head's projections
-            for head_idx in range(kv_params.n_kv_heads):
-                head_start = head_idx * kv_params.head_dim
-                head_end = head_start + kv_params.head_dim
-
-                # Compare cached values with reference results
-                cached = host_kv_blocks[
-                    block, 0, 0, :tokens_in_page, head_idx, :
-                ]
-                expected = ref_results[
-                    batch_start : (batch_start + tokens_in_page),
-                    head_start:head_end,
-                ]
-                assert np.isclose(
-                    cached, expected, rtol=1e-03, atol=1e-03
-                ).all()
-
-            batch_start += page_size
-
-    for ctx in batch:
+    for batch_idx, ctx in enumerate(batch):
         ctx.update(999)
         k_cache = kv_manager._dump_k_cache_to_torch_tensor(ctx)
-        assert k_cache.shape == (
-            ctx.start_idx,
-            num_layers,
-            kv_params.n_kv_heads,
-            kv_params.head_dim,
+
+        # Calculate starting position for this batch
+        seq_start = (
+            int(np.cumsum(prompt_lens[:batch_idx])) if batch_idx != 0 else 0
+        )
+        seq_len = prompt_lens[batch_idx]
+
+        expected = ref_results[seq_start : (seq_start + seq_len), :]
+
+        torch.testing.assert_close(
+            k_cache.reshape([seq_len, -1]),
+            expected,
+            rtol=5e-4,
+            atol=5e-4,
         )
 
 
