@@ -40,8 +40,9 @@ class Mistral(Transformer):
     def __init__(self, config: MistralConfig):
         assert len(config.devices) == 1
 
+        # hidden_size (5120) != num_attention_heads * head_dim (128 * 40 = 4,096)
         rope = OptimizedRotaryEmbedding(
-            dim=config.num_attention_heads * config.head_dim,
+            dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             head_dim=config.head_dim,
             theta=config.rope_theta,
@@ -75,10 +76,12 @@ class Mistral(Transformer):
                 attention_norm=RMSNorm(
                     config.hidden_size,
                     config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
                 mlp_norm=RMSNorm(
                     config.hidden_size,
                     config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
             )
             for i in range(config.num_hidden_layers)
@@ -119,6 +122,7 @@ class Mistral(Transformer):
             norm=RMSNorm(
                 config.hidden_size,
                 config.rms_norm_eps,
+                multiply_before_cast=False,
             ),
             output=output,
             embedding=embedding_layer,
