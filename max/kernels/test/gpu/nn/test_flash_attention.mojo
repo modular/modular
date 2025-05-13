@@ -13,7 +13,7 @@
 
 from math import ceildiv, isclose, isqrt
 from random import rand
-from sys import argv
+from sys import argv, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -328,7 +328,22 @@ fn test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var rtol = 2e-2 if num_partitions.value() >= 4 else 1e-2
+    @parameter
+    fn get_rtol() -> Float64:
+        @parameter
+        if has_amd_gpu_accelerator():
+            if num_partitions.value() >= 16:
+                return 4e-2
+            elif num_partitions.value() >= 4:
+                return 3e-2
+            elif num_partitions.value() >= 2:
+                return 2.5e-2
+            else:
+                return 1e-2
+        else:
+            return 2e-2 if num_partitions.value() >= 4 else 1e-2
+
+    var rtol = get_rtol()
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):

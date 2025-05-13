@@ -522,6 +522,16 @@ fn test_decoding[
         batch_size=batch_size,
         num_partitions=num_partitions,
     ](1, 1, ctx, use_index_input=use_index_input)
+    test[
+        3,
+        qkv_type,
+        DType.float32,
+        128,
+        2,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 5120, ctx, use_index_input=use_index_input)
 
 
 def main():
@@ -532,3 +542,4 @@ def main():
         for batch_size in range(1, 5, 3):
             test_decoding[batch_size, 1](ctx, False)
             test_decoding[batch_size, 1, DType.float32](ctx, False)
+        test_decoding[1, None](ctx, False)

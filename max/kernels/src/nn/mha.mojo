@@ -124,6 +124,7 @@ from tensor_internal import ManagedTensorSlice
 from tensor_internal import IOUnknown
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from layout import Layout
+from pathlib import Path
 
 # ===-----------------------------------------------------------------------===#
 # Flash attention
@@ -525,18 +526,11 @@ fn flash_attention_dispatch[
             )
             alias num_blocks_y = num_heads // group
 
-            var num_partitions_value: Int
-
-            @parameter
-            if has_amd_gpu_accelerator():
-                # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
-                num_partitions_value = 1
-            else:
-                num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
-                    num_heads, group
-                ](
-                    batch_size, max_cache_valid_length, ctx
-                )
+            var num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
+                num_heads, group
+            ](
+                batch_size, max_cache_valid_length, ctx
+            )
 
             alias use_sm90_kernel = (
                 ctx.device_info is H100
@@ -712,10 +706,10 @@ fn flash_attention_dispatch[
                             Int(batch_size),
                         ),
                         block_dim=(num_threads, 1, 1),
-                        shared_mem_bytes=shared_mem_bytes,
+                        shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             ctx.device_info.shared_memory_per_multiprocessor
-                            - 4096
+                            - 4096 if has_nvidia_gpu_accelerator() else 0
                         ),
                     )
 
@@ -2630,8 +2624,11 @@ fn mha_decoding[
             q_ptr.offset(q_batch_offset),
             k,
             v,
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
             1,
             num_keys,
+            num_partitions,
             scale,
             batch_idx,
             Int(0),
