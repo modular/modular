@@ -192,10 +192,10 @@ fn sqrt(x: Int) -> Int:
     var r2 = 0
 
     @parameter
-    for p in range(bitwidthof[Int]() // 4, -1, -1):
-        var tr2 = r2 + (r << (p + 1)) + (1 << (p + p))
-        if tr2 <= x:
-            r2 = tr2
+    for p in reversed(range(bitwidthof[Int]() // 2)):
+        var dr2 = (r << (p + 1)) + (1 << (p + p))
+        if r2 <= x - dr2:
+            r2 += dr2
             r |= 1 << p
 
     return r

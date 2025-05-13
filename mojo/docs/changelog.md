@@ -100,3 +100,6 @@ Changes to Python-Mojo interoperability:
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
+  products incorrect results for large inputs.
