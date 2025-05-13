@@ -33,7 +33,8 @@ build --legacy_important_outputs=false
 build --remote_cache_compression
 build --slim_profile=false
 
-build:ci --bes_results_url=https://modular-public.buildbuddy.io/invocation/
-build:ci --bes_backend=grpcs://modular-public.buildbuddy.io
-build:ci --remote_cache=grpcs://modular-public.buildbuddy.io
+# TODO: Disable remote caching for now.
+# build:ci --bes_results_url=https://modular-public.buildbuddy.io/invocation/
+# build:ci --bes_backend=grpcs://modular-public.buildbuddy.io
+# build:ci --remote_cache=grpcs://modular-public.buildbuddy.io
 build:ci --remote_timeout=10m

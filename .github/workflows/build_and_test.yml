@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-name: Build and Test
+name: (Experimental, Bazel) Build and Test
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -47,6 +47,4 @@ jobs:
 
       - name: Build and Test
         run: |
-          ./bazelw test --config=ci --build_tag_filters=-skip-external-ci-${{ matrix.os }} --test_tag_filters=-skip-external-ci-${{ matrix.os }} --remote_header=$BUILDBUDDY_TOKEN -- //... -//max/serve/...
-        env:
-          BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}
+          ./bazelw test --config=ci --build_tag_filters=-skip-external-ci-${{ matrix.os }} --test_tag_filters=-skip-external-ci-${{ matrix.os }} -- //... -//max/serve/...
