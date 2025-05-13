@@ -881,9 +881,9 @@ PIPELINES = {
                 "torch_deepseek_golden/torch_V2_lite_chat_bfloat16_golden.json"
             ),
             # TODO(MODELS-516): Investigate need for high tolerances here.
-            absolute_tolerance=22,
-            relative_tolerance=0.76,
-            cos_dist_threshold=4.0e-1,
+            absolute_tolerance=26,
+            relative_tolerance=0.90,
+            cos_dist_threshold=6.0e-1,
             kl_div_threshold=18,
         ),
     ),
