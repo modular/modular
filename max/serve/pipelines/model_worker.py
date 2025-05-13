@@ -85,6 +85,7 @@ def _model_worker_process_fn(
     metric_client_factory: Callable[
         [], AbstractAsyncContextManager[MetricClient]
     ],
+    ctx: multiprocessing.context.BaseContext,
 ) -> None:
     try:
         _set_pdeathsig(signal.SIGTERM)
@@ -96,6 +97,7 @@ def _model_worker_process_fn(
                 queues,
                 settings,
                 metric_client_factory,
+                ctx,
             )
         )
     except KeyboardInterrupt:
@@ -161,6 +163,7 @@ async def start_model_worker(
             queue_args,
             settings,
             metric_client.cross_process_factory(),
+            mp_context,
         ),
     )
     worker.start()
@@ -263,6 +266,7 @@ async def model_worker_run_v3(
     metric_client_factory: Callable[
         [], AbstractAsyncContextManager[MetricClient]
     ],
+    ctx: multiprocessing.context.BaseContext,
 ) -> None:
     configure_logging(settings)
 
@@ -280,12 +284,28 @@ async def model_worker_run_v3(
     scheduler: Scheduler
     if isinstance(pipeline, TokenGenerator):
         if pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
+            if (
+                settings.prefill_zmq_endpoint is None
+                or settings.decode_zmq_endpoint is None
+            ):
+                raise ValueError(
+                    "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
+                )
+
             scheduler = _create_decode_scheduler(
                 settings, pipeline, pc, pipeline_config, zmq_ctx
             )
         elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
+            if (
+                settings.prefill_zmq_endpoint is None
+                or settings.decode_zmq_endpoint is None
+            ):
+                raise ValueError(
+                    "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
+                )
+
             scheduler = _create_prefill_scheduler(
-                settings, pipeline, pc, pipeline_config
+                settings, pipeline, pc, pipeline_config, zmq_ctx
             )
         elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
             scheduler = _create_token_generation_scheduler(
@@ -370,6 +390,7 @@ def _create_prefill_scheduler(
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
+    zmq_ctx: zmq.Context,
 ) -> PrefillScheduler:
     # Initialize Scheduler Config
     if pipeline_config.context_encoding:
@@ -422,6 +443,7 @@ def _create_prefill_scheduler(
         paged_manager=paged_manager,
         prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
         decode_zmq_endpoint=settings.decode_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
     )
 
 

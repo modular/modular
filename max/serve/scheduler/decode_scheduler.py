@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import logging
+import queue
 import time
 from dataclasses import dataclass
 
@@ -21,6 +23,8 @@ from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
 from .zmq_queue import ZmqPullSocket, ZmqPushSocket
+
+logger = logging.getLogger("max.serve")
 
 
 @dataclass
@@ -67,8 +71,37 @@ class DecodeScheduler(Scheduler):
             zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
         )
 
+        # Initialize Queues for Disaggregation
+        self.decode_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=decode_zmq_endpoint
+        )
+        self.prefill_push_socket = ZmqPushSocket[tuple[str, InputContext]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=prefill_zmq_endpoint
+        )
+
     def run(self) -> None:
         while True:
             # Indicate that the process is still alive.
             self.pc.beat()
+
+            # Try and Receive from the request queue and send to Prefill
+            try:
+                new_request = self.request_pull_socket.get_nowait()
+                logger.debug(f"sending from the decode_node: {new_request}")
+                self.prefill_push_socket.put_nowait(new_request)
+            except queue.Empty:
+                logger.debug("nothing in the request queue.")
+
+            try:
+                new_decode = self.decode_pull_socket.get_nowait()
+                logger.debug(
+                    f"received new request on the decode node: {new_decode}"
+                )
+                logger.debug("sending back to prefill.")
+                self.prefill_push_socket.put_nowait(new_decode)
+                logger.debug("sent from the decode node.")
+
+            except queue.Empty:
+                logger.debug("nothing in the decode queue.")
+
             time.sleep(5)

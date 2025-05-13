@@ -12,15 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
+import queue
 import time
 from dataclasses import dataclass
 from typing import Optional
 
+import zmq
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TokenGenerator
+from max.pipelines.core import InputContext, TokenGenerator
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
+from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -59,6 +62,7 @@ class PrefillScheduler(Scheduler):
         scheduler_config: PrefillSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
+        zmq_ctx: zmq.Context,
         prefill_zmq_endpoint: str,
         decode_zmq_endpoint: str,
     ):
@@ -66,8 +70,32 @@ class PrefillScheduler(Scheduler):
         self.pipeline = pipeline
         self.scheduler_config = PrefillSchedulerConfig
 
+        # Initialize Queues for Disaggregation
+        logger.info(f"starting prefill queue on: {prefill_zmq_endpoint}")
+        logger.info(f"starting decode queue on: {decode_zmq_endpoint}")
+        self.prefill_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
+            zmq_ctx, prefill_zmq_endpoint
+        )
+        self.decode_push_socket = ZmqPushSocket[tuple[str, InputContext]](
+            zmq_ctx, decode_zmq_endpoint
+        )
+
     def run(self) -> None:
         while True:
             # Indicate that the process is still alive.
             self.pc.beat()
+
+            # Try and receive any request from the prefill node.
+            try:
+                new_value = self.prefill_pull_socket.get_nowait()
+
+                logger.info(f"received value on the prefill_node: {new_value}")
+                logger.info(f"sending back to the decode node: {new_value}")
+
+                self.decode_push_socket.put_nowait(new_value)
+                logger.info("sent back to the decode node!")
+
+            except queue.Empty:
+                logger.info("nothing in the prefill queue.")
+
             time.sleep(5)
