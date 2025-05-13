@@ -16,6 +16,8 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
 import socket
+import tempfile
+import uuid
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
@@ -57,6 +59,10 @@ class MetricRecordingMethod(Enum):
     ASYNCIO = "ASYNCIO"
     # Send metric observations to a seperate process for recording
     PROCESS = "PROCESS"
+
+
+def generate_zmq_ipc_endpoint() -> str:
+    return f"ipc://{tempfile.gettempdir()}/{uuid.uuid4()}"
 
 
 class Settings(BaseSettings):
@@ -215,6 +221,24 @@ class Settings(BaseSettings):
         default=False,
         description="Experimental: Enable KV Cache Agent support.",
         alias="MAX_SERVE_EXPERIMENTAL_ENABLE_KVCACHE_AGENT",
+    )
+
+    request_zmq_endpoint: str = Field(
+        default_factory=generate_zmq_ipc_endpoint,
+        description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
+        alias="MAX_SERVE_REQUEST_ZMQ_ENDPOINT",
+    )
+
+    response_zmq_endpoint: str = Field(
+        default_factory=generate_zmq_ipc_endpoint,
+        description="Expose Response ZMQ Socket for communication between the API and Model Worker(s)",
+        alias="MAX_SERVE_RESPONSE_ZMQ_ENDPOINT",
+    )
+
+    cancel_zmq_endpoint: str = Field(
+        default_factory=generate_zmq_ipc_endpoint,
+        description="Expose Cancel ZMQ Socket for communication betwee the API and Model Worker(s)",
+        alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
     )
 
     prefill_zmq_endpoint: Optional[str] = Field(

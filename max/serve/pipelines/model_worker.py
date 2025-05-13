@@ -22,9 +22,10 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, Union, cast
 
 import uvloop
+import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     EmbeddingsGenerator,
@@ -56,7 +57,7 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
-from max.serve.scheduler.zmq_queue import ZmqSocket
+from max.serve.scheduler.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
@@ -79,7 +80,7 @@ def _model_worker_process_fn(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     batch_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqSocket],
+    queues: Mapping[str, Union[ZmqPushSocket, ZmqPullSocket]],
     settings: Settings,
     metric_client_factory: Callable[
         [], AbstractAsyncContextManager[MetricClient]
@@ -135,11 +136,16 @@ async def start_model_worker(
         "model-worker",
         health_fail_s=settings.mw_health_fail_s,
     )
-    engine_queue: EngineQueue = EngineQueue(mp_context, worker_pc=pc)
+    zmq_ctx = zmq.Context(io_threads=2)
+    engine_queue: EngineQueue = EngineQueue(
+        mp_context,
+        worker_pc=pc,
+        request_zmq_endpoint=settings.request_zmq_endpoint,
+        response_zmq_endpoint=settings.response_zmq_endpoint,
+        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
+    )
     queue_args = {
-        "REQUEST": engine_queue.request_q,
-        "RESPONSE": engine_queue.response_q,
-        "CANCEL": engine_queue.cancel_q,
         "KV_CACHE_AGENT": kvcache_agent_queue,
     }
 
@@ -252,7 +258,7 @@ async def model_worker_run_v3(
     pc: ProcessControl,
     model_factory: PipelinesFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqSocket],
+    queues: Mapping[str, Union[ZmqPushSocket, ZmqPullSocket]],
     settings: Settings,
     metric_client_factory: Callable[
         [], AbstractAsyncContextManager[MetricClient]
@@ -270,17 +276,20 @@ async def model_worker_run_v3(
         with record_ms(METRICS.model_load_time), Tracer("model_factory"):
             pipeline = model_factory()
 
+    zmq_ctx = zmq.Context(io_threads=2)
     scheduler: Scheduler
     if isinstance(pipeline, TokenGenerator):
         if pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
             scheduler = _create_decode_scheduler(
-                pipeline, pc, pipeline_config, queues
+                settings, pipeline, pc, pipeline_config, zmq_ctx
             )
         elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
-            scheduler = _create_prefill_scheduler(pipeline, pc, pipeline_config)
+            scheduler = _create_prefill_scheduler(
+                settings, pipeline, pc, pipeline_config
+            )
         elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
             scheduler = _create_token_generation_scheduler(
-                pipeline, pc, pipeline_config, queues
+                settings, pipeline, pc, pipeline_config, queues, zmq_ctx
             )
         else:
             raise ValueError(
@@ -289,7 +298,11 @@ async def model_worker_run_v3(
 
     elif isinstance(pipeline, EmbeddingsGenerator):
         scheduler = _create_embeddings_scheduler(
-            pipeline, pc, pipeline_config, queues
+            settings,
+            pipeline,
+            pc,
+            pipeline_config,
+            zmq_ctx,
         )
     else:
         raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
@@ -306,10 +319,11 @@ async def model_worker_run_v3(
 
 
 def _create_decode_scheduler(
+    settings: Settings,
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqSocket],
+    zmq_ctx: zmq.Context,
 ) -> DecodeScheduler:
     # Initialize Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
@@ -329,16 +343,30 @@ def _create_decode_scheduler(
             "DecodeScheduler only supports Paged Caching Strategy."
         )
 
+    if (
+        settings.prefill_zmq_endpoint is None
+        or settings.decode_zmq_endpoint is None
+    ):
+        raise ValueError(
+            "DecodeScheduler must be provided both a prefill_zmq_endpoint and decode_zmq_endpoint on initialization"
+        )
+
     return DecodeScheduler(
         process_control=pc,
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        queues=queues,
         paged_manager=paged_manager,
+        request_zmq_endpoint=settings.request_zmq_endpoint,
+        response_zmq_endpoint=settings.response_zmq_endpoint,
+        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        prefill_zmq_endpoint=cast(str, settings.prefill_zmq_endpoint),
+        decode_zmq_endpoint=cast(str, settings.decode_zmq_endpoint),
+        zmq_ctx=zmq_ctx,
     )
 
 
 def _create_prefill_scheduler(
+    settings: Settings,
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
@@ -379,19 +407,31 @@ def _create_prefill_scheduler(
             "PrefillScheduler only supports Paged Caching Strategy."
         )
 
+    if (
+        settings.prefill_zmq_endpoint is None
+        or settings.decode_zmq_endpoint is None
+    ):
+        raise ValueError(
+            "PrefillScheduler requires both that the prefill_zmq_endpoint and decode_zmq_endpoint be provided."
+        )
+
     return PrefillScheduler(
         process_control=pc,
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         paged_manager=paged_manager,
+        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
+        decode_zmq_endpoint=settings.decode_zmq_endpoint,
     )
 
 
 def _create_token_generation_scheduler(
+    settings: Settings,
     pipeline: TokenGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqSocket],
+    queues: Mapping[str, Any],
+    zmq_ctx: zmq.Context,
 ) -> TokenGenerationScheduler:
     config = pipeline_config
     max_batch_size_tg = config.token_generation.size
@@ -441,22 +481,26 @@ def _create_token_generation_scheduler(
         if "KV_CACHE_AGENT" in queues:
             paged_manager.block_manager.device_block_pool.kv_cache_agent_queue = queues[
                 "KV_CACHE_AGENT"
-            ]  # type: ignore
+            ]
 
     return TokenGenerationScheduler(
         process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        queues=queues,
         paged_manager=paged_manager,
+        request_zmq_endpoint=settings.request_zmq_endpoint,
+        response_zmq_endpoint=settings.response_zmq_endpoint,
+        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
     )
 
 
 def _create_embeddings_scheduler(
+    settings: Settings,
     pipeline: EmbeddingsGenerator,
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, ZmqSocket],
+    zmq_ctx: zmq.Context,
 ) -> EmbeddingsScheduler:
     config = pipeline_config
     max_batch_size = config.token_generation.size
@@ -468,5 +512,8 @@ def _create_embeddings_scheduler(
         process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        queues=queues,
+        request_zmq_endpoint=settings.request_zmq_endpoint,
+        response_zmq_endpoint=settings.response_zmq_endpoint,
+        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
     )

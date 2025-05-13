@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass
 
+import zmq
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TokenGenerator
+from max.pipelines.core import InputContext, TextResponse, TokenGenerator
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
-from .zmq_queue import ZmqPullSocket, ZmqSocket
+from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 
 @dataclass
@@ -40,8 +40,14 @@ class DecodeScheduler(Scheduler):
         process_control: ProcessControl,
         pipeline: TokenGenerator,
         scheduler_config: DecodeSchedulerConfig,
-        queues: Mapping[str, ZmqSocket],
         paged_manager: PagedKVCacheManager,
+        *,
+        request_zmq_endpoint: str,
+        response_zmq_endpoint: str,
+        cancel_zmq_endpoint: str,
+        prefill_zmq_endpoint: str,
+        decode_zmq_endpoint: str,
+        zmq_ctx: zmq.Context,
     ):
         # Initialize Pipeline and Config
         self.scheduler_config = DecodeSchedulerConfig
@@ -50,28 +56,16 @@ class DecodeScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        # Check that all queues are provided.
-        if "REQUEST" not in queues:
-            raise RuntimeError(
-                "REQUEST queue must be provided to Decode Scheduler."
-            )
-
-        if "RESPONSE" not in queues:
-            raise RuntimeError(
-                "RESPONSE queue must be provided to Decode Scheduler."
-            )
-
-        if "CANCEL" not in queues:
-            raise RuntimeError(
-                "CANCEL queue must be provided to Decode Scheduler."
-            )
-
-        # TODO: Initialize ZmqSocket as Client/Server
-
         # Initialize Queues
-        self.request_queue = ZmqPullSocket(queues["REQUEST"])
-        self.response_q = queues["RESPONSE"]
-        self.cancel_q = queues["CANCEL"]
+        self.request_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
+            zmq_ctx, zmq_endpoint=request_zmq_endpoint
+        )
+        self.response_push_socket = ZmqPushSocket[tuple[str, TextResponse]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
+        )
+        self.cancel_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
+        )
 
     def run(self) -> None:
         while True:

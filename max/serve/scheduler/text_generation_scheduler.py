@@ -14,11 +14,11 @@ import logging
 import queue
 import time
 from collections import deque
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional, cast
 
+import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     InputContext,
@@ -33,7 +33,7 @@ from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
 from .queues import STOP_STREAM
-from .zmq_queue import ZmqPullSocket, ZmqSocket
+from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -145,7 +145,11 @@ class TokenGenerationScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
-        queues: Mapping[str, ZmqSocket],
+        *,
+        request_zmq_endpoint: str,
+        response_zmq_endpoint: str,
+        cancel_zmq_endpoint: str,
+        zmq_ctx: zmq.Context,
         paged_manager: Optional[PagedKVCacheManager] = None,
     ):
         self.scheduler_config = scheduler_config
@@ -155,12 +159,14 @@ class TokenGenerationScheduler(Scheduler):
         self.pc = process_control
 
         self.request_q = ZmqPullSocket[tuple[str, InputContext]](
-            queues["REQUEST"]
+            zmq_ctx=zmq_ctx, zmq_endpoint=request_zmq_endpoint
         )
-        self.response_q: ZmqSocket[list[dict[str, TextResponse]]] = queues[
-            "RESPONSE"
-        ]
-        self.cancel_q = ZmqPullSocket[list[str]](queues["CANCEL"])
+        self.response_q = ZmqPushSocket[list[dict[str, TextResponse]]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
+        )
+        self.cancel_q = ZmqPullSocket[list[str]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
+        )
 
         # Initialize Scheduler state.
         self.active_batch: dict[str, InputContext] = {}
@@ -706,7 +712,6 @@ class TokenGenerationScheduler(Scheduler):
         batch_responses: dict[str, TextGenerationResponse],
     ):
         """Handle chunked requests"""
-
         # Only the last request in a batch could be chunked. We discard its response
         # and put it back into the request queue if it is chunked.
         last_req = list(batch_executed.values())[-1]

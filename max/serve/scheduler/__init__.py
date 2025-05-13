@@ -12,5 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .base import Scheduler
+from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
-__all__ = ["Scheduler"]
+__all__ = ["Scheduler", "ZmqPushSocket", "ZmqPullSocket"]

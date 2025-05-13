@@ -276,7 +276,9 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             decoded_token
                         ):
                             # Tell the scheduler to stop generating this request
-                            self.engine_queue.cancel_q.put_nowait([request.id])
+                            self.engine_queue.cancel_push_socket.put(
+                                [request.id]
+                            )
 
                             logger.debug(
                                 f"Cancelling {request.id} because stop sequence ({stop_sequence_match}) detected in {stop_detector.continuation_tail}"

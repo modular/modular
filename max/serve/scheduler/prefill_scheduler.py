@@ -58,6 +58,9 @@ class PrefillScheduler(Scheduler):
         pipeline: TokenGenerator,
         scheduler_config: PrefillSchedulerConfig,
         paged_manager: PagedKVCacheManager,
+        *,
+        prefill_zmq_endpoint: str,
+        decode_zmq_endpoint: str,
     ):
         self.pc = process_control
         self.pipeline = pipeline
