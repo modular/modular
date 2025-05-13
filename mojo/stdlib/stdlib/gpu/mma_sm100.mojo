@@ -990,3 +990,40 @@ fn mma[
         )
     else:
         constrained[False, String("Unsupported cta group: ", cta_group)]()
+
+
+# ===----------------------------------------------------------------------=== #
+# UMMA Sync
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn mma_arrive[
+    cta_group: Int = 1,
+](mbar_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED, *_, **_],):
+    """Arrive at the mbar pointer for the MMA instruction.
+
+    Parameters:
+        cta_group: Number of ctas used by MMA.
+
+    Args:
+        mbar_ptr: Pointer to the mbar.
+    """
+
+    constrained[
+        cta_group == 1 or cta_group == 2,
+        String("Unsupported cta group: ", cta_group),
+    ]()
+
+    alias type = mbar_ptr.type
+    constrained[sizeof[type]() == 8, "mbar_ptr must be 8 bytes"]()
+
+    alias cta_str = "cta_group::" + String(cta_group)
+
+    inlined_assembly[
+        "tcgen05.commit."
+        + cta_str
+        + ".mbarrier::arrive::one.shared::cluster.b64 [$0];",
+        NoneType,
+        constraints="r",
+    ](Int32(Int(mbar_ptr)))
