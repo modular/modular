@@ -17,7 +17,9 @@ from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 def torch_rms_norm(x, weight, eps=1e-6):
     #   See https://github.com/meta-llama/llama/blob/main/llama/model.py#L34
-    return x * torch.rsqrt((x**2).mean(-1, keepdim=True) + eps) * weight
+    return (
+        x * torch.rsqrt((x.float() ** 2).mean(-1, keepdim=True) + eps)
+    ).type_as(x) * weight
 
 
 def run_test_norm(
@@ -32,7 +34,7 @@ def run_test_norm(
     with Graph("norm", input_types=[input_type, weight_type]) as graph:
         assert are_all_tensor_values(graph.inputs)
         x, weight = graph.inputs
-        graph.output(RMSNormV1(weight)(x))
+        graph.output(RMSNormV1(weight=weight, multiply_before_cast=False)(x))
 
         @modular_graph_test(session, graph)
         def test_correctness(execute, inputs, torch_inputs):
@@ -69,7 +71,7 @@ def test_norm(session, shape, dtype):
     run_test_norm(
         session,
         TensorType(dtype, shape, device=DeviceRef.CPU()),
-        rtol=1e-2,
+        rtol=1e-4,
         atol=1e-8,
     )
 
@@ -91,6 +93,6 @@ def test_norm_gpu(gpu_session, shape, dtype):
     run_test_norm(
         gpu_session,
         TensorType(dtype, shape, device=DeviceRef.GPU()),
-        rtol=1e-1,
+        rtol=1e-4,
         atol=1e-8,
     )
