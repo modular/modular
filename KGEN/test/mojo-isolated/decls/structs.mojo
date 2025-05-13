@@ -64,12 +64,19 @@ struct DtorExample5[T: AnyType]:
 # Copy/Move synthesis tests
 # ===----------------------------------------------------------------------=== #
 
-struct IntPair(Copyable, Movable):
+struct IntPair(Copyable, Movable, ExplicitlyCopyable):
   var x: Int
   var y: Int
 
-struct IntPairWrapper(Copyable, Movable):
+struct IntPairWrapper(Copyable, Movable, ExplicitlyCopyable):
   var value: IntPair
+
+
+# CHECK-LABEL: lit.struct.decl @IntPairWrapper
+# CHECK-LABEL: lit.fn @"copy
+# CHECK-SAME: (%existing: !lit.ref<!IntPairWrapper{{.*}}> read_mem,
+# CHECK-SAME: %__result__: !lit.ref<!IntPairWrapper{{.*}}> byref_result)
+# CHECK-NEXT: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}(%existing, %__result__)
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynth
 fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
@@ -79,11 +86,19 @@ fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
   # CHECK: lit.call {{.*}}IntPair::@"__moveinit__{{.*}}({{.*}}, %aMove)
   var aMove = a^
 
+  # TODO.
+  # HECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
+  # var aExCopy = a.copy()
+
   # CHECK: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}({{.*}}, %bCopy)
   var bCopy = b
 
   # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
   var bMove = b^
+
+  # TODO.
+  # HECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
+  # var bExCopy = b.copy()
 
 # ===----------------------------------------------------------------------=== #
 # Fieldwise init tests
