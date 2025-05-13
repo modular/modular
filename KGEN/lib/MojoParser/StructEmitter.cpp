@@ -683,14 +683,13 @@ FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
   return copyFunc;
 }
 
-std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
+std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
   auto &shared = structDecl.getShared();
-  std::bitset<5> existingFunctions;
-  existingFunctions.reset();
   auto structOp = cast<StructDeclOp>(structDecl);
 
-  auto setBit = [&](StringRef name, SpecialFunctionKind kind,
-                    unsigned index) -> LogicalResult {
+  ValueInfo result;
+  auto find = [&](StringRef name, SpecialFunctionKind kind,
+                  FnOp &member) -> LogicalResult {
     LookupResult lookupResult =
         shared.lookupAndResolveDecl(name, structDecl.getLoc(), structDecl,
                                     /*searchParentScopes=*/false);
@@ -703,94 +702,32 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     if (lookupResult.getIfSuccess().size() == 1) {
       ASTDecl *result = lookupResult.getIfSuccess().front();
       if (auto func = dyn_cast<FnOp>(result))
-        if ((SpecialFunctionKind)func.getSpecialFnKind() == kind)
-          existingFunctions[index] = 1;
+        if (SpecialFunctionKind(func.getSpecialFnKind()) == kind)
+          member = func;
     }
 
     return success();
   };
-  if (failed(setBit("__del__", SpecialFunctionKind::kDel, FuncIndex::Destruct)))
-    return {};
-  if (failed(setBit("__copyinit__", SpecialFunctionKind::kCopyInit,
-                    FuncIndex::Copy)))
-    return {};
-  if (failed(setBit("copy", SpecialFunctionKind::kNormal,
-                    FuncIndex::ExplicitCopy))) {
-    return {};
-  }
-  if (failed(setBit("__moveinit__", SpecialFunctionKind::kMoveInit,
-                    FuncIndex::Move)))
-    return {};
-  LookupResult inits =
-      shared.lookupAndResolveDecl("__init__", structDecl.getLoc(), structDecl,
-                                  /*searchParentScopes=*/false);
-  if (inits.isErroneous())
+  if (failed(find("__del__", SpecialFunctionKind::kDel, result.del)) ||
+      failed(find("__copyinit__", SpecialFunctionKind::kCopyInit,
+                  result.copyinit)) ||
+      failed(find("__moveinit__", SpecialFunctionKind::kMoveInit,
+                  result.moveinit)) ||
+      failed(find("copy", SpecialFunctionKind::kNormal, result.copy)))
     return {};
 
-  unsigned numFields = std::distance(structOp.getFieldDecls().begin(),
-                                     structOp.getFieldDecls().end());
-  for (ASTDecl *declaration : inits.getIfSuccess()) {
-    auto func = dyn_cast<FnOp>(declaration);
-    if (!func)
-      continue;
-    auto signature = func.getFuncTypeGenerator();
-    ArrayRef<Type> inputTypes = signature.getArguments();
-    ArrayRef<ArgConvention> convs = signature.getArgConventions();
-    // Ignore the result slot and error result.
-    while (!convs.empty() && isResultSlot(convs.back())) {
-      inputTypes = inputTypes.drop_back();
-      convs = convs.drop_back();
-    }
-    // TODO: Handle default arguments.
-    if (inputTypes.size() != numFields)
-      continue;
-    // Skip any kind of var-args.
-    FnMetadataAttr fnMetadata = signature.getBody().getMetadata();
-    if (fnMetadata.hasAnyVarArg())
-      continue;
-
-    bool isMatch = true;
-    for (auto [type, conv, field] :
-         llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
-      // Strip the pointer type if present.
-      Type argType = type;
-      // Fieldwise initializers must have read/owned conventions. ref etc
-      // are lit.ref's mechanically but these are invisible the to the caller.
-      if (hasImplicitOrigin(conv)) {
-        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem) {
-          isMatch = false;
-          break;
-        }
-        argType = ASTType(argType).getReferenceElementType();
-      }
-
-      StructFieldOp op = field;
-      if (argType != op.getType()) {
-        isMatch = false;
-        break;
-      }
-    }
-    if (isMatch)
-      existingFunctions[FuncIndex::FieldwiseInit] = 1;
-  }
-  return ValueInfo(existingFunctions);
+  return result;
 }
 
-std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
-    ASTDecl &structDecl, bool generateFieldwiseInit,
-    bool forceGenerateDestructor) {
+std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
+    ASTDecl &structDecl, bool forceGenerateDestructor) {
   auto declOp = cast<StructDeclOp>(structDecl);
-  std::optional<ValueInfo> valueInfo = ValueInfo::createValueInfo(structDecl);
+  std::optional<ValueInfo> valueInfo = ValueInfo::lookupExisting(structDecl);
   if (!valueInfo)
     return {};
 
-  FnOp fieldwiseInit;
-  if (!valueInfo->hasFieldwiseInit() && generateFieldwiseInit)
-    fieldwiseInit = synthesizeFieldwiseInit(structDecl);
-
-  FnOp destructorFunc;
-  if (!valueInfo->hasNontrivialDestructor() && forceGenerateDestructor)
-    destructorFunc = synthesizeEmptyDtor(structDecl);
+  if (!valueInfo->del && forceGenerateDestructor)
+    valueInfo->del = synthesizeEmptyDtor(structDecl);
 
   auto addCopyOrMoveBuiltinTrait = [&](StringRef traitName) {
     ASTDecl *traitDecl = shared.lookupBuiltinTrait(
@@ -799,24 +736,22 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       addTraitParent(declOp, traitDecl);
   };
 
-  FnOp copyFunc;
-  if (!valueInfo->hasCopy() && !declOp.isRegisterPassableTrivial())
-    copyFunc = synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
+  if (!valueInfo->copyinit && !declOp.isRegisterPassableTrivial())
+    valueInfo->copyinit =
+        synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
   addCopyOrMoveBuiltinTrait("Copyable");
 
-  FnOp moveFunc;
-  if (!valueInfo->hasMove() && !declOp.isRegisterPassable())
-    moveFunc = synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
+  if (!valueInfo->moveinit && !declOp.isRegisterPassable())
+    valueInfo->moveinit =
+        synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
   addCopyOrMoveBuiltinTrait("Movable");
 
-  FnOp explicitCopyFunc;
-  if (!valueInfo->hasExplicitCopy()) {
-    explicitCopyFunc = synthesizeExplicitCopy(structDecl);
+  if (!valueInfo->copy) {
+    valueInfo->copy = synthesizeExplicitCopy(structDecl);
     addCopyOrMoveBuiltinTrait("ExplicitlyCopyable");
   }
 
-  return GeneratedStubs{destructorFunc, copyFunc, explicitCopyFunc, moveFunc,
-                        fieldwiseInit};
+  return valueInfo;
 }
 
 FnOp StructEmitter::findInitInStruct(StructDeclOp structOp,

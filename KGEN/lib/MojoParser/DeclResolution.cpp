@@ -2272,15 +2272,15 @@ static void preprocessValueDecorator(ASTDecl &structDecl) {
   for (ExprNode *decorator : structDecl.getBodyDecorators()) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "value") {
-        std::optional<ValueInfo> info = ValueInfo::createValueInfo(structDecl);
+        std::optional<ValueInfo> info = ValueInfo::lookupExisting(structDecl);
         if (!info)
           break;
         StructEmitter emitter(structDecl.getShared());
         FnOp moveFunc, copyFunc;
-        if (!structOp.isRegisterPassable() && !info->hasMove())
+        if (!structOp.isRegisterPassable() && !info->moveinit)
           moveFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
                                                            /*isMove=*/true);
-        if (!structOp.isRegisterPassableTrivial() && !info->hasCopy())
+        if (!structOp.isRegisterPassableTrivial() && !info->copyinit)
           copyFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
                                                            /*isMove=*/false);
       }
@@ -2288,37 +2288,92 @@ static void preprocessValueDecorator(ASTDecl &structDecl) {
   }
 }
 
+/// Look at the initializers of the specified struct to see if there is already
+/// a fieldwise init.  If so, return it, otherwise return null.
+static FnOp findFieldwiseInit(ASTDecl &structDecl) {
+  auto &shared = structDecl.getShared();
+
+  LookupResult inits =
+      shared.lookupAndResolveDecl("__init__", structDecl.getLoc(), structDecl,
+                                  /*searchParentScopes=*/false);
+  if (inits.isErroneous())
+    return {};
+
+  auto structOp = cast<StructDeclOp>(structDecl);
+  unsigned numFields = std::distance(structOp.getFieldDecls().begin(),
+                                     structOp.getFieldDecls().end());
+  for (ASTDecl *declaration : inits.getIfSuccess()) {
+    auto func = dyn_cast<FnOp>(declaration);
+    if (!func)
+      continue;
+    auto signature = func.getFuncTypeGenerator();
+    ArrayRef<Type> inputTypes = signature.getArguments();
+    ArrayRef<ArgConvention> convs = signature.getArgConventions();
+    // Ignore the result slot and error result.
+    while (!convs.empty() && isResultSlot(convs.back())) {
+      inputTypes = inputTypes.drop_back();
+      convs = convs.drop_back();
+    }
+    // TODO: Handle default arguments.
+    if (inputTypes.size() != numFields)
+      continue;
+    // Skip any kind of var-args.
+    if (signature.getBody().getMetadata().hasAnyVarArg())
+      continue;
+
+    bool isMatch = true;
+    for (auto [type, conv, field] :
+         llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
+      // Strip the pointer type if present.
+      ASTType argType = type;
+      // Fieldwise initializers must have read/owned conventions. ref etc
+      // are lit.ref's mechanically but these are invisible the to the caller.
+      if (hasImplicitOrigin(conv)) {
+        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem) {
+          isMatch = false;
+          break;
+        }
+        argType = ASTType(argType).getReferenceElementType();
+      }
+
+      if (!argType.isEqualCanon(field.getType())) {
+        isMatch = false;
+        break;
+      }
+    }
+    if (isMatch)
+      return func;
+  }
+  return {};
+}
+
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   // Generate the fieldwise init.
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = cast<StructDeclOp>(structDecl);
   // Generate the copy and memberwise init stubs.
-  auto stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      structDecl, /*generateFieldwiseInit=*/true);
+  auto stubs = structEmitter.addMissingValueMemberStubsToStruct(structDecl);
   if (!stubs) {
     emitError(decoratorLoc, "'@value' cannot synthesize fieldwise init for '")
         << declOp.getSymName() << "'";
     structDecl.setErroneous();
     return;
   }
+
+  // Generate the fieldwise init unless it already has one.
+  if (!findFieldwiseInit(structDecl))
+    structEmitter.synthesizeFieldwiseInit(structDecl);
 }
 
 /// Process the @fieldwise_init body decorator on structs. 'isRequired'
 /// indicates whether it is an error to already have a fieldwise init.
 void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc) {
-  // Generate the fieldwise init.
-  StructDeclOp declOp = cast<StructDeclOp>(structDecl);
-  // FIXME: Cut this down.
-  std::optional<ValueInfo> valueInfo = ValueInfo::createValueInfo(structDecl);
-  if (!valueInfo)
-    return; // Error emitted.
-
   // Don't add one if we already have one.
-  if (valueInfo->hasFieldwiseInit()) {
-    emitError(decoratorLoc, "'")
-        << declOp.getSymName()
-        << "' has an explicitly declared fieldwise initializer";
-    // TODO: Emit a note on the initializer.
+  if (FnOp init = findFieldwiseInit(structDecl)) {
+    auto diag = emitError(decoratorLoc, "'")
+                << cast<StructDeclOp>(structDecl).getSymName()
+                << "' has an explicitly declared fieldwise initializer";
+    diag.attachNote(init.getLoc()) << "initializer declared here";
     return;
   }
 

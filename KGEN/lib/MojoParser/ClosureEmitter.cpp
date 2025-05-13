@@ -320,18 +320,18 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto callMember = addFieldOpAndDecl(callFieldAttr, callMemberSignatureType,
                                       declOp, structDecl, b, getDeclResolver());
 
-  std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
-      structDecl, /*generateFieldwiseInit=*/false,
-      /*forceGenerateDestructor=*/true);
+  std::optional<ValueInfo> stubs =
+      addMissingValueMemberStubsToStruct(structDecl,
+                                         /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
 
-  FnOp copyCtr = stubs->copyCtr;
+  FnOp copyCtr = stubs->copyinit;
   SymbolConstantAttr copyCtrRef =
       copyCtr.getBoundSymbolRef(shared.getEvaluationContext());
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
 
-  FnOp moveCtr = stubs->moveCtr;
+  FnOp moveCtr = stubs->moveinit;
   SymbolConstantAttr moveCtrRef =
       moveCtr.getBoundSymbolRef(shared.getEvaluationContext());
   ASTDecl *moveCtrDecl =
@@ -339,7 +339,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
   // Populate destructor.
   {
-    FnOp destructor = stubs->dtor;
+    FnOp destructor = stubs->del;
     ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         destructor.getLoc(), destructor.getBody());
     Value dtorSelf = destructor.getBody()->getArgument(0);
@@ -577,7 +577,6 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Add the copy and move constructors and dtor.
   (void)addMissingValueMemberStubsToStruct(structDecl,
-                                           /*generateFieldwiseInit=*/false,
                                            /*forceGenerateDestructor=*/true);
 
   builder =

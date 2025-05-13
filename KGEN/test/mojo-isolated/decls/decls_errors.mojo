@@ -732,7 +732,7 @@ struct CantSynthesize:
   var x : InMemStruct 
 
 
-@value # expected-error {{'@value' cannot synthesize fieldwise init for 'ResolveErrorIsBubbled'}}
+@value
 struct ResolveErrorIsBubbled:
    var x: Int
    @implicit
@@ -1142,5 +1142,6 @@ struct FieldwiseInitExample[T: Movable]:
   var x: Int
   var y: T
 
+  # expected-note @below {{initializer declared here}}
   fn __init__(out self, x: Int, y: T):
     pass 
