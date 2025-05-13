@@ -25,7 +25,6 @@ lit_tests(
     srcs = glob(
         [
             "**/*.api",
-            "**/*.mojo",
         ],
     ),
     custom_substitutions = {
@@ -42,7 +41,6 @@ lit_tests(
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
     },
     mojo_deps = [
-        "//SDK/lib/API/mojo/max/max",
         "@mojo//:stdlib",
         "@mojo//:register",
     ],
