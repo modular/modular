@@ -726,13 +726,13 @@ struct BadDtor1:
 
 @value
 struct CantSynthesize:
-# expected-error @below {{cannot synthesize memberwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
   var x : InMemStruct 
 
 
-@value # expected-error {{'@value' cannot synthesize memberwise init for 'ResolveErrorIsBubbled'}}
+@value # expected-error {{'@value' cannot synthesize fieldwise init for 'ResolveErrorIsBubbled'}}
 struct ResolveErrorIsBubbled:
    var x: Int
    @implicit
@@ -1012,7 +1012,7 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
 
 @value
 struct AnyTypeMember[T: AnyType]:
-# expected-error @below {{cannot synthesize memberwise init because field 'value' has non-copyable and non-movable type 'T'}}
+# expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable and non-movable type 'T'}}
     var value: T

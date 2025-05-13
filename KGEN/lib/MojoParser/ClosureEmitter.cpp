@@ -564,7 +564,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   initSigConventions.push_back(ArgConvention::ByRefResult);
   initSigPassingKinds.push_back(PassingKind::Implicit);
 
-  FnOp initFunc = synthesizeMemberwiseInit(
+  // FIXME: This can't use the simple form of 'synthesizeMemberwiseInit' because
+  // 'ref' captures are modeled wrong: we're storing the /values/ in the closure
+  // instead of the /addresses/. fieldTypes above should be adding a layer of
+  // lit.ref, which would allow us to use the simple form.
+  FnOp initFunc = synthesizeFieldwiseInit(
       structDecl, initSigTypes, initSigConventions,
       PogListAttr::get(ctx, initSigNames, initSigPassingKinds),
       shared.getNoneType());

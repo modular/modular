@@ -1130,9 +1130,9 @@ struct RecursiveCopyable:
     var recurse: BoxCopyable[Node]
 
 
-# CHECK-LABEL: lit.struct.decl @RaisingMemberwiseInit
+# CHECK-LABEL: lit.struct.decl @RaisingFieldwiseInit
 @value
-struct RaisingMemberwiseInit:
+struct RaisingFieldwiseInit:
     var x: Int
 
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
