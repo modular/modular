@@ -50,9 +50,6 @@ modular_genrule(
     # happen with the stubfiles. Avoid the issue entirely by just forcing it off when generating.
     export MODULAR_ENABLE_PROFILING=OFF
 
-    # Disable the error that NIXL isn't implemented on Mac. 
-    export MODULAR_NIXL_IGNORE_NOT_IMPLEMENTED_ERROR=ON
-
     export folder=$(dirname $(location stubfiles/dtype.pyi))
     $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
 
