@@ -19,19 +19,19 @@ repos:
         entry: mojo format
         language: system
         files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
-        stages: [commit]
+        stages: [pre-commit]
       - id: check-docstrings
         name: check-docstrings
         entry: python3 ./mojo/stdlib/scripts/check-docstrings.py
         language: system
         pass_filenames: false
-        stages: [commit]
+        stages: [pre-commit]
       - id: check-license
         name: check-license
         entry: mojo mojo/stdlib/scripts/check_licenses.mojo
         language: system
         files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
-        stages: [commit]
+        stages: [pre-commit]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.40.0
     hooks:
