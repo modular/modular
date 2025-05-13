@@ -328,3 +328,54 @@ fn tcgen05_ld[
         ](tmem.ptr[])
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+
+@always_inline
+fn tcgen05_release_allocation_lock():
+    """Releases the allocation lock for the current CTA group.
+
+    Note:
+        This function is only available on NVIDIA Blackwell GPUs (SM 100+).
+    """
+    check_blackwell_constraint()
+
+    inlined_assembly[
+        "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()
+
+
+@always_inline
+fn tcgen05_load_wait():
+    """Waits for tensor memory loads to complete.
+
+    Note:
+        This function is only available on NVIDIA Blackwell GPUs (SM 100+).
+    """
+    check_blackwell_constraint()
+
+    inlined_assembly[
+        "tcgen05.wait::ld.sync.aligned;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()
+
+
+@always_inline
+fn tcgen05_store_wait():
+    """Waits for tensor memory stores to complete.
+
+    Note:
+        This function is only available on NVIDIA Blackwell GPUs (SM 100+).
+    """
+    check_blackwell_constraint()
+
+    inlined_assembly[
+        "tcgen05.wait::st.sync.aligned;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()

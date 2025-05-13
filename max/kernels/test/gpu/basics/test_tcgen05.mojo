@@ -12,9 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from testing import *
-from gpu.tcgen05 import TensorMemory, tcgen05_alloc, tcgen05_dealloc, tcgen05_ld
+from gpu.tcgen05 import (
+    TensorMemory,
+    tcgen05_alloc,
+    tcgen05_dealloc,
+    tcgen05_ld,
+    tcgen05_load_wait,
+    tcgen05_release_allocation_lock,
+    tcgen05_store_wait,
+)
 from memory import UnsafePointer, stack_allocation
+from testing import assert_true
 
 
 fn alloc_test_fn[cta_group: Int32]():
@@ -42,6 +50,7 @@ fn test_tcgen05_alloc() raises:
 fn alloc_dealloc_test_fn():
     var tmem = TensorMemory(32)
     tcgen05_alloc[1](tmem)
+    tcgen05_release_allocation_lock()
     tcgen05_dealloc[1](tmem)
 
 
@@ -50,6 +59,9 @@ fn test_tcgen05_dealloc() raises:
         alloc_dealloc_test_fn,
         target = _get_gpu_target["sm_100a"](),
     ]()
+    assert_true(
+        "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;" in asm
+    )
     assert_true("tcgen05.dealloc.cta_group::1.sync.aligned.b32" in asm)
 
 
@@ -64,6 +76,7 @@ fn ld_test_fn():
         pack=False,
         width=64,
     ](tmem)
+    tcgen05_load_wait()
     tcgen05_dealloc[1](tmem)
 
 
@@ -73,6 +86,7 @@ fn test_tcgen05_ld() raises:
         target = _get_gpu_target["sm_100a"](),
     ]()
     assert_true("tcgen05.ld.sync.aligned.32x32b.x64.b32" in asm)
+    assert_true("tcgen05.wait::ld.sync.aligned;" in asm)
 
 
 fn main() raises:
