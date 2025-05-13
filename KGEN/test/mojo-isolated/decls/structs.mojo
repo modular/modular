@@ -84,3 +84,22 @@ fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
 
   # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
   var bMove = b^
+
+# ===----------------------------------------------------------------------=== #
+# Fieldwise init tests
+# ===----------------------------------------------------------------------=== #
+
+@fieldwise_init
+struct FieldwiseInitExample[T: Movable]:
+  var x: Int
+  var y: T
+
+# CHECK-LABEL: lit.struct.decl @FieldwiseInitExample
+# CHECK: lit.fn @"__init__
+# CHECK-SAME: (%x: !Int, %y: !lit.ref<:!Movable T, mut *"y`"> owned_in_mem,
+# CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
+# CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
+# CHECK-NEXT: lit.ref.store %x, [[TMP]]
+# CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
+# CHECK-NEXT: lit.call{{.*}}"__moveinit__"{{.*}}(%y, [[TMP]]) 
+# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none> 

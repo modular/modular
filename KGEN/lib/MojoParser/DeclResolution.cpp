@@ -2248,6 +2248,9 @@ private:
   /// fieldwise init, copy ctor and move ctor if requested.
   void processValueDecorator(SMLoc decoratorLoc);
 
+  /// Process the @fieldwise_init body decorator on structs.
+  void processFieldwiseInitDecorator(SMLoc decoratorLoc);
+
   /// Get a constant symbol to a method, and return null if it is missing or
   /// something went wrong.
   /// Provide optionally a callback for the case where the method is missing.
@@ -2264,7 +2267,6 @@ private:
 /// Synthesize the `__copyinit__` and `__moveinit__` stubs for `@value`
 /// decorated structs early to ensure their movability and copyability
 /// requirements are satisfied.
-/// FIXME: This should toss on the Copyable and Movable traits.
 static void preprocessValueDecorator(ASTDecl &structDecl) {
   auto structOp = cast<StructDeclOp>(structDecl);
   for (ExprNode *decorator : structDecl.getBodyDecorators()) {
@@ -2290,6 +2292,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   // Generate the fieldwise init.
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = cast<StructDeclOp>(structDecl);
+  // Generate the copy and memberwise init stubs.
   auto stubs = structEmitter.addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/true);
   if (!stubs) {
@@ -2298,6 +2301,30 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     structDecl.setErroneous();
     return;
   }
+}
+
+/// Process the @fieldwise_init body decorator on structs. 'isRequired'
+/// indicates whether it is an error to already have a fieldwise init.
+void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc) {
+  // Generate the fieldwise init.
+  StructDeclOp declOp = cast<StructDeclOp>(structDecl);
+  // FIXME: Cut this down.
+  std::optional<ValueInfo> valueInfo = ValueInfo::createValueInfo(structDecl);
+  if (!valueInfo)
+    return; // Error emitted.
+
+  // Don't add one if we already have one.
+  if (valueInfo->hasFieldwiseInit()) {
+    emitError(decoratorLoc, "'")
+        << declOp.getSymName()
+        << "' has an explicitly declared fieldwise initializer";
+    // TODO: Emit a note on the initializer.
+    return;
+  }
+
+  // Generate the fieldwise init.
+  StructEmitter structEmitter(shared);
+  structEmitter.synthesizeFieldwiseInit(structDecl);
 }
 
 SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
@@ -2327,13 +2354,16 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
                                                      StructDeclOp structOp) {
   // @value decorator
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "fieldwise_init") {
+      processFieldwiseInitDecorator(decorator->getRangeStart());
+      return success();
+    }
     if (declRef->spelling == "value") {
       processValueDecorator(decorator->getRangeStart());
       return success();
     }
-    if (declRef->spelling == "explicit_destroy") {
+    if (declRef->spelling == "explicit_destroy")
       return success();
-    }
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {

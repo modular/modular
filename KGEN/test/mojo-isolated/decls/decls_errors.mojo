@@ -1136,3 +1136,11 @@ fn llvm_arg_meta_wrong_type[x: Int](a: Int, b: Int):
 @__llvm_arg_metadata(c, myMeta)
 fn llvm_arg_meta_wrong_name[x: Int](a: Int, b: Int):
     pass
+
+@fieldwise_init # expected-error {{'FieldwiseInitExample' has an explicitly declared fieldwise initializer}}
+struct FieldwiseInitExample[T: Movable]:
+  var x: Int
+  var y: T
+
+  fn __init__(out self, x: Int, y: T):
+    pass 
