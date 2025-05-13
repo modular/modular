@@ -35,7 +35,7 @@ fn is_compile_time() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-@value  # fieldwise.
+@fieldwise_init
 struct _OptimizationLevel(Intable, Stringable, Writable):
     """Represents the optimization level used during compilation.
 

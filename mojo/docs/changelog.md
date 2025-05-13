@@ -37,6 +37,11 @@ what we publish.
 
 - `try` and `raise` now work at comptime.
 
+- A new `@fieldwise_init` decorator can be attached to structs to synthesize a
+  fieldwise initializer - an `__init__` method that takes the same arguments as
+  the fields in the struct.  This gives access to this helpful capability
+  without having to opt into the rest of the methods that `@value` synthesizes.
+
 ### Standard library changes
 
 - The `CollectionElement` trait has been removed.
