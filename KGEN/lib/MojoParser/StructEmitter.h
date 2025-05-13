@@ -16,45 +16,20 @@
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/SharedState.h"
 
-#include <bitset>
-
 namespace M::KGEN::LIT {
 
-struct GeneratedStubs {
-  FnOp dtor;
-  FnOp copyCtr;
-  FnOp explicitCopy;
-  FnOp moveCtr;
-  FnOp init;
-};
-
+/// This struct bundles up analysis of the value members of a struct.
 class ValueInfo {
 public:
-  enum FuncIndex {
-    Destruct = 0,
-    Move = 1,
-    Copy = 2,
-    ExplicitCopy = 3,
-    FieldwiseInit = 4
-  };
+  FnOp del;      // __del__
+  FnOp copyinit; // __copyinit__
+  FnOp moveinit; // __moveinit__
+  FnOp copy;     // copy
 
-  static std::optional<ValueInfo> createValueInfo(ASTDecl &structDecl);
-  bool hasNontrivialDestructor() const {
-    return existingFunctions[FuncIndex::Destruct];
-  }
-  bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
-  bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }
-  bool hasExplicitCopy() const {
-    return existingFunctions[FuncIndex::ExplicitCopy];
-  }
-  bool hasFieldwiseInit() const {
-    return existingFunctions[FuncIndex::FieldwiseInit];
-  }
+  static std::optional<ValueInfo> lookupExisting(ASTDecl &structDecl);
 
 private:
-  ValueInfo(const std::bitset<5> &existingFunctions)
-      : existingFunctions(existingFunctions) {}
-  std::bitset<5> existingFunctions;
+  ValueInfo() {}
 };
 
 class StructEmitter : public SharedStateUser {
@@ -64,19 +39,13 @@ public:
   /// Generate empty stubs for the destructor, copy constructor, and move
   /// constructor on the declOp if they are eligible and do not already exist.
   ///
-  /// A struct is eligible for a move constructor if it is memory only.
-  ///
-  /// A struct is eligible for a copy constructor if it is not register passable
-  /// trivial.
-  ///
   /// A struct is eligible for a destructor if one of its fields has a
   /// destructor. It is possible that none of the fields of a struct have a
   /// destructor but that struct has an init that allocates heap memory. In this
   /// case set the forceGenerateDestructor flag to true to force destructor
   /// generation.
-  std::optional<GeneratedStubs>
+  std::optional<ValueInfo>
   addMissingValueMemberStubsToStruct(ASTDecl &structDecl,
-                                     bool generateFieldwiseInit,
                                      bool forceGenerateDestructor = false);
 
   /// Populate the function with a field by field copy. This will fail if the
