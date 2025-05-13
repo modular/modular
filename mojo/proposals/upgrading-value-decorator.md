@@ -31,7 +31,7 @@ effects:
 
 - Similarly, if the members are all movable, it adds a `__moveinit__` when missing.
 
-- Finally, unless the user declared it already, it adds a “memberwise”
+- Finally, unless the user declared it already, it adds a “fieldwise”
   `__init__` method that allows one to construct the struct by specifying all of
   the fields.
 
@@ -66,7 +66,7 @@ This saves a lot of boilerplate!
 This decorator is very handy and has served us well, but has some problems,
 mostly that it is “all or nothing”:
 
-- Many types don’t want a memberwise initializer, because this leaks
+- Many types don’t want a fieldwise initializer, because this leaks
   implementation details, but they do want synthesized move/copy members. You
   face a choice of a) not using `@value` and write them explicitly or b) use
   `@value` and get stuff they don’t want.
@@ -82,12 +82,12 @@ You might say that it isn’t very “Modular”.
 ## Proposed solution
 
 The solution I’d propose is to move the synthesis of these members to trait
-specifications and introduce a new `@memberwise_init` decorator (it isn’t
+specifications and introduce a new `@fieldwise_init` decorator (it isn’t
 useful or expressible as a trait). The example above would be expressed like
 this (replacing the `@value` decorator) to get all the code describe above:
 
 ```mojo
-@memberwise_init
+@fieldwise_init
 struct Simple(Copyable, Movable, ExplicitlyCopyable):
   var x: Int
   var y: String
@@ -95,8 +95,8 @@ struct Simple(Copyable, Movable, ExplicitlyCopyable):
 
 This requires a couple steps:
 
-1. Introduce a new `@memberwise_init` decorator, that only introduces the
-   memberwise constructor.
+1. Introduce a new `@fieldwise_init` decorator, that only introduces the
+   fieldwise constructor.
 
 2. Change trait conformance checking for `Copyable` and `Movable` and
    `ExplicitlyCopyable` to synthesize the member when missing.
@@ -136,7 +136,7 @@ class InventoryItem:
 For reference, the same thing in Mojo would look like this in our proposal:
 
 ```mojo
-@memberwise_init
+@fieldwise_init
 struct InventoryItem(Copyable, Movable, ExplicitlyCopyable):
     var name: String
     var unit_price: Float64
@@ -149,7 +149,7 @@ struct InventoryItem(Copyable, Movable, ExplicitlyCopyable):
 
 The [behavior of the `@dataclass`
 decorator](https://docs.python.org/3/library/dataclasses.html) is to synthesize
-a memberwise constructor, methods like `__eq__` and `__repr__` and a bunch of
+a fieldwise constructor, methods like `__eq__` and `__repr__` and a bunch of
 other things. Python classes have reference semantics, so they don’t have
 `__copyinit__` or `__moveinit__` like Mojo.
 
@@ -179,7 +179,7 @@ this can be solved in the library by adding something like:
 alias RecordLike = Copyable & Movable & ExplicitlyCopyable & Representable
 ...
 
-@memberwise_init
+@fieldwise_init
 struct InventoryItem(RecordLike):
 ```
 
