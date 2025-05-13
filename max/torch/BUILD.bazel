@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "torch",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+
+    # TODO: Re-enable mypy once the code is cleaned up.
+    tags = [],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max:_core",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/mlir",
+        "//SDK/lib/API/python/max/support",
+        requirement("torch"),
+    ],
+)
