@@ -4604,9 +4604,9 @@ struct ROIAlign:
         sampling_ratio: Scalar,
     ):
         roi_align_nhwc[aligned, mode](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(rois),
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            rois.to_layout_tensor(),
             Int(output_height),
             Int(output_width),
             spatial_scale,
