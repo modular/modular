@@ -556,7 +556,7 @@ struct ContinuousBatchingKVCacheCollection[
     type_: DType,
     kv_params_: KVCacheStaticParams,
     assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
-](KVCollectionT, Movable, Copyable):
+](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
 
