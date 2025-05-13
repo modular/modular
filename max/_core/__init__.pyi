@@ -32,6 +32,9 @@ from . import (
     graph as graph,
 )
 from . import (
+    nixl as nixl,
+)
+from . import (
     profiler as profiler,
 )
 
