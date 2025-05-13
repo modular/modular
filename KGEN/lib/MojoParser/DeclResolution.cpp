@@ -2245,7 +2245,7 @@ struct StructBodyDecorators : public SharedStateUser {
 
 private:
   /// Process the @value body decorator on structs.  This synthesizes the
-  /// memberwise init, copy ctor and move ctor if requested.
+  /// fieldwise init, copy ctor and move ctor if requested.
   void processValueDecorator(SMLoc decoratorLoc);
 
   /// Get a constant symbol to a method, and return null if it is missing or
@@ -2287,13 +2287,13 @@ static void preprocessValueDecorator(ASTDecl &structDecl) {
 }
 
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
-  // Generate the memberwise init.
+  // Generate the fieldwise init.
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = cast<StructDeclOp>(structDecl);
   auto stubs = structEmitter.addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/true);
   if (!stubs) {
-    emitError(decoratorLoc, "'@value' cannot synthesize memberwise init for '")
+    emitError(decoratorLoc, "'@value' cannot synthesize fieldwise init for '")
         << declOp.getSymName() << "'";
     structDecl.setErroneous();
     return;

@@ -106,6 +106,9 @@ public:
   /// Add `copy()` method for this struct.
   FnOp synthesizeExplicitCopy(ASTDecl &structDecl);
 
+  /// Add a attribute initializer method for this struct with a body.
+  FnOp synthesizeFieldwiseInit(ASTDecl &structDecl);
+
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
   FnOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
@@ -129,11 +132,11 @@ public:
   /// method for memory-only types where not all fields are initialized, though
   /// this requires manual modification of the returned FnOp to initialize any
   /// omitted fields.
-  FnOp synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
-                                ArrayRef<ArgConvention> argConventions,
-                                PogListAttr argListAttrs,
-                                // None or Self if register passable.
-                                ASTType litReturnType);
+  FnOp synthesizeFieldwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
+                               ArrayRef<ArgConvention> argConventions,
+                               PogListAttr argListAttrs,
+                               // None or Self if register passable.
+                               ASTType litReturnType);
 
   /// Create a FnOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.

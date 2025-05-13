@@ -261,7 +261,57 @@ static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
   structOp.setCanonicalTrait(TraitType::get(structOp.getContext(), newSymbols));
 }
 
-FnOp StructEmitter::synthesizeMemberwiseInit(
+/// Add a attribute initializer method for this struct with a body.
+FnOp StructEmitter::synthesizeFieldwiseInit(ASTDecl &structDecl) {
+  auto declOp = cast<StructDeclOp>(structDecl);
+  ASTType selfType = structDecl.getTypeDeclSelf();
+
+  SmallVector<Type> argTypes;
+  SmallVector<ArgConvention> argConventions;
+  SmallVector<StringAttr> argNames;
+  SmallVector<PassingKind> argPassingKinds;
+
+  // We declare all of the operands to the init constructor as owned.  This
+  // enables it to work with move-only fields, and, for copyable types, forces
+  // the copy into the caller, which can then be elided with a consume or
+  // RValue.
+  for (auto fieldOp : declOp.getFieldDecls()) {
+    ASTType fieldType = fieldOp.getType();
+    ArgConvention conv;
+    switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
+    case TypeConvention::MemoryOnly:
+    case TypeConvention::Unspecified:
+    case TypeConvention::RegisterPassable:
+      fieldType = fieldType.getRefForArgument(fieldOp.getName().str(),
+                                              /*isMut=*/true);
+      conv = ArgConvention::OwnedMem;
+      break;
+    case TypeConvention::RegisterPassableTrivial:
+      conv = ArgConvention::ReadReg;
+      break;
+    }
+    argTypes.push_back(fieldType);
+    argConventions.push_back(conv);
+    argNames.push_back(fieldOp.getNameAttr());
+    argPassingKinds.push_back(PassingKind::PosOrKw);
+  }
+
+  // Add the 'out self' argument if memory-only.
+  Type litResultType = selfType;
+  if (!selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
+    litResultType = shared.getNoneType();
+    argTypes.push_back(selfType.getRefForArgument("self", /*isMut=*/true));
+    argConventions.push_back(ArgConvention::ByRefResult);
+    argNames.push_back(StringAttr::get(shared.getContext(), "self"));
+    argPassingKinds.push_back(PassingKind::Implicit);
+  }
+
+  return synthesizeFieldwiseInit(
+      structDecl, argTypes, argConventions,
+      PogListAttr::get(getContext(), argNames, argPassingKinds), litResultType);
+}
+
+FnOp StructEmitter::synthesizeFieldwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     // None or Self if register passable.
@@ -314,7 +364,7 @@ FnOp StructEmitter::synthesizeMemberwiseInit(
     if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
         !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
       auto diag = emitError(fieldASTDecl.getLoc())
-                  << "cannot synthesize memberwise init because field '"
+                  << "cannot synthesize fieldwise init because field '"
                   << fieldOp.getName()
                   << "' has non-copyable and non-movable type " << fieldType;
       return {};
@@ -704,7 +754,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
          llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
       // Strip the pointer type if present.
       Type argType = type;
-      // Memberwise initializers must have read/owned conventions. ref etc
+      // Fieldwise initializers must have read/owned conventions. ref etc
       // are lit.ref's mechanically but these are invisible the to the caller.
       if (hasImplicitOrigin(conv)) {
         if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem) {
@@ -734,56 +784,9 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   if (!valueInfo)
     return {};
 
-  OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
-  ASTType selfType = structDecl.getTypeDeclSelf();
-
-  FnOp init;
-  if (!valueInfo->hasFieldwiseInit() && generateFieldwiseInit) {
-    SmallVector<Type> argTypes;
-    SmallVector<ArgConvention> argConventions;
-    SmallVector<StringAttr> argNames;
-    SmallVector<PassingKind> argPassingKinds;
-
-    // We declare all of the operands to the init constructor as owned.  This
-    // enables it to work with move-only fields, and, for copyable types, forces
-    // the copy into the caller, which can then be elided with a consume or
-    // RValue.
-    for (auto fieldOp : declOp.getFieldDecls()) {
-      ASTType fieldType = fieldOp.getType();
-      ArgConvention conv;
-      switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
-      case TypeConvention::MemoryOnly:
-      case TypeConvention::Unspecified:
-      case TypeConvention::RegisterPassable:
-        fieldType = fieldType.getRefForArgument(fieldOp.getName().str(),
-                                                /*isMut=*/true);
-        conv = ArgConvention::OwnedMem;
-        break;
-      case TypeConvention::RegisterPassableTrivial:
-        conv = ArgConvention::ReadReg;
-        break;
-      }
-      argTypes.push_back(fieldType);
-      argConventions.push_back(conv);
-      argNames.push_back(fieldOp.getNameAttr());
-      argPassingKinds.push_back(PassingKind::PosOrKw);
-    }
-
-    // Add the 'out self' argument if memory-only.
-    Type litResultType = selfType;
-    if (!selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
-      litResultType = shared.getNoneType();
-      argTypes.push_back(selfType.getRefForArgument("self", /*isMut=*/true));
-      argConventions.push_back(ArgConvention::ByRefResult);
-      argNames.push_back(StringAttr::get(shared.getContext(), "self"));
-      argPassingKinds.push_back(PassingKind::Implicit);
-    }
-
-    init = synthesizeMemberwiseInit(
-        structDecl, argTypes, argConventions,
-        PogListAttr::get(getContext(), argNames, argPassingKinds),
-        litResultType);
-  }
+  FnOp fieldwiseInit;
+  if (!valueInfo->hasFieldwiseInit() && generateFieldwiseInit)
+    fieldwiseInit = synthesizeFieldwiseInit(structDecl);
 
   FnOp destructorFunc;
   if (!valueInfo->hasNontrivialDestructor() && forceGenerateDestructor)
@@ -813,7 +816,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   }
 
   return GeneratedStubs{destructorFunc, copyFunc, explicitCopyFunc, moveFunc,
-                        init};
+                        fieldwiseInit};
 }
 
 FnOp StructEmitter::findInitInStruct(StructDeclOp structOp,
