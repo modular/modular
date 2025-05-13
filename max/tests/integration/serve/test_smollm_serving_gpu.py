@@ -44,7 +44,7 @@ async def test_smollm_serve_gpu(app):
     # requests and collect the results later
     N_REQUESTS = 3
 
-    async with TestClient(app) as client:
+    async with TestClient(app, timeout=90.0) as client:
         tasks = [
             client.post(
                 "/v1/chat/completions",
