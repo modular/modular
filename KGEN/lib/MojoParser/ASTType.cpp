@@ -494,7 +494,7 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
 
     // Disable printing all parameters for the user defined `Index` functions.
     // For example, 'Index[Intable, Intable](16,16)' -> 'Index(16,16)'
-    if (getNameFromSymbolRef(symbol, true).starts_with("Index")) {
+    if (isFunc && getNameFromSymbolRef(symbol, true).starts_with("Index[")) {
       os << "Index";
       return;
     }
