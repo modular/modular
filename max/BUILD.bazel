@@ -148,5 +148,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/profiler",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/torch",
     ],
 )
