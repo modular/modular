@@ -1,0 +1,9 @@
+MOJO_VERSION = "25.4.0.dev2025051305"
+
+mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
+mojo.toolchain(
+    use_prebuilt_packages = False,
+    version = MOJO_VERSION,
+)
+
+use_repo(mojo, "mojo_toolchains")
