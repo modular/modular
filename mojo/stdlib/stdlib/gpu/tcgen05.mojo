@@ -57,15 +57,22 @@ struct TensorMemory:
 
 
 @always_inline
-fn tcgen05_alloc[cta_group: Int32](mut tmem: TensorMemory):
+fn tcgen05_alloc[
+    cta_group: Int32
+](
+    ptr_tmem_addr: UnsafePointer[
+        UInt32, address_space = AddressSpace.SHARED, alignment=16
+    ],
+    num_cols: UInt32,
+):
     """Allocates tensor memory for use with tcgen05 instructions.
 
     Parameters:
         cta_group: The cooperative thread array (CTA) group ID.
 
     Args:
-        tmem: TensorMemory struct to hold the allocation address and number of
-              columns.
+        ptr_tmem_addr: Shared memory pointer to hold tensor memory address.
+        num_cols: The number of columns to allocate.
 
     Note:
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
@@ -80,13 +87,13 @@ fn tcgen05_alloc[cta_group: Int32](mut tmem: TensorMemory):
         constraints="r,r",
         has_side_effect=True,
     ](
-        UInt32(Int(tmem.ptr)),
-        tmem.num_cols,
+        UInt32(Int(ptr_tmem_addr)),
+        num_cols,
     )
 
 
 @always_inline
-fn tcgen05_dealloc[cta_group: Int32](mut tmem: TensorMemory):
+fn tcgen05_dealloc[cta_group: Int32](tmem_addr: UInt32, num_cols: UInt32):
     """Deallocates tensor memory allocated by tcgen05_alloc().
 
     This function deallocates tensor memory that was previously allocated using
@@ -97,9 +104,8 @@ fn tcgen05_dealloc[cta_group: Int32](mut tmem: TensorMemory):
         cta_group: The cooperative thread array (CTA) group ID.
 
     Args:
-        tmem: TensorMemory struct to hold the allocation address and number of
-              columns.
-
+        tmem_addr: Address of the tensor memory to deallocate.
+        num_cols: Number of columns in the tensor memory.
     Note:
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
@@ -112,7 +118,7 @@ fn tcgen05_dealloc[cta_group: Int32](mut tmem: TensorMemory):
         NoneType,
         constraints="r,r",
         has_side_effect=True,
-    ](tmem.ptr[0], tmem.num_cols)
+    ](tmem_addr, num_cols)
 
 
 @always_inline
@@ -124,7 +130,7 @@ fn tcgen05_ld[
     type: DType,
     pack: Bool,
     width: Int = (datapaths * bits * repeat) // (32 * 32),
-](tmem: TensorMemory) -> SIMD[type, width]:
+](tmem_addr: UInt32) -> SIMD[type, width]:
     """Loads data from tensor memory into registers.
 
     Parameters:
@@ -136,7 +142,7 @@ fn tcgen05_ld[
         width: The nubmer elements in the result vector.
 
     Args:
-        tmem: TensorMemory struct to load from.
+        tmem_addr: The address of the tensor memory to load from.
 
     Returns:
         The SIMD register containing the loaded data.
@@ -192,7 +198,7 @@ fn tcgen05_ld[
             _RegisterPackType[UInt32],
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 
@@ -210,7 +216,7 @@ fn tcgen05_ld[
             _RegisterPackType[UInt32, UInt32],
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 
@@ -228,7 +234,7 @@ fn tcgen05_ld[
             _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 
@@ -248,7 +254,7 @@ fn tcgen05_ld[
             ],
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 
@@ -271,7 +277,7 @@ fn tcgen05_ld[
             # fmt: on
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 
@@ -296,7 +302,7 @@ fn tcgen05_ld[
             # fmt: on
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 
@@ -325,7 +331,7 @@ fn tcgen05_ld[
             # fmt: on
             constraints=constraints_str,
             has_side_effect=True,
-        ](tmem.ptr[])
+        ](tmem_addr)
 
         return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
 

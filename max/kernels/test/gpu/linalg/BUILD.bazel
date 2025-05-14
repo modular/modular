@@ -16,6 +16,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
     "test_stream_k.mojo": ["//:nvidia_gpu"],
+    "test_tma_mma_sm100.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
     "test_vendor_blas.mojo": ["//:nvidia_gpu"],

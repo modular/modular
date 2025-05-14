@@ -840,7 +840,7 @@ struct MMASmemDescriptor:
         alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
         # Extract 18 bits and ignore 4 LSB.
-        var base_ptr = UInt64(smem_ptr)
+        var base_ptr = UInt32(Int(smem_ptr))
         var start_address = UInt64((base_ptr & 0x3FFFF) >> 4)
 
         # Ignore 4 LSB.
@@ -930,46 +930,48 @@ fn mma[
 
     @parameter
     if cta_group == 1:
-        alias masks = IndexList[4, element_type = DType.uint32](0)
+        var masks = IndexList[4, element_type = DType.uint32](0)
 
         inlined_assembly[
             """{
                 .reg .pred p;
                 setp.ne.b32 p, $4, 0;
-                tcgen06.mma.cta_group::1."""
+                tcgen05.mma.cta_group::1."""
             + String(kind)
             + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
             }""",
             NoneType,
-            constraints="r,l,l,r,n,n,n,n,n",
+            constraints="r,l,l,r,n,r,r,r,r",
         ](
             c_tmem,
             a_desc,
             b_desc,
             inst_desc,
+            c_scale,
             masks[0],
             masks[1],
             masks[2],
             masks[3],
         )
     elif cta_group == 2:
-        alias masks = IndexList[8, element_type = DType.uint32](0)
+        var masks = IndexList[8, element_type = DType.uint32](0)
 
         inlined_assembly[
             """{
                 .reg .pred p;
                 setp.ne.b32 p, $4, 0;
-                tcgen06.mma.cta_group::2."""
+                tcgen05.mma.cta_group::2."""
             + String(kind)
             + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
             }""",
             NoneType,
-            constraints="r,l,l,r,n,n,n,n,n,n,n,n,n",
+            constraints="r,l,l,r,n,r,r,r,r,r,r,r,r",
         ](
             c_tmem,
             a_desc,
             b_desc,
             inst_desc,
+            c_scale,
             masks[0],
             masks[1],
             masks[2],

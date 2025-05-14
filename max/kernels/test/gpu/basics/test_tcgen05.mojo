@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.memory import AddressSpace
 from gpu.tcgen05 import (
     TensorMemory,
     tcgen05_alloc,
@@ -26,8 +27,11 @@ from testing import assert_true
 
 
 fn alloc_test_fn[cta_group: Int32]():
-    var tmem = TensorMemory(32)
-    tcgen05_alloc[cta_group](tmem)
+    var ptr_tmem_addr = UnsafePointer[
+        UInt32, address_space = AddressSpace.SHARED, alignment=16
+    ]()
+    var num_cols: UInt32 = 32
+    tcgen05_alloc[cta_group](ptr_tmem_addr, num_cols)
 
 
 fn test_tcgen05_alloc() raises:
@@ -48,10 +52,14 @@ fn test_tcgen05_alloc() raises:
 
 
 fn alloc_dealloc_test_fn():
-    var tmem = TensorMemory(32)
-    tcgen05_alloc[1](tmem)
+    var ptr_tmem_addr = UnsafePointer[
+        UInt32, address_space = AddressSpace.SHARED, alignment=16
+    ]()
+    var tmem_addr: UInt32 = 0
+    var num_cols: UInt32 = 32
+    tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     tcgen05_release_allocation_lock()
-    tcgen05_dealloc[1](tmem)
+    tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
 fn test_tcgen05_dealloc() raises:
@@ -66,8 +74,12 @@ fn test_tcgen05_dealloc() raises:
 
 
 fn ld_test_fn():
-    var tmem = TensorMemory(32)
-    tcgen05_alloc[1](tmem)
+    var ptr_tmem_addr = UnsafePointer[
+        UInt32, address_space = AddressSpace.SHARED, alignment=16
+    ]()
+    var num_cols: UInt32 = 32
+    tcgen05_alloc[1](ptr_tmem_addr, num_cols)
+    var tmem_addr = ptr_tmem_addr[0]
     _ = tcgen05_ld[
         datapaths=32,
         bits=32,
@@ -75,9 +87,9 @@ fn ld_test_fn():
         type = DType.float32,
         pack=False,
         width=64,
-    ](tmem)
+    ](tmem_addr)
     tcgen05_load_wait()
-    tcgen05_dealloc[1](tmem)
+    tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
 fn test_tcgen05_ld() raises:
