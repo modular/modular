@@ -141,3 +141,20 @@ modular_cc_test(
         "//AsyncRT:NIXL",
     ],
 )
+
+modular_cc_test(
+    name = "NixlTestUcx",
+    size = "small",
+    srcs = ["NixlTestUcx.cpp"],
+    data = [
+        "//AsyncRT:plugin_ucx",
+    ],
+    env = {
+        # TODO(GENAI-170): Make plugin directory discovery more robust and work
+        # outside of Bazel.
+        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
+    },
+    deps = [
+        "//AsyncRT:NIXL",
+    ],
+)
