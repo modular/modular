@@ -6,6 +6,7 @@ modular_py_test(
         [
             "*.py",
             "pipelines/*.py",
+            "scheduler/*.py",
         ],
     ),
     data = ["//SDK/lib/API/python/tests/serve/testdata"],
