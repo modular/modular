@@ -88,7 +88,7 @@ class PlotConfig:
 
 
 def draw_plot(
-    x: Sequence[str],
+    x: list[str],
     y_list: np.ndarray,
     y_names: Sequence[str],
     x_title: str,
@@ -230,8 +230,8 @@ def extract_pivots(x_labels):
     return pivot_columns, non_pivot_columns
 
 
-def append_wrap_fixed_width(lst: list, sep: str, num_lines: int = 2):
-    s = []
+def append_wrap_fixed_width(lst: list[str], sep: str, num_lines: int = 2):
+    s: list[str] = []
     result = []
     current_len = 0
     width = sum([len(x) for x in lst]) // num_lines
@@ -359,7 +359,7 @@ def parse_and_plot(
         ext_pivots.extend(pivots)
 
         df = label_to_df(x_labels)
-        s = []
+        s: list[str] = []
         for npv in non_pivots:
             if npv in pivots:
                 continue
@@ -372,7 +372,7 @@ def parse_and_plot(
     # TODO: check for sanity of x_labels
 
     draw_plot(
-        x=x_labels,
+        x=list(x_labels),
         y_list=np.array(y_list),
         y_names=y_names,
         x_title=f"<b>{key_col}</b>"
@@ -456,7 +456,7 @@ def parse_and_plot(
 )
 @click.argument("input_files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    input_files: click.UNPROCESSED,
+    input_files,
     label_list: list[str],
     output_prefix: Optional[str],
     plot_col: str,
