@@ -138,7 +138,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
-    LIT_OptionalConventionParameter:$origPackConvention
+    LIT_OptionalConventionParameter:$origPackConvention,
+    LIT_OptionalConventionParameter:$origVariadicConvention
   );
 
   let assemblyFormat = [{
@@ -146,6 +147,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
         `[` (`]`) : ($defaultPos^      `]`)? `,`
         `[` (`]`) : ($defaultKwOnly^   `]`)?
         (`,` custom<ArgConvention>($origPackConvention)^)?
+        (`,` custom<ArgConvention>($origVariadicConvention)^)?
     `>`
   }];
 
@@ -163,7 +165,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<VariadicKind>":$variadics,
-                     "std::optional<ArgConvention>":$origPackConvention)>
+                     "std::optional<ArgConvention>":$elementConventions,
+                     "std::optional<ArgConvention>":$origVariadicConvention)>
   ];
 
   let extraClassDeclaration = [{

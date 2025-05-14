@@ -734,7 +734,7 @@ fn test_or(a: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.fn @"variadic_mems
 # CHECK-SAME: [imm *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, read_mem> pos_vararg)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">> read_mem|pos_vararg)
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
@@ -794,7 +794,7 @@ fn variadic_field_sensitivity():
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, mut> pos_vararg)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">> mut|pos_vararg)
 fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
@@ -829,6 +829,22 @@ fn call_variadic_inout_mems():
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
+
+# CHECK-LABEL: lit.fn @"variadic_owned_mems
+fn variadic_owned_mems(owned *mems: MemExample):
+    # CHECK: lit.call @{{.*}}::@VariadicListMem::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
+    # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>, ?,
+    # CHECK-SAME: "self": !lit.ref<@{{.*}}::@VariadicListMem<:!Bool {:i1 1},
+    mems[0].x += 1
+
+
+# CHECK-LABEL: lit.fn @"call_variadic_owned_mems
+fn call_variadic_owned_mems(owned c: MemExample, owned d: MemExample):
+    variadic_owned_mems(c^, d^)
+    # COM: Ensure owned convention of callee is honored.
+    # CHECK:  lit.call @{{.*}}::@"variadic_owned_mems{{.*}}
+    # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+    # CHECK-NEXT: kgen.return %none : !kgen.none
 
 
 # CHECK-LABEL: lit.fn @"test_partial_overwrite

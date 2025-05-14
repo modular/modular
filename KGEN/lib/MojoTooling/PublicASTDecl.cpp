@@ -59,14 +59,6 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
-/// Refine the convention for the given type and input convention.
-static ArgConvention refineConventionForType(Type type,
-                                             ArgConvention convention) {
-  if (auto variadic = dyn_cast<VariadicType>(type))
-    return variadic.getConvention();
-  return convention;
-}
-
 /// Generate a user-readable representation of the given pvalue.
 static std::string generatePValueString(SharedState &shared, PValue value) {
   std::string typeName;
@@ -1010,7 +1002,10 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
        llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
-    ArgConvention convention = refineConventionForType(userType, conventionX);
+    ArgConvention convention = conventionX;
+    if (auto variadic = dyn_cast<VariadicType>(userType))
+      convention = signature.getPosVarArgConvention(argIdx);
+
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx)) {
       TypedAttr reboundDefaultAttr =

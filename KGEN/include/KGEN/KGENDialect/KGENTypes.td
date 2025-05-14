@@ -397,29 +397,21 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
     !kgen.variadic<scalar<f32>>
 
     // A parameterized variadic sequence.
-    !kgen.variadic<type, owned_in_mem>
+    !kgen.variadic<type>
     ```
   }];
 
-  let parameters = (ins "Type":$elementType,
-                        "ArgConvention":$convention);
+  let parameters = (ins "Type":$elementType);
   let assemblyFormat = [{
-    `<`custom<ParamType>($elementType)
-      `` custom<VariadicConvention>($convention) `>`
+    `<`custom<ParamType>($elementType) `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins
-        "Type":$elementType,
-        CArg<"ArgConvention", "ArgConvention::ReadReg">:$convention), [{
-      return $_get(elementType.getContext(), elementType, convention);
+        "Type":$elementType), [{
+      return $_get(elementType.getContext(), elementType);
     }]>,
   ];
-
-  let extraClassDeclaration = [{
-    /// Get a variadic type with only the element type changed.
-    VariadicType getWithElementType(Type type);
-  }];
 }
 
 //===----------------------------------------------------------------------===//

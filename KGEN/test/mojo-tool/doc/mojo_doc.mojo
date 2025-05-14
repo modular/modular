@@ -460,7 +460,7 @@ fn variadic_arg_hack[
     vals: __mlir_type[
         `!kgen.variadic<!lit.ref<`,
         element_type,
-        `, #lit.any.origin<0>: !lit.origin<0>, 0>, read_mem>`,
+        `, #lit.any.origin<0>: !lit.origin<0>, 0>>`,
     ]
 ):
     """Test hacky use case of `!kgen.variadic` argument type printing.

@@ -46,8 +46,7 @@ def PointerType : DialectType<(type
 )>;
 
 def VariadicType : DialectType<(type
-  Type:$elementType,
-  EnumAttr<"ArgConvention">:$convention
+  Type:$elementType
 )>;
 
 def NoneType : DialectType<(type)>;

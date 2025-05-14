@@ -348,7 +348,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         for (TypedAttr &arg : args)
           arg = StoreToMemAttr::get(arg, varElType);
       }
-      auto newVarType = VariadicType::get(varElType, varType.getConvention());
+      auto newVarType = VariadicType::get(varElType);
       argValue = PValue(VariadicAttr::get(args, newVarType));
     } else {
       ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
@@ -439,7 +439,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
         origin = OriginUnionAttr::get(refType.getOrigin().getType());
 
       refType = refType.getWithOrigin(getCommonOrigin());
-      expectedType = VariadicType::get(refType, expectedVararg.getConvention());
+      expectedType = VariadicType::get(refType);
     }
 
     // Check for a splat.
@@ -1320,7 +1320,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
              "Unknown way to create variadic list");
     }
 
-    auto conv = cast<VariadicType>(argVal.getType()).getConvention();
+    auto conv = signature.getPosVarArgConvention(argIdx);
     for (auto elt : unpackedArgs)
       checkArg(elt, conv);
     return;

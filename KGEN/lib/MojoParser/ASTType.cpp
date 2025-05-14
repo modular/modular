@@ -350,12 +350,6 @@ ASTType ASTType::getVariadicElementType() const {
   return ASTType(cast<VariadicType>(mlirType).getElementType());
 }
 
-/// Given a VariadicType, return the argument convention.  This aborts if
-/// the current type isn't a VariadicType.
-ArgConvention ASTType::getVariadicConvention() const {
-  return cast<VariadicType>(mlirType).getConvention();
-}
-
 /// Return the RefPackType that corresponds to the VariadicPack instance.
 RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
@@ -1094,7 +1088,6 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     ASTType(ref.getElementType()).print(os, diagShared, demangleParams);
   } else if (auto variadic = dyn_cast<VariadicType>(type)) {
     os << "Variadic[";
-    printConvention(variadic.getConvention());
     ASTType(variadic.getElementType()).print(os, diagShared, demangleParams);
     os << "]";
   } else if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
@@ -1139,7 +1132,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       if (sig.isPosVarArg(idx)) { // Print with the element of the variadic.
         auto variadic = cast<VariadicType>(type);
         type = variadic.getElementType();
-        convention = variadic.getConvention();
+        convention = sig.getPosVarArgConvention(idx);
         printStar = true;
       }
 

@@ -386,9 +386,7 @@ alias mname1 = _get_kgen_string[alias_parametric_fn()]()
 # CHECK-SAME: LLVMMetadataArray = [
 # CHECK-SAME: #kgen.param.expr<data_to_str, {{.*}}alias_parametric_fn
 # CHECK-SAME: #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
-@__llvm_metadata(
-    mname1=128
-)
+@__llvm_metadata(mname1=128)
 fn kernel3[x: Int]():
     pass
 
@@ -676,7 +674,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -1101,7 +1099,7 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.fn @"__init__(decls::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> pos_vararg
+    # CHECK: lit.fn @"__init__(decls::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>> read_mem|pos_vararg
     # The argument is intentionally memory-only.
     @implicit
     fn __init__(out self, *values: ValueMem):
@@ -1795,7 +1793,11 @@ struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
     fn __init__(out self, *, ref [origin]to: Int):
         self._value = __get_mvalue_as_litref(to)
 
-struct StructWithParam[a: Int]: pass
+
+struct StructWithParam[a: Int]:
+    pass
+
 
 # CHECK-LABEL: lit.fn @"autoparam_mangler_crash
-fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam](): pass
+fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
+    pass

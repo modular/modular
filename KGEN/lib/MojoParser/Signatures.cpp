@@ -804,7 +804,7 @@ TypeCheckedParamList::TypeCheckedParamList(
 
     if (variadicKind == VariadicKind::PosVarArg) {
       if (!type.isTypeCheckErrorType())
-        type = VariadicType::get(type, ArgConvention::ReadReg);
+        type = VariadicType::get(type);
       else
         variadicKind = VariadicKind::None;
     }
@@ -856,7 +856,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr() {
   return PogListAttr::get(
       shared.getContext(),
       PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
-      defaultKwOnlyParams);
+      defaultKwOnlyParams, ArgConvention::ByRefError, ArgConvention::ReadMem);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -1353,7 +1353,8 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   // The convention is to pass as a register value, in the case of a memory
   // value, we're passing the array of pointers by value.
   if (arg.variadicKind == VariadicKind::PosVarArg) {
-    fullType = VariadicType::get(fullType, arg.kgenConvention);
+    fullType = VariadicType::get(fullType);
+    arg.variadicElementArgConvention = arg.kgenConvention;
     arg.kgenConvention = ArgConvention::ReadReg;
   } else if (arg.variadicKind == VariadicKind::KwVarArg) {
     // We build OwnedKwargsDict[ValType].
@@ -1987,17 +1988,25 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   argConventions.reserve(numArgs);
 
   ArgConvention argPackOrigConvention = ArgConvention::ByRefError;
+  ArgConvention argVariadicOrigConvention = ArgConvention::ReadMem;
+  int i = 0;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
+    if (arg.variadicKind == VariadicKind::PosVarArg) {
+      argVariadicOrigConvention = arg.variadicElementArgConvention;
+      i++;
+    }
+
     argPogs.emplace_back(PogMetadataAttr::get(
         arg.name, arg.getKWArgHandlingAsPassingKind(), arg.variadicKind));
     argConventions.push_back(arg.kgenConvention);
     if (arg.variadicKind == VariadicKind::PackVarArg)
       argPackOrigConvention = arg.kgenVariadicConvention;
   }
+  assert(i <= 1 && "There can be at most one variadic argument");
 
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
-                       argPackOrigConvention),
+                       argPackOrigConvention, argVariadicOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,

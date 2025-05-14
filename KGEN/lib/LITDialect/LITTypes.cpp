@@ -103,7 +103,8 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       PogListAttr::get(ctx, paramListAttrs.getPogs(),
                        remapper.replace(paramListAttrs.getDefaultPos()),
                        remapper.replace(paramListAttrs.getDefaultKwOnly()),
-                       paramListAttrs.getOrigPackConvention());
+                       paramListAttrs.getOrigPackConvention(),
+                       paramListAttrs.getOrigVariadicConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -912,6 +913,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   SmallVector<ArgConvention> argConventions;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origArgPackConvention;
+  std::optional<ArgConvention> origVariadicConvention;
 
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
@@ -926,10 +928,11 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
 
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
-    if (p.parseType(type) || parseConventionAndVariadicness(
-                                 p, argConventions.emplace_back(),
-                                 argVariadics.emplace_back(VariadicKind::None),
-                                 origArgPackConvention, idx++))
+    if (p.parseType(type) ||
+        parseConventionAndVariadicness(
+            p, argConventions.emplace_back(),
+            argVariadics.emplace_back(VariadicKind::None),
+            origArgPackConvention, origVariadicConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -963,7 +966,8 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                       defaultKwOnlyArgs, argVariadics, origArgPackConvention),
+                       defaultKwOnlyArgs, argVariadics, origArgPackConvention,
+                       origVariadicConvention),
       numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature =
@@ -1150,13 +1154,6 @@ bool FnType::isPosVarArg(size_t index) {
   return getMetadata().isPosVarArg(index);
 }
 
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
-ArgConvention FnType::getPosVarArgConvention(size_t index) {
-  assert(isPosVarArg(index) && "isn't a positional vararg");
-  return ::cast<VariadicType>(getArguments()[index]).getConvention();
-}
-
 bool FnType::isKwVarArg(size_t index) {
   return getMetadata().isKwVarArg(index);
 }
@@ -1308,7 +1305,11 @@ bool FnTypeGeneratorType::isPosVarArg(size_t index) {
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
 /// example: fn x(inout *args: Int) is declared 'inout'.
 ArgConvention FnTypeGeneratorType::getPosVarArgConvention(size_t index) {
-  return getBody().getPosVarArgConvention(index);
+  PogListAttr pogs = getFnMetadata().getArgListAttrs();
+  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg)
+    return pogs.getOrigVariadicConvention();
+  else
+    return ArgConvention::ReadReg;
 }
 
 bool FnTypeGeneratorType::isKwVarArg(size_t index) {
