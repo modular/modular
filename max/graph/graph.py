@@ -53,6 +53,37 @@ class KernelLibrary:
     def add_path(self, path: Path):
         self._analysis.add_path(path)
 
+    def load_paths(
+        self, context: mlir.Context, custom_extensions: Iterable[Path]
+    ):
+        """Load the custom operations from provided library paths.
+
+        Performs additional "smart" library loading logic for custom operation
+        libraries in additional formats. The loading logic supports the
+        following formats:
+
+        - Compiled Mojo binary packages with .mojopkg extension
+        - Mojo source directory with custom operations
+
+        The loaded libraries are added to the current kernel library.
+
+        Args:
+            context: The MLIR context for loading MLIR operations
+            custom_extensions: File paths to the custom operation libraries
+        """
+        with context:
+            for ext_path in custom_extensions:
+                if is_mojo_binary_package_path(ext_path):
+                    self.add_path(ext_path)
+                elif is_mojo_source_package_path(ext_path):
+                    # Builds the source directory into a .mojopkg file.
+                    self.add_path(_build_mojo_source_package(ext_path))
+                else:
+                    raise ValueError(
+                        "Path provided as custom extension to Graph must be a "
+                        + f"Mojo source or binary package: {ext_path}"
+                    )
+
     def __getitem__(self, kernel: str):
         if kernel not in self._analysis.symbol_names:
             raise KeyError(kernel)
@@ -227,18 +258,7 @@ class Graph:
 
         # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = kernel_library or KernelLibrary(self._context)
-        with self._context:
-            for ext_path in custom_extensions:
-                if is_mojo_binary_package_path(ext_path):
-                    self._import_kernels(ext_path)
-                elif is_mojo_source_package_path(ext_path):
-                    # Builds the source directory into a .mojopkg file.
-                    self._import_kernels(_build_mojo_source_package(ext_path))
-                else:
-                    raise ValueError(
-                        "Path provided as custom extension to Graph must be a "
-                        + f"Mojo source or binary package: {ext_path}"
-                    )
+        self._import_kernels(custom_extensions)
 
         self._subgraphs = {}
         self._mlir_value_map = {}
@@ -722,18 +742,19 @@ class Graph:
 
         return _graph.frame_loc(mlir.Context.current, tb)
 
-    def _import_kernels(self, path: Path):
-        self._kernel_library.add_path(path)
+    def _import_kernels(self, paths: Iterable[Path]):
+        with self._context:
+            self._kernel_library.load_paths(self._context, paths)
 
-        # Update the graph attribute for the library paths.
-        self._mlir_op.attributes[Graph._kernel_library_paths_attr_name] = (
-            mlir.ArrayAttr.get(
-                [
-                    mlir.StringAttr.get(str(path), self._context)
-                    for path in self._kernel_library.library_paths()
-                ]
+            # Update the graph attribute for the library paths.
+            self._mlir_op.attributes[Graph._kernel_library_paths_attr_name] = (
+                mlir.ArrayAttr.get(
+                    [
+                        mlir.StringAttr.get(str(path), self._context)
+                        for path in self._kernel_library.library_paths()
+                    ]
+                )
             )
-        )
 
     @property
     def kernel_libraries_paths(self) -> list[Path]:

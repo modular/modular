@@ -48,7 +48,7 @@ def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
 
         with pytest.raises(ValueError) as err:
             ops.custom(
@@ -72,7 +72,7 @@ def test_my_add_valid(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             ops.custom(
                 "my_add",
@@ -95,7 +95,7 @@ def test_my_add_invalid_inputs_count(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
 
         with pytest.raises(ValueError) as err:
             ops.custom(
@@ -119,7 +119,7 @@ def test_my_add_invalid_outputs_count(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
 
         with pytest.raises(ValueError) as err:
             ops.custom(
@@ -143,7 +143,7 @@ def test_op_with_device_context_valid(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             ops.custom(
                 "op_with_device_context",
@@ -166,7 +166,7 @@ def test_op_multiple_outputs_valid(
         output_types=[tensor_type, tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             *ops.custom(
                 "op_with_multiple_outputs",
@@ -189,7 +189,7 @@ def test_op_multiple_outputs_invalid_outputs_count(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
 
         with pytest.raises(ValueError) as err:
             ops.custom(
@@ -213,7 +213,7 @@ def test_op_without_outputs_invalid_outputs_count(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
 
         with pytest.raises(ValueError) as err:
             ops.custom(
@@ -238,7 +238,7 @@ def test_return_opaque_mem_type(
         output_types=[opaque_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             ops.custom(
                 "make_my_int_memory",
@@ -262,7 +262,7 @@ def test_return_opaque_reg_type(
         output_types=[opaque_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             ops.custom(
                 "make_my_int_reg",
@@ -285,7 +285,7 @@ def test_variadic_ins_outs_valid(
         output_types=[tensor_type, tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             *ops.custom(
                 "variadic_input_to_output",
@@ -306,7 +306,7 @@ def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "variadic_add",
@@ -329,7 +329,7 @@ def test_tensor_kernel_raises_valid(
         output_types=[tensor_type],
     )
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         graph.output(
             ops.custom(
                 "binary_kernel_with_raises",
@@ -352,7 +352,7 @@ def test_mutable_input_tensor_valid(
     buffer_type = BufferType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph("test_mutable_input_tensor_valid", input_types=[buffer_type])
     with graph:
-        graph._import_kernels(kernel_verification_ops_path)
+        graph._import_kernels([kernel_verification_ops_path])
         ops.inplace_custom(
             "mutable_input_tensor",
             values=[graph.inputs[0]],
