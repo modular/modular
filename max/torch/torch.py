@@ -36,16 +36,18 @@ except ImportError:
 class CustomOpLibrary:
     _context: Context
     _kernel_library: KernelLibrary
-    _path: Path
     _session: InferenceSession
 
-    def __init__(self, path: Path):
+    def __init__(self, kernel_library: Union[Path, KernelLibrary]):
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
         self._context = Context()
-        self._kernel_library = KernelLibrary(self._context, [])
+        self._kernel_library = (
+            kernel_library
+            if isinstance(kernel_library, KernelLibrary)
+            else KernelLibrary(self._context, [kernel_library])
+        )
         self._session = InferenceSession(devices=devices)
-        self._path = path
 
     def __getattr__(self, attr: str):
         if attr.startswith("_"):
@@ -57,6 +59,19 @@ class CustomOpLibrary:
 class CustomOp:
     library: CustomOpLibrary
     name: str
+
+    @property
+    def context(self) -> mlir.Context:
+        return self.library._context
+
+    @property
+    def kernel_library(self) -> KernelLibrary:
+        return self.library._kernel_library
+
+    @property
+    def kernel(self) -> mlir.Operation:
+        analysis = self.kernel_library._analysis
+        return analysis.kernel(self.name)
 
 
 ###############################################################################
@@ -123,10 +138,11 @@ def custom_op_graph(op: CustomOp, *args, out_like: list[torch.Tensor]) -> Graph:
     output_types = [torch_tensor_to_type(t) for t in out_like]
     graph_types = [*(t.as_buffer() for t in output_types), *input_types]
 
-    kernel_path = op.library._path
-
     with Graph(
-        op.name, input_types=graph_types, custom_extensions=[kernel_path]
+        op.name,
+        input_types=graph_types,
+        context=op.context,
+        kernel_library=op.kernel_library,
     ) as graph:
         results = ops.custom(
             op.name,
@@ -201,14 +217,7 @@ def register_custom_op(op: CustomOp, name: Optional[str] = None):
     model: Optional[Model] = None
     registered_fake: Optional[Callable[..., TensorValues]] = None
 
-    # TODO(GEX-2219): Why is the smart library loading happening in the Graph
-    # constructor?
-    # TODO(GEX-2224): We need to handle MLIR contexts more consistently. There
-    # is already a live context on the CustomOpLibrary.
-    graph = Graph("foo", custom_extensions=[op.library._path])
-    kernel: mlir.Operation = graph._kernel_library._analysis.kernel(op.name)
-    # kernel: kgen.GeneratorOp = analysis.kernel(op.name)
-    signature: inspect.Signature = op_signature(kernel)
+    signature: inspect.Signature = op_signature(op.kernel)
 
     # Compile the model if it has not been compiled already.
     def compile_model(*args: torch.Tensor) -> TensorValues:
