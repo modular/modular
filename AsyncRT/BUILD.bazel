@@ -176,18 +176,26 @@ modular_cc_library(
 
 modular_cc_library(
     name = "NIXL",
-    srcs = glob([
-        "lib/NIXL/**/*.cpp",
-    ]),
-    hdrs = glob([
-        "include/AsyncRT/NIXL/**/*.h",
-    ]),
+    srcs = glob(
+        [
+            "lib/NIXL/**/*.cpp",
+        ],
+        exclude = [
+            "lib/NIXL/plugins/ucx/**",
+            "lib/NIXL/utils/ucx/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "include/AsyncRT/NIXL/**/*.h",
+        ],
+        exclude = [
+            "include/AsyncRT/NIXL/plugins/ucx/**",
+            "include/AsyncRT/NIXL/utils/ucx/**",
+        ],
+    ),
     include_prefix = "",
     strip_include_prefix = "include",
-    # Only compatible with Linux since this depends on liburing, at the least.
-    target_compatible_with = [
-        "@platforms//os:linux",
-    ],
     visibility = ["//visibility:public"],
     deps = [
         "//AsyncRT:Support",
@@ -195,4 +203,30 @@ modular_cc_library(
         "@llvm-project//llvm:Support",
     ],
     alwayslink = True,
+)
+
+modular_shared_library(
+    # NOTE: currently the target name is coupled to NIXL's plugin discovery
+    # logic, which looks for `libplugin_*.so`.
+    name = "plugin_ucx",
+    srcs = glob([
+        "lib/NIXL/plugins/ucx/**",
+        "lib/NIXL/utils/ucx/**",
+    ]),
+    hdrs = glob(
+        [
+            "include/AsyncRT/NIXL/plugins/ucx/**",
+            "include/AsyncRT/NIXL/utils/ucx/**",
+        ],
+    ),
+    tags = ["maybe-unused"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//AsyncRT:NIXL",
+        "@ucx_prebuilt//:ucx",
+    ],
 )
