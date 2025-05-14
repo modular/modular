@@ -33,7 +33,6 @@ alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
 
 
-@value
 @register_passable("trivial")
 struct Origin[mut: Bool]:
     alias _mlir_type = __mlir_type[
@@ -130,7 +129,6 @@ struct NoneType:
         self._value = value
 
 
-@value
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
@@ -177,7 +175,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
         result = __type_of(result)()
 
 
-@value
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
@@ -200,7 +197,6 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
         result = __type_of(result)()
 
 
-@value
 @register_passable("trivial")
 struct FloatDyn:
     var value: __mlir_type.`!pop.scalar<f64>`
@@ -223,7 +219,6 @@ struct FloatDyn:
         self = FloatLiteral(value)
 
 
-@value
 @register_passable("trivial")
 struct Int(AnyRPTrivialType, Copyable):
     var value: Index
@@ -287,7 +282,6 @@ struct Int(AnyRPTrivialType, Copyable):
         return self.value
 
 
-@value
 @register_passable("trivial")
 struct UInt8:
     fn __init__(out self):
@@ -297,7 +291,6 @@ struct UInt8:
 alias Byte = UInt8
 
 
-@value
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
@@ -318,7 +311,6 @@ struct Span[
         return self._data
 
 
-@value
 @register_passable("trivial")
 struct StringLiteral[value: __mlir_type.`!kgen.string`]:
     @always_inline("builtin")
@@ -427,7 +419,6 @@ struct String(KeyElement):
         return UnsafePointer[UInt8]()
 
 
-@value
 @register_passable("trivial")
 struct Bool(AnyRPTrivialType):
     var value: __mlir_type.i1
@@ -562,7 +553,7 @@ struct _lit_origin_union[
     ]
 
 
-@value
+@fieldwise_init
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
@@ -718,7 +709,6 @@ struct __ParameterClosureCaptureList[
         __mlir_op.`kgen.capture_list.expand`(self.value)
 
 
-@value
 @register_passable("trivial")
 struct AddressSpace:
     """Address space of the pointer."""
@@ -737,7 +727,6 @@ struct AddressSpace:
         return self._value.value
 
 
-@value
 @register_passable("trivial")
 struct Pointer[
     mut: Bool, //,
@@ -860,7 +849,6 @@ struct UnsafePointer[
             pass
 
 
-@value
 @register_passable("trivial")
 struct _StridedRangeIterator:
     var start: Int

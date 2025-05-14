@@ -8,13 +8,9 @@
 from sys import argv
 
 
-@value
-struct MemType:
+@fieldwise_init("implicit")
+struct MemType(Copyable):
     var member: Int
-
-    @implicit
-    fn __init__(out self, member: Int):
-        self.member = member
 
     fn __add__(self, other: MemType) -> MemType:
         return MemType(self.member + other.member)
@@ -27,9 +23,9 @@ fn makes_escaping_closure(m: Int) -> fn (n: Int) escaping -> Int:
     return myclosure
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Foo[a: Int]:
+struct Foo[a: Int](Copyable):
     var b: Int
 
     fn get(self) -> Int:
@@ -52,7 +48,7 @@ fn parameter_capture[a: Int, b: Int](c: Int) -> fn (x: Int) escaping -> Int:
     return p_capture
 
 
-@value
+@fieldwise_init
 struct Bar[C: Int, D: Int]:
     var x: Int
 
@@ -60,9 +56,9 @@ struct Bar[C: Int, D: Int]:
         return self.x + C
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Bat[A: Int]:
+struct Bat[A: Int](Copyable, Movable):
     var b: Int
 
     fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, A]:
@@ -111,9 +107,9 @@ fn captureCallable[
     return foo
 
 
-@value
+@fieldwise_init
 @register_passable
-struct C[B: DType]:
+struct C[B: DType](Copyable):
     var b: Int
 
     fn get(self) -> Int:
