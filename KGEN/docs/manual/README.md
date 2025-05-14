@@ -610,8 +610,6 @@ $ kgen-translate --import-mojo example.mojo
       // register-passable vs register-passable trivial. Write about this in
       // compiler manual.
 
-    -- From StructEmitter.cpp synthesizeExplicitCopy() having to handle each TypeConvention variant differently.
-
 
 #### Structs
 

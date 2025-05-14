@@ -1403,11 +1403,16 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   return varDecl;
 }
 
-void DeclResolver::resolveSyntheticBody(FnOp op, ASTDecl &decl) {
+void DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
   StructEmitter gen(shared);
-  switch (op.getSpecialFunctionKind()) {
+  switch (fn.getSpecialFunctionKind()) {
   default:
-    llvm_unreachable("unknown synthetic function to synthesize");
+    // Matching by name is a bit gross, but we don't have general synthesized
+    // decls so it should be robust.
+    assert(fn.getSymName()->starts_with("copy(") &&
+           "unknown synthetic function to synthesize");
+    gen.populateExplicitCopy(decl);
+    return;
   case SpecialFunctionKind::kMoveInit:
     (void)gen.populateMoveCopy(decl, /*isMove*/ true);
     return;

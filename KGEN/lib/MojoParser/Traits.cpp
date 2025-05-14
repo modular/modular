@@ -106,7 +106,7 @@ static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
     return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
 
   if (methodName == "copy" && conformsToTrait("ExplicitlyCopyable"))
-    return gen.synthesizeExplicitCopy(structDecl);
+    return gen.synthesizeEmptyExplicitCopy(structDecl);
 
   return {};
 }
