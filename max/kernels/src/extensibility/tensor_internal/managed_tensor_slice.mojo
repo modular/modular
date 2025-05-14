@@ -334,6 +334,68 @@ fn _output_fusion_hook_impl[
 
 
 # ===----------------------------------------------------------------------=== #
+# Mixed precision output fusion hook used by experimental codegen path.
+# ===----------------------------------------------------------------------=== #
+
+
+@no_inline
+fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
+    func_type: AnyTrivialRegType, //,
+    dst_type: DType,
+    src_type: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[dst_type, rank],
+    out_lambda: func_type,
+    out result: StaticTensorSpec[src_type, rank],
+):
+    return StaticTensorSpec[src_type, rank](
+        shape=spec.shape,
+        strides=spec.strides,
+        alignment=spec.alignment,
+        address_space=spec.address_space,
+        exclusive=spec.exclusive,
+        in_lambda=None,
+        out_lambda=rebind[result.out_lambda_t](out_lambda),
+        out_compute_lambda=None,
+    )
+
+
+@__mogg_intrinsic_attr("mogg.dps_mixed_precision_output_fusion_hook")
+@register_internal("mogg.dps_mixed_precision_output_fusion_hook")
+@no_inline
+fn _mixed_precision_output_fusion_hook_impl[
+    mut: Bool, //,
+    dst_type: DType,  # The concrete tensor storage DType.
+    src_type: DType,  # The DType used by lambda (before casting).
+    rank: Int,
+    io_spec: IOSpec[mut],
+    static_spec: StaticTensorSpec[dst_type, rank],
+](
+    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
+) -> StaticTensorSpec[src_type, rank]:
+    @always_inline
+    @parameter
+    fn _output_lambda[
+        _w: Int, _elem_align: Int = 1
+    ](i: IndexList[rank], v: SIMD[src_type, _w]):
+        # .... compiler-generated-code insert here!
+        simd_store_into_managed_tensor_slice[
+            simd_width=_w,
+            element_alignment=_elem_align,
+        ](tensor, i, rebind[SIMD[dst_type, _w]](v))
+
+    return _extract_tensor_spec[
+        rebuild_mix_precision_static_tensor_specs_with_output_lambda[
+            dst_type, src_type, rank
+        ](
+            static_spec,
+            _output_lambda,
+        )
+    ]()
+
+
+# ===----------------------------------------------------------------------=== #
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
