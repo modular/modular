@@ -846,7 +846,7 @@ struct _Accumulator[
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
-                        self[i, j] = fma[type, simd_width](
+                        self[i, j] = fma[dtype=type, width=simd_width](
                             a_vecs[i][lane].cast[type](),
                             b_vec.cast[type](),
                             self[i, j],
@@ -905,7 +905,7 @@ struct _Accumulator[
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
-                        self[i, j] = fma[type, simd_width](
+                        self[i, j] = fma[dtype=type, width=simd_width](
                             a_vecs[i][lane].cast[type](),
                             b_vec.cast[type](),
                             self[i, j],
