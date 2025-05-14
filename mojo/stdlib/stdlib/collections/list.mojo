@@ -308,6 +308,29 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
                 return True
         return False
 
+    fn __contains__[
+        origin: Origin, //
+    ](self: List[StringSlice[origin], *_], value: StringSlice[*_]) -> Bool:
+        """Verify if a given StringSlice is present in the list.
+
+        ```mojo
+        var x = List[Int](1,2,3)
+        if 3 in x: print("x contains 3")
+        ```
+        Parameters:
+            origin: The origin of the underlying string data.
+
+        Args:
+            value: The value to find.
+
+        Returns:
+            True if the value is contained in the list, False otherwise.
+        """
+        for i in self:
+            if i[] == value:
+                return True
+        return False
+
     fn __mul__(self, x: Int) -> Self:
         """Multiplies the list by x and returns a new list.
 
