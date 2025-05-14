@@ -144,7 +144,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
             # Not unrolled on K path.
             for idx_k in range(tile_n_k[1]):
                 # accumulate data for this (n, k) index
-                self._accumulate[simd_size](
+                self._accumulate[simd_size, kernel_rows, kernel_cols](
                     a,
                     b_packed,
                     acc,

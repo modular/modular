@@ -216,7 +216,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
             var kl = align_down(tile_n_k[1], 4)
             for idx_k in range(0, kl, 4):
                 # accumulate data for this (n, k) index
-                self._accumulate[False, simd_size](
+                self._accumulate[False, simd_size, kernel_rows, kernel_cols](
                     a,
                     b_packed,
                     acc,
@@ -225,7 +225,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                     tile_n_k,
                 )
             if kl != tile_n_k[1]:
-                self._accumulate[True, simd_size](
+                self._accumulate[True, simd_size, kernel_rows, kernel_cols](
                     a,
                     b_packed,
                     acc,

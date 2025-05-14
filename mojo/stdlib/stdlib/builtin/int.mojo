@@ -573,7 +573,7 @@ struct Int(
         """
         return Float64(self) / Float64(rhs)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floordiv__(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` rounded down to the nearest
         integer.
@@ -588,10 +588,10 @@ struct Int(
         var denom = select(rhs == 0, 1, rhs)
         var div = self._positive_div(denom)
         var rem = self._positive_rem(denom)
-        var res = select(((rhs < 0) ^ (self < 0)) & rem, div - 1, div)
+        var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mod__(self, rhs: Int) -> Int:
         """Return the remainder of self divided by rhs.
 
@@ -604,7 +604,7 @@ struct Int(
         # This should raise an exception
         var denom = select(rhs == 0, 1, rhs)
         var rem = self._positive_rem(denom)
-        var res = select(((rhs < 0) ^ (self < 0)) & rem, rem + rhs, rem)
+        var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), rem + rhs, rem)
         return select(rhs == 0, 0, res)
 
     @always_inline("nodebug")
@@ -1183,7 +1183,7 @@ struct Int(
         """
         return self.value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _positive_div(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` assuming that the arguments
         are both positive.
@@ -1196,7 +1196,7 @@ struct Int(
         """
         return __mlir_op.`index.divs`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _positive_rem(self, rhs: Int) -> Int:
         """Return the modulus of `self` and `rhs` assuming that the arguments
         are both positive.
