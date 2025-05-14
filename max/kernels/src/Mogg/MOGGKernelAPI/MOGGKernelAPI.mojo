@@ -381,6 +381,18 @@ fn ManagedTensorSliceDef[
     return ty
 
 
+@register_internal("list_of_tensor")
+fn ListOfTensorDef[
+    type: DType,
+    rank: Int,
+](
+    ty: List[
+        InputTensor[static_spec = StaticTensorSpec[type, rank].create_unknown()]
+    ]
+) -> __type_of(ty):
+    return ty
+
+
 # ===-----------------------------------------------------------------------===#
 # Hooks to help build static shapes.
 # ===-----------------------------------------------------------------------===#
