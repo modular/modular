@@ -70,6 +70,8 @@ constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
     "mogg.dps_input_fusion_hook";
 constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
     "mogg.dps_output_fusion_hook";
+constexpr StringLiteral MOGG_INTRINSIC_MIXED_PRECISION_OUTPUT_FUSION_HOOK =
+    "mogg.dps_mixed_precision_output_fusion_hook";
 
 /// MOGG Intrinsic for the ManagedTensorSlice _fused_load method.
 constexpr StringLiteral MOGG_INTRINSIC_TENSOR_FUSED_LOAD =
