@@ -1271,7 +1271,7 @@ fn mha_single_batch[
             q_gmem_iter[].vectorize[1, simd_size](),
         )
 
-        async_copy_commit_group()
+        # we `async_copy_commit_group()` and after we finish copying `k`.
 
         q_gmem_iter._incr()
 
@@ -1389,10 +1389,9 @@ fn mha_single_batch[
                 k_gmem_iter[].vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             k_gmem_iter._incr()
 
+        async_copy_commit_group()
         # synchronize here since we can overlap q tile and first k tile copy
         async_copy_wait_all()
         barrier()
@@ -1566,9 +1565,9 @@ fn mha_single_batch[
                 v_tensor.vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             v_gmem_iter._incr()
+
+        async_copy_commit_group()
 
         @parameter
         if num_warps_n > 1:
@@ -3160,7 +3159,7 @@ fn mha_decoding_single_batch[
             q_gmem_iter[].vectorize[1, simd_size](),
         )
 
-        async_copy_commit_group()
+        # we `async_copy_commit_group()` and after we finish copying `k`.
 
         q_gmem_iter._incr()
 
@@ -3220,9 +3219,9 @@ fn mha_decoding_single_batch[
                 k_tensor.vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             k_gmem_iter._incr()
+
+        async_copy_commit_group()
 
         async_copy_wait_all()
         barrier()
@@ -3358,9 +3357,9 @@ fn mha_decoding_single_batch[
                 v_tensor.vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             v_gmem_iter._incr()
+
+        async_copy_commit_group()
 
         @parameter
         if not decoding_warp_split_k:
