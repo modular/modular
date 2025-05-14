@@ -431,6 +431,23 @@ Here are involved concepts in those lines (not in order).
 
 See also [Modular Jargon, Slang and Lingo](https://www.notion.so/modularai/Modular-Jargon-Slang-and-Lingo-d71a8b9aad66401d914309cc2f3c3eca)
 
+More terms:
+
+ * A "generator" is a function.
+ * Everything in MLIR is either an **operation** or an **attribute**.
+    * An **operation** generally describes computation, like a a function or an
+      expression.
+       * And for some reason, structs and traits are also operations.
+    * An **attribute** is metadata, values, and flags.
+      * Pre-elaboration, an attribute is generally a parameter expression.
+      * Post-elaboration, an attribute is generally a parameter value.
+ * "Bindings" are the mapping of a caller-supplied argument (or parameter) to
+   the callee's argument (or parameter) declaration. When calling
+   `foo[a: Int, b: Bool]()` like `foo[42, True]`, the bindings are `a=42` and
+   `b=True`.
+ * Structs and functions can both have **signatures**. A signature is the name,
+   parameter types, and (if for a function) argument types.
+
 We'll cover these more below:
 
 * POC — Parameter Operator Code
