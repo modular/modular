@@ -301,20 +301,20 @@ def verify(
             )
 
         error_message = (
-            f'The outputs when using the "{first_framework}"'
-            " framework is not within tolerance to the"
+            f'👎 The outputs when using the "{first_framework}"'
+            " framework is NOT within tolerance to the"
             f' outputs when using the "{other_framework}"'
             " framework."
         )
         CONSOLE.print(error_message)
-
-    # the results are within tolerance, so we log a good message
-    CONSOLE.print(
-        f'👍 The outputs when using the "{first_framework}" framework'
-        f' are close to the outputs when using the "{other_framework}"'
-        " framework for specified tolerances"
-        f" ({validator.threshold_str()})"
-    )
+    else:
+        # the results are within tolerance, so we log a good message
+        CONSOLE.print(
+            f'👍 The outputs when using the "{first_framework}" framework'
+            f' are close to the outputs when using the "{other_framework}"'
+            " framework for specified tolerances"
+            f" ({validator.threshold_str()})"
+        )
 
     return VerificationResult(
         passed=test_passed,
