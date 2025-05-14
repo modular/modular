@@ -363,13 +363,14 @@ def test_dlpack_device() -> None:
 def test_dlpack() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype in DLPACK_DTYPES:
+        # Numpy's dlpack implementation cannot handle its own bool types.
+        # Also don't try to put ints into a boolean vector.
+        if dtype is dtype.bool:
+            continue
+
         tensor = Tensor(dtype, (1, 4))
         for j in range(4):
             tensor[0, j] = j
-
-        # Numpy's dlpack implementation cannot handle its own bool types.
-        if dtype is dtype.bool:
-            continue
 
         np_dtype = dtype.to_numpy()
         array = np.from_dlpack(tensor)
