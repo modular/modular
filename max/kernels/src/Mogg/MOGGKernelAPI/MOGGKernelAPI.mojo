@@ -8741,20 +8741,19 @@ struct ArgSort[*, ascending: Bool]:
     fn execute[
         target: StaticString
     ](
-        indecies: OutputTensor[rank=1],
+        indices: OutputTensor[rank=1],
         input: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        var indecies_ndbuffer = managed_tensor_slice_to_ndbuffer(indecies)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-
         @parameter
         if target == "cpu":
-            argsort[ascending=ascending](indecies_ndbuffer, input_ndbuffer)
+            argsort[ascending=ascending](
+                indices.to_layout_tensor(), input.to_layout_tensor()
+            )
         else:
             var cuda_ctx = ctx.get_device_context()
             argsort[ascending=ascending, target=target](
-                indecies_ndbuffer, input_ndbuffer, cuda_ctx
+                indices.to_layout_tensor(), input.to_layout_tensor(), cuda_ctx
             )
 
 

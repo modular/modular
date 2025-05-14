@@ -32,6 +32,7 @@ from buffer.dimlist import _make_tuple
 from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 from stdlib.builtin.io import _snprintf
@@ -118,6 +119,19 @@ struct HostNDBuffer[
         )
         ctx.enqueue_copy(retval.buffer, self.tensor.data)
         return retval^
+
+    fn to_layout_tensor(
+        self,
+        out result: LayoutTensor[
+            type, Layout.row_major(IntTuple(shape)), MutableAnyOrigin
+        ],
+    ):
+        result = __type_of(result)(
+            self.tensor.data,
+            RuntimeLayout[__type_of(result).layout](
+                self.tensor.get_shape(), self.tensor.get_strides()
+            ),
+        )
 
 
 @value
@@ -210,6 +224,19 @@ struct DeviceNDBuffer[
         var retval = HostNDBuffer[type, rank, shape](self.tensor.dynamic_shape)
         ctx.enqueue_copy(retval.tensor.data, self.buffer)
         return retval^
+
+    fn to_layout_tensor(
+        ref self,
+        out result: LayoutTensor[
+            type, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
+        ],
+    ):
+        result = __type_of(result)(
+            self.buffer,
+            RuntimeLayout[__type_of(result).layout](
+                self.tensor.get_shape(), self.tensor.get_strides()
+            ),
+        )
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
