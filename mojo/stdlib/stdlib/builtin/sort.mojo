@@ -30,12 +30,9 @@ alias insertion_sort_threshold = 32
 
 
 @value
+@fieldwise_init("implicit")
 struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
     var data: T
-
-    @implicit
-    fn __init__(out self, data: T):
-        self.data = data
 
     fn __init__(out self, *, other: Self):
         self.data = other.data

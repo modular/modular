@@ -41,6 +41,8 @@ what we publish.
   fieldwise initializer - an `__init__` method that takes the same arguments as
   the fields in the struct.  This gives access to this helpful capability
   without having to opt into the rest of the methods that `@value` synthesizes.
+  This decorator allows an optional `@fieldwise_init("implicit")` form for
+  single-element structs, which marks the initializer as `@implicit`.
 
 ### Standard library changes
 
