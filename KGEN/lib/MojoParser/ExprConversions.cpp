@@ -253,7 +253,8 @@ static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
 
   auto newPogListAttr =
       PogListAttr::get(ctx, names, passingKinds, {}, {}, variadics,
-                       origPogListAttr.getOrigPackConvention());
+                       origPogListAttr.getOrigPackConvention(),
+                       origPogListAttr.getOrigVariadicConvention());
 
   auto metadata = FnMetadataAttr::get(
       newPogListAttr, sig.getNumImplicitOriginDecls(),

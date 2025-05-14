@@ -519,6 +519,7 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<ArgConvention> argConventions;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origArgPackConvention;
+  std::optional<ArgConvention> origVariadicConvention;
 
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
@@ -548,9 +549,9 @@ static ParseResult parseLITFunctionSignature(
     // input convention, and variadicness.
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
-        parseConventionAndVariadicness(p, argConventions.emplace_back(),
-                                       argVariadics.emplace_back(),
-                                       origArgPackConvention, idx++))
+        parseConventionAndVariadicness(
+            p, argConventions.emplace_back(), argVariadics.emplace_back(),
+            origArgPackConvention, origVariadicConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -580,7 +581,7 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadics,
-                       origArgPackConvention),
+                       origArgPackConvention, origVariadicConvention),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
@@ -667,6 +668,9 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
              argConv == ArgConvention::OwnedReg);
       argConv = signature.getPackVarArgConvention(i);
     }
+    if (argListAttr.isPosVarArg(i))
+      argConv = argListAttr.getOrigVariadicConvention();
+
     printConventionAndVariadicness(p, argConv, argListAttr.getVariadicKind(i));
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {

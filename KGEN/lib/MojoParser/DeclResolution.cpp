@@ -823,7 +823,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     if (sig.isPosVarArg(idx)) {
       auto variadic = cast<VariadicType>(type);
       type = variadic.getElementType();
-      conv = variadic.getConvention();
+      conv = sig.getPosVarArgConvention(idx);
     } else if (sig.isKwVarArg(idx)) {
       // Don't need to unpack anything. We treat the whole dictionary as the
       // value type.
@@ -1335,7 +1335,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 /// the variable declaration holding it.
 static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
                                    ASTDecl &parentDecl, ExprEmitter &emitter,
-                                   SMLoc loc) {
+                                   SMLoc loc, ArgConvention convention) {
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
   auto variadicType = cast<VariadicType>(argValue.getType());
@@ -1354,25 +1354,42 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 
   // Bind the "is_owned" parameter, start by filling the parameter list with ?.
   if (refType) {
-    SmallVector<TypedAttr> typeParams;
+    assert(varListStruct.getSignature().getParamTypes().size() == 4);
+    SmallVector<TypedAttr> typeParams(4);
     ParserParameterEvaluator evaluator(emitter.shared);
-    for (Type type : varListStruct.getSignature().getParamTypes()) {
-      typeParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
-      evaluator.addInputValue(typeParams.back());
-    }
+    Type boolType = varListStruct.getSignature().getParamTypes()[0];
+    Type eltType = varListStruct.getSignature().getParamTypes()[1];
+    Type originType = varListStruct.getSignature().getParamTypes()[2];
 
-    // The last parameter is the "is_owned" parameter.
-    // Emit the "is_owned" parameter.
-    auto isOwnedAttr =
-        BoolAttr::get(emitter.getContext(),
-                      variadicType.getConvention() == ArgConvention::OwnedMem);
-    SyntheticNode locExpr(loc);
-    PValue isOwnedVal = // Convert to Bool.
-        emitter.emitPValue({isOwnedAttr, &locExpr}, EC_Type,
-                           typeParams.back().getType());
-    if (!isOwnedVal)
-      return {};
-    typeParams.back() = isOwnedVal;
+    // The first parameter is the "elt_is_mutable" parameter.
+    // Emit the "is_mutable" parameter
+    auto makeBoolAttr = [&](bool value) -> PValue {
+      auto boolAttr = BoolAttr::get(emitter.getContext(), value);
+      SyntheticNode locMutableExpr(loc);
+      return emitter.emitPValue({boolAttr, &locMutableExpr}, EC_Type, boolType);
+    };
+
+    auto isMut = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                              convention == ArgConvention::Mut);
+    evaluator.addInputValue(isMut);
+    typeParams[0] = isMut.get();
+
+    SyntheticNode locElExpr(loc);
+    auto eltTypeAttr = emitter.emitPValue(
+        {refType.getElementType(), &locElExpr}, EC_Type, eltType);
+    evaluator.addInputValue(eltTypeAttr);
+    typeParams[1] = eltTypeAttr.get();
+
+    SyntheticNode locOriginExpr(loc);
+    auto reboundOriginType = evaluator.getReboundType(originType);
+    auto origin = emitter.emitPValue({refType.getOrigin(), &locOriginExpr},
+                                     EC_Type, reboundOriginType);
+    evaluator.addInputValue(origin);
+    typeParams[2] = origin.get();
+
+    auto isOwned = makeBoolAttr(convention == ArgConvention::OwnedMem);
+    evaluator.addInputValue(isOwned);
+    typeParams[3] = isOwned.get();
 
     varListType = varListStruct.bindReference(typeParams);
     assert(varListType && "Failed to bind type params");
@@ -1496,7 +1513,8 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     // VarArg arguments are projected into a VariadicList.
     if (funcSignature.isPosVarArg(argIdx)) {
       auto declOp =
-          makeVarArgWrapper(bbArg, argName, decl, emitter, argDecl.getLoc());
+          makeVarArgWrapper(bbArg, argName, decl, emitter, argDecl.getLoc(),
+                            funcSignature.getPosVarArgConvention(argIdx));
       if (!declOp)
         return failure();
       declOp.setArgShadowIndex(bbArg.getArgNumber());

@@ -86,6 +86,10 @@ struct ParsedArgument {
   // After type checking, this will hold the KGEN convention to use.
   ArgConvention kgenConvention = ArgConvention(128);
 
+  // if there is a variadic argument, the convention of the elements will be
+  // stored here.
+  ArgConvention variadicElementArgConvention = ArgConvention(128);
+
   // For variadics and packs, this is the declared argument convention, even
   // those the variadic type is passed another way.
   ArgConvention kgenVariadicConvention = ArgConvention(128);

@@ -240,12 +240,18 @@ static void getCallOpEffects(
     SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
     CachedOriginFinder &originFinder) {
   FnType signature;
+  PogListAttr pogs;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
   size_t argIdxOffset = 0;
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
+    assert(isa<FnTypeGeneratorType>(directCall.getCalleeType()));
+    pogs = cast<FnTypeGeneratorType>(directCall.getCalleeType())
+               .getBody()
+               .getMetadata()
+               .getArgListAttrs();
     signature = directCall.getCalleeType().getBody();
     conventions = signature.getArgConventions().drop_back(
         signature.getNumAsyncReturnSlots());
@@ -331,7 +337,10 @@ static void getCallOpEffects(
   for (auto [idx, arg, convention] :
        llvm::enumerate(callArguments, conventions)) {
     if (auto splat = arg.getDefiningOp<POP::VariadicSplatOp>()) {
-      addArgument(splat.getOperand(), splat.getType().getConvention());
+      ArgConvention elArgConvention = ArgConvention::ReadReg;
+      if (pogs.getVariadicKind(idx) == VariadicKind::PosVarArg)
+        elArgConvention = pogs.getOrigVariadicConvention();
+      addArgument(splat.getOperand(), elArgConvention);
       continue;
     }
 
@@ -348,9 +357,11 @@ static void getCallOpEffects(
     //      arguments.
     // TODO(field-sensitive origins): remove this hack.
     if (auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>()) {
-      auto varargConvention = vararg.getType().getConvention();
+      ArgConvention elArgConvention = ArgConvention::ReadReg;
+      if (pogs.getVariadicKind(idx) == VariadicKind::PosVarArg)
+        elArgConvention = pogs.getOrigVariadicConvention();
       for (auto varOperand : vararg.getOperands())
-        addArgument(varOperand, varargConvention);
+        addArgument(varOperand, elArgConvention);
       continue;
     }
 

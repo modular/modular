@@ -981,7 +981,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     if (fullSig.isPosVarArg(argNo)) {
       auto variadic = cast<VariadicType>(argType);
       argType = variadic.getElementType();
-      convention = variadic.getConvention();
+      convention = fullSig.getPosVarArgConvention(argNo);
       numStars = 1;
     } else if (ASTType variadicPack = fullSig.getIfVariadicPack(argNo)) {
       TypedAttr packVariadic = variadicPack.getVariadicPackTypeList();

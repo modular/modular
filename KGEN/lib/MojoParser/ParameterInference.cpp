@@ -278,7 +278,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
 
     // Now assemble the kgen.variadic parameter value and match it against the
     // expected one.
-    auto varType = VariadicType::get(variadicElType, ArgConvention::ReadReg);
+    auto varType = VariadicType::get(variadicElType);
     auto variadicAttr = VariadicAttr::get(elements, varType);
     if (failed(matchParams(variadicAttr, variadic))) {
       return failure();
@@ -1314,8 +1314,9 @@ LogicalResult ParameterInferenceState::infer(
       while (posOperandIdx != numOperands) {
         auto &operand = operands[posOperandIdx];
         if (!operand.keyword &&
-            failed(inferOneOperand(operand, varArgsEltType,
-                                   expectedVariadic.getConvention())))
+            failed(inferOneOperand(
+                operand, varArgsEltType,
+                signature.getPosVarArgConvention(expectedArgIdx))))
           return failure();
         ++posOperandIdx;
       }

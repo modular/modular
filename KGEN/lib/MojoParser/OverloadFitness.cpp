@@ -1118,7 +1118,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands) {
         if (auto result = processPositionalOperand(
-                varArgsEltType, expectedVariadic.getConvention()))
+                varArgsEltType,
+                signature.getPosVarArgConvention(expectedArgIdx)))
           return std::move(*result);
         result.payload.passesVarArgArgument = true;
       }

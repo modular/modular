@@ -138,10 +138,6 @@ public:
   /// the current type isn't a VariadicType.
   ASTType getVariadicElementType() const;
 
-  /// Given a VariadicType, return its convention as an ASTType.  This aborts if
-  /// the current type isn't a VariadicType.
-  ArgConvention getVariadicConvention() const;
-
   /// Return the RefPackType that corresponds to the VariadicPack instance.
   RefPackType getVariadicPackInfo(SharedState &shared) const;
   /// Return the type list for the variadic argument in a VariadicPack.  This

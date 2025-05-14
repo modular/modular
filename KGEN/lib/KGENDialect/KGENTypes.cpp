@@ -921,36 +921,6 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 // VariadicType
 //===----------------------------------------------------------------------===//
 
-static void printVariadicConvention(AsmPrinter &p, ArgConvention conv) {
-  // Default to borrowed_in_reg
-  if (conv != ArgConvention::ReadReg)
-    p << ", " << stringifyArgConvention(conv);
-}
-
-static ParseResult parseVariadicConvention(AsmParser &p, ArgConvention &conv) {
-  // Default to borrowed_in_reg
-  if (!succeeded(p.parseOptionalComma())) {
-    conv = ArgConvention::ReadReg;
-    return success();
-  }
-
-  StringRef name;
-  llvm::SMLoc loc = p.getCurrentLocation();
-  if (p.parseKeyword(&name))
-    return failure();
-  auto convVal = symbolizeArgConvention(name);
-  if (!convVal.has_value()) {
-    p.emitError(loc, "expected convention");
-    return failure();
-  }
-  conv = *convVal;
-  return success();
-}
-
-VariadicType VariadicType::getWithElementType(Type type) {
-  return VariadicType::get(type, getConvention());
-}
-
 /// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
 /// contiguous sequence, and the size of that sequence. So, its size would be
 /// the size of a pointer, plus the size of the size type (which has the same

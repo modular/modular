@@ -591,30 +591,12 @@ struct VariadicListMem[
 ]:
     alias reference_type = Pointer[element_type, origin]
     alias _mlir_ref_type = Self.reference_type._mlir_type
-    alias _mlir_type = __mlir_type[
-        `!kgen.variadic<`, Self._mlir_ref_type, `, read_mem>`
-    ]
+    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `>`]
 
     @implicit
     fn __init__(
         out self,
         value: Self._mlir_type,
-    ):
-        pass
-
-    @implicit
-    fn __init__(
-        out self,
-        value: __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `, mut>`],
-    ):
-        pass
-
-    @implicit
-    fn __init__(
-        out self,
-        value: __mlir_type[
-            `!kgen.variadic<`, Self._mlir_ref_type, `, owned_in_mem>`
-        ],
     ):
         pass
 

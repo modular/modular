@@ -617,7 +617,6 @@ ParamBindings::verifyBindingsImpl(
     }
 
     SmallVector<TypedAttr> elements;
-    auto variadicType = cast<VariadicType>(requestedType);
     do {
       auto &binding = operands[posBindingIdx++];
       if (binding.keyword)
@@ -636,8 +635,7 @@ ParamBindings::verifyBindingsImpl(
       }
     } while (posBindingIdx != numBindings);
 
-    auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
-                                     variadicType.getConvention());
+    auto varType = VariadicType::get(evaluator.getReboundType(expectedType));
     setParamValue(VariadicAttr::get(elements, varType));
   }
 
