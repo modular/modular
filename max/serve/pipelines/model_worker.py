@@ -346,6 +346,9 @@ def _create_decode_scheduler(
     pipeline_config: TokenGeneratorPipelineConfig,
     zmq_ctx: zmq.Context,
 ) -> DecodeScheduler:
+    # Initialize ZMQ Context - One per process
+    zmq_ctx = zmq.Context(io_threads=2)
+
     # Initialize Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
         max_batch_size_tg=pipeline_config.token_generation.size,

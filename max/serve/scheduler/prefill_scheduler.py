@@ -126,9 +126,10 @@ class PrefillScheduler(Scheduler):
         - Tracks total batch token length
         """
         batch_token_length = 0
-        for _ in range(self.scheduler_config.max_batch_size_ce):
+        while self.available_cache_indices:
             try:
                 req_id, data = self.pull_from_prefill_socket()
+                logger.info("received from decode node!")
 
                 if data.start_idx == 0:
                     data.unassign_from_cache()
@@ -208,6 +209,8 @@ class PrefillScheduler(Scheduler):
             req_id, input_context = self.active_batch.popitem()
             # Reset this - This is a workaround until we successfully transfer the KV Cache.
             input_context.bump_token_indices(start_idx=-input_context.start_idx)
+            # TODO: E2EOPT-231
+            input_context._completion_start_idx -= 1  # type: ignore
             self.push_to_decode_socket(req_id, input_context)
 
     def run(self) -> None:
