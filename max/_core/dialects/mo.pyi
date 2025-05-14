@@ -1522,6 +1522,7 @@ class ConvTransposeOp(max._core.Operation):
         paddings: max._core.Value[TensorType],
         output_paddings: max._core.Value[TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+        filter_packed: max._core.dialects.builtin.BoolAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
@@ -1542,6 +1543,12 @@ class ConvTransposeOp(max._core.Operation):
     @output_param_decls.setter
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+    @property
+    def filter_packed(self) -> bool: ...
+    @filter_packed.setter
+    def filter_packed(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class CoordinateTransformMode(enum.Enum):
