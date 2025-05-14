@@ -57,7 +57,7 @@ fn floor[T: Floorable, //](value: T) -> T:
     """Get the floor value of the given object.
 
     Parameters:
-        T: The type conforming to Floorable.
+        T: The type conforming to `Floorable`.
 
     Args:
         value: The object to get the floor value of.
@@ -78,7 +78,7 @@ fn ceil[T: Ceilable, //](value: T) -> T:
     """Get the ceiling value of the given object.
 
     Parameters:
-        T: The type conforming to Ceilable.
+        T: The type conforming to `Ceilable`.
 
     Args:
         value: The object to get the ceiling value of.
@@ -206,9 +206,7 @@ fn _sqrt_nvvm(x: SIMD) -> __type_of(x):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
-    alias instruction = StaticString(
-        "llvm.nvvm.sqrt.approx.ftz.f"
-    ) if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
@@ -221,16 +219,13 @@ fn _sqrt_nvvm(x: SIMD) -> __type_of(x):
 
 @always_inline
 fn sqrt[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs elementwise square root on the elements of a SIMD vector.
-
-    Constraints:
-        The type must be an arithmetic or boolean type.
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector to perform square root on.
@@ -247,17 +242,17 @@ fn sqrt[
     if dtype is DType.bool:
         return x
     elif dtype.is_integral():
-        var res = SIMD[dtype, simd_width]()
+        var res = SIMD[dtype, width]()
 
         @parameter
-        for i in range(simd_width):
+        for i in range(width):
             res[i] = sqrt(Int(x[i]))
         return res
     elif is_nvidia_gpu():
 
         @parameter
-        if x.dtype in (DType.float16, DType.bfloat16):
-            return _sqrt_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
+        if dtype in (DType.float16, DType.bfloat16):
+            return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
         return _sqrt_nvvm(x)
 
     return llvm_intrinsic["llvm.sqrt", __type_of(x), has_side_effect=False](x)
@@ -274,9 +269,7 @@ fn _isqrt_nvvm(x: SIMD) -> __type_of(x):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = StaticString(
-        "llvm.nvvm.rsqrt.approx.ftz.f"
-    ) if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
+    alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
@@ -288,8 +281,12 @@ fn _isqrt_nvvm(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn isqrt(x: SIMD) -> __type_of(x):
+fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Performs elementwise reciprocal square root on a SIMD vector.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector to perform reciprocal square root on.
@@ -297,25 +294,25 @@ fn isqrt(x: SIMD) -> __type_of(x):
     Returns:
         The elementwise reciprocal square root of x.
     """
-    constrained[x.dtype.is_floating_point(), "type must be floating point"]()
+    constrained[dtype.is_floating_point(), "type must be floating point"]()
 
     @parameter
     if is_nvidia_gpu():
 
         @parameter
-        if x.dtype in (DType.float16, DType.bfloat16):
-            return _isqrt_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
+        if dtype in (DType.float16, DType.bfloat16):
+            return _isqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
 
         return _isqrt_nvvm(x)
     elif is_amd_gpu():
 
         @parameter
-        if x.dtype in (DType.float16, DType.float32, DType.float64):
+        if dtype in (DType.float16, DType.float32, DType.float64):
             return _call_amdgcn_intrinsic[
-                "llvm.amdgcn.rsq." + _get_amdgcn_type_suffix[x.dtype]()
+                "llvm.amdgcn.rsq." + _get_amdgcn_type_suffix[dtype]()
             ](x)
 
-        return isqrt(x.cast[DType.float32]()).cast[x.dtype]()
+        return isqrt(x.cast[DType.float32]()).cast[dtype]()
 
     return 1 / sqrt(x)
 
@@ -331,9 +328,7 @@ fn _recip_nvvm(x: SIMD) -> __type_of(x):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = StaticString(
-        "llvm.nvvm.rcp.approx.ftz.f"
-    ) if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
+    alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     var res = __type_of(x)()
 
     @parameter
@@ -345,8 +340,12 @@ fn _recip_nvvm(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn recip(x: SIMD) -> __type_of(x):
+fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Performs elementwise reciprocal on a SIMD vector.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector to perform reciprocal on.
@@ -354,25 +353,25 @@ fn recip(x: SIMD) -> __type_of(x):
     Returns:
         The elementwise reciprocal of x.
     """
-    constrained[x.dtype.is_floating_point(), "type must be floating point"]()
+    constrained[dtype.is_floating_point(), "type must be floating point"]()
 
     @parameter
     if is_nvidia_gpu():
 
         @parameter
-        if x.dtype in (DType.float16, DType.bfloat16):
-            return _recip_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
+        if dtype in (DType.float16, DType.bfloat16):
+            return _recip_nvvm(x.cast[DType.float32]()).cast[dtype]()
 
         return _recip_nvvm(x)
     elif is_amd_gpu():
 
         @parameter
-        if x.dtype in (DType.float16, DType.float32, DType.float64):
+        if dtype in (DType.float16, DType.float32, DType.float64):
             return _call_amdgcn_intrinsic[
-                "llvm.amdgcn.rcp." + _get_amdgcn_type_suffix[x.dtype]()
+                "llvm.amdgcn.rcp." + _get_amdgcn_type_suffix[dtype]()
             ](x)
 
-        return recip(x.cast[DType.float32]()).cast[x.dtype]()
+        return recip(x.cast[DType.float32]()).cast[dtype]()
 
     return 1 / x
 
@@ -384,14 +383,14 @@ fn recip(x: SIMD) -> __type_of(x):
 
 @always_inline
 fn exp2[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes elementwise 2 raised to the power of n, where n is an element
     of the input SIMD vector.
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector to perform exp2 on.
@@ -448,7 +447,7 @@ fn exp2[
     xc -= m.cast[dtype]()
 
     var r = polynomial_evaluate[
-        List[SIMD[dtype, simd_width]](
+        List[SIMD[dtype, width]](
             1.0,
             0.693144857883,
             0.2401793301105,
@@ -469,10 +468,8 @@ fn exp2[
 
 @always_inline
 fn _ldexp_impl[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width], exp: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width], exp: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes elementwise ldexp function.
 
     The ldexp function multiplies a floating point value x by the number 2
@@ -481,7 +478,7 @@ fn _ldexp_impl[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector of floating point values.
@@ -491,29 +488,25 @@ fn _ldexp_impl[
         Vector containing elementwise result of ldexp on x and exp.
     """
 
-    alias hardware_simd_width = simdwidthof[dtype]()
+    alias hardware_width = simdwidthof[dtype]()
 
     @parameter
-    if (
-        has_avx512f()
-        and dtype is DType.float32
-        and simd_width >= hardware_simd_width
-    ):
-        var res: SIMD[dtype, simd_width] = 0
-        var zero: SIMD[dtype, hardware_simd_width] = 0
+    if has_avx512f() and dtype is DType.float32 and width >= hardware_width:
+        var res: SIMD[dtype, width] = 0
+        var zero: SIMD[dtype, hardware_width] = 0
 
         @parameter
-        for idx in range(simd_width // hardware_simd_width):
-            alias i = idx * hardware_simd_width
+        for idx in range(width // hardware_width):
+            alias i = idx * hardware_width
             # On AVX512, we can use the scalef intrinsic to compute the ldexp
             # function.
             var part = llvm_intrinsic[
                 "llvm.x86.avx512.mask.scalef.ps.512",
-                SIMD[dtype, hardware_simd_width],
+                SIMD[dtype, hardware_width],
                 has_side_effect=False,
             ](
-                x.slice[hardware_simd_width, offset=i](),
-                exp.slice[hardware_simd_width, offset=i](),
+                x.slice[hardware_width, offset=i](),
+                exp.slice[hardware_width, offset=i](),
                 zero,
                 Int16(-1),
                 Int32(4),
@@ -530,10 +523,8 @@ fn _ldexp_impl[
 
 @always_inline
 fn ldexp[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[dtype, width]:
     """Computes elementwise ldexp function.
 
     The ldexp function multiplies a floating point value x by the number 2
@@ -542,7 +533,7 @@ fn ldexp[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector of floating point values.
@@ -573,9 +564,9 @@ trait _Expable:
 
 @always_inline
 fn _exp_taylor[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    alias coefficients = List[SIMD[dtype, simd_width]](
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    alias coefficients = List[SIMD[dtype, width]](
         1.0,
         1.0,
         0.5,
@@ -597,8 +588,8 @@ fn _exp_taylor[
 
 @always_inline
 fn exp[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Calculates elementwise exponential of the input vector.
 
     Given an input vector $X$ and an output vector $Y$, sets $Y_i = e^{X_i}$ for
@@ -610,7 +601,7 @@ fn exp[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input SIMD vector.
@@ -633,8 +624,8 @@ fn exp[
     if dtype not in (DType.float32, DType.float64):
         return exp(x.cast[DType.float32]()).cast[dtype]()
 
-    var min_val: SIMD[dtype, simd_width]
-    var max_val: SIMD[dtype, simd_width]
+    var min_val: SIMD[dtype, width]
+    var max_val: SIMD[dtype, width]
 
     @parameter
     if dtype is DType.float64:
@@ -673,8 +664,8 @@ fn exp[T: _Expable](x: T) -> T:
 
 @always_inline
 fn _frexp_mask1[
-    simd_width: Int, dtype: DType
-]() -> SIMD[_integral_type_of[dtype](), simd_width]:
+    dtype: DType, width: Int
+]() -> SIMD[_integral_type_of[dtype](), width]:
     @parameter
     if dtype is DType.float16:
         return 0x7C00
@@ -689,8 +680,8 @@ fn _frexp_mask1[
 
 @always_inline
 fn _frexp_mask2[
-    simd_width: Int, dtype: DType
-]() -> SIMD[_integral_type_of[dtype](), simd_width]:
+    dtype: DType, width: Int
+]() -> SIMD[_integral_type_of[dtype](), width]:
     @parameter
     if dtype is DType.float16:
         return 0x3800
@@ -705,8 +696,8 @@ fn _frexp_mask2[
 
 @always_inline
 fn frexp[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> StaticTuple[SIMD[dtype, simd_width], 2]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> StaticTuple[SIMD[dtype, width], 2]:
     """Breaks floating point values into a fractional part and an exponent part.
     This follows C and Python in increasing the exponent by 1 and normalizing the
     fraction from 0.5 to 1.0 instead of 1.0 to 2.0.
@@ -716,7 +707,7 @@ fn frexp[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input values.
@@ -727,13 +718,13 @@ fn frexp[
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
     constrained[dtype.is_floating_point(), "must be a floating point value"]()
-    alias T = SIMD[dtype, simd_width]
+    alias T = SIMD[dtype, width]
     alias zero = T(0)
     # Add one to the resulting exponent up by subtracting 1 from the bias
     alias exponent_bias = FPUtils[dtype].exponent_bias() - 1
     alias mantissa_width = FPUtils[dtype].mantissa_width()
-    var mask1 = _frexp_mask1[simd_width, dtype]()
-    var mask2 = _frexp_mask2[simd_width, dtype]()
+    var mask1 = _frexp_mask1[dtype, width]()
+    var mask2 = _frexp_mask2[dtype, width]()
     var x_int = x.to_bits()
     var selector = x != zero
     var exp = selector.select(
@@ -751,13 +742,13 @@ fn frexp[
 
 @always_inline
 fn _log_base[
-    dtype: DType, simd_width: Int, //, base: Int
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //, base: Int
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs elementwise log of a SIMD vector with a specific base.
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
         base: The logarithm base.
 
     Args:
@@ -782,7 +773,7 @@ fn _log_base[
 
     var y = (
         polynomial_evaluate[
-            List[SIMD[dtype, simd_width]](
+            List[SIMD[dtype, width]](
                 3.3333331174e-1,
                 -2.4999993993e-1,
                 2.0000714765e-1,
@@ -809,8 +800,12 @@ fn _log_base[
 
 
 @always_inline
-fn log(x: SIMD) -> __type_of(x):
+fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Performs elementwise natural log (base E) of a SIMD vector.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: Vector to perform logarithm operation on.
@@ -824,9 +819,9 @@ fn log(x: SIMD) -> __type_of(x):
         alias ln2 = 0.69314718055966295651160180568695068359375
 
         @parameter
-        if sizeof[x.dtype]() < sizeof[DType.float32]():
-            return log(x.cast[DType.float32]()).cast[x.dtype]()
-        elif x.dtype is DType.float32:
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return log(x.cast[DType.float32]()).cast[dtype]()
+        elif dtype is DType.float32:
             return (
                 _call_ptx_intrinsic[
                     instruction="lg2.approx.f32", constraints="=f,f"
@@ -843,11 +838,15 @@ fn log(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn log2(x: SIMD) -> __type_of(x):
+fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Performs elementwise log (base 2) of a SIMD vector.
 
     Args:
         x: Vector to perform logarithm operation on.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Returns:
         Vector containing result of performing log base 2 on x.
@@ -857,9 +856,9 @@ fn log2(x: SIMD) -> __type_of(x):
     if is_nvidia_gpu():
 
         @parameter
-        if sizeof[x.dtype]() < sizeof[DType.float32]():
-            return log2(x.cast[DType.float32]()).cast[x.dtype]()
-        elif x.dtype is DType.float32:
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return log2(x.cast[DType.float32]()).cast[dtype]()
+        elif dtype is DType.float32:
             return _call_ptx_intrinsic[
                 instruction="lg2.approx.f32", constraints="=f,f"
             ](x)
@@ -874,9 +873,9 @@ fn log2(x: SIMD) -> __type_of(x):
 
 @always_inline
 fn copysign[
-    dtype: DType, simd_width: Int, //
-](magnitude: SIMD[dtype, simd_width], sign: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
+    dtype: DType, width: Int, //
+](magnitude: SIMD[dtype, width], sign: SIMD[dtype, width]) -> SIMD[
+    dtype, width
 ]:
     """Returns a value with the magnitude of the first operand and the sign of
     the second operand.
@@ -886,7 +885,7 @@ fn copysign[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         magnitude: The magnitude to use.
@@ -903,7 +902,7 @@ fn copysign[
     else:
         constrained[dtype.is_numeric(), "operands must be a numeric type"]()
         return llvm_intrinsic[
-            "llvm.copysign", SIMD[dtype, simd_width], has_side_effect=False
+            "llvm.copysign", SIMD[dtype, width], has_side_effect=False
         ](magnitude, sign)
 
 
@@ -914,14 +913,16 @@ fn copysign[
 
 @always_inline
 fn erf[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs the elementwise Erf on a SIMD vector.
+
+    Constraints:
+        The type must be a floating-point type.
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-                Constraints: must be a floating-point type.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector to perform elementwise Erf on.
@@ -933,7 +934,7 @@ fn erf[
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
-        List[SIMD[dtype, simd_width]](
+        List[SIMD[dtype, width]](
             1.28717512e-1,
             6.34846687e-1,
             1.06777847e-1,
@@ -948,7 +949,7 @@ fn erf[
     r_large = copysign(1 - exp(-r_large), x)
 
     var r_small = polynomial_evaluate[
-        List[SIMD[dtype, simd_width]](
+        List[SIMD[dtype, width]](
             1.28379151e-1,
             -3.76124859e-1,
             1.12818025e-1,
@@ -968,13 +969,13 @@ fn erf[
 
 @always_inline
 fn tanh[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs elementwise evaluation of the tanh function.
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The vector to perform the elementwise tanh on.
@@ -1005,7 +1006,7 @@ fn tanh[
     var x_squared = xc * xc
 
     var numerator = xc * polynomial_evaluate[
-        List[SIMD[dtype, simd_width]](
+        List[SIMD[dtype, width]](
             4.89352455891786e-03,
             6.37261928875436e-04,
             1.48572235717979e-05,
@@ -1017,7 +1018,7 @@ fn tanh[
     ](x_squared)
 
     var denominator = polynomial_evaluate[
-        List[SIMD[dtype, simd_width]](
+        List[SIMD[dtype, width]](
             4.89352518554385e-03,
             2.26843463243900e-03,
             1.18534705686654e-04,
@@ -1036,15 +1037,15 @@ fn tanh[
 # TODO: control symmetric behavior with flag so we can be compatible with Python
 @always_inline
 fn isclose[
-    dtype: DType, simd_width: Int
+    dtype: DType, width: Int
 ](
-    a: SIMD[dtype, simd_width],
-    b: SIMD[dtype, simd_width],
+    a: SIMD[dtype, width],
+    b: SIMD[dtype, width],
     *,
     atol: Float64 = 1e-08,
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
-) -> SIMD[DType.bool, simd_width]:
+) -> SIMD[DType.bool, width]:
     """Checks if the two input values are numerically within a tolerance.
 
     When the type is integral, then equality is checked. When the type is
@@ -1057,7 +1058,7 @@ fn isclose[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         a: The first value to compare.
@@ -1103,29 +1104,27 @@ fn isclose[
 
 
 # TODO: Remove this when `iota` works at compile-time
-fn _compile_time_iota[
-    dtype: DType, simd_width: Int
-]() -> SIMD[dtype, simd_width]:
+fn _compile_time_iota[dtype: DType, width: Int]() -> SIMD[dtype, width]:
     constrained[
         dtype.is_integral(),
         "_compile_time_iota can only be used with integer dtypes.",
     ]()
-    var a = SIMD[dtype, simd_width](0)
-    for i in range(simd_width):
+    var a = SIMD[dtype, width](0)
+    for i in range(width):
         a[i] = i
     return a
 
 
 @always_inline
 fn iota[
-    dtype: DType, simd_width: Int
-](offset: Scalar[dtype] = 0) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int
+](offset: Scalar[dtype] = 0) -> SIMD[dtype, width]:
     """Creates a SIMD vector containing an increasing sequence, starting from
     offset.
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         offset: The value to start the sequence at. Default is zero.
@@ -1138,35 +1137,35 @@ fn iota[
     if is_amd_gpu():
         # We can't use llvm.stepvector on AMD GPUs, because of a bug in the
         # amd backend. See https://github.com/llvm/llvm-project/issues/139317
-        var out = SIMD[dtype, simd_width]()
+        var out = SIMD[dtype, width]()
 
         @parameter
-        for i in range(simd_width):
+        for i in range(width):
             out[i] = i
         return out + offset
     else:
 
         @parameter
-        if simd_width == 1:
+        if width == 1:
             return offset
         elif dtype.is_integral():
             var step = llvm_intrinsic[
                 "llvm.stepvector",
-                SIMD[dtype, simd_width],
+                SIMD[dtype, width],
                 has_side_effect=False,
             ]()
             return step + offset
         else:
             var it = llvm_intrinsic[
                 "llvm.stepvector",
-                SIMD[DType.index, simd_width],
+                SIMD[DType.index, width],
                 has_side_effect=False,
             ]()
             return it.cast[dtype]() + offset
 
 
 fn iota[
-    dtype: DType
+    dtype: DType, //
 ](buff: UnsafePointer[Scalar[dtype], mut=True, **_], len: Int, offset: Int = 0):
     """Fill the buffer with numbers ranging from offset to offset + len - 1,
     spaced by 1.
@@ -1185,8 +1184,8 @@ fn iota[
     @always_inline
     @__copy_capture(offset, buff)
     @parameter
-    fn fill[simd_width: Int](i: Int):
-        buff.store(i, iota[dtype, simd_width](offset + i))
+    fn fill[width: Int](i: Int):
+        buff.store(i, iota[dtype, width](offset + i))
 
     vectorize[fill, simdwidthof[dtype]()](len)
 
@@ -1256,12 +1255,14 @@ fn fma(a: UInt, b: UInt, c: UInt) -> UInt:
 
 @always_inline("nodebug")
 fn fma[
-    dtype: DType, simd_width: Int
+    dtype: DType, width: Int, //
 ](
-    a: SIMD[dtype, simd_width],
-    b: SIMD[dtype, simd_width],
-    c: SIMD[dtype, simd_width],
-) -> SIMD[dtype, simd_width]:
+    a: SIMD[dtype, width],
+    b: SIMD[dtype, width],
+    c: SIMD[dtype, width],
+) -> SIMD[
+    dtype, width
+]:
     """Performs elementwise `fma` (fused multiply-add) on the inputs.
 
     Each element in the result SIMD vector is $(A_i * B_i) + C_i$, where $A_i$,
@@ -1269,7 +1270,7 @@ fn fma[
 
     Parameters:
         dtype: The `dtype` of the input SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         a: The first vector of inputs.
@@ -1365,11 +1366,15 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
 # ===----------------------------------------------------------------------=== #
 
 
-fn acos(x: SIMD) -> __type_of(x):
+fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `acos` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1385,11 +1390,15 @@ fn acos(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn asin(x: SIMD) -> __type_of(x):
+fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `asin` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1405,11 +1414,15 @@ fn asin(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn atan(x: SIMD) -> __type_of(x):
+fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `atan` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1426,10 +1439,8 @@ fn atan(x: SIMD) -> __type_of(x):
 
 
 fn atan2[
-    dtype: DType, simd_width: Int, //
-](y: SIMD[dtype, simd_width], x: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+    dtype: DType, width: Int, //
+](y: SIMD[dtype, width], x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the `atan2` of the inputs.
 
     Constraints:
@@ -1437,7 +1448,7 @@ fn atan2[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         y: The first input argument.
@@ -1467,9 +1478,9 @@ fn atan2[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, simd_width](y, x)
+        return _simd_apply[_float64_dispatch, dtype, width](y, x)
     else:
-        return _simd_apply[_float32_dispatch, dtype, simd_width](y, x)
+        return _simd_apply[_float32_dispatch, dtype, width](y, x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1478,8 +1489,8 @@ fn atan2[
 
 
 fn cos[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the `cos` of the inputs.
 
     Constraints:
@@ -1487,7 +1498,7 @@ fn cos[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1515,8 +1526,8 @@ fn cos[
 
 
 fn sin[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the `sin` of the inputs.
 
     Constraints:
@@ -1524,7 +1535,7 @@ fn sin[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1551,11 +1562,15 @@ fn sin[
 # ===----------------------------------------------------------------------=== #
 
 
-fn tan(x: SIMD) -> __type_of(x):
+fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `tan` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1571,11 +1586,15 @@ fn tan(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn acosh(x: SIMD) -> __type_of(x):
+fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `acosh` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1591,11 +1610,15 @@ fn acosh(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn asinh(x: SIMD) -> __type_of(x):
+fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `asinh` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1655,11 +1678,15 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn atanh(x: SIMD) -> __type_of(x):
+fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `atanh` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1667,7 +1694,6 @@ fn atanh(x: SIMD) -> __type_of(x):
     Returns:
         The `atanh` of the input.
     """
-    alias dtype = x.dtype
     constrained[
         dtype.is_floating_point(), "input type must be floating point"
     ]()
@@ -1690,11 +1716,15 @@ fn atanh(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn cosh(x: SIMD) -> __type_of(x):
+fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `cosh` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1710,11 +1740,15 @@ fn cosh(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn sinh(x: SIMD) -> __type_of(x):
+fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `sinh` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1731,11 +1765,15 @@ fn sinh(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn expm1(x: SIMD) -> __type_of(x):
+fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `expm1` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1751,11 +1789,15 @@ fn expm1(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn log10(x: SIMD) -> __type_of(x):
+fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `log10` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1769,9 +1811,9 @@ fn log10(x: SIMD) -> __type_of(x):
         alias log10_2 = 0.301029995663981195213738894724493027
 
         @parameter
-        if sizeof[x.dtype]() < sizeof[DType.float32]():
-            return log10(x.cast[DType.float32]()).cast[x.dtype]()
-        elif x.dtype is DType.float32:
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return log10(x.cast[DType.float32]()).cast[dtype]()
+        elif dtype is DType.float32:
             return (
                 _call_ptx_intrinsic[
                     instruction="lg2.approx.f32", constraints="=f,f"
@@ -1791,11 +1833,15 @@ fn log10(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn log1p(x: SIMD) -> __type_of(x):
+fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `log1p` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1811,11 +1857,15 @@ fn log1p(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn logb(x: SIMD) -> __type_of(x):
+fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `logb` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1831,11 +1881,15 @@ fn logb(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn cbrt(x: SIMD) -> __type_of(x):
+fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `cbrt` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1853,10 +1907,8 @@ fn cbrt(x: SIMD) -> __type_of(x):
 
 # TODO: implement for variadic inputs as Python.
 fn hypot[
-    dtype: DType, simd_width: Int, //
-](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+    dtype: DType, width: Int, //
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the `hypot` of the inputs.
 
     Constraints:
@@ -1864,7 +1916,7 @@ fn hypot[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         arg0: The first input argument.
@@ -1894,8 +1946,8 @@ fn hypot[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, simd_width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, simd_width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
+    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1903,11 +1955,15 @@ fn hypot[
 # ===----------------------------------------------------------------------=== #
 
 
-fn erfc(x: SIMD) -> __type_of(x):
+fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `erfc` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1923,11 +1979,15 @@ fn erfc(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn lgamma(x: SIMD) -> __type_of(x):
+fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `lgamma` of the inputs.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1943,13 +2003,17 @@ fn lgamma(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn gamma(x: SIMD) -> __type_of(x):
+fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the Gamma of the input.
 
     For details, see https://en.wikipedia.org/wiki/Gamma_function.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input argument.
@@ -1966,10 +2030,8 @@ fn gamma(x: SIMD) -> __type_of(x):
 
 
 fn remainder[
-    dtype: DType, simd_width: Int, //
-](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the `remainder` of the inputs.
 
     Constraints:
@@ -1977,7 +2039,7 @@ fn remainder[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The first input argument.
@@ -2011,8 +2073,8 @@ fn remainder[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, simd_width](x, y)
-    return _simd_apply[_float32_dispatch, dtype, simd_width](x, y)
+        return _simd_apply[_float64_dispatch, dtype, width](x, y)
+    return _simd_apply[_float32_dispatch, dtype, width](x, y)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2020,12 +2082,16 @@ fn remainder[
 # ===----------------------------------------------------------------------=== #
 
 
-fn j0(x: SIMD) -> __type_of(x):
+fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the Bessel function of the first kind of order 0 for each input
     value.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input vector.
@@ -2041,12 +2107,16 @@ fn j0(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn j1(x: SIMD) -> __type_of(x):
+fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the Bessel function of the first kind of order 1 for each input
     value.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input vector.
@@ -2062,12 +2132,16 @@ fn j1(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn y0(x: SIMD) -> __type_of(x):
+fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the Bessel function of the second kind of order 0 for each input
     value.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input vector.
@@ -2083,12 +2157,16 @@ fn y0(x: SIMD) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn y1(x: SIMD) -> __type_of(x):
+fn y1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the Bessel function of the second kind of order 1 for each input
     value.
 
     Constraints:
         The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input vector.
@@ -2105,10 +2183,8 @@ fn y1(x: SIMD) -> __type_of(x):
 
 
 fn scalb[
-    dtype: DType, simd_width: Int, //
-](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+    dtype: DType, width: Int, //
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the `scalb` of the inputs.
 
     Constraints:
@@ -2116,7 +2192,7 @@ fn scalb[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         arg0: The first input argument.
@@ -2146,8 +2222,8 @@ fn scalb[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, simd_width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, simd_width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
+    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2314,8 +2390,14 @@ fn lcm(*values: Int) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
+fn modf[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> Tuple[__type_of(x), __type_of(x)]:
     """Computes the integral and fractional part of the value.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: The input value.
@@ -2333,8 +2415,8 @@ fn modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
 
 @always_inline
 fn ulp[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.
 
@@ -2343,7 +2425,7 @@ fn ulp[
 
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
-        simd_width: The width of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         x: SIMD vector input.
@@ -2357,7 +2439,7 @@ fn ulp[
     var nan_mask = isnan(x)
     var xabs = abs(x)
     var inf_mask = isinf(xabs)
-    alias inf_val = SIMD[dtype, simd_width](inf[dtype]())
+    alias inf_val = SIMD[dtype, width](inf[dtype]())
     var x2 = nextafter(xabs, inf_val)
     var x2_inf_mask = isinf(x2)
 
@@ -2450,14 +2532,22 @@ fn clamp(
     return max(min(val, upper_bound), lower_bound)
 
 
-fn clamp(
-    val: SIMD, lower_bound: __type_of(val), upper_bound: __type_of(val)
+fn clamp[
+    dtype: DType, width: Int, //
+](
+    val: SIMD[dtype, width],
+    lower_bound: __type_of(val),
+    upper_bound: __type_of(val),
 ) -> __type_of(val):
     """Clamps the values in a SIMD vector to be in a certain range.
 
     Clamp cuts values in the input SIMD vector off at the upper bound and
     lower bound values. For example,  SIMD vector `[0, 1, 2, 3]` clamped to
     a lower bound of 1 and an upper bound of 2 would return `[1, 1, 2, 2]`.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
 
     Args:
         val: The value to clamp.
@@ -2483,10 +2573,10 @@ fn _type_is_libm_supported(dtype: DType) -> Bool:
 fn _call_libm[
     func_name: StaticString,
     arg_type: DType,
-    simd_width: Int,
+    width: Int,
     *,
     result_type: DType = arg_type,
-](arg: SIMD[arg_type, simd_width]) -> SIMD[result_type, simd_width]:
+](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
     constrained[
         arg_type.is_floating_point(), "argument type must be floating point"
     ]()
@@ -2511,18 +2601,18 @@ fn _call_libm[
 fn _call_libm_impl[
     func_name: StaticString,
     arg_type: DType,
-    simd_width: Int,
+    width: Int,
     *,
     result_type: DType = arg_type,
-](arg: SIMD[arg_type, simd_width]) -> SIMD[result_type, simd_width]:
+](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
     alias libm_name = String(
         func_name
     ) if arg_type is DType.float64 else func_name + "f"
 
-    var res = SIMD[result_type, simd_width]()
+    var res = SIMD[result_type, width]()
 
     @parameter
-    for i in range(simd_width):
+    for i in range(width):
         res[i] = _external_call_const[libm_name, Scalar[result_type]](arg[i])
 
     return res
@@ -2558,21 +2648,21 @@ fn _call_ptx_intrinsic_scalar[
 
 fn _call_ptx_intrinsic[
     dtype: DType,
-    simd_width: Int, //,
+    width: Int, //,
     *,
     instruction: StaticString,
     constraints: StaticString,
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     @parameter
-    if simd_width == 1:
+    if width == 1:
         return _call_ptx_intrinsic_scalar[
             instruction=instruction, constraints=constraints
         ](arg[0])
 
-    var res = SIMD[dtype, simd_width]()
+    var res = SIMD[dtype, width]()
 
     @parameter
-    for i in range(simd_width):
+    for i in range(width):
         res[i] = _call_ptx_intrinsic_scalar[
             instruction=instruction, constraints=constraints
         ](arg[i])
@@ -2581,23 +2671,23 @@ fn _call_ptx_intrinsic[
 
 fn _call_ptx_intrinsic[
     dtype: DType,
-    simd_width: Int, //,
+    width: Int, //,
     *,
     scalar_instruction: StaticString,
     vector2_instruction: StaticString,
     scalar_constraints: StaticString,
     vector_constraints: StaticString,
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     @parameter
-    if simd_width == 1:
+    if width == 1:
         return _call_ptx_intrinsic_scalar[
             instruction=scalar_instruction, constraints=scalar_constraints
         ](arg[0])
 
-    var res = SIMD[dtype, simd_width]()
+    var res = SIMD[dtype, width]()
 
     @parameter
-    for i in range(0, simd_width, 2):
+    for i in range(0, width, 2):
         res = res.insert[offset=i](
             inlined_assembly[
                 vector2_instruction + " $0, $1;",
@@ -2612,25 +2702,23 @@ fn _call_ptx_intrinsic[
 
 fn _call_ptx_intrinsic[
     dtype: DType,
-    simd_width: Int, //,
+    width: Int, //,
     *,
     scalar_instruction: StaticString,
     vector2_instruction: StaticString,
     scalar_constraints: StaticString,
     vector_constraints: StaticString,
-](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     @parameter
-    if simd_width == 1:
+    if width == 1:
         return _call_ptx_intrinsic_scalar[
             instruction=scalar_instruction, constraints=scalar_constraints
         ](arg0[0], arg1[0])
 
-    var res = SIMD[dtype, simd_width]()
+    var res = SIMD[dtype, width]()
 
     @parameter
-    for i in range(0, simd_width, 2):
+    for i in range(0, width, 2):
         res = res.insert[offset=i](
             inlined_assembly[
                 vector2_instruction + " $0, $1; $2;",
