@@ -13,7 +13,6 @@
 
 import logging
 import queue
-import time
 from dataclasses import dataclass
 
 import zmq
@@ -92,6 +91,7 @@ class DecodeScheduler(Scheduler):
             except queue.Empty:
                 logger.debug("nothing in the request queue.")
 
+            # Try and Receive from the decode queue
             try:
                 new_decode = self.decode_pull_socket.get_nowait()
                 logger.debug(
@@ -100,8 +100,5 @@ class DecodeScheduler(Scheduler):
                 logger.debug("sending back to prefill.")
                 self.prefill_push_socket.put_nowait(new_decode)
                 logger.debug("sent from the decode node.")
-
             except queue.Empty:
-                logger.debug("nothing in the decode queue.")
-
-            time.sleep(5)
+                logger.debug("nothing on the decode queue")

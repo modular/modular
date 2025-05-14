@@ -117,6 +117,7 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     kvcache_agent_queue: Optional[multiprocessing.Queue] = None,
+    zmq_io_threads: int = 1,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -138,7 +139,7 @@ async def start_model_worker(
         "model-worker",
         health_fail_s=settings.mw_health_fail_s,
     )
-    zmq_ctx = zmq.Context(io_threads=2)
+    zmq_ctx = zmq.Context(io_threads=zmq_io_threads)
     engine_queue: EngineQueue = EngineQueue(
         mp_context,
         worker_pc=pc,
@@ -392,6 +393,9 @@ def _create_prefill_scheduler(
     pipeline_config: TokenGeneratorPipelineConfig,
     zmq_ctx: zmq.Context,
 ) -> PrefillScheduler:
+    # Create zmq Context
+    zmq_ctx = zmq.Context(io_threads=2)
+
     # Initialize Scheduler Config
     if pipeline_config.context_encoding:
         max_batch_size_ce = pipeline_config.context_encoding.size
@@ -409,12 +413,19 @@ def _create_prefill_scheduler(
         )
         batch_timeout = None
 
-    scheduler_config = PrefillSchedulerConfig(
-        max_batch_size_ce=max_batch_size_ce,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        batch_timeout=batch_timeout,
-        enable_chunked_prefill=pipeline_config.token_generation.enable_chunked_prefill,
-    )
+    if target_tokens_per_batch_ce is None:
+        scheduler_config = PrefillSchedulerConfig(
+            max_batch_size_ce=max_batch_size_ce,
+            batch_timeout=batch_timeout,
+            enable_chunked_prefill=pipeline_config.token_generation.enable_chunked_prefill,
+        )
+    else:
+        scheduler_config = PrefillSchedulerConfig(
+            max_batch_size_ce=max_batch_size_ce,
+            target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+            batch_timeout=batch_timeout,
+            enable_chunked_prefill=pipeline_config.token_generation.enable_chunked_prefill,
+        )
 
     # Retrieve the KV Cache, failing if KV Cache is not enabled.
     if (
