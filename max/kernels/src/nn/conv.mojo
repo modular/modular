@@ -3204,9 +3204,9 @@ fn conv_gpu[
     output: NDBuffer[
         mut=True, output_type, input_rank, MutableAnyOrigin, output_dim
     ],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
+    stride: IndexList[input_rank - 2],
+    dilation: IndexList[input_rank - 2],
+    padding: IndexList[input_rank - 2],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
@@ -3223,20 +3223,50 @@ fn conv_gpu[
         maybe_epilogue_func,
     ]
 
-    var grid_dim_x = ceildiv(output.dim[2](), block_size)  # w
-    var grid_dim_y = ceildiv(output.dim[1](), block_size)  # h
-    var grid_dim_z = input.dim[0]()  # n
+    alias conv_gpu_3d = conv3d_gpu_naive_ndhwc_qrscf[
+        input_dim,
+        filter_dim,
+        output_dim,
+        input_type,
+        filter_type,
+        output_type,
+        block_size,
+        maybe_epilogue_func,
+    ]
+    var grid_dim_y = ceildiv(
+        output.dim[1](), block_size
+    )  # height for 2d and depth for 3d
+    var grid_dim_z = input.dim[0]()  # n for both
 
-    ctx.enqueue_function[conv_gpu_n](
-        input,
-        filter,
-        output,
-        stride,
-        dilation,
-        padding,
-        grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-        block_dim=(block_size, block_size),
-    )
+    @parameter
+    if input_rank == 4:
+        var grid_dim_x = ceildiv(
+            output.dim[2](), block_size
+        )  # w / block size for 2d
+        ctx.enqueue_function[conv_gpu_n](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+            block_dim=(block_size, block_size),
+        )
+    elif input_rank == 5:
+        var grid_dim_x = ceildiv(
+            output.dim[2]() * output.dim[3](), block_size
+        )  # h * w / block size for 3d
+        ctx.enqueue_function[conv_gpu_3d](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+            block_dim=(block_size, block_size),
+        )
 
 
 fn conv3d_gpu_naive_ndhwc_qrscf[

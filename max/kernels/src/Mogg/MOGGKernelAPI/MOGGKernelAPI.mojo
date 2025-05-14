@@ -5386,8 +5386,9 @@ struct Conv:
             )
         else:
             constrained[
-                input.rank == 4 and filter.rank == 4,
-                "only rank 4 tensor is supported on cuda gpu",
+                (input.rank == 4 and filter.rank == 4)
+                or (input.rank == 5 and filter.rank == 5),
+                "only rank 4 or 5 tensor is supported on cuda gpu",
             ]()
             constrained[
                 filter_packed == False,
@@ -5395,6 +5396,17 @@ struct Conv:
             ]()
 
             var cuda_ctx = ctx.get_device_context()
+            var pad_tuple = IndexList[input.rank - 2](0)
+
+            @parameter
+            if input.rank == 4:
+                pad_tuple[0] = pad_h_tuple[0]
+                pad_tuple[1] = pad_w_tuple[0]
+            elif input.rank == 5:
+                pad_tuple[0] = pad_d_tuple[0]
+                pad_tuple[1] = pad_h_tuple[0]
+                pad_tuple[2] = pad_w_tuple[0]
+
             conv_gpu[
                 input.rank,
                 filter.rank,
@@ -5409,9 +5421,9 @@ struct Conv:
                 input_buf,
                 filter_buf,
                 output_buf,
-                IndexList[2](stride_tuple[0], stride_tuple[1]),
-                IndexList[2](dilation_tuple[0], dilation_tuple[1]),
-                IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
                 Int(num_groups),
                 cuda_ctx,
             )
