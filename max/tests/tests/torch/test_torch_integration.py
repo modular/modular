@@ -19,7 +19,7 @@ def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
     img = img.to(torch.float32) * rgb_mask
 
     result = torch.minimum(
-        img.sum(axis=-1, dtype=torch.float32),
+        img.sum(dim=-1, dtype=torch.float32),
         torch.as_tensor([255], dtype=torch.float32),
     ).to(torch.uint8)
 
@@ -27,12 +27,7 @@ def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_grayscale(backend: str):
-    # TODO: Library path and CustomOpLibrary instantiation should live in
-    #       conftest.py
-    path = Path(os.getenv("MODULAR_PYTORCH_CUSTOM_OPS"))
-
-    op_library = CustomOpLibrary(path)
+def test_grayscale(op_library: CustomOpLibrary, backend: str):
     grayscale = register_custom_op(op_library.grayscale)
 
     @grayscale.register_fake
@@ -53,12 +48,7 @@ def test_grayscale(backend: str):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_binary_add(backend: str):
-    # TODO: Library path and CustomOpLibrary instantiation should live in
-    #       conftest.py
-    path = Path(os.getenv("MODULAR_PYTORCH_CUSTOM_OPS"))
-
-    op_library = CustomOpLibrary(path)
+def test_binary_add(op_library: CustomOpLibrary, backend: str):
     myadd = register_custom_op(op_library.myadd)
 
     @myadd.register_fake

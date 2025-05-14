@@ -1,0 +1,47 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from __future__ import annotations
+
+import os
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
+from max import mlir
+from max.graph import (
+    KernelLibrary,
+)
+from max.torch import CustomOpLibrary
+
+
+@pytest.fixture
+def modular_path() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    modular_path = os.getenv("MODULAR_PATH")
+    assert modular_path is not None
+
+    return Path(modular_path)
+
+
+@pytest.fixture(scope="module")
+def mlir_context() -> Generator[mlir.Context]:
+    """Set up the MLIR context by registering and loading Modular dialects."""
+    with mlir.Context() as ctx, mlir.Location.unknown():
+        yield ctx
+
+
+@pytest.fixture(scope="module")
+def kernel_library(mlir_context: mlir.Context) -> Generator[KernelLibrary]:
+    """Set up the kernel library for the current system."""
+    path = Path(os.getenv("MODULAR_PYTORCH_CUSTOM_OPS"))
+    yield KernelLibrary(mlir_context, [path])
+
+
+@pytest.fixture(scope="function")
+def op_library(kernel_library: KernelLibrary) -> Generator[CustomOpLibrary]:
+    """Set up the kernel library for the current system."""
+    yield CustomOpLibrary(kernel_library)
