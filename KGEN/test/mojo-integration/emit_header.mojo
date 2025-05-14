@@ -21,7 +21,7 @@ fn call_me() -> Float32:
     return 1.0
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct RegIntPair:
     var first: Int
