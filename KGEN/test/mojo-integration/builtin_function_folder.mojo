@@ -6,6 +6,7 @@
 
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
+
 from utils._select import _select_register_value as select
 
 
@@ -47,4 +48,20 @@ fn fold_index_ceildiv() -> UIntT[2]:
     alias B: UInt = 3
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
     var a = UIntT[A.__ceildiv__(B)]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold integer division
+##===----------------------------------------------------------------------===##
+
+
+fn int_floordiv[A: Int, B: Int]() -> IntT[A // B]:
+    var a = IntT[A // B]()
+    return a
+
+
+fn fold_integer_floordiv() -> IntT[3]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@IntT<:!Int {3}>, mut *"a`1">
+    var a = int_floordiv[10, 3]()
     return a
