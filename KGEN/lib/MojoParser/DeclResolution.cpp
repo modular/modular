@@ -2224,8 +2224,8 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
 /// one implementation (not overloaded).  This returns the method if successful,
 /// and returns null if there is none.
 static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
+                                              StringRef name,
                                               SpecialFunctionKind specialKind) {
-  const char *name = SpecialFunctionInfo::get(specialKind).name;
   LookupResult inits = structDecl.getShared().lookupAndResolveDecl(
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
 
@@ -2268,30 +2268,6 @@ private:
   ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
 };
 } // namespace
-
-/// Synthesize the `__copyinit__` and `__moveinit__` stubs for `@value`
-/// decorated structs early to ensure their movability and copyability
-/// requirements are satisfied.
-static void preprocessValueDecorator(ASTDecl &structDecl) {
-  auto structOp = cast<StructDeclOp>(structDecl);
-  for (ExprNode *decorator : structDecl.getBodyDecorators()) {
-    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      if (declRef->spelling == "value") {
-        std::optional<ValueInfo> info = ValueInfo::lookupExisting(structDecl);
-        if (!info)
-          break;
-        StructEmitter emitter(structDecl.getShared());
-        FnOp moveFunc, copyFunc;
-        if (!structOp.isRegisterPassable() && !info->moveinit)
-          moveFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
-                                                           /*isMove=*/true);
-        if (!structOp.isRegisterPassableTrivial() && !info->copyinit)
-          copyFunc = emitter.synthesizeEmptyMoveOrCopyInit(structDecl,
-                                                           /*isMove=*/false);
-      }
-    }
-  }
-}
 
 /// Look at the initializers of the specified struct to see if there is already
 /// a fieldwise init.  If so, return it, otherwise return null.
@@ -2505,24 +2481,28 @@ static void processRegisterPassableDecorator(
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
+  auto conformsToTrait = [&](StringRef traitName) {
+    auto trait = dyn_cast_or_null<TraitDeclOp>(
+        shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc()));
+    if (!trait)
+      return false;
+    return structDecl.doesNominalTypeConformTo(trait.bindReference(),
+                                               /*allowImplicit=*/false);
+  };
+
   // Push the debug scope for this struct if necessary so that nested operations
   // have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(structOp.getLocScope());
 
+  // Parse the body of the struct, which will give us all the methods and
+  // fields, but without resolving their signatures or bodies.
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
 
   // Determine if there is an explicit conformance to AnyType.
-  bool implicitlyDestructible = false;
-  if (auto anyTypeTrait =
-          dyn_cast_or_null<TraitDeclOp>(shared.lookupBuiltinTrait(
-              "AnyType", &structDecl, structDecl.getLoc()))) {
-    implicitlyDestructible =
-        structDecl.doesNominalTypeConformTo(anyTypeTrait.bindReference(),
-                                            /*allowImplicit=*/false);
-  }
+  bool implicitlyDestructible = conformsToTrait("AnyType");
 
   // Check to see if there is a destructor and install it into the StructDeclOp
   // if so.
@@ -2535,21 +2515,20 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     (void)StructEmitter(shared).synthesizeEmptyDtor(structDecl);
   }
 
-  // Look up move and copy constructors and record them if declared.
-  if (!structOp.isRegisterPassable()) {
-    if (auto copyInitAttr =
-            lookupSpecialMethod(structDecl, SpecialFunctionKind::kCopyInit))
-      structOp.setCopyInitAttr(copyInitAttr);
-    if (auto moveInitAttr =
-            lookupSpecialMethod(structDecl, SpecialFunctionKind::kMoveInit))
-      structOp.setMoveInitAttr(moveInitAttr);
-  }
-
-  // If the struct is decorated with `@value`, synthesize the copy and move
-  // constructors before the field types are signature resolved to ensure that
-  // the Copyable and Movable trait requirements are satisfied.
-  // FIXME: The order of decorator resolution here is a bit gross.
-  preprocessValueDecorator(structDecl);
+  // If the struct conforms to well-known traits but doesn't have explicit
+  // implementations of the corresponding methods, add signatures for them.
+  // These can all be synthesized without resolving the members.
+  if (conformsToTrait("Movable") &&
+      !shared.typeHasMember(structDecl, "__moveinit__", structDecl.getLoc()))
+    StructEmitter(shared).synthesizeEmptyMoveOrCopyInit(structDecl,
+                                                        /*isMove=*/true);
+  if (conformsToTrait("Copyable") &&
+      !shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
+    StructEmitter(shared).synthesizeEmptyMoveOrCopyInit(structDecl,
+                                                        /*isMove=*/false);
+  if (conformsToTrait("ExplicitlyCopyable") &&
+      !shared.typeHasMember(structDecl, "copy", structDecl.getLoc()))
+    StructEmitter(shared).synthesizeEmptyExplicitCopy(structDecl);
 
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.
@@ -2585,6 +2564,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     processRegisterPassableDecorator(structOp, structDecl, structFields, *this,
                                      structOp.getConvention());
   }
+
+  // Look up move and copy constructors and record them if declared.
+  if (auto copyInitAttr = lookupSpecialMethod(structDecl, "__copyinit__",
+                                              SpecialFunctionKind::kCopyInit))
+    structOp.setCopyInitAttr(copyInitAttr);
+  if (auto moveInitAttr = lookupSpecialMethod(structDecl, "__moveinit__",
+                                              SpecialFunctionKind::kMoveInit))
+    structOp.setMoveInitAttr(moveInitAttr);
 
   // If any of the fields are bad, we do not process decorators since they
   // assume that the struct body if valid.
