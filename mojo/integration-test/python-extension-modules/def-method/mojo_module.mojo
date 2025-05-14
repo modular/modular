@@ -47,8 +47,8 @@ fn PyInit_mojo_module() -> PythonObject:
         return abort[PythonObject]("failed to create Python module: ", e)
 
 
-@value
-struct Person(Defaultable, Representable):
+@fieldwise_init
+struct Person(Defaultable, Representable, Copyable, Movable):
     var name: String
     var age: Int
 

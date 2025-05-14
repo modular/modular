@@ -36,8 +36,8 @@ fn PyInit_mojo_module() -> PythonObject:
         return abort[PythonObject]("failed to create Python module: ", e)
 
 
-@value
-struct PyArrayObject[dtype: DType]:
+@fieldwise_init
+struct PyArrayObject[dtype: DType](Copyable, Movable):
     """
     Container for a numpy array.
 

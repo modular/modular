@@ -122,8 +122,8 @@ fn case_mojo_mutate(
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct Person(Defaultable, Representable):
+@fieldwise_init
+struct Person(Defaultable, Representable, Copyable, Movable):
     var name: String
     var age: Int
 
