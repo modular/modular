@@ -8,12 +8,12 @@
 from sys import argv
 
 
-from runtime.asyncrt import run
+from runtime.asyncrt import _run
 
 
 @no_inline
 fn takeClosure(owned writer: Coroutine[Int]) -> Int:
-    return run(writer^)
+    return _run(writer^)
 
 
 @no_inline
