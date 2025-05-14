@@ -54,7 +54,6 @@ from .reflection import get_linkage_name
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct _Info:
     """A compiled closure implementation.
@@ -70,7 +69,6 @@ struct _Info:
     var num_captures: __mlir_type.index
 
 
-@value
 @register_passable("trivial")
 struct _PopulateInfo:
     """A compiled populate closure implementation.
@@ -85,7 +83,7 @@ struct _PopulateInfo:
     var populate: fn (__mlir_type.`!kgen.pointer<none>`) capturing -> None
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Info[func_type: AnyTrivialRegType, func: func_type](
     Stringable, Writable

@@ -25,7 +25,7 @@ from sys.info import _has_blackwell_tcgen05
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct UMMAKind(Stringable, Writable):
     """Struct for UMMA instruction types.
@@ -46,15 +46,6 @@ struct UMMAKind(Stringable, Writable):
 
     alias KIND_I8 = Self(4)
     """i8 type"""
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        """Initialize UMMA kind with an integer value.
-
-        Args:
-            value: The integer value representing the UMMA instruction type.
-        """
-        self._value = value
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

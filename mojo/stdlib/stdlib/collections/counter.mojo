@@ -23,7 +23,7 @@ from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
 from utils import Variant
 
 
-@value
+@fieldwise_init
 struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
     """A container for counting hashable items.
 

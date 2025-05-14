@@ -26,7 +26,6 @@ alias _mIsNotInteger = UInt8(~(1 << 7))
 alias _mIsFloat = UInt8(1 << 6)
 
 
-@value
 @register_passable("trivial")
 struct DType(
     Copyable,

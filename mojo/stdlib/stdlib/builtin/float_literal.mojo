@@ -20,7 +20,6 @@ These are Mojo built-ins, so you don't need to import them.
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @nonmaterializable(Float64)
 @register_passable("trivial")
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](

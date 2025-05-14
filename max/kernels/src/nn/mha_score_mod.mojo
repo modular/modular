@@ -44,7 +44,7 @@ trait ScoreModTrait:
         ...
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct AlibiScoreMod[
     num_heads: Int,

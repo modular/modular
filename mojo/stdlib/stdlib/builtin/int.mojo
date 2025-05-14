@@ -95,7 +95,6 @@ trait Intable(Copyable, Movable):
     example:
 
     ```mojo
-    @value
     struct Foo(Intable):
         var i: Int
 
@@ -137,7 +136,6 @@ trait IntableRaising:
     raise an error. For example:
 
     ```mojo
-    @value
     struct Foo(IntableRaising):
         var i: Int
 
@@ -174,7 +172,6 @@ trait ImplicitlyIntable(Intable):
     example:
 
     ```mojo
-    @value
     struct Foo(ImplicitlyIntable):
         var i: Int
 
@@ -203,7 +200,6 @@ trait ImplicitlyIntable(Intable):
 
 
 @lldb_formatter_wrapping_type
-@value
 @register_passable("trivial")
 struct Int(
     Absable,

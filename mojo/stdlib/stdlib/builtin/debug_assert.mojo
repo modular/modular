@@ -306,7 +306,7 @@ fn _debug_assert_msg_mem(loc: _SourceLocation, message: String):
         abort()
 
 
-@value
+@fieldwise_init
 struct _GPUThreadInfo(Writable):
     fn write_to[W: Writer](self, mut writer: W):
         writer.write(

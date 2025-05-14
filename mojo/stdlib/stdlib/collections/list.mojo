@@ -33,14 +33,14 @@ from .optional import Optional
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 struct _ListIter[
     list_mutability: Bool, //,
     T: Copyable & Movable,
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator for List.
 
     Parameters:

@@ -27,7 +27,6 @@ from utils.write import Writable
 
 
 @lldb_formatter_wrapping_type
-@value
 @register_passable("trivial")
 struct UInt(
     Indexer,

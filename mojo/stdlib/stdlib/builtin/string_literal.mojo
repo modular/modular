@@ -32,7 +32,6 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,

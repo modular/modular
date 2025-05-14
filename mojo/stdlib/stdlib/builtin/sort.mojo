@@ -29,7 +29,6 @@ from memory import Span, UnsafePointer
 alias insertion_sort_threshold = 32
 
 
-@value
 @fieldwise_init("implicit")
 struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
     var data: T
@@ -194,7 +193,6 @@ fn _delegate_small_sort[
 
 
 # FIXME (MSTDL-808): Using _Pair over Span results in 1-3% improvement
-# @value
 # struct _Pair[T: AnyType]:
 #     var ptr: UnsafePointer[T]
 #     var len: Int

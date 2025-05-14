@@ -133,8 +133,8 @@ struct ListLiteral[*Ts: Copyable & Movable](Sized, Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
-struct _VariadicListIter[type: AnyTrivialRegType]:
+@fieldwise_init
+struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Movable):
     """Const Iterator for VariadicList.
 
     Parameters:
@@ -229,7 +229,7 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
         return Self.IterType(0, self)
 
 
-@value
+@fieldwise_init
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,

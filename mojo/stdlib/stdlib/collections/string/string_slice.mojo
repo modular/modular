@@ -81,12 +81,11 @@ alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
 
 
-@value
 struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -307,8 +306,7 @@ struct CodepointSliceIter[
         return result
 
 
-@value
-struct CodepointsIter[mut: Bool, //, origin: Origin[mut]]:
+struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](Copyable, Movable):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
 
@@ -447,7 +445,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]]:
         return result
 
 
-@value
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Stringable,

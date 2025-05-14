@@ -439,7 +439,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 struct Scope(Writable, Copyable, Movable, EqualityComparable):
     """Represents memory synchronization scope levels for GPU memory operations.
 

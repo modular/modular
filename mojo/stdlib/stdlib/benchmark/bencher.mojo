@@ -30,7 +30,7 @@ from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
-@value
+@fieldwise_init
 struct BenchMetric(Copyable, Movable, Stringable, Writable):
     """Defines a benchmark throughput metric."""
 

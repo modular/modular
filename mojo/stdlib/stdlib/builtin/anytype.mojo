@@ -75,7 +75,6 @@ trait AnyType:
     Example:
 
     ```mojo
-    @value
     struct ResourceOwner(AnyType):
         var ptr: UnsafePointer[Int]
 

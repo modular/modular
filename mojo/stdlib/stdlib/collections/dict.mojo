@@ -52,14 +52,14 @@ trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
     pass
 
 
-@value
+@fieldwise_init
 struct _DictEntryIter[
     dict_mutability: Bool, //,
     K: KeyElement,
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -109,14 +109,14 @@ struct _DictEntryIter[
         return len(self.src[]) - self.seen
 
 
-@value
+@fieldwise_init
 struct _DictKeyIter[
     dict_mutability: Bool, //,
     K: KeyElement,
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -147,14 +147,14 @@ struct _DictKeyIter[
         return self.iter.__len__()
 
 
-@value
+@fieldwise_init
 struct _DictValueIter[
     dict_mutability: Bool, //,
     K: KeyElement,
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -199,7 +199,7 @@ struct _DictValueIter[
         return self.iter.__len__()
 
 
-@value
+@fieldwise_init
 struct DictEntry[K: KeyElement, V: Copyable & Movable](
     Copyable, Movable, ExplicitlyCopyable
 ):

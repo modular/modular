@@ -319,8 +319,7 @@ fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[mut=True, type, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
-@value
-struct TestCase[_sampling: Bool, _largest: Bool = True]:
+struct TestCase[_sampling: Bool, _largest: Bool = True](Copyable, Movable):
     alias sampling = _sampling
     alias largest = _largest
     var N: Int
@@ -335,16 +334,18 @@ struct TestCase[_sampling: Bool, _largest: Bool = True]:
         K: Int,
         block_size: Int,
         batch_size: Int,
+        num_blocks_per_input: OptionalReg[Int] = None,
     ):
         self.N = N
         self.K = K
         self.block_size = block_size
         self.batch_size = batch_size
-        self.num_blocks_per_input = None
+        self.num_blocks_per_input = num_blocks_per_input
 
 
-@value
-struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True]:
+struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
+    Copyable, Movable
+):
     alias sampling = _sampling
     alias largest = _largest
     var input_shape: IndexList[rank]

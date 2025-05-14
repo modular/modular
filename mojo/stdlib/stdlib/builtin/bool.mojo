@@ -37,7 +37,6 @@ trait Boolable:
     example:
 
     ```mojo
-    @value
     struct Foo(Boolable):
         var val: Bool
 
@@ -73,7 +72,6 @@ trait ImplicitlyBoolable(Boolable):
     example:
 
     ```mojo
-    @value
     struct Foo(ImplicitlyBoolable):
         var val: Bool
 
@@ -100,7 +98,6 @@ trait ImplicitlyBoolable(Boolable):
 
 
 @lldb_formatter_wrapping_type
-@value
 @register_passable("trivial")
 struct Bool(
     Comparable,

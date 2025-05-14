@@ -24,7 +24,6 @@ trait Representable:
     Here is an example:
 
     ```mojo
-    @value
     struct Dog(Representable):
         var name: String
         var age: Int
