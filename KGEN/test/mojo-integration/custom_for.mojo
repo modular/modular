@@ -40,17 +40,10 @@ struct my_iter:
         return 0
 
 
-struct MyList:
+@fieldwise_init
+struct MyList(Copyable):
     var start: UnsafePointer[Int]
     var size: Int
-
-    fn __copyinit__(out self, existing: Self):
-        self.start = existing.start
-        self.size = existing.size
-
-    fn __init__(out self, ptr: UnsafePointer[Int], size: Int):
-        self.start = ptr
-        self.size = size
 
     fn __setitem__(mut self, idx: Int, val: Int):
         var ptr = self.start + idx
