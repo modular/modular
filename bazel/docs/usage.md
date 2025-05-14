@@ -58,6 +58,13 @@ case `bazel` automatically skips building and testing them. `bazel` also
 automatically detects the current GPU hardware, so tests that are
 specific to individual GPUs can be run.
 
+## Using a different Mojo version
+
+The Mojo version in
+[`bazel/mojo.MODULE.bazel`](https://github.com/modular/modular/blob/main/bazel/mojo.MODULE.bazel)
+is automatically updated with each nightly, but can be manually replaced
+locally to use a different version if desired.
+
 ## `BUILD.bazel` file
 
 The `BUILD.bazel` files throughout the repository define how targets are
