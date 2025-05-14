@@ -85,7 +85,7 @@ struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, Movable, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -306,7 +306,9 @@ struct CodepointSliceIter[
         return result
 
 
-struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](Copyable, Movable):
+struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
+    Copyable, Movable, Sized
+):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
 
