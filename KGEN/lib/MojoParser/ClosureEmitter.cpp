@@ -764,6 +764,30 @@ getDemangledNames(ArrayRef<ParamDeclAttr> decls) {
   });
 }
 
+static FnOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands) {
+  size_t expectedNumInputs = operands.size() + 1;
+
+  for (auto candidate : structOp.getOps<FnOp>()) {
+    SpecialFunctionKind kind = candidate.getSpecialFunctionKind();
+    if (kind != SpecialFunctionKind::kInit ||
+        candidate.getBody()->getArguments().size() != expectedNumInputs)
+      continue;
+
+    bool isMatch = true;
+    for (auto [existing, proposed] :
+         llvm::zip(candidate.getFuncTypeGenerator().getArguments().slice(1),
+                   operands)) {
+      if (existing != proposed) {
+        isMatch = false;
+        break;
+      }
+    }
+    if (isMatch)
+      return candidate;
+  }
+  return {};
+}
+
 FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                StructDeclOp closureImpl,
                                                SMLoc loc) {

@@ -48,10 +48,6 @@ public:
   addMissingValueMemberStubsToStruct(ASTDecl &structDecl,
                                      bool forceGenerateDestructor = false);
 
-  /// Populate the function with a field by field copy. This will fail if the
-  /// given function does not have the expected signature.
-  LogicalResult populateMoveCopy(ASTDecl &functionDecl, bool isMove);
-
   /// Create a FnOp within the scope of the given struct and add function
   /// terminators.
   std::pair<FnOp, ASTDecl *>
@@ -72,15 +68,16 @@ public:
   /// Add an empty `__moveinit__` or `__copyinit__` stub for this struct, to be
   /// filled in later.
   FnOp synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl, bool isMove);
+  /// Populate the function with a field by field copy. This will fail if the
+  /// given function does not have the expected signature.
+  LogicalResult populateMoveCopy(ASTDecl &fnDecl, bool isMove);
+
   /// Add `copy()` method for this struct.
-  FnOp synthesizeExplicitCopy(ASTDecl &structDecl);
+  FnOp synthesizeEmptyExplicitCopy(ASTDecl &structDecl);
+  void populateExplicitCopy(ASTDecl &fnDecl);
 
   /// Add a attribute initializer method for this struct with a body.
   FnOp synthesizeFieldwiseInit(ASTDecl &structDecl);
-
-  /// Return the initializer method with the specified signature if it exists
-  /// and null otherwise. The operands type is not expected to include self.
-  FnOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
 
   /// Emit an emtpy function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.

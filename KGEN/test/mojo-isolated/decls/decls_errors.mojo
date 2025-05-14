@@ -1017,6 +1017,9 @@ struct AnyTypeMember[T: AnyType]:
 # expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable and non-movable type 'T'}}
     var value: T
 
+# expected-error @below {{cannot synthesize explicit 'copy()' for non-copyable struct 'ExpCopyable'; declare 'copy()' manually}}
+struct ExpCopyable(ExplicitlyCopyable):
+  var x: Int
 
 # Issue https://github.com/modular/mojo/issues/1675
 # Ensure @value fails gracefully in the presence of duplicate field names.

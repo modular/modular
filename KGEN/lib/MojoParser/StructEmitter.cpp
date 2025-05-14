@@ -407,85 +407,6 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
   return funcOp;
 }
 
-/// Given a function of the form
-///    fn __copyinit__(existing: MyStruct, out self: MyStruct)
-/// populate the method with the following:
-///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
-///   %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
-///   copyinit_of_type_of_field0(%targetField0, %field)
-LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
-  // This method body resolves the decl.
-  // TODO: This is because clients are directly calling this instead of having
-  // declresolution do it.
-  fnDecl.resolvedness = DeclResolvedness::body;
-
-  auto fn = cast<FnOp>(fnDecl);
-  ASTDecl *structDecl = fnDecl.getParentDecl();
-  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
-
-  // We want to populate a move but the move/copy should be a method!
-  SMLoc location = fnDecl.getLoc();
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (shared.diBuilder)
-    diScopeGuard = shared.diBuilder->pushScopeGuard(fn.getLocScope());
-  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
-      shared.translateLocation(location), fn.getBody());
-  ExprEmitter emitter(*structDecl, b);
-
-  assert(fn.getNumArguments() == 2 &&
-         "copy and move functions should have two arguments");
-  Value existingArg = fn.getBody()->getArgument(0);
-  Value selfArg = fn.getBody()->getArgument(1);
-
-  // If the value is RP trivial then we can just load and store the whole thing
-  // in one shot instead of breaking it down into fields because we know all the
-  // underlying copy/move operations are trivial.
-  // TODO: Use memcpy for memory trivial types when we have them.
-  if (structOp.isRegisterPassableTrivial()) {
-    Value value = b.create<LIT::RefLoadOp>(existingArg);
-    b.create<RefStoreOp>(value, selfArg);
-    return success();
-  }
-
-  // Otherwise, memory and register passable values are both passed by-reference
-  // so we need to copy/move them fieldwise, invoking the copy/move ctors as
-  // appropriate.
-  for (StructFieldOp fieldOp : structOp.getFieldDecls()) {
-    ASTType fieldType = fieldOp.getType();
-
-    // TODO: Add a nicer accessor.
-    auto fieldEntries = structDecl->lookupInCurrentScope(fieldOp.getNameAttr());
-    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
-    ASTDecl &fieldASTDecl = *fieldEntries[0];
-    if (failed(getDeclResolver().resolveSignature(fieldASTDecl,
-                                                  fieldASTDecl.getLoc())))
-      return failure();
-
-    // Verify that this will work so we get a tailored error message.
-    if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
-        !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
-      auto diag = emitError(fieldASTDecl.getLoc())
-                  << "cannot synthesize " << fn.getSpecialFunctionInfo().name
-                  << " because field '" << fieldOp.getName()
-                  << "' has non-copyable and non-movable type " << fieldType;
-      return failure();
-    }
-
-    auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
-    Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
-    CValue src =
-        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-    emitter.emitStoreToLValue({src, SyntheticNode(location)},
-                              MLValue(targetFieldOp), EC_AttributeRefBase);
-  }
-  SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
-  if (isMove)
-    structOp.setMoveInitAttr(ref);
-  else
-    structOp.setCopyInitAttr(ref);
-  return success();
-}
-
 /// Given a struct and a list of arguments, generate a function. For example,
 /// given {
 ///  MyStruct, "prefix", [ParamType1, ParamType2],
@@ -602,14 +523,90 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(ASTDecl &structDecl,
   return resultFn;
 }
 
-FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
-  ASTType selfType = structDecl.getTypeDeclSelf();
-  MLIRContext *ctx = this->shared.getContext();
+/// Given a function of the form
+///    fn __copyinit__(existing: MyStruct, out self: MyStruct)
+/// populate the method with the following:
+///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
+///   %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
+///   copyinit_of_type_of_field0(%targetField0, %field)
+LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
+  // This method body resolves the decl.
+  // TODO: This is because clients are directly calling this instead of having
+  // declresolution do it.
+  fnDecl.resolvedness = DeclResolvedness::body;
 
+  auto fn = cast<FnOp>(fnDecl);
+  ASTDecl *structDecl = fnDecl.getParentDecl();
+  auto structOp = cast<StructDeclOp>(structDecl);
+
+  // We want to populate a move but the move/copy should be a method!
+  SMLoc location = fnDecl.getLoc();
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(fn.getLocScope());
+  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
+      shared.translateLocation(location), fn.getBody());
+  ExprEmitter emitter(*structDecl, b);
+
+  assert(fn.getNumArguments() == 2 &&
+         "copy and move functions should have two arguments");
+  Value existingArg = fn.getBody()->getArgument(0);
+  Value selfArg = fn.getBody()->getArgument(1);
+
+  // If the value is RP trivial then we can just load and store the whole thing
+  // in one shot instead of breaking it down into fields because we know all the
+  // underlying copy/move operations are trivial.
+  // TODO: Use memcpy for memory trivial types when we have them.
+  if (structOp.isRegisterPassableTrivial()) {
+    Value value = b.create<LIT::RefLoadOp>(existingArg);
+    b.create<RefStoreOp>(value, selfArg);
+    return success();
+  }
+
+  // Otherwise, memory and register passable values are both passed by-reference
+  // so we need to copy/move them fieldwise, invoking the copy/move ctors as
+  // appropriate.
+  for (StructFieldOp fieldOp : structOp.getFieldDecls()) {
+    ASTType fieldType = fieldOp.getType();
+
+    // TODO: Add a nicer accessor.
+    auto fieldEntries = structDecl->lookupInCurrentScope(fieldOp.getNameAttr());
+    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
+    ASTDecl &fieldASTDecl = *fieldEntries[0];
+    if (failed(getDeclResolver().resolveSignature(fieldASTDecl,
+                                                  fieldASTDecl.getLoc())))
+      return failure();
+
+    // Verify that this will work so we get a tailored error message.
+    if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
+        !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
+      auto diag = emitError(fieldASTDecl.getLoc())
+                  << "cannot synthesize " << fn.getSpecialFunctionInfo().name
+                  << " because field '" << fieldOp.getName()
+                  << "' has non-copyable and non-movable type " << fieldType;
+      return failure();
+    }
+
+    auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
+    Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
+    CValue src =
+        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
+    emitter.emitStoreToLValue({src, SyntheticNode(location)},
+                              MLValue(targetFieldOp), EC_AttributeRefBase);
+  }
+  SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
+  if (isMove)
+    structOp.setMoveInitAttr(ref);
+  else
+    structOp.setCopyInitAttr(ref);
+  return success();
+}
+
+FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
   ExprEmitter emitter(structDecl, EC_Decorator);
 
-  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl);
-
+  ASTType selfType = structDecl.getTypeDeclSelf();
+  MLIRContext *ctx = this->shared.getContext();
   SmallVector<Type> argTypes;
   SmallVector<ArgConvention> argConventions;
   SmallVector<StringAttr> argNames;
@@ -659,28 +656,49 @@ FnOp StructEmitter::synthesizeExplicitCopy(ASTDecl &structDecl) {
       "copy", argTypes, argConventions, argListAttrs,
       /*resultType=*/mlirReturnType, structDecl, structDecl.getLoc());
 
+  funcDecl->resolvedness = DeclResolvedness::signature;
+  return copyFunc;
+}
+
+void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
+  auto fn = cast<FnOp>(fnDecl);
+  ASTDecl &structDecl = *fnDecl.getParentDecl();
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
+
+  ExprEmitter emitter(structDecl, EC_Decorator);
+
   // Point a `builder` at the end of the new copy() FnOp
-  emitter.builder = OpBuilder::atBlockEnd(copyFunc.getBody());
+  emitter.builder = OpBuilder::atBlockEnd(fn.getBody());
 
   // Now generate the body of the copy() method
   SyntheticNode synthNode(structDecl.getLoc());
 
-  // FIXME: Should be invoking the recursive copy() method here if the element
-  // is ExplictlyCopyable but not Copyable.
+  // If the struct is copyable, then just generate a call to the copy
+  // constructor to reduce code size.
   Value resultToReturn;
-  if (structDeclOp.isRegisterPassableTrivial()) {
-    resultToReturn = copyFunc.getArgument(0);
-  } else if (structDeclOp.isRegisterPassable()) {
-    MBValue selfArg = MBValue(copyFunc.getArgument(0));
-    resultToReturn = emitter.emitSRValue({selfArg, synthNode}, EC_ReturnValue);
+  if (structDecl.getTypeDeclSelf().isCopyable(fnDecl.getLoc(), shared)) {
+    if (structOp.isRegisterPassableTrivial()) {
+      resultToReturn = fn.getArgument(0);
+    } else if (structOp.isRegisterPassable()) {
+      MBValue selfArg = MBValue(fn.getArgument(0));
+      resultToReturn =
+          emitter.emitSRValue({selfArg, synthNode}, EC_ReturnValue);
+    } else {
+      MBValue selfArg = MBValue(fn.getArgument(0));
+      ValueDest resultSlotDest(MLValue(fn.getArgument(1)), EC_ReturnValue);
+      emitter.emitCopyOfValue({selfArg, synthNode}, resultSlotDest);
+      // resultToReturn remains null.
+    }
   } else {
-    MBValue selfArg = MBValue(copyFunc.getArgument(0));
-    ValueDest resultSlotDest(MLValue(copyFunc.getArgument(1)), EC_ReturnValue);
-    emitter.emitCopyOfValue({selfArg, synthNode}, resultSlotDest);
-    // resultToReturn remains null.
+    emitError(structDecl.getLoc())
+        << "cannot synthesize explicit 'copy()'"
+        << " for non-copyable struct " << structDecl.getTypeDeclSelf()
+        << "; declare 'copy()' manually";
   }
-  emitter.emitNormalReturn(structDeclOp.getLoc(), resultToReturn);
-  return copyFunc;
+
+  emitter.emitNormalReturn(structOp.getLoc(), resultToReturn);
+
+  fnDecl.resolvedness = DeclResolvedness::body;
 }
 
 std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
@@ -753,34 +771,9 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
   // ExplicitlyCopyable.
   // We should just remove @value.
   if (!valueInfo->copy) {
-    valueInfo->copy = synthesizeExplicitCopy(structDecl);
+    valueInfo->copy = synthesizeEmptyExplicitCopy(structDecl);
     addCopyOrMoveBuiltinTrait("ExplicitlyCopyable");
   }
 
   return valueInfo;
-}
-
-FnOp StructEmitter::findInitInStruct(StructDeclOp structOp,
-                                     ArrayRef<Type> operands) {
-  size_t expectedNumInputs = operands.size() + 1;
-
-  for (auto candidate : structOp.getOps<FnOp>()) {
-    SpecialFunctionKind kind = candidate.getSpecialFunctionKind();
-    if (kind != SpecialFunctionKind::kInit ||
-        candidate.getBody()->getArguments().size() != expectedNumInputs)
-      continue;
-
-    bool isMatch = true;
-    for (auto [existing, proposed] :
-         llvm::zip(candidate.getFuncTypeGenerator().getArguments().slice(1),
-                   operands)) {
-      if (existing != proposed) {
-        isMatch = false;
-        break;
-      }
-    }
-    if (isMatch)
-      return candidate;
-  }
-  return {};
 }
