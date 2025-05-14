@@ -35,7 +35,10 @@ what we publish.
 
 ### Language changes
 
-- `try` and `raise` now work at comptime.
+- The Mojo compiler will now synthesize `__moveinit__` and `__copyinit__` and
+  `copy()` methods for structs that conform to `Movable`, `Copyable`, and
+  `ExplicitlyCopyable` (respectively) but that do not implement the methods
+  explicitly.
 
 - A new `@fieldwise_init` decorator can be attached to structs to synthesize a
   fieldwise initializer - an `__init__` method that takes the same arguments as
@@ -43,6 +46,8 @@ what we publish.
   without having to opt into the rest of the methods that `@value` synthesizes.
   This decorator allows an optional `@fieldwise_init("implicit")` form for
   single-element structs, which marks the initializer as `@implicit`.
+
+- `try` and `raise` now work at comptime.
 
 ### Standard library changes
 

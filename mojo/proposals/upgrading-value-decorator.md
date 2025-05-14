@@ -1,6 +1,6 @@
 # Upgrading the `@value` decorator
 
-April 2025. Status: Proposed, not implemented.
+April 2025. Status: Implemented in Mojo 25.4
 
 The `@value` decorator on struct declarations were added really early in the
 evolution of Mojo as a way to bring up the language and get the lifecycle
