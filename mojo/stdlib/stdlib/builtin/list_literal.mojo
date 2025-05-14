@@ -299,9 +299,7 @@ struct VariadicListMem[
 
     alias reference_type = Pointer[element_type, origin]
     alias _mlir_ref_type = Self.reference_type._mlir_type
-    alias _mlir_type = __mlir_type[
-        `!kgen.variadic<`, Self._mlir_ref_type, `, read_mem>`
-    ]
+    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `>`]
 
     var value: Self._mlir_type
     """The underlying storage, a variadic list of references to elements of the
@@ -322,46 +320,6 @@ struct VariadicListMem[
             value: The variadic argument to construct the list with.
         """
         self.value = value
-
-    # Provide support for variadics of *mut* arguments.  The reference will
-    # automatically be inferred to be mutable, and the !kgen.variadic will have
-    # convention=mut.
-    alias _inout_variadic_type = __mlir_type[
-        `!kgen.variadic<`, Self._mlir_ref_type, `, mut>`
-    ]
-
-    @always_inline
-    @implicit
-    fn __init__(out self, value: Self._inout_variadic_type):
-        """Constructs a VariadicList from a variadic argument type.
-
-        Args:
-            value: The variadic argument to construct the list with.
-        """
-        var tmp = value
-        # We need to bitcast different argument conventions to a consistent
-        # representation.  This is ugly but effective.
-        self.value = UnsafePointer(to=tmp).bitcast[Self._mlir_type]()[]
-
-    # Provide support for variadics of *owned* arguments.  The reference will
-    # automatically be inferred to be mutable, and the !kgen.variadic will have
-    # convention=owned_in_mem.
-    alias _owned_variadic_type = __mlir_type[
-        `!kgen.variadic<`, Self._mlir_ref_type, `, owned_in_mem>`
-    ]
-
-    @always_inline
-    @implicit
-    fn __init__(out self, value: Self._owned_variadic_type):
-        """Constructs a VariadicList from a variadic argument type.
-
-        Args:
-            value: The variadic argument to construct the list with.
-        """
-        var tmp = value
-        # We need to bitcast different argument conventions to a consistent
-        # representation.  This is ugly but effective.
-        self.value = UnsafePointer(to=tmp).bitcast[Self._mlir_type]()[]
 
     @always_inline
     fn __moveinit__(out self, owned existing: Self):
