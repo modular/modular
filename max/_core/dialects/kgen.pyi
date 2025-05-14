@@ -3782,24 +3782,16 @@ class VariadicType(max._core.Type):
     !kgen.variadic<scalar<f32>>
 
     // A parameterized variadic sequence.
-    !kgen.variadic<type, owned_in_mem>
+    !kgen.variadic<type>
     ```
     """
 
     @overload
-    def __init__(
-        self,
-        element_type: max._core.Type,
-        convention: ArgConvention = ArgConvention.read,
-    ) -> None: ...
+    def __init__(self, element_type: max._core.Type) -> None: ...
     @overload
-    def __init__(
-        self, element_type: max._core.Type, convention: ArgConvention
-    ) -> None: ...
+    def __init__(self, element_type: max._core.Type) -> None: ...
     @property
     def element_type(self) -> max._core.Type | None: ...
-    @property
-    def convention(self) -> ArgConvention: ...
 
 class VariantAttr(max._core.Attribute):
     """
