@@ -2249,7 +2249,7 @@ private:
   void processValueDecorator(SMLoc decoratorLoc);
 
   /// Process the @fieldwise_init body decorator on structs.
-  void processFieldwiseInitDecorator(SMLoc decoratorLoc);
+  void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
 
   /// Get a constant symbol to a method, and return null if it is missing or
   /// something went wrong.
@@ -2367,7 +2367,8 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
 
 /// Process the @fieldwise_init body decorator on structs. 'isRequired'
 /// indicates whether it is an error to already have a fieldwise init.
-void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc) {
+void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
+                                                         bool isImplicit) {
   // Don't add one if we already have one.
   if (FnOp init = findFieldwiseInit(structDecl)) {
     auto diag = emitError(decoratorLoc, "'")
@@ -2379,7 +2380,21 @@ void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc) {
 
   // Generate the fieldwise init.
   StructEmitter structEmitter(shared);
-  structEmitter.synthesizeFieldwiseInit(structDecl);
+  auto fn = structEmitter.synthesizeFieldwiseInit(structDecl);
+  if (!fn)
+    return;
+
+  // If "implicit", check for validity and set the bit.
+  if (isImplicit) {
+    auto fieldsRange = cast<StructDeclOp>(structDecl).getFieldDecls();
+    if (std::distance(fieldsRange.begin(), fieldsRange.end()) != 1) {
+      emitError(decoratorLoc,
+                "@fieldwise_init(\"implicit\") is only valid on structs "
+                "with a single field");
+      return;
+    }
+    fn.setIsImplicitConversion(true);
+  }
 }
 
 SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
@@ -2407,10 +2422,10 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
 
 LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
                                                      StructDeclOp structOp) {
-  // @value decorator
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "fieldwise_init") {
-      processFieldwiseInitDecorator(decorator->getRangeStart());
+      processFieldwiseInitDecorator(decorator->getRangeStart(),
+                                    /*implicit*/ false);
       return success();
     }
     if (declRef->spelling == "value") {
@@ -2422,7 +2437,18 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-      if (declRef->spelling == "explicit_destroy") {
+      if (declRef->spelling == "explicit_destroy")
+        return success();
+
+      if (declRef->spelling == "fieldwise_init") {
+        if (callNode->operands.size() != 1 ||
+            !isa<StringLiteralNode>(callNode->operands.front().expr) ||
+            cast<StringLiteralNode>(callNode->operands.front().expr)
+                    ->getValue() != "implicit")
+          emitError(decorator->getRangeStart(),
+                    "@fieldwise_init only allows an \"implicit\" argument");
+        processFieldwiseInitDecorator(decorator->getRangeStart(),
+                                      /*implicit*/ true);
         return success();
       }
     }

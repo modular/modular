@@ -45,12 +45,9 @@ struct AStruct:
         self.tuple = Tuple[Int, Int8, Float32](1, 87, 123.125)
 
 
+@fieldwise_init("implicit")
 struct ParamStruct[T: AnyTrivialRegType]:
     var t: T
-
-    @implicit
-    fn __init__(out self, t: T):
-        self.t = t
 
 
 fn keep_alive[*Ts: AnyType](*args: *Ts):
