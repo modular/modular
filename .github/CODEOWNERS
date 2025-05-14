@@ -1,11 +1,23 @@
-# Codeowners for MAX repo.
+# Codeowners for modular/modular repo.
 # Every line is a file pattern that is followed by one or more code owners.
 # Order is important; the last matching pattern takes the most precedence.
 
 * @modular/max-code-reviewers
 
-# Standard Library Sources
-/mojo/stdlib/       @modular/stdlib
+# Standard Library
+/mojo/stdlib/         @modular/stdlib
+/mojo/stdlib/stdlib/gpu/host @modular/stdlib
+/mojo/stdlib/stdlib/gpu/runtime @modular/stdlib @modular/mojo-lang
+/mojo/stdlib/test/asyncrt @modular/stdlib @ehein6 @iposva
+
+# Kernel Library
+/max/max/kernels    @modular/kernels @modular/stdlib
+
+# Tracing
+/mojo/stdlib/gpu/host/_tracing.mojo @modular/stdlib @modular/kernels @ehein6 @iposva @modular/mojo-tooling
+/mojo/stdlib/gpu/profiler.mojo @modular/stdlib @modular/kernels @ehein6 @iposva @modular/mojo-tooling
+/mojo/stdlib/runtime/tracing.mojo @modular/mojo-lang @modular/mojo-tooling
+/mojo/stdlib/test/runtime/tracing.mojo @modular/mojo-lang @modular/mojo-tooling
 
 # Documentation
 /mojo/docs/         @modular/mojo-docs
@@ -15,4 +27,4 @@
 /mojo/stdlib/docs/  @modular/mojo-docs @modular/stdlib
 
 # Examples
-/examples/mojo/     @jackos
+/examples/mojo/     @jackos @arthurevans @KenJones-Modular
