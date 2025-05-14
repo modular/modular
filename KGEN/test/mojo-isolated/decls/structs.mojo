@@ -86,9 +86,8 @@ fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
   # CHECK: lit.call {{.*}}IntPair::@"__moveinit__{{.*}}({{.*}}, %aMove)
   var aMove = a^
 
-  # TODO.
-  # HECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
-  # var aExCopy = a.copy()
+  # CHECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
+  var aExCopy = a.copy()
 
   # CHECK: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}({{.*}}, %bCopy)
   var bCopy = b
@@ -96,9 +95,8 @@ fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
   # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
   var bMove = b^
 
-  # TODO.
-  # HECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
-  # var bExCopy = b.copy()
+  # CHECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
+  var bExCopy = b.copy()
 
 # ===----------------------------------------------------------------------=== #
 # Fieldwise init tests

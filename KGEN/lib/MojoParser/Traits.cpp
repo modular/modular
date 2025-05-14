@@ -79,38 +79,6 @@ getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
   return {newSignature, bindings};
 }
 
-/// Allow synthesizing default implementations of certain special functions.
-static FnOp synthesizeSpecialFunction(ASTDecl &structDecl,
-                                      StringRef methodName) {
-  StructEmitter gen(structDecl.getShared());
-
-  auto conformsToTrait = [&](StringRef traitName) {
-    auto trait = dyn_cast_or_null<TraitDeclOp>(gen.shared.lookupBuiltinTrait(
-        traitName, &structDecl, structDecl.getLoc()));
-    if (!trait)
-      return false;
-    return structDecl.doesNominalTypeConformTo(trait.bindReference(),
-                                               /*allowImplicit=*/false);
-  };
-
-  // Synthesize default implementations of special functions for well-known
-  // traits.
-  auto kind = SpecialFunctionInfo::getKind(methodName);
-  if (kind == SpecialFunctionKind::kDel && conformsToTrait("AnyType"))
-    return gen.synthesizeEmptyDtor(structDecl);
-
-  if (kind == SpecialFunctionKind::kCopyInit && conformsToTrait("Copyable"))
-    return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/false);
-
-  if (kind == SpecialFunctionKind::kMoveInit && conformsToTrait("Movable"))
-    return gen.synthesizeEmptyMoveOrCopyInit(structDecl, /*isMove=*/true);
-
-  if (methodName == "copy" && conformsToTrait("ExplicitlyCopyable"))
-    return gen.synthesizeEmptyExplicitCopy(structDecl);
-
-  return {};
-}
-
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                      std::optional<InflightDiag> &diag,
                                      WitnessTable &witnessTable) {
@@ -153,16 +121,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
     if (decls.empty() || !isa<FnOp>(decls.front())) {
-      // See if this is a method like __copyinit__ that can be synthesized on
-      // demand.
-      if (!synthesizeSpecialFunction(structDecl, name)) {
-        diag->attachNote(traitFnDecl->getLoc())
-            << "required function '" + name.str() + "' is not implemented";
-        return failure(); // Stop the outer loop.
-      }
-      // Yep, we synthesized it.
-      decls = structDecl.lookupInCurrentScope(name);
-      assert(!decls.empty() && "didn't synthesize a method");
+      diag->attachNote(traitFnDecl->getLoc())
+          << "required function '" + name.str() + "' is not implemented";
+      return failure(); // Stop the outer loop.
     }
 
     // Signature resolve the found decls first, so they can be checked.
@@ -826,19 +787,9 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       OverloadSet ov(name, impls, std::move(implBindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       auto result = ov.filterOverloadSetForValueType(
-          requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/false);
-      if (!result) {
-        // Don't error out if name is for the thunk functions that will be
-        // synthesized when conformance check happens.
-        if (synthesizeSpecialFunction(*metaTypeDecl, name))
-          continue;
-
-        // The struct does not have the specified member and we cannot
-        // synthesize it. Re-emit the error to get a diagnostic.
-        (void)ov.filterOverloadSetForValueType(
-            requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/true);
+          requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/true);
+      if (!result)
         return {};
-      }
       assert(result.getType().mlirType == requirementSig &&
              "didn't form a fn with signature of expected type");
       vtable.push_back(VTableEntryAttr::get(name, result));

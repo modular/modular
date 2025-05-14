@@ -480,8 +480,8 @@ fn bind_regpassable_required_type():
 struct RegTrivialSpecial(AnyType, Copyable, Movable):
     pass
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__copyinit__
     # CHECK: lit.fn @"__moveinit__
+    # CHECK: lit.fn @"__copyinit__
 
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
@@ -840,7 +840,7 @@ struct ChildFirst:
 # CHECK-LABEL: lit.struct.decl @RegisterPassable
 # CHECK-SAME: (!AnyType_Copyable_UnknownDestructibility_ImplicitConformance)
 @register_passable
-struct RegisterPassable:
+struct RegisterPassable(Copyable):
     # CHECK: lit.fn @"__copyinit__{{.*}}"
     fn __copyinit__(out self, existing: Self):
         pass

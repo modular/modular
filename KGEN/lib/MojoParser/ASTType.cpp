@@ -297,20 +297,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // Look for a copy constructor.
-  // FIXME: Remove this, just rely on trait conformance.
-  if (shared.typeHasMember(*typeDecl, "__copyinit__", loc))
-    return true;
-
-  // Check to see if the type conforms to Copyable.
-  if (auto copyableTrait =
-          dyn_cast_or_null<TraitDeclOp>(shared.lookupBuiltinTrait(
-              "Copyable", typeDecl, typeDecl->getLoc()))) {
-    if (typeDecl->doesNominalTypeConformTo(copyableTrait.bindReference(),
-                                           /*allowImplicit=*/false))
-      return true;
-  }
-
-  return false;
+  return shared.typeHasMember(*typeDecl, "__copyinit__", loc);
 }
 
 /// Return true if this type is movable from its own type, either because it
@@ -326,19 +313,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // Look for a move constructor.
-  // FIXME: Remove this, just rely on trait conformance.
-  if (shared.typeHasMember(*typeDecl, "__moveinit__", loc))
-    return true;
-
-  // Check to see if the type conforms to Movable.
-  if (auto movableTrait = dyn_cast_or_null<TraitDeclOp>(
-          shared.lookupBuiltinTrait("Movable", typeDecl, typeDecl->getLoc()))) {
-    if (typeDecl->doesNominalTypeConformTo(movableTrait.bindReference(),
-                                           /*allowImplicit=*/false))
-      return true;
-  }
-
-  return false;
+  return shared.typeHasMember(*typeDecl, "__moveinit__", loc);
 }
 
 /// Return true if this type is movable, either because it is trivial, a
@@ -350,12 +325,8 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   if (!typeDecl) // MLIR Types are movable.
     return true;
 
-  SMLoc loc = value.expr->getLoc();
-  if (failed(shared.declResolver->resolveBody(*typeDecl, loc)))
-    return true;
-
   // If the type is register passable at all, then it is movable.
-  if (isRegisterPassable(loc, shared))
+  if (isRegisterPassable(value.expr->getLoc(), shared))
     return true;
 
   // Check all the available candidate to see if we have one that cooperates

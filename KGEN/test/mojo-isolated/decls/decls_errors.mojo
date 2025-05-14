@@ -777,6 +777,7 @@ struct NotRegisterPassable:
 @value
 @register_passable
 struct Outer34551: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
+    # expected-error @below {{cannot synthesize __moveinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
     var _inner: NotRegisterPassable
