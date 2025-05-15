@@ -409,6 +409,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       auto b = handleSemanticTerminatorOp(op, "raise statement");
       emitRaise(b);
       op.erase();
+      doesFallThrough = false;
       return;
     }
 

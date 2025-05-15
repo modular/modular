@@ -320,6 +320,24 @@ lit.fn @if_else_return(%cond: i1) -> index {
   lit.end_fn
 }
 
+// CHECK-LABEL: lit.fn @if_else_raise
+lit.fn @if_else_raise[mut elt, mut lt](%cond: i1,
+    %error[*""]: !lit.ref<@Error, mut elt> byref_error,
+    %result[*""]: !lit.ref<none, mut lt> byref_result
+) throws -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  hlcf.if %cond {
+    lit.return %0 : i1
+    hlcf.yield
+  } else {
+    lit.call @throwing_func[mut elt, mut lt](%error, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+    lit.raise
+    hlcf.yield
+  }
+  // CHECK: kgen.unreachable
+  lit.end_fn
+}
+
 // CHECK-LABEL: lit.fn @coroutine2
 lit.fn @coroutine2() async -> index {
   %0 = index.constant 0
