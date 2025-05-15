@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["*.py"]),
+    data = [
+        "//AsyncRT:plugin_ucx",
+    ],
+    env = {
+        # TODO(GENAI-170): Make plugin directory discovery more robust and work
+        # outside of Bazel.
+        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
+    },
+    deps = [
+        "//SDK/lib/API/python/max:_core",
+    ],
+)
