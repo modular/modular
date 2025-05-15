@@ -119,11 +119,6 @@ modular_python_binding_py_library(
         file1 = "//SDK/lib/API/python/max:stubfiles/{}".format(file),
         file2 = "_core/{}".format(file),
         tags = ["stubfiles"],
-        # Disable the NIXL test on Mac only
-        target_compatible_with = select({
-            "@platforms//os:linux": [],
-            "//conditions:default": ["@platforms//:incompatible"] if file == "nixl.pyi" else [],
-        }),
     )
     for file in stubfiles
 ]
