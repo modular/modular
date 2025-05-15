@@ -897,6 +897,106 @@ _MHA_MASK_CONFIG_DICT = {
 }
 
 
+def causal_flash_attention_gpu(
+    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
+) -> TensorValue:
+    """Computes causal flash attention using GPU-optimized kernel.
+    Args:
+        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
+        scale: Scaling factor for attention scores
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        msg = (
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+        raise ValueError(msg)
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            msg = f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            raise ValueError(msg)
+
+    # Validate head dimension matches across all inputs
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        msg = (
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+        raise ValueError(msg)
+
+    return ops.custom(
+        "causal_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=q.dtype,
+                shape=q.shape,
+                device=q.device,
+            )
+        ],
+    )[0].tensor
+
+
+def null_mask_flash_attention_gpu(
+    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
+) -> TensorValue:
+    """Computes flash attention using GPU-optimized kernel.
+    Args:
+        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
+        scale: Scaling factor for attention scores
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        msg = (
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+        raise ValueError(msg)
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            msg = f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            raise ValueError(msg)
+
+    # Validate head dimension matches across all inputs
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        msg = (
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+        raise ValueError(msg)
+
+    return ops.custom(
+        "no_mask_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=q.dtype,
+                shape=q.shape,
+                device=q.device,
+            )
+        ],
+    )[0].tensor
+
+
 def flash_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,

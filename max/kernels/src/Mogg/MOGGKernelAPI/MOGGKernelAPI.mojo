@@ -154,7 +154,7 @@ from nn.kv_cache_ragged import (
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
 from nn.mha import flash_attention
-from nn.mha_mask import MaskName
+from nn.mha_mask import MaskName, CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod, AlibiScoreMod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -5742,6 +5742,149 @@ struct MaskedFlashAttentionGPU:
             mask_buffer,
             scale,
             context=ctx,
+        )
+
+
+@compiler.register("causal_flash_attention_gpu")
+struct CausalFlashAttentionGPU:
+    @staticmethod
+    fn execute[
+        target: StaticString, rank: Int
+    ](
+        output: OutputTensor[rank=rank],
+        q: InputTensor[rank=rank],
+        k: InputTensor[rank=rank],
+        v: InputTensor[rank=rank],
+        scale: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`causal_flash_attention_gpu` is a hand-fused operator which does
+        something analogous to the following list of operations.
+
+        **Step 0:
+        Transpose:
+        query_processed = transpose(query) # BSHD --> BHSD
+        key_processed = transpose(key)     # BSHD --> BHDS
+        value_processed = transpose(value) # BSHD --> BHSD
+
+        **Step 1:
+        attentionMatrix = query_processed @ key_processed
+
+        **Step 2:
+        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+
+        **Step 3:
+        # Normalize and apply masking
+        attentionMatrixNorm = attentionMatrix * scale
+
+        # Note attention_mask is HSS and auto-broadcasts
+        attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
+
+        **Step 4:
+        # Apply softmax and reproject result
+        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
+        answer = attentionMatrixSoftMax @ value_processed
+        answer = transpose(answer) # BHSD --> BSHD
+
+        Compared to the CPU patterns the notable differences are:
+        1. The transposes are part of the kernel itself
+
+        Finally, this pattern supports grouped attention patterns. That is if we
+        have G groups, then let h = H / G. Key and value are allowed to be BShD
+        in these scenarios. Both key and value must be BShD if one is. If this is
+        true the following is equivalently run before Step 0:
+
+        ** Step -1:
+        key = concat(key, ...) # concat BShD --> BSHD
+        value = concat(value, ...) # concat BShD --> BSHD
+
+        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
+        by Tri Dao et al.
+        """
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
+        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
+        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
+        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+
+        flash_attention(
+            output_buffer,
+            q_buffer,
+            k_buffer,
+            v_buffer,
+            CausalMask(),
+            IdentityScoreMod(),
+            scale,
+            ctx[],
+        )
+
+
+@compiler.register("no_mask_flash_attention_gpu")
+struct NoMaskFlashAttentionGPU:
+    @staticmethod
+    fn execute[
+        target: StaticString, rank: Int
+    ](
+        output: OutputTensor[rank=rank],
+        q: InputTensor[rank=rank],
+        k: InputTensor[rank=rank],
+        v: InputTensor[rank=rank],
+        scale: Scalar[dtype = DType.float32],
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`no_mask_flash_attention_gpu` is a hand-fused operator which does
+        something analogous to the following list of operations.
+
+        **Step 0:
+        Transpose:
+        query_processed = transpose(query) # BSHD --> BHSD
+        key_processed = transpose(key)     # BSHD --> BHDS
+        value_processed = transpose(value) # BSHD --> BHSD
+
+        **Step 1:
+        attentionMatrix = query_processed @ key_processed
+
+        **Step 2:
+        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+
+        **Step 3:
+        # Apply softmax and reproject result
+        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
+        answer = attentionMatrixSoftMax @ value_processed
+        answer = transpose(answer) # BHSD --> BSHD
+
+        Compared to the CPU patterns the notable differences are:
+        1. The transposes are part of the kernel itself
+
+        Finally, this pattern supports grouped attention patterns. That is if we
+        have G groups, then let h = H / G. Key and value are allowed to be BShD
+        in these scenarios. Both key and value must be BShD if one is. If this is
+        true the following is equivalently run before Step 0:
+
+        ** Step -1:
+        key = concat(key, ...) # concat BShD --> BSHD
+        value = concat(value, ...) # concat BShD --> BSHD
+
+        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
+        by Tri Dao et al.
+        """
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
+        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
+        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
+        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+
+        flash_attention(
+            output_buffer,
+            q_buffer,
+            k_buffer,
+            v_buffer,
+            NullMask(),
+            IdentityScoreMod(),
+            scale,
+            ctx[],
         )
 
 
