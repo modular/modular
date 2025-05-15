@@ -7625,12 +7625,12 @@ struct Struct_moe_create_indices:
         context: DeviceContextPtr,
     ) raises:
         moe_create_indices[input_type = DType.uint32, target=target](
-            managed_tensor_slice_to_ndbuffer(token_expert_order),
-            managed_tensor_slice_to_ndbuffer(expert_start_indices),
-            managed_tensor_slice_to_ndbuffer(restore_token_order),
-            managed_tensor_slice_to_ndbuffer(expert_ids),
-            managed_tensor_slice_to_ndbuffer(expert_usage_stats),
-            managed_tensor_slice_to_ndbuffer(topk_ids),
+            token_expert_order.to_layout_tensor(),
+            expert_start_indices.to_layout_tensor(),
+            restore_token_order.to_layout_tensor(),
+            expert_ids.to_layout_tensor(),
+            expert_usage_stats.to_layout_tensor(),
+            topk_ids.to_layout_tensor(),
             context,
         )
 
