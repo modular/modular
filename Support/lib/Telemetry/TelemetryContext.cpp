@@ -397,6 +397,8 @@ TelemetryContext::TelemetryContext(
   // -------- Logs --------
   // Get logs exporter config.
   httpEndpoint = settings.getValue("telemetry.exporters.logs.http_endpoint");
+  if (httpEndpoint.empty())
+    httpEndpoint = MODULAR_TELEMETRY_URL;
   filePath = settings.getValue("telemetry.exporters.logs.file_path").str();
 
   // Create log processors for each exporter.
