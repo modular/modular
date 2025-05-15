@@ -91,6 +91,8 @@ modular_py_test(
         "gpu",
         "no-sandbox",
         "requires-network",
+        # TODO(E2EOPT-239): Re-enable once less flaky
+        "manual",
     ],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
