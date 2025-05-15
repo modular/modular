@@ -184,156 +184,68 @@ fn tcgen05_ld[
     alias addr_str = "[$" + String(width) + "]"
 
     @parameter
+    fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[type, width]:
+        var r = inlined_assembly[
+            "tcgen05.ld.sync.aligned."
+            + shape_str
+            + "b.x"
+            + num_str
+            + pack_str
+            + ".b32 "
+            + output_args_str
+            + addr_str
+            + ";",
+            pack_type,
+            constraints=constraints_str,
+            has_side_effect=True,
+        ](tmem_addr)
+        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+
+    # fmt: off
+    @parameter
     if width == 1:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            _RegisterPackType[UInt32],
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
-
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32]
+            ]()
     elif width == 2:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            _RegisterPackType[UInt32, UInt32],
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
-
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32]
+            ]()
     elif width == 4:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
-
+        return  call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
+            ]()
     elif width == 8:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            _RegisterPackType[
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
-            ],
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
-
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32]
+             ]()
     elif width == 16:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            # fmt: off
-            _RegisterPackType[
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
-            ],
-            # fmt: on
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
-
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ]
+        ]()
     elif width == 32:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            # fmt: off
-            _RegisterPackType[
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
-            ],
-            # fmt: on
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
-
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ]
+        ]()
     else:
-        var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + addr_str
-            + ";",
-            # fmt: off
-            _RegisterPackType[
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
-            ],
-            # fmt: on
-            constraints=constraints_str,
-            has_side_effect=True,
-        ](tmem_addr)
-
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+            ]
+        ]()
+    # fmt: on
 
 
 @always_inline
