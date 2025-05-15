@@ -856,45 +856,33 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     return;
 
   ExprEmitter emitter(decl, EC_Type);
-  auto generateConformancesImpl = [&](ASTType type, Location loc) {
-    SyntheticNode node(shared.diags.convertLocToSMLoc(loc));
-    ASTType metatype = type.getMetaType();
-    // If this is already a trait type, then we know the value is going to be
-    // resolved to a type constant.
-    SmallVector<TypedAttr> conformances;
-    if (auto trait = dyn_cast_or_null<TraitType>(metatype)) {
-      conformances.push_back(PValue(type));
-      return conformances;
+  auto generateConformancesImpl = [&](ASTType type, Location loc) -> TypedAttr {
+    SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
+    SmallVector<VTableEntryAttr> entries;
+    // These are the trait methods that MOGG is interested in.
+    for (auto [traitName, entryName] :
+         SmallVector<std::pair<StringRef, StringRef>>{
+             {"AnyType", "__del__"}, {"Movable", "__moveinit__"}}) {
+      auto traitDecl = cast_or_null<TraitDeclOp>(
+          shared.lookupBuiltinTrait(traitName, &decl, smloc));
+      if (!traitDecl)
+        continue;
+      TraitType trait = traitDecl.bindReference();
+      FailureOr<TypedAttr> entry = getUniqueWitnessForTypeIfConforms(
+          shared, type, trait, entryName, smloc);
+      // If failed, an error will have been emitted. If empty, the type does not
+      // conform to the trait. In either case, move on to the next trait method.
+      if (failed(entry) || !*entry)
+        continue;
+      entries.push_back(VTableEntryAttr::get(
+          StringAttr::get(shared.getContext(), entryName), *entry));
     }
-    // If this is some MLIR type, generate the default trait conformances.
-    if (!metatype || isa<TypeType>(metatype)) {
-      for (StringRef traitName :
-           {"UnknownDestructibility", "AnyType", "Copyable", "Movable"}) {
-        auto traitDecl = cast_or_null<TraitDeclOp>(
-            shared.lookupBuiltinTrait(traitName, &decl, node.getLoc()));
-        if (!traitDecl)
-          continue;
-        TraitType trait = traitDecl.bindReference();
-        if (PValue result =
-                emitter.emitPValue({PValue(type), node}, EC_Trait, trait))
-          conformances.push_back(result);
-      }
-      return conformances;
-    }
-    // Otherwise, generate bindings for each explicit conformance.
-    assert(isa<StructMetaType>(metatype));
-    auto structDecl = cast<StructDeclOp>(type.getDecl(shared));
-    for (SymbolRefAttr parent : structDecl.getCanonicalTrait().getSymbols()) {
-      auto trait = TraitType::get(parent);
-      if (PValue result = emitter.emitMetaTypeToTraitConversion(
-              {PValue(type), node}, trait))
-        conformances.push_back(result);
-    }
-    return conformances;
+    return TypeParamAttr::get(type, type,
+                              VTableAttr::get(shared.getContext(), entries));
   };
   auto generateConformances = [&](ASTType type, Location loc) {
     return ParameterExprArrayAttr::get(loc.getContext(),
-                                       generateConformancesImpl(type, loc));
+                                       {generateConformancesImpl(type, loc)});
   };
 
   SmallVector<Attribute> argConformances;
