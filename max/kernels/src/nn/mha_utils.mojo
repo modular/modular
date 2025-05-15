@@ -550,7 +550,7 @@ fn dispatch_mask_and_score_mod[
     elif MaskName.CHUNKED == mask_type:
         constrained[
             local_window_size > 0,
-            "You muse specify local_window_size for ChunkedMask",
+            "You must specify local_window_size for ChunkedMask",
         ]()
         return outer_wrapper(ChunkedMask[local_window_size]())
     elif MaskName.NULL == mask_type:
@@ -558,13 +558,13 @@ fn dispatch_mask_and_score_mod[
     elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
         constrained[
             local_window_size > 0,
-            "You muse specify local_window_size for SlidingWindowCausalMask",
+            "You must specify local_window_size for SlidingWindowCausalMask",
         ]()
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
         constrained[
             local_window_size > 0,
-            "You muse specify local_window_size for ChunkedCausalMask",
+            "You must specify local_window_size for ChunkedCausalMask",
         ]()
         return outer_wrapper(ChunkedCausalMask[local_window_size]())
     else:
@@ -607,7 +607,7 @@ fn _dispatch_score_mod[
     @parameter
     if score_mod_type == AlibiScoreMod.name_str:
         constrained[
-            num_heads > 0, "You muse specify num_heads for AlibiScoreMod"
+            num_heads > 0, "You must specify num_heads for AlibiScoreMod"
         ]()
         return wrapper(AlibiScoreMod[num_heads]())
     elif score_mod_type == IdentityScoreMod.name_str:
