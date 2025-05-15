@@ -1503,7 +1503,7 @@ struct DeviceFunction[
     var _handle: _DeviceFunctionPtr
     """Internal handle to the compiled device function."""
 
-    var _func_impl: Info[func_type, func]
+    var _func_impl: Info[func_type, func, target]
     """Compilation information for the function."""
 
     fn __copyinit__(out self, existing: Self):

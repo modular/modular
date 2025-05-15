@@ -59,7 +59,7 @@ fn _compile_code[
     compile_options: StaticString = HardwareInfo.from_target[
         target
     ]().compile_options,
-]() -> Info[func_type, func]:
+]() -> Info[func_type, func, target]:
     return compile_info[
         func,
         emission_kind=emission_kind,
