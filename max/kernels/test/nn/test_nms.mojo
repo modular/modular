@@ -13,7 +13,7 @@
 
 from collections import List
 
-from buffer import NDBuffer
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from memory import UnsafePointer
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
@@ -41,23 +41,31 @@ struct BoxCoords[type: DType]:
         self.x2 = x2
 
 
+alias unknown_layout_3d = Layout.row_major(
+    UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+)
+
+
 fn fill_boxes[
     type: DType
-](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> NDBuffer[
-    type, 3, MutableAnyOrigin
+](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> LayoutTensor[
+    type, unknown_layout_3d, MutableAnyOrigin
 ]:
     var num_boxes = len(box_list) // batch_size
     var shape = IndexList[3](batch_size, num_boxes, 4)
     var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
-    var boxes = NDBuffer[type, 3](storage, shape)
+    var boxes = LayoutTensor[type, unknown_layout_3d](
+        storage.origin_cast[True, MutableAnyOrigin](),
+        RuntimeLayout[unknown_layout_3d].row_major(shape),
+    )
     for i in range(len(box_list)):
         var coords = linear_offset_to_coords(
             i, IndexList[2](batch_size, num_boxes)
         )
-        boxes[Index(coords[0], coords[1], 0)] = box_list[i].y1
-        boxes[Index(coords[0], coords[1], 1)] = box_list[i].x1
-        boxes[Index(coords[0], coords[1], 2)] = box_list[i].y2
-        boxes[Index(coords[0], coords[1], 3)] = box_list[i].x2
+        boxes[coords[0], coords[1], 0] = box_list[i].y1
+        boxes[coords[0], coords[1], 1] = box_list[i].x1
+        boxes[coords[0], coords[1], 2] = box_list[i].y2
+        boxes[coords[0], coords[1], 3] = box_list[i].x2
 
     return boxes
 
@@ -78,15 +86,18 @@ fn fill_scores[
     type: DType
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[type]]
-) -> NDBuffer[type, 3, MutableAnyOrigin]:
+) -> LayoutTensor[type, unknown_layout_3d, MutableAnyOrigin]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
     var shape = IndexList[3](batch_size, num_classes, num_boxes)
     var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
-    var scores = NDBuffer[type, 3](storage, shape)
+    var scores = LayoutTensor[type, unknown_layout_3d](
+        storage.origin_cast[True, MutableAnyOrigin](),
+        RuntimeLayout[unknown_layout_3d].row_major(shape),
+    )
     for i in range(len(scores_list)):
         var coords = linear_offset_to_coords(i, shape)
-        scores[coords] = scores_list[i]
+        scores[coords[0], coords[1], coords[2]] = scores_list[i]
 
     return scores
 
@@ -115,7 +126,14 @@ fn test_case[
     )
     var idxs_shape = IndexList[2](shape[0], shape[1])
     var idxs_storage = UnsafePointer[Int64].alloc(idxs_shape.flattened_length())
-    var selected_idxs = NDBuffer[DType.int64, 2](idxs_storage, idxs_shape)
+    var selected_idxs = LayoutTensor[
+        DType.int64, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        idxs_storage,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            idxs_shape
+        ),
+    )
     non_max_suppression(
         boxes,
         scores,
@@ -125,7 +143,7 @@ fn test_case[
         score_threshold,
     )
 
-    for i in range(selected_idxs.dim(0)):
+    for i in range(Int(selected_idxs.runtime_layout.shape[0])):
         print(selected_idxs[i, 0], end="")
         print(",", end="")
         print(selected_idxs[i, 1], end="")
@@ -134,9 +152,9 @@ fn test_case[
         print(",", end="")
         print("")
 
-    boxes.data.free()
-    scores.data.free()
-    selected_idxs.data.free()
+    boxes.ptr.free()
+    scores.ptr.free()
+    selected_idxs.ptr.free()
 
 
 fn main():

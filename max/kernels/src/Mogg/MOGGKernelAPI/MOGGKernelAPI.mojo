@@ -4308,9 +4308,9 @@ struct NonMaximumSupression:
         var score_threshold_float = score_threshold
 
         non_max_suppression(
-            managed_tensor_slice_to_ndbuffer(boxes),
-            managed_tensor_slice_to_ndbuffer(scores),
-            managed_tensor_slice_to_ndbuffer(output),
+            boxes.to_layout_tensor(),
+            scores.to_layout_tensor(),
+            output.to_layout_tensor(),
             max_output_boxes_int,
             iou_threshold_float,
             score_threshold_float,
@@ -4331,8 +4331,8 @@ struct NonMaximumSupression:
         var score_threshold_float = score_threshold
 
         return non_max_suppression_shape_func(
-            managed_tensor_slice_to_ndbuffer(boxes),
-            managed_tensor_slice_to_ndbuffer(scores),
+            boxes.to_layout_tensor(),
+            scores.to_layout_tensor(),
             max_output_boxes_int,
             iou_threshold_float,
             score_threshold_float,

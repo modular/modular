@@ -14,7 +14,7 @@
 from collections import List
 from math import iota
 
-from buffer import NDBuffer
+from layout import LayoutTensor, Layout, RuntimeTuple
 from memory import Span, UnsafePointer
 
 from utils import IndexList
@@ -62,36 +62,39 @@ fn _get_bounding_box[
 ](
     batch_size: Int,
     box_idx: Int,
-    boxes: NDBuffer[type, 3],
-) -> BoundingBox[
-    type
-]:
-    var y1 = boxes[batch_size, box_idx, 0]
-    var x1 = boxes[batch_size, box_idx, 1]
-    var y2 = boxes[batch_size, box_idx, 2]
-    var x2 = boxes[batch_size, box_idx, 3]
+    boxes: LayoutTensor[type, **_],
+) -> BoundingBox[type]:
+    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
+    var y1 = boxes[batch_size, box_idx, 0][0]
+    var x1 = boxes[batch_size, box_idx, 1][0]
+    var y2 = boxes[batch_size, box_idx, 2][0]
+    var x2 = boxes[batch_size, box_idx, 3][0]
     return BoundingBox(y1, x1, y2, x2)
 
 
 fn non_max_suppression[
     type: DType
 ](
-    boxes: NDBuffer[type, 3],
-    scores: NDBuffer[type, 3],
-    output: NDBuffer[mut=True, DType.int64, 2],
+    boxes: LayoutTensor[type, **_],
+    scores: LayoutTensor[type, **_],
+    output: LayoutTensor[mut=True, DType.int64, **_],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
 ):
     """Buffer semantic overload."""
+    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
+    constrained[scores.rank == 3, "scores must be of rank 3"]()
+    constrained[output.rank == 2, "output must be of rank 2"]()
+
     var pred_count = 0
 
     @parameter
     @always_inline
     fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
-        output[Index(pred_count, 0)] = batch_idx
-        output[Index(pred_count, 1)] = class_idx
-        output[Index(pred_count, 2)] = box_idx
+        output[pred_count, 0] = batch_idx
+        output[pred_count, 1] = class_idx
+        output[pred_count, 2] = box_idx
         pred_count += 1
 
     non_max_suppression[type, store_to_outputs](
@@ -106,14 +109,17 @@ fn non_max_suppression[
 fn non_max_suppression_shape_func[
     type: DType
 ](
-    boxes: NDBuffer[type, 3],
-    scores: NDBuffer[type, 3],
+    boxes: LayoutTensor[type, **_],
+    scores: LayoutTensor[type, **_],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
 ) -> IndexList[2]:
     """Overload to compute the output shape. Can be removed once the graph compiler
     supports value semantic kernels that allocate their own output."""
+    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
+    constrained[scores.rank == 3, "scores must be of rank 3"]()
+
     var box_pred_count: Int64 = 0
 
     @parameter
@@ -136,31 +142,36 @@ fn non_max_suppression[
     type: DType,
     func: fn (Int64, Int64, Int64) capturing [_] -> None,
 ](
-    boxes: NDBuffer[type, 3],
-    scores: NDBuffer[type, 3],
+    boxes: LayoutTensor[type, **_],
+    scores: LayoutTensor[type, **_],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
     """
+    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
+    constrained[scores.rank == 3, "scores must be of rank 3"]()
 
-    var batch_size = boxes.dim(0)
-    var num_boxes = boxes.dim(1)
-    var num_classes = scores.dim(1)
+    var batch_size = Int(boxes.runtime_layout.shape[0])
+    var num_boxes = Int(boxes.runtime_layout.shape[1])
+    var num_classes = Int(scores.runtime_layout.shape[1])
 
     debug_assert(
-        boxes.dim(2) == 4,
+        Int(boxes.runtime_layout.shape[2]) == 4,
         (
             "boxes must be specified with the 2D coords representing the"
             " diagonal corners"
         ),
     )
     debug_assert(
-        boxes.dim(0) == scores.dim(0), "dim 0 of boxes and scores must be equal"
+        Int(boxes.runtime_layout.shape[0])
+        == Int(scores.runtime_layout.shape[0]),
+        "dim 0 of boxes and scores must be equal",
     )
     debug_assert(
-        boxes.dim(1) == scores.dim(2),
+        Int(boxes.runtime_layout.shape[1])
+        == Int(scores.runtime_layout.shape[2]),
         "boxes and scores must contain the same number of boxes",
     )
 
@@ -178,7 +189,10 @@ fn non_max_suppression[
             # this happens when:
             #   1. score does not meet score threshold
             #   2. iou with an existing prediction is above the IOU threshold
-            var per_class_scores_ptr = scores._offset(Index(b, c, 0))
+            var offset = scores.runtime_layout(
+                RuntimeTuple[scores.layout.shape](b, c, 0)
+            )
+            var per_class_scores_ptr = scores.ptr.offset(offset)
 
             # filter so that we only consider scores above the threshold
             # reduces the number of box_idxs to sort
