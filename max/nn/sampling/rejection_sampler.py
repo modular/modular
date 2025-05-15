@@ -129,15 +129,13 @@ class RejectionSampler(nn.Module):
                     dtype=DType.float32,
                     device=DeviceRef.CPU(),
                 ),
-                ops.gather(target_logits, rejected_offsets, axis=0).to(
-                    DeviceRef.CPU()
-                ),
+                ops.gather(target_logits, rejected_offsets, axis=0),
             ],
             [
                 TensorType(
                     DType.int64,
                     Shape((Dim("batch_size"), Dim(1))),
-                    device=DeviceRef.CPU(),
+                    device=self.device,
                 )
             ],
         )[0]

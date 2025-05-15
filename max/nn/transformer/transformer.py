@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Callable, TypeVar, cast
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import TensorValue, TensorValueLike, ops
 
 from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
@@ -164,7 +164,7 @@ class Transformer(Module):
                 0,
                 -1,
                 out_dim="return_n_logits_range",
-                device=DeviceRef.CPU(),
+                device=h.device,
                 dtype=DType.int64,
             )
             offsets = (
@@ -180,7 +180,7 @@ class Transformer(Module):
                 TensorValue(last_indices.shape[0]) + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
-                device=DeviceRef.CPU(),
+                device=h.device,
                 dtype=DType.int64,
             )
         elif self.return_logits == ReturnLogits.ALL:
