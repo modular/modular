@@ -222,7 +222,7 @@ for more details.
 
 #### Fork and clone the repo
 
-Go to the [MAX repo](https://github.com/modular/modular) and click the fork
+Go to the [modular repo](https://github.com/modular/modular) and click the fork
 button:
 
 ![Create Fork](stdlib/docs/images/create-fork.png)
@@ -230,14 +230,14 @@ button:
 Clone your forked repo locally with the command:
 
 ```bash
-git clone git@github.com:[your-username]/max.git
-cd max/mojo
+git clone git@github.com:[your-username]/modular.git
+cd modular
 ```
 
 Add the upstream remote and fetch it:
 
 ```bash
-git remote add upstream git@github.com:modular/max.git
+git remote add upstream git@github.com:modular/modular.git
 git fetch upstream
 ```
 
