@@ -81,18 +81,13 @@ fn bitcast[
     )
 
 
-alias _uint1 = DType(__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`)
-alias _uint2 = DType(__mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`)
-alias _uint4 = DType(__mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`)
-
-
 @always_inline("builtin")
 fn _uint(n: Int) -> DType:
     # fmt: off
     return (
-        _uint1 if n == 1 else
-        _uint2 if n == 2 else
-        _uint4 if n == 4 else
+        DType._uint1 if n == 1 else
+        DType._uint2 if n == 2 else
+        DType._uint4 if n == 4 else
         DType.uint8 if n == 8 else
         DType.uint16 if n == 16 else
         DType.uint32 if n == 32 else
@@ -107,9 +102,9 @@ fn _uint(n: Int) -> DType:
 fn _llvm_bitwidth(dtype: DType) -> Int:
     # fmt: off
     return (
-        1 if dtype is _uint1 else
-        2 if dtype is _uint2 else
-        4 if dtype is _uint4 else
+        1 if dtype is DType._uint1 else
+        2 if dtype is DType._uint2 else
+        4 if dtype is DType._uint4 else
         8 if dtype is DType.uint8 else
         16 if dtype is DType.uint16 else
         32 if dtype is DType.uint32 else
