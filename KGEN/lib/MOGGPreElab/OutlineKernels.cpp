@@ -79,6 +79,8 @@ private:
     SmallVector<Operation *> opsToClone;
     ArrayRef<Type> returnTypes;
 
+    // Look for the lambda.
+    KGEN::ParamDeclareRegionOp elemwiseBodyLambda = nullptr;
     // If this is elementwise outline just the elementwise.
     if (elementwiseOp) {
       // For DPS it's not the last argument since an extra StaticTensorSpec
@@ -86,22 +88,20 @@ private:
       TypedAttr elemwiseLambda = elementwiseOp.getParamValues()[2];
       ParamDeclRefAttr asParam = cast<ParamDeclRefAttr>(elemwiseLambda);
 
-      // Look for the lambda.
-      KGEN::ParamDeclareRegionOp bodyLambda = nullptr;
       for (auto lambda : gen.getOps<KGEN::ParamDeclareRegionOp>()) {
         if (lambda.getParamDecl().getName() == asParam.getName()) {
-          assert(bodyLambda == nullptr);
-          bodyLambda = lambda;
+          assert(elemwiseBodyLambda == nullptr);
+          elemwiseBodyLambda = lambda;
         }
       }
-      assert(bodyLambda != nullptr);
+      assert(elemwiseBodyLambda != nullptr);
 
       // Clone the body
-      for (Operation &op : bodyLambda.getOps())
+      for (Operation &op : elemwiseBodyLambda.getOps())
         if (shouldOutlinefromElemwiseBody(symTab, &op))
           opsToClone.push_back(&op);
 
-      returnTypes = bodyLambda.getFunctionType().getResults();
+      returnTypes = elemwiseBodyLambda.getFunctionType().getResults();
     } else {
       for (Operation &op : gen.getOps()) {
         // Don't include the input / output lambdas in the cloning. These are
@@ -198,9 +198,24 @@ private:
     for (Operation *op : opsToClone)
       op->walk(identifyInputParamsAndValues);
 
+    auto outlinedInputs = usesFromAbove.takeVector();
+    if (elemwiseBodyLambda) {
+      // Canonicalize the outlined function such that indices is always present
+      // and put at the last.
+      assert(elemwiseBodyLambda.getBody()->getNumArguments() == 1);
+      auto indices = elemwiseBodyLambda.getBody()->getArgument(0);
+      if (auto it = llvm::find(outlinedInputs, indices);
+          it != outlinedInputs.end()) {
+        outlinedInputs.erase(it);
+        outlinedInputs.push_back(indices);
+      } else {
+        outlinedInputs.push_back(indices);
+        walker.walk(indices.getType());
+      }
+    }
+
     // Translate the input params / values into types needed to build the
     // signature.
-    SmallVector<Type> inputArgTypes;
     SmallVector<KGEN::ParamDeclAttr> asDecls;
     SmallVector<KGEN::ParamDeclRefAttr> paramsAsArgument;
     SmallVector<TypedAttr> paramArgs;
@@ -210,15 +225,13 @@ private:
       paramArgs.push_back(p);
     }
 
-    inputArgTypes.reserve(usesFromAbove.size());
-    for (Value v : usesFromAbove)
-      inputArgTypes.push_back(v.getType());
-
     OpBuilder builder{ctx};
     builder.setInsertionPoint(gen);
 
     // Create the outlined function to call.
-    auto newFuncType = FunctionType::get(ctx, inputArgTypes, returnTypes);
+    auto newFuncType = FunctionType::get(
+        ctx, ValueRange(outlinedInputs).getTypes(), returnTypes);
+
     FuncTypeGeneratorType sigType =
         FuncTypeGeneratorType::remapToFuncTypeGenerator(
             asDecls, newFuncType,
@@ -259,7 +272,7 @@ private:
     IRMapping mapper;
 
     // Pass all the original arguments to the kernel.
-    for (Value v : usesFromAbove) {
+    for (Value v : outlinedInputs) {
       Value newArg = block.addArgument(v.getType(), v.getLoc());
       mapper.map(v, newArg);
     }
@@ -293,8 +306,8 @@ private:
     // Create the KGEN parameter bindings. I.E the <> "template" parameters.
     // Note this is empty as we expect all parameters to be bound in the above
     // sig.
-    auto callOp = builder.create<KGEN::CallOp>(
-        outlinedFunction.getLoc(), symbol, usesFromAbove.getArrayRef());
+    auto callOp = builder.create<KGEN::CallOp>(outlinedFunction.getLoc(),
+                                               symbol, outlinedInputs);
 
     builder.create<KGEN::ReturnOp>(gen.getLoc(), callOp->getResults());
   }
