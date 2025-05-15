@@ -14,7 +14,6 @@
 import asyncio
 import ctypes
 import logging
-import math
 import multiprocessing
 import os
 import signal
@@ -351,8 +350,8 @@ def _create_decode_scheduler(
 
     # Initialize Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
-        max_batch_size_tg=pipeline_config.token_generation.size,
-        max_forward_steps_tg=pipeline_config.token_generation.max_forward_steps,
+        max_batch_size_tg=pipeline_config.max_batch_size_tg,
+        max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
     )
 
     # Retrieve the KV Cache, failing if KV Cache is not enabled.
@@ -399,36 +398,18 @@ def _create_prefill_scheduler(
     # Create zmq Context
     zmq_ctx = zmq.Context(io_threads=2)
 
-    # Initialize Scheduler Config
-    if pipeline_config.context_encoding:
-        max_batch_size_ce = pipeline_config.context_encoding.size
-        target_tokens_per_batch_ce = (
-            pipeline_config.context_encoding.target_sum_seq_len
-        )
-        if math.isclose(pipeline_config.context_encoding.timeout, 0.0):
-            batch_timeout = None
-        else:
-            batch_timeout = pipeline_config.context_encoding.timeout
+    # Create Scheduler Config
+    if pipeline_config.target_tokens_per_batch_ce is None:
+        target_tokens_per_batch_ce = 4096
     else:
-        max_batch_size_ce = pipeline_config.token_generation.size
-        target_tokens_per_batch_ce = (
-            pipeline_config.token_generation.target_sum_seq_len
-        )
-        batch_timeout = None
+        target_tokens_per_batch_ce = pipeline_config.target_tokens_per_batch_ce
 
-    if target_tokens_per_batch_ce is None:
-        scheduler_config = PrefillSchedulerConfig(
-            max_batch_size_ce=max_batch_size_ce,
-            batch_timeout=batch_timeout,
-            enable_chunked_prefill=pipeline_config.token_generation.enable_chunked_prefill,
-        )
-    else:
-        scheduler_config = PrefillSchedulerConfig(
-            max_batch_size_ce=max_batch_size_ce,
-            target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-            batch_timeout=batch_timeout,
-            enable_chunked_prefill=pipeline_config.token_generation.enable_chunked_prefill,
-        )
+    scheduler_config = PrefillSchedulerConfig(
+        max_batch_size_ce=pipeline_config.max_batch_size_ce,
+        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        batch_timeout=pipeline_config.batch_timeout,
+        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+    )
 
     # Retrieve the KV Cache, failing if KV Cache is not enabled.
     if (
@@ -469,38 +450,17 @@ def _create_token_generation_scheduler(
     queues: Mapping[str, Any],
     zmq_ctx: zmq.Context,
 ) -> TokenGenerationScheduler:
-    config = pipeline_config
-    max_batch_size_tg = config.token_generation.size
-    max_forward_steps_tg = config.token_generation.max_forward_steps
-    target_tokens_per_batch_tg = config.token_generation.target_sum_seq_len
-    enable_chunked_prefill = config.token_generation.enable_chunked_prefill
-    enable_in_flight_batching = (
-        config.token_generation.enable_in_flight_batching
-    )
-    if config.context_encoding:
-        max_batch_size_ce = config.context_encoding.size
-        max_forward_steps_ce = config.context_encoding.max_forward_steps
-        target_tokens_per_batch_ce = config.context_encoding.target_sum_seq_len
-        if math.isclose(config.context_encoding.timeout, 0.0):
-            batch_timeout = None
-        else:
-            batch_timeout = config.context_encoding.timeout
-    else:
-        max_batch_size_ce = max_batch_size_tg
-        max_forward_steps_ce = max_forward_steps_tg
-        target_tokens_per_batch_ce = target_tokens_per_batch_tg
-        batch_timeout = None
-
+    # Create Scheduler Config
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
-        max_forward_steps_tg=max_forward_steps_tg,
-        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
-        max_batch_size_ce=max_batch_size_ce,
-        max_forward_steps_ce=max_forward_steps_ce,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        batch_timeout=batch_timeout,
-        enable_chunked_prefill=enable_chunked_prefill,
-        enable_in_flight_batching=enable_in_flight_batching,
+        max_batch_size_tg=pipeline_config.max_batch_size_tg,
+        max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
+        target_tokens_per_batch_tg=pipeline_config.target_tokens_per_batch_tg,
+        max_batch_size_ce=pipeline_config.max_batch_size_ce,
+        max_forward_steps_ce=pipeline_config.max_forward_steps_ce,
+        target_tokens_per_batch_ce=pipeline_config.target_tokens_per_batch_ce,
+        batch_timeout=pipeline_config.batch_timeout,
+        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+        enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
     )
 
     # TODO E2EOPT-190: Grab paged_manager from SpeculativeDecodingTextGenerationPipeline

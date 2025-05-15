@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import signal
 from collections.abc import AsyncGenerator
@@ -83,6 +84,59 @@ class TokenGeneratorPipelineConfig:
     token_generation: BatchQueueConfig
     context_encoding: Optional[BatchQueueConfig] = None
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
+
+    @property
+    def max_batch_size_tg(self) -> int:
+        return self.token_generation.size
+
+    @property
+    def max_batch_size_ce(self) -> int:
+        if self.context_encoding:
+            return self.context_encoding.size
+
+        return self.token_generation.size
+
+    @property
+    def max_forward_steps_tg(self) -> int:
+        return self.token_generation.max_forward_steps
+
+    @property
+    def max_forward_steps_ce(self) -> int:
+        if self.context_encoding:
+            return self.context_encoding.max_forward_steps
+
+        return self.token_generation.max_forward_steps
+
+    @property
+    def target_tokens_per_batch_tg(self) -> Optional[int]:
+        return self.token_generation.target_sum_seq_len
+
+    @property
+    def target_tokens_per_batch_ce(self) -> Optional[int]:
+        if self.context_encoding:
+            return self.context_encoding.target_sum_seq_len
+
+        return self.token_generation.target_sum_seq_len
+
+    @property
+    def enable_chunked_prefill(self) -> bool:
+        return self.token_generation.enable_chunked_prefill
+
+    @property
+    def enable_in_flight_batching(self) -> bool:
+        return self.token_generation.enable_in_flight_batching
+
+    @property
+    def batch_timeout(self) -> Optional[float]:
+        if self.context_encoding:
+            timeout = self.context_encoding.timeout
+        else:
+            timeout = self.token_generation.timeout
+
+        if math.isclose(timeout, 0.0):
+            return None
+
+        return timeout
 
     @classmethod
     def no_cache(
