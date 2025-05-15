@@ -4,7 +4,6 @@ load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modula
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["_core.cpp"],
-    declare_py_library = False,
     module_name = "_core",
     nanobind_deps = [
         "//SDK/lib/API/python/max/_core/src:modules",
