@@ -241,8 +241,8 @@ def test_latent_attention_prefill(
     torch.testing.assert_close(
         torch_output,
         max_output,
-        rtol=1e-2,
-        atol=1e-2,
+        rtol=5e-4,
+        atol=5e-4,
     )
 
 
@@ -265,8 +265,8 @@ def test_latent_attention_decode(
     torch.testing.assert_close(
         torch_output,
         max_output,
-        rtol=1e-3,
-        atol=2e-3,
+        rtol=5e-4,
+        atol=5e-4,
     )
 
 
