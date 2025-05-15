@@ -399,9 +399,9 @@ fn _matmul_gpu[
     )
     # fmt: off
     # Require Static K, N in A, B, C
-    alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
-                                        and a_shape.has_value[1]() \
-                                        and c_shape.has_value[1]()
+    alias has_static_NK = b_shape.all_known[2]() \
+                      and a_shape.has_value[1]() \
+                      and c_shape.has_value[1]()
     # fmt: on
 
     @parameter
@@ -414,12 +414,14 @@ fn _matmul_gpu[
             _trace_description=_trace_description,
         ](c, a, b, ctx)
 
+    # Dispatch for FP8
     @parameter
     if (
         (a_type is DType.float8_e4m3fn)
         and a_type == b_type
         and ctx.device_info is H100
         and transpose_b
+        and has_static_NK
     ):
 
         @parameter
@@ -609,7 +611,7 @@ fn _matmul_gpu[
         matmul_supported_format
         and has_accelerator()
         and use_tensor_core
-        and multistage_gemm_supported_shape
+        and has_static_NK
     ):
         if multi_gemm_cond:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
