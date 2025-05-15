@@ -15,7 +15,7 @@
 from testing import assert_equal
 
 
-@value
+@fieldwise_init
 struct Dog(Representable):
     var name: String
     var age: Int
@@ -29,7 +29,7 @@ def test_explicit_conformance():
     assert_equal(repr(dog), "Dog(name='Fido', age=3)")
 
 
-@value
+@fieldwise_init
 struct Cat:
     var name: String
     var age: Int

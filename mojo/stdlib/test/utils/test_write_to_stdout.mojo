@@ -21,7 +21,7 @@ fn main() raises:
     test_write_to_stdout()
 
 
-@value
+@fieldwise_init
 struct Point(Writable):
     var x: Int
     var y: Int

@@ -388,13 +388,9 @@ def test_dict_update_empty_new():
     assert_equal(len(orig), 2)
 
 
-@value
+@fieldwise_init("implicit")
 struct DummyKey(KeyElement):
     var value: Int
-
-    @implicit
-    fn __init__(out self, value: Int):
-        self.value = value
 
     fn __init__(out self, *, other: Self):
         self = other

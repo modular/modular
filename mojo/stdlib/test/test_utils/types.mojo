@@ -236,8 +236,8 @@ struct MoveCopyCounter(Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct DelRecorder(ExplicitlyCopyable):
+@fieldwise_init
+struct DelRecorder(ExplicitlyCopyable, Copyable, Movable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
@@ -249,7 +249,7 @@ struct DelRecorder(ExplicitlyCopyable):
         self.destructor_counter[].append(self.value)
 
     fn copy(self) -> Self:
-        return self
+        return DelRecorder(other=self)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -257,7 +257,7 @@ struct DelRecorder(ExplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
     Copyable & Movable
 ):
@@ -308,8 +308,8 @@ struct DelCounter(Copyable, Movable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct AbortOnDel:
+@fieldwise_init
+struct AbortOnDel(Copyable, Movable):
     var value: Int
 
     fn __del__(owned self):
@@ -321,7 +321,7 @@ struct AbortOnDel:
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct CopyCountedStruct(Copyable, Movable):
     var counter: CopyCounter
     var value: String
@@ -341,7 +341,7 @@ struct CopyCountedStruct(Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct AbortOnCopy(Copyable, ExplicitlyCopyable):
     fn __copyinit__(out self, other: Self):
         abort("We should never implicitly copy AbortOnCopy")

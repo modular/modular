@@ -458,6 +458,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     ExplicitlyCopyable,
     EqualityComparable,
     Hashable,
+    _HashableWithHasher,
     KeyElement,
     PathLike,
     FloatableRaising,

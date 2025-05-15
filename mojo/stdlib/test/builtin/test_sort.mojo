@@ -483,7 +483,7 @@ fn test_sort_stress() raises:
         test[_lt, _leq](length)
 
 
-@value
+@fieldwise_init
 struct MyStruct(Copyable, Movable):
     var val: Int
 
@@ -535,7 +535,7 @@ def test_sort_strings():
     assert_sorted_string(strings)
 
 
-@value
+@fieldwise_init
 struct Person(Copyable, Movable, Comparable):
     var name: String
     var age: Int
@@ -598,7 +598,8 @@ fn test_sort_empty_comparable_elements_list() raises:
     assert_true(len(person_list) == 0)
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct IntPair:
     var x: Int
     var idx: Int
