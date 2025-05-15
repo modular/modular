@@ -491,8 +491,8 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
-                           ParserParameterEvaluator &traitAliasReplacer,
-                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
+                           ParserParameterEvaluator *traitAliasReplacer,
+                           const DenseMap<StringAttr, TypedAttr> *aliasValues,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
@@ -539,27 +539,30 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   //         fn bork(self) -> SIMD[int]: ...
 
   // bork's `T` is a regular paramRef, we use traitAliasReplacer to replace it.
-  signature = traitAliasReplacer.replace(signature);
+  if (traitAliasReplacer)
+    signature = traitAliasReplacer->replace(signature);
 
   // However, zork's `Self.T` is different, like: get_vtable_entry(Self, "T").
   // And after the first step, that Self is actually the struct, so the
   // requirementFn is really more like: get_vtable_entry(MyStruct, "T").
   // We'll manually replace those entire get_vtable_entry calls.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
-    if (paramOp.getOpcode() == POC::GetVTableEntry &&
-        paramOp.getOperand(0) == PValue(newSelfType).get()) {
-      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
-      // The vtable entries have type !kgen.string, but the entries from the
-      // trait decl have a StringAttr with no type.  Reunique them to look up.
-      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
-      auto iter = aliasValues.find(aliasName);
-      if (iter != aliasValues.end())
-        return iter->second;
-    }
-    return paramOp;
-  });
-  signature = cast<FnTypeGeneratorType>(replacer.replace(signature));
+  if (aliasValues) {
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
+      if (paramOp.getOpcode() == POC::GetVTableEntry &&
+          paramOp.getOperand(0) == PValue(newSelfType).get()) {
+        auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
+        // The vtable entries have type !kgen.string, but the entries from the
+        // trait decl have a StringAttr with no type.  Reunique them to look up.
+        aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
+        auto iter = aliasValues->find(aliasName);
+        if (iter != aliasValues->end())
+          return iter->second;
+      }
+      return paramOp;
+    });
+    signature = cast<FnTypeGeneratorType>(replacer.replace(signature));
+  }
 
   // At this point, signature's `self` argument's type is the struct or
   // trait.  For example when binding Self down to some "MTT: Movable", we have:
@@ -580,6 +583,76 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
       /*emitErrorFn=*/{}, &declResolver.shared.getEvaluationContext());
 
   return signature;
+}
+
+FailureOr<GetWitnessAttr>
+LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
+                                       TraitType trait, StringRef entryName,
+                                       SMLoc errorLoc) {
+  // Get the decl for the type.
+  ASTDecl *typeDecl = type.getDecl(shared);
+  if (!typeDecl) {
+    Type metaType = type.getMetaType();
+    assert(!metaType || isa<TypeType>(metaType));
+    // This is a MLIR type, so we need to bind it to the builtin stub.
+    // Use a special wrapper decl in the builtins as stubs.
+    typeDecl = shared.getBuiltinStubsMLIRType(errorLoc).getDecl(shared);
+    if (!typeDecl || !isa<StructDeclOp>(typeDecl)) {
+      shared.emitError(errorLoc, "malformed builtin._stubs.__MLIRType");
+      return {};
+    }
+    // Need to update the type itself to the wrapper type.
+    type = cast<StructDeclOp>(typeDecl).bindReference({PValue(type)});
+  }
+
+  if (!typeDecl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true)) {
+    // Does not conform. This is the only non-error case where we return an
+    // empty attr.
+    return GetWitnessAttr();
+  }
+
+  // Make sure the trait body is fully resolved so we know what the methods are.
+  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+  if (failed(shared.declResolver->resolveBody(*traitDecl, errorLoc)))
+    return failure();
+
+  // Locate the entry in the trait.
+  ArrayRef<ASTDecl *> entries = traitDecl->lookupInCurrentScope(entryName);
+  if (entries.empty()) {
+    shared.emitError(errorLoc, "trait ")
+        << trait << " has no entry named " << entryName;
+    return failure();
+  }
+
+  // If there are multiple entries, emit an error.
+  if (entries.size() > 1) {
+    shared.emitError(errorLoc, "trait ")
+        << trait << " has multiple entries named " << entryName;
+    return failure();
+  }
+
+  ASTDecl &entry = *entries.front();
+  Type resultType;
+  // TODO(BillyZ): Fix trait alias replacement here once #60811 lands. Currently
+  // this function does not properly replace alias mentions with the struct
+  // type, but that does not impact any use case since this is only ever called
+  // on AnyType and Movable right now.
+  if (auto aliasDecl = dyn_cast<AliasDeclOp>(entry)) {
+    resultType = aliasDecl.getType();
+  } else if (auto fnDecl = dyn_cast<FnOp>(entry)) {
+    resultType = createRequirementSignature(fnDecl, type, nullptr, nullptr,
+                                            *shared.declResolver);
+  } else {
+    llvm_unreachable("expected an alias or a function");
+  }
+
+  ASTDecl *parentTraitDecl = entry.getParentDecl();
+  MLIRContext *ctx = parentTraitDecl->getContext();
+  return GetWitnessAttr::get(
+      PValue(type),
+      StringAttr::get(ctx,
+                      getFlattenedSymbolName(parentTraitDecl->getSymbolRef())),
+      StringAttr::get(ctx, entryName), resultType);
 }
 
 /// Emit a metatype conversion to a trait type by materializing the meta type
@@ -746,7 +819,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // TODO(MOCO-1789): This complicated logic will be removed once we have
       // symbolized witness tables.
       FnTypeGeneratorType requirementSig = createRequirementSignature(
-          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
+          traitFn, type, &traitAliasReplacer, &aliasValues, getDeclResolver());
 
       // Form a set of bindings to plow into the impl signature by binding Self
       // to the appropriate Struct or derived Trait type.

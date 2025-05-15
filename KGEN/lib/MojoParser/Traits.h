@@ -14,6 +14,10 @@ namespace M {
 class InflightDiag;
 } // namespace M
 
+namespace M::KGEN {
+class GetWitnessAttr;
+} // namespace M::KGEN
+
 namespace M::KGEN::LIT {
 class ASTDecl;
 class SharedState;
@@ -35,6 +39,15 @@ void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);
+
+/// Emit a GetWitnessAttr that fetches a unique trait requirement if a type
+/// conforms to it. The entry must be unique (non-overloaded) within the trait.
+/// If the type does not conform to the trait, return an empty GetWitnessAttr.
+FailureOr<GetWitnessAttr> getUniqueWitnessForTypeIfConforms(SharedState &shared,
+                                                            ASTType type,
+                                                            TraitType trait,
+                                                            StringRef entryName,
+                                                            SMLoc errorLoc);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H
