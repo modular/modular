@@ -41,6 +41,7 @@ from .utils import (
     calculate_tile_n_k,
     dispatch_get_kernel_type,
     elementwise_epilogue_type,
+    elementwise_compute_lambda_type,
     get_kernel_config,
     get_min_task_size,
     get_partitioned_matmul,
@@ -766,6 +767,9 @@ fn matmul[
     transpose_b: Bool = False,
     b_packed: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
@@ -785,6 +789,7 @@ fn matmul[
         transpose_b=transpose_b,
         b_packed=b_packed,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         saturated_vnni=saturated_vnni,
         single_thread_blocking_override=single_thread_blocking_override,
         _trace_description=_trace_description,
@@ -798,6 +803,9 @@ fn matmul[
     transpose_b: Bool = False,
     b_packed: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     _trace_description: StaticString = "",
@@ -847,10 +855,31 @@ fn matmul[
         if is_cpu[target]():
             var kernel_type_m = a.shape.at[0]().or_else(0)
 
+            # The CPU version of matmul doesn't support compute lambda
+            # We wrap it around an epilogue lambda instead.
+            @parameter
+            @always_inline
+            fn compute_lambda_wrapper[
+                _type: DType, _width: Int, *, alignment: Int = 1
+            ](coords: IndexList[2], val: SIMD[_type, _width]):
+                @parameter
+                if elementwise_compute_lambda_fn:
+                    alias compute_lambda = elementwise_compute_lambda_fn.value()
+                    var output = compute_lambda(coords, val)
+                    c.store[alignment=alignment](
+                        coords, rebind[SIMD[c.type, _width]](output)
+                    )
+
+            alias elementwise_lambda_wrapper = OptionalReg[
+                elementwise_epilogue_type
+            ](
+                compute_lambda_wrapper
+            ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
+
             _matmul_cpu[
                 transpose_b=transpose_b,
                 b_packed=b_packed,
-                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
                 saturated_vnni=saturated_vnni,
                 single_thread_blocking_override=single_thread_blocking_override,
             ](c, a, b, kernel_type_m)
@@ -860,6 +889,7 @@ fn matmul[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 _trace_description=_trace_description,
             ](c, a, b, ctx.value())
 

@@ -77,6 +77,7 @@ from linalg.matrix_band_part import matrix_band_part
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+    elementwise_compute_lambda_type as matmul_elementwise_compute_lambda_type,
 )
 from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
@@ -4376,30 +4377,41 @@ struct Matmul:
 
         @parameter
         @always_inline
-        fn output_fn[
+        fn epilgue_fn[
             _type: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_type, _width]):
-            alias has_compute_lambda = c.static_spec.out_compute_lambda is not None
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c.type, _width]](val),
+            )
 
-            @parameter
-            if has_compute_lambda:
-                var output = c._fused_compute_output_lambda(
+        @parameter
+        @always_inline
+        fn output_compute_fn[
+            _type: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_type, _width]) -> SIMD[
+            _type, _width
+        ]:
+            return rebind[SIMD[_type, _width]](
+                c._fused_compute_output_lambda(
                     coords, rebind[SIMD[c.type, _width]](val)
                 )
-                c.store[element_alignment=alignment](coords, output)
-            else:
-                c._lambda_store[width=_width, element_alignment=alignment](
-                    coords,
-                    rebind[SIMD[c.type, _width]](val),
-                )
+            )
+
+        alias has_compute_lambda = c.static_spec.out_compute_lambda is not None
 
         matmul[
             transposed_a,
             transpose_b,
             packed_b,
             OptionalReg[matmul_elementwise_epilogue_type](
-                output_fn
-            ) if lambdas_have_fusion else None,
+                epilgue_fn
+            ) if lambdas_have_fusion
+            and not has_compute_lambda else None,
+            OptionalReg[matmul_elementwise_compute_lambda_type](
+                output_compute_fn
+            ) if lambdas_have_fusion
+            and has_compute_lambda else None,
             saturated_vnni=False,
             single_thread_blocking_override=_synchronous,
             target=target,
