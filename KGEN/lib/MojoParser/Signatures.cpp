@@ -1989,7 +1989,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
 
   ArgConvention argPackOrigConvention = ArgConvention::ByRefError;
   ArgConvention argVariadicOrigConvention = ArgConvention::ReadMem;
-  int i = 0;
+  [[maybe_unused]] int i = 0;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     if (arg.variadicKind == VariadicKind::PosVarArg) {
       argVariadicOrigConvention = arg.variadicElementArgConvention;

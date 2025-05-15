@@ -592,7 +592,7 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
   // Get the decl for the type.
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
-    Type metaType = type.getMetaType();
+    [[maybe_unused]] Type metaType = type.getMetaType();
     assert(!metaType || isa<TypeType>(metaType));
     // This is a MLIR type, so we need to bind it to the builtin stub.
     // Use a special wrapper decl in the builtins as stubs.
