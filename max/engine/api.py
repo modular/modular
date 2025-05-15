@@ -22,7 +22,6 @@ from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
 from max._core.engine import TensorData as _TensorData
 from max._core.engine import TensorSpec as TensorSpec
-from max._core.engine import TorchInputSpec as TorchInputSpec
 from max._core.profiler import set_gpu_profiling_state
 from max._core_types.driver import DLPackArray
 from max.driver import CPU, Device, Tensor
@@ -241,26 +240,6 @@ def _TensorSpec_repr(self) -> str:
 
 TensorSpec.__str__ = _TensorSpec_str  # type: ignore[method-assign]
 TensorSpec.__repr__ = _TensorSpec_repr  # type: ignore[method-assign]
-
-
-def _TorchInputSpec_str(self) -> str:
-    device_str = "" if len(self.device) == 0 else f" {self.device}"
-    if self.shape is not None:
-        mlir_shape = [
-            str(dim) if isinstance(dim, int) else "-1" for dim in self.shape
-        ]
-        shape_str = "x".join(mlir_shape)
-        return f"{shape_str}x{self.dtype.name}{device_str}"
-    else:
-        return f"None x {self.dtype.name}{device_str}"
-
-
-def _TorchInputSpec_repr(self) -> str:
-    return f"TorchInputSpec(shape={self.shape}, dtype={self.dtype}, device={self.device!r})"
-
-
-TorchInputSpec.__str__ = _TorchInputSpec_str  # type: ignore[method-assign]
-TorchInputSpec.__repr__ = _TorchInputSpec_repr  # type: ignore[method-assign]
 
 
 def _is_torch_tensor(obj: Any) -> bool:
@@ -483,54 +462,18 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
         custom_ops_path: str | None = None,
-        input_specs: list[TorchInputSpec] | None = None,
         weights_registry: Mapping[str, DLPackCompatible] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
-        Note: PyTorch models must be in TorchScript format.
-
         Args:
-            model: Path to a model, or a TorchScript model instance.
-              May be a TorchScript model or an ONNX model.
+            model: Path to a model.
 
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojopkg` custom ops, `.so` custom op libraries
-              for PyTorch and `.pt` torchscript files for torch metadata
-              libraries. Supports :obj:`TorchMetadata` and
-              :obj:`torch.jit.ScriptModule` objects for
-              torch metadata libraries without serialization.
+              Supports paths to `.mojopkg` custom ops.
 
             custom_ops_path: The path to your custom ops Mojo package.
               Deprecated, use ``custom_extensions`` instead.
-
-            input_specs: The tensor specifications (shape and data type) for
-              each of the model inputs. This is required when loading serialized
-              TorchScript models because they do not include type and shape
-              annotations.
-
-              For example:
-
-              .. code-block:: python
-
-                  session = engine.InferenceSession()
-                  model = session.load(
-                      "clip-vit.torchscript",
-                      input_specs = [
-                          engine.TorchInputSpec(
-                              shape=[1, 16], dtype=DType.int32
-                          ),
-                          engine.TorchInputSpec(
-                              shape=[1, 3, 224, 224], dtype=DType.float32
-                          ),
-                          engine.TorchInputSpec(
-                              shape=[1, 16], dtype=DType.int32
-                          ),
-                      ],
-                  )
-
-              If the model supports an input with dynamic shapes, use ``None``
-              as the dimension size in ``shape``.
 
             weights_registry: A mapping from names of model weights' names to
               their values. The values are currently expected to be dlpack
@@ -564,9 +507,6 @@ class InferenceSession:
             options_dict["custom_extensions"].extend(
                 _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
             )
-
-        if input_specs is not None:
-            options_dict["input_specs"] = input_specs
 
         if isinstance(model, (str, bytes)):
             model = Path(str(model))
@@ -602,29 +542,7 @@ class InferenceSession:
                 model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
             )
         else:
-            if _is_torchscript_module(model):
-                _remove_static_info_from_torch_jit_graph(model.graph)
-                _model = self._impl.compile_from_object(
-                    model._c, _FrameworkFormat.torchscript_module, options_dict
-                )
-            elif _is_torchscript_function(model):
-                _remove_static_info_from_torch_jit_graph(model.graph)
-                _model = self._impl.compile_from_object(
-                    model, _FrameworkFormat.torchscript_function, options_dict
-                )
-            elif _is_torch_mlir_module(model):
-                options_dict["_mlir_module_capsule_name"] = (
-                    "max._torch_mlir.ir.Module._CAPIPtr"
-                )
-                _model = self._impl.compile_from_object(
-                    model, _FrameworkFormat.torch_mlir, options_dict
-                )
-
-            else:
-                raise RuntimeError(
-                    "The model is not a valid string path, Path object, "
-                    " torch.jit.ScriptModule or MlirModule."
-                )
+            raise RuntimeError("The model is not a valid path or module.")
 
         for weight_name, weight in weights_registry_real.items():
             try:
@@ -636,9 +554,6 @@ class InferenceSession:
 
         _model._load(weights_registry_real)
         return _model
-
-    def _get_torch_custom_op_schemas(self):
-        return self._impl._get_torch_custom_op_schemas()  # type: ignore
 
     def set_debug_print_options(
         self,
@@ -786,7 +701,7 @@ class InferenceSession:
         self._impl.set_mojo_define(key, value)
 
     @property
-    def stats_report(self) -> dict[str, Any]:
+    def stats_report(self) -> dict[str, Any]:  # XXX
         """Metadata about model compilation (PyTorch only).
 
         Prints a list of "fallback ops", which are ops that could not be lowered
