@@ -205,7 +205,7 @@ class _Gemma3Attention(Module):
                 self.devices[0]
             ),
             epsilon=self.qk_norm_eps,
-            layer_idx=self.layer_idx,
+            layer_idx=layer_idx,
             total_seq_len=total_seq_len,
             input_row_offsets=kwargs["input_row_offsets"],
             weight_offset=1.0,

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Union
 
 from max.dtype import DType
-from max.graph import TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 from max.nn import (
     EmbeddingV1,
     LayerNormV1,
@@ -79,8 +79,13 @@ class Transformer(Layer):
         # Construct a kv cache for use downstream.
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
-        for _, layer in enumerate(self.layers):
-            h = layer(h, kv_collection, **kwargs)
+        for idx, layer in enumerate(self.layers):
+            h = layer(
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                h,
+                kv_collection,
+                **kwargs,
+            )
 
         if self.all_logits:
             # When echo is enabled, the logits of the input tokens are

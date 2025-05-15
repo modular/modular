@@ -256,7 +256,7 @@ class _Llama4TextAttention(Module):
                 .broadcast_to([self.kv_params.head_dim])
                 .to(self.devices[0]),
                 epsilon=self.qk_norm_eps,
-                layer_idx=self.layer_idx,
+                layer_idx=layer_idx,
                 total_seq_len=total_seq_len,
                 input_row_offsets=kwargs["input_row_offsets"],
                 weight_offset=0.0,

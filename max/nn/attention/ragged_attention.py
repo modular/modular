@@ -48,7 +48,6 @@ class RaggedAttention(Module):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        layer_idx: int,
         devices: list[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         linear_cls: Callable[..., Linear] = Linear,
@@ -65,7 +64,6 @@ class RaggedAttention(Module):
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
-            layer_idx: The layer number associated with this Attention block.
             dtype: DType of the
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used.
@@ -93,7 +91,7 @@ class RaggedAttention(Module):
         super().__init__()
         self.mask_variant = mask_variant
         self.n_heads = num_attention_heads
-        self.layer_idx = layer_idx
+
         self.kv_params = kv_params
         self.has_bias = has_bias
         self.scale = (
@@ -183,6 +181,7 @@ class RaggedAttention(Module):
 
     def __call__(
         self,
+        layer_idx: TensorValue,
         x: TensorValue,
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
@@ -191,9 +190,6 @@ class RaggedAttention(Module):
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
-        layer_idx = ops.constant(
-            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
-        )
 
         # Call into fused qkv ragged matmul.
         xq = fused_qkv_ragged_matmul(

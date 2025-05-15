@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Callable, TypeVar, cast
 
 from max.dtype import DType
-from max.graph import TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 
 from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
@@ -53,6 +53,7 @@ class TransformerBlock(Module):
 
     def __call__(
         self,
+        layer_idx: TensorValue,
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
@@ -62,6 +63,7 @@ class TransformerBlock(Module):
             self.residual_multiplier, x.dtype, device=x.device
         )
         attn_out = self.self_attn(
+            layer_idx,
             self.input_layernorm(x),
             kv_collection,
             **kwargs,
@@ -145,8 +147,9 @@ class Transformer(Module):
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
         input_row_offsets = kwargs["input_row_offsets"]
 
-        for _, layer in enumerate(self.layers):
+        for idx, layer in enumerate(self.layers):
             h = layer(
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
                 **kwargs,

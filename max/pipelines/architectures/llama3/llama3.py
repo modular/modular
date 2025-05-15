@@ -208,7 +208,6 @@ class Llama3(Transformer):
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
                     kv_params=config.kv_params,
-                    layer_idx=i,
                     dtype=config.dtype,
                     rope=rope,
                     linear_cls=linear_cls,

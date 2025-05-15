@@ -126,7 +126,6 @@ class DistributedLlama3(DistributedTransformer):
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
                     kv_params=config.kv_params,
-                    layer_idx=i,
                     dtype=config.dtype,
                     rope=rope,
                     linear_cls=linear_cls,
@@ -147,7 +146,7 @@ class DistributedLlama3(DistributedTransformer):
                 # TODO: Support residual_multiplier
                 # residual_multiplier=config.residual_multiplier,
             )
-            for i in range(config.num_hidden_layers)
+            for _ in range(config.num_hidden_layers)
         ]
 
         # Create Embedding and output layers.

@@ -470,7 +470,7 @@ def matmul_kv_cache_ragged(
     input_row_offsets: TensorValue,
     weight: TensorValue,
     kv_collection: PagedKVCacheCollection,
-    layer_idx: int | np.integer,
+    layer_idx: TensorValue,
 ) -> None:
     """Computes key and value projections with ragged input.
 
@@ -522,7 +522,7 @@ def matmul_kv_cache_ragged(
             input_row_offsets,
             weight,
             kv_collection,
-            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
+            layer_idx,
         ],
         parameters=parameters,
     )
@@ -534,7 +534,7 @@ def matmul_k_cache_ragged(
     input_row_offsets: TensorValue,
     weight: TensorValue,
     kv_collection: PagedKVCacheCollection,
-    layer_idx: int | np.integer,
+    layer_idx: TensorValue,
 ) -> None:
     """Computes key projections with ragged input.
 
@@ -586,7 +586,7 @@ def matmul_k_cache_ragged(
             input_row_offsets,
             weight,
             kv_collection,
-            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
+            layer_idx,
         ],
         parameters=parameters,
     )
@@ -1614,7 +1614,7 @@ def rms_norm_key_cache(
     kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
     gamma: TensorValue,
     epsilon: float | np.floating,
-    layer_idx: int | np.integer,
+    layer_idx: TensorValue,
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
     weight_offset: float | np.floating,
@@ -1676,7 +1676,7 @@ def rms_norm_key_cache(
             kv_collection,
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
-            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
+            layer_idx,
             ops.cast(TensorValue(total_seq_len), DType.uint32),
             input_row_offsets,
             ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),

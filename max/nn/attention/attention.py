@@ -15,8 +15,7 @@
 from dataclasses import dataclass
 from typing import Union
 
-from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import TensorValue, ops
 
 from ..kernels import flash_attention, fused_qkv_matmul
 from ..kv_cache import (
@@ -30,6 +29,7 @@ from .interfaces import AttentionImpl, AttentionImplQKV
 class Attention(AttentionImpl):
     def __call__(
         self,
+        layer_idx: TensorValue,
         x: TensorValue,
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
@@ -60,7 +60,7 @@ class Attention(AttentionImpl):
             input=x,
             wqkv=self.wqkv,
             kv_collection=kv_collection,
-            layer_idx=self.layer_idx,
+            layer_idx=layer_idx,
             n_heads=self.n_heads,
         )
 
@@ -79,7 +79,7 @@ class Attention(AttentionImpl):
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
-            layer_idx=self.layer_idx,
+            layer_idx=layer_idx,
             attention_mask=attention_mask,
             valid_lengths=kwargs["valid_lengths"],
             scale=self.scale,
@@ -94,6 +94,7 @@ class Attention(AttentionImpl):
 class AttentionQKV(AttentionImplQKV):
     def __call__(
         self,
+        layer_idx: TensorValue,
         x: TensorValue,
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
@@ -127,9 +128,7 @@ class AttentionQKV(AttentionImplQKV):
             input=x,
             wqkv=wqkv,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(
-                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
-            ),
+            layer_idx=layer_idx,
             n_heads=self.n_heads,
         )
 
@@ -148,9 +147,7 @@ class AttentionQKV(AttentionImplQKV):
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(
-                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
-            ),
+            layer_idx=layer_idx,
             attention_mask=attention_mask,
             valid_lengths=kwargs["valid_lengths"],
             scale=self.scale,

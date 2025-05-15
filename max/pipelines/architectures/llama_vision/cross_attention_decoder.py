@@ -18,8 +18,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import TensorValue, Weight, ops
 from max.nn import MLPV1, RMSNormV1
 from max.nn.kernels import (
     MHAMaskVariant,
@@ -42,9 +41,6 @@ class CrossSdpaAttention(Layer):
     vision_kv_params: KVCacheParams
     """KV Cache Params, including the number of kv heads, the head dim, and data type."""
 
-    layer_idx: int
-    """Index into the cross attention layers' KV cache."""
-
     q_proj: LinearV1
     """A linear layer for the query projection."""
 
@@ -65,6 +61,7 @@ class CrossSdpaAttention(Layer):
 
     def __call__(
         self,
+        layer_idx: TensorValue,
         hidden_states: TensorValue,
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
@@ -93,7 +90,7 @@ class CrossSdpaAttention(Layer):
             kv_params=self.vision_kv_params,
             # Here, hidden_states correspond to cross_attention_states.
             hidden_states=cross_attention_states,
-            layer_idx=self.layer_idx,
+            layer_idx=layer_idx,
             input_row_offsets=cross_input_row_offsets,
             weight=wkv,
             kv_collection=kv_collection,
@@ -103,7 +100,7 @@ class CrossSdpaAttention(Layer):
             kv_collection,
             gamma=ops.cast(self.k_norm.weight, hidden_states.dtype),
             epsilon=self.k_norm.eps,
-            layer_idx=self.layer_idx,
+            layer_idx=layer_idx,
             # Use the total sequence length of the cross attention states.
             total_seq_len=cross_attention_states.shape[0],
             input_row_offsets=cross_input_row_offsets,
@@ -115,9 +112,7 @@ class CrossSdpaAttention(Layer):
             self.vision_kv_params,
             input=query_states,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(
-                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
-            ),
+            layer_idx=layer_idx,
             input_row_offsets=hidden_input_row_offsets,
             # Use the null mask to attend to all vision tokens.
             mask_variant=MHAMaskVariant.NULL_MASK,
@@ -145,6 +140,7 @@ class CrossAttentionDecoderLayer(Layer):
 
     def __call__(
         self,
+        layer_idx: TensorValue,
         hidden_states: TensorValue,
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
@@ -156,6 +152,7 @@ class CrossAttentionDecoderLayer(Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         hidden_states = self.cross_attn(
+            layer_idx,
             hidden_states,
             hidden_input_row_offsets,
             hidden_max_seq_len,

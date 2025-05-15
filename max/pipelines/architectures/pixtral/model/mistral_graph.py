@@ -107,7 +107,6 @@ def _attention_opaque(
     params: PipelineConfig,
     rope: OptimizedRotaryEmbedding,
     weights: Weights,
-    layer_idx: int,
     huggingface_config: AutoConfig,
     dtype: DType,
 ):
@@ -149,7 +148,6 @@ def _attention_opaque(
             weights.self_attn.o_proj,
         ),
         rope=rope,
-        layer_idx=ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         scale=math.sqrt(1 / kv_params.head_dim),
     )
 
@@ -182,7 +180,6 @@ def _transformer(
                     params,
                     rope,
                     weights.language_model.model.layers[i],
-                    layer_idx=i,
                     huggingface_config=huggingface_config,
                     dtype=dtype,
                 ),
