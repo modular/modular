@@ -27,7 +27,11 @@ Key components:
 from sys import bitwidthof, is_gpu
 
 from layout import Layout, LayoutTensor
-from layout.layout_tensor import LayoutTensorIter, _get_index_type
+from layout.layout_tensor import (
+    LayoutTensorIter,
+    _get_index_type,
+    _get_layout_type,
+)
 from memory import UnsafePointer
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -139,7 +143,7 @@ struct LayoutTensorBuild[
     __layout: Layout = Layout(1),
     __layout_init: Bool = False,
     __address_space: AddressSpace = _GPUAddressSpace.GENERIC,
-    __layout_int_type: DType = _get_index_type(__layout, __address_space),
+    __layout_int_type: DType = _get_layout_type(__layout, __address_space),
     __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
 ]:
@@ -609,7 +613,7 @@ struct LayoutTensorBuild[
         return __type_of(res)(
             rebind[__type_of(res.runtime_layout)](
                 self.runtime_layout.cast[
-                    _get_index_type(_GPUAddressSpace.SHARED)
+                    res.__layout_int_type, linear_idx_type = res.__index_type
                 ]()
             )
         )
@@ -637,7 +641,7 @@ struct LayoutTensorBuild[
         return __type_of(res)(
             rebind[__type_of(res.runtime_layout)](
                 self.runtime_layout.cast[
-                    _get_index_type(_GPUAddressSpace.LOCAL)
+                    res.__layout_int_type, linear_idx_type = res.__index_type
                 ]()
             )
         )
@@ -705,7 +709,10 @@ struct LayoutTensorBuild[
             return __type_of(res)(ptr)
         else:
             return __type_of(res)(
-                ptr, rebind[__type_of(res.runtime_layout)](self.runtime_layout)
+                ptr,
+                self.runtime_layout.cast[
+                    res.layout_int_type, linear_idx_type = res.linear_idx_type
+                ](),
             )
 
     @always_inline
@@ -726,7 +733,9 @@ struct LayoutTensorBuild[
             `LayoutTensorBuild` - A new builder with circular indexing enabled.
         """
         return __type_of(res)(
-            rebind[__type_of(res.runtime_layout)](self.runtime_layout)
+            self.runtime_layout.cast[
+                res.__layout_int_type, linear_idx_type = res.__index_type
+            ]()
         )
 
     @always_inline
