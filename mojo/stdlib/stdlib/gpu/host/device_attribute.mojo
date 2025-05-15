@@ -23,7 +23,7 @@ supported features.
 """
 
 
-@value
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct DeviceAttribute:
     """
@@ -108,16 +108,3 @@ struct DeviceAttribute:
     alias MAX_ACCESS_POLICY_WINDOW_SIZE = Self(109)
     """ CUDA-only: Maximum value of CUaccessPolicyWindow::num_bytes.
     """
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        """
-        Initialize a DeviceAttribute with the given integer value.
-
-        Args:
-            value: The integer value representing a specific device attribute.
-
-        This constructor allows implicit conversion from Int32 to DeviceAttribute,
-        making it easier to use integer constants with this type.
-        """
-        self._value = value

@@ -152,7 +152,8 @@ fn curandGenerateLongLong(
     ]()(generator, output_ptr, num)
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct libraryPropertyType_t:
     var _value: Int32
     alias MAJOR_VERSION = Self(0)
@@ -182,7 +183,7 @@ fn curandGetProperty(
     ]()(type, value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct curandRngType(Writable):
     """
@@ -537,7 +538,7 @@ alias curandGenerator_st = NoneType
 alias curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct curandMethod(Writable):
     """\\cond UNHIDE_ENUMS ."""
@@ -700,7 +701,7 @@ alias curandHistogramM2K_st = Int16
 alias curandMethod_t = curandMethod
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct curandStatus(Writable):
     """
@@ -780,7 +781,7 @@ struct curandStatus(Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct curandDirectionVectorSet(Writable):
     """
@@ -1250,7 +1251,7 @@ alias curandHistogramM2_t = UnsafePointer[curandHistogramM2_st]
 alias curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct curandOrdering(Writable):
     """

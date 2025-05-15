@@ -311,7 +311,7 @@ fn cudnnGetConvolution2dDescriptor(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnFusedOpsConstParamLabel_t(Writable):
     var _value: Int8
@@ -477,7 +477,7 @@ fn cudnnSetConvolutionReorderType(
     ]()(conv_desc, reorder_type)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnReorderType_t(Writable):
     var _value: Int8
@@ -619,7 +619,7 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnFusedOps_t(Writable):
     var _value: Int8
@@ -699,7 +699,7 @@ fn cudnnDestroyConvolutionDescriptor(
     ]()(conv_desc)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnFusedOpsPointerPlaceHolder_t(Writable):
     var _value: Int8
@@ -812,7 +812,7 @@ fn cudnnGetConvolutionReorderType(
     ]()(conv_desc, reorder_type)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnFusedOpsVariantParamLabel_t(Writable):
     var _value: Int8
@@ -1327,7 +1327,7 @@ fn cudnnGetConvolutionForwardAlgorithmMaxCount(
     ]()(handle, count)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnConvolutionMode_t(Writable):
     var _value: Int8

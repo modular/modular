@@ -117,7 +117,7 @@ fn cublasLtMatrixTransformDescCreate(
     ]()(transform_desc, scale_type)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Order:
     """Enum for data ordering ."""
@@ -210,7 +210,7 @@ fn cublasLtMatrixLayoutSetAttribute(
     ]()(mat_layout, attr, buf, size_in_bytes)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ClusterShape:
     """Thread Block Cluster size.
@@ -684,7 +684,7 @@ fn cublasLtGetStatusString(status: Result) raises -> UnsafePointer[Int8]:
     ]()(status)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PointerMode:
     """UnsafePointer mode to use for alpha/beta ."""
@@ -828,7 +828,7 @@ fn cublasLtMatmulAlgoCheck(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Search:
     """Matmul heuristic search mode
@@ -884,7 +884,7 @@ struct Search:
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ReductionScheme:
     """Reduction scheme for portions of the dot-product calculated in parallel (a. k. a. "split - K").
@@ -1009,7 +1009,7 @@ struct PreferenceOpaque:
     var data: StaticTuple[UInt64, 8]  # uint64_t data[8]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasLtMatmulDescAttributes_t:
     """Matmul descriptor attributes to define details of the operation. ."""
@@ -1611,7 +1611,7 @@ fn cublasLtMatrixLayoutInit_internal(
     ]()(mat_layout, size, type, rows, cols, ld)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Preference:
     """Algo search preference to fine tune the heuristic function. ."""
@@ -1736,7 +1736,7 @@ struct MatmulAlgorithm:
 alias cublasLtNumericalImplFlags_t = UInt64
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct AlgorithmConfig:
     """Algo Configuration Attributes that can be set according to the Algo capabilities
@@ -1905,7 +1905,7 @@ fn cublasLtMatmulAlgoGetHeuristic(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct InnerShape:
     """Inner size of the kernel.
@@ -1952,7 +1952,7 @@ struct InnerShape:
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct LayoutAttribute:
     """Attributes of memory layout ."""
@@ -2154,7 +2154,7 @@ fn cublasLtLoggerSetLevel(level: Int16) -> Result:
     ]()(level)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Stages:
     """Size and number of stages in which elements are read into shared memory.
@@ -2407,7 +2407,7 @@ fn cublasLtMatmulAlgoInit(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Epilogue:
     """Postprocessing options for the epilogue
@@ -2583,7 +2583,7 @@ fn cublasLtMatrixLayoutCreate(
     ]()(mat_layout, type, rows, cols, ld)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PointerModeMask:
     """Mask to define pointer mode capability ."""
@@ -2655,7 +2655,7 @@ fn cublasLtMatmulDescCreate(
     ]()(matmul_desc, compute_type, scale_type)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Tile:
     """Tile size (in C/D matrix Rows x Cols).
@@ -3023,7 +3023,7 @@ struct Transform:
     var data: StaticTuple[UInt64, 8]  # uint64_t data[8]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TransformDescriptor:
     """Matrix transform descriptor attributes to define details of the operation.
