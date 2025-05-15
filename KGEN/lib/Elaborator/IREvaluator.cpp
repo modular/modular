@@ -544,7 +544,7 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
   // Slice out a standalone module to re-elaborate with the new target later.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       elaborator->getExpectedMangledName(
-          *errorLoc, "compile_offload_closure", op.getOperand(0),
+          *errorLoc, "compile_offload_closure", op.getOperand(1),
           /*allowParametric=*/false, /*sanitize=*/false);
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());
