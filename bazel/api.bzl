@@ -63,6 +63,7 @@ def _noop(**_kwargs):
 
 lit_tests = _noop
 modular_py_binary = _noop
+modular_py_test = _noop
 mojo_doc = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
