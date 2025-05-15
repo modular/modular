@@ -13,7 +13,7 @@ from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -59,7 +59,9 @@ class RMSNormKeyCacheModel:
             self.fetch_layer(*fetch_args),
             gamma=gamma,
             epsilon=1e-5,
-            layer_idx=self.layer_idx,
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
             total_seq_len=Dim(self.total_seq_len),
             input_row_offsets=input_row_offsets,
             rms_norm_cols=self.rms_norm_cols,

@@ -172,9 +172,6 @@ def mistral_given_pytorch_mistral(
                 ].self_attn.o_proj.weight.data,
             ),
             rope=rope,
-            layer_idx=ops.constant(
-                layer_idx, DType.uint32, device=DeviceRef.CPU()
-            ),
             scale=math.sqrt(1.0 / kv_params.head_dim),
         )
 

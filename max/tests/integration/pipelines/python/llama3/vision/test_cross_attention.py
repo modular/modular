@@ -14,7 +14,7 @@ from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
@@ -62,7 +62,6 @@ class CrossAttentionModel:
         self.cross_attention = CrossSdpaAttention(
             config.num_attention_heads,
             kv_params,
-            layer_idx=0,
             q_proj=LinearV1(
                 Weight(
                     name="wq",
@@ -121,6 +120,7 @@ class CrossAttentionModel:
         """Builds the cross attention model graph."""
         kv_collection = self.fetch(*fetch_args)
         return self.cross_attention(
+            ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             hidden_states,
             hidden_input_row_offsets,
             hidden_max_seq_len,

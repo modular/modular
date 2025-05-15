@@ -154,15 +154,13 @@ def _attention_layer(
         attn_fn = Attention(
             n_heads=N_HEADS,
             kv_params=kv_params,
-            layer_idx=ops.constant(
-                LAYER_IDX, DType.uint32, device=DeviceRef.CPU()
-            ),
             wqkv=wqkv,
             wo=LinearV1(wo),
             scale=math.sqrt(1.0 / kv_params.head_dim),
         )
 
         attn_out = attn_fn(
+            ops.constant(LAYER_IDX, DType.uint32, device=DeviceRef.CPU()),
             x.tensor,
             kv_collection,
             valid_lengths=valid_lengths,

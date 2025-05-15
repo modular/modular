@@ -15,7 +15,7 @@ from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import AttentionWithRopeQKV, LinearV1, OptimizedRotaryEmbedding
 from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -159,7 +159,6 @@ def _attention_layer(
                 n_kv_heads=n_kv_heads,
                 head_dim=head_dim,
             ),
-            layer_idx=layer_idx,
             wq=wq,
             wk=wk,
             wv=wv,
@@ -170,6 +169,9 @@ def _attention_layer(
 
         graph.output(
             attention(
+                layer_idx=ops.constant(
+                    layer_idx, DType.uint32, device=DeviceRef.CPU()
+                ),
                 x=x,
                 kv_collection=kv_collection,
                 input_row_offsets=input_row_offsets,

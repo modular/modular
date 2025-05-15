@@ -196,7 +196,9 @@ class MatmulKVRaggedModel:
             input_row_offsets,
             weight,
             kv_collection=self.fetch_layer(*fetch_args),
-            layer_idx=self.layer_idx,
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
         )
 
 
@@ -340,7 +342,9 @@ class MatmulKRaggedModel:
             input_row_offsets,
             weight,
             kv_collection=self.fetch_layer(*fetch_args),
-            layer_idx=self.layer_idx,
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
         )
 
 

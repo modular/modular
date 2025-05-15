@@ -12,7 +12,7 @@ from max._core.engine import PrintStyle
 from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention.attention_with_rope import LatentAttentionWithRope
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
@@ -94,7 +94,6 @@ def generate_max_outputs(
         num_key_value_heads=config.num_key_value_heads,
         hidden_size=config.hidden_size,
         kv_params=kv_params,
-        layer_idx=0,
         dtype=DType.bfloat16,
         q_lora_rank=config.q_lora_rank,
         kv_lora_rank=config.kv_lora_rank,
@@ -142,6 +141,7 @@ def generate_max_outputs(
             kv_collection = fetch_op(*[v.tensor for v in graph.inputs[2:]])
 
             result = latent_attention(
+                ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 hidden_states,
                 kv_collection,
                 input_row_offsets=input_row_offsets,
