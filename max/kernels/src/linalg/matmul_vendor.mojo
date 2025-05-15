@@ -82,6 +82,7 @@ fn matmul[
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
                 Index(m, n), ctx
             )
+            return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
         var tmp_device_buffer = ctx.enqueue_create_buffer[c.type](
