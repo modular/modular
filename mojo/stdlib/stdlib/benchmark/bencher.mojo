@@ -143,7 +143,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
         raise Error(err)
 
 
-@value
+@fieldwise_init
 struct ThroughputMeasure(Copyable, Movable):
     """Records a throughput metric of metric BenchMetric and value."""
 
@@ -216,8 +216,8 @@ struct ThroughputMeasure(Copyable, Movable):
         return (self.value) * 1e-9 / elapsed_sec
 
 
-@value
-struct Format(Writable, Stringable):
+@fieldwise_init
+struct Format(Writable, Stringable, Copyable, Movable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -288,7 +288,7 @@ struct Format(Writable, Stringable):
         return self.value == other.value
 
 
-@value
+@fieldwise_init
 struct BenchConfig(Copyable, Movable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
@@ -408,7 +408,7 @@ struct BenchConfig(Copyable, Movable):
         self = other
 
 
-@value
+@fieldwise_init
 struct BenchId:
     """Defines a benchmark Id struct to identify and represent a particular benchmark execution.
     """
@@ -441,7 +441,6 @@ struct BenchId:
         self.input_id = None
 
 
-@value
 struct BenchmarkInfo(Copyable, Movable):
     """Defines a Benchmark Info struct to record execution Statistics."""
 
@@ -486,8 +485,8 @@ struct BenchmarkInfo(Copyable, Movable):
         self = other
 
 
-@value
-struct Mode:
+@fieldwise_init
+struct Mode(Copyable, Movable):
     """Defines a Benchmark Mode to distinguish between test runs and actual benchmarks.
     """
 
@@ -1147,13 +1146,13 @@ struct Bench(Writable, Stringable):
         return List[Int](max_met, max_min, max_mean, max_max, max_dur)
 
 
-@value
+@fieldwise_init
 struct _Metric(Copyable, Movable):
     var max_width: Int
     var rates: Dict[Int, Float64]
 
 
-@value
+@fieldwise_init
 @register_passable
 struct Bencher:
     """Defines a Bencher struct which facilitates the timing of a target function.
