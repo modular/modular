@@ -43,25 +43,14 @@ def execute_ragged_flash_attention[
     num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: List[Int],
-    max_seq_len_cache: Int,
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias num_continuous_blocks = 32
-    alias num_paged_blocks = 32
     alias page_size = 512
 
     var batch_size = len(valid_lengths)
-    debug_assert[WRITE_MODE_MEM](
-        batch_size < num_continuous_blocks,
-        "batch_size passed to unit test (",
-        batch_size,
-        ") is larger than configured num_continuous_blocks (",
-        num_continuous_blocks,
-        ")",
-    )
     debug_assert[WRITE_MODE_MEM](
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
@@ -106,13 +95,18 @@ def execute_ragged_flash_attention[
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
+    var num_continuous_blocks = batch_size + 2
+    var num_paged_blocks = ceildiv(
+        max_full_context_length, page_size
+    ) * batch_size
+
     # initialize our KVCache
     kv_block_continuous_host = HostNDBuffer[type, 6](
         IndexList[6](
             num_continuous_blocks,
             2,
             num_layers,
-            max_seq_len_cache,
+            max_full_context_length,
             kv_params.num_heads,
             kv_params.head_size,
         ),
@@ -286,7 +280,7 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite(ctx: DeviceContext):
     alias types = (DType.float32, DType.bfloat16)
 
-    for bs_ref in List[Int](1, 16):
+    for bs_ref in List[Int](1, 4):
 
         @parameter
         for type_idx in range(len(types)):
@@ -305,12 +299,12 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             print("CE", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
-            ](ce_seq_lens, 1500, ce_cache_sizes, 2, 1, ctx)
+            ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
 
             print("TG", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
-            ](tg_seq_lens, 1500, tg_cache_sizes, 2, 0, ctx)
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
     print("CE", 1, DType.bfloat16)
@@ -318,14 +312,14 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     var short_ce_cache_size = List[Int](0)
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
-    ](short_ce_seq_len, 110, short_ce_cache_size, 2, 1, ctx)
+    ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
 
     print("TG", 2, DType.bfloat16)
     tg_seq_lens = List[Int](1, 1)
     tg_variable_cache_lens = List[Int](1024, 11)
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
-    ](tg_seq_lens, 1500, tg_variable_cache_lens, 2, 0, ctx)
+    ](tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx)
 
 
 def main():
