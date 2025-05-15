@@ -42,19 +42,14 @@ MARKER_COLORS = [
 ]
 
 
-def _get_max_bars_per_chart(x_labels, width_px, font_size_pt):
-    def px_to_pt(px):
-        return int(px * 0.75)
-
+def _get_max_groups_per_chart(x_labels, width_px, font_size_pt):
     x_labels_len = [
         ([len(t) for t in entry.split("<br>")]) for entry in x_labels
     ]
     max_width = max(max(x_labels_len))
-    avg_bar_width = int(font_size_pt * max_width)
-    max_bars_per_chart = (
-        px_to_pt(width_px) + avg_bar_width - 1
-    ) // avg_bar_width
-    return max_bars_per_chart
+    avg_bar_width = (font_size_pt * max_width) if max_width else 1
+    max_groups_per_chart = (width_px + avg_bar_width - 1) // avg_bar_width
+    return max_groups_per_chart
 
 
 @dataclass
@@ -71,6 +66,7 @@ class PlotConfig:
     ytext: Print value on top of the bar
     font_family: Font family
     barmode: Bar mode ["group", "stacked"]
+    groups_per_chart: ["all"=-1 (default), "auto"=0, int]
     """
 
     extension: str = "png"  # ['png', 'jpg', 'jpeg', 'webp', 'svg', 'pdf', 'eps', 'json', 'html']
@@ -79,12 +75,13 @@ class PlotConfig:
     font_size_pt: int = 16
     width_px: int = 1920
     height_px: int = 1080
-    prec: int = 2
+    prec: int = 3
     bgcolor: str = "#ffffff"
     y_text: bool = True  # Print value on top of the bar
     barmode: str = "group"  # ["group", "stacked"]
     font_family: str = "Courier New"
     title_font_family: str = "Times New Roman"
+    groups_per_chart: int = 0
 
 
 def draw_plot(
@@ -172,14 +169,19 @@ def draw_plot(
         print(f"- added [{name}]")
 
     to_html = extension == "html"
-    if to_html:
+
+    if cfg.groups_per_chart == -1:
         delta = len(x)
-    else:
-        delta = _get_max_bars_per_chart(
+    elif cfg.groups_per_chart == 0:
+        delta = _get_max_groups_per_chart(
             x_labels=x,
             width_px=width_px,
             font_size_pt=font_size_pt,
         )
+    else:
+        assert cfg.groups_per_chart > 0
+        delta = cfg.groups_per_chart
+
     for i in range(0, len(x), delta):
         plot_draw(
             x[i : i + delta],
@@ -404,7 +406,7 @@ def parse_and_plot(
 @click.option(
     "--key",
     "-k",
-    default="name",
+    default="spec",
     type=click.STRING,
     help="Name of ref-key column (should be identical for corresponding entries across files)",
 )
@@ -442,6 +444,13 @@ def parse_and_plot(
     help="Print bar values (default=True)",
 )
 @click.option(
+    "--groups-per-chart",
+    "-g",
+    default=0,
+    type=click.INT,
+    help="Number of groups per chart [-1=all, 0=auto, integer] (default=auto)",
+)
+@click.option(
     "--force", "-f", is_flag=True, default=False, help="Skip input validation"
 )
 @click.option(
@@ -466,6 +475,7 @@ def cli(
     scale: float,
     prec: int,
     ytext: bool,
+    groups_per_chart: int,
     force: bool,
     verbose: bool,
     pivot,
@@ -490,7 +500,12 @@ def cli(
     prefix = output_prefix if output_prefix else "img"
 
     cfg = PlotConfig(
-        extension=extension, prefix=prefix, scale=scale, prec=prec, y_text=ytext
+        extension=extension,
+        prefix=prefix,
+        scale=scale,
+        prec=prec,
+        y_text=ytext,
+        groups_per_chart=groups_per_chart,
     )
 
     parse_and_plot(
