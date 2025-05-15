@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-# Test for https://github.com/modular/max/issues/1505
+# Test for https://github.com/modular/modular/issues/1505
 
 from random import random_ui64
 

@@ -1,5 +1,5 @@
 ---
-title: APIs and reference
+title: Mojo reference
 sidebar_label: Overview
 hide_table_of_contents: false
 description: Mojo standard library and other references
@@ -8,35 +8,35 @@ listing:
     contents: 'stdlib/*/index.md'
     type: grid
     page-size: 99
+  - id: kernels
+    contents: 'kernels/*/index.md'
+    type: grid
+    page-size: 99
   - id: decorators
     contents: 'manual/decorators/*.md'
     type: grid
     page-size: 20
-  - id: cli
-    contents: 'cli/*.md'
+  - id: maxlib
+    contents: '../max/api/mojo/*/index.md'
     type: grid
     page-size: 20
 ---
 
-This section includes the API reference for the Mojo standard library, as well
-as a reference for Mojo decorators and the Mojo CLI.
+This section includes the Mojo API references:
 
-## Mojo standard library
+- [Standard library](#standard-library): Common Mojo APIs.
+- [MAX AI Kernels library](#max-ai-kernels-library). Mojo APIs for writing
+  high-performance computational kernels and custom operations for AI models.
+- [MAX library](#max-library). MAX Mojo APIs, including tensor APIs for custom
+  operations, and legacy MAX APIs.
+- [Decorators](#decorators). Mojo decorators reference.
 
-The Mojo standard library provides nearly everything you'll need for
-writing Mojo programs, including basic data types like
-[`Int`](/mojo/stdlib/builtin/int/Int) and
-[`SIMD`](/mojo/stdlib/builtin/simd/SIMD), collection types like
-[`List`](/mojo/stdlib/collections/list/List), reusable
-[algorithms](/mojo/stdlib/algorithm/) and modules to support
-[GPU programming](/mojo/stdlib/gpu).
-
-### How to read the Mojo API docs
+## How to read the Mojo API docs
 
 Mojo syntax is covered in detail in the [Mojo manual](/mojo/manual/). Here's a
 quick cheat-sheet on reading struct and function signatures.
 
-#### Arguments
+### Arguments
 
 Function arguments appear in parentheses after the function name:
 
@@ -85,7 +85,7 @@ The most common conventions are:
 For details and a complete list of argument conventions, see
 [Argument conventions](/mojo/manual/values/ownership#argument-conventions).
 
-#### Parameters
+### Parameters
 
 Mojo structs and functions can take parameters. Parameters are evaluated
 at compilation time, and act as constants at runtime. Parameter lists are
@@ -104,24 +104,50 @@ Like arguments, parameters can be positional-only, keyword-or-positional, or
 keyword-only, and they can be required or optional. The `/`, `*`, and `=`
 characters have the same meaning in parameter lists as they do in argument lists.
 
-### Top-level packages
+## Standard library
+
+The Mojo standard library provides nearly everything you'll need for
+writing Mojo programs, including basic data types like
+[`Int`](/mojo/stdlib/builtin/int/Int) and
+[`SIMD`](/mojo/stdlib/builtin/simd/SIMD), collection types like
+[`List`](/mojo/stdlib/collections/list/List), reusable
+[algorithms](/mojo/stdlib/algorithm/) and modules to support
+[GPU programming](/mojo/stdlib/gpu).
+
+Top-level packages:
 
 :::🔥#stdlib
 :::
 
-## Mojo decorators
+## MAX AI kernels library
 
-A Mojo decorator is a higher-order function that modifies or extends the
-behavior of a struct, a function, or some other code. You'll find a list
-of built-in Mojo decorators here.
+The MAX AI kernels library provides a collection of highly optimized, reusable
+compute kernels for high-performance numerical and AI workloads. These kernels
+serve as the foundational building blocks for writing [MAX custom
+operations](/max/custom-ops/) or standalone [GPU
+kernels](/mojo/manual/gpu/basics) that are portable across CPUs and GPUs.
 
-:::🔥#decorators
+Top-level packages:
+
+:::🔥#kernels
 :::
 
-## Mojo CLI reference
 
-The Mojo CLI provides commands to help you develop, run, build,
-and debug Mojo programs.
+## MAX library
 
-:::🔥#cli
+The Mojo MAX library provides APIs to interact with the MAX graph compiler
+and runtime.
+
+Top-level packages:
+
+:::🔥#maxlib
+:::
+
+
+## Decorators
+
+A Mojo decorator is a higher-order function that modifies or extends the
+behavior of a struct, a function, or some other code.
+
+:::🔥#decorators
 :::

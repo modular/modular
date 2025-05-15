@@ -235,14 +235,14 @@ def test_float_conversion():
 
 def test_conversion_from_python():
     # Test conversion from Python '5'
-    assert_equal(Int.try_from_python(PythonObject(5)), 5)
+    assert_equal(Int(PythonObject(5)), 5)
 
     # Test error trying conversion from Python '"str"'
-    with assert_raises(contains="an integer is required"):
-        _ = Int.try_from_python(PythonObject("str"))
+    with assert_raises(contains="invalid literal for int()"):
+        _ = Int(PythonObject("str"))
 
     # Test conversion from Python '-1'
-    assert_equal(Int.try_from_python(PythonObject(-1)), -1)
+    assert_equal(Int(PythonObject(-1)), -1)
 
 
 def test_is_power_of_two():

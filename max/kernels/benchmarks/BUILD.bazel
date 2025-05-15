@@ -1,0 +1,152 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "mojo_binary",
+    "mojo_test",
+    "pkg_files",
+    "requirement",
+    "strip_prefix",
+)
+
+_RUN_BENCHMARKS = [
+    "algorithm/parallelize_overhead.mojo",
+    "nn/bench_gather_reduce.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "algorithm/parallelize_overhead.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): reenable and remove this tag
+}
+
+_CPU_TESTS = glob(
+    ["**/*.mojo"],
+    exclude = [
+        "**/*.yaml",
+        "autotune/**",
+        "demos/**",
+        "gpu/**",
+        "misc/**",
+        "packages/**",
+    ] + _RUN_BENCHMARKS,
+)
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:layout",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _CPU_TESTS
+]
+
+[
+    build_test(
+        name = src + ".test",
+        targets = [src.split(".")[0]],
+    )
+    for src in _CPU_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "enormous",
+        srcs = [src],
+        args = ["-t"],
+        enable_assertions = False,
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:layout",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _RUN_BENCHMARKS
+]
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:layout",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["gpu/*.mojo"])
+]
+
+[
+    build_test(
+        name = src + ".test",
+        tags = ["gpu"],
+        targets = [src.split(".")[0]],
+    )
+    for src in glob(["gpu/*.mojo"])
+]
+
+pkg_files(
+    name = "kernel_benchmark_files",
+    srcs = glob(
+        [
+            "**/*.mojo",
+            "**/*.yaml",
+            "autotune/**",
+        ],
+        exclude = [
+            "demos/**",
+            "misc/**",
+            "packages/**",
+        ],
+    ),
+    prefix = "kernel-benchmark",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)
+
+modular_py_library(
+    name = "autotune",
+    srcs = [
+        "autotune/kplot.py",
+        "autotune/kprofile.py",
+    ],
+    imports = ["autotune"],
+    visibility = ["//visibility:public"],
+    deps = [
+        # Deps required for kbench/kplot/kprofile
+        requirement("numpy"),
+        requirement("click"),
+        requirement("pandas"),
+        requirement("rich"),
+        requirement("plotly"),
+        requirement("kaleido"),
+        requirement("pyyaml"),
+        "//GenericML/tools/model:lib",
+    ],
+)
+
+modular_py_test(
+    name = "autotune_tests",
+    srcs = glob(["autotune/tests/*.py"]),
+    deps = [
+        ":autotune",
+    ],
+)

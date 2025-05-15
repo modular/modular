@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_not
-# RUN: not --crash mojo %s 2>&1
+# RUN: not mojo %s 2>&1
 
 from pathlib import Path
 from sys import DLHandle

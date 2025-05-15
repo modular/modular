@@ -510,9 +510,9 @@ def test_split():
             "\x1c",
             "\x1d",
             "\x1e",
-            String(next_line),
-            String(unicode_line_sep),
-            String(unicode_paragraph_sep),
+            String(bytes=next_line),
+            String(bytes=unicode_line_sep),
+            String(bytes=unicode_paragraph_sep),
         )
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
@@ -579,7 +579,7 @@ def test_splitlines():
     alias S = StringSlice[StaticConstantOrigin]
     alias L = List[StringSlice[StaticConstantOrigin]]
 
-    # FIXME: remove once StringSlice conforms to TestableCollectionElement
+    # FIXME: remove once we can compare Lists of different element types
     fn _assert_equal[
         O1: ImmutableOrigin
     ](l1: List[StringSlice[O1]], l2: List[String]) raises:
@@ -623,9 +623,9 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(List[UInt8](0xC2, 0x85))
-    var unicode_line_sep = String(List[UInt8](0xE2, 0x80, 0xA8))
-    var unicode_paragraph_sep = String(List[UInt8](0xE2, 0x80, 0xA9))
+    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
+    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
+    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = i[]
@@ -966,6 +966,12 @@ def test_replace():
         StringSlice("hello world hello world").replace("world", "mojo"),
         "hello mojo hello mojo",
     )
+    assert_equal(
+        StringSlice("this is a test").replace(
+            "this", "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz"
+        ),
+        "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz is a test",
+    )
 
 
 def test_join():
@@ -1002,6 +1008,20 @@ def test_string_slice_intern():
     assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
     # Test get_static_string with multiple string arguments.
     assert_equal(get_static_string["a", "b", "c"](), "abc")
+
+
+# This is just a compile test
+# it does not need to be run
+def test_merge():
+    var a = ""
+    var b = String("hi")
+
+    fn cond(
+        pred: Bool, a: StringSlice, b: StringSlice
+    ) -> StringSlice[__origin_of(a.origin, b.origin)]:
+        return a if pred else b
+
+    _ = cond(True, a, b)
 
 
 def main():

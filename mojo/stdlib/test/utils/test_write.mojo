@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from collections.string.inline_string import _FixedString
-
 from testing import assert_equal
 
 from utils import Writable, Writer
@@ -23,8 +21,6 @@ fn main() raises:
     test_writer_of_string()
     test_string_format_seq()
     test_stringable_based_on_format()
-
-    test_writer_of_fixed_string()
 
     test_write_int_padded()
 
@@ -72,12 +68,6 @@ fn test_string_format_seq() raises:
 
 fn test_stringable_based_on_format() raises:
     assert_equal(String(Point(10, 11)), "Point(10, 11)")
-
-
-fn test_writer_of_fixed_string() raises:
-    var s1 = _FixedString[100]()
-    s1.write("Hello, World!")
-    assert_equal(String(s1), "Hello, World!")
 
 
 fn test_write_int_padded() raises:

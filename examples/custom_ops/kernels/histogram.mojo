@@ -20,7 +20,7 @@ from gpu.host.info import Info, is_cpu, is_gpu
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 from utils.index import IndexList
@@ -66,13 +66,13 @@ fn _histogram_gpu(
         barrier()
 
         # Increment the shared memory for the current thread
-        _ = Atomic._fetch_add(shared_mem + Int(input[tid]), 1)
+        _ = Atomic.fetch_add(shared_mem + Int(input[tid]), 1)
 
         # Synchronize all threads to ensure that the shared memory is updated
         barrier()
 
         # Increment the output for the current thread
-        _ = Atomic._fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
+        _ = Atomic.fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
 
     var n = input.dim_size(0)
 

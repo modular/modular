@@ -13,7 +13,7 @@ format = "mojo format ."
 
 [dependencies]
 max = ">=24.4.0,<25"
-python = ">=3.8,<3.12"
+python = ">=3.9,<3.14"
 pytorch = ">=2.5.1,<3"
 
 [pypi-dependencies]

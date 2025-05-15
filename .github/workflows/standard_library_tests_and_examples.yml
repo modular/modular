@@ -14,12 +14,16 @@
 name: Test stdlib and examples
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
+
+concurrency: # Only allow a single build/test run at a time for a PR.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   test-examples:
@@ -66,3 +70,4 @@ jobs:
         run: |
           magic run --frozen tests
           magic run --frozen examples
+          magic run --frozen benchmarks

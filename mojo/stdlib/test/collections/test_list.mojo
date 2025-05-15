@@ -572,7 +572,7 @@ def test_no_extra_copies_with_sugared_set_by_field():
 
 # Ensure correct behavior of __copyinit__
 # as reported in GH issue 27875 internally and
-# https://github.com/modular/max/issues/1493
+# https://github.com/modular/modular/issues/1493
 def test_list_copy_constructor():
     var vec = List[Int](capacity=1)
     var vec_copy = vec
@@ -781,7 +781,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement List.__eq__ for Self[ComparableCollectionElement]
+    # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
     # var y = List[List[Int]]()
     # y.append(List(1,2))
     # assert_equal(List(1,2) in y,True)

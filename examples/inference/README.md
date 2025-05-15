@@ -6,7 +6,7 @@ Mojo, Python, and C APIs:
 
 ## PyTorch (via TorchScript)
 
-- BERT, [with the Mojo API](./bert-mojo-torchscript/),
-[with the Python API](./bert-python-torchscript/),
-and [with the C API](./bert-c-torchscript/)
+- BERT [with the Python API](./bert-python-torchscript/) and [with the C
+API](./bert-c-torchscript/)
+
 - [ResNet50 with the Python API](./resnet50-python-torchscript/)

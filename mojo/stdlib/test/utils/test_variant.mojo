@@ -37,7 +37,7 @@ fn assert_no_poison() raises:
     assert_false(_poison_ptr().take_pointee())
 
 
-struct Poison(CollectionElement):
+struct Poison(Copyable, Movable):
     fn __init__(out self):
         pass
 

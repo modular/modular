@@ -20,7 +20,7 @@ from collections.string.string import (
 )
 
 from memory import UnsafePointer, memcpy
-from python import Python
+from python import Python, PythonObject
 from testing import (
     assert_equal,
     assert_false,
@@ -28,6 +28,8 @@ from testing import (
     assert_raises,
     assert_true,
 )
+
+from math import isinf, isnan
 
 
 @value
@@ -471,6 +473,33 @@ def test_atof():
     assert_equal(FloatLiteral.infinity, atof(" inf "))
     assert_equal(FloatLiteral.negative_infinity, atof("-inf  "))
 
+    # Tests for scientific notation bug fix (using buff[pos] instead of buff[start])
+    assert_equal(
+        1.23e-2, atof("1.23e-2")
+    )  # Previously failed due to wrong buffer indexing
+    assert_equal(
+        4.56e2, atof("4.56e+2")
+    )  # Previously failed due to wrong buffer indexing
+
+    # Tests for case-insensitive NaN and infinity
+    assert_true(isnan(atof("NaN")))
+    assert_true(isnan(atof("nan")))
+    assert_true(isinf(atof("Inf")))
+    assert_true(isinf(atof("INFINITY")))
+    assert_true(isinf(atof("infinity")))
+    assert_true(isinf(atof("-INFINITY")))
+
+    # Tests for leading decimal point (no digits before decimal)
+    assert_equal(0.123, atof(".123"))
+    assert_equal(-0.123, atof("-.123"))
+    assert_equal(0.123, atof("+.123"))
+
+    # Tests for large exponents (overflow handling)
+    assert_equal(
+        FloatLiteral.infinity, atof("1e309")
+    )  # Overflows double precision
+    assert_equal(0.0, atof("1e-309"))  # Underflows to zero
+
     # Negative cases
     with assert_raises(contains="String is not convertible to float: ''"):
         _ = atof("")
@@ -509,6 +538,12 @@ def test_atof():
         contains="String is not convertible to float: ' ++94. '"
     ):
         _ = atof(" ++94. ")
+
+    with assert_raises(contains="String is not convertible to float"):
+        _ = atof(".")  # Just a decimal point with no digits
+
+    with assert_raises(contains="String is not convertible to float"):
+        _ = atof("e5")  # Exponent with no mantissa
 
 
 def test_calc_initial_buffer_size_int32():
@@ -647,9 +682,9 @@ def test_split():
             "\x1c",
             "\x1d",
             "\x1e",
-            String(next_line),
-            String(unicode_line_sep),
-            String(unicode_paragraph_sep),
+            String(bytes=next_line),
+            String(bytes=unicode_line_sep),
+            String(bytes=unicode_paragraph_sep),
         )
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
@@ -807,7 +842,7 @@ def test_splitlines():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
     for elt in List(next_line, unicode_line_sep, unicode_paragraph_sep):
-        u = String(elt[])
+        u = String(bytes=elt[])
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -836,9 +871,9 @@ def test_isspace():
         String("\x1c"),
         String("\x1d"),
         String("\x1e"),
-        String(next_line),
-        String(unicode_line_sep),
-        String(unicode_paragraph_sep),
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
 
     for i in univ_sep_var:
@@ -1433,6 +1468,15 @@ def test_unsafe_cstr():
     var p3 = s3.unsafe_cstr_ptr()
     assert_equal(p3[0], 0)
 
+    # 24 bytes is out of line.
+    var s4: String = "abcdefghabcdefghabcdefgh"
+    var p4 = s4.unsafe_cstr_ptr()
+    assert_equal(p4[0], ord("a"))
+    assert_equal(p4[1], ord("b"))
+    assert_equal(p4[2], ord("c"))
+    assert_equal(p4[23], ord("h"))
+    assert_equal(p4[24], 0)
+
 
 def test_variadic_ctors():
     var s = String("message", 42, 42.2, True, sep=", ")
@@ -1451,17 +1495,27 @@ def test_variadic_ctors():
 
 
 def test_sso():
-    # String literals are stored out of line.
+    # String literals are stored inline when short and not nul-terminated.
     var s: String = String("hello")
+    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s._capacity_or_data.is_inline(), True)
+    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
+
+    # String literals are stored out-of-line when longer than SSO and
+    # nul-terminated.
+    s = String("hellohellohellohellohellohellohellohellohellohellohello")
     assert_equal(s.capacity(), 0)
     assert_equal(s._capacity_or_data.is_inline(), False)
+    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Empty strings are stored inline.
     s = String()
     assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s._capacity_or_data.is_inline(), True)
+    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
-    s += "f" * (_StringCapacityField.NUM_SSO_BYTES)
+    s += "f" * _StringCapacityField.NUM_SSO_BYTES
     assert_equal(len(s), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
     assert_equal(s._capacity_or_data.is_inline(), True)
@@ -1469,7 +1523,7 @@ def test_sso():
     # One more byte.
     s += "f"
 
-    # The capcity should be 2x the previous amount, rounded up to 8.
+    # The capacity should be 2x the previous amount, rounded up to 8.
     alias expected_capacity = (_StringCapacityField.NUM_SSO_BYTES * 2 + 7) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._capacity_or_data.is_inline(), False)
@@ -1480,15 +1534,26 @@ def test_sso():
     assert_equal(s._capacity_or_data.is_inline(), False)
     assert_equal(s, "ffff")
 
-    # Copying the small out-of-line string should bring it inline.
+    # Copying the small out-of-line string should just bump the count.
     var s2 = s.copy()
-    assert_equal(s2._capacity_or_data.is_inline(), True)
+    assert_equal(s2._capacity_or_data.is_inline(), False)
     assert_equal(s2, "ffff")
 
     # Stringizing short things should be inline.
     s = String(42)
     assert_equal(s, "42")
     assert_equal(s._capacity_or_data.is_inline(), True)
+
+
+def test_python_object():
+    var s = String(PythonObject("hello"))
+    assert_equal(s, "hello")
+
+    var p = Python()
+    _ = p.eval("class A:\n  def __str__(self): pass")
+    var a = p.evaluate("A()")
+    with assert_raises(contains="__str__ returned non-string"):
+        _ = String(a)
 
 
 def main():
@@ -1538,3 +1603,4 @@ def main():
     test_unsafe_cstr()
     test_variadic_ctors()
     test_sso()
+    test_python_object()

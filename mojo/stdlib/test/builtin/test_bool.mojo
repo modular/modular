@@ -13,6 +13,7 @@
 # RUN: %mojo -debug-level full %s
 
 from testing import assert_equal, assert_false, assert_true
+from python import PythonObject
 
 
 def test_default():
@@ -54,11 +55,6 @@ fn takes_bool(cond: Bool) -> Bool:
 def test_convert_from_implicitly_boolable():
     assert_true(takes_bool(MyTrue()))
     assert_true(Bool(MyTrue()))
-
-
-# def test_bool_to_string():
-#     assert_equal(String(True), "True")
-#     assert_equal(String(False), "False")
 
 
 def test_bool_representation():
@@ -159,16 +155,28 @@ def test_float_conversion():
     assert_equal((False).__float__(), 0.0)
 
 
+def test_from_python():
+    assert_true(Bool(PythonObject(True)))
+    assert_false(Bool(PythonObject(False)))
+
+
+def test_to_python_object():
+    assert_true(Bool(True).to_python_object() == PythonObject(True))
+    assert_true(Bool(False).to_python_object() == PythonObject(False))
+    assert_false(Bool(True).to_python_object() == PythonObject(False))
+
+
 def main():
     test_default()
     test_min_max()
     test_bool_cast_to_int()
     test_bool_none()
     test_convert_from_implicitly_boolable()
-    # test_bool_to_string()
     test_bool_representation()
     test_bitwise()
     test_neg()
     test_indexer()
     test_comparisons()
     test_float_conversion()
+    test_from_python()
+    test_to_python_object()

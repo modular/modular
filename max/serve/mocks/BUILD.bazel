@@ -1,0 +1,6 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+modular_py_library(
+    name = "mocks",
+    srcs = glob(["*.py"]),
+)

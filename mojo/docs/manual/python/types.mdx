@@ -13,8 +13,7 @@ method.
 ## Mojo types in Python
 
 Mojo primitive types implicitly convert into Python objects. Today we support
-integers, floats, booleans, strings, tuples, and `ListLiteral` instances
-(described below in [Mojo wrapper objects](#mojo-wrapper-objects)).
+integers, floats, booleans, and strings.
 
 To demonstrate, the following example dynamically creates an in-memory Python
 module named `py_utils` containing a `type_printer()` function, which simply
@@ -33,22 +32,38 @@ def type_printer(value):
 
     py_utils.type_printer(4)
     py_utils.type_printer(3.14)
-    py_utils.type_printer(("Mojo", True))
+    py_utils.type_printer(True)
+    py_utils.type_printer("Mojo")
 ```
 
 ```output
 <class 'int'>
 <class 'float'>
-<class 'tuple'>
+<class 'bool'>
+<class 'str'>
 ```
 
 ## Python types in Mojo
 
-You can also use Python objects from Mojo. For example, Mojo's
-[`Dict`](/mojo/stdlib/collections/dict/Dict) and
-[`List`](/mojo/stdlib/collections/list/List) types don't natively support
-heterogeneous collections. One alternative is to use a Python dictionary or
-list.
+You can also create and use Python objects from Mojo.
+
+### Mojo wrapper objects
+
+When you use Python objects in your Mojo code, Mojo adds the
+[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper around
+the Python object. This object exposes a number of common double underscore
+methods (dunder methods) like `__getitem__()` and `__getattr__()`, passing them
+through to the underlying Python object. Most of the time, you can treat the
+wrapped object just like you'd treat it in Python. You can use dot-notation to
+access attributes and call methods, and use the `[]` operator to access an item
+in a sequence.
+
+You can explicitly create a wrapped Python object by initializing a
+`PythonObject` with a Mojo integer, float, boolean, or string. Additionally, you
+can create several types of Python collections directly in Mojo using the
+[`Python.dict()`](/mojo/stdlib/python/python/Python#dict),
+[`Python.list()`](/mojo/stdlib/python/python/Python#list), and
+[`Python.tuple()`](/mojo/stdlib/python/python/Python#tuple) static methods.
 
 For example, to create a Python dictionary, use the
 [`Python.dict()`](/mojo/stdlib/python/python/Python#dict) method:
@@ -68,25 +83,14 @@ def main():
 {'item_name': 'whizbang', 'price': 11.75, 'inventory': 100}
 ```
 
-### Mojo wrapper objects
-
-When you use Python objects in your Mojo code, Mojo adds the
-[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper around
-the Python object. This object exposes a number of common double underscore
-methods (dunder methods) like `__getitem__()` and `__getattr__()`, passing them
-through to the underlying Python object.
-
-You can explicitly create a wrapped Python object by initializing a
-`PythonObject` with a Mojo literal. Most of the time, you can treat the wrapped
-object just like you'd treat it in Python. You can use dot-notation to access
-attributes and call methods, and use the `[]` operator to access an item in a
-sequence. For example:
+With the [`Python.list()`](/mojo/stdlib/python/python/Python#list) method, you
+can create a Python list and optionally initialize it:
 
 ```mojo
-from python import PythonObject
+from python import Python
 
 def main():
-    var py_list: PythonObject = ["cat", 2, 3.14159, 4]  # A ListLiteral
+    py_list = Python.list("cat", 2, 3.14159, 4)
     n = py_list[2]
     print("n =", n)
     py_list.append(5)
@@ -99,26 +103,24 @@ n = 3.14159
 ['aardvark', 2, 3.14159, 4, 5]
 ```
 
-:::note
+The [`Python.tuple()`](/mojo/stdlib/python/python/Python#tuple) method creates a
+Python tuple of values:
 
-In the example above, `["cat", 2, 3.14159, 4]` is an instance of
-[`ListLiteral`](/mojo/stdlib/builtin/list_literal/ListLiteral/), which supports
-lists of heterogeneous values. The `ListLiteral` type is intended only for
-Python interoperability, and it is not compatible with the native Mojo
-[`List`](/mojo/stdlib/collections/list/List) type. For example, the following
-line results in a compilation error:
+```mojo
+from python import Python
 
-```
-var mojo_list: List[Int] = [1, 2, 3, 4]
+def main():
+    py_tuple = Python.tuple("cat", 2, 3.1415, "cat")
+    n = py_tuple[2]
+    print("n =", n)
+    print("Number of cats:", py_tuple.count("cat"))
 ```
 
 ```output
-error: cannot implicitly convert 'ListLiteral[Int, Int, Int, Int]' value to 'List[Int]'
-var mojo_list: List[Int] = [1, 2, 3, 4]
-                           ^~~~~~~~~~~~
+n = 3.1415
+Number of cats: 2
 ```
 
-:::
 
 If you want to construct a Python type that doesn't have a literal Mojo
 equivalent, you can also use the
@@ -143,7 +145,6 @@ Is 7 in the set: True
 
 Some Mojo APIs handle `PythonObject` just fine, but sometimes you'll need to
 explicitly convert a Python value into a native Mojo value.
-
 Currently `PythonObject` conforms to the
 [`Stringable`](/mojo/stdlib/builtin/str/Stringable),
 [`Boolable`](/mojo/stdlib/builtin/bool/Boolable),

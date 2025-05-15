@@ -11,6 +11,6 @@ examples = "../examples/mojo/run-examples.sh"
 benchmarks = "./stdlib/scripts/run-benchmarks.sh"
 
 [dependencies]
-python = ">=3.9,<3.13"
+python = ">=3.9,<3.14"
 lit = "*"
 max = "*"

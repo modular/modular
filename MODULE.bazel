@@ -1,0 +1,137 @@
+"""Define bazel dependencies."""
+
+module(
+    name = "modular",
+    version = "0",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "protobuf", version = "29.3")
+bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
+bazel_dep(name = "rules_cc", version = "0.0.17")
+bazel_dep(name = "rules_mojo", version = "0.1.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "7.0.2")
+bazel_dep(name = "rules_python", version = "1.4.0-rc4")
+bazel_dep(name = "rules_shell", version = "0.4.1")
+
+# TODO: Remove when 0.3.0 is released
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-dH3c36ID639D1vbXkOK2hOxRjB0UUnQwkr2CeKF7GWQ=",
+    strip_prefix = "rules_mojo-fcfda29454093baff7901178d4dae91a9a042178",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/fcfda29454093baff7901178d4dae91a9a042178.tar.gz",
+    ],
+)
+
+bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
+bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
+single_version_override(
+    module_name = "toolchains_llvm",
+    patch_strip = 1,
+    patches = [
+        "//bazel:toolchains_llvm.patch",
+    ],
+)
+
+mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
+
+mojo_aliases(name = "mojo")
+
+include("//bazel:mojo.MODULE.bazel")
+
+register_toolchains("@mojo_toolchains//...")
+
+_DEFAULT_PYTHON_VERSION = "3.12"
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
+python.toolchain(
+    ignore_root_user_error = True,
+    is_default = True,
+    python_version = _DEFAULT_PYTHON_VERSION,
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip", dev_dependency = True)
+pip.parse(
+    hub_name = "modular_test_deps",
+    python_version = _DEFAULT_PYTHON_VERSION,
+    requirements_lock = "bazel/requirements.txt",
+)
+use_repo(pip, "modular_test_deps")
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
+llvm.toolchain(
+    name = "llvm_toolchain",
+    llvm_versions = {
+        "linux-aarch64": "20.1.1",
+        "linux-x86_64": "20.1.1",
+    },
+    sha256 = {
+        "linux-aarch64": "86314680f7abea8e054d635c0e54b3f3f6993f8e826df0da8cfd02e456976625",
+        "linux-x86_64": "58d7a1a8fa22a001794e82a8e9ca441e12fb6d62fd8b7d47040df58a459dec8e",
+    },
+    stdlib = {
+        "linux-aarch64": "dynamic-stdc++",
+        "linux-x86_64": "dynamic-stdc++",
+    },
+    urls = {
+        "linux-aarch64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_arm64.tar.xz"],
+        "linux-x86_64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_amd64.tar.xz"],
+    },
+)
+use_repo(llvm, "llvm_toolchain")
+
+register_toolchains("@llvm_toolchain//:all")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# This section is derived from the full LLVM workspace, available at
+# llvm-project/utils/bazel/WORKSPACE. If there are changes in
+# LLVM that require updating these dependencies, this file may also need to
+# be updated in the future.
+http_archive(
+    name = "llvm_zlib",
+    build_file = "@llvm-raw//utils/bazel/third_party_build:zlib-ng.BUILD",
+    dev_dependency = True,
+    sha256 = "e36bb346c00472a1f9ff2a0a4643e590a254be6379da7cddd9daeb9a7f296731",
+    strip_prefix = "zlib-ng-2.0.7",
+    urls = [
+        "https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.0.7.zip",
+    ],
+)
+
+http_archive(
+    name = "llvm_zstd",
+    build_file = "@llvm-raw//utils/bazel/third_party_build:zstd.BUILD",
+    dev_dependency = True,
+    sha256 = "7c42d56fac126929a6a85dbc73ff1db2411d04f104fae9bdea51305663a83fd0",
+    strip_prefix = "zstd-1.5.2",
+    urls = [
+        "https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.tar.gz",
+    ],
+)
+
+# NOTE: These versions don't particularly match what modular uses internally, this is only used for test dependencies
+LLVM_COMMIT = "6274cdb9a6714908c8a4e30d2ef0bf22a6949065"
+
+LLVM_SHA = "ee26cf9d90a87bd02f10f0846cda0f2e82e4d930a3704d5c790cb2ee76f44124"
+
+http_archive(
+    name = "llvm-raw",
+    build_file_content = "exports_files(glob([\"**\"]))",
+    dev_dependency = True,
+    sha256 = LLVM_SHA,
+    strip_prefix = "llvm-project-{}".format(LLVM_COMMIT),
+    url = "https://github.com/llvm/llvm-project/archive/{}.tar.gz".format(LLVM_COMMIT),
+)
+
+llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_configure")
+
+llvm_configure(name = "llvm-project")
+
+modular_host_platform = use_repo_rule("//bazel:modular_host_platform.bzl", "modular_host_platform")
+
+modular_host_platform(name = "modular_host_platform")

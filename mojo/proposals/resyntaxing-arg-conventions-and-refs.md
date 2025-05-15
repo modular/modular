@@ -1,9 +1,9 @@
 # Resyntaxing argument conventions and References
 
 Chris Lattner, Date: October 2024, Status: **Implemented** (except for future
-directions), [discussion thread](https://github.com/modular/max/issues/3623)
+directions), [discussion thread](https://github.com/modular/modular/issues/3623)
 
-Previous revision: [[June 2023](https://github.com/modular/max/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
+Previous revision: [[June 2023](https://github.com/modular/modular/blob/f8d7cb8ba4c21ec3fbc87e21609b3fd56cab695f/proposals/lifetimes-keyword-renaming.md)]
 
 The design of the Mojo references subsystem is starting to come together.  To
 finalize the major points, it helps to come back and re-evaluate several early
@@ -228,7 +228,7 @@ and [Patterns](https://docs.python.org/3/reference/compound_stmts.html#patterns)
 (closely related)
 which we need for compatibility with the Python ecosystem.  These are the basis
 for `match` statements, unpack assignment syntax `(a,b) = foo()` and other
-things.  
+things.
 
 Mojo currently has support for targets, but not patterns.  When we implement
 patterns, we will extend `var` and `for` statements to work with them and we
@@ -275,7 +275,7 @@ declare local references on the stack.
     b += "foo"
 
     # I don't see a reason not to allow `ref` in "target" syntax, so let's do
-    # that too: 
+    # that too:
     ref c = mutlist[i]
     c += "foo"
 
@@ -316,7 +316,7 @@ should look to extend ref to conform to specific traits (e.g. `AnyType` and
 enable things like:
 
 ```mojo
-struct Dict[K: KeyElement, V: CollectionElement]:
+struct Dict[K: KeyElement, V: Copyable & Movable]:
     ...
     fn __getitem__(self, key: K) -> Optional[ref [...] Self.V]:
         ...

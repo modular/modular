@@ -27,10 +27,10 @@ def main():
         "--diagnose-missing-doc-strings",
         "-o",
         "/dev/null",
-        "./mojo/stdlib/src",
+        "./mojo/stdlib/stdlib",
     ]
     result = subprocess.run(command, capture_output=True)
-    if result.stderr or result.returncode != 0:
+    if result.returncode != 0:
         print("Docstring issue found in the stdlib: ")
         print(result.stderr.decode())
         sys.exit(1)

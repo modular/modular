@@ -18,6 +18,9 @@ following examples are shown here:
 - **fused_attention**: A fused attention operation, which leverages many of the
   available MAX GPU programming features to show how to address an important
   use case in AI models.
+- **image_pipeline**: Simple image pipeline that sequences custom ops:
+  grayscale, brighten, and blur. It leaves the data on the GPU for each op
+  before writing the result back to CPU and disk.
 
 Custom kernels have been written in Mojo to carry out these calculations. For
 each example, a simple graph containing a single operation is constructed
@@ -47,6 +50,7 @@ magic run vector_addition
 magic run top_k
 magic run matrix_multiplication
 magic run fused_attention
+magic run image_pipeline
 ```
 
 `magic run <example>` runs the associated Python example, taking care

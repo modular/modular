@@ -1,0 +1,18 @@
+load("@rules_uv//uv:pip.bzl", "pip_compile")
+
+pip_compile(
+    name = "generate_requirements",
+    args = [
+        "--emit-index-url",
+        "--isolated",
+        "--no-strip-extras",
+        "--no-strip-markers",
+    ],
+    data = [
+        "requirements.in",
+    ],
+    exec_properties = {"dockerNetwork": "bridge"},
+    requirements_in = "requirements.in",
+    requirements_txt = "requirements.txt",
+    tags = ["manual"],  # TODO: This currently fails internal CI because the command differs
+)

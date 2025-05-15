@@ -15,7 +15,7 @@ name: Documentation issue
 description: Report a problem with the MAX docs
 title: "[Docs]"
 labels:
-  - "documentation,max-repo"
+  - "documentation,modular-repo"
 body:
   - type: markdown
     attributes:

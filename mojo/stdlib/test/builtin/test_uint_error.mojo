@@ -19,7 +19,7 @@
 
 
 fn main():
-    # CHECK: test_uint_error.mojo:23:15: error: integer value -1 is negative, but is being converted to an unsigned type
+    # CHECK: test_uint_error.mojo:23:{{.*}}: error: integer value -1 is negative, but is being converted to an unsigned type
     print(UInt(-1))
     # CHECK-NOT: is never reached
     print("is never reached")

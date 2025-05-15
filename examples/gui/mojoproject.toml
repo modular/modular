@@ -6,7 +6,7 @@ platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 
 [dependencies]
 max = "*"
-numpy = "1.25.2"
+numpy = "*"
 pillow = "<=10.4.0"
 protobuf = "<=4.25.3"
 tokenizers = "<0.21"

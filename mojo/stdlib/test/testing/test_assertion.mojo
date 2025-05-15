@@ -217,13 +217,13 @@ def test_assert_almost_equal():
 def test_assert_is():
     var a = PythonObject("mojo")
     var b = a
-    assert_is(a, b)
+    assert_true(a is b)
 
 
 def test_assert_is_not():
     var a = PythonObject("mojo")
     var b = PythonObject("mojo")
-    assert_is_not(a, b)
+    assert_true(a is not b)
 
 
 def test_assert_custom_location():

@@ -141,14 +141,14 @@ direct programming support for the MLIR intermediate representations.
 ### Is Mojo only for AI or can it be used for other stuff?
 
 Mojo's initial focus is to solve AI programmability challenges. See
-[here](https://github.com/modular/max/tree/main/examples/custom_ops) for examples
+[here](https://github.com/modular/modular/tree/main/examples/custom_ops) for examples
 of how to write custom GPU operations. That being said,
 the goal is to grow Mojo into a general purpose programming language. We use Mojo
 at Modular to develop AI algorithms, but
 you can use it for other things like HPC, data transformations, writing pre/post
 processing operations, and much more. For examples of how Mojo can be used for
 other general programming tasks, see our [Mojo
-examples](https://github.com/modular/max/tree/main/examples/mojo).
+examples](https://github.com/modular/modular/tree/main/examples/mojo).
 
 ### Is Mojo interpreted or compiled?
 
@@ -213,10 +213,7 @@ hardware](https://www.modular.com/hardware).
 
 Mojo provides all the language functionality necessary for anyone to extend
 hardware support. As such, we expect hardware vendors and community members
-will contribute additional hardware support in the future. We’ll share more
-details about opening access to Mojo in the future, but in the meantime, you
-can read more about our [hardware extensibility
-vision](https://www.modular.com/hardware).
+will contribute additional hardware support in the future.
 
 ### How does Mojo provide a 35,000x speed-up over Python?
 
@@ -268,8 +265,8 @@ Yes, but it's different. When we first announced Mojo, it was available
 only through login, in a JupyterLab environment. Now that Mojo is available
 for local development, we've shut down that service.
 
-The new [Mojo Playground](/mojo/playground) is built into the docs website
-and does not require login.
+The new [Mojo Playground](https://developer.modular.com/playground)
+does not require login.
 
 - It provides access to Mojo and the Mojo standard library. It does not have
   network access, so you can't install additional Mojo or Python packages.
@@ -285,11 +282,11 @@ and does not require login.
   using buttons in the Playground toolbar.
 
 - There might be some bugs. Please [report issues and feedback on
-  GitHub](https://github.com/modular/max/issues/new/choose).
+  GitHub](https://github.com/modular/modular/issues/new/choose).
 
 ### What are the license terms for the SDK?
 
-Please read the [Mojo SDK License Terms](https://www.modular.com/legal/mojo).
+Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
@@ -358,10 +355,10 @@ the language is evolving rapidly and source stability is not guaranteed.
 
 ### How often will you be releasing new versions of Mojo?
 
-Mojo development is moving fast and we are regularly releasing updates.
-Please join the [Mojo Discord channel](http://discord.gg/modular) for
-notifications and [sign up for our newsletter](https://www.modular.com/newsletter)
-for more coarse-grain updates.
+Mojo development is moving fast and we are regularly releasing updates. Please
+join the [Mojo Discord channel](http://discord.gg/modular) for notifications
+and [sign up for our newsletter](https://www.modular.com/modverse#signup) for
+more coarse-grain updates.
 
 ## Open Source
 

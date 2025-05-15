@@ -254,6 +254,22 @@ def test_dunder_methods(mut python: Python):
     assert_equal(c, -35)
 
 
+def test_inplace_dunder_methods(mut python: Python):
+    # test dunder methods that don't fall back to their non-inplace counterparts
+    var list_obj = Python.list(1, 2)
+
+    list_obj += Python.list(3, 4)
+    assert_equal(String(list_obj), "[1, 2, 3, 4]")
+
+    list_obj *= 2
+    assert_equal(String(list_obj), "[1, 2, 3, 4, 1, 2, 3, 4]")
+
+    _ = python.eval("class A:\n  def __iadd__(self, other):\n    return 1")
+    var a = python.evaluate("A()")
+    a += 1
+    assert_equal(a, 1)
+
+
 def test_num_conversion() -> None:
     alias n = UInt64(0xFEDC_BA09_8765_4321)
     alias n_str = String(n)
@@ -309,6 +325,10 @@ def test_len():
 
     var l2 = Python.evaluate("[42,42.0]")
     assert_equal(len(l2), 2)
+
+    var x = PythonObject(42)
+    with assert_raises(contains="object of type 'int' has no len()"):
+        _ = len(x)
 
 
 def test_is():
@@ -377,17 +397,18 @@ fn test_setitem() raises:
 
 
 fn test_dict() raises:
-    var d = Dict[PythonObject, PythonObject]()
-    d["food"] = "remove this"
-    d["fries"] = "yes"
-    d["food"] = 123  # intentionally replace to ensure keys stay in order
-
-    var dd = PythonObject(d)
+    # Test Python.dict from keyword arguments.
+    var dd = Python.dict(food=123, fries="yes")
     assert_equal(String(dd), "{'food': 123, 'fries': 'yes'}")
 
     dd["food"] = "salad"
-    dd[42] = Python.evaluate("[4, 2]")
+    dd[42] = Python.list(4, 2)
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
+
+    # Test Python.dict from a Span of tuples.
+    var tuples = List((123, PythonObject("food")), (42, PythonObject("42")))
+    dd = Python.dict(tuples)
+    assert_equal(String(dd), "{123: 'food', 42: '42'}")
 
     # Also test that Python.dict() creates the right object.
     var empty = Python.dict()
@@ -445,8 +466,8 @@ fn test_getitem_raises() raises:
 
     with_2d = custom_indexable.With2DGetItem()
     assert_equal("[1, 2, 3]", String(with_2d[0]))
-    assert_equal(2, with_2d[0, 1])
-    assert_equal(6, with_2d[1, 2])
+    assert_equal(2, Int(with_2d[0, 1]))
+    assert_equal(6, Int(with_2d[1, 2]))
 
     with assert_raises(contains="list index out of range"):
         _ = with_2d[0, 4]
@@ -582,13 +603,10 @@ def test_contains_dunder():
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
-    var y = Dict[PythonObject, PythonObject]()
-    y["A"] = "A"
-    y["B"] = 5
-    x = PythonObject(y)
-    assert_true("A" in x)
-    assert_false("C" in x)
-    assert_true("B" in x)
+    var y = Python.dict(A="A", B=5)
+    assert_true("A" in y)
+    assert_false("C" in y)
+    assert_true("B" in y)
 
 
 def main():
@@ -596,6 +614,7 @@ def main():
     var python = Python()
 
     test_dunder_methods(python)
+    test_inplace_dunder_methods(python)
     test_num_conversion()
     test_bool_conversion()
     test_string_conversions()

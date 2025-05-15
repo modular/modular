@@ -25,7 +25,10 @@ Some high-level capabilities it provides:
 
 - Ability to interoperate with 'nul' terminated C string APIs.
 
-etc.  This document will examine some of the basics of how it works and why. It
+- O(1) copyinit by using a reference counted representation with
+  lazy-copy-on-mutation.
+
+This document will examine some of the basics of how it works and why. It
 can be extended over time.
 
 ## Representation implementation
@@ -129,6 +132,20 @@ be deallocated - things like a string literal or a slice from a `StaticString`.
 The `String` type uses this form to avoid having to make a heap allocation or
 copy of string literals.  See below for more details.
 
+### Mutable Indirect String Representation
+
+When a string is indirect and not mutable, the pointer field points to the
+string data corresponding to the string, but there is an additional
+`_StringOutOfLineHeader` header *before* the string data the pointer points to.
+This header contains a reference count for the mutable string buffer.
+
+This design allows the `__copyinit__` for the String type to guarantee that it
+is O(1): it just copies three words of data, and increments the reference count
+if indirect and mutable.  When checking to see if a string is mutable, the data
+is copied to a new buffer when the pointer is to an immutable string or when it
+points to a shared buffer.  This has no performance impact for short strings
+(an important common case) and has very low overhead for anything else.
+
 ## Unicode support
 
 TOWRITE.
@@ -153,6 +170,10 @@ string, it is important to know that the `String` type also sets its notion of
 immediately reallocate without extra checks.  This is a minor optimization and
 simplification of code, but it means that static constant strings will have
 `capacity=0` but have `length=n` where `n > 0`.
+
+Construction from short constant strings (like "foo") loads the string data at
+`String` construction time, which keeps usage of the string direct where
+possible.
 
 ### Mutable String Views
 

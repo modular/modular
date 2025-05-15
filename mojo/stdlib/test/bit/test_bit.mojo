@@ -177,9 +177,13 @@ def test_byte_swap():
 
 def test_byte_swap_simd():
     alias simd_width = 4
+    alias int8_t = DType.int8
     alias int16_t = DType.int16
     alias int32_t = DType.int32
     alias int64_t = DType.int64
+
+    alias var1 = SIMD[int8_t, simd_width](0x01, 0x23, 0x45, 0x67)
+    assert_equal(byte_swap(var1), var1)
 
     alias var2 = SIMD[int16_t, simd_width](-0x0123, 0x0000, 0x0102, 0x0201)
     assert_equal(

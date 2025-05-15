@@ -24,6 +24,7 @@
 * `ObservableDel`
 * `DelRecorder`
 * `AbortOnDel`
+* `AbortOnCopy`
 """
 
 from os import abort
@@ -131,7 +132,7 @@ struct ImplicitCopyOnly(Copyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(CollectionElement, ExplicitlyCopyable, Writable):
+struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
     """Counts the number of copies performed on a value."""
 
     var copy_count: Int
@@ -162,9 +163,10 @@ struct CopyCounter(CollectionElement, ExplicitlyCopyable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCounter[T: CollectionElementNew](
-    CollectionElement,
-    CollectionElementNew,
+struct MoveCounter[T: ExplicitlyCopyable & Movable](
+    Copyable,
+    Movable,
+    ExplicitlyCopyable,
 ):
     """Counts the number of moves performed on a value."""
 
@@ -194,7 +196,7 @@ struct MoveCounter[T: CollectionElementNew](
         self.move_count = existing.move_count + 1
 
     # TODO: This type should not be Copyable, but has to be to satisfy
-    #       CollectionElement at the moment.
+    #       Copyable & Movable at the moment.
     fn __copyinit__(out self, existing: Self):
         self.value = existing.value.copy()
         self.move_count = existing.move_count
@@ -209,7 +211,7 @@ struct MoveCounter[T: CollectionElementNew](
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCopyCounter(CollectionElement):
+struct MoveCopyCounter(Copyable, Movable):
     var copied: Int
     var moved: Int
 
@@ -257,7 +259,7 @@ struct DelRecorder(ExplicitlyCopyable):
 
 @value
 struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
-    CollectionElement
+    Copyable & Movable
 ):
     var target: UnsafePointer[Bool, origin=origin]
 
@@ -275,7 +277,7 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 var g_dtor_count: Int = 0
 
 
-struct DelCounter(CollectionElement, Writable):
+struct DelCounter(Copyable, Movable, Writable):
     # NOTE: payload is required because LinkedList does not support zero sized structs.
     var payload: Int
 
@@ -320,7 +322,7 @@ struct AbortOnDel:
 
 
 @value
-struct CopyCountedStruct(CollectionElement):
+struct CopyCountedStruct(Copyable, Movable):
     var counter: CopyCounter
     var value: String
 
@@ -332,3 +334,18 @@ struct CopyCountedStruct(CollectionElement):
     fn __init__(out self, value: String):
         self.counter = CopyCounter()
         self.value = value
+
+
+# ===----------------------------------------------------------------------=== #
+# AbortOnCopy
+# ===----------------------------------------------------------------------=== #
+
+
+@value
+struct AbortOnCopy(Copyable, ExplicitlyCopyable):
+    fn __copyinit__(out self, other: Self):
+        abort("We should never implicitly copy AbortOnCopy")
+
+    fn copy(self) -> Self:
+        abort("We should never explicitly copy AbortOnCopy")
+        return self

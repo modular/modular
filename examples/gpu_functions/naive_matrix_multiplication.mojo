@@ -12,30 +12,86 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import ceildiv
-from sys import has_nvidia_gpu_accelerator
-
-from gpu.host import Dim
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import global_idx
+from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from max.driver import Accelerator, Device, Tensor, accelerator, cpu
+from math import ceildiv
+from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 alias float_dtype = DType.float32
-alias tensor_rank = 2
+
+alias I = 5
+alias J = 4
+alias K = 6
+
+alias m_layout = Layout.row_major(I, J)
+alias n_layout = Layout.row_major(J, K)
+alias p_layout = Layout.row_major(I, K)
 
 
-fn naive_matrix_multiplication[
-    m_layout: Layout,
-    n_layout: Layout,
-    p_layout: Layout,
-](
+def main():
+    constrained[
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        "This example requires a supported GPU",
+    ]()
+
+    var ctx = DeviceContext()
+    var m_buffer = ctx.enqueue_create_buffer[float_dtype](m_layout.size())
+    var n_buffer = ctx.enqueue_create_buffer[float_dtype](n_layout.size())
+    var p_buffer = ctx.enqueue_create_buffer[float_dtype](p_layout.size())
+
+    # Map input buffers to host to fill with values from CPU
+    with m_buffer.map_to_host() as host_buffer:
+        var m_tensor = LayoutTensor[float_dtype, m_layout](host_buffer)
+        for m_row in range(I):
+            for m_col in range(J):
+                m_tensor[m_row, m_col] = m_row - m_col
+        print("M matrix:", m_tensor)
+
+    with n_buffer.map_to_host() as host_buffer:
+        var n_tensor = LayoutTensor[float_dtype, n_layout](host_buffer)
+        for n_row in range(J):
+            for n_col in range(K):
+                n_tensor[n_row, n_col] = n_row + n_col
+        print("N matrix:", n_tensor)
+
+    # Wrap device buffers in `LayoutTensor`
+    var m_tensor = LayoutTensor[float_dtype, m_layout](m_buffer)
+    var n_tensor = LayoutTensor[float_dtype, n_layout](n_buffer)
+    var p_tensor = LayoutTensor[float_dtype, p_layout](p_buffer)
+
+    # The grid is divided up into blocks, making sure there's an extra
+    # full block for any remainder. This hasn't been tuned for any specific
+    # GPU.
+    alias BLOCK_SIZE = 16
+    alias num_col_blocks = ceildiv(I, BLOCK_SIZE)
+    alias num_row_blocks = ceildiv(J, BLOCK_SIZE)
+
+    # Launch the compiled function on the GPU. The target device is specified
+    # first, followed by all function arguments. The last two named parameters
+    # are the dimensions of the grid in blocks, and the block dimensions.
+    ctx.enqueue_function[naive_matrix_multiplication](
+        m_tensor,
+        n_tensor,
+        p_tensor,
+        grid_dim=(num_col_blocks, num_row_blocks),
+        block_dim=(BLOCK_SIZE, BLOCK_SIZE),
+    )
+
+    # Move the output tensor back onto the CPU so that we can read the results.
+    with p_buffer.map_to_host() as host_buffer:
+        var host_tensor = LayoutTensor[float_dtype, p_layout](host_buffer)
+        print("Resulting matrix:", host_tensor)
+
+
+fn naive_matrix_multiplication(
     m: LayoutTensor[float_dtype, m_layout, MutableAnyOrigin],
     n: LayoutTensor[float_dtype, n_layout, MutableAnyOrigin],
     p: LayoutTensor[float_dtype, p_layout, MutableAnyOrigin],
 ):
     """Naive matrix multiplication of M_ij x N_jk = P_ik."""
-    row = block_dim.y * block_idx.y + thread_idx.y
-    col = block_dim.x * block_idx.x + thread_idx.x
+    var row = global_idx.y
+    var col = global_idx.x
 
     var m_dim = p.dim(0)
     var n_dim = p.dim(1)
@@ -44,74 +100,3 @@ fn naive_matrix_multiplication[
     if row < m_dim and col < n_dim:
         for j_index in range(k_dim):
             p[row, col] = p[row, col] + m[row, j_index] * n[j_index, col]
-
-
-def main():
-    # Attempt to connect to a compatible GPU. If one is not found, this will
-    # error out and exit.
-    gpu_device = accelerator()
-    host_device = cpu()
-
-    alias I = 5
-    alias J = 4
-    alias K = 6
-
-    # Allocate the two input matrices on the host.
-    m_tensor = Tensor[float_dtype, tensor_rank]((I, J), host_device)
-    n_tensor = Tensor[float_dtype, tensor_rank]((J, K), host_device)
-
-    # Fill them with initial values.
-    for m_row in range(I):
-        for m_col in range(J):
-            m_tensor[m_row, m_col] = m_row - m_col
-
-    for n_row in range(J):
-        for n_col in range(K):
-            n_tensor[n_row, n_col] = n_row + n_col
-
-    print("M matrix:", m_tensor)
-    print("N matrix:", n_tensor)
-
-    # Move the input matrices to the accelerator.
-    m_tensor = m_tensor.move_to(gpu_device)
-    n_tensor = n_tensor.move_to(gpu_device)
-
-    # Allocate a tensor on the accelerator to host the calculation results.
-    p_tensor = Tensor[float_dtype, tensor_rank]((I, K), gpu_device)
-
-    m_layout_tensor = m_tensor.to_layout_tensor()
-    n_layout_tensor = n_tensor.to_layout_tensor()
-    p_layout_tensor = p_tensor.to_layout_tensor()
-
-    # Compile the function to run across a grid on the GPU.
-    gpu_function = Accelerator.compile[
-        naive_matrix_multiplication[
-            m_layout_tensor.layout,
-            n_layout_tensor.layout,
-            p_layout_tensor.layout,
-        ]
-    ](gpu_device)
-
-    # The grid is divided up into blocks, making sure there's an extra
-    # full block for any remainder. This hasn't been tuned for any specific
-    # GPU.
-    alias BLOCK_SIZE = 16
-    num_col_blocks = ceildiv(I, BLOCK_SIZE)
-    num_row_blocks = ceildiv(J, BLOCK_SIZE)
-
-    # Launch the compiled function on the GPU. The target device is specified
-    # first, followed by all function arguments. The last two named parameters
-    # are the dimensions of the grid in blocks, and the block dimensions.
-    gpu_function(
-        gpu_device,
-        m_layout_tensor,
-        n_layout_tensor,
-        p_layout_tensor,
-        grid_dim=Dim(num_col_blocks, num_row_blocks),
-        block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
-    )
-
-    # Move the output tensor back onto the CPU so that we can read the results.
-    p_tensor = p_tensor.move_to(host_device)
-
-    print("Resulting matrix:", p_tensor)

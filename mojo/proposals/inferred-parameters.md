@@ -49,7 +49,7 @@ scalar_param[DType.int32, Int32()]() # 'dt' parameter is required
 This has been requested multiple times in various forms, especially given the
 new autoparameterization feature. The current tracking feature request:
 
-- <https://github.com/modular/max/issues/1245>
+- <https://github.com/modular/modular/issues/1245>
 
 ## Proposal
 

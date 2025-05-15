@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_test")
+
+mojo_binary(
+    name = "operators",
+    srcs = [
+        "main.mojo",
+        "my_complex.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "operators_test",
+    srcs = [
+        "my_complex.mojo",
+        "test_my_complex.mojo",
+    ],
+    main = "test_my_complex.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)

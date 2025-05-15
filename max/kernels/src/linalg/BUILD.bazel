@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//visibility:public"])
+
+mojo_library(
+    name = "linalg",
+    srcs = glob(["**/*.mojo"]),
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+)

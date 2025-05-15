@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

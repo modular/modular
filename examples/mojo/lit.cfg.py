@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,7 +29,6 @@ config.suffixes = [".mojo", ".🔥"]
 config.excludes = [
     # No RUN: directive, just bare examples
     "hello_interop.mojo",
-    "matmul.mojo",
 ] + [path.name for path in os.scandir("../examples/mojo") if path.is_dir()]
 
 # Have the examples run in the build directory.
@@ -45,15 +44,6 @@ config.test_source_root = Path(__file__).parent.resolve()
 
 # Substitute %mojo for just `mojo` itself.
 config.substitutions.insert(0, ("%mojo", "mojo"))
-
-# MODULAR_HOME is at <package root>/share/max by default
-pre_built_packages_path = (
-    Path(os.environ["MODULAR_HOME"]).parent.parent / "lib" / "mojo"
-).resolve()
-
-os.environ[
-    "MODULAR_MOJO_MAX_IMPORT_PATH"
-] = f"{build_root},{pre_built_packages_path}"
 
 # Pass through several environment variables
 # to the underlying subprocesses that run the tests.

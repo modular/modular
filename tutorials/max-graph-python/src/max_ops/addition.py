@@ -16,12 +16,14 @@ from typing import Any
 import numpy as np
 from max import engine
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, Any]:
     # 1. Build the graph
-    input_type = TensorType(dtype=DType.float32, shape=(1,))
+    input_type = TensorType(
+        dtype=DType.float32, shape=(1,), device=DeviceRef.CPU()
+    )
     with Graph(
         "simple_add_graph", input_types=(input_type, input_type)
     ) as graph:

@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "scheduler",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/core",
+        "//SDK/lib/API/python/max/serve/telemetry",
+        requirement("psutil"),
+        requirement("sentinel"),
+        requirement("pyzmq"),
+    ],
+)

@@ -2,7 +2,7 @@ name: Check PR target branch
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read

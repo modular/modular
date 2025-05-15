@@ -1,0 +1,29 @@
+load("//bazel:api.bzl", "lit_tests")
+
+lit_tests(
+    name = "benchmarks",
+    size = "large",
+    srcs = glob(["**/*.mojo"]),
+    data = [
+        "collections/data/UN_charter_AR.html",
+        "collections/data/UN_charter_AR.txt",
+        "collections/data/UN_charter_EN.html",
+        "collections/data/UN_charter_EN.txt",
+        "collections/data/UN_charter_ES.html",
+        "collections/data/UN_charter_ES.txt",
+        "collections/data/UN_charter_RU.html",
+        "collections/data/UN_charter_RU.txt",
+        "collections/data/UN_charter_zh-CN.html",
+        "collections/data/UN_charter_zh-CN.txt",
+    ],
+    env = {
+        "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
+    },
+    generate_litcfg = False,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+)

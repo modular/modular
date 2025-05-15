@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "pipelines",
+    srcs = glob(["*.py"]),
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/core",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
+        "//SDK/lib/API/python/max/serve/scheduler",
+        "//SDK/lib/API/python/max/serve/telemetry",
+        "//SDK/lib/API/python/max/support",
+        requirement("gguf"),
+        requirement("transformers"),
+        requirement("numpy"),
+        requirement("uvloop"),
+        requirement("psutil"),
+        requirement("pyzmq"),
+    ],
+)

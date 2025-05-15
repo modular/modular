@@ -30,6 +30,18 @@ def test_set_construction():
     _ = Set(Set[Int](1, 2, 3))
 
 
+def test_set_move():
+    var s1 = Set[Int](1, 2, 3)
+    var s2 = s1^
+    assert_equal(s2, Set[Int](1, 2, 3))
+
+
+def test_set_copy():
+    var s1 = Set[Int](1, 2, 3)
+    var s2 = s1
+    assert_equal(s1, s2)
+
+
 def test_len():
     var s1 = Set[Int]()
     assert_equal(0, len(s1))
@@ -533,3 +545,5 @@ def main():
     test["test_discard", test_discard]()
     test["test_clear", test_clear]()
     test["test_set_str", test_set_str]()
+
+    test_set_move()

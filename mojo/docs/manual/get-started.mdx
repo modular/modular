@@ -1,7 +1,7 @@
 ---
 title: "Get started with Mojo"
 description: "Install Mojo and learn the language basics by building a complete Mojo program"
-github_url: https://github.com/modular/max/tree/main/examples/mojo/life
+github_url: https://github.com/modular/modular/tree/main/examples/mojo/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
@@ -36,7 +36,7 @@ This tutorial might be a little long because there's a lot to learn, but we
 tried to keep the explanations simple, and we included links along the way for
 you to go learn more about each topic. If you just want to see the finished
 code, you can [get it on
-GitHub](https://github.com/modular/max/tree/main/examples/mojo/life).
+GitHub](https://github.com/modular/modular/tree/main/examples/mojo/life).
 
 System requirements:
 
@@ -135,7 +135,7 @@ If you've programmed before in Python, this should look familiar.
 - You can use any number of spaces or tabs for indentation as long as you use
   the same indentation for the entire code block. We'll follow the [Python style
   guide](https://peps.python.org/pep-0008/) and use 4 spaces.
-- This [`print()`](/mojo/stdlib/builtin/io/print) function a Mojo built-in so it
+- This [`print()`](/mojo/stdlib/builtin/io/print) function is a Mojo built-in so it
   doesn't require an import.
 
 An executable Mojo program *requires* you to define a no-argument `main()` as
@@ -1078,6 +1078,8 @@ from python import Python
 def run_display():
     # This is roughly equivalent to Python's `import pygame`
     pygame = Python.import_module("pygame")
+
+    # Initialize pygame modules
     pygame.init()
 ```
 
@@ -1117,7 +1119,9 @@ def run_display(
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode((window_height, window_width))
+    window = pygame.display.set_mode(
+        Python.tuple(window_height, window_width)
+    )
     pygame.display.set_caption("Conway's Game of Life")
 
     cell_height = window_height / grid.rows
@@ -1150,7 +1154,9 @@ def run_display(
                     width = cell_width - border_size
                     height = cell_height - border_size
                     pygame.draw.rect(
-                        window, cell_fill_color, (x, y, width, height)
+                        window,
+                        cell_fill_color,
+                        Python.tuple(x, y, width, height),
                     )
 
         # Update the display
@@ -1164,6 +1170,7 @@ def run_display(
 
     # Shut down pygame cleanly
     pygame.quit()
+
 
 def main():
     start = Grid.random(128, 128)
@@ -1180,7 +1187,7 @@ After importing the `pygame` module, we call `pygame.init()` to initialize all
 the pygame subsystems.
 
 The `set_mode()` function creates and initializes a window, with the height and
-width passed as a Mojo tuple of two values. This returns a
+width passed as a Python tuple of two values. This returns a
 [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) wrapper for the
 window, which we can then use to call functions and set attributes to manipulate
 the window. (For more information about interacting with Python objects from
@@ -1242,8 +1249,8 @@ steps:
   functions with Mojo.
 
 - Explore more Mojo
-  [examples](https://github.com/modular/max/tree/main/examples/mojo) in the
-  public [MAX GitHub repository](https://github.com/modular/max).
+  [examples](https://github.com/modular/modular/tree/main/examples/mojo) in the
+  public [MAX GitHub repository](https://github.com/modular/modular).
 
 import TutorialStack from '@site/src/components/TutorialStack';
 

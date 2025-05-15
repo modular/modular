@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REPO_ROOT="${SCRIPT_DIR}"/../..
+REPO_ROOT="${SCRIPT_DIR}"/../../..
 BUILD_DIR="${REPO_ROOT}"/build
 
 echo "Creating build directory for building the stdlib running the tests in."
@@ -28,7 +28,6 @@ TEST_UTILS_PATH="${REPO_ROOT}/stdlib/test/test_utils"
 # This is needed to compile test_utils.mojopkg correctly, otherwise it
 # uses the stdlib that's given in the nightly, and will fail compilation
 # if some breaking changes are made.
-export MODULAR_MOJO_MAX_IMPORT_PATH=$BUILD_DIR
 mojo package "${TEST_UTILS_PATH}" -I ${BUILD_DIR} -o "${BUILD_DIR}/test_utils.mojopkg"
 
 TEST_PATH="${REPO_ROOT}/stdlib/test"

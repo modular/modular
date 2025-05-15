@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//visibility:public"])
+
+mojo_library(
+    name = "quantization",
+    srcs = glob(["**/*.mojo"]),
+    deps = [
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)

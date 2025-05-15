@@ -1,8 +1,0 @@
-name: max-repo
-channels:
-  - https://conda.modular.com/max-nightly/
-  - conda-forge
-dependencies:
-  - python>=3.9,<3.13
-  - max
-  - pip>=24.0,<25
