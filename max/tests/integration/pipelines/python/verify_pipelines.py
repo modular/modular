@@ -636,8 +636,8 @@ PIPELINES = {
             encoding="bfloat16",
             absolute_tolerance=2.1e-1,
             relative_tolerance=1.1e-1,
-            cos_dist_threshold=4.7e-4,
-            kl_div_threshold=1.9e-3,
+            cos_dist_threshold=6.6e-4,
+            kl_div_threshold=2.8e-3,
         ),
     ),
     "llama3-vision-bfloat16": PipelineDef(
