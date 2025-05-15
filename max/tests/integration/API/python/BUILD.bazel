@@ -205,3 +205,28 @@ modular_run_binary_test(
         "requires-network",
     ],
 )
+
+modular_run_binary_test(
+    name = "pipelines_speculative_decoding_smoke_test",
+    args = [
+        "generate",
+        "--draft-model-path=hf-internal-testing/tiny-random-LlamaForCausalLM",
+        "--model-path=hf-internal-testing/tiny-random-LlamaForCausalLM",
+        "--quantization-encoding=bfloat16",
+        "--devices=gpu",
+        "--cache-strategy=paged",
+        "--kv-cache-page-size=128",
+        "--max-batch-size=4",
+        "--max-num-steps=10",
+        "--max-length=512",
+        "--device-memory-utilization=0.3",
+        "--prompt=\"The meaning of life is\"",
+    ],
+    binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+)
