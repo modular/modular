@@ -1,6 +1,16 @@
 # Test for shared layers.
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+modular_py_library(
+    name = "shared_conv_impl",
+    srcs = ["shared_conv_impl.py"],
+    deps = [
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
 
 modular_py_test(
     name = "tests",
@@ -18,7 +28,9 @@ modular_py_test(
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
     ],
+    imports = ["."],
     deps = [
+        ":shared_conv_impl",
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
@@ -47,16 +59,18 @@ modular_py_test(
             "**/*_attention_gpu.py",
             "**/*_nixl_gpu.py",
         ],
-    ),
+    ) + ["conftest.py"],
     data = [
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
     ],
     gpu_constraints = ["//:has_gpu"],
+    imports = ["."],
     tags = [
         "gpu",
     ],
     deps = [
+        ":shared_conv_impl",
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
