@@ -836,7 +836,15 @@ struct CPython:
             print("libpython selected:", python_lib)
 
         try:
-            self.lib = DLHandle(python_lib)
+            # Note:
+            #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
+            #   is a dynamic library being loaded as a Python extension module,
+            #   and we need to find CPython symbols that are statically linked
+            #   into the `python` main executable. On those paltforms where
+            #   `python` executable can be statically linked (Linux), it's
+            #   important that we don't load a second copy of CPython symbols
+            #   into the process by loading the `libpython` dynamic library.
+            self.lib = DLHandle(python_lib) if python_lib != "" else DLHandle()
         except e:
             self.lib = abort[DLHandle](
                 String("Failed to load libpython from", python_lib, ":\n", e)

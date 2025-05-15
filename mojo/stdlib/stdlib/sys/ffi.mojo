@@ -173,6 +173,19 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
     var handle: OpaquePointer
     """The handle to the dynamic library."""
 
+    @always_inline
+    fn __init__(out self, flags: Int = DEFAULT_RTLD) raises:
+        """Initialize a dynamic library handle to all global symbols in the
+        current process.
+
+        On POXIX-compatible operating systems, this performs
+        `dlopen(nullptr, flags)`.
+
+        Args:
+            flags: The flags to load the dynamic library.
+        """
+        self = Self._dlopen(UnsafePointer[c_char](), flags)
+
     # TODO(#15590): Implement support for windows and remove the always_inline.
     @always_inline
     fn __init__[
@@ -189,10 +202,14 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
             flags: The flags to load the dynamic library.
         """
 
+        var fspath = path.__fspath__()
+        self = Self._dlopen(fspath.unsafe_cstr_ptr(), flags)
+
+    @staticmethod
+    fn _dlopen(file: UnsafePointer[c_char], flags: Int) raises -> DLHandle:
         @parameter
         if not os_is_windows():
-            var fspath = path.__fspath__()
-            var handle = dlopen(fspath.unsafe_cstr_ptr(), flags)
+            var handle = dlopen(file, flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
                 raise Error(
@@ -203,9 +220,9 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
                         ),
                     )
                 )
-            self.handle = handle
+            return DLHandle(handle)
         else:
-            self.handle = OpaquePointer()
+            return DLHandle(OpaquePointer())
 
     fn copy(self) -> Self:
         """Copy the object.
