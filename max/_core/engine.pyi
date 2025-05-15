@@ -27,12 +27,6 @@ InputType = Union[
 class FrameworkFormat(enum.Enum):
     max_graph = 0
 
-    torchscript_module = 1
-
-    torchscript_function = 2
-
-    torch_mlir = 3
-
 class InferenceSession:
     def __init__(self, config: dict = {}) -> None: ...
     def compile_from_path(
@@ -322,52 +316,6 @@ class TensorSpec:
         If a dimension size is unknown/dynamic (such as the batch size), its
         value is ``None``.
         """
-
-    def __getstate__(self) -> tuple: ...
-    def __repr__(self) -> str: ...
-    def __setstate__(self, arg: tuple, /) -> None: ...
-    def __str__(self) -> str: ...
-
-class TorchInputSpec:
-    """
-    Specifies valid input specification for a TorchScript model.
-
-    Before you load a TorchScript model, you must create an instance of this class
-    for each input tensor, and pass them to the `input_specs` argument of
-    :meth:`InferenceSession.load`.ss
-
-    For example code, see :meth:`InferenceSession.load`.
-    """
-
-    def __init__(
-        self,
-        shape: Sequence[int | str | None] | None,
-        dtype: max._core.dtype.DType,
-        device: str = "",
-    ) -> None:
-        """
-        Args:
-            shape: The input tensor shape.
-            dtype: The input data type.
-            device: The device on which this tensor should be loaded.
-        """
-
-    @property
-    def shape(self) -> list[int | str | None] | None:
-        """
-        The shape of the tensor as a list of integers.
-
-        If a dimension size is unknown/dynamic (such as the batch size), its
-        value is ``None``.
-        """
-
-    @property
-    def dtype(self) -> max._core.dtype.DType:
-        """A torch input tensor data type."""
-
-    @property
-    def device(self) -> str:
-        """A torch device."""
 
     def __getstate__(self) -> tuple: ...
     def __repr__(self) -> str: ...

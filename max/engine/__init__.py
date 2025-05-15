@@ -15,5 +15,4 @@ from .api import (
     Model,
     MojoValue,
     TensorSpec,
-    TorchInputSpec,
 )
