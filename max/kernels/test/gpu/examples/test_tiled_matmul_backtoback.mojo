@@ -63,7 +63,6 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
-@value
 @register_passable("trivial")
 struct BackToBackMatmulConfig[
     dst_type: DType,

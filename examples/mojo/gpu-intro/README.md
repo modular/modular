@@ -1,0 +1,34 @@
+# Get started with GPU programming tutorial solution
+
+This directory contains a complete solution for the [Get started with GPU
+programming](https://docs.modular.com/mojo/manual/gpu/intro-tutorial/) tutorial
+project, which is an implementation of a simple vector addition GPU kernel using
+Mojo. Please refer to the tutorial for an explanation of the code and concepts.
+
+This example requires a [supported
+GPU](https://docs.modular.com/max/faq/#gpu-requirements) to run the kernel. If
+your system doesn't have a supported GPU, you can compile the program but the
+only output you'll see when you run it is:
+
+```output
+No compatible GPU found
+```
+
+## Files
+
+This directory contains the following files:
+
+- `vector_addition.mojo` is the only source file for the tutorial solution,
+  containing the kernel function and the main program.
+
+- `mojoproject.toml` is a [Magic](https://docs.modular.com/magic/)
+  project file containing the project dependencies and task definitions.
+
+## Run the code
+
+If you have [`magic`](https://docs.modular.com/magic) installed, you can
+execute the example by running the following command:
+
+```bash
+magic run mojo vector_addition.mojo
+```

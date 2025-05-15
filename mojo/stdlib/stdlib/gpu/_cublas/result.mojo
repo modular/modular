@@ -14,7 +14,6 @@
 from os import abort
 
 
-@value
 @register_passable("trivial")
 struct Result(Writable):
     var _value: Int32

@@ -4,13 +4,12 @@
 
 > Note: Mojo is included as a subdirectory in this repository
 
-The Modular platform (previously known as MAX) is an integrated suite of AI
-libraries, tools, and technologies that unifies commonly fragmented AI
-deployment workflows. Modular Platform accelerates time to market for the latest
-innovations by giving AI developers a single toolchain that unlocks full
-programmability, unparalleled performance, and seamless hardware portability.
+The Modular Platform is an open and fully-integrated suite of AI libraries
+and tools that accelerates model serving and scales GenAI deployments. It
+abstracts away hardware complexity so you can run the most popular open
+models with industry-leading GPU and CPU performance without any code changes.
 
-![](https://docs.modular.com/images/modular-container-stack.png)
+![](https://docs.modular.com/images/modular-container-stack.png?20250513)
 
 [See here to get started with the Modular platform](https://docs.modular.com/max/get-started)
 and when you want to report issues or request features,

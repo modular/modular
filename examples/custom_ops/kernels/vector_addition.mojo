@@ -16,7 +16,7 @@ from math import ceildiv
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils.index import IndexList
 

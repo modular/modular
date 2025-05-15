@@ -61,9 +61,7 @@ def main():
             name="brightness",
             values=[
                 x,
-                ops.constant(
-                    brightness, DType.float32, DeviceRef.from_device(device)
-                ),
+                ops.constant(brightness, DType.float32, DeviceRef.CPU()),
             ],
             out_types=[x.type],
         )[0].tensor
@@ -73,9 +71,7 @@ def main():
             name="blur",
             values=[
                 x,
-                ops.constant(
-                    blur_size, DType.int64, DeviceRef.from_device(device)
-                ),
+                ops.constant(blur_size, DType.int64, DeviceRef.CPU()),
             ],
             out_types=[x.type],
         )[0].tensor

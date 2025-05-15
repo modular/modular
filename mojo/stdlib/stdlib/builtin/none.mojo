@@ -16,7 +16,6 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-@value
 @register_passable("trivial")
 struct NoneType(
     Copyable,

@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from collections import List
 from collections.string.format import _CurlyEntryFormattable
-from collections.string.string_slice import CodepointSliceIter
+from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char
 
@@ -32,7 +32,6 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,

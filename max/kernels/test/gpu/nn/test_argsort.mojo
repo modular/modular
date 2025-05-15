@@ -45,7 +45,7 @@ fn test_argsort[
     var device_input = input.copy_to_device(ctx)
 
     argsort[ascending=ascending, target="gpu"](
-        device_indices.tensor, device_input.tensor, ctx
+        device_indices.to_layout_tensor(), device_input.to_layout_tensor(), ctx
     )
 
     var indices = device_indices.copy_from_device(ctx)
@@ -53,7 +53,9 @@ fn test_argsort[
 
     # Test for correctness against CPU reference
     var expected_indices = HostNDBuffer[DType.int64, 1](N)
-    argsort[ascending=ascending](expected_indices.tensor, input.tensor)
+    argsort[ascending=ascending](
+        expected_indices.to_layout_tensor(), input.to_layout_tensor()
+    )
 
     for i in range(N):
         assert_equal(

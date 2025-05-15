@@ -35,6 +35,7 @@ from .managed_tensor_slice import (
     _FusedComputeOutputTensor,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
+    _mixed_precision_output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,

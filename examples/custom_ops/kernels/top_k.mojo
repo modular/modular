@@ -19,7 +19,7 @@ from bit import log2_floor
 from compiler import register
 from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp
 from gpu.memory import AddressSpace, external_memory
-from max.tensor import InputTensor, OutputTensor
+from tensor_internal import InputTensor, OutputTensor
 from memory import Span
 from runtime.asyncrt import DeviceContextPtr
 

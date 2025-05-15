@@ -124,6 +124,7 @@ from tensor_internal import ManagedTensorSlice
 from tensor_internal import IOUnknown
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from layout import Layout
+from pathlib import Path
 
 # ===-----------------------------------------------------------------------===#
 # Flash attention
@@ -227,6 +228,7 @@ fn flash_attention[
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
@@ -524,18 +526,11 @@ fn flash_attention_dispatch[
             )
             alias num_blocks_y = num_heads // group
 
-            var num_partitions_value: Int
-
-            @parameter
-            if has_amd_gpu_accelerator():
-                # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
-                num_partitions_value = 1
-            else:
-                num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
-                    num_heads, group
-                ](
-                    batch_size, max_cache_valid_length, ctx
-                )
+            var num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
+                num_heads, group
+            ](
+                batch_size, max_cache_valid_length, ctx
+            )
 
             alias use_sm90_kernel = (
                 ctx.device_info is H100
@@ -711,10 +706,10 @@ fn flash_attention_dispatch[
                             Int(batch_size),
                         ),
                         block_dim=(num_threads, 1, 1),
-                        shared_mem_bytes=shared_mem_bytes,
+                        shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             ctx.device_info.shared_memory_per_multiprocessor
-                            - 4096
+                            - 4096 if has_nvidia_gpu_accelerator() else 0
                         ),
                     )
 
@@ -1276,7 +1271,7 @@ fn mha_single_batch[
             q_gmem_iter[].vectorize[1, simd_size](),
         )
 
-        async_copy_commit_group()
+        # we `async_copy_commit_group()` and after we finish copying `k`.
 
         q_gmem_iter._incr()
 
@@ -1394,10 +1389,9 @@ fn mha_single_batch[
                 k_gmem_iter[].vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             k_gmem_iter._incr()
 
+        async_copy_commit_group()
         # synchronize here since we can overlap q tile and first k tile copy
         async_copy_wait_all()
         barrier()
@@ -1571,9 +1565,9 @@ fn mha_single_batch[
                 v_tensor.vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             v_gmem_iter._incr()
+
+        async_copy_commit_group()
 
         @parameter
         if num_warps_n > 1:
@@ -2629,8 +2623,11 @@ fn mha_decoding[
             q_ptr.offset(q_batch_offset),
             k,
             v,
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
             1,
             num_keys,
+            num_partitions,
             scale,
             batch_idx,
             Int(0),
@@ -3162,7 +3159,7 @@ fn mha_decoding_single_batch[
             q_gmem_iter[].vectorize[1, simd_size](),
         )
 
-        async_copy_commit_group()
+        # we `async_copy_commit_group()` and after we finish copying `k`.
 
         q_gmem_iter._incr()
 
@@ -3222,9 +3219,9 @@ fn mha_decoding_single_batch[
                 k_tensor.vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             k_gmem_iter._incr()
+
+        async_copy_commit_group()
 
         async_copy_wait_all()
         barrier()
@@ -3360,9 +3357,9 @@ fn mha_decoding_single_batch[
                 v_tensor.vectorize[1, simd_size](),
             )
 
-            async_copy_commit_group()
-
             v_gmem_iter._incr()
+
+        async_copy_commit_group()
 
         @parameter
         if not decoding_warp_split_k:

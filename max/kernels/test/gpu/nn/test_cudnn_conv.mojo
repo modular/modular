@@ -150,7 +150,7 @@ fn test_conv_cudnn[
     # verifying results
     for x in range(output_dim_flattened):
         assert_equal(output_data_host[x], output_ref_host[x])
-
+    print("Succeed")
     input_data_host.free()
     filter_data_host.free()
     output_data_host.free()
@@ -333,7 +333,7 @@ fn test_conv_gpu[
     for x in range(output_dim_flattened):
         assert_equal(output_ref_ptr[x], output_cpu_ptr[x])
         assert_almost_equal(output_ref_ptr[x], output_gpu_ptr[x], rtol=0.01)
-
+    print("Succeed")
     input_ptr.free()
     filter_ptr.free()
 

@@ -44,7 +44,7 @@ from utils import write_args, write_buffered
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _fdopen[mode: StaticString = "a"]:
     var handle: OpaquePointer

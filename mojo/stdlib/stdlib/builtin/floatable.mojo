@@ -25,7 +25,6 @@ trait Floatable:
     For example:
 
     ```mojo
-    @value
     struct Foo(Floatable):
         var i: Float64
 
@@ -65,7 +64,6 @@ trait FloatableRaising:
     ```mojo
     from utils import Variant
 
-    @value
     struct MaybeFloat(FloatableRaising):
         var value: Variant[Float64, NoneType]
 

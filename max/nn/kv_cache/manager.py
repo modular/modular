@@ -42,14 +42,16 @@ class KVCacheInputs:
     A base class that holds KV cache related (Tensor) inputs.
 
     It is meant to be subclassed by concrete KV cache input types.
+    For example, here's a derived class for a text KV cache manager:
 
-    Example:
-        >>> @dataclass
-        ... class RaggedKVCacheInputs(KVCacheInputs):
-        ...     blocks: Tensor
-        ...     cache_lengths: Tensor
-        ...     lookup_table: Tensor
-        ...     max_lengths: Tensor
+    .. code-block:: python
+
+        @dataclass
+        class RaggedKVCacheInputs(KVCacheInputs):
+            blocks: Tensor
+            cache_lengths: Tensor
+            lookup_table: Tensor
+            max_lengths: Tensor
     """
 
     def __iter__(self) -> Iterator[Tensor]:
@@ -90,7 +92,7 @@ class KVCacheInputs:
 @dataclass
 class PaddedKVCacheInputs(KVCacheInputs):
     """
-    PaddedKVCacheInputs is a class that holds the inputs for
+    ``PaddedKVCacheInputs`` is a class that holds the inputs for
     KV cache when used together with padded tensors.
     """
 
@@ -103,7 +105,7 @@ class PaddedKVCacheInputs(KVCacheInputs):
 @dataclass
 class RaggedKVCacheInputs(KVCacheInputs):
     """
-    RaggedKVCacheInputs is a class that holds the inputs for
+    ``RaggedKVCacheInputs`` is a class that holds the inputs for
     KV cache when used together with ragged tensors.
     """
 
@@ -116,7 +118,8 @@ class RaggedKVCacheInputs(KVCacheInputs):
 @dataclass
 class KVCacheInputsSequence(KVCacheInputs):
     """
-    KVCacheInputsSequence is a sequence of KVCacheInputs.
+    ``KVCacheInputsSequence`` is a sequence of :obj:`KVCacheInputs`.
+
     It is primarily used in our multistep execution to represent batched
     KVCacheInputs.
     """
@@ -131,14 +134,16 @@ class KVCacheInputSymbols:
 
     The derived class is responsible for defining the input symbols for the
     specific KV cache manager.
-
     For example, here's a derived class for a text KV cache manager:
-        >>> @dataclass
-        ... class ContinuousBatchingKVCacheInputSymbols(KVCacheInputSymbols):
-        ...     kv_blocks: TensorType
-        ...     cache_lengths: TensorType
-        ...     lookup_table: TensorType
-        ...     max_lengths: TensorType
+
+    .. code-block:: python
+
+        @dataclass
+        class ContinuousBatchingKVCacheInputSymbols(KVCacheInputSymbols):
+            kv_blocks: TensorType
+            cache_lengths: TensorType
+            lookup_table: TensorType
+            max_lengths: TensorType
     """
 
     def __iter__(self) -> Iterator[Any]:
@@ -234,11 +239,11 @@ class KVCacheManager(ABC, Generic[T]):
         ...
 
     def claim(self, n: int) -> list[int]:
-        """Claims `n` blocks of memory in the cache for incoming requests.
+        """Claims ``n`` blocks of memory in the cache for incoming requests.
 
         This returns a list of sequence ids, which identify a sequence's
         location within the cache. This sequence id can then be passed
-        in the fetch function to return the ContinuousBatchingKVCacheCollection
+        in the fetch function to return the :obj:`ContinuousBatchingKVCacheCollection`
         for those sequences.
         """
         # TODO we should remove this interface and just use external_claim.
@@ -269,8 +274,8 @@ class KVCacheManager(ABC, Generic[T]):
         ...
 
     def release(self, seq_id: int) -> None:
-        """Release `seq_id` provided, marking this sequence as complete.
-        This returns the seq_id back to the available pool of cache memory,
+        """Release :obj:`seq_id` provided, marking this sequence as complete.
+        This returns the :obj:`seq_id` back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
         if seq_id not in self.active:
@@ -293,7 +298,7 @@ class KVCacheManager(ABC, Generic[T]):
         """Returns the default number of KV cache inputs for KV managers.
 
         Subclasses with a different number of KV cache inputs should override
-        this method and `increment_cache_lengths`.
+        this method and :obj:`increment_cache_lengths`.
         """
         return 4
 

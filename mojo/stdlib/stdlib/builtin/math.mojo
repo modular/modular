@@ -292,7 +292,6 @@ trait Powable:
 
     For example:
     ```mojo
-    @value
     struct Rational(Powable):
         var numerator: Float64
         var denominator: Float64
@@ -381,7 +380,7 @@ trait Roundable:
 
     For example:
     ```mojo
-    @value
+    @fieldwise_init
     struct Complex(Roundable):
         var re: Float64
         var im: Float64

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from compiler import register
-from max.tensor import InputTensor, OutputTensor, foreach
+from tensor_internal import InputTensor, OutputTensor, foreach
 from runtime.asyncrt import DeviceContextPtr
 from utils.index import IndexList
 from layout import LayoutTensor, Layout

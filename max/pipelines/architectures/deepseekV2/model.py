@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import time
-import warnings
 from collections.abc import Sequence
 from typing import Optional, cast
 
@@ -42,9 +41,9 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    compute_log_probabilities,
     upper_bounded_default,
 )
+from max.pipelines.lib.log_probabilities import compute_log_probabilities_ragged
 from transformers import AutoConfig
 
 from .deepseekV2 import DeepseekV2
@@ -418,47 +417,24 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None] | None:
-        if any(echo for echo in batch_echo):
-            if model_outputs.logits is None:
-                warnings.warn(
-                    "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_config.model_path}"
-                    " model. Please ensure that this model is started with "
-                    "`--enable-echo`."
-                )
-                assert not self.pipeline_config.enable_echo, (
-                    "Echo was enabled but logits were not returned."
-                )
-                return None
+        if model_outputs.logits is not None:
             logits = model_outputs.logits.to_numpy()
-        assert model_outputs.next_token_logits
+        else:
+            logits = None
+        assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits.to_numpy()
-
         sampled_tokens = next_tokens.to_numpy()
 
-        # Handle the ragged inputs
         model_inputs = cast(DeepseekV2Inputs, model_inputs)
         tokens = model_inputs.tokens.to_numpy()
         input_row_offsets = model_inputs.input_row_offsets.to_numpy()
 
-        def _get_logits_and_samples(
-            batch_index: int, echo: bool
-        ) -> tuple[np.ndarray, np.ndarray]:
-            if echo:
-                start_offset = input_row_offsets[batch_index]
-                end_offset = input_row_offsets[batch_index + 1]
-                batch_logits = logits[start_offset:end_offset]
-                samples = np.concatenate(
-                    (
-                        tokens[start_offset + 1 : end_offset],
-                        sampled_tokens[batch_index : batch_index + 1],
-                    )
-                )
-            else:
-                batch_logits = next_token_logits[batch_index : batch_index + 1]
-                samples = sampled_tokens[batch_index : batch_index + 1]
-            return batch_logits, samples
-
-        return compute_log_probabilities(
-            _get_logits_and_samples, batch_top_n, batch_echo
+        return compute_log_probabilities_ragged(
+            input_row_offsets=input_row_offsets,
+            logits=logits,
+            next_token_logits=next_token_logits,
+            tokens=tokens,
+            sampled_tokens=sampled_tokens,
+            batch_top_n=batch_top_n,
+            batch_echo=batch_echo,
         )

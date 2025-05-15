@@ -13,16 +13,16 @@
 
 import logging
 import queue
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import zmq
 from max.pipelines.core import EmbeddingsGenerator, InputContext
 from max.profiler import traced
 from max.serve.process_control import ProcessControl
 from max.serve.scheduler import Scheduler
 from max.serve.scheduler.queues import STOP_STREAM
-from max.serve.scheduler.zmq_queue import ZmqSocket
+from max.serve.scheduler.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -41,7 +41,10 @@ class EmbeddingsScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: EmbeddingsSchedulerConfig,
         pipeline: EmbeddingsGenerator,
-        queues: Mapping[str, ZmqSocket],
+        request_zmq_endpoint: str,
+        response_zmq_endpoint: str,
+        cancel_zmq_endpoint: str,
+        zmq_ctx: zmq.Context,
     ):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -49,9 +52,12 @@ class EmbeddingsScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q: ZmqSocket[tuple[str, InputContext]] = queues["REQUEST"]
-        self.response_q: ZmqSocket[list[dict[str, Any]]] = queues["RESPONSE"]
-        self.cancel_q: ZmqSocket[list[str]] = queues["CANCEL"]
+        self.request_q = ZmqPullSocket[tuple[str, InputContext]](
+            zmq_ctx=zmq_ctx, zmq_endpoint=request_zmq_endpoint
+        )
+        self.response_q = ZmqPushSocket[Any](
+            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
+        )
 
     @traced
     def _create_batch_to_execute(self):

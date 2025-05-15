@@ -37,8 +37,8 @@ from builtin._location import __call_location, _SourceLocation
 from builtin.io import _printf
 
 
-@value
-struct ProfileBlock[enabled: Bool = False]:
+@fieldwise_init
+struct ProfileBlock[enabled: Bool = False](Copyable, Movable):
     """A struct for profiling code blocks.
 
     This struct provides context manager functionality to profile code blocks.

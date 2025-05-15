@@ -833,6 +833,38 @@ struct LayoutTensor[
             self.runtime_element_layout,
         )
 
+    @always_inline("nodebug")
+    fn address_space_cast[
+        address_space: AddressSpace = Self.address_space,
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
+        ],
+    ):
+        """Changes the origin or mutability of a pointer.
+
+        Parameters:
+            address_space: The new address space.
+
+        Returns:
+            A new `LayoutTensor` object with the same type and origin
+            as the original `LayoutTensor`, and the new specified address_space.
+        """
+        result = __type_of(result)(
+            self.ptr.address_space_cast[address_space](),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        )
+
     @always_inline
     fn get_immutable(
         self,

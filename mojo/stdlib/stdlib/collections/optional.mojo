@@ -37,7 +37,7 @@ from utils import Variant
 
 
 # TODO(27780): NoneType can't currently conform to traits
-@value
+@fieldwise_init
 struct _NoneType(
     Copyable,
     ExplicitlyCopyable,
@@ -58,7 +58,6 @@ struct _NoneType(
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 struct Optional[T: Copyable & Movable](
     Copyable,
     ExplicitlyCopyable,
@@ -425,8 +424,7 @@ struct Optional[T: Copyable & Movable](
 
         var opt = Optional(Pointer(to=data))
 
-        # TODO(MOCO-1522): Drop `[T=String]` after fixing param inference issue.
-        var opt_owned: Optional[String] = opt.copied[T=String]()
+        var opt_owned: Optional[String] = opt.copied()
         ```
         .
         """

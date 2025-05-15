@@ -218,7 +218,7 @@ fn producer_main_loop[
     var multicast_column_mask = 0
 
     @parameter
-    for i in range(Int(CLUSTER_M)):
+    for i in range(CLUSTER_M):
         multicast_column_mask |= 1 << (i * CLUSTER_N)
 
     var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)

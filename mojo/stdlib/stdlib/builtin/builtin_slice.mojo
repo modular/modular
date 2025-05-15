@@ -18,12 +18,13 @@ These are Mojo built-ins, so you don't need to import them.
 from collections import Optional
 
 
-@value
 struct Slice(
     Stringable,
     EqualityComparable,
     Representable,
     Writable,
+    Copyable,
+    Movable,
     ExplicitlyCopyable,
 ):
     """Represents a slice expression.

@@ -57,6 +57,7 @@ class _Gemma3Attention(Module):
         scale: float | None = None,
         has_bias: bool = False,
         qk_norm_eps: float = 1e-6,
+        local_window_size: int = 1024,
     ):
         """Initializes the attention layer.
 
@@ -90,6 +91,7 @@ class _Gemma3Attention(Module):
             if scale is not None
             else math.sqrt(1.0 / self.kv_params.head_dim)
         )
+        self.local_window_size = local_window_size
         self.sliding_window_pattern = sliding_window_pattern
         self.qk_norm_eps = qk_norm_eps
 
@@ -238,6 +240,7 @@ class _Gemma3Attention(Module):
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=mask_variant,
             scale=self.scale,
+            local_window_size=self.local_window_size,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)

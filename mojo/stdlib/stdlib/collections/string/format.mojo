@@ -92,7 +92,6 @@ from utils import Variant
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-@value
 struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
@@ -489,7 +488,6 @@ will be less constrained.
 # TODO: add usage of these traits before trying to coerce to repr/str/int/float
 
 
-@value
 @register_passable("trivial")
 struct _FormatSpec(Copyable, Movable):
     """Store every field of the format specifier in a byte (e.g., ord("+") for

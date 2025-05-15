@@ -34,7 +34,7 @@ from utils import StaticTuple
 from utils.numerics import FPUtils, isinf, isnan
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _UInt128:
     var high: UInt64
@@ -46,25 +46,22 @@ struct _UInt128:
         self.low = sum
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _MulParity:
     var parity: Bool
     var is_integer: Bool
 
-    fn __init__(out self, parity: Bool, is_integer: Bool):
-        self.parity = parity
-        self.is_integer = is_integer
 
-
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _MulResult[CarrierDType: DType]:
     var integer_part: Scalar[CarrierDType]
     var is_integer: Bool
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias CarrierType = Scalar[Self.CarrierDType]
     alias total_bits = sizeof[dtype]() * 8

@@ -147,7 +147,7 @@ from utils.numerics import max_finite, min_finite
 # ===-----------------------------------------------------------------------===#
 # Batch
 # ===-----------------------------------------------------------------------===#
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Batch(Copyable, Movable):
     """
@@ -213,7 +213,7 @@ struct Unit:
 # ===-----------------------------------------------------------------------===#
 # Report
 # ===-----------------------------------------------------------------------===#
-@value
+@fieldwise_init
 struct Report(Copyable, Movable):
     """
     Contains the average execution time, iterations, min and max of each batch.
@@ -380,7 +380,6 @@ struct Report(Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
     var max_batch_size: Int

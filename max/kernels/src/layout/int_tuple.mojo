@@ -667,18 +667,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         self._store.copy_from(0, existing._store, size)
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, owned existing: Self):
-        """Initialize by moving an existing `IntTuple`.
-
-        Takes ownership of the provided `IntTuple`'s storage without copying.
-        This is more efficient than copying when the source `IntTuple` is no longer needed.
-
-        Args:
-            existing: The `IntTuple` to move from (will be consumed).
-        """
-        self._store = existing._store^
-
-    @always_inline("nodebug")
     fn __lt__(self, rhs: IntTuple) -> Bool:
         """Compare two `IntTuple`s lexicographically.
 

@@ -15,7 +15,7 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.id import global_idx
 from layout import Layout, LayoutTensor
 from math import ceildiv
-from tensor import (
+from tensor_internal import (
     InputTensor,
     OutputTensor,
     StaticTensorSpec,

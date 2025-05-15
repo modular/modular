@@ -92,7 +92,7 @@ def get_field_type(field_type: Any):
         field_type = click.Path(path_type=pathlib.Path)
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
-            field_type = click.Choice(list(field_type))
+            field_type = click.Choice(list(field_type), case_sensitive=False)
 
     return field_type
 

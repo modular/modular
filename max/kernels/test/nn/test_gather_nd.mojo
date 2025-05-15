@@ -22,12 +22,12 @@ from utils import IndexList
 
 # CHECK-LABEL: test_gather_nd
 fn main():
-    print("test_gather_nd")
-
     """
     Note: Examples 1-5 are from:
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND
     """
+
+    print("test_gather_nd")
 
     fn test_gather_nd_eg1() raises:
         # Example 1

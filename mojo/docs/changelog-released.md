@@ -1483,7 +1483,7 @@ Special thanks to our community contributors:
 - The `Type{field1: 42, field2: 17}` syntax for direct initializing register
   passable types has been removed. This was legacy syntax - to upgrade your
   code, add the [`@value`](/mojo/manual/decorators/value) decorator to your
-  struct to get a memberwise initializer and use `Type(field1=42, field2 = 17)`
+  struct to get a fieldwise initializer and use `Type(field1=42, field2 = 17)`
   instead.
 
 ### 🛠️ Fixed
@@ -8013,7 +8013,7 @@ busy this week.
 
 - 📢 Mojo now supports an `@value` decorator on structs to reduce boilerplate
   and encourage best practices in value semantics.  The `@value` decorator looks
-  to see the struct has a memberwise initializer (which has arguments for each
+  to see the struct has a fieldwise initializer (which has arguments for each
   field of the struct), a `__copyinit__` method, and a `__moveinit__` method,
   and synthesizes the missing ones if possible.  For example, if you write:
 

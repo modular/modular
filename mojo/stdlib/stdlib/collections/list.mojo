@@ -33,14 +33,14 @@ from .optional import Optional
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 struct _ListIter[
     list_mutability: Bool, //,
     T: Copyable & Movable,
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator for List.
 
     Parameters:
@@ -202,16 +202,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         self = Self(capacity=unsafe_uninit_length)
         self._len = unsafe_uninit_length
-
-    fn __moveinit__(out self, owned existing: Self):
-        """Move data of an existing list into a new one.
-
-        Args:
-            existing: The existing list.
-        """
-        self.data = existing.data
-        self._len = existing._len
-        self.capacity = existing.capacity
 
     fn __copyinit__(out self, existing: Self):
         """Creates a deepcopy of the given list.

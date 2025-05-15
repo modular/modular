@@ -276,7 +276,6 @@ struct _StringOutOfLineHeader:
 # ===----------------------------------------------------------------------=== #
 
 
-@value
 struct String(
     Sized,
     Stringable,

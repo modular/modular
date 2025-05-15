@@ -219,7 +219,7 @@ fn _compute_ndbuffer_stride[
 
 
 # This type is "async safe" (see _async_parallelize).
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct NDBuffer[
     mut: Bool, //,

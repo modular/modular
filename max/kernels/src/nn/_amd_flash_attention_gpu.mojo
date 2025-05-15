@@ -63,7 +63,11 @@ from linalg.utils_gpu import MatmulConfig
 from memory import UnsafePointer, stack_allocation
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus, CausalMask
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
-from nn.mha_utils import MHAConfig, _kernel_mask
+from nn.mha_utils import (
+    MHAConfig,
+    _kernel_mask,
+    get_start_and_end_for_partitions,
+)
 from nn.softmax import (
     _online_softmax_iter_for_mma_output,
     _online_softmax_iter_for_mma_output_split_warp_reduce,
@@ -1233,8 +1237,11 @@ fn mha_decoding_single_batch[
     q: UnsafePointer[Scalar[q_type],],
     k: k_t,
     v: v_t,
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     seq_len: Int,
     num_keys: Int,
+    num_partitions: Int,
     scale: Float32,
     batch_idx: Int,
     start_pos: Int,
@@ -1284,7 +1291,7 @@ fn mha_decoding_single_batch[
 
     var kv_head_idx = block_idx.y
 
-    var q_tile_idx = block_idx.x
+    var q_tile_idx = 0
 
     var gmem_manager = GlobalMemoryManager[
         q_type, BM, BN, BK, depth, num_heads, group, token_gen
@@ -1552,9 +1559,13 @@ fn mha_decoding_single_batch[
         # ensure that smem for v is not required anymore
         barrier()
 
-    for i in range(0, num_keys, BN):
-        var end = min(i + BN, num_keys)
-        loop_over_kvcache[BN](i, end, end != num_keys)
+    start, end = get_start_and_end_for_partitions[BN](
+        num_keys, num_partitions, block_idx.x
+    )
+
+    for i in range(start, end, BN):
+        var end_ = min(i + BN, end)
+        loop_over_kvcache[BN](i, end_, end_ != end)
 
     # Apply softmax denominator.
     apply_softmax_denominator[
@@ -1562,6 +1573,14 @@ fn mha_decoding_single_batch[
         num_n_mmas=num_n_mmas,
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
+
+    if num_partitions > 1:
+        if thread_idx.x < group:
+            var row_sum = rowsum[0, 0][0]
+            var row_max = rowmax[0, 0][0]
+            var q_head_idx = kv_head_idx * group + thread_idx.x
+            exp_sum_ptr[q_head_idx] = row_sum
+            qk_max_ptr[q_head_idx] = row_max
 
     var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
     copy_local_to_dram[

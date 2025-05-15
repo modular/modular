@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
+from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from math import ceildiv
@@ -19,6 +19,7 @@ from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias VECTOR_WIDTH = 10
+alias BLOCK_SIZE = 5
 alias layout = Layout.row_major(VECTOR_WIDTH)
 
 
@@ -45,13 +46,17 @@ def main():
     var rhs_tensor = LayoutTensor[float_dtype, layout](rhs_buffer)
     var out_tensor = LayoutTensor[float_dtype, layout](out_buffer)
 
+    # Calculate the number of blocks needed to cover the vector
+    var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
+
     # Launch the vector_addition function as a GPU kernel
     ctx.enqueue_function[vector_addition](
         lhs_tensor,
         rhs_tensor,
         out_tensor,
-        grid_dim=1,
-        block_dim=VECTOR_WIDTH,
+        VECTOR_WIDTH,
+        grid_dim=grid_dim,
+        block_dim=BLOCK_SIZE,
     )
 
     # Map to host so that values can be printed from the CPU
@@ -64,7 +69,9 @@ fn vector_addition(
     lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
     rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
     out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    size: Int,
 ):
     """The calculation to perform across the vector on the GPU."""
-    var tid = thread_idx.x
-    out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
+    var global_tid = global_idx.x
+    if global_tid < size:
+        out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]

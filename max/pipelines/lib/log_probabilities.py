@@ -13,11 +13,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
-from typing import Callable
 
 import numpy as np
 from max.pipelines.core import LogProbabilities
+
+logger = logging.getLogger(__name__)
 
 
 def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
@@ -52,24 +54,27 @@ def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
     return shifted_x - log_sum_exp
 
 
-def compute_log_probabilities(
-    get_logits_and_samples: Callable[
-        [int, bool], (tuple[np.ndarray, np.ndarray] | None)
-    ],
+def compute_log_probabilities_ragged(
+    *,
+    input_row_offsets: np.ndarray,
+    logits: np.ndarray | None,
+    next_token_logits: np.ndarray,
+    tokens: np.ndarray,
+    sampled_tokens: np.ndarray,
     batch_top_n: Sequence[int],
     batch_echo: Sequence[bool],
 ) -> list[LogProbabilities | None]:
-    """Computes the log probabilities.
+    """Computes the log probabilities for ragged model outputs.
 
     Args:
-        get_logits_and_samples: Callable that takes the batch index and an
-        `echo` bool and returns the logits and sampled tokens for that batch.
-            Args:
-            - batch_index is an int between [0, batch_size)
-            - echo is whether that item was requested to echo the input tokens.
-            Returns (None if batch item is empty):
-            - Logits should have shape = (n_tokens, vocab_size).
-            - Sampled tokens should have shape = (n_tokens).
+        input_row_offsets: Token offsets into token-indexed buffers, by batch
+            index.  Should have 1 more element than there are batches (batch n
+            is token indices [input_row_offsets[n], input_row_offsets[n+1])).
+        logits: (tokens, vocab_dim) tensor full of tensor logits.  Token
+            dimension mapped to batches using input_row_offsets.
+        next_token_logits: (batch, vocab_dim) tensor full of logits for next
+            tokens per batch.
+        sampled_tokens: (batch_dim,) tensor of sampled token per batch
         batch_top_n: Number of top log probabilities to return per input in
             the batch. For any element where `top_n == 0`, the
             LogProbabilities is skipped.
@@ -79,19 +84,39 @@ def compute_log_probabilities(
     Returns:
         Computed log probabilities for each item in the batch.
     """
+
+    if logits is None and any(batch_echo):
+        logger.warning(
+            "Could not get logprobs with echo because the full logits "
+            "were not returned by the model. Please ensure that the model is "
+            "started with `--enable-echo`."
+        )
+
     log_probabilities: list[LogProbabilities | None] = []
     for batch, (top_n, echo) in enumerate(zip(batch_top_n, batch_echo)):
         if top_n == 0:
             log_probabilities.append(None)
             continue
 
-        logits_and_samples = get_logits_and_samples(batch, echo)
-        if not logits_and_samples:
-            log_probabilities.append(None)
-            continue
+        start_offset = input_row_offsets[batch]
+        end_offset = input_row_offsets[batch + 1]
+        if echo:
+            if logits is None:
+                # Insufficient data to fulfill this request -- warned earlier.
+                log_probabilities.append(None)
+                continue
+            batch_logits = logits[start_offset:end_offset]
+            samples = np.concatenate(
+                (
+                    tokens[start_offset + 1 : end_offset],
+                    sampled_tokens[batch : batch + 1],
+                )
+            )
+        else:
+            batch_logits = next_token_logits[batch : batch + 1]
+            samples = sampled_tokens[batch : batch + 1]
 
-        logits, samples = logits_and_samples
-        log_probs = log_softmax(logits, axis=-1)
+        log_probs = log_softmax(batch_logits, axis=-1)
 
         # Get top n tokens.
         top_n_indices = np.argpartition(log_probs, -top_n, axis=-1)[
@@ -131,54 +156,3 @@ def compute_log_probabilities(
         )
 
     return log_probabilities
-
-
-def compute_log_probabilities_ragged(
-    *,
-    input_row_offsets: np.ndarray,
-    logits: np.ndarray,
-    tokens: np.ndarray,
-    sampled_tokens: np.ndarray,
-    batch_top_n: Sequence[int],
-    batch_echo: Sequence[bool],
-) -> list[LogProbabilities | None]:
-    """Computes the log probabilities for ragged model outputs.
-
-    Args:
-        input_row_offsets: Token offsets into token-indexed buffers, by batch
-            index.  Should have 1 more element than there are batches (batch n
-            is token indices [input_row_offsets[n], input_row_offsets[n+1])).
-        logits: (tokens, vocab_dim) tensor full of tensor logits.  Token
-            dimension mapped to batches using input_row_offsets.
-        sampled_tokens: (batch_dim,) tensor of sampled token per batch
-        batch_top_n: Number of top log probabilities to return per input in
-            the batch. For any element where `top_n == 0`, the
-            LogProbabilities is skipped.
-        batch_echo: Whether to include input tokens in the returned log
-            probabilities.
-
-    Returns:
-        Computed log probabilities for each item in the batch.
-    """
-
-    def get_logits_and_samples(
-        batch_index: int, echo: bool
-    ) -> tuple[np.ndarray, np.ndarray]:
-        start_offset = input_row_offsets[batch_index]
-        end_offset = input_row_offsets[batch_index + 1]
-        if echo:
-            batch_logits = logits[start_offset:end_offset]
-            samples = np.concatenate(
-                (
-                    tokens[start_offset + 1 : end_offset],
-                    sampled_tokens[batch_index : batch_index + 1],
-                )
-            )
-        else:
-            batch_logits = logits[end_offset - 1 : end_offset]
-            samples = sampled_tokens[batch_index : batch_index + 1]
-        return batch_logits, samples
-
-    return compute_log_probabilities(
-        get_logits_and_samples, batch_top_n, batch_echo
-    )

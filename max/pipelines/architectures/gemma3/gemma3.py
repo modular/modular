@@ -17,12 +17,13 @@ from __future__ import annotations
 import functools
 from collections.abc import Sequence
 
-from max.graph import TensorValue
+from max.dtype import DType
+from max.graph import TensorValue, TensorValueLike, ops
 from max.nn import (
     MLP,
+    LayerList,
     Linear,
     Module,
-    Transformer,
 )
 from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.rotary_embedding import OptimizedRotaryEmbedding
@@ -80,7 +81,7 @@ class TransformerBlock(Module):
         return residual + hidden_states
 
 
-class Gemma3TextModel(Transformer):
+class Gemma3TextModel(Module):
     """The Gemma 3 language model."""
 
     def __init__(self, config: Gemma3Config):
@@ -154,18 +155,36 @@ class Gemma3TextModel(Transformer):
             for i in range(config.num_hidden_layers)
         ]
 
-        super().__init__(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            layers=layers,
-            norm=self.norm,
-            output=self.lm_head,
-            embedding=self.embed_tokens,
-            kv_params=config.kv_params,
-            kv_collection_constructor=FetchPagedKVCacheCollection(
-                config.kv_params
-            ),
+        self.dim = config.hidden_size
+        self.n_heads = config.num_attention_heads
+        self.layers = LayerList(layers)
+        self.norm = self.norm
+        self.lm_head = self.lm_head
+        self.embed_tokens = self.embed_tokens
+        self.kv_params = config.kv_params
+        self.kv_collection_constructor = FetchPagedKVCacheCollection(
+            config.kv_params
         )
+
+    def __call__(
+        self,
+        tokens: TensorValueLike,
+        kv_cache_inputs: Sequence[TensorValue],
+        **kwargs,
+    ) -> tuple[TensorValue, ...]:
+        h = self.embed_tokens(tokens)
+
+        kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
+        input_row_offsets = kwargs["input_row_offsets"]
+
+        for layer in self.layers:
+            h = layer(h, kv_collection, **kwargs)
+
+        # Retrieve a variable number of tokens
+        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
+        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
+
+        return (last_logits,)
 
 
 class Gemma3(Module):
@@ -180,11 +199,10 @@ class Gemma3(Module):
         tokens: TensorValue,
         input_row_offsets: TensorValue,
         kv_cache_inputs: Sequence[TensorValue],
-        return_n_logits: TensorValue,
+        return_n_logits: TensorValue,  # Not used for Gemma3 currently
     ) -> tuple[TensorValue, ...]:
         return self.language_model(
             tokens,
             input_row_offsets=input_row_offsets,
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
         )

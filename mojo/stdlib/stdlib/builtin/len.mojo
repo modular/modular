@@ -32,7 +32,6 @@ trait Sized:
     method. For example:
 
     ```mojo
-    @value
     struct Foo(Sized):
         var length: Int
 
@@ -78,7 +77,6 @@ trait UIntSized:
     method. For example:
 
     ```mojo
-    @value
     struct Foo(Sized):
         var length: Int
 
@@ -124,7 +122,6 @@ trait SizedRaising:
     method, which can raise an error. For example:
 
     ```mojo
-    @value
     struct Foo(SizedRaising):
         var length: Int
 

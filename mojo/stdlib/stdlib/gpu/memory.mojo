@@ -57,7 +57,8 @@ alias AddressSpace = _GPUAddressSpace
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct CacheOperation:
     """Represents different GPU cache operation policies.
 
@@ -194,7 +195,8 @@ struct CacheOperation:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct CacheEviction:
     """Represents cache eviction policies for GPU memory operations.
 
@@ -324,7 +326,8 @@ struct CacheEviction:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct Fill:
     """Represents memory fill patterns for GPU memory operations.
 
@@ -412,7 +415,8 @@ struct Fill:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct Consistency(Copyable, Movable, EqualityComparable):
     """Represents memory consistency models for GPU memory operations.
 
@@ -523,7 +527,8 @@ struct Consistency(Copyable, Movable, EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct ReduceOp:
     """Represents reduction operations for parallel reduction algorithms.
 

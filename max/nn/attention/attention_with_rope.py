@@ -370,7 +370,7 @@ class AttentionWithRope(Module):
             if self.has_weight_scale:
                 assert self.max_weight_scale is not None
                 wqkv = quantize_static_scaled_float8(
-                    wqkv, self.max_weight_scale
+                    wqkv, self.max_weight_scale.to(DeviceRef.CPU())
                 )
             return wqkv
 
@@ -509,7 +509,9 @@ class AttentionWithRope(Module):
             assert self.max_input_scale is not None
             assert self.max_weight_scale is not None
             assert isinstance(kv_collection, PagedKVCacheCollection)
-            x = quantize_static_scaled_float8(x, self.max_input_scale)
+            x = quantize_static_scaled_float8(
+                x, self.max_input_scale.to(DeviceRef.CPU())
+            )
 
             xq = fused_qkv_ragged_matmul_scaled_float8(
                 self.kv_params,

@@ -48,7 +48,6 @@ from .lib.hf_utils import (
     download_weight_files,
     repo_exists_with_retry,
 )
-from .lib.log_probabilities import compute_log_probabilities
 from .lib.max_config import (
     KVCacheConfig,
     ProfilingConfig,
@@ -77,7 +76,6 @@ from .lib.tokenizer import (
 register_all_models()
 
 __all__ = [
-    "compute_log_probabilities",
     "download_weight_files",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",

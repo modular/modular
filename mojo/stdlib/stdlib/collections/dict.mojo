@@ -52,14 +52,14 @@ trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
     pass
 
 
-@value
+@fieldwise_init
 struct _DictEntryIter[
     dict_mutability: Bool, //,
     K: KeyElement,
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -109,14 +109,14 @@ struct _DictEntryIter[
         return len(self.src[]) - self.seen
 
 
-@value
+@fieldwise_init
 struct _DictKeyIter[
     dict_mutability: Bool, //,
     K: KeyElement,
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -147,14 +147,14 @@ struct _DictKeyIter[
         return self.iter.__len__()
 
 
-@value
+@fieldwise_init
 struct _DictValueIter[
     dict_mutability: Bool, //,
     K: KeyElement,
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -199,7 +199,7 @@ struct _DictValueIter[
         return self.iter.__len__()
 
 
-@value
+@fieldwise_init
 struct DictEntry[K: KeyElement, V: Copyable & Movable](
     Copyable, Movable, ExplicitlyCopyable
 ):
@@ -250,7 +250,7 @@ alias _EMPTY = -1
 alias _REMOVED = -2
 
 
-struct _DictIndex:
+struct _DictIndex(Movable):
     """A compact dict-index type. Small dict indices are compressed
     to smaller integer types to use less memory.
 
@@ -571,17 +571,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         self._index = existing._index.copy(existing._reserved())
         self._entries = existing._entries
 
-    fn __moveinit__(out self, owned existing: Self):
-        """Move data of an existing dict into a new one.
-
-        Args:
-            existing: The existing dict.
-        """
-        self._len = existing._len
-        self._n_entries = existing._n_entries
-        self._index = existing._index^
-        self._entries = existing._entries^
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
@@ -754,9 +743,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             otherwise an empty Optional.
         """
 
-        # TODO(MOCO-604): push usage through
-        # TODO(MOCO-1522): Drop `[T=V]` after fixing param inference issue.
-        return self.get_ptr(key).copied[T=V]()
+        try:
+            return self._find_ref(key)
+        except:
+            return Optional[V](None)
 
     fn _find_ref(
         ref self, key: K
@@ -770,35 +760,18 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        if entry := self.get_ptr(key):
-            # SAFETY: We just checked that `entry` is populated.
-            return entry.unsafe_value()[]
-        else:
-            raise "KeyError"
-
-    fn get_ptr(
-        ref self, key: K
-    ) -> Optional[Pointer[V, __origin_of(self._entries[0].value().value)]]:
-        """Get a pointer to a value in the dictionary by key.
-
-        Args:
-            key: The key to search for in the dictionary.
-
-        Returns:
-            An optional value containing a pointer to the value if it is
-            present, otherwise an empty Optional.
-        """
         var hash = hash(key)
         var found: Bool
         var index: Int
         found, _, index = self._find_index(hash, key)
+
         if found:
             var entry = Pointer(to=self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
             # SAFETY: We just checked that `entry` is present.
-            return Pointer(to=entry[].unsafe_value().value)
+            return entry[].unsafe_value().value
 
-        return None
+        raise "KeyError"
 
     fn get(self, key: K) -> Optional[V]:
         """Get a value from the dictionary by key.
