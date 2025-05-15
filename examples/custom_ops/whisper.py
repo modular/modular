@@ -19,7 +19,7 @@ import sysconfig
 from pathlib import Path
 from typing import Optional
 
-import max.torch_legacy as mtorch
+import max.torch_legacy as mtorch  # type: ignore
 import torch
 import transformers
 from datasets import load_dataset

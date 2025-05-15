@@ -50,6 +50,7 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "whisper",
     srcs = ["whisper.py"],
+    create_test = False,
     extra_data = [
         ":kernels",
         "//GenericML:MGPRT",
@@ -58,7 +59,6 @@ custom_op_example_py_binary(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     extra_deps = [
-        "//PyTorch:max_torch",
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),

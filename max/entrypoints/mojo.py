@@ -60,9 +60,6 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MAX_GRAPH_LIB": str(lib / "libmax") + ext,
         "MODULAR_MAX_PATH": str(root),
         "MODULAR_MAX_NAME": "MAX Platform",
-        "MODULAR_MAX_TORCH_EXT_LIB": (
-            str(lib / "libmodular-framework-torch-ext") + ext
-        ),
         # MODULAR_MAX_VERSION intentionally omitted
 
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": (
