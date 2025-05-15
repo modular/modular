@@ -42,6 +42,7 @@ from .pipeline import (
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
+    get_paged_manager,
     upper_bounded_default,
 )
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
@@ -90,4 +91,5 @@ __all__ = [
     "TextTokenizer",
     "token_sampler",
     "upper_bounded_default",
+    "get_paged_manager",
 ]

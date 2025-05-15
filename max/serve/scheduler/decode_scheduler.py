@@ -25,6 +25,8 @@ from max.pipelines.core import (
     TextResponse,
     TokenGenerator,
 )
+from max.pipelines.lib.pipeline import get_paged_manager
+from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
@@ -377,3 +379,47 @@ class DecodeScheduler(Scheduler):
 
             # Schedule Batch
             self.schedule_batch(num_steps)
+
+
+def load_decode_scheduler(
+    zmq_ctx: zmq.Context,
+    settings: Settings,
+    pipeline: TokenGenerator,
+    pc: ProcessControl,
+    max_batch_size_tg: int,
+    max_forward_steps_tg: int,
+) -> DecodeScheduler:
+    # Create Scheduler Config
+    scheduler_config = DecodeSchedulerConfig(
+        max_batch_size_tg=max_batch_size_tg,
+        max_forward_steps_tg=max_forward_steps_tg,
+    )
+
+    # Retrieve Paged Manager
+    paged_manager = get_paged_manager(pipeline)
+
+    if paged_manager is None:
+        raise RuntimeError(
+            "A paged KV cache manager must be present to use the DecodeScheduler"
+        )
+
+    if (
+        settings.prefill_zmq_endpoint is None
+        or settings.decode_zmq_endpoint is None
+    ):
+        raise ValueError(
+            "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
+        )
+
+    return DecodeScheduler(
+        process_control=pc,
+        pipeline=pipeline,
+        scheduler_config=scheduler_config,
+        paged_manager=paged_manager,
+        request_zmq_endpoint=settings.request_zmq_endpoint,
+        response_zmq_endpoint=settings.response_zmq_endpoint,
+        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
+        decode_zmq_endpoint=settings.decode_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
+    )

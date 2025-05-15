@@ -46,6 +46,7 @@ from max.nn.kv_cache import (
     KVCacheInputsSequence,
     KVCacheManager,
     KVCacheParams,
+    PagedKVCacheManager,
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
@@ -417,6 +418,19 @@ class KVCacheMixin(Protocol):
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         ...
+
+
+def get_paged_manager(
+    pipeline: TokenGenerator,
+) -> Optional[PagedKVCacheManager]:
+    if (
+        hasattr(pipeline, "_pipeline_model")
+        and hasattr(pipeline._pipeline_model, "kv_manager")
+        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
+    ):
+        return pipeline._pipeline_model.kv_manager
+
+    return None
 
 
 class TextGenerationPipeline(TokenGenerator[T]):

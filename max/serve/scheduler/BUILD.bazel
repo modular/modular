@@ -7,6 +7,9 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines/core",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        "//SDK/lib/API/python/max/serve:config",
+        "//SDK/lib/API/python/max/serve:process_control",
         "//SDK/lib/API/python/max/serve/telemetry",
         requirement("psutil"),
         requirement("sentinel"),

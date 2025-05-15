@@ -21,18 +21,15 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, Callable, Optional, Union, cast
+from typing import Callable, Optional, Union
 
 import uvloop
 import zmq
-from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     EmbeddingsGenerator,
     PipelinesFactory,
     TokenGenerator,
 )
-from max.pipelines.lib import PipelineRole
-from max.pipelines.lib.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
@@ -42,20 +39,9 @@ from max.serve.pipelines.scheduler import (
 )
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
+from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import Scheduler
-from max.serve.scheduler.decode_scheduler import (
-    DecodeScheduler,
-    DecodeSchedulerConfig,
-)
-from max.serve.scheduler.prefill_scheduler import (
-    PrefillScheduler,
-    PrefillSchedulerConfig,
-)
 from max.serve.scheduler.queues import EngineQueue
-from max.serve.scheduler.text_generation_scheduler import (
-    TokenGenerationScheduler,
-    TokenGenerationSchedulerConfig,
-)
 from max.serve.scheduler.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
@@ -282,39 +268,24 @@ async def model_worker_run_v3(
 
     zmq_ctx = zmq.Context(io_threads=2)
     scheduler: Scheduler
+    # TODO: E2EOPT-235
     if isinstance(pipeline, TokenGenerator):
-        if pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
-            if (
-                settings.prefill_zmq_endpoint is None
-                or settings.decode_zmq_endpoint is None
-            ):
-                raise ValueError(
-                    "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
-                )
-
-            scheduler = _create_decode_scheduler(
-                settings, pipeline, pc, pipeline_config, zmq_ctx
-            )
-        elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
-            if (
-                settings.prefill_zmq_endpoint is None
-                or settings.decode_zmq_endpoint is None
-            ):
-                raise ValueError(
-                    "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
-                )
-
-            scheduler = _create_prefill_scheduler(
-                settings, pipeline, pc, pipeline_config, zmq_ctx
-            )
-        elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
-            scheduler = _create_token_generation_scheduler(
-                settings, pipeline, pc, pipeline_config, queues, zmq_ctx
-            )
-        else:
-            raise ValueError(
-                f"Pipeline Role of {pipeline_config.pipeline_role} is not supported."
-            )
+        scheduler = load_scheduler(
+            zmq_ctx=zmq_ctx,
+            settings=settings,
+            pipeline=pipeline,
+            pipeline_role=pipeline_config.pipeline_role,
+            pc=pc,
+            max_batch_size_tg=pipeline_config.max_batch_size_tg,
+            max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
+            target_tokens_per_batch_tg=pipeline_config.target_tokens_per_batch_tg,
+            max_batch_size_ce=pipeline_config.max_batch_size_ce,
+            max_forward_steps_ce=pipeline_config.max_forward_steps_ce,
+            target_tokens_per_batch_ce=pipeline_config.target_tokens_per_batch_ce,
+            batch_timeout=pipeline_config.batch_timeout,
+            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+        )
 
     elif isinstance(pipeline, EmbeddingsGenerator):
         scheduler = _create_embeddings_scheduler(
@@ -336,159 +307,6 @@ async def model_worker_run_v3(
 
     pc.set_completed()
     logger.info("Stopped model worker!")
-
-
-def _create_decode_scheduler(
-    settings: Settings,
-    pipeline: TokenGenerator,
-    pc: ProcessControl,
-    pipeline_config: TokenGeneratorPipelineConfig,
-    zmq_ctx: zmq.Context,
-) -> DecodeScheduler:
-    # Initialize ZMQ Context - One per process
-    zmq_ctx = zmq.Context(io_threads=2)
-
-    # Initialize Scheduler Config
-    scheduler_config = DecodeSchedulerConfig(
-        max_batch_size_tg=pipeline_config.max_batch_size_tg,
-        max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
-    )
-
-    # Retrieve the KV Cache, failing if KV Cache is not enabled.
-    if (
-        isinstance(pipeline, TextGenerationPipeline)
-        and isinstance(pipeline._pipeline_model, KVCacheMixin)
-        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
-    ):
-        paged_manager = pipeline._pipeline_model.kv_manager
-    else:
-        raise ValueError(
-            "DecodeScheduler only supports Paged Caching Strategy."
-        )
-
-    if (
-        settings.prefill_zmq_endpoint is None
-        or settings.decode_zmq_endpoint is None
-    ):
-        raise ValueError(
-            "DecodeScheduler must be provided both a prefill_zmq_endpoint and decode_zmq_endpoint on initialization"
-        )
-
-    return DecodeScheduler(
-        process_control=pc,
-        pipeline=pipeline,
-        scheduler_config=scheduler_config,
-        paged_manager=paged_manager,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        prefill_zmq_endpoint=cast(str, settings.prefill_zmq_endpoint),
-        decode_zmq_endpoint=cast(str, settings.decode_zmq_endpoint),
-        zmq_ctx=zmq_ctx,
-    )
-
-
-def _create_prefill_scheduler(
-    settings: Settings,
-    pipeline: TokenGenerator,
-    pc: ProcessControl,
-    pipeline_config: TokenGeneratorPipelineConfig,
-    zmq_ctx: zmq.Context,
-) -> PrefillScheduler:
-    # Create zmq Context
-    zmq_ctx = zmq.Context(io_threads=2)
-
-    # Create Scheduler Config
-    if pipeline_config.target_tokens_per_batch_ce is None:
-        target_tokens_per_batch_ce = 4096
-    else:
-        target_tokens_per_batch_ce = pipeline_config.target_tokens_per_batch_ce
-
-    scheduler_config = PrefillSchedulerConfig(
-        max_batch_size_ce=pipeline_config.max_batch_size_ce,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        batch_timeout=pipeline_config.batch_timeout,
-        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-    )
-
-    # Retrieve the KV Cache, failing if KV Cache is not enabled.
-    if (
-        isinstance(pipeline, TextGenerationPipeline)
-        and isinstance(pipeline._pipeline_model, KVCacheMixin)
-        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
-    ):
-        paged_manager = pipeline._pipeline_model.kv_manager
-    else:
-        raise ValueError(
-            "PrefillScheduler only supports Paged Caching Strategy."
-        )
-
-    if (
-        settings.prefill_zmq_endpoint is None
-        or settings.decode_zmq_endpoint is None
-    ):
-        raise ValueError(
-            "PrefillScheduler requires both that the prefill_zmq_endpoint and decode_zmq_endpoint be provided."
-        )
-
-    return PrefillScheduler(
-        process_control=pc,
-        pipeline=pipeline,
-        scheduler_config=scheduler_config,
-        paged_manager=paged_manager,
-        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
-        decode_zmq_endpoint=settings.decode_zmq_endpoint,
-        zmq_ctx=zmq_ctx,
-    )
-
-
-def _create_token_generation_scheduler(
-    settings: Settings,
-    pipeline: TokenGenerator,
-    pc: ProcessControl,
-    pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, Any],
-    zmq_ctx: zmq.Context,
-) -> TokenGenerationScheduler:
-    # Create Scheduler Config
-    scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=pipeline_config.max_batch_size_tg,
-        max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
-        target_tokens_per_batch_tg=pipeline_config.target_tokens_per_batch_tg,
-        max_batch_size_ce=pipeline_config.max_batch_size_ce,
-        max_forward_steps_ce=pipeline_config.max_forward_steps_ce,
-        target_tokens_per_batch_ce=pipeline_config.target_tokens_per_batch_ce,
-        batch_timeout=pipeline_config.batch_timeout,
-        enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-        enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-    )
-
-    # TODO E2EOPT-190: Grab paged_manager from SpeculativeDecodingTextGenerationPipeline
-
-    # Get the paged kv cache manager if we are using one
-    paged_manager = None
-    if (
-        isinstance(pipeline, TextGenerationPipeline)
-        and isinstance(pipeline._pipeline_model, KVCacheMixin)
-        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
-    ):
-        paged_manager = pipeline._pipeline_model.kv_manager
-        # If KV Cache Agent is enabled and the queue is provided, set it on the paged manager
-        if "KV_CACHE_AGENT" in queues:
-            paged_manager.block_manager.device_block_pool.kv_cache_agent_queue = queues[
-                "KV_CACHE_AGENT"
-            ]
-
-    return TokenGenerationScheduler(
-        process_control=pc,
-        scheduler_config=scheduler_config,
-        pipeline=pipeline,
-        paged_manager=paged_manager,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        zmq_ctx=zmq_ctx,
-    )
 
 
 def _create_embeddings_scheduler(

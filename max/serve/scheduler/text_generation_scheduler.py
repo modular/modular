@@ -26,7 +26,9 @@ from max.pipelines.core import (
     TextResponse,
     TokenGenerator,
 )
+from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Trace, traced
+from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -818,3 +820,47 @@ class TokenGenerationScheduler(Scheduler):
             else:
                 assert sch_output.batch_type == BatchType.TokenGeneration
                 self._schedule_tg(sch_output)
+
+
+def load_text_generation_scheduler(
+    zmq_ctx: zmq.Context,
+    settings: Settings,
+    pipeline: TokenGenerator,
+    pc: ProcessControl,
+    max_batch_size_tg: int,
+    max_forward_steps_tg: int,
+    target_tokens_per_batch_tg: Optional[int],
+    max_batch_size_ce: int,
+    max_forward_steps_ce: int,
+    target_tokens_per_batch_ce: Optional[int],
+    batch_timeout: Optional[float],
+    enable_chunked_prefill: bool = True,
+    enable_in_flight_batching: bool = False,
+) -> TokenGenerationScheduler:
+    # Create Scheduler Config.
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size_tg=max_batch_size_tg,
+        max_forward_steps_tg=max_forward_steps_tg,
+        target_tokens_per_batch_tg=target_tokens_per_batch_tg,
+        max_batch_size_ce=max_batch_size_ce,
+        max_forward_steps_ce=max_forward_steps_ce,
+        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        batch_timeout=batch_timeout,
+        enable_chunked_prefill=enable_chunked_prefill,
+        enable_in_flight_batching=enable_in_flight_batching,
+    )
+
+    # Retrieve Paged Manager
+    paged_manager = get_paged_manager(pipeline)
+
+    # Return Scheduler
+    return TokenGenerationScheduler(
+        process_control=pc,
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        paged_manager=paged_manager,
+        request_zmq_endpoint=settings.request_zmq_endpoint,
+        response_zmq_endpoint=settings.response_zmq_endpoint,
+        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
+    )

@@ -19,6 +19,8 @@ from typing import Optional
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import InputContext, TokenGenerator
+from max.pipelines.lib.pipeline import get_paged_manager
+from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
@@ -245,3 +247,56 @@ class PrefillScheduler(Scheduler):
             except Exception as e:
                 logger.exception("An error occured during scheduling.")
                 raise e
+
+
+def load_prefill_scheduler(
+    zmq_ctx: zmq.Context,
+    settings: Settings,
+    pipeline: TokenGenerator,
+    pc: ProcessControl,
+    max_batch_size_ce: int,
+    target_tokens_per_batch_ce: Optional[int],
+    batch_timeout: Optional[float],
+    enable_chunked_prefill: bool,
+) -> PrefillScheduler:
+    if enable_chunked_prefill == True and target_tokens_per_batch_ce is None:
+        raise RuntimeError(
+            "if enable_chunked_prefill=True, target_tokens_per_batch_ce must be provided"
+        )
+
+    if target_tokens_per_batch_ce is None:
+        target_tokens_per_batch_ce = -1
+
+    # Create Scheduler Config.
+    scheduler_config = PrefillSchedulerConfig(
+        max_batch_size_ce=max_batch_size_ce,
+        batch_timeout=batch_timeout,
+        enable_chunked_prefill=enable_chunked_prefill,
+        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+    )
+
+    # Get Paged Manager
+    paged_manager = get_paged_manager(pipeline)
+
+    if paged_manager is None:
+        raise RuntimeError(
+            "A paged KV cache manager must be present to use the DecodeScheduler"
+        )
+
+    if (
+        settings.prefill_zmq_endpoint is None
+        or settings.decode_zmq_endpoint is None
+    ):
+        raise ValueError(
+            "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
+        )
+
+    return PrefillScheduler(
+        process_control=pc,
+        pipeline=pipeline,
+        scheduler_config=scheduler_config,
+        paged_manager=paged_manager,
+        zmq_ctx=zmq_ctx,
+        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
+        decode_zmq_endpoint=settings.decode_zmq_endpoint,
+    )
