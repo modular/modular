@@ -656,6 +656,7 @@ class LatentAttentionWithRope(AttentionWithRope):
         self.BUFFER_TOK_SIZE = buffer_size
 
         self.scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
+        self.scale = self.rope.compute_scale(self.scale)
         self.devices = devices or [DeviceRef.CPU()]
 
         if self.q_lora_rank is not None:

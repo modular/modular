@@ -123,6 +123,14 @@ class RotaryEmbedding(Module):
         self._freqs_cis = self.freqs_cis_base()
         return self._freqs_cis
 
+    def compute_scale(self, user_scale: Optional[float] = None) -> float:
+        n = (
+            self.head_dim
+            if self.head_dim is not None
+            else self.dim // self.n_heads
+        )
+        return user_scale if user_scale else math.sqrt(1.0 / n)
+
     def __call__(
         self,
         x: TensorValueLike,
@@ -384,6 +392,16 @@ class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
             sin = ops.sin(freqs) * _mscale
             self._freqs_cis = ops.stack([cos, sin], axis=-1)
         return TensorValue(self._freqs_cis)
+
+    def compute_scale(self, user_scale: Optional[float] = None) -> float:
+        assert self.scaling_params
+        scale = super().compute_scale(user_scale)
+        mscale = self._yarn_get_mscale(
+            self.scaling_params.scaling_factor,
+            self.scaling_params.mscale,
+        )
+
+        return scale * mscale * mscale
 
     def _compute_yarn_freqs(self) -> TensorValue:
         if self.scaling_params is None:
