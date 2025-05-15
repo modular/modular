@@ -57,6 +57,7 @@ def gather_nd(
     """Selects elements out of an input tensor by index.
 
     Examples:
+
     >>> input_shape = ["a", "b", "c", "d", "e"]
     >>> indices_shape = ["a", "f", 3]
     >>> input_type = TensorType(DType.bfloat16, input_shape)

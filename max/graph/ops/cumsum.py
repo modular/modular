@@ -41,10 +41,11 @@ def cumsum(
         The tensor will have the same type as the input tensor. The computed
         values will be the cumulative sum of the values along the given axis,
         according to the specified parameters:
-            - if `exclusive` is set, the first value will be 0, and the last
-                value will be excluded from the sum
-            - if `reverse` is set, the sum will be computed starting at the
-                back of the axis back to the front, rather than front-to-back
+
+        - if `exclusive` is set, the first value will be 0, and the last
+          value will be excluded from the sum
+        - if `reverse` is set, the sum will be computed starting at the
+          back of the axis back to the front, rather than front-to-back
     """
     x = TensorValue(x)
 

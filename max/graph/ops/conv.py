@@ -122,6 +122,7 @@ def conv3d(
     strides, dilations, paddings, and groups.
 
     The op supports 3-D convolution, with the following layout assumptions:
+
     - input has NDHWC layout, i.e.,
       (batch_size, depth, height, width, in_channels)
     - filter has layout RSCF, i.e.,
@@ -133,20 +134,20 @@ def conv3d(
     convolution, dim1 here represents D, dim2 represents H and dim3 represents W. In Python like
     syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
 
-    ```python
-    input = [
-      [1, 2, 3],
-      [4, 5, 6]
-    ]
-    # Shape is 2x3
+    .. code-block:: python
 
-    padded_input = [
-      [0, 0, 1, 2, 3, 0],
-      [0, 0, 4, 5, 6, 0]
-      [0, 0, 0, 0, 0, 0]
-    ]
-    # Shape is 3x6
-    ```
+        input = [
+          [1, 2, 3],
+          [4, 5, 6]
+        ]
+        # Shape is 2x3
+
+        padded_input = [
+          [0, 0, 1, 2, 3, 0],
+          [0, 0, 4, 5, 6, 0],
+          [0, 0, 0, 0, 0, 0]
+        ]
+        # Shape is 3x6
 
     This op currently only supports strides and padding on the input.
 

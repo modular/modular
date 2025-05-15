@@ -44,7 +44,6 @@ def conv2d_transpose(
     filter and hyperparameters as this op). A visualization of the computation
     can be found in https://d2l.ai/chapter_computer-vision/transposed-conv.html.
 
-
     The padding values are expected to take the form (pad_dim1_before,
     pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
     0's before and after the indicated *spatial* dimensions in `input`. In 2D
@@ -52,18 +51,18 @@ def conv2d_transpose(
     python like syntax, padding a 2x4 spatial `output` with [0, 1, 2, 1] would
     yield:
 
-    ```python
-    output = [
-      [1, 2, 3, 4],
-      [5, 6, 7, 8]
-    ]
-    # Shape is 2x4
+    .. code-block:: python
 
-    padded_input = [
-      [3],
-    ]
-    # Shape is 1x1
-    ```
+        output = [
+          [1, 2, 3, 4],
+          [5, 6, 7, 8]
+        ]
+        # Shape is 2x4
+
+        padded_input = [
+          [3],
+        ]
+        # Shape is 1x1
 
     Args:
         input: An NHWC input tensor to perform the convolution upon.
@@ -75,9 +74,9 @@ def conv2d_transpose(
         dilation: The spacing between the kernel points.
         padding: The amount of padding applied to the input.
         output_paddings: this argument is meant to resolve the ambiguity of multiple
-    potential output shapes when any stride is greater than 1. Basically,
-    we'll add `output_paddings[i]` number of zeros at the end of output's ith
-    axis. We only support output_paddings = 0.
+            potential output shapes when any stride is greater than 1. Basically,
+            we'll add `output_paddings[i]` number of zeros at the end of output's ith
+            axis. We only support output_paddings = 0.
         bias: tensor of shape (out_channels,)
 
     Returns:

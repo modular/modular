@@ -24,8 +24,12 @@ def hann_window(
     dtype: DType = DType.float32,
 ) -> TensorValue:
     """Calculate a Hann window for a given length.
+
     Hann window function:
+    .. math::
+
         H[n] = 1/2 [1 - cos(2 * pi * n / (N - 1))]
+
     where N is window_length.
 
     Args:
