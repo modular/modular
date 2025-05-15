@@ -19,7 +19,7 @@ import os
 import signal
 import sys
 import uuid
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Callable, Optional, Union
 
@@ -42,7 +42,6 @@ from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import Scheduler
 from max.serve.scheduler.queues import EngineQueue
-from max.serve.scheduler.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
@@ -61,38 +60,216 @@ def _set_pdeathsig(pdeathsig: int) -> None:
     libc.prctl(PR_SET_PDEATHSIG, pdeathsig)
 
 
-def _model_worker_process_fn(
-    pc: ProcessControl,
-    model_factory: PipelinesFactory,
-    batch_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, Union[ZmqPushSocket, ZmqPullSocket]],
-    settings: Settings,
-    metric_client_factory: Callable[
-        [], AbstractAsyncContextManager[MetricClient]
-    ],
-    ctx: multiprocessing.context.BaseContext,
-) -> None:
-    try:
-        _set_pdeathsig(signal.SIGTERM)
-        uvloop.run(
-            model_worker_run_v3(
-                pc,
-                model_factory,
-                batch_config,
-                queues,
-                settings,
-                metric_client_factory,
-                ctx,
+class ModelWorker:
+    """A stateless namespace class for organizing ModelWorker functionality.
+
+    This class has no instance state or methods, and serves purely as a namespace
+    to organize the async functionality associated with running a single ModelWorker
+    process. All methods are static and handle tasks like worker initialization,
+    scheduler configuration, and process lifecycle management.
+    """
+
+    @staticmethod
+    @traced
+    def _configure_metrics(
+        settings: Settings,
+        metric_client: MetricClient,
+    ) -> None:
+        """Configure metrics recording for the model worker process.
+
+        Args:
+            settings: Global server settings containing metric configuration
+            metric_client: Client for recording metrics
+        """
+        supported_methods = [
+            MetricRecordingMethod.NOOP,
+            MetricRecordingMethod.PROCESS,
+        ]
+        if settings.metric_recording not in supported_methods:
+            logger.info(
+                "Unsuported recording method. Metrics unavailable in model worker"
             )
+            return
+
+        configure_metrics(settings)
+        METRICS.configure(metric_client)
+
+    @staticmethod
+    @traced
+    async def run(
+        pc: ProcessControl,
+        model_factory: PipelinesFactory,
+        pipeline_config: TokenGeneratorPipelineConfig,
+        settings: Settings,
+        metric_client_factory: Callable[
+            [], AbstractAsyncContextManager[MetricClient]
+        ],
+    ) -> None:
+        """Runs a model worker process.
+
+        Configures logging and metrics, initializes the model pipeline and scheduler,
+        and executes the main worker loop.
+
+        Args:
+            pc: Process control for managing worker lifecycle
+            model_factory: Factory function to create the model pipeline
+            pipeline_config: Configuration for the token generation pipeline
+            settings: Global server settings
+            metric_client_factory: Factory function to create metric client
+        """
+        # Configure Logging
+        configure_logging(settings)
+        pid = os.getpid()
+        logger.info("Starting model worker on process %d!", pid)
+
+        # Configure Metrics
+        async with metric_client_factory() as metric_client:
+            ModelWorker._configure_metrics(settings, metric_client)
+
+            # Initialize token generator.
+            with record_ms(METRICS.model_load_time), Tracer("model_factory"):
+                pipeline = model_factory()
+
+        # Initialize ZeroMQ Context.
+        # This should only be done once per process.
+        zmq_ctx = zmq.Context(io_threads=2)
+
+        # Retrieve Scheduler.
+        scheduler = ModelWorker.retrieve_scheduler(
+            pc,
+            pipeline,
+            zmq_ctx,
+            settings,
+            pipeline_config,
         )
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        logger.exception(
-            "Encountered an error in _model_worker_process_fn %s",
-            e,
-            stack_info=True,
+
+        # Mark the start of the process, and run the scheduler.
+        pc.set_started()
+        logger.debug("Started model worker!")
+
+        scheduler.run()
+
+        # Close the process.
+        pc.set_completed()
+        logger.debug("Stopped model worker!")
+
+    @staticmethod
+    def _retrieve_embeddings_scheduler(
+        pc: ProcessControl,
+        pipeline: EmbeddingsGenerator,
+        zmq_ctx: zmq.Context,
+        settings: Settings,
+        pipeline_config: TokenGeneratorPipelineConfig,
+    ) -> Scheduler:
+        config = pipeline_config
+        max_batch_size = config.token_generation.size
+
+        scheduler_config = EmbeddingsSchedulerConfig(
+            max_batch_size=max_batch_size,
         )
+        return EmbeddingsScheduler(
+            process_control=pc,
+            scheduler_config=scheduler_config,
+            pipeline=pipeline,
+            request_zmq_endpoint=settings.request_zmq_endpoint,
+            response_zmq_endpoint=settings.response_zmq_endpoint,
+            cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+            zmq_ctx=zmq_ctx,
+        )
+
+    @staticmethod
+    @traced
+    def retrieve_scheduler(
+        pc: ProcessControl,
+        pipeline: Union[TokenGenerator, EmbeddingsGenerator],
+        zmq_ctx: zmq.Context,
+        settings: Settings,
+        pipeline_config: TokenGeneratorPipelineConfig,
+    ) -> Scheduler:
+        """Retrieves the appropriate scheduler based on the pipeline type.
+
+        Args:
+            pc: Process control for managing worker lifecycle
+            pipeline: The pipeline instance to create a scheduler for
+            zmq_ctx: ZeroMQ context for communication
+            settings: Global server settings
+            pipeline_config: Configuration for the token generation pipeline
+
+        Returns:
+            A scheduler instance configured for the given pipeline type
+
+        """
+        # TODO(E2EOPT-235): Simplify embeddings scheduler creation upstream
+        if isinstance(pipeline, TokenGenerator):
+            return load_scheduler(
+                zmq_ctx=zmq_ctx,
+                settings=settings,
+                pipeline=pipeline,
+                pipeline_role=pipeline_config.pipeline_role,
+                pc=pc,
+                max_batch_size_tg=pipeline_config.max_batch_size_tg,
+                max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
+                target_tokens_per_batch_tg=pipeline_config.target_tokens_per_batch_tg,
+                max_batch_size_ce=pipeline_config.max_batch_size_ce,
+                max_forward_steps_ce=pipeline_config.max_forward_steps_ce,
+                target_tokens_per_batch_ce=pipeline_config.target_tokens_per_batch_ce,
+                batch_timeout=pipeline_config.batch_timeout,
+                enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+                enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            )
+        elif isinstance(pipeline, EmbeddingsGenerator):
+            return ModelWorker._retrieve_embeddings_scheduler(
+                pc,
+                pipeline,
+                zmq_ctx,
+                settings,
+                pipeline_config,
+            )
+
+    @staticmethod
+    @traced
+    def __call__(
+        pc: ProcessControl,
+        model_factory: PipelinesFactory,
+        pipeline_config: TokenGeneratorPipelineConfig,
+        settings: Settings,
+        metric_client_factory: Callable[
+            [], AbstractAsyncContextManager[MetricClient]
+        ],
+    ) -> None:
+        """Primary entry point for running a ModelWorker process.
+
+        This method is called when starting a new ModelWorker process. It initializes the event loop
+        using uvloop and runs the main ModelWorker.run coroutine. The process handles model inference
+        requests and manages the lifecycle of the underlying model pipeline.
+
+        Args:
+            pc: Process control for managing worker lifecycle
+            model_factory: Factory for creating model pipeline instances
+            pipeline_config: Configuration for the token generation pipeline
+            settings: Global server settings
+            metric_client_factory: Factory for creating metric client instances
+            ctx: Multiprocessing context for worker process
+        """
+        try:
+            _set_pdeathsig(signal.SIGTERM)
+            uvloop.run(
+                ModelWorker.run(
+                    pc,
+                    model_factory,
+                    pipeline_config,
+                    settings,
+                    metric_client_factory,
+                )
+            )
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            logger.exception(
+                "Encountered an error in ModelWorker.run %s",
+                e,
+                stack_info=True,
+            )
 
 
 @asynccontextmanager
@@ -140,16 +317,14 @@ async def start_model_worker(
     logger.info("Starting worker: %s", worker_name)
     worker = mp_context.Process(
         name=worker_name,
-        target=_model_worker_process_fn,
+        target=ModelWorker(),
         daemon=True,
         args=(
             pc,
             model_factory,
             batch_config,
-            queue_args,
             settings,
             metric_client.cross_process_factory(),
-            mp_context,
         ),
     )
     worker.start()
@@ -224,110 +399,3 @@ async def start_model_worker(
     finally:
         worker_task.cancel()
         await monitor.shutdown()
-
-
-# INTERNAL
-def mw_configure_metrics(settings, metric_client):
-    supported_methods = [
-        MetricRecordingMethod.NOOP,
-        MetricRecordingMethod.PROCESS,
-    ]
-    if settings.metric_recording not in supported_methods:
-        logger.info(
-            "Unsuported recording method. Metrics unavailable in model worker"
-        )
-        return
-
-    configure_metrics(settings)
-    METRICS.configure(metric_client)
-
-
-@traced
-async def model_worker_run_v3(
-    pc: ProcessControl,
-    model_factory: PipelinesFactory,
-    pipeline_config: TokenGeneratorPipelineConfig,
-    queues: Mapping[str, Union[ZmqPushSocket, ZmqPullSocket]],
-    settings: Settings,
-    metric_client_factory: Callable[
-        [], AbstractAsyncContextManager[MetricClient]
-    ],
-    ctx: multiprocessing.context.BaseContext,
-) -> None:
-    configure_logging(settings)
-
-    pid = os.getpid()
-    logger.info("Starting model worker on process %d!", pid)
-
-    async with metric_client_factory() as metric_client:
-        mw_configure_metrics(settings, metric_client)
-
-        # Initialize token generator.
-        with record_ms(METRICS.model_load_time), Tracer("model_factory"):
-            pipeline = model_factory()
-
-    zmq_ctx = zmq.Context(io_threads=2)
-    scheduler: Scheduler
-    # TODO: E2EOPT-235
-    if isinstance(pipeline, TokenGenerator):
-        scheduler = load_scheduler(
-            zmq_ctx=zmq_ctx,
-            settings=settings,
-            pipeline=pipeline,
-            pipeline_role=pipeline_config.pipeline_role,
-            pc=pc,
-            max_batch_size_tg=pipeline_config.max_batch_size_tg,
-            max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
-            target_tokens_per_batch_tg=pipeline_config.target_tokens_per_batch_tg,
-            max_batch_size_ce=pipeline_config.max_batch_size_ce,
-            max_forward_steps_ce=pipeline_config.max_forward_steps_ce,
-            target_tokens_per_batch_ce=pipeline_config.target_tokens_per_batch_ce,
-            batch_timeout=pipeline_config.batch_timeout,
-            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-        )
-
-    elif isinstance(pipeline, EmbeddingsGenerator):
-        scheduler = _create_embeddings_scheduler(
-            settings,
-            pipeline,
-            pc,
-            pipeline_config,
-            zmq_ctx,
-        )
-    else:
-        raise ValueError(f"Invalid pipeline type: {type(pipeline)}")
-
-    logger.info("Scheduler created with pipeline type: %s", type(pipeline))
-
-    pc.set_started()
-    logger.debug("Started model worker!")
-
-    scheduler.run()
-
-    pc.set_completed()
-    logger.info("Stopped model worker!")
-
-
-def _create_embeddings_scheduler(
-    settings: Settings,
-    pipeline: EmbeddingsGenerator,
-    pc: ProcessControl,
-    pipeline_config: TokenGeneratorPipelineConfig,
-    zmq_ctx: zmq.Context,
-) -> EmbeddingsScheduler:
-    config = pipeline_config
-    max_batch_size = config.token_generation.size
-
-    scheduler_config = EmbeddingsSchedulerConfig(
-        max_batch_size=max_batch_size,
-    )
-    return EmbeddingsScheduler(
-        process_control=pc,
-        scheduler_config=scheduler_config,
-        pipeline=pipeline,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        zmq_ctx=zmq_ctx,
-    )
