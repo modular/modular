@@ -1372,8 +1372,11 @@ LogicalResult ParamOperatorAttr::verify(
     break;
 
   case POC::CompileOffloadClosure: {
-    if (operands.size() != 1)
-      return emitError() << "'compile_offload_closure' requires 1 operands";
+    if (operands.size() != 2)
+      return emitError() << "'compile_offload_closure' requires 2 operands";
+    if (!::isa<TargetType>(operands.front().getType()))
+      return emitError() << "'compile_offload_closure' first operand should be "
+                            "a target type";
     break;
   }
   case POC::GetVTableEntry:

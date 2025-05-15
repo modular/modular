@@ -2196,15 +2196,18 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
   // CHECK: %string = kgen.param.constant: string = <"{{.*}}">
   // CHECK-NEXT: %index1 = kgen.param.constant = <1>
   // CHECK: %1 = kgen.struct.create(%string, %index1) : !kgen.struct<(string, index)>
-  %1 = kgen.compile_offload<#kgen.target<triple = "nvptx64-nvidia-cuda",
+
+  kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda",
                                          arch = "sm_80",
                                          simd_bit_width = 128,
                                          index_bit_width = 64,
-                                         tune_cpu = "sm_80">, 2, "",
-                                         :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
-                                        : !kgen.struct<(string, index)>
+                                         tune_cpu = "sm_80">>
+  %1 = kgen.compile_offload<nvptx, 2, "",
+                            :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
+                            : !kgen.struct<(string, index)>
   // CHECK-NEXT: %2 = kgen.call @"HELLO,x=FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
-  kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <compile_offload_closure(@HELLO<:() capturing -> index *"foo()">)>
+  kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <compile_offload_closure(
+    nvptx, :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">)>
   %2 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: x](%arg0)
   kgen.return
 }
