@@ -4,6 +4,22 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from python import PythonObject
+from python._bindings import PythonModuleBuilder
 
-fn arg_reg_trivial_borrowed(arg: Int):
-    pass
+from os import abort
+
+
+@export
+fn PyInit_mojo_module() -> PythonObject:
+    try:
+        var m = PythonModuleBuilder("mojo_module")
+        m.def_function[plus_one]("plus_one")
+
+        return m.finalize()
+    except e:
+        return abort[PythonObject]("failed to create Python module: ", e)
+
+
+fn plus_one(arg: PythonObject) raises -> PythonObject:
+    return arg + 1
