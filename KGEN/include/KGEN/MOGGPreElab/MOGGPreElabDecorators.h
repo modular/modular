@@ -39,9 +39,13 @@ constexpr StringLiteral MOGG_INPUT_PARAM_TYPES = "mogg.input_param_types";
 // The names as they appear in the lit source.
 constexpr StringLiteral MOGG_ARG_SRC_NAMES = "mogg.arg_src_names";
 
-/// Tracks the mojo trait conformances of each argument and result type.
-constexpr StringLiteral MOGG_ARGUMENT_CONFORMANCES = "mogg.arg_conformances";
-constexpr StringLiteral MOGG_RESULT_CONFORMANCES = "mogg.result_conformances";
+/// Tracks the value witness entries of each argument and result type.
+/// This is a DictionaryAttr where the key is the name of the method and the
+/// value is the (potentially unresolved) method reference as a TypedAttr.
+constexpr StringLiteral MOGG_ARGUMENT_VALUE_WITNESSES =
+    "mogg.arg_value_witnesses";
+constexpr StringLiteral MOGG_RESULT_VALUE_WITNESSES =
+    "mogg.result_value_witnesses";
 
 /// MOGG Intrinsic for the register kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_REGISTER = "mogg.intrinsic_register";

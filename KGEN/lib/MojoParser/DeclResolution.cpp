@@ -856,9 +856,10 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     return;
 
   ExprEmitter emitter(decl, EC_Type);
-  auto generateConformancesImpl = [&](ASTType type, Location loc) -> TypedAttr {
+  auto generateValueWitnesses = [&](ASTType type,
+                                    Location loc) -> DictionaryAttr {
     SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
-    SmallVector<VTableEntryAttr> entries;
+    NamedAttrList methodsDict;
     // These are the trait methods that MOGG is interested in.
     for (auto [traitName, entryName] :
          SmallVector<std::pair<StringRef, StringRef>>{
@@ -874,28 +875,22 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
       // conform to the trait. In either case, move on to the next trait method.
       if (failed(entry) || !*entry)
         continue;
-      entries.push_back(VTableEntryAttr::get(
-          StringAttr::get(shared.getContext(), entryName), *entry));
+      methodsDict.set(entryName, *entry);
     }
-    return TypeParamAttr::get(type, type,
-                              VTableAttr::get(shared.getContext(), entries));
-  };
-  auto generateConformances = [&](ASTType type, Location loc) {
-    return ParameterExprArrayAttr::get(loc.getContext(),
-                                       {generateConformancesImpl(type, loc)});
+    return DictionaryAttr::get(shared.getContext(), methodsDict);
   };
 
   SmallVector<Attribute> argConformances;
-  Attribute resConformances = generateConformances(resultType, func.getLoc());
+  Attribute resConformances = generateValueWitnesses(resultType, func.getLoc());
   for (auto [idx, argType] : llvm::enumerate(argTypes)) {
     argConformances.push_back(
-        generateConformances(argType, func.getArgument(idx).getLoc()));
+        generateValueWitnesses(argType, func.getArgument(idx).getLoc()));
   }
 
   NamedAttrList attrs = func->getAttrDictionary();
-  attrs.set(MOGGPreElab::MOGG_ARGUMENT_CONFORMANCES,
+  attrs.set(MOGGPreElab::MOGG_ARGUMENT_VALUE_WITNESSES,
             ArrayAttr::get(shared.getContext(), argConformances));
-  attrs.set(MOGGPreElab::MOGG_RESULT_CONFORMANCES, resConformances);
+  attrs.set(MOGGPreElab::MOGG_RESULT_VALUE_WITNESSES, resConformances);
   func->setAttrs(attrs.getDictionary(shared.getContext()));
 }
 
