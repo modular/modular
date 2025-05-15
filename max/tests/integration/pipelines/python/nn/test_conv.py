@@ -16,7 +16,9 @@ ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6
 
 
-def test_conv1d() -> None:
+def test_conv1dv1(session: InferenceSession) -> None:
+    torch.manual_seed(42)
+
     batch_size = 3
     in_channels = 128
     length = 3000
@@ -70,7 +72,6 @@ def test_conv1d() -> None:
     )
 
     # out_channels=hidden_size and kernel_size=kernel_size are inferred from kernel.
-    session = InferenceSession()
     graph = Graph(
         "conv1d",
         Conv1DV1(
@@ -102,7 +103,8 @@ def test_conv1d() -> None:
     )
 
 
-def test_conv3d() -> None:
+def test_conv3dv1(session: InferenceSession) -> None:
+    torch.manual_seed(42)
     in_channels = 3
     out_channels = 1280
     kernel_size = (2, 14, 14)
@@ -181,7 +183,9 @@ def test_conv3d() -> None:
     )
 
 
-def test_conv3dv2() -> None:
+def test_conv3d(session: InferenceSession) -> None:
+    torch.manual_seed(42)
+
     in_channels = 3
     out_channels = 1280
     kernel_size = (2, 14, 14)
@@ -237,7 +241,6 @@ def test_conv3dv2() -> None:
         torch_conv_result = torch_conv(input_sequence)
 
     # get_max_output
-    session = InferenceSession()
     graph = Graph(
         "conv3d",
         max_conv,
@@ -260,24 +263,29 @@ def test_conv3dv2() -> None:
     )
 
 
-def test_conv1dv2() -> None:
-    batch_size = 3
-    in_channels = 128
-    length = 3000
-    hidden_size = 1280  # out_channels
-    kernel_size = 3
-    stride = 1
-    padding = 1
+def test_conv1d(session: InferenceSession) -> None:
+    torch.manual_seed(42)
 
-    is_gpu = False
+    batch_size = 1
+    in_channels = 1024
+    length = 57
+    hidden_size = 1024  # out_channels
+    kernel_size = 7
+    stride = 1
+    padding = 3
+
+    is_gpu = not session.devices[0].is_host
     torch_dtype = torch.float32
+    torch_device = torch.device("cuda") if is_gpu else torch.device("cpu")
     max_dtype = DType.float32
+    max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
 
     # Create input tensor in PyTorch format (batch_size, in_channels, length)
-    input_sequence = torch.rand(size=(batch_size, in_channels, length)).to(
-        torch_dtype
+    input_sequence = torch.rand(
+        size=(batch_size, in_channels, length),
+        dtype=torch_dtype,
+        device=torch_device,
     )
-    input_sequence = input_sequence.cuda() if is_gpu else input_sequence.cpu()
 
     # Create PyTorch Conv1d layer
     torch_conv = nn.Conv1d(
@@ -286,7 +294,8 @@ def test_conv1dv2() -> None:
         kernel_size=kernel_size,
         stride=stride,
         padding=padding,
-        bias=False,
+        bias=True,
+        device=torch_device,
     )
 
     # Create our Conv1D layer
@@ -296,18 +305,34 @@ def test_conv1dv2() -> None:
         out_channels=hidden_size,
         dtype=max_dtype,
         stride=stride,
+        device=max_device,
         padding=padding,
-        has_bias=False,
+        has_bias=True,
         permute=True,
     )
 
     # Initialize random weights for PyTorch conv
     torch_conv.weight.data = nn.Parameter(
-        torch.rand(size=torch_conv.weight.data.shape)
+        torch.rand(
+            size=torch_conv.weight.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
     )
+    assert torch_conv.bias is not None
 
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.bias.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
     # Load the same weights into our conv
-    state_dict = {"weight": torch_conv.weight.data.cpu()}
+    state_dict = {
+        "weight": torch_conv.weight.data.detach().cpu(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
     max_conv.load_state_dict(state_dict)
 
     # Get PyTorch output
@@ -315,12 +340,11 @@ def test_conv1dv2() -> None:
         torch_conv_result = torch_conv(input_sequence)
 
     # Get Max output
-    session = InferenceSession()
     graph = Graph(
         "conv1d",
         max_conv,
         input_types=(
-            TensorType(max_dtype, input_sequence.shape, device=DeviceRef.CPU()),
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
         ),
     )
 
@@ -331,7 +355,7 @@ def test_conv1dv2() -> None:
     # Compare results
     np.testing.assert_allclose(
         graph_api_conv_result.to_numpy(),
-        torch_conv_result.detach().numpy(),
+        torch_conv_result.detach().cpu().numpy(),
         equal_nan=True,
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
