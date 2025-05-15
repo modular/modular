@@ -84,7 +84,12 @@ KGEN_CompilerRT_Python_SetPythonPath() {
   if (!libpython && !pythonBin.empty())
     libpython = findLibPython(pythonBin);
 
-  if (!libpython || !is_regular_file(*libpython))
+  // Intentionally setting MOJO_PYTHON_LIBRARY to "" should result in
+  // `dlopen(nullptr, ..)`, to look for CPython symbols in the current process.
+  // That behavior is important on platforms (Linux), where the Python `python`
+  // executable statically links the CPython implementation but can't be
+  // `dlopen()`'d directly because it is a PIE executable.
+  if (!libpython || (*libpython != "" && !is_regular_file(*libpython)))
     return "found no suitable Python library to link to";
 
   if (failed(setProcessEnv("MOJO_PYTHON_LIBRARY", *libpython)))
