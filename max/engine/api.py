@@ -263,21 +263,6 @@ def _is_torchscript_module(obj: Any) -> bool:
     ] and t.__module__ in ["torch.jit.script", "torch.jit._script"]
 
 
-def _is_torchscript_function(obj: Any) -> bool:
-    """Checks if an object is a `torch.jit.ScriptFunction`."""
-    t = type(obj)
-    return t.__name__ == "ScriptFunction" and t.__module__ == "torch.jit"
-
-
-def _is_torch_mlir_module(obj: Any) -> bool:
-    """Checks if an object is a `max._torch_mlir.Module`."""
-    # Only check last submodule since the higher level modules in the hierarchy
-    # may differ depending on where the mlir module is built
-    return type(obj).__name__ == "Module" and type(obj).__module__.startswith(
-        "max._torch_mlir"
-    )
-
-
 def _is_max_graph(obj: Any) -> bool:
     """Checks if an object is `max.graph.Graph`."""
     # TODO(MSDK-677): We should use isinstance here once max.graph
