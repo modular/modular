@@ -6,7 +6,6 @@ filegroup(
         "Inputs/dynamic-model.mlir",
         "Inputs/named-inputs.mlir",
         "Inputs/no-inputs.mlir",
-        "Inputs/relu3x100x100.torchscript",
         "Inputs/scalar-input.mlir",
         "c/mo-model.api",
     ],
@@ -27,14 +26,8 @@ lit_tests(
             "**/*.api",
         ],
     ),
-    custom_substitutions = {
-        "%pytorch_generated_tests_dir": "../../../../PyTorch/test/utils",
-    },
     data = [
         ":inputs",
-        "//PyTorch:modular-framework-torch-ext",
-        "//PyTorch/test/utils:pytorch-generated-tests",
-        "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test:inputs",
     ],
     env = {

@@ -17,7 +17,7 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
+from max.engine import InferenceSession, Model, TensorSpec
 from max.graph import (
     DeviceRef,
     Graph,
@@ -41,11 +41,6 @@ def modular_lib_path() -> Path:
 @pytest.fixture
 def sdk_test_inputs_path(modular_path: Path) -> Path:
     return modular_path / "SDK" / "integration-test" / "API" / "Inputs"
-
-
-@pytest.fixture
-def relu_torchscript_model_path(sdk_test_inputs_path: Path) -> Path:
-    return sdk_test_inputs_path / "relu3x100x100.torchscript"
 
 
 @pytest.fixture
@@ -427,36 +422,6 @@ def test_dynamic_rank_spec() -> None:
     assert str(input_spec) == "None x float64"
 
 
-def test_repr_torch_input_spec() -> None:
-    input_spec_with_shape = TorchInputSpec([20, 30], DType.float32)
-    assert input_spec_with_shape.shape == [20, 30]
-    assert input_spec_with_shape.dtype == DType.float32
-
-    assert (
-        repr(input_spec_with_shape)
-        == "TorchInputSpec(shape=[20, 30], dtype=DType.float32, device='')"
-    )
-    assert str(input_spec_with_shape) == "20x30xfloat32"
-
-    input_spec_without_shape = TorchInputSpec(None, DType.float64)
-    assert input_spec_without_shape.shape is None
-    assert input_spec_without_shape.dtype == DType.float64
-
-    assert (
-        repr(input_spec_without_shape)
-        == "TorchInputSpec(shape=None, dtype=DType.float64, device='')"
-    )
-    assert str(input_spec_without_shape) == "None x float64"
-
-    input_spec_with_dim_names = TorchInputSpec(["BATCH", 30], DType.float32)
-    assert input_spec_with_dim_names.shape == ["BATCH", 30]
-    assert (
-        repr(input_spec_with_dim_names)
-        == "TorchInputSpec(shape=['BATCH', 30], dtype=DType.float32, device='')"
-    )
-    assert str(input_spec_with_dim_names) == "-1x30xfloat32"
-
-
 @dataclass
 class ExternalWeightsModel:
     """Model that performs elementwise add with a weights tensor."""
@@ -651,17 +616,6 @@ def test_weight_device_implicit_mismatch(
 
         result = model.execute(input_tensor)[0]
         assert isinstance(result, Tensor)
-
-
-def test_stats_report(
-    session: InferenceSession, relu_torchscript_model_path: Path
-) -> None:
-    input_specs = [TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)]
-    session.load(relu_torchscript_model_path, input_specs=input_specs)
-    sr = session.stats_report
-    assert isinstance(sr, dict)
-    assert sr["fallbacks"] == {}
-    assert sr["total_op_count"] == 3
 
 
 def test_devices(session: InferenceSession) -> None:

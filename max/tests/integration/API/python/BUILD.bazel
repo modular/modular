@@ -23,7 +23,6 @@ modular_py_test(
     ],
     data = [
         "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
         "//SDK/lib/API/python/tests/graph/testdata",
@@ -70,7 +69,6 @@ modular_py_test(
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
         "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
     ],
@@ -109,7 +107,6 @@ modular_py_test(
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
         "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
     ],
@@ -142,9 +139,7 @@ modular_py_test(
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
         "//ModularFramework/tools/max",
-        "//PyTorch:ATenRT",
         "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
