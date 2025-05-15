@@ -3,7 +3,7 @@
 # But this is needed by benchmarking to setup the environment
 # Adding this back for now to unblock.  
 click >= 8.1.7
-fastapi >= 0.111.0
+fastapi >= 0.115.3
 gguf >= 0.10.0
 requests >= 2.32.3
 tokenizers >= 0.19.1
@@ -32,6 +32,7 @@ pyinstrument>=5.0.1
 python-json-logger>=2.0.7
 sentinel>=0.3.0
 sse-starlette>=2.1.2
+starlette==0.41.2 # transitively included by sse-starlette, >=0.40.0 is required for resolving CVE-2024-47874, 0.41.3 introduces a breaking change against mypy (https://github.com/encode/starlette/discussions/2757)
 tokenizers>=0.19.0
 uvicorn>=0.34.0
 uvloop>=0.21.0
