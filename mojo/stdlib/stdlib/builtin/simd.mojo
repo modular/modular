@@ -1845,6 +1845,15 @@ struct SIMD[dtype: DType, size: Int](
         elif target is DType.bfloat16 and not _has_native_bf16_support():
             return rebind[Target](_f32_to_bfloat16(self.cast[DType.float32]()))
 
+        @parameter
+        if dtype in (DType._uint1, DType._uint2, DType._uint4):
+            # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
+            var uint = __mlir_op.`pop.cast`[
+                _type = SIMD[DType.index, size]._mlir_type,
+                fast = __mlir_attr.unit,
+            ](self.value)
+            return SIMD[DType.index, size](uint).cast[target]()
+
         return __mlir_op.`pop.cast`[
             _type = Target._mlir_type, fast = __mlir_attr.unit
         ](self.value)

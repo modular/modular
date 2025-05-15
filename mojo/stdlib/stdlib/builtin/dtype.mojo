@@ -59,6 +59,10 @@ struct DType(
     """Represents an integral type whose bitwidth is the maximum integral value
     on the system."""
 
+    alias _uint1 = DType(__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`)
+    alias _uint2 = DType(__mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`)
+    alias _uint4 = DType(__mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`)
+
     alias uint8 = DType(__mlir_attr.`#kgen.dtype.constant<ui8> : !kgen.dtype`)
     """Represents an unsigned integer type whose bitwidth is 8."""
     alias int8 = DType(__mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`)
