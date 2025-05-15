@@ -4664,9 +4664,9 @@ struct Tile:
         repeats: InputTensor,
     ) raises:
         tile(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(repeats),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            repeats.to_layout_tensor(),
+            output.to_layout_tensor(),
         )
 
     @staticmethod
@@ -4674,9 +4674,13 @@ struct Tile:
         input: InputTensor,
         repeats: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
-        return tile_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(repeats),
+        # rebind is required because mojo can't figure out that
+        # input.static_spec.to_layout_tensor().rank == input.rank
+        return rebind[IndexList[input.rank]](
+            tile_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                repeats.to_layout_tensor(),
+            )
         )
 
 

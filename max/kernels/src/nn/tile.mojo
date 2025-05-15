@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
+from layout import LayoutTensor, Layout
 from memory import memcpy
 
 from utils import IndexList
@@ -26,20 +26,22 @@ from utils import IndexList
 
 @always_inline
 fn tile[
-    rank: Int, type: DType, rank_repeats: Int, type_repeats: DType
+    type: DType, type_repeats: DType
 ](
-    input: NDBuffer[type, rank],
-    repeats: NDBuffer[type_repeats, rank_repeats],
-    output: NDBuffer[mut=True, type, rank],
+    input: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    repeats: LayoutTensor[
+        type_repeats, address_space = AddressSpace.GENERIC, **_
+    ],
+    output: LayoutTensor[
+        mut=True, type, address_space = AddressSpace.GENERIC, **_
+    ],
 ) raises:
     """
     Implements the `Tile` operator from the ONNX spec. This behaves like Numpy
     tile, but without broadcast.
 
     Parameters:
-        rank: Rank of the input and output tensors.
         type: Type of the input and output tensors.
-        rank_repeats: Rank of the repeats tensor.
         type_repeats: Type of the repeats tensor.
 
     Args:
@@ -49,19 +51,22 @@ fn tile[
                  input tensor rank.
         output: The output tensor. Has the same dimensions and type as input.
     """
+    constrained[
+        input.rank == output.rank, "input and output must have the same rank"
+    ]()
 
-    if rank > 4:
+    if input.rank > 4:
         raise Error(
             "Currently only inputs of up to three dimensions are supported."
         )
 
-    if rank_repeats != 1 or type_repeats != DType.int64:
+    if repeats.rank != 1 or type_repeats != DType.int64:
         raise Error(
             "Rank of repeats tensor needs to be one-dimensional and of int64"
             " type."
         )
 
-    if rank != repeats.dim(0):
+    if input.rank != Int(repeats.runtime_layout.shape[0]):
         raise Error(
             "Length of repeats tensor should be equal to the rank of the input"
             " tensor."
@@ -72,19 +77,19 @@ fn tile[
     var num_rows_input = 1
 
     @parameter
-    if rank == 4:
-        num_dp_input = input.dim(rank - 4)
+    if input.rank == 4:
+        num_dp_input = Int(input.runtime_layout.shape[input.rank - 4])
 
     @parameter
-    if rank >= 3:
-        num_depth_input = input.dim(rank - 3)
+    if input.rank >= 3:
+        num_depth_input = Int(input.runtime_layout.shape[input.rank - 3])
 
     @parameter
-    if rank >= 2:
-        num_rows_input = input.dim(rank - 2)
-    var num_cols_input = input.dim(rank - 1)
+    if input.rank >= 2:
+        num_rows_input = Int(input.runtime_layout.shape[input.rank - 2])
+    var num_cols_input = Int(input.runtime_layout.shape[input.rank - 1])
 
-    var repeats_len = repeats.dim(0)
+    var repeats_len = Int(repeats.runtime_layout.shape[0])
 
     # Initializes output by first copying in the original input to the
     # appropriate output elements, and then handles tiling across the column
@@ -120,8 +125,8 @@ fn tile[
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
                 for rep in range(Int(repeats[repeats_len - 1])):
-                    var src_ptr = input.data.offset(input_src_index)
-                    var dst_ptr = output.data.offset(
+                    var src_ptr = input.ptr.offset(input_src_index)
+                    var dst_ptr = output.ptr.offset(
                         output_src_index + rep * output_src_stride
                     )
                     memcpy(dst_ptr, src_ptr, count)
@@ -137,7 +142,7 @@ fn tile[
     # Moving from the inner to the outermost dimension, we can memcpy to
     # replicate contiguous memory areas (representing a dimension to be tiled).
     @parameter
-    if rank >= 2:
+    if input.rank >= 2:
         var src_index_stride = num_rows_input * num_cols_input * Int(
             repeats[repeats_len - 1]
         )
@@ -156,15 +161,15 @@ fn tile[
                     repeats[repeats_len - 1]
                 )
                 for rep in range(Int(repeats[repeats_len - 2] - 1)):
-                    var src_ptr = output.data.offset(src_index)
-                    var dst_ptr = output.data.offset(
+                    var src_ptr = output.ptr.offset(src_index)
+                    var dst_ptr = output.ptr.offset(
                         src_index + (rep + 1) * src_index_stride
                     )
                     memcpy(dst_ptr, src_ptr, count)
 
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     @parameter
-    if rank >= 3:
+    if input.rank >= 3:
         var src_index_stride = num_depth_input * Int(
             repeats[repeats_len - 2]
         ) * num_rows_input * num_cols_input * Int(repeats[repeats_len - 1])
@@ -178,27 +183,29 @@ fn tile[
                 repeats[repeats_len - 1]
             )
             for rep in range(Int(repeats[repeats_len - 3] - 1)):
-                var src_ptr = output.data.offset(src_index)
-                var dst_ptr = output.data.offset(
+                var src_ptr = output.ptr.offset(src_index)
+                var dst_ptr = output.ptr.offset(
                     src_index + (rep + 1) * src_index_stride
                 )
                 memcpy(dst_ptr, src_ptr, count)
 
     # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
     @parameter
-    if rank == 4:
+    if input.rank == 4:
         var src_index_stride = num_dp_input * Int(
-            repeats[repeats.dim(0) - 3]
+            repeats[Int(repeats.runtime_layout.shape[0]) - 3]
         ) * num_depth_input * Int(
-            repeats[repeats.dim(0) - 2]
+            repeats[Int(repeats.runtime_layout.shape[0]) - 2]
         ) * num_rows_input * num_cols_input * Int(
-            repeats[repeats.dim(0) - 1]
+            repeats[Int(repeats.runtime_layout.shape[0]) - 1]
         )
         var count = src_index_stride
         var src_index = 0
-        for rep in range(Int(repeats[repeats.dim(0) - 4] - 1)):
-            var src_ptr = output.data.offset(src_index)
-            var dst_ptr = output.data.offset(
+        for rep in range(
+            Int(repeats[Int(repeats.runtime_layout.shape[0]) - 4] - 1)
+        ):
+            var src_ptr = output.ptr.offset(src_index)
+            var dst_ptr = output.ptr.offset(
                 src_index + (rep + 1) * src_index_stride
             )
             memcpy(dst_ptr, src_ptr, count)
@@ -206,20 +213,18 @@ fn tile[
 
 @always_inline
 fn tile_shape[
-    input_rank: Int,
     input_type: DType,
     repeats_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    repeats_buf: NDBuffer[repeats_type, 1],
-) raises -> IndexList[input_rank]:
+    input_buf: LayoutTensor[input_type, **_],
+    repeats_buf: LayoutTensor[repeats_type, **_],
+) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are
     compatible.
 
     Parameters:
-        input_rank: Rank of the input tensor (can be any shape).
         input_type: Type of the input tensor.
         repeats_type: Type of the repeats tensor.
         single_thread_blocking_override: If True, then the operation is run
@@ -232,16 +237,20 @@ fn tile_shape[
     Returns:
         The output shape.
     """
+    constrained[repeats_buf.rank == 1, "repeats_buf must be of rank 1"]()
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.
-    if repeats_buf.dim(0) != input_rank:
+    if Int(repeats_buf.runtime_layout.shape[0]) != input_buf.rank:
         raise Error("[tile] requires (len(repeats) == input_rank)")
 
     # Compute and return the output shape.
-    var output_shape = IndexList[input_rank]()
+    var output_shape = IndexList[input_buf.rank]()
 
-    for i in range(input_rank):
-        output_shape[i] = input_buf.dim(i) * Int(repeats_buf[i])
+    @parameter
+    for i in range(input_buf.rank):
+        output_shape[i] = Int(input_buf.runtime_layout.shape[i]) * Int(
+            repeats_buf[i]
+        )
 
     return output_shape

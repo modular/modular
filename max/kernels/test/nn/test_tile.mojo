@@ -11,11 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.tile import tile
 
 from utils import IndexList
+
+alias layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
+alias layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+alias layout_unknown_3d = Layout.row_major(
+    UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+)
+alias layout_unknown_4d = Layout.row_major(
+    UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+)
 
 
 # CHECK-LABEL: test_tile_eg1
@@ -29,17 +37,12 @@ fn test_tile_eg1() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0)] = 0
-    input[IndexList[rank](0, 1)] = 1
-    input[IndexList[rank](1, 0)] = 2
-    input[IndexList[rank](1, 1)] = 3
+    input[0, 0] = 0
+    input[0, 1] = 1
+    input[1, 0] = 2
+    input[1, 1] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -47,30 +50,29 @@ fn test_tile_eg1() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[0] = 2
+    repeats[1] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 4),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 4)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_2d](
+            input_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
+        ),
+        LayoutTensor[type, layout_unknown_2d](
+            output_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 4)),
+        ),
     )
 
     print()
@@ -94,17 +96,12 @@ fn test_tile_eg2() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0)] = 0
-    input[IndexList[rank](0, 1)] = 1
-    input[IndexList[rank](1, 0)] = 2
-    input[IndexList[rank](1, 1)] = 3
+    input[0, 0] = 0
+    input[0, 1] = 1
+    input[1, 0] = 2
+    input[1, 1] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -112,30 +109,29 @@ fn test_tile_eg2() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 3
-    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[0] = 3
+    repeats[1] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 6 * 4](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(6, 4),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(6, 4)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_2d](
+            input_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
+        ),
+        LayoutTensor[type, layout_unknown_2d](
+            output_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](6, 4)),
+        ),
     )
 
     print()
@@ -157,17 +153,12 @@ fn test_tile_eg3() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0)] = 0
-    input[IndexList[rank](0, 1)] = 1
-    input[IndexList[rank](1, 0)] = 2
-    input[IndexList[rank](1, 1)] = 3
+    input[0, 0] = 0
+    input[0, 1] = 1
+    input[1, 0] = 2
+    input[1, 1] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -175,30 +166,29 @@ fn test_tile_eg3() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 3
+    repeats[0] = 2
+    repeats[1] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 6](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 6),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 6)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_2d](
+            input_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
+        ),
+        LayoutTensor[type, layout_unknown_2d](
+            output_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 6)),
+        ),
     )
 
     print()
@@ -224,22 +214,17 @@ fn test_tile_eg4() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 1)] = 1
-    input[IndexList[rank](0, 1, 0)] = 2
-    input[IndexList[rank](0, 1, 1)] = 3
+    input[0, 0, 0] = 0
+    input[0, 0, 1] = 1
+    input[0, 1, 0] = 2
+    input[0, 1, 1] = 3
 
-    input[IndexList[rank](1, 0, 0)] = 4
-    input[IndexList[rank](1, 0, 1)] = 5
-    input[IndexList[rank](1, 1, 0)] = 6
-    input[IndexList[rank](1, 1, 1)] = 7
+    input[1, 0, 0] = 4
+    input[1, 0, 1] = 5
+    input[1, 1, 0] = 6
+    input[1, 1, 1] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -247,31 +232,30 @@ fn test_tile_eg4() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(3),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 1
-    repeats[IndexList[rank_repeats](2)] = 1
+    repeats[0] = 2
+    repeats[1] = 1
+    repeats[2] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 2 * 2](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 2, 2),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 2, 2)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_3d](
+            input_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
+        ),
+        LayoutTensor[type, layout_unknown_3d](
+            output_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](4, 2, 2)),
+        ),
     )
 
     print()
@@ -299,22 +283,17 @@ fn test_tile_eg5() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 1)] = 1
-    input[IndexList[rank](0, 1, 0)] = 2
-    input[IndexList[rank](0, 1, 1)] = 3
+    input[0, 0, 0] = 0
+    input[0, 0, 1] = 1
+    input[0, 1, 0] = 2
+    input[0, 1, 1] = 3
 
-    input[IndexList[rank](1, 0, 0)] = 4
-    input[IndexList[rank](1, 0, 1)] = 5
-    input[IndexList[rank](1, 1, 0)] = 6
-    input[IndexList[rank](1, 1, 1)] = 7
+    input[1, 0, 0] = 4
+    input[1, 0, 1] = 5
+    input[1, 1, 0] = 6
+    input[1, 1, 1] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -322,31 +301,30 @@ fn test_tile_eg5() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(3),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 1
-    repeats[IndexList[rank_repeats](2)] = 2
+    repeats[0] = 2
+    repeats[1] = 1
+    repeats[2] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 2 * 4](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 2, 4),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 2, 4)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_3d](
+            input_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
+        ),
+        LayoutTensor[type, layout_unknown_3d](
+            output_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](4, 2, 4)),
+        ),
     )
 
     print()
@@ -369,17 +347,12 @@ fn test_tile_eg6() raises:
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
 
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0)] = 1
-    input[IndexList[rank](0, 1)] = 2
-    input[IndexList[rank](1, 0)] = 3
-    input[IndexList[rank](1, 1)] = 4
+    input[0, 0] = 1
+    input[0, 1] = 2
+    input[1, 0] = 3
+    input[1, 1] = 4
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -387,30 +360,29 @@ fn test_tile_eg6() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 1
-    repeats[IndexList[rank_repeats](1)] = 2
+    repeats[0] = 1
+    repeats[1] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 2 * 4](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 4),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(2, 4)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_2d](
+            input_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
+        ),
+        LayoutTensor[type, layout_unknown_2d](
+            output_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 4)),
+        ),
     )
 
     print()
@@ -432,17 +404,12 @@ fn test_tile_eg7() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0)] = 1
-    input[IndexList[rank](0, 1)] = 2
-    input[IndexList[rank](1, 0)] = 3
-    input[IndexList[rank](1, 1)] = 4
+    input[0, 0] = 1
+    input[0, 1] = 2
+    input[1, 0] = 3
+    input[1, 1] = 4
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -450,30 +417,29 @@ fn test_tile_eg7() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 1
+    repeats[0] = 2
+    repeats[1] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 2](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 2),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 2)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_2d](
+            input_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
+        ),
+        LayoutTensor[type, layout_unknown_2d](
+            output_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 2)),
+        ),
     )
 
     print()
@@ -495,17 +461,12 @@ fn test_tile_eg8() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(1, 4),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(1, 4)](input_stack)
 
-    input[IndexList[rank](0, 0)] = 1
-    input[IndexList[rank](0, 1)] = 2
-    input[IndexList[rank](0, 2)] = 3
-    input[IndexList[rank](0, 3)] = 4
+    input[0, 0] = 1
+    input[0, 1] = 2
+    input[0, 2] = 3
+    input[0, 3] = 4
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -513,34 +474,33 @@ fn test_tile_eg8() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 4
-    repeats[IndexList[rank_repeats](1)] = 1
+    repeats[0] = 4
+    repeats[1] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 4](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 4),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 4)](output_stack)
 
     for i in range(4):
         for j in range(4):
-            output[IndexList[rank](i, j)] = 0
+            output[i, j] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_2d](
+            input_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](1, 4)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
+        ),
+        LayoutTensor[type, layout_unknown_2d](
+            output_stack,
+            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 4)),
+        ),
     )
 
     print()
@@ -574,22 +534,17 @@ fn test_tile_eg9() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 1)] = 1
-    input[IndexList[rank](0, 1, 0)] = 2
-    input[IndexList[rank](0, 1, 1)] = 3
+    input[0, 0, 0] = 0
+    input[0, 0, 1] = 1
+    input[0, 1, 0] = 2
+    input[0, 1, 1] = 3
 
-    input[IndexList[rank](1, 0, 0)] = 4
-    input[IndexList[rank](1, 0, 1)] = 5
-    input[IndexList[rank](1, 1, 0)] = 6
-    input[IndexList[rank](1, 1, 1)] = 7
+    input[1, 0, 0] = 4
+    input[1, 0, 1] = 5
+    input[1, 1, 0] = 6
+    input[1, 1, 1] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -597,36 +552,35 @@ fn test_tile_eg9() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(3),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 2
-    repeats[IndexList[rank_repeats](2)] = 1
+    repeats[0] = 2
+    repeats[1] = 2
+    repeats[2] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 4 * 2](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 4, 2),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 4, 2)](output_stack)
 
     for i in range(4):
         for j in range(4):
             for k in range(2):
-                output[IndexList[rank](i, j, k)] = 0
+                output[i, j, k] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_3d](
+            input_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
+        ),
+        LayoutTensor[type, layout_unknown_3d](
+            output_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](4, 4, 2)),
+        ),
     )
 
     print()
@@ -670,22 +624,17 @@ fn test_tile_eg10() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 1)] = 1
-    input[IndexList[rank](0, 1, 0)] = 2
-    input[IndexList[rank](0, 1, 1)] = 3
+    input[0, 0, 0] = 0
+    input[0, 0, 1] = 1
+    input[0, 1, 0] = 2
+    input[0, 1, 1] = 3
 
-    input[IndexList[rank](1, 0, 0)] = 4
-    input[IndexList[rank](1, 0, 1)] = 5
-    input[IndexList[rank](1, 1, 0)] = 6
-    input[IndexList[rank](1, 1, 1)] = 7
+    input[1, 0, 0] = 4
+    input[1, 0, 1] = 5
+    input[1, 1, 0] = 6
+    input[1, 1, 1] = 7
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -693,31 +642,30 @@ fn test_tile_eg10() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(3),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 3
-    repeats[IndexList[rank_repeats](1)] = 2
-    repeats[IndexList[rank_repeats](2)] = 3
+    repeats[0] = 3
+    repeats[1] = 2
+    repeats[2] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 6 * 4 * 6](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(6, 4, 6),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(6, 4, 6)](output_stack)
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_3d](
+            input_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
+        ),
+        LayoutTensor[type, layout_unknown_3d](
+            output_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](6, 4, 6)),
+        ),
     )
 
     print()
@@ -773,27 +721,22 @@ fn test_tile_eg11() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 3 * 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(3, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(3, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 1)] = 1
-    input[IndexList[rank](0, 1, 0)] = 2
-    input[IndexList[rank](0, 1, 1)] = 3
+    input[0, 0, 0] = 0
+    input[0, 0, 1] = 1
+    input[0, 1, 0] = 2
+    input[0, 1, 1] = 3
 
-    input[IndexList[rank](1, 0, 0)] = 4
-    input[IndexList[rank](1, 0, 1)] = 5
-    input[IndexList[rank](1, 1, 0)] = 6
-    input[IndexList[rank](1, 1, 1)] = 7
+    input[1, 0, 0] = 4
+    input[1, 0, 1] = 5
+    input[1, 1, 0] = 6
+    input[1, 1, 1] = 7
 
-    input[IndexList[rank](2, 0, 0)] = 8
-    input[IndexList[rank](2, 0, 1)] = 9
-    input[IndexList[rank](2, 1, 0)] = 10
-    input[IndexList[rank](2, 1, 1)] = 11
+    input[2, 0, 0] = 8
+    input[2, 0, 1] = 9
+    input[2, 1, 0] = 10
+    input[2, 1, 1] = 11
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -801,36 +744,35 @@ fn test_tile_eg11() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(3),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 3
-    repeats[IndexList[rank_repeats](2)] = 1
+    repeats[0] = 2
+    repeats[1] = 3
+    repeats[2] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 6 * 6 * 2](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(6, 6, 2),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(6, 6, 2)](output_stack)
 
     for i in range(6):
         for j in range(6):
             for k in range(2):
-                output[IndexList[rank](i, j, k)] = 0
+                output[i, j, k] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_3d](
+            input_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](3, 2, 2)),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
+        ),
+        LayoutTensor[type, layout_unknown_3d](
+            output_stack,
+            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](6, 6, 2)),
+        ),
     )
 
     print()
@@ -854,17 +796,12 @@ fn test_tile_eg12() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(1, 1, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(1, 1, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 0, 1)] = 1
-    input[IndexList[rank](0, 0, 1, 0)] = 2
-    input[IndexList[rank](0, 0, 1, 1)] = 3
+    input[0, 0, 0, 0] = 0
+    input[0, 0, 0, 1] = 1
+    input[0, 0, 1, 0] = 2
+    input[0, 0, 1, 1] = 3
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -872,38 +809,41 @@ fn test_tile_eg12() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(4),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 1
-    repeats[IndexList[rank_repeats](1)] = 1
-    repeats[IndexList[rank_repeats](2)] = 2
-    repeats[IndexList[rank_repeats](3)] = 3
+    repeats[0] = 1
+    repeats[1] = 1
+    repeats[2] = 2
+    repeats[3] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 6](uninitialized=True)
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(1, 1, 4, 6),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(1, 1, 4, 6)](output_stack)
 
     for i in range(1):
         for j in range(1):
             for k in range(4):
                 for l in range(6):
-                    output[IndexList[rank](i, j, k, l)] = 0
+                    output[i, j, k, l] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_4d](
+            input_stack,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](1, 1, 2, 2)
+            ),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](4)),
+        ),
+        LayoutTensor[type, layout_unknown_4d](
+            output_stack,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](1, 1, 4, 6)
+            ),
+        ),
     )
 
     print()
@@ -943,32 +883,27 @@ fn test_tile_eg13() raises:
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
         uninitialized=True
     )
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 0, 1)] = 1
-    input[IndexList[rank](0, 0, 1, 0)] = 2
-    input[IndexList[rank](0, 0, 1, 1)] = 3
+    input[0, 0, 0, 0] = 0
+    input[0, 0, 0, 1] = 1
+    input[0, 0, 1, 0] = 2
+    input[0, 0, 1, 1] = 3
 
-    input[IndexList[rank](0, 1, 0, 0)] = 4
-    input[IndexList[rank](0, 1, 0, 1)] = 5
-    input[IndexList[rank](0, 1, 1, 0)] = 6
-    input[IndexList[rank](0, 1, 1, 1)] = 7
+    input[0, 1, 0, 0] = 4
+    input[0, 1, 0, 1] = 5
+    input[0, 1, 1, 0] = 6
+    input[0, 1, 1, 1] = 7
 
-    input[IndexList[rank](1, 0, 0, 0)] = 8
-    input[IndexList[rank](1, 0, 0, 1)] = 9
-    input[IndexList[rank](1, 0, 1, 0)] = 10
-    input[IndexList[rank](1, 0, 1, 1)] = 11
+    input[1, 0, 0, 0] = 8
+    input[1, 0, 0, 1] = 9
+    input[1, 0, 1, 0] = 10
+    input[1, 0, 1, 1] = 11
 
-    input[IndexList[rank](1, 1, 0, 0)] = 12
-    input[IndexList[rank](1, 1, 0, 1)] = 13
-    input[IndexList[rank](1, 1, 1, 0)] = 14
-    input[IndexList[rank](1, 1, 1, 1)] = 15
+    input[1, 1, 0, 0] = 12
+    input[1, 1, 0, 1] = 13
+    input[1, 1, 1, 0] = 14
+    input[1, 1, 1, 1] = 15
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -976,40 +911,43 @@ fn test_tile_eg13() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(4),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 1
-    repeats[IndexList[rank_repeats](1)] = 2
-    repeats[IndexList[rank_repeats](2)] = 2
-    repeats[IndexList[rank_repeats](3)] = 3
+    repeats[0] = 1
+    repeats[1] = 2
+    repeats[2] = 2
+    repeats[3] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 2 * 4 * 4 * 6](
         uninitialized=True
     )
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 4, 4, 6),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(2, 4, 4, 6)](output_stack)
 
     for i in range(2):
         for j in range(4):
             for k in range(4):
                 for l in range(6):
-                    output[IndexList[rank](i, j, k, l)] = 0
+                    output[i, j, k, l] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_4d](
+            input_stack,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](2, 2, 2, 2)
+            ),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](4)),
+        ),
+        LayoutTensor[type, layout_unknown_4d](
+            output_stack,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](2, 4, 4, 6)
+            ),
+        ),
     )
 
     print()
@@ -1065,32 +1003,27 @@ fn test_tile_eg14() raises:
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
         uninitialized=True
     )
-    var input = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(2, 2, 2, 2),
-    ](input_stack)
+    var input = LayoutTensor[type, Layout.row_major(2, 2, 2, 2)](input_stack)
 
-    input[IndexList[rank](0, 0, 0, 0)] = 0
-    input[IndexList[rank](0, 0, 0, 1)] = 1
-    input[IndexList[rank](0, 0, 1, 0)] = 2
-    input[IndexList[rank](0, 0, 1, 1)] = 3
+    input[0, 0, 0, 0] = 0
+    input[0, 0, 0, 1] = 1
+    input[0, 0, 1, 0] = 2
+    input[0, 0, 1, 1] = 3
 
-    input[IndexList[rank](0, 1, 0, 0)] = 4
-    input[IndexList[rank](0, 1, 0, 1)] = 5
-    input[IndexList[rank](0, 1, 1, 0)] = 6
-    input[IndexList[rank](0, 1, 1, 1)] = 7
+    input[0, 1, 0, 0] = 4
+    input[0, 1, 0, 1] = 5
+    input[0, 1, 1, 0] = 6
+    input[0, 1, 1, 1] = 7
 
-    input[IndexList[rank](1, 0, 0, 0)] = 8
-    input[IndexList[rank](1, 0, 0, 1)] = 9
-    input[IndexList[rank](1, 0, 1, 0)] = 10
-    input[IndexList[rank](1, 0, 1, 1)] = 11
+    input[1, 0, 0, 0] = 8
+    input[1, 0, 0, 1] = 9
+    input[1, 0, 1, 0] = 10
+    input[1, 0, 1, 1] = 11
 
-    input[IndexList[rank](1, 1, 0, 0)] = 12
-    input[IndexList[rank](1, 1, 0, 1)] = 13
-    input[IndexList[rank](1, 1, 1, 0)] = 14
-    input[IndexList[rank](1, 1, 1, 1)] = 15
+    input[1, 1, 0, 0] = 12
+    input[1, 1, 0, 1] = 13
+    input[1, 1, 1, 0] = 14
+    input[1, 1, 1, 1] = 15
 
     # rank_repeats is always 1
     alias rank_repeats = 1
@@ -1098,40 +1031,43 @@ fn test_tile_eg14() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = NDBuffer[
-        type_repeats,
-        rank_repeats,
-        _,
-        DimList(4),
-    ](repeats_stack)
+    var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
 
-    repeats[IndexList[rank_repeats](0)] = 2
-    repeats[IndexList[rank_repeats](1)] = 2
-    repeats[IndexList[rank_repeats](2)] = 2
-    repeats[IndexList[rank_repeats](3)] = 3
+    repeats[0] = 2
+    repeats[1] = 2
+    repeats[2] = 2
+    repeats[3] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 4 * 4 * 6](
         uninitialized=True
     )
-    var output = NDBuffer[
-        type,
-        rank,
-        _,
-        DimList(4, 4, 4, 6),
-    ](output_stack)
+    var output = LayoutTensor[type, Layout.row_major(4, 4, 4, 6)](output_stack)
 
     for i in range(4):
         for j in range(4):
             for k in range(4):
                 for l in range(6):
-                    output[IndexList[rank](i, j, k, l)] = 0
+                    output[i, j, k, l] = 0
 
-    tile[rank, type, rank_repeats, type_repeats](
-        input.make_dims_unknown(),
-        repeats.make_dims_unknown(),
-        output.make_dims_unknown(),
+    tile[type, type_repeats](
+        LayoutTensor[type, layout_unknown_4d](
+            input_stack,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](2, 2, 2, 2)
+            ),
+        ),
+        LayoutTensor[type_repeats, layout_unknown_1d](
+            repeats_stack,
+            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](4)),
+        ),
+        LayoutTensor[type, layout_unknown_4d](
+            output_stack,
+            RuntimeLayout[layout_unknown_4d].row_major(
+                IndexList[4](4, 4, 4, 6)
+            ),
+        ),
     )
 
     print()
