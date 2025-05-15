@@ -181,12 +181,49 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        out self: UnsafePointer[
+        out self,
+        other: UnsafePointer[
+            type, address_space=address_space, mut=mut, origin=origin, **_
+        ],
+    ):
+        """Exclusivity parameter cast a pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: UnsafePointer[
             type,
             mut=mut,
             origin = Origin[mut].cast_from[MutableAnyOrigin].result, **_,
         ],
-        other: UnsafePointer[type, mut=mut, origin=origin, **_],
+        out self: UnsafePointer[
+            type = other.type,
+            address_space = other.address_space,
+            alignment = other.alignment,
+            mut = other.mut,
+            origin=origin,
+        ],
+    ):
+        """Exclusivity parameter cast a pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        out self: UnsafePointer[NoneType], other: UnsafePointer[NoneType, **_]
     ):
         """Exclusivity parameter cast a pointer.
 

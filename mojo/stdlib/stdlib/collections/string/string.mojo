@@ -387,7 +387,7 @@ struct String(
                 length,
             )
         else:
-            self._ptr_or_data = data.unsafe_ptr()
+            self._ptr_or_data = rebind[UnsafePointer[Byte]](data.unsafe_ptr())
             self._len_or_data = length
             self._capacity_or_data = cap_field
 

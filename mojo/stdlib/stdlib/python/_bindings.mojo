@@ -113,7 +113,9 @@ fn python_type_object[
         0,
         Py_TPFLAGS_DEFAULT,
         # Note: This pointer is only "read-only" by PyType_FromSpec.
-        slots.unsafe_ptr(),
+        slots.unsafe_ptr().origin_cast[
+            mut=False, origin=StaticConstantOrigin
+        ](),
     )
 
     # Construct a Python 'type' object from our type spec.

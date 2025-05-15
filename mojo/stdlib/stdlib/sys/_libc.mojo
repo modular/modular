@@ -63,8 +63,8 @@ fn fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 fn popen(
-    command: UnsafePointer[c_char],
-    type: UnsafePointer[c_char],
+    command: UnsafePointer[c_char, **_],
+    type: UnsafePointer[c_char, **_],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -76,7 +76,10 @@ fn pclose(stream: FILE_ptr) -> c_int:
 
 @always_inline
 fn setvbuf(
-    stream: FILE_ptr, buffer: UnsafePointer[c_char], mode: c_int, size: c_size_t
+    stream: FILE_ptr,
+    buffer: UnsafePointer[c_char, **_],
+    mode: c_int,
+    size: c_size_t,
 ) -> c_int:
     return external_call["setvbuf", c_int](stream, buffer)
 
@@ -108,7 +111,7 @@ fn dup(oldfd: c_int) -> c_int:
 
 @always_inline
 fn execvp(
-    file: UnsafePointer[c_char], argv: UnsafePointer[UnsafePointer[c_char]]
+    file: UnsafePointer[c_char, **_], argv: UnsafePointer[UnsafePointer[c_char]]
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -145,7 +148,7 @@ fn kill(pid: c_int, sig: c_int) -> c_int:
 
 
 @always_inline
-fn pipe(fildes: UnsafePointer[c_int]) -> c_int:
+fn pipe(fildes: UnsafePointer[c_int, **_]) -> c_int:
     """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
     """
     return external_call["pipe", c_int](fildes)

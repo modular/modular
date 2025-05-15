@@ -651,7 +651,7 @@ struct Buffer:
             self._handle[].payloads.offset(ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[UInt64, **_]) -> UInt64:
+    fn pop(mut self, top: UnsafePointer[UInt64, mut=True, **_]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -694,7 +694,7 @@ struct Buffer:
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[UInt64, **_], ptr: UInt64):
+    fn push(mut self, top: UnsafePointer[UInt64, mut=True, **_], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:

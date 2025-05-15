@@ -78,19 +78,19 @@ struct _AsyncContext:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _init_asyncrt_chain(chain: UnsafePointer[_Chain]):
+fn _init_asyncrt_chain(chain: UnsafePointer[_Chain, **_]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
 
 
-fn _del_asyncrt_chain(chain: UnsafePointer[_Chain]):
+fn _del_asyncrt_chain(chain: UnsafePointer[_Chain, **_]):
     external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
         chain.address
     )
 
 
-fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[_Chain]):
+fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[_Chain, **_]):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -102,15 +102,15 @@ fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     )
 
 
-fn _async_wait(chain: UnsafePointer[_Chain]):
+fn _async_wait(chain: UnsafePointer[_Chain, **_]):
     external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
 
 
-fn _async_complete(chain: UnsafePointer[_Chain]):
+fn _async_complete(chain: UnsafePointer[_Chain, **_]):
     external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
 
 
-fn _async_wait_timeout(chain: UnsafePointer[_Chain], timeout: Int) -> Bool:
+fn _async_wait_timeout(chain: UnsafePointer[_Chain, **_], timeout: Int) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain.address, timeout
     )

@@ -44,14 +44,8 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_context(CUcontext *result, const DeviceContext *ctx)
     _checked(
-        external_call[
-            "AsyncRT_DeviceContext_cuda_context",
-            _CharPtr,
-            UnsafePointer[CUcontext],
-            _DeviceContextPtr,
-        ](
-            UnsafePointer(to=result),
-            ctx._handle,
+        external_call["AsyncRT_DeviceContext_cuda_context", _CharPtr](
+            UnsafePointer(to=result), ctx._handle
         )
     )
     return result
@@ -64,14 +58,8 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
     var result = CUstream()
     # const char *AsyncRT_DeviceStream_cuda_stream(CUstream *result, const DeviceStream *stream)
     _checked(
-        external_call[
-            "AsyncRT_DeviceStream_cuda_stream",
-            _CharPtr,
-            UnsafePointer[CUstream],
-            _DeviceStreamPtr,
-        ](
-            UnsafePointer(to=result),
-            stream._handle,
+        external_call["AsyncRT_DeviceStream_cuda_stream", _CharPtr](
+            UnsafePointer(to=result), stream._handle
         )
     )
     return result
