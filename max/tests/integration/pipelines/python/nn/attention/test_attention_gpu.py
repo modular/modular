@@ -6,6 +6,8 @@
 """Test pipelines attention layer."""
 
 import math
+from functools import partial
+from typing import cast
 
 import numpy as np
 import pytest
@@ -17,7 +19,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import Attention
-from max.nn.kernels import MHAMaskVariant, flare_mla_prefill_ragged
+from max.nn.kernels import (
+    MHAMaskVariant,
+    causal_flash_attention_gpu,
+    flare_mla_prefill_ragged,
+    null_mask_flash_attention_gpu,
+)
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -33,6 +40,7 @@ from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
 from max.support.math import ceildiv
 from modular_graph_test import are_all_tensor_values
 from test_common.distance_metrics import is_euclidean_distance_close
+from torch.nn.functional import scaled_dot_product_attention
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
@@ -706,3 +714,229 @@ def test_kv_cache_paged_mla_prefill():
     host = CPU(0)
     assert np.all(result.to(host).to_numpy() != np.inf)
     assert np.all(result.to(host).to_numpy() != np.nan)
+
+
+def causal_max_flash_attn(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
+) -> np.ndarray:
+    assert q.dtype == torch.bfloat16
+    dtype = DType.bfloat16
+    batch, q_seq_len, nheads, head_dim = q.shape
+
+    # Graph types.
+    q_type = TensorType(
+        dtype,
+        shape=["batch", "q_seq_len", nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    kv_type = TensorType(
+        dtype,
+        shape=["batch", "kv_seq_len", nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+
+    session = InferenceSession(devices=[Accelerator()])
+
+    # Stage ops.
+
+    # Construct and compile the MAX graph flash attention.
+    graph = Graph(
+        "flash_attn",
+        forward=partial(
+            causal_flash_attention_gpu, scale=math.sqrt(1.0 / head_dim)
+        ),
+        input_types=[
+            q_type,
+            kv_type,
+            kv_type,
+        ],
+    )
+
+    # Compile model.
+    model = session.load(graph)
+
+    # Execute.
+    return torch.from_dlpack(
+        cast(
+            Tensor,
+            model.execute(q.detach(), k.detach(), v.detach())[0],
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "q_seqlen,k_seqlen",
+    [
+        (128, 128),
+        # TODO(KERN-1634): support num_keys != seq_len.
+        # (2, 3),
+    ],
+)
+def test_causal_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
+    dtype = DType.bfloat16
+    head_dim = 128
+    batch_size = 1
+    nheads = 6
+    nheads_k = 6
+    torch_device = "cuda"
+    torch_dtype = torch.bfloat16
+
+    # Set seed.
+    torch.random.manual_seed(42)
+
+    q = torch.randn(
+        batch_size,
+        q_seqlen,
+        nheads,
+        head_dim,
+        device=torch_device,
+        dtype=torch_dtype,
+        requires_grad=False,
+    )
+    k = torch.randn(
+        batch_size,
+        k_seqlen,
+        nheads_k,
+        head_dim,
+        device=torch_device,
+        dtype=torch_dtype,
+        requires_grad=False,
+    )
+    v = torch.randn(
+        batch_size,
+        k_seqlen,
+        nheads_k,
+        head_dim,
+        device=torch_device,
+        dtype=torch_dtype,
+        requires_grad=False,
+    )
+
+    out_max = causal_max_flash_attn(q, k, v).squeeze()
+    out_flash_attn = (
+        scaled_dot_product_attention(
+            q.to(torch_device).permute(0, 2, 1, 3),
+            k.to(torch_device).permute(0, 2, 1, 3),
+            v.to(torch_device).permute(0, 2, 1, 3),
+            is_causal=True,
+            scale=math.sqrt(1.0 / head_dim),
+        )
+        .permute(0, 2, 1, 3)
+        .squeeze()
+    )
+
+    torch.testing.assert_close(out_max, out_flash_attn, rtol=1e-2, atol=2e-2)
+
+
+def null_mask_max_flash_attn(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
+) -> np.ndarray:
+    assert q.dtype == torch.bfloat16
+    dtype = DType.bfloat16
+    batch, q_seq_len, nheads, head_dim = q.shape
+
+    # Graph types.
+    q_type = TensorType(
+        dtype,
+        shape=["batch", "q_seq_len", nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    kv_type = TensorType(
+        dtype,
+        shape=["batch", "kv_seq_len", nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+
+    session = InferenceSession(devices=[Accelerator()])
+
+    # Stage ops.
+
+    # Construct and compile the MAX graph flash attention.
+    graph = Graph(
+        "flash_attn",
+        forward=partial(
+            null_mask_flash_attention_gpu, scale=math.sqrt(1.0 / head_dim)
+        ),
+        input_types=[
+            q_type,
+            kv_type,
+            kv_type,
+        ],
+    )
+
+    # Compile model.
+    model = session.load(graph)
+
+    # Execute.
+    return torch.from_dlpack(
+        cast(
+            Tensor,
+            model.execute(q.detach(), k.detach(), v.detach())[0],
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "q_seqlen,k_seqlen",
+    [
+        (128, 128),
+        # TODO(KERN-1634): support num_keys != seq_len.
+        # (2, 3),
+    ],
+)
+def test_null_mask_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
+    dtype = DType.bfloat16
+    head_dim = 128
+    batch_size = 1
+    nheads = 6
+    nheads_k = 6
+    torch_device = "cuda"
+    torch_dtype = torch.bfloat16
+
+    # Set seed.
+    torch.random.manual_seed(42)
+
+    q = torch.randn(
+        batch_size,
+        q_seqlen,
+        nheads,
+        head_dim,
+        device=torch_device,
+        dtype=torch_dtype,
+        requires_grad=False,
+    )
+    k = torch.randn(
+        batch_size,
+        k_seqlen,
+        nheads_k,
+        head_dim,
+        device=torch_device,
+        dtype=torch_dtype,
+        requires_grad=False,
+    )
+    v = torch.randn(
+        batch_size,
+        k_seqlen,
+        nheads_k,
+        head_dim,
+        device=torch_device,
+        dtype=torch_dtype,
+        requires_grad=False,
+    )
+
+    out_max = null_mask_max_flash_attn(q, k, v).squeeze()
+
+    out_flash_attn = (
+        scaled_dot_product_attention(
+            q.to(torch_device).permute(0, 2, 1, 3),
+            k.to(torch_device).permute(0, 2, 1, 3),
+            v.to(torch_device).permute(0, 2, 1, 3),
+            attn_mask=None,
+            is_causal=False,
+            scale=math.sqrt(1.0 / head_dim),
+        )
+        .permute(0, 2, 1, 3)
+        .squeeze()
+    )
+
+    torch.testing.assert_close(out_max, out_flash_attn, rtol=1e-2, atol=2e-2)

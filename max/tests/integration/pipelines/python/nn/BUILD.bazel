@@ -108,7 +108,6 @@ modular_py_test(
     data = [
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
-        "@flash_attn",
     ],
     env = {
         "BAZEL": "true",
