@@ -783,3 +783,35 @@ fn foo():
              })
       .execute();
 }
+
+TEST(HoverTest, testHoverPrettyPrintGetItem) {
+  Document doc("test:///pretty_print_getitem.mojo", R"(
+from layout import IntTuple
+
+struct Foo:
+    var t: IntTuple
+
+    fn __init__(out self: Foo):
+        self.t = IntTuple()
+
+fn baz():
+    alias f = Foo()
+    alias ft = f.t[0]
+  )");
+
+  // Find the position of 'ft' in 'alias ft = f.t[0]'.
+  lsp::Range rangeFt = *doc.findFirstRange("ft");
+
+  createTestClient()
+      .open(doc)
+      .hover(doc, rangeFt.start,
+             [&](const lsp::Hover &hover) {
+               // The hover should pretty-print as 'f.t[0]', not
+               // 'f.t.__getitem__(0)'.
+               EXPECT_TRUE(
+                   StringRef(hover.contents.value).contains("Foo().t[0]"));
+               EXPECT_FALSE(
+                   StringRef(hover.contents.value).contains("__getitem__"));
+             })
+      .execute();
+}
