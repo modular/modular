@@ -8,7 +8,7 @@
 import numpy as np
 import pytest
 import torch
-from max.torch import CustomOpLibrary, register_custom_op
+from max.torch import CustomOpLibrary
 
 
 def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
@@ -26,14 +26,16 @@ def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str):
-    grayscale = register_custom_op(op_library.grayscale)
+    grayscale_kernel = op_library.grayscale
 
-    @grayscale.register_fake
-    def _(pic):
-        return pic.new_empty(pic.shape[:-1])
+    @torch.compile(backend=backend)
+    def grayscale(pic):
+        result = pic.new_empty(pic.shape[:-1])
+        grayscale_kernel(result, pic)
+        return result
 
     img = (torch.rand(64, 64, 3) * 255).to(torch.uint8)
-    result = torch.compile(grayscale, backend=backend)(img)
+    result = grayscale(img)
 
     # For some reason we differ by 1 in a small number of locations.
     np.testing.assert_allclose(
@@ -47,15 +49,17 @@ def test_grayscale(op_library: CustomOpLibrary, backend: str):
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_binary_add(op_library: CustomOpLibrary, backend: str):
-    myadd = register_custom_op(op_library.myadd)
+    myadd_kernel = op_library.myadd
 
-    @myadd.register_fake
-    def _(A, B):
-        return torch.empty_like(A)
+    @torch.compile(backend=backend)
+    def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        C = torch.zeros(A.shape)
+        myadd_kernel(C, A, B)
+        return C
 
     A = torch.rand(64, 64, dtype=torch.float32)
     B = torch.rand(64, 64, dtype=torch.float32)
-    C = torch.compile(myadd, backend=backend)(A, B)
+    C = myadd(A, B)
 
     # For some reason we differ by 1 in a small number of locations.
     np.testing.assert_allclose(
@@ -69,17 +73,17 @@ def test_binary_add(op_library: CustomOpLibrary, backend: str):
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
-    # TODO: Library path and CustomOpLibrary instantiation should live in
-    #       conftest.py
-    myadd = register_custom_op(op_library.myadd)
+    myadd_kernel = op_library.myadd
 
-    @myadd.register_fake
-    def _(A, B):
-        return torch.empty_like(A)
+    @torch.compile(backend=backend)
+    def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        C = torch.zeros(A.shape)
+        myadd_kernel(C, A, B)
+        return C
 
     A = torch.rand(64, 64, dtype=torch.float32)
     B = torch.rand(64, 64, dtype=torch.float32)
-    C = torch.compile(myadd, backend=backend)(A, B)
+    C = myadd(A, B)
 
     # For some reason we differ by 1 in a small number of locations.
     np.testing.assert_allclose(
@@ -92,7 +96,7 @@ def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
 
     A = torch.rand(128, 128, dtype=torch.float32)
     B = torch.rand(128, 128, dtype=torch.float32)
-    C = torch.compile(myadd, backend=backend)(A, B)
+    C = myadd(A, B)
 
     # For some reason we differ by 1 in a small number of locations.
     np.testing.assert_allclose(
