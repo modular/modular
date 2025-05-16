@@ -28,7 +28,7 @@ alias hipblasLtMatrixLayout_t = UnsafePointer[NoneType]
 alias hipblasLtMatmulPreference_t = UnsafePointer[NoneType]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Status(Writable):
     var _value: Int32
@@ -89,7 +89,7 @@ struct Status(Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct hipDataType_t:
     var _value: Int32
@@ -110,7 +110,7 @@ struct hipDataType_t:
         return not (self == other)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct hipblasComputeType_t:
     var _value: Int32
@@ -130,7 +130,7 @@ struct hipblasComputeType_t:
         return not (self == other)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct hipblasOperation_t:
     var _value: Int32
@@ -149,7 +149,7 @@ struct hipblasOperation_t:
         return not (self == other)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct hipblasLtMatmulDescAttributes_t:
     var _value: Int32

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct LibraryProperty:
     var _value: Int32
@@ -44,7 +44,7 @@ struct LibraryProperty:
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Status(Stringable, Writable):
     var _value: Int8
@@ -134,7 +134,7 @@ struct Status(Stringable, Writable):
 #  CUFFT defines and supports the following data types
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Type(Stringable, Writable):
     var _value: Int8
@@ -188,7 +188,7 @@ struct Type(Stringable, Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Compatibility(Stringable, Writable):
     var _value: Int8
@@ -227,7 +227,7 @@ struct Compatibility(Stringable, Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Property(Stringable, Writable):
     var _value: Int8

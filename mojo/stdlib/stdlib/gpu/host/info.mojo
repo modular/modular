@@ -35,7 +35,7 @@ alias _KB = 1024
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable
 struct Vendor(Writable):
     """Represents GPU vendors.
@@ -803,7 +803,7 @@ alias MI300X = Info(
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable
 struct Info(Writable):
     """

@@ -135,7 +135,8 @@ alias EventPayload = UInt64
 alias NVTXVersion = 2
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct Color(Intable):
     var _value: Int
 
@@ -153,7 +154,7 @@ struct Color(Intable):
         return self._value
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _C_EventAttributes:
     var version: UInt16
@@ -200,7 +201,7 @@ fn color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-@register_passable
+@register_passable("trivial")
 struct EventAttributes:
     var _value: _C_EventAttributes
 
