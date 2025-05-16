@@ -37,7 +37,7 @@ def mlir_context() -> Generator[mlir.Context]:
 @pytest.fixture(scope="module")
 def kernel_library(mlir_context: mlir.Context) -> Generator[KernelLibrary]:
     """Set up the kernel library for the current system."""
-    path = Path(os.getenv("MODULAR_PYTORCH_CUSTOM_OPS"))
+    path = Path(os.environ["MODULAR_PYTORCH_CUSTOM_OPS"])
     yield KernelLibrary(mlir_context, [path])
 
 

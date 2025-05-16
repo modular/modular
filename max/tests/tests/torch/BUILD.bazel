@@ -14,7 +14,7 @@ modular_py_test(
         "@mojo//:stdlib",
         "@mojo//:tensor_internal",
     ],
-    tags = ["no-mypy"],  # TODO: fix and remove
+    tags = [],
     deps = [
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
