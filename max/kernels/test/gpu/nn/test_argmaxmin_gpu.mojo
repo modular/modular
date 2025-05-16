@@ -75,9 +75,17 @@ fn test_argmaxmin_gpu[
 
     @parameter
     if largest:
-        argmax(in_buffer.tensor, rank - 1, out_idxs_cpu.tensor)
+        argmax(
+            in_buffer.to_layout_tensor(),
+            rank - 1,
+            out_idxs_cpu.to_layout_tensor(),
+        )
     else:
-        argmin(in_buffer.tensor, rank - 1, out_idxs_cpu.tensor)
+        argmin(
+            in_buffer.to_layout_tensor(),
+            rank - 1,
+            out_idxs_cpu.to_layout_tensor(),
+        )
 
     for i in range(out_idxs_cpu.tensor.num_elements()):
         assert_equal(

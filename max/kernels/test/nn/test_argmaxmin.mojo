@@ -13,8 +13,7 @@
 
 from algorithm import sum
 from algorithm.reduction import _reduce_generator, max, min
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from builtin.math import max as _max
 from builtin.math import min as _min
 from memory import UnsafePointer
@@ -30,26 +29,46 @@ fn test_argn() raises:
     alias size = 93
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
-    var vector = NDBuffer[DType.int32, 1, _, DimList(size)](vector_stack)
+    var vector = LayoutTensor[DType.int32, Layout.row_major(size)](vector_stack)
     var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, _, DimList(1)](output_stack)
+    var output = LayoutTensor[DType.index, Layout.row_major(1)](output_stack)
 
     for i in range(size):
         vector[i] = i
 
     argmax(
-        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
+        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+            vector_stack,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                IndexList[1](size)
+            ),
+        ),
         0,
-        rebind[NDBuffer[DType.index, 1, output.origin]](output),
+        LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+            output_stack,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                IndexList[1](1)
+            ),
+        ),
     )
 
     # CHECK: argmax = 92
     print("argmax = ", output[0])
 
     argmin(
-        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
+        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE),](
+            vector_stack,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                IndexList[1](size)
+            ),
+        ),
         0,
-        rebind[NDBuffer[DType.index, 1, output.origin]](output),
+        LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+            output_stack,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                IndexList[1](1)
+            ),
+        ),
     )
 
     # CHECK: argmin = 0
@@ -66,45 +85,47 @@ fn test_argn_2() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
-        vector_stack
+    var vector = LayoutTensor[
+        DType.float32, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, size)
+        ),
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
     )
 
     for i in range(batch_size):
         for j in range(size):
-            vector[Index(i, j)] = j
+            vector[i, j] = j
 
-    argmax(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(vector, 1, output)
 
     # CHECK: argmax = 90
     # CHECK: argmax = 90
     # CHECK: argmax = 90
     # CHECK: argmax = 90
     for i in range(batch_size):
-        print("argmax = ", output[Index(i, 0)])
+        print("argmax = ", output[i, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(vector, 1, output)
 
     # CHECK: argmin = 0
     # CHECK: argmin = 0
     # CHECK: argmin = 0
     # CHECK: argmin = 0
     for i in range(batch_size):
-        print("argmin = ", output[Index(i, 0)])
+        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_2_test_2
@@ -117,43 +138,47 @@ fn test_argn_2_test_2() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
-        vector_stack
+    var vector = LayoutTensor[
+        DType.float32,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, size)
+        ),
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
     )
 
     for i in range(batch_size):
         for j in range(size):
-            vector[Index(i, j)] = i * size + j
+            vector[i, j] = i * size + j
             if i % 2:
-                vector[Index(i, j)] *= -1
+                vector[i, j] *= -1
 
-    argmax(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(vector, 1, output)
 
     # CHECK: argmax = 2
     # CHECK: argmax = 0
     for i in range(batch_size):
-        print("argmax = ", output[Index(i, 0)])
+        print("argmax = ", output[i, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(vector, 1, output)
 
     # CHECK: argmin = 0
     # CHECK: argmin = 2
     for i in range(batch_size):
-        print("argmin = ", output[Index(i, 0)])
+        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_2_neg_axis
@@ -166,43 +191,47 @@ fn test_argn_2_neg_axis() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
-        vector_stack
+    var vector = LayoutTensor[
+        DType.float32,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, size)
+        ),
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
     )
 
     for i in range(batch_size):
         for j in range(size):
-            vector[Index(i, j)] = i * size + j
+            vector[i, j] = i * size + j
             if i % 2:
-                vector[Index(i, j)] *= -1
+                vector[i, j] *= -1
 
-    argmax(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        -1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(vector, -1, output)
 
     # CHECK: argmax = 2
     # CHECK: argmax = 0
     for i in range(batch_size):
-        print("argmax = ", output[Index(i, 0)])
+        print("argmax = ", output[i, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        -1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(vector, -1, output)
 
     # CHECK: argmin = 0
     # CHECK: argmin = 2
     for i in range(batch_size):
-        print("argmin = ", output[Index(i, 0)])
+        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_test_zeros
@@ -215,39 +244,43 @@ fn test_argn_test_zeros() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
-        vector_stack
+    var vector = LayoutTensor[
+        DType.float32,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, size)
+        ),
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
     )
 
     for i in range(batch_size):
         for j in range(size):
-            vector[Index(i, j)] = 0
+            vector[i, j] = 0
 
-    argmax(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(vector, 1, output)
 
     # CHECK: argmax = 0
     for i in range(batch_size):
-        print("argmax = ", output[Index(i, 0)])
+        print("argmax = ", output[i, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(vector, 1, output)
 
     # CHECK: argmin = 0
     for i in range(batch_size):
-        print("argmin = ", output[Index(i, 0)])
+        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_test_identity
@@ -258,48 +291,52 @@ fn test_argn_test_identity() raises:
     alias size = 5
 
     var vector_stack = InlineArray[Int64, batch_size * size](uninitialized=True)
-    var vector = NDBuffer[DType.int64, 2, _, DimList(batch_size, size)](
-        vector_stack
+    var vector = LayoutTensor[
+        DType.int64,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, size)
+        ),
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
     )
 
     for i in range(batch_size):
         for j in range(size):
-            vector[Index(i, j)] = 0
+            vector[i, j] = 0
 
-    vector[Index(1, 4)] = 1
-    vector[Index(2, 3)] = 1
-    vector[Index(2, 4)] = 1
+    vector[1, 4] = 1
+    vector[2, 3] = 1
+    vector[2, 4] = 1
 
-    argmax(
-        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(vector, 1, output)
 
     # CHECK: argmax = 0
-    print("argmax = ", output[Index(0, 0)])
+    print("argmax = ", output[0, 0])
     # CHECK: argmax = 4
-    print("argmax = ", output[Index(1, 0)])
+    print("argmax = ", output[1, 0])
     # CHECK: argmax = 3
-    print("argmax = ", output[Index(2, 0)])
+    print("argmax = ", output[2, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(vector, 1, output)
 
     # CHECK: argmin = 0
     # CHECK: argmin = 0
     # CHECK: argmin = 0
     for i in range(batch_size):
-        print("argmin = ", output[Index(i, 0)])
+        print("argmin = ", output[i, 0])
 
 
 # CHECK-LABEL: test_argn_3d_identity
@@ -310,46 +347,54 @@ fn test_argn_3d_identity() raises:
     alias seq_len = 2
     alias hidden_dim = 5
 
-    alias vector_shape = DimList(batch_size, seq_len, hidden_dim)
-    var vector_stack = InlineArray[Int64, Int(vector_shape.product())](
+    alias vector_shape = Layout.row_major(batch_size, seq_len, hidden_dim)
+    var vector_stack = InlineArray[Int64, vector_shape.size()](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.int64, 3, _, vector_shape](vector_stack)
-    vector.fill(0)
+    var vector = LayoutTensor[
+        DType.int64,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        vector_stack,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
+        ].row_major(IndexList[3](batch_size, seq_len, hidden_dim)),
+    ).fill(
+        0
+    )
 
     var output_stack = InlineArray[Scalar[DType.index], batch_size * seq_len](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 3, _, DimList(batch_size, seq_len, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index,
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
+    ](
+        output_stack,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
+        ].row_major(IndexList[3](batch_size, seq_len, 1)),
+    ).fill(
+        0
     )
-    output.fill(0)
 
-    vector[Index(0, 1, 4)] = 1
-    vector[Index(1, 0, 1)] = 1
-    vector[Index(1, 0, 2)] = 1
-    vector[Index(1, 1, 3)] = 1
+    vector[0, 1, 4] = 1
+    vector[1, 0, 1] = 1
+    vector[1, 0, 2] = 1
+    vector[1, 1, 3] = 1
 
-    argmax(
-        rebind[NDBuffer[DType.int64, 3, vector.origin]](vector),
-        2,
-        rebind[NDBuffer[DType.index, 3, output.origin]](output),
-    )
+    argmax(vector, 2, output)
 
     # CHECK: argmax = 0
-    print("argmax = ", output[Index(0, 0, 0)])
+    print("argmax = ", output[0, 0, 0])
     # CHECK: argmax = 4
-    print("argmax = ", output[Index(0, 1, 0)])
+    print("argmax = ", output[0, 1, 0])
     # CHECK: argmax = 1
-    print("argmax = ", output[Index(1, 0, 0)])
+    print("argmax = ", output[1, 0, 0])
     # CHECK: argmax = 3
-    print("argmax = ", output[Index(1, 1, 0)])
+    print("argmax = ", output[1, 1, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.int64, 3, vector.origin]](vector),
-        2,
-        rebind[NDBuffer[DType.index, 3, output.origin]](output),
-    )
+    argmin(vector, 2, output)
 
     # CHECK: argmin = 0
     # CHECK: argmin = 0
@@ -357,7 +402,7 @@ fn test_argn_3d_identity() raises:
     # CHECK: argmin = 0
     for i in range(batch_size):
         for j in range(seq_len):
-            print("argmin = ", output[Index(i, j, 0)])
+            print("argmin = ", output[i, j, 0])
 
 
 fn test_argn_less_than_simd() raises:
@@ -369,47 +414,51 @@ fn test_argn_less_than_simd() raises:
     var vector_stack = InlineArray[Int64, batch_size * hidden_dim](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.int64, 2, _, DimList(batch_size, hidden_dim)](
-        vector_stack
+    var vector = LayoutTensor[
+        DType.int64, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, hidden_dim)
+        ),
+    ).fill(
+        0
     )
-    vector.fill(0)
 
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
+    ).fill(
+        0
     )
-    output.fill(0)
 
-    vector[Index(0, 0)] = 0
-    vector[Index(0, 1)] = 1
-    vector[Index(0, 2)] = 2
-    vector[Index(1, 0)] = 5
-    vector[Index(1, 1)] = 4
-    vector[Index(1, 2)] = 3
+    vector[0, 0] = 0
+    vector[0, 1] = 1
+    vector[0, 2] = 2
+    vector[1, 0] = 5
+    vector[1, 1] = 4
+    vector[1, 2] = 3
 
-    argmax(
-        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(vector, 1, output)
 
     # CHECK: argmax = 2
-    print("argmax = ", output[Index(0, 0)])
+    print("argmax = ", output[0, 0])
     # CHECK: argmax = 0
-    print("argmax = ", output[Index(1, 0)])
+    print("argmax = ", output[1, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(vector, 1, output)
 
     # CHECK: argmin = 0
-    print("argmin = ", output[Index(0, 0)])
+    print("argmin = ", output[0, 0])
     # CHECK: argmin = 2
-    print("argmin = ", output[Index(1, 0)])
+    print("argmin = ", output[1, 0])
 
 
 # CHECK-LABEL: test_argn_simd_edge_case
@@ -426,30 +475,31 @@ fn test_argn_simd_index_order() raises:
     alias size = 17
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
-    var vector = NDBuffer[DType.int32, 1, _, DimList(size)](vector_stack)
-    vector.fill(0)
+    var vector = LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+        vector_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](size)
+        ),
+    ).fill(0)
     var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, _, DimList(1)](output_stack)
+    var output = LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](1)
+        ),
+    )
 
     vector[5] = 1
     vector[4] = -1
     vector[8] = -1
     vector[9] = 1
 
-    argmax(
-        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
-        0,
-        rebind[NDBuffer[DType.index, 1, output.origin]](output),
-    )
+    argmax(vector, 0, output)
 
     # CHECK: argmax = 5
     print("argmax = ", output[0])
 
-    argmin(
-        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
-        0,
-        rebind[NDBuffer[DType.index, 1, output.origin]](output),
-    )
+    argmin(vector, 0, output)
 
     # CHECK: argmin = 4
     print("argmin = ", output[0])
@@ -464,80 +514,83 @@ fn test_argn_parallelize() raises:
     alias hidden_dim = 16384
 
     var input_ptr = UnsafePointer[Float32].alloc(batch_size * hidden_dim)
-    var input = NDBuffer[DType.float32, 2, _, DimList(batch_size, hidden_dim)](
-        input_ptr
+    var input = LayoutTensor[
+        DType.float32, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        input_ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, hidden_dim)
+        ),
+    ).fill(
+        0
     )
-    input.fill(0)
 
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
-        output_stack
+    var output = LayoutTensor[
+        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    ](
+        output_stack,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
+            IndexList[2](batch_size, 1)
+        ),
     )
 
-    input[Index(0, 10)] = 100
-    input[Index(0, 100)] = -100
-    input[Index(1, 20)] = -100
-    input[Index(1, 200)] = 100
-    input[Index(2, 30)] = 100
-    input[Index(2, 300)] = -100
-    input[Index(3, 40)] = -100
-    input[Index(3, 400)] = 100
-    input[Index(4, 10)] = 100
-    input[Index(4, 100)] = -100
-    input[Index(5, 20)] = 100
-    input[Index(5, 200)] = -100
-    input[Index(6, 30)] = 100
-    input[Index(6, 300)] = -100
-    input[Index(7, 40)] = -100
-    input[Index(7, 400)] = 100
+    input[0, 10] = 100
+    input[0, 100] = -100
+    input[1, 20] = -100
+    input[1, 200] = 100
+    input[2, 30] = 100
+    input[2, 300] = -100
+    input[3, 40] = -100
+    input[3, 400] = 100
+    input[4, 10] = 100
+    input[4, 100] = -100
+    input[5, 20] = 100
+    input[5, 200] = -100
+    input[6, 30] = 100
+    input[6, 300] = -100
+    input[7, 40] = -100
+    input[7, 400] = 100
 
-    argmax(
-        rebind[NDBuffer[DType.float32, 2, input.origin]](input),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmax(input, 1, output)
 
     # CHECK: argmax = 10
-    print("argmax = ", output[Index(0, 0)])
+    print("argmax = ", output[0, 0])
     # CHECK: argmax = 200
-    print("argmax = ", output[Index(1, 0)])
+    print("argmax = ", output[1, 0])
     # CHECK: argmax = 30
-    print("argmax = ", output[Index(2, 0)])
+    print("argmax = ", output[2, 0])
     # CHECK: argmax = 400
-    print("argmax = ", output[Index(3, 0)])
+    print("argmax = ", output[3, 0])
     # CHECK: argmax = 10
-    print("argmax = ", output[Index(4, 0)])
+    print("argmax = ", output[4, 0])
     # CHECK: argmax = 20
-    print("argmax = ", output[Index(5, 0)])
+    print("argmax = ", output[5, 0])
     # CHECK: argmax = 30
-    print("argmax = ", output[Index(6, 0)])
+    print("argmax = ", output[6, 0])
     # CHECK: argmax = 400
-    print("argmax = ", output[Index(7, 0)])
+    print("argmax = ", output[7, 0])
 
-    argmin(
-        rebind[NDBuffer[DType.float32, 2, input.origin]](input),
-        1,
-        rebind[NDBuffer[DType.index, 2, output.origin]](output),
-    )
+    argmin(input, 1, output)
 
     # CHECK: argmin = 100
-    print("argmin = ", output[Index(0, 0)])
+    print("argmin = ", output[0, 0])
     # CHECK: argmin = 20
-    print("argmin = ", output[Index(1, 0)])
+    print("argmin = ", output[1, 0])
     # CHECK: argmin = 300
-    print("argmin = ", output[Index(2, 0)])
+    print("argmin = ", output[2, 0])
     # CHECK: argmin = 40
-    print("argmin = ", output[Index(3, 0)])
+    print("argmin = ", output[3, 0])
     # CHECK: argmin = 100
-    print("argmin = ", output[Index(4, 0)])
+    print("argmin = ", output[4, 0])
     # CHECK: argmin = 200
-    print("argmin = ", output[Index(5, 0)])
+    print("argmin = ", output[5, 0])
     # CHECK: argmin = 300
-    print("argmin = ", output[Index(6, 0)])
+    print("argmin = ", output[6, 0])
     # CHECK: argmin = 40
-    print("argmin = ", output[Index(7, 0)])
+    print("argmin = ", output[7, 0])
 
     input_ptr.free()
 

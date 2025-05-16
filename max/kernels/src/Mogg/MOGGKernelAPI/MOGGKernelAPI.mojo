@@ -3180,10 +3180,11 @@ struct ArgMax:
 
             @parameter
             if target == "cpu":
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-
-                argmax(input_ndbuffer, axis_val, output_ndbuffer)
+                argmax(
+                    input.to_layout_tensor(),
+                    axis_val,
+                    output.to_layout_tensor(),
+                )
             else:
                 if axis_val != rank - 1:
                     raise Error("axis other than -1 not supported on GPU")
@@ -3220,10 +3221,11 @@ struct ArgMin:
 
             @parameter
             if target == "cpu":
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-
-                argmin(input_ndbuffer, axis_val, output_ndbuffer)
+                argmin(
+                    input.to_layout_tensor(),
+                    axis_val,
+                    output.to_layout_tensor(),
+                )
             else:
                 if axis_val != rank - 1:
                     raise Error("axis other than -1 not supported on GPU")
@@ -8420,7 +8422,11 @@ struct Struct_topk_fused_sampling:
                 # However, switching to just using our topk_fused_sampling leads to a -37% perf
                 # drop in q4_k benchmarking for llama 3.
                 if K == 1:
-                    argmax(input_buf, rank - 1, out_idxs_buf)
+                    argmax(
+                        input.to_layout_tensor(),
+                        rank - 1,
+                        out_idxs.to_layout_tensor(),
+                    )
                     return
                 _topk_fused_sampling_cpu(
                     Int(K), input_buf, out_idxs_buf, temperature

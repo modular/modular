@@ -21,16 +21,16 @@ from sys.info import simdwidthof
 
 from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
-from buffer import NDBuffer
 from builtin.math import max as _max
 from builtin.math import min as _min
 
+from layout import LayoutTensor, Layout
 from utils.index import IndexList
 
 
 fn _argn[
     is_max: Bool
-](input: NDBuffer, axis: Int, output: NDBuffer[mut=True, *_]) raises:
+](input: LayoutTensor, axis: Int, output: LayoutTensor[mut=True, **_]) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -44,7 +44,7 @@ fn _argn[
         output: The output tensor.
     """
     alias rank = input.rank
-    alias simd_width = simdwidthof[input.type]()
+    alias simd_width = simdwidthof[input.dtype]()
 
     var canonical_axis = axis
     if canonical_axis < 0:
@@ -58,13 +58,15 @@ fn _argn[
 
     @parameter
     for subaxis in range(rank):
+        var output_subaxis = output.runtime_layout.dim(subaxis)
+        var input_subaxis = output.runtime_layout.dim(subaxis)
         if subaxis == canonical_axis:
-            if output.dim(subaxis) != 1:
+            if output_subaxis != 1:
                 raise Error("expected axis to have size 1 in output")
-        elif input.dim(subaxis) != output.dim(subaxis):
+        elif input_subaxis != output_subaxis:
             raise Error("input and output dims must match aside from 'axis'")
 
-    var axis_size = input.dim(canonical_axis)
+    var axis_size = input.runtime_layout.dim(canonical_axis)
     var input_stride: Int
     var output_stride: Int
     var chunk_size: Int
@@ -72,19 +74,19 @@ fn _argn[
 
     @parameter
     if rank == 1:
-        input_stride = input.num_elements()
-        output_stride = output.num_elements()
+        input_stride = input.size()
+        output_stride = output.size()
         chunk_size = 1
     else:
-        input_stride = input.stride(canonical_axis - 1)
-        output_stride = output.stride(canonical_axis - 1)
+        input_stride = input.runtime_layout.stride.value[canonical_axis - 1]
+        output_stride = output.runtime_layout.stride.value[canonical_axis - 1]
 
         for i in range(canonical_axis):
-            parallel_size *= input.dim(i)
+            parallel_size *= input.runtime_layout.dim(i)
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.get_shape().flattened_length()),
+            _get_num_workers(input.runtime_layout.size()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
@@ -126,26 +128,26 @@ fn _argn[
         for i in range(start, end):
             var input_offset = i * input_stride
             var output_offset = i * output_stride
-            var input_dim_ptr = input.data.offset(input_offset)
-            var output_dim_ptr = output.data.offset(output_offset)
-            var global_val: Scalar[input.type]
+            var input_dim_ptr = input.ptr.offset(input_offset)
+            var output_dim_ptr = output.ptr.offset(output_offset)
+            var global_val: Scalar[input.dtype]
 
             # initialize limits
             @parameter
             if is_max:
-                global_val = Scalar[input.type].MIN
+                global_val = Scalar[input.dtype].MIN
             else:
-                global_val = Scalar[input.type].MAX
+                global_val = Scalar[input.dtype].MAX
 
             # initialize vector of maximal/minimal values
-            var global_values: SIMD[input.type, simd_width]
+            var global_values: SIMD[input.dtype, simd_width]
             if axis_size < simd_width:
                 global_values = global_val
             else:
                 global_values = input_dim_ptr.load[width=simd_width]()
 
             # iterate over values evenly divisible by simd_width
-            var indices = iota[output.type, simd_width]()
+            var indices = iota[output.dtype, simd_width]()
             var global_indices = indices
             var last_simd_index = align_down(axis_size, simd_width)
             for j in range(simd_width, last_simd_index, simd_width):
@@ -163,7 +165,7 @@ fn _argn[
                 global_val = global_values.reduce_min()
 
             # Check trailing indices.
-            var idx = Scalar[output.type](0)
+            var idx = Scalar[output.dtype](0)
             var found_min: Bool = False
             for j in range(last_simd_index, axis_size, 1):
                 var elem = input_dim_ptr.load(j)
@@ -176,7 +178,7 @@ fn _argn[
             if not found_min:
                 var matching = global_values == global_val
                 var min_indices = matching.select(
-                    global_indices, Scalar[output.type].MAX
+                    global_indices, Scalar[output.dtype].MAX
                 )
                 idx = min_indices.reduce_min()
             output_dim_ptr[] = idx
@@ -190,9 +192,9 @@ fn _argn[
 
 
 fn argmax(
-    input: NDBuffer,
+    input: LayoutTensor,
     axis: Int,
-    output: NDBuffer[mut=True, *_],
+    output: LayoutTensor[mut=True, **_],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -207,9 +209,9 @@ fn argmax(
 
 
 fn argmax(
-    input: NDBuffer,
-    axis_buf: NDBuffer,
-    output: NDBuffer[mut=True, *_],
+    input: LayoutTensor,
+    axis_buf: LayoutTensor,
+    output: LayoutTensor[mut=True, **_],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -229,9 +231,9 @@ fn argmax(
 
 
 fn argmin(
-    input: NDBuffer,
+    input: LayoutTensor,
     axis: Int,
-    output: NDBuffer[mut=True, *_],
+    output: LayoutTensor[mut=True, **_],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -246,9 +248,9 @@ fn argmin(
 
 
 fn argmin(
-    input: NDBuffer,
-    axis_buf: NDBuffer,
-    output: NDBuffer[mut=True, *_],
+    input: LayoutTensor,
+    axis_buf: LayoutTensor,
+    output: LayoutTensor[mut=True, **_],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
