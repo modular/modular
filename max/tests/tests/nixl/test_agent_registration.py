@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test NIXL Agent Registration"""
 
-import pytest
 from max._core.nixl import Agent, AgentConfig
 
 
@@ -26,7 +25,6 @@ def test_agent_registration():
     agent.create_backend(type="ucx", init_params=ucx_params[0])
 
 
-@pytest.mark.skip("TODO: E2EOPT-241")
 def test_remote_agent_registration():
     # Stand up Agent 1
     agent_1 = Agent(
