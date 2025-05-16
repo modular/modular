@@ -50,7 +50,8 @@ class LLM:
     _request_queue: RequestQueue
     _response_queue: ResponseQueue
 
-    def __init__(self, settings: Settings, pipeline_config: PipelineConfig):
+    def __init__(self, pipeline_config: PipelineConfig):
+        settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
         self._pc = ProcessControl(threading, "LLM")
         self._request_queue = Queue()
         self._response_queue = Queue()

@@ -22,7 +22,7 @@ from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -92,6 +92,11 @@ class Settings(BaseSettings):
         description="List of exposed API types.",
         default=[APIType.OPENAI, APIType.SAGEMAKER],
     )
+    offline_inference: bool = Field(
+        description="If True, the server is run in offline inference mode. While it will still spin up workers, it will not spin up the API endpoint or use an HTTP port.",
+        default=False,
+        alias="MAX_SERVE_OFFLINE_INFERENCE",
+    )
     host: str = Field(
         description="Hostname to use", default="0.0.0.0", alias="MAX_SERVE_HOST"
     )
@@ -99,8 +104,13 @@ class Settings(BaseSettings):
         description="Port to use", default=8000, alias="MAX_SERVE_PORT"
     )
 
-    @field_validator("port")
-    def validate_port(cls, port: int):
+    @field_validator("port", mode="after")
+    @classmethod
+    def validate_port(cls, port: int, info: ValidationInfo):
+        # In offline inference mode, port is not used and always valid.
+        if info.data["offline_inference"]:
+            return port
+
         # check if port is already in use
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:

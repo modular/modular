@@ -32,7 +32,7 @@ async def start_telemetry_consumer(
         yield SyncClient(settings)
 
     elif method == MetricRecordingMethod.ASYNCIO:
-        async with start_asyncio_consumer(settings) as controller:
+        async with start_asyncio_consumer(settings.metric_level) as controller:
             yield controller
 
     elif method == MetricRecordingMethod.PROCESS:

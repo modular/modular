@@ -20,7 +20,7 @@ from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Callable, NoReturn, Optional
 
-from max.serve.config import MetricLevel, Settings
+from max.serve.config import MetricLevel
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
 
 logger = logging.getLogger(__name__)
@@ -39,12 +39,9 @@ class NotStarted(Exception):
 
 
 class AsyncioMetricClient(MetricClient):
-    def __init__(self, settings: Settings, q):
+    def __init__(self, level: MetricLevel, q):
         self.q = q
-        # Important: If any other items of settings are pulled out here in
-        # __init__, please make sure they are put back into the reconstructed
-        # Settings object inside of cross_process_factory.
-        self.level = settings.metric_level
+        self.level = level
 
     def __getstate__(self) -> NoReturn:
         raise TypeError(
@@ -65,8 +62,7 @@ class AsyncioMetricClient(MetricClient):
     def cross_process_factory(
         self,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
-        settings = Settings(metric_level=self.level)
-        return functools.partial(start_asyncio_consumer, settings)
+        return functools.partial(start_asyncio_consumer, self.level)
 
 
 class AsyncioTelemetryController:
@@ -101,12 +97,12 @@ class AsyncioTelemetryController:
         finally:
             self.task = None
 
-    def Client(self, settings: Settings) -> AsyncioMetricClient:
+    def Client(self, level: MetricLevel) -> AsyncioMetricClient:
         if self.task is None:
             raise NotStarted(
                 "AsyncioTelemetryController task not started. Cannot enqueue work."
             )
-        return AsyncioMetricClient(settings, self.q)
+        return AsyncioMetricClient(level, self.q)
 
     @staticmethod
     async def _consume(q):
@@ -138,7 +134,7 @@ class AsyncioTelemetryController:
 
 @asynccontextmanager
 async def start_asyncio_consumer(
-    settings: Settings,
+    level: MetricLevel,
 ) -> AsyncGenerator[AsyncioMetricClient, None]:
     async with AsyncioTelemetryController() as controller:
-        yield controller.Client(settings)
+        yield controller.Client(level)

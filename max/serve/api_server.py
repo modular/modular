@@ -78,6 +78,11 @@ async def lifespan(
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
 
+    if settings.offline_inference:
+        raise ValueError(
+            "It is not valid to start the API Server if the server is in offline inference mode"
+        )
+
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
