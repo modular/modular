@@ -265,7 +265,7 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
     return mlir::success();
   }
 
-  return failure();
+  return {};
 }
 
 LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {

@@ -684,6 +684,37 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
 }
 
 //===----------------------------------------------------------------------===//
+// GeneratorAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
+    DeclareAttrInterfaceMethods<ParameterScopeAttrInterface>,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
+  let summary = "generator constant attribute";
+  let description = [{
+    This is a generator constant attribute that represents a generator whose
+    body is a parameter expression.
+
+    Example:
+
+    ```mlir
+    #kgen.gen<*(0,0) + 1> : !kgen.generator<<index> index>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$body,
+                        AttributeSelfTypeParameter<"", "GeneratorType">:$type);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$body,
+                                        "GeneratorType":$type), [{
+      return get(type.getContext(), body, type);
+    }]>
+  ];
+  let assemblyFormat = "`<` custom<GeneratorAttrBody>($body, ref($type)) `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//
 
@@ -1486,5 +1517,3 @@ def KGEN_ToStringDeferredAttr : KGENAttr<"ToStringDeferred",
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
-
-

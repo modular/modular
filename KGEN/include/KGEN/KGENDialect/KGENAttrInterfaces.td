@@ -58,6 +58,27 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ParameterScopeAttrInterface
+//===----------------------------------------------------------------------===//
+
+def ParameterScopeAttrInterface : AttrInterface<"ParameterScopeAttrInterface"> {
+  let description = [{
+    The `ParameterScopeAttrInterface` describes an attribute that declares a
+    nested parameter scope within a parameter expression. It enables
+    `ParamIndexRefAttr` values inside the attribute to reference parameters
+    declared in a scope.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the types of the nested input parameter declarations.
+    }], "ArrayRef<Type>", "getInputParamTypes">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ContextuallyEvaluatedAttrInterface
 //===----------------------------------------------------------------------===//
 

@@ -104,6 +104,9 @@ public:
                            bool &hasConstExpr);
 
 private:
+  void collectUsesFromAttrImpl(Attribute attr,
+                               SmallVectorImpl<ParamDeclRefAttr> &uses,
+                               bool &hasConstExpr);
   void collectUsesFromTypesImpl(Type type,
                                 SmallVectorImpl<ParamDeclRefAttr> &uses,
                                 bool &hasConstExpr);
@@ -128,9 +131,9 @@ private:
   /// constant parameter expressions.
   Analysis &cache;
 
-  /// An internal stack of scoped parameter types representing the current
-  /// nested signatures.
-  SmallVector<ParameterScopeTypeInterface> signatures;
+  /// An internal stack of scoped parameter types representing the input param
+  /// types of the current nested signatures.
+  SmallVector<ArrayRef<Type>> signatures;
 };
 
 //===----------------------------------------------------------------------===//

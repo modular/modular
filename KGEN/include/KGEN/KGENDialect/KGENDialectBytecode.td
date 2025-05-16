@@ -183,6 +183,11 @@ def SymbolConstantAttr : DialectAttribute<(attr
   ConcreteType<"GeneratorType">:$type
 )>;
 
+def GeneratorAttr : DialectAttribute<(attr
+  ConcreteAttribute<"TypedAttr">:$body,
+  ConcreteType<"GeneratorType">:$type
+)>;
+
 def TargetParamAttr : DialectAttribute<(attr
   ConcreteAttribute<"TargetInfoAttr">:$target
 )>;
@@ -282,6 +287,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TypeInstanceRefAttr,
     DTypeConstantAttr,
     SymbolConstantAttr,
+    GeneratorAttr,
     TargetParamAttr,
     StructDefFieldAttr,
     StructAttr,

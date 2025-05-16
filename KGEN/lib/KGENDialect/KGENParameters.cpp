@@ -86,9 +86,21 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
+void ParameterCollector::collectUsesFromAttr(
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasConstExpr) {
+  if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
+    signatures.push_back(sig.getInputParamTypes());
+    collectUsesFromAttrImpl(attr, uses, hasConstExpr);
+    signatures.pop_back();
+    return;
+  }
+  collectUsesFromAttrImpl(attr, uses, hasConstExpr);
+}
+
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
-void ParameterCollector::collectUsesFromAttr(
+void ParameterCollector::collectUsesFromAttrImpl(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
     bool &hasConstExpr) {
   // If we have already scanned it and know that it has no parameters in it,
@@ -119,14 +131,12 @@ void ParameterCollector::collectUsesFromAttr(
                    << " exceeds depth of contextual signatures: "
                    << signatures.size();
           }
-          ParameterScopeTypeInterface sig =
+          ArrayRef<Type> types =
               signatures[signatures.size() - 1 - indexRef.getDepth()];
-          ArrayRef<Type> types = sig.getInputParamTypes();
           if (indexRef.getIndex() >= types.size()) {
-            return emitError()
-                   << "index reference " << indexRef.getIndex()
-                   << " is out of bounds: referenced signature " << sig
-                   << " has " << types.size() << ' ' << "input parameters";
+            return emitError() << "index reference " << indexRef.getIndex()
+                               << " is out of bounds: referenced signature has "
+                               << types.size() << " input parameters";
           }
           // The index parameter reference can exist in a different scope than
           // the one in which the referenced parameter was declared. This means
@@ -194,7 +204,7 @@ void ParameterCollector::collectUsesFromAttr(
 void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
-    signatures.push_back(sig);
+    signatures.push_back(sig.getInputParamTypes());
     collectUsesFromTypesImpl(type, uses, hasConstExpr);
     signatures.pop_back();
     return;

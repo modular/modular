@@ -172,3 +172,13 @@ kgen.generator @closureSymbol(){
                               @bar_move<:type index, :type index>,
                               @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
 } : () -> ()
+
+"some.op"() {
+  a = 5 : index,
+  // CHECK: gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>index>
+  gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>index>,
+  // CHECK-SAME: gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<index>index>
+  gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<index> index>,
+  // CHECK-SAME: gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index>index>
+  gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index> index>
+} : () -> ()

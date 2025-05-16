@@ -401,7 +401,10 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                                    ::cast<FuncTypeGeneratorType>(type),
                                    mergedParamValues);
   }
-
+  // Don't substitute any parameter values into a GeneratorAttr here. Those
+  // should be handled by ParameterEvaluator explicitly so that any contextually
+  // evaluated attributes that got updated can attempt a re-evaluation using
+  // the evaluation context.
   return Base::get(generator.getContext(), generator, paramValues, type);
 }
 
@@ -700,6 +703,32 @@ ParseResult parseColonTypeSymbolConstant(AsmParser &p,
 
 void printColonTypeSymbolConstant(AsmPrinter &p, SymbolConstantAttr value) {
   printColonTypeParamValue(p, value);
+}
+
+//===----------------------------------------------------------------------===//
+// GeneratorAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseGeneratorAttrBody(AsmParser &p, TypedAttr &body,
+                                          GeneratorType type) {
+  return parseParamValue(p, body, type.getBody());
+}
+
+static void printGeneratorAttrBody(AsmPrinter &p, TypedAttr body,
+                                   GeneratorType type) {
+  printParamValue(p, body, type.getBody());
+}
+
+/// A generator value needs to be instantiated.
+bool GeneratorAttr::isConstant() const { return false; }
+
+bool GeneratorAttr::isLessThan(Attribute rhs) const {
+  return ParameterAttr::compare(getBody(),
+                                ::cast<GeneratorAttr>(rhs).getBody());
+}
+
+ArrayRef<Type> GeneratorAttr::getInputParamTypes() const {
+  return getType().getInputParamTypes();
 }
 
 //===----------------------------------------------------------------------===//
