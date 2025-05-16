@@ -18,7 +18,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from max.graph import TensorValue, Weight, ops
+from max.dtype import DType
+from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn import MLPV1, RMSNormV1
 from max.nn.kernels import (
     MHAMaskVariant,
@@ -41,6 +42,9 @@ class CrossSdpaAttention(Layer):
     vision_kv_params: KVCacheParams
     """KV Cache Params, including the number of kv heads, the head dim, and data type."""
 
+    layer_idx: int
+    """Index into the cross attention layers' KV cache."""
+
     q_proj: LinearV1
     """A linear layer for the query projection."""
 
@@ -61,7 +65,6 @@ class CrossSdpaAttention(Layer):
 
     def __call__(
         self,
-        layer_idx: TensorValue,
         hidden_states: TensorValue,
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
@@ -74,6 +77,9 @@ class CrossSdpaAttention(Layer):
         Returns:
             Attended hidden activation.
         """
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
         wkv = ops.concat((self.wk, self.wv), axis=0)
 
         query_states = self.q_proj(hidden_states)
@@ -140,7 +146,6 @@ class CrossAttentionDecoderLayer(Layer):
 
     def __call__(
         self,
-        layer_idx: TensorValue,
         hidden_states: TensorValue,
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
@@ -152,7 +157,6 @@ class CrossAttentionDecoderLayer(Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         hidden_states = self.cross_attn(
-            layer_idx,
             hidden_states,
             hidden_input_row_offsets,
             hidden_max_seq_len,
