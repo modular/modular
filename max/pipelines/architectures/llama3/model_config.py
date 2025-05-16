@@ -394,5 +394,5 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             float8_config=float8_config,
-            use_subgraphs=pipeline_config.use_subgraphs,
+            use_subgraphs=pipeline_config.model_config.use_subgraphs,
         )

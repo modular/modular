@@ -118,9 +118,6 @@ class PipelineConfig(MAXConfig):
     Each module must expose an `ARCHITECTURES` list of architectures to register.
     """
 
-    use_subgraphs: bool = False
-    """Whether to use subgraphs for the model."""
-
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
