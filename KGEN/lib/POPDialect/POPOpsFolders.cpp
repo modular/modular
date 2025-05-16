@@ -2160,16 +2160,6 @@ OpFoldResult StringSizeOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// StringHashOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
-  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
-    return StringHashAttr::get(getContext(), str);
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
 // DTypeToUI8
 //===----------------------------------------------------------------------===//
 

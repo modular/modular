@@ -1659,26 +1659,6 @@ bool StringConcatAttr::isConstant() const { return false; }
 Type StringConcatAttr::getType() const { return StringType::get(getContext()); }
 
 //===----------------------------------------------------------------------===//
-// StringHashAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr StringHashAttr::get(MLIRContext *ctx, TypedAttr str) {
-  // If input is a string literal, we can fold this
-  auto strAttr = ::dyn_cast_or_null<StringAttr>(str);
-  if (!strAttr)
-    return Base::get(ctx, str);
-
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(arrayRefFromStringRef(strAttr.getValue()));
-  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
-  return StringAttr::get(llvm::toHex(hashStr, true), StringType::get(ctx));
-}
-
-bool StringHashAttr::isConstant() const { return false; }
-
-Type StringHashAttr::getType() const { return StringType::get(getContext()); }
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
