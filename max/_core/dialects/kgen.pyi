@@ -1217,6 +1217,31 @@ class FuncType(max._core.Type):
 class FuncTypeGeneratorType(GeneratorType):
     pass
 
+class GeneratorAttr(max._core.Attribute):
+    """
+    This is a generator constant attribute that represents a generator whose
+    body is a parameter expression.
+
+    Example:
+
+    ```mlir
+    #kgen.gen<*(0,0) + 1> : !kgen.generator<<index> index>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
+    ) -> None: ...
+    @property
+    def body(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> GeneratorType: ...
+
 class GeneratorMetadataAttrInterface(Protocol):
     """
     This interface describes attributes that are attached to a GeneratorType,
@@ -2651,6 +2676,17 @@ class ParameterExprArrayAttr(max._core.Attribute):
     ) -> None: ...
     @property
     def value(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+
+class ParameterScopeAttrInterface(Protocol):
+    """
+    The `ParameterScopeAttrInterface` describes an attribute that declares a
+    nested parameter scope within a parameter expression. It enables
+    `ParamIndexRefAttr` values inside the attribute to reference parameters
+    declared in a scope.
+    """
+
+    @property
+    def input_param_types(self) -> Sequence[max._core.Type]: ...
 
 class ParameterScopeTypeInterface(Protocol):
     """
