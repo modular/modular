@@ -692,6 +692,32 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     // on an error return.  This includes (for example) by-ref arguments.
     if (trackable.endInitState == OriginTrackable::ExitInitState::EndsInit)
       return false;
+
+    // If the type is movable, then ~always use a temporary result.  The reason
+    // is that we need to support things like:
+    // fn func():
+    //     val1 = 0
+    //     try:
+    //         val1 = fn_that_raises()  # Here.
+    //     except:
+    //         pass
+    //     use(val1) # Should work!
+    //
+    // If we don't do this end up with an uninitialized value on the error
+    // return path.  Movable types are supposed to be efficiently movable.
+    if (ASTType(destRValueType).isMovable(callExpr->getLoc(), emitter.shared)) {
+      // If we're the top level, then nothing can use the result, so we can
+      // microoptimize this case.
+      bool isOk = false;
+      if (emitter.builder) {
+        if (Operation *opForRaise =
+                findOpProcessingRaise(emitter.builder->getInsertionBlock()))
+          if (isa<FnOp>(opForRaise))
+            isOk = true;
+      }
+      if (!isOk)
+        return false;
+    }
   }
 
   // Collect all of the types of all the arguments so we can collect the

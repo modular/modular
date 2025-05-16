@@ -110,7 +110,10 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %0 = lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %a)
+        # CHECK: %__call_result_tmp__ = lit.var.decl
+        # CHECK-NEXT: lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %__call_result_tmp__)
+        # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %__call_result_tmp__
+        # CHECK-NEXT: lit.ref.store [[TMP]], %a 
         a = maybeRaises()
         # CHECK-NEXT: lit.try.yield
     except:

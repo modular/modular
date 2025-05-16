@@ -1446,3 +1446,16 @@ struct Task[T1: Movable, T2: Movable](Movable):
     fn concat(owned self, owned other: Self) -> Task[Self, Self]:
         return Task(self^, other^)
 
+# https://github.com/modular/modular/issues/4518
+fn issue4518():
+    val1 = 0
+
+    try:
+        val1 = issue4518_fn_that_raises()
+    except:
+        pass
+
+    if val1:  # use of uninitialized value 'val1'
+        pass
+
+fn issue4518_fn_that_raises() raises -> Int: return 0
