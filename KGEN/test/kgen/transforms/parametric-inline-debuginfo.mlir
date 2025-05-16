@@ -151,7 +151,7 @@ kgen.generator @has_debuginfo() {
 // -----
 
 // CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !pop.simd<N, DT>>
-// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N0, DT0>>
+// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N, DT0>>
 // CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M]])>
 // CHECK-DAG: ![[STR0:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M0]])>
 // CHECK-DAG: ![[SR:.*]] = !debuginfo.subroutine<(![[STR]]) -> (![[STR]]): DW_CC_normal>
@@ -174,8 +174,8 @@ kgen.generator @foo<DT>() {
   // CHECK-NEXT:   hlcf.loop
   // CHECK-NEXT:     kgen.param.declare A = <1> loc(#[[LOC0]])
   // CHECK:        kgen.param.for
-  // CHECK-NEXT:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !pop.simd<N0, DT0>) -> !pop.simd<N0, DT0>
-  // CHECK:        } else (%arg1: !pop.simd<N0, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
+  // CHECK-NEXT:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !pop.simd<N, DT0>) -> !pop.simd<N, DT0>
+  // CHECK:        } else (%arg1: !pop.simd<N, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
   kgen.call @bar() : () -> ()
   kgen.return
 }
