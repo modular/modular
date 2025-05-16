@@ -1866,7 +1866,7 @@ def quantize_dynamic_scaled_float8(
         msg = "input must be rank 2 tensor"
         raise ValueError(msg)
 
-    if out_type == DType.float8_e4m3fn:
+    if out_type != DType.float8_e4m3fn:
         msg = "out_type must be float8_e4m3fn"
         raise ValueError(msg)
 

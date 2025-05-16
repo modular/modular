@@ -8971,8 +8971,8 @@ struct QuantizeDynamicScaledFloat8:
         target: StaticString,
     ](
         output: OutputTensor[type=output_type, rank=2],
+        scales: OutputTensor[type=scales_type, rank=2],
         input: InputTensor[type=input_type, rank=2],
-        scales: InputTensor[type=scales_type, rank=2],
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:

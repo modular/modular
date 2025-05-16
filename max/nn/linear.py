@@ -40,7 +40,9 @@ from max.graph.weights import Weights
 from .clamp import clamp
 from .comm import Allreduce
 from .kernels import (
+    dynamic_scaled_matmul,
     matmul_static_scaled_float8,
+    quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     swish_glu,
 )
@@ -93,8 +95,7 @@ class Float8InputScaleSpec:
     """The origin (static or dynamic) of the input scale factor."""
 
     dtype: DType
-    """The data type of the input scale factor(s). Must be provided if
-    :obj:`origin` is :obj:`Float8ScaleOrigin.STATIC`."""
+    """The data type of the input scale factor(s)."""
 
     activation_scale_ub: float | None = None
     """An optional upper bound for dynamic activation scaling."""
@@ -115,6 +116,16 @@ class Float8Config:
 
     embedding_output_dtype: DType | None = None
     """The data type of the output from the embedding layer."""
+
+    @property
+    def is_static(self) -> bool:
+        """Returns true if this input scale is static."""
+        return self.input_scale.origin == Float8ScaleOrigin.STATIC
+
+    @property
+    def is_dynamic(self) -> bool:
+        """Returns true if this input scale is dynamic."""
+        return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
 
 
 class Linear(Module):
@@ -157,7 +168,7 @@ class Linear(Module):
     Model init moves the input_scale to :obj:`device` if present."""
 
     weight_scale: Weight | None = None
-    """The optional weight scale stored on CPU with shape ().
+    """The optional weight scale stored on CPU with shape () or (N,).
     Model init moves the weight_scale to :obj:`device` if present."""
 
     device: DeviceRef
@@ -217,31 +228,50 @@ class Linear(Module):
                 )
 
         if float8_config:
-            if (
-                float8_config.input_scale.granularity
-                == Float8ScaleGranularity.TENSOR
-            ) and (
-                float8_config.input_scale.origin == Float8ScaleOrigin.STATIC
-            ):
+            if float8_config.input_scale.origin == Float8ScaleOrigin.STATIC:
                 self.input_scale = Weight(
                     name=f"{name}.input_scale" if name else "input_scale",
                     dtype=float8_config.input_scale.dtype,
-                    shape=[1],
+                    shape=(),
                     device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
 
+            if float8_config.input_scale.granularity not in [
+                Float8ScaleGranularity.TENSOR,
+                Float8ScaleGranularity.COLWISE,
+            ]:
+                raise ValueError(
+                    f"unsupported input scale granularity {float8_config.input_scale.granularity}. "
+                    "Only tensor and col-wise are supported, currently"
+                )
+
+            weight_scale_shape: tuple[int, ...]
             if (
+                float8_config.weight_scale.granularity
+                == Float8ScaleGranularity.ROWWISE
+            ):
+                weight_scale_shape = (int(self.weight.shape[0]), 1)
+            elif (
                 float8_config.weight_scale.granularity
                 == Float8ScaleGranularity.TENSOR
             ):
-                self.weight_scale = Weight(
-                    name=f"{name}.weight_scale" if name else "weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[1],
-                    device=DeviceRef.CPU(),
-                    quantization_encoding=quantization_encoding,
+                weight_scale_shape = (1,)
+            else:
+                raise ValueError(
+                    "only row-wise and tensor scaling are "
+                    f"supported currently, but got {float8_config.weight_scale.granularity}"
                 )
+
+            self.weight_scale = Weight(
+                name=f"{name}.weight_scale" if name else "weight_scale",
+                dtype=float8_config.weight_scale.dtype,
+                # TODO: Pass a per-layer quantization type.
+                # For now since we only support row-wise
+                shape=weight_scale_shape,
+                device=DeviceRef.CPU(),
+                quantization_encoding=quantization_encoding,
+            )
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
@@ -280,8 +310,18 @@ class Linear(Module):
                     x, weight, input_scale, weight_scale
                 )
             else:
-                # Dynamic input matmul
-                raise NotImplementedError("TODO: support dynamic input scaling")
+                x, x_scales = quantize_dynamic_scaled_float8(x)
+
+                if self.device:
+                    weight_scale = weight_scale.to(self.device)
+
+                res = dynamic_scaled_matmul(
+                    x,
+                    weight,
+                    x_scales,
+                    weight_scale,
+                    out_type=DType.bfloat16,
+                )
         else:
             res = x @ weight.T
 

@@ -88,12 +88,12 @@ def _parse_float8_config_from_compressed_tensors(
         )
 
     input_scale_name = "layers.0.mlp.down_proj.input_scale"
+    has_input_scale = input_scale_name in state_dict
     input_spec = Float8InputScaleSpec(
         granularity=input_granularity,
         origin=input_origin,
-        dtype=state_dict[input_scale_name].dtype
-        if input_scale_name in state_dict
-        else dtype,
+        # Set reasonable defaults if the static input scale isn't present.
+        dtype=state_dict[input_scale_name].dtype if has_input_scale else dtype,
         # Ignore activation_scale_ub, which is not present in compressed-tensors.
     )
 
@@ -117,9 +117,9 @@ def _parse_float8_config_from_compressed_tensors(
             "dynamic weight scaling is not supported for compressed-tensors FP8 method"
         )
 
+    weight_scale = state_dict["layers.0.mlp.down_proj.weight_scale"]
     weight_spec = Float8WeightScaleSpec(
-        granularity=weight_granularity,
-        dtype=state_dict["layers.0.mlp.down_proj.weight_scale"].dtype,
+        granularity=weight_granularity, dtype=weight_scale.dtype
     )
 
     # Determine whether QKV proj is in float8.
