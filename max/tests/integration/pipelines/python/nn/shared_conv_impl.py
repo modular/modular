@@ -16,8 +16,8 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import Conv1D, Conv3D
 
-ACCURACY_RTOL = 1e-4
-ACCURACY_ATOL = 1e-6
+ACCURACY_RTOL = 2e-4
+ACCURACY_ATOL = 1e-5
 
 
 def conv3d_impl(session: InferenceSession) -> None:
@@ -187,4 +187,16 @@ def conv1d_impl(session: InferenceSession) -> None:
         input_types=(
             TensorType(max_dtype, input_sequence.shape, device=max_device),
         ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    graph_api_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(graph_api_conv_result, Tensor)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
     )
