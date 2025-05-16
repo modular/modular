@@ -561,6 +561,7 @@ trait GreatGrandFather:
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
 # CHECK-SAME: GreatGrandFather)
+# CHECK-SAME: immediateParents = #M<symbols[@traits::@GreatGrandFather]>
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.fn @"bar
     fn bar(self):
@@ -571,6 +572,7 @@ trait GrandFather(GreatGrandFather):
 
 # CHECK-LABEL: lit.trait.decl @Father
 # CHECK-SAME: GrandFather_GreatGrandFather)
+# CHECK-SAME: immediateParents = #M<symbols[@traits::@GrandFather]>
 trait Father(GrandFather):
     # CHECK: lit.fn @"baz
     fn baz(self):
@@ -578,6 +580,13 @@ trait Father(GrandFather):
 
     # CHECK: lit.fn @"bar
     # CHECK: lit.fn @"foo
+
+
+# CHECK-LABEL: lit.trait.decl @UnevenDiamond
+# CHECK-SAME: Father_GrandFather_GreatGrandFather_UnevenDiamond)
+# CHECK-SAME: immediateParents = #M<symbols[@traits::@Father]>
+trait UnevenDiamond(GreatGrandFather, Father):
+    ...
 
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance

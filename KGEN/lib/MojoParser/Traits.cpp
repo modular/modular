@@ -381,7 +381,11 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
       structOp.getLoc(), &structOp.getFields().front());
   for (auto &[symbol, witnesses] : witnessTableCollection) {
     StringAttr name = b.getStringAttr(getFlattenedSymbolName(symbol));
-    ConformanceOp witnessTable = b.create<ConformanceOp>(name, symbol);
+    ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    SymbolRefArrayAttr immediateParents =
+        cast<TraitDeclOp>(parentDecl).getImmediateParentsAttr();
+    ConformanceOp witnessTable =
+        b.create<ConformanceOp>(name, symbol, immediateParents);
     witnessTable.getBody().push_back(new Block());
 
     OpBuilder::InsertionGuard guard(b);

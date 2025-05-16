@@ -1903,11 +1903,12 @@ ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
 //===----------------------------------------------------------------------===//
 
 /// For a struct or trait declaration, parse an optional list of parent traits
-/// to inherit from. `inheritedFrom` is a map from each inherited symbol to the
-/// first symbol that explicitly inherits from it.
+/// to inherit from. `immediateParents` will be populated with the smallest set
+/// of equivalent parent trait decls.
 static ParseResult
 parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
-                             StringRef declName, SharedState &shared) {
+                             StringRef declName, SharedState &shared,
+                             DenseSet<SymbolRefAttr> &immediateParents) {
   if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
     return success();
 
@@ -1942,9 +1943,7 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
     // elsewhere, provide a warning.
     if (symbols.size() == 1) {
       auto symbol = symbols.front();
-      auto [it, inserted] =
-          inheritedFrom->try_emplace(symbol, std::make_pair(symbol, loc));
-      if (!inserted) {
+      if (auto it = inheritedFrom->find(symbol); it != inheritedFrom->end()) {
         auto [cur, curLoc] = it->second;
         InflightDiag diag = shared.emitWarning(loc, "'")
                             << declName << "' already inherits from "
@@ -1954,6 +1953,7 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
         else
           diag.attachNote(curLoc) << "inherited through "
                                   << ASTType(TraitType::get(cur)) << " here";
+        return success();
       }
     }
 
@@ -1961,11 +1961,21 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
     for (SymbolRefAttr symbol : symbols) {
+      // If this symbol is already a parent, skip it.
+      if (inheritedFrom->contains(symbol))
+        continue;
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
       TraitType canonicalParent =
           cast<TraitDeclOp>(traitDecl).getCanonicalTrait();
-      for (SymbolRefAttr parent : canonicalParent.getSymbols())
+      for (SymbolRefAttr parent : canonicalParent.getSymbols()) {
         inheritedFrom->try_emplace(parent, std::make_pair(symbol, loc));
+        // Any immediate parent that is actually a parent of this `symbol` is no
+        // longer an immediate parent.
+        immediateParents.erase(parent);
+      }
+      // Insert this `symbol` as an immediate parent. This must happen after the
+      // loop, because this symbol itself is part of `canonicalParent` too.
+      immediateParents.insert(symbol);
     }
     return success();
   };
@@ -2093,7 +2103,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                           decl.getLoc(), decl.getParentDecl());
 
   ParsedParamList parsedParams;
-
+  DenseSet<SymbolRefAttr> immediateParents; // unused.
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
@@ -2101,7 +2111,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                         &identifierLoc) ||
       parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList) ||
       parseOptionalInheritanceList(p, sigDecl, decl, structOp.getSymName(),
-                                   shared) ||
+                                   shared, immediateParents) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
@@ -2596,7 +2606,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structOp.getLoc(), &structOp.getFields().front());
   for (SymbolRefAttr parent : structOp.getCanonicalTrait().getSymbols()) {
     StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
-    ConformanceOp witnessTable = b.create<ConformanceOp>(name, parent);
+    ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
+    SymbolRefArrayAttr immediateParents =
+        cast<TraitDeclOp>(parentDecl).getImmediateParentsAttr();
+    ConformanceOp witnessTable =
+        b.create<ConformanceOp>(name, parent, immediateParents);
     witnessTable.getBody().push_back(new Block());
     ASTDecl &decl = addDecl(witnessTable, structDecl.getLoc(), name,
                             &structDecl, {}, {}, -1);
@@ -2697,8 +2711,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Map from each symbol to the first symbol that explicitly inherits from it.
+  DenseSet<SymbolRefAttr> immediateParents;
   if (parseOptionalInheritanceList(p, *decl.getParentDecl(), decl,
-                                   traitOp.getSymName(), shared))
+                                   traitOp.getSymName(), shared,
+                                   immediateParents))
     return failure();
   SmallVector<SymbolRefAttr> parentTraits;
   if (auto *inheritedFrom = decl.getTraitConformanceLineage())
@@ -2722,6 +2738,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     if (ASTDecl *unknownDestructibilityDecl = shared.lookupBuiltinTrait(
             "UnknownDestructibility", decl.getParentDecl(), decl.getLoc())) {
       parentTraits.push_back(unknownDestructibilityDecl->getSymbolRef());
+      // No need to add UnknownDestructibility to immediateParents, since it
+      // has an empty requirements table.
     }
   }
 
@@ -2766,6 +2784,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
       if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
               "AnyType", decl.getParentDecl(), decl.getLoc())) {
         parentTraits.push_back(anyTypeDecl->getSymbolRef());
+        // Update immediateParents only if it is empty, otherwise some other
+        // parent trait will have already added it.
+        if (immediateParents.empty())
+          immediateParents.insert(anyTypeDecl->getSymbolRef());
       }
     }
   }
@@ -2790,6 +2812,13 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
   TraitType canonTrait = getCanonicalTrait(parentTraits);
   traitOp.setCanonicalTrait(canonTrait);
+
+  // Add the immediate parents to the trait.
+  SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
+                                                 immediateParents.end());
+  sortAndDeduplicateSymbols(immediateParentsVec);
+  traitOp.setImmediateParents(
+      SymbolRefArrayAttr::get(ctx, immediateParentsVec));
 
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(traitOp));
 

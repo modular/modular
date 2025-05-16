@@ -1315,6 +1315,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
+        SymbolRefArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
         /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{},
         /*linearTypeErrorMsg*/ {});

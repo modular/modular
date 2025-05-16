@@ -355,13 +355,20 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     The `kgen.conformance` operation defines the conformance table of a struct
     type for a trait.
 
-    Its body contains the conformance table entries the map trait requirements to
-    the struct type's definitions.
+    Its body contains the conformance table entries that map trait requirements
+    to the struct type's definitions.
 
-    The optional `traitRef` parameter is a reference to the trait being
-    conformed to.
+    - The optional `traitRef` parameter is a reference to the trait being
+      conformed to.
+    - The `immediateParents` parameter contains the conformance tables that this
+      conformance table directly inherits from. It only includes the first level
+      of parents, not any further ancestors.
 
-    TODO: Support references to parent conformance tables.
+    Logically, a ConformanceOp represents a witness table whose contents is a
+    concatenation of each parent ConformanceOp's conformance table followed by
+    the entries of the ConformanceOp itself. The parent conformance tables are
+    ordered by the name of the ConformanceOps (also the order in
+    `immediateParents`).
 
     Example:
 
@@ -376,8 +383,11 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       OptionalAttr<SymbolRefAttr>:$traitRef);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<SymbolRefAttr>:$traitRef,
+    DefaultValuedAttr<M_SymbolRefArrayAttr, "std::nullopt">:$immediateParents
+  );
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = "$sym_name $body attr-dict-with-keyword";
