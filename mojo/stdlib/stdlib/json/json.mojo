@@ -783,10 +783,6 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
 
             raise Error("Invalid JSON value starting with: '", context, "'")
 
-        # Parser should never reach this point due to the else clause above
-        # but compiler may expect a return value
-        return JSONValue[origin]()
-
     fn _parse_string(mut self) raises -> String:
         """
         Parses a JSON string at the current position, handling Unicode escape sequences.
