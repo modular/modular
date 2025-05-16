@@ -197,18 +197,22 @@ public:
 
   /// Compute the expected mangled name of a generator, assuming it has one
   /// successful implementation. If it doesn't, elaboration will fail anyways.
-  static StringAttr getExpectedMangledName(GeneratorOp func,
-                                           ArrayRef<TypedAttr> params,
-                                           bool sanitize);
+  static StringAttr
+  getExpectedMangledName(GeneratorOp func, ArrayRef<TypedAttr> params,
+                         bool sanitize,
+                         function_ref<std::string(StringRef)> getPrefix);
 
   /// Compute the expected mangled name of a generator from a parameter.
   /// Returns both the mangled name and the generator referenced by the
   /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
   /// If `allowParametric`, any not fully bound symbol reference will just have
   /// its symbol name returned. Otherwise, not fully bound symbols are errors.
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-  getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                         TypedAttr symCst, bool allowParametric, bool sanitize);
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> getExpectedMangledName(
+      Location errorLoc, StringRef errorContext, TypedAttr symCst,
+      bool allowParametric, bool sanitize,
+      function_ref<std::string(StringRef)> getPrefix = [](StringRef) {
+        return "";
+      });
 
   /// Concretize all non-parametric symbol references within the provided
   /// parameter expression.
@@ -394,7 +398,15 @@ private:
   /// the current implementation node should be suspended.
   ElaborationState processOp(ImplNode *node, Operation *op);
 
-  ElaborationState bundleOffloadModules(ImplNode *node, CompileOffloadOp op);
+  /// Process a CompileOffloadOp by replace its parametric attributes
+  // to concrete values.
+  ElaborationState processCompileOffload(ImplNode *node, CompileOffloadOp op);
+  /// bundliing CompileOffloadOps into one sliced Module.
+  ErrorTreeOrSuccess
+  bundleOffloadModules(ModuleOp theModule,
+                       DenseMap<SymbolRefAttr, StringAttr> &symToRename);
+
+  ErrorTreeOrSuccess bundleCompileOffloadOp(CompileOffloadOp Op);
 
   /// Process a deferred op by replacing it with an operation and attributes it
   /// stores.
@@ -497,6 +509,8 @@ private:
 
   /// Bundled offload functions for different targets.
   Shared<llvm::MapVector<TargetInfoAttr, OffloadInfo>> targetOffloadInfos;
+
+  Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
 
   /// Mutex to protect diagnostic handler in MLIRContext. Mutex must be locked
   /// for a short period of time and only to set diagnostics.

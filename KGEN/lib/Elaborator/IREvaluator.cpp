@@ -542,10 +542,18 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
   // We will generated the actual body of this closure later.
 
   // Slice out a standalone module to re-elaborate with the new target later.
+
+  TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
+  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
+  // compiler will fail.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       elaborator->getExpectedMangledName(
           *errorLoc, "compile_offload_closure", op.getOperand(1),
-          /*allowParametric=*/false, /*sanitize=*/false);
+          /*allowParametric=*/false, /*sanitize=*/false,
+          [isGPU = target.isGPU()](StringRef name) {
+            return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
+          });
+
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());
     return failure();
@@ -581,10 +589,16 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
   // GPU backends.
+
+  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
+  // compiler will fail.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       elaborator->getExpectedMangledName(
           *errorLoc, "get_linkage_name", op.getOperand(1),
-          /*allowParametric=*/true, /*sanitize=*/target.isGPU());
+          /*allowParametric=*/true, /*sanitize=*/target.isGPU(),
+          [isGPU = target.isGPU()](StringRef name) {
+            return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
+          });
   if (pairOrError.isError()) {
     emitError(pairOrError.takeError());
     return failure();
