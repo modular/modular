@@ -1226,12 +1226,12 @@ void ExclusivityChecker::checkCaptureOrigins() {
 /// already seen.
 void ExclusivityChecker::checkOriginAccess(
     Value val, std::optional<ArgConvention> convention,
-    std::optional<unsigned> argIdx, TypedAttr origin) {
+    std::optional<unsigned> argIdx, TypedAttr rawOrigin) {
   // Determine whether the access was immutable.
-  bool isImmut = cast<OriginType>(origin.getType()).isMutableKnown(false);
+  bool isImmut = cast<OriginType>(rawOrigin.getType()).isMutableKnown(false);
 
   // Look through immcasts to determine the accessed origin.
-  origin = OriginMutCastAttr::strip(origin);
+  TypedAttr origin = OriginMutCastAttr::strip(rawOrigin);
 
   // Accesses to the global origin never conflict.
   if (isa<AnyOriginAttr>(origin))
@@ -1247,7 +1247,7 @@ void ExclusivityChecker::checkOriginAccess(
     // are not.
     if (!it->second.isImmut || !isImmut) {
       // If not, we have a problem!
-      diagViolation(val, *convention, *argIdx, origin, it->second);
+      diagViolation(val, *convention, *argIdx, rawOrigin, it->second);
       return;
     }
 
@@ -1272,7 +1272,7 @@ void ExclusivityChecker::checkOriginAccess(
     // the access conflicts if either is a store.
     if (it->second.isLeaf && (!isImmut || !it->second.isImmut)) {
       assert(val && "capture origins cannot self-conflict");
-      diagViolation(val, *convention, *argIdx, origin, it->second);
+      diagViolation(val, *convention, *argIdx, rawOrigin, it->second);
       return;
     }
 
