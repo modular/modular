@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import os
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -70,13 +68,9 @@ def test_binary_add(op_library: CustomOpLibrary, backend: str):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-@pytest.mark.skip(reason="GEX-2225")
-def test_binary_add_multiple_sizes(backend: str):
+def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
     # TODO: Library path and CustomOpLibrary instantiation should live in
     #       conftest.py
-    path = Path(os.getenv("MODULAR_PYTORCH_CUSTOM_OPS"))
-
-    op_library = CustomOpLibrary(path)
     myadd = register_custom_op(op_library.myadd)
 
     @myadd.register_fake
