@@ -39,6 +39,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 
@@ -2082,11 +2083,14 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
-      ExprNode *packedExpr = dyn_cast<UnaryOpNode>(operand.expr)->subExpr;
-      if (packedExpr && packedExpr->kind == ExprNode::kDiscardLiteral)
-        diag << "unbound packs not supported yet in runtime arguments";
-      else
-        diag << "unpacked arguments are not supported yet";
+      if (auto unaryOp = dyn_cast<UnaryOpNode>(operand.expr)) {
+        ExprNode *packedExpr = unaryOp->subExpr;
+        if (packedExpr && packedExpr->kind == ExprNode::kDiscardLiteral) {
+          diag << "unbound packs not supported yet in runtime arguments";
+          return {};
+        }
+      }
+      diag << "unpacked arguments are not supported yet";
       return {};
     }
 
