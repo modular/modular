@@ -4,9 +4,6 @@ modular_py_library(
     name = "torch",
     srcs = glob(["**/*.py"]),
     imports = ["../.."],
-
-    # TODO: Re-enable mypy once the code is cleaned up.
-    tags = [],
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max:_core",
