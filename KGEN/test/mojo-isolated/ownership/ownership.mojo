@@ -1434,3 +1434,15 @@ struct SomeValue[T: Copyable & Movable]:
         self.value = value
         self.name = "example"
         self.tmp = 1 #<- remove this field and it works
+
+# This triggered a bug handling parameterized types with substitutions, reported
+# on discord.
+struct Task[T1: Movable, T2: Movable](Movable):
+    var t1: T1
+    var t2: T2
+    fn __init__(out self, owned t1: T1, owned t2: T2):
+        self.t1 = t1^
+        self.t2 = t2^
+    fn concat(owned self, owned other: Self) -> Task[Self, Self]:
+        return Task(self^, other^)
+

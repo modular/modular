@@ -212,10 +212,11 @@ private:
   /// (fully flattened) symbol and parameters.
   mutable DenseMap<LIT::StructType, unsigned> numFields;
 
-  /// A map from struct name and field name to index within the struct.  This
+  /// A map from StructType and field name to index within the struct.  This
   /// isn't the field number, this is the number of recursively flattened
   /// fields until the start of the field.
-  mutable DenseMap<std::pair<SymbolRefAttr, StringAttr>, unsigned> fieldIndices;
+  mutable DenseMap<std::pair<LIT::StructType, StringAttr>, unsigned>
+      fieldIndices;
 };
 
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
@@ -341,18 +342,18 @@ bool TypeDeclInfo::emitErrorMsgIfLinearType(
 unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // We currently treat all non-struct types as being a single element, even
   // things like kgen.list containing struct types.
-  auto declRef = dyn_cast<LIT::StructType>(type);
-  if (!declRef)
+  auto structType = dyn_cast<LIT::StructType>(type);
+  if (!structType)
     return 1;
 
   // See if we've already looked this up, if so, just return the known value.
-  auto it = numFields.find(declRef);
+  auto it = numFields.find(structType);
   if (it != numFields.end())
     return it->second;
 
   // If not, we compute it recursively.  Structs cannot be infinitely deep, so
   // we can just do this recursively.
-  SymbolRefAttr structSymbol = declRef.getSymbol();
+  SymbolRefAttr structSymbol = structType.getSymbol();
   auto smIt = structMap.find(structSymbol);
   assert(smIt != structMap.end() && smIt->second &&
          "reference to struct that wasn't declared");
@@ -362,12 +363,12 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // types to recursively compute the number of fields.
   ParameterEvaluator evaluator;
   for (auto [decl, value] :
-       llvm::zip(decl.getInputParams(), declRef.getParamValues()))
+       llvm::zip(decl.getInputParams(), structType.getParamValues()))
     evaluator.setParameterValue(decl, value);
 
   size_t totalFields = 0;
   for (auto field : decl.getFieldDecls()) {
-    fieldIndices[{structSymbol, field.getNameAttr()}] = totalFields;
+    fieldIndices[{structType, field.getNameAttr()}] = totalFields;
     totalFields +=
         getNumFieldsInType(evaluator.getReboundType(field.getType()));
   }
@@ -379,14 +380,14 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // to support (sub)fields that have zero members soundly.
   ++totalFields;
 
-  return numFields[declRef] = totalFields;
+  return numFields[structType] = totalFields;
 }
 
 /// Return the start bit for a field with the specified name in the specified
 /// type, or -1 if the field isn't found.
 int TypeDeclInfo::getFieldIndexOrInvalid(LIT::StructType type,
                                          StringAttr fieldName) const {
-  auto it = fieldIndices.find({type.getSymbol(), fieldName});
+  auto it = fieldIndices.find({type, fieldName});
   return it == fieldIndices.end() ? -1 : it->second;
 }
 
