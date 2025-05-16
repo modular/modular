@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-# CHECK: 'compile_offload' function is not fully bound
+# CHECK: 'get_linkage_name' function is not fully bound
 # CHECK-SAME: param_fn{{.*}} missing 1 parameter binding(s)
 
 from compile import compile_info

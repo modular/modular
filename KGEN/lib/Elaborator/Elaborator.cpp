@@ -209,7 +209,8 @@ StringAttr ParamNode::getMangledName() {
       gen.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
-  std::string baseName = mangleParameterValues(gen, inputParamValues);
+  std::string baseName = mangleParameterValues(gen, inputParamValues,
+                                               [](StringRef) { return ""; });
   StringAttr name = StringAttr::get(gen->getContext(), baseName);
 
   const void *existing = nullptr;
@@ -547,20 +548,21 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
       genref.getType());
 }
 
-StringAttr Elaborator::getExpectedMangledName(GeneratorOp func,
-                                              ArrayRef<TypedAttr> params,
-                                              bool sanitize) {
-  auto baseName =
-      StringAttr::get(func.getContext(), mangleParameterValues(func, params));
+StringAttr Elaborator::getExpectedMangledName(
+    GeneratorOp func, ArrayRef<TypedAttr> params, bool sanitize,
+    function_ref<std::string(StringRef)> getPrefix) {
+  auto baseName = StringAttr::get(
+      func.getContext(), mangleParameterValues(func, params, getPrefix));
   if (sanitize)
     baseName = sanitizeSymbolToAlnum(baseName);
   return baseName;
 }
 
 ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
-Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
-                                   TypedAttr symCst, bool allowParametric,
-                                   bool sanitize) {
+Elaborator::getExpectedMangledName(
+    Location errorLoc, StringRef errorContext, TypedAttr symCst,
+    bool allowParametric, bool sanitize,
+    function_ref<std::string(StringRef)> getPrefix) {
   auto symbol = dyn_cast<SymbolConstantAttr>(symCst);
   if (!symbol) {
     return ErrorTree(
@@ -580,8 +582,9 @@ Elaborator::getExpectedMangledName(Location errorLoc, StringRef errorContext,
   auto func = oldSymTab.lookup<GeneratorOp>(
       cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
   assert(func && "expected a valid generator reference");
-  return std::make_pair(
-      getExpectedMangledName(func, symbol.getParamValues(), sanitize), func);
+  return std::make_pair(getExpectedMangledName(func, symbol.getParamValues(),
+                                               sanitize, getPrefix),
+                        func);
 }
 
 ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
@@ -1394,7 +1397,7 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
   if (auto call = dyn_cast<GeneratorUserOpInterface>(op))
     return processCallOp(node, call);
   if (auto compileOffload = dyn_cast<CompileOffloadOp>(op))
-    return bundleOffloadModules(node, compileOffload);
+    return processCompileOffload(node, compileOffload);
   if (auto deferred = dyn_cast<DeferredOp>(op))
     return processDeferredOp(node, deferred);
 
@@ -1669,19 +1672,89 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
 // Elaborator::bundleOffloadModules
 //===----------------------------------------------------------------------===//
 
-ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
-                                                  CompileOffloadOp op) {
+static void
+replaceSymNames(Operation *op,
+                const DenseMap<SymbolRefAttr, StringAttr> &symToRename) {
 
-  SmallVector<NamedAttribute> newAttrs;
-  bool changedAttrs = false;
-  for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    Attribute value;
-    HANDLE_EVALUATOR_CONC(value, parent, op->getLoc(), namedAttr.getValue());
-    newAttrs.emplace_back(namedAttr.getName(), value);
-    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
+  if (symToRename.empty())
+    return;
+
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&symToRename](SymbolConstantAttr attr) {
+    auto iter = symToRename.find(attr.getSymbol());
+    if (iter != symToRename.end()) {
+      return SymbolConstantAttr::get(iter->second, attr.getType(),
+                                     attr.getParamValues());
+    }
+    return attr;
+  });
+
+  replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
+}
+
+ErrorTreeOrSuccess Elaborator::bundleOffloadModules(
+    ModuleOp theModule, DenseMap<SymbolRefAttr, StringAttr> &symToRename) {
+  std::optional<ErrorTree> error;
+  DenseMap<GeneratorOp, StringAttr> genNewNameMap;
+  for (CompileOffloadOp op : compileOffloadOps.get()) {
+    TargetInfoAttr target =
+        cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
+    SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getFuncAttr());
+    StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
+
+    // Add "_" prefix to GPU kernel name if it starts with a number, otherwise
+    // ptx compiler will fail.
+    if (!target.isGPU() || !llvm::isDigit(name.str().front()))
+      continue;
+
+    StringAttr newName = StringAttr::get(name.getContext(), "_" + name.str());
+    symToRename.insert({symbol.getSymbol(), newName});
+
+    ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+        getExpectedMangledName(op.getLoc(), "compile_offload", symbol,
+                               /*allowParametric=*/false,
+                               /*sanitize=*/false);
+
+    if (pairOrError.isError()) {
+      error = pairOrError.takeError();
+      break;
+    }
+
+    StringAttr mangledName;
+    GeneratorOp func;
+    std::tie(mangledName, func) = pairOrError.takeValue();
+    genNewNameMap.insert({func, newName});
   }
-  if (changedAttrs)
-    op->setAttrs(newAttrs);
+
+  if (error)
+    return std::move(*error);
+
+  replaceSymNames(theModule, symToRename);
+  for (auto [gen, name] : genNewNameMap)
+    (void)oldSymTab.rename(gen, name);
+
+  for (CompileOffloadOp op : compileOffloadOps.get()) {
+    replaceSymNames(op, symToRename);
+    ErrorTreeOrSuccess result = bundleCompileOffloadOp(op);
+    if (result.isError()) {
+      error = result.takeError();
+      break;
+    }
+  }
+
+  if (error)
+    return std::move(*error);
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Elaborator::bundleCompileOffloadOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
 
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
@@ -1696,9 +1769,9 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
                              /*allowParametric=*/false,
                              /*sanitize=*/false);
   if (pairOrError.isError()) {
-    parent->setToError(pairOrError.takeError());
-    return failure();
+    return pairOrError.takeError();
   }
+
   StringAttr name;
   GeneratorOp func;
   std::tie(name, func) = pairOrError.takeValue();
@@ -1758,6 +1831,28 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
     for (TypedAttr attr : symbol.getParamValues())
       walker.walk(attr);
   });
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Elaborator::processCompileOffload
+//===----------------------------------------------------------------------===//
+
+ElaborationState Elaborator::processCompileOffload(ImplNode *parent,
+                                                   CompileOffloadOp op) {
+
+  SmallVector<NamedAttribute> newAttrs;
+  bool changedAttrs = false;
+  for (const NamedAttribute &namedAttr : op->getAttrs()) {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, parent, op->getLoc(), namedAttr.getValue());
+    newAttrs.emplace_back(namedAttr.getName(), value);
+    changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
+  }
+  if (changedAttrs)
+    op->setAttrs(newAttrs);
+
+  compileOffloadOps.modify([&](auto &set) { set.insert(op); });
 
   return ElaborationState::advance();
 }
@@ -2287,6 +2382,17 @@ Elaborator::run(ModuleOp theModule,
     return failure();
   }
 
+  DenseMap<SymbolRefAttr, StringAttr> symToRename;
+  ErrorTreeOrSuccess bundleOr = bundleOffloadModules(theModule, symToRename);
+
+  if (bundleOr.isError()) {
+    bundleOr.takeError().emit([](Location loc) { return mlir::emitError(loc); },
+                              "Bundle CompileOffload failed.");
+    for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
+      node->inst.erase();
+    return failure();
+  }
+
   // Compile the offload functions here.
   MLIRContext *ctx = theModule.getContext();
   DiagnosticHandler handler(ctx);
@@ -2381,6 +2487,7 @@ Elaborator::run(ModuleOp theModule,
   // Update the symbol table with the new one.
   theModule.getBody()->erase();
   theModule.getBodyRegion().push_back(newBlock);
+  replaceSymNames(theModule, symToRename);
 
   theModule.walk([&](Operation *op) {
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
