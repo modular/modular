@@ -54,6 +54,9 @@ def _get_nvidia_constraint(lines):
     if "RTX 4080 SUPER" in line:
         return None
 
+    if "NVIDIA GeForce RTX 3090" in line:
+        return None
+
     fail("Unrecognized nvidia-smi output, please report: {}".format(lines))
 
 def _impl(rctx):
