@@ -12,7 +12,7 @@ requires = ["hatchling"]
 
 [tool.pixi.project]
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
-platforms = ["osx-arm64", "linux-64"]
+platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
 [tool.pixi.pypi-dependencies]
 max_ops = { path = ".", editable = true }
@@ -26,7 +26,7 @@ test = { depends-on = ["addition"] }
 
 
 [tool.pixi.dependencies]
-max = "~=24.6"
+max = "*"
 numpy = "*"
 pytest = ">=8.3.3,<9"
 black = ">=24.10.0,<25"

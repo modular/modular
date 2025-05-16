@@ -1,13 +1,14 @@
 [project]
-platforms = ["osx-arm64", "linux-64"]
+platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 version = "0.0.0"
 authors = ["Modular <hello@modular.com>"]
-channels = ["pytorch", "conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 description = "Add a short description here"
 name = "local"
 
 [tasks]
+test = "mojo zero.mojo"
 
 [dependencies]
-max = ">=24.4.0,<25"
+max = "*"
 pytorch = ">=2.5.1,<3"
