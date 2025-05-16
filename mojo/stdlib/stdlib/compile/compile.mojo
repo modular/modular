@@ -66,6 +66,7 @@ struct _Info:
     """
 
     var asm: __mlir_type.`!kgen.string`
+    var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
 
 
@@ -273,7 +274,7 @@ fn compile_info[
         # HACK: This is super low-level processing of !kgen.string values.
         # pop.string.hash should move to an attribute representation or
         # something.
-        module_name=__mlir_op.`pop.string.hash`(offload.asm),
+        module_name=offload.module_name,
         num_captures=offload.num_captures,
     )
     return result
