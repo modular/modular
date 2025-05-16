@@ -308,7 +308,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         # correct. To avoid any issue, only set norm_dtype for float8 models
         # for now.
         norm_dtype = None
-        if float8_config and "layers.0.input_layernorm.weight" in state_dict:
+        if "layers.0.input_layernorm.weight" in state_dict:
             norm_dtype = state_dict["layers.0.input_layernorm.weight"].dtype
 
         # When tie_word_embeddings=True, the embedding weights are shared with
