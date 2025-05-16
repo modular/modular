@@ -37,12 +37,67 @@ except ImportError:
 
 
 class CustomOpLibrary:
+    """A PyTorch interface to custom operations implemented in Mojo.
+
+    A CustomOpLibrary implements an interface to custom operations implemented
+    in Mojo. The library allows for easy passing of PyTorch data as
+    obj:`torch.Tensor` values to the corresponding custom op. The CustomOpLibrary
+    handles the compilation of the Mojo custom ops and marshalling of data between
+    PyTorch and the executable Mojo code.
+
+    For example, consider a grayscale operation implemented in Mojo:
+
+    .. code-block:: mojo
+        # file: library.mojo
+
+        @register("grayscale")
+        struct Grayscale:
+            @staticmethod
+            fn execute[
+                # The kind of device this is running on: "cpu" or "gpu"
+                target: StaticString,
+            ](
+                img_out: OutputTensor[type = DType.uint8, rank=2],
+                img_in: InputTensor[type = DType.uint8, rank=3],
+                ctx: DeviceContextPtr,
+            ) raises:
+                ...
+
+    The CustomOpLibrary can be used to call invoke the Mojo operations like so:
+
+    .. code-block:: python
+        import torch
+        from max.torch import CustomOpLibrary
+
+        op_library = CustomOpLibrary("library.mojopkg")
+        grayscale_op = op_library.grayscale
+
+        def grayscale(pic: torch.Tensor) -> torch.Tensor:
+            result = pic.new_empty(pic.shape[:-1])
+            grayscale_op(result, pic)
+            return result
+
+        img = (torch.rand(64, 64, 3) * 255).to(torch.uint8)
+        result = grayscale(img)
+
+    The custom operation produced by obj:`op_library.<opname>` will have the
+    same interface as the backing Mojo operation. Each obj:`InputTensor` or
+    obj:`OutputTensor` argument corresponds to a obj:`torch.Tensor` value in
+    Python. Each argument corresponding to an obj:`OutputTensor` in the Mojo
+    operation will be modified in-place.
+    """
+
     _context: Context
     _kernel_library: KernelLibrary
     _session: InferenceSession
     _ops: dict[str, CustomOpDef]
 
     def __init__(self, kernel_library: Path | KernelLibrary):
+        """
+        Args:
+            kernel_library: The kernel library or path to load a kernel library
+                from.
+        """
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
         self._context = Context()
