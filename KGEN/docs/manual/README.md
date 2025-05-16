@@ -118,6 +118,68 @@ In summary:
 - `llvm` can exist at all levels of KGEN IR to describe target-specific
   operations, but then the kernel can only target LLVM.
 
+### Stages
+
+The Mojo compiler has a lot of stages. Some of the big ones are:
+
+- Parsing, which does lexing, parsing, and type-checking.
+- Elaborating, which instantiates generics, for example `fn add[x: Int](...)`
+  into `fn add[3](...)`, `fn add[42](...)`, `fn add[1337](...)` etc.
+- Lowering to LLVM.
+
+...but there are a lot more.
+
+You can learn about all of them in Weiwei's excellent
+[Mojo Compilation Model](https://www.notion.so/modularai/Mojo-Compilation-Model-Now-and-Future-6028a58015034f38b037e520ee2e2d78)
+doc.
+
+You can see all the passes that run for a particular program by running
+`kgen --mlir-print-ir-before-all -elaborate main.mojo 2>&1 | grep 'IR Dump Before'`.
+For example when run on a simple `fn main(): pass` it mentions these passes
+coming after the parser:
+
+- DebugInfoStrip
+- LowerSemanticCF
+- VerifyParameters
+- CheckLifetimes
+- AnnotateKernels
+- VerifyKernels
+- LowerLIT
+- MOGGPreElabPipeline
+- RemoveUnusedParams
+- EliminateDeadSymbols
+- SROA
+- Mem2Reg
+- Canonicalizer
+- InlineParametric
+- SCCP
+- ApplyInliner
+- OutlineClosures
+- CSE
+- LiftAndFoldApply
+- ElaborateGenerators
+- EliminateDuplicateFunctions
+- ResolveCompilerPromises
+- LowerArgConventions
+- LowerCallingConventions
+- EnsureNoParameters
+- AutomaticInline
+- RaiseForLoops
+- LoopUnrolling
+- ArgPromotion
+- SimplifyCF
+- LowerLoops
+- LowerClosures
+- LowerAsyncFunctions
+- DeadArgumentElimination
+
+...and many of these passes are run multiple times.
+
+The `mojo` command will run the entire pipeline from beginning to end, but you
+can use `kgen` to run specific passes, and `kgen-translate` to run only the
+parser. For more details on those, and other commands, see
+[Mojo Dev Tools](https://www.notion.so/modularai/Mojo-Dev-Tools-027879ef5e4d480ea6f8f73b1cbc2ad3).
+
 ### MLIR Guide
 
 - `%name` — A run-time value; an MLIR SSA value; the result of an MLIR
@@ -208,7 +270,7 @@ For lit.ref.store specifically, the `<..., ...>` is actually shorthand for
 As you can see, there's a lot of context-dependent sugar in our MLIR. If you
 don't know what something means, ask in slack (and then add the answer to this
 guide!). Or, if you're feeling brave, you can try and trace the printing logic
-(usually in a _.td and its corresponding_.cpp file).
+(usually in a `_.td` and its corresponding `_.cpp` file).
 
 #### Symbols
 
@@ -326,12 +388,12 @@ There can be subtle differences between the various terms:
 - "Constant" is equivalent to "parameter value", but probably refers to
   hard-coded parameter values.
 
-#### Compile-time Data Has Types Too
+#### Does Compile-time Data Have Types?
 
-In Mojo, compile-time data has types.
+(Spoiler alert: in Mojo and LIT, yes, but in KGEN, no.)
 
-Let's start by observing some things about C++. In C++, compile-time data _kind
-of_ has types.
+To better frame the question, let's start by observing some things about C++. In
+C++, compile-time data _kind of_ has types.
 
 - The `N` in `template<int N> ...` has type `Int`.
 - The `T` in `template<typename T>` kind of has a type, `typename`.
@@ -339,8 +401,11 @@ of_ has types.
 This is not how Mojo works. However, **that is how kgen works.** kgen's `type`
 is basically C++'s `typename`.
 
-Mojo itself is a bit more strict, to enable better type-checking (akin to Java
-generics) compared to C++'s "duck-typed" templates.
+However, Mojo (and the LIT dialect which comes right after Mojo), compile-time
+data does have types.
+
+They're a bit more strict in that way, to enable better type-checking (akin to
+Java generics) compared to C++'s "duck-typed" templates.
 
 In Mojo, we need to specify the rough shape of `T`, by specifying a trait.
 
@@ -511,10 +576,11 @@ More terms:
 - Structs and functions can both have **signatures**. A signature is the name,
   parameter types, and (if for a function) argument types.
 
-We'll cover these more below:
+Some miscellaneous other terms:
 
 - POC — Parameter Operator Code
-- POG — Parameter or argument (also a joke by Jeff, as “pog” is a gaming term)
+- POG — Parameter or argument (also a joke by Jeff, as
+  [“pog” is a gaming term](https://modular-ai.slack.com/archives/C03GM7S2VMZ/p1736555603471169?thread_ts=1736479123.803939&cid=C03GM7S2VMZ))
 
 ### Parameter Operator Code
 
@@ -542,7 +608,7 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"Min", 7, "min">,
 ```
 
-## Mojo ↔ IR Correspondence
+## Mojo ↔ IR ↔ C++ Correspondence
 
 The goal of this section is to give you an intuition for how the same “thing” is
 modeled in each of those domains. As a very basic example, consider the question
