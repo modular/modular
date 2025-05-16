@@ -27,7 +27,7 @@ trait MaybeZeroSized:
         ...
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ZeroSized(MaybeZeroSized, DevicePassable):
     alias device_type: AnyTrivialRegType = Self
@@ -43,9 +43,6 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
     fn get_device_type_name() -> String:
         return Self.get_type_name()
 
-    fn __init__(out self):
-        pass
-
     @always_inline
     fn value(self) -> S:
         return 2
@@ -60,7 +57,7 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
         writer.write(")")
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct NotZeroSized(MaybeZeroSized, DevicePassable):
     alias device_type: AnyTrivialRegType = Self

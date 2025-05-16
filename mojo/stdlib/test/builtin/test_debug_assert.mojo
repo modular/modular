@@ -48,7 +48,7 @@ def test_debug_assert_writable():
     print("is reached")
 
 
-@value
+@fieldwise_init
 struct WritableOnly:
     var message: String
 

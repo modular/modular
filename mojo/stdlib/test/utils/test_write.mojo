@@ -25,7 +25,7 @@ fn main() raises:
     test_write_int_padded()
 
 
-@value
+@fieldwise_init
 struct Point(Writable, Stringable):
     var x: Int
     var y: Int

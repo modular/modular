@@ -52,7 +52,7 @@ def test_assert_messages():
         assert_true(assertion in String(e) and assertion_error in String(e))
 
 
-@value
+@fieldwise_init
 struct DummyStruct:
     var value: Int
 

@@ -77,7 +77,7 @@ fn test_hex() raises:
     assert_equal(hex(False), "0x0")
 
 
-@value
+@fieldwise_init
 struct Ind(Intable):
     fn __int__(self) -> Int:
         return 1

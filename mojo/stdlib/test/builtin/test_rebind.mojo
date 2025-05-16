@@ -47,7 +47,7 @@ def test_rebind_register():
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct MyMemStruct[size: Int]:
     var value: Int
 

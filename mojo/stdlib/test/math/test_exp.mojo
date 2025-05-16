@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from math import exp
+from math.math import exp, _Expable
 from random import randn_float64, seed
 from sys import has_neon
 
@@ -70,8 +70,8 @@ def test_exp_libm[type: DType]():
         )
 
 
-@value
-struct Float32Expable(EqualityComparable, Stringable):
+@fieldwise_init
+struct Float32Expable(EqualityComparable, Stringable, _Expable):
     """This is a test struct that implements the Expable trait for Float32."""
 
     var x: Float32
@@ -89,14 +89,11 @@ struct Float32Expable(EqualityComparable, Stringable):
         return String("Float32Expable(", self.x, ")")
 
 
-@value
-struct FakeExpable(EqualityComparable, Stringable):
+@fieldwise_init
+struct FakeExpable(EqualityComparable, Stringable, _Expable):
     """This is a test struct that has a dummy definition of exp function."""
 
     var x: Int
-
-    fn __init__(out self, x: Int):
-        self.x = x
 
     fn __exp__(self) -> Self:
         return Self(99)

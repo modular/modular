@@ -36,7 +36,7 @@ alias void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
 alias int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Pair:
     var lo: Int
