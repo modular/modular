@@ -351,6 +351,13 @@ class StringArrayAttr(max._core.Attribute):
     @property
     def value(self) -> Sequence[max._core.dialects.builtin.StringAttr]: ...
 
+class SymbolRefArrayAttr(max._core.Attribute):
+    def __init__(
+        self, value: Sequence[max._core.dialects.builtin.SymbolRefAttr]
+    ) -> None: ...
+    @property
+    def value(self) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+
 class TargetInfoAttr(max._core.Attribute):
     """
     The `#M.target` attribute represents a compilation target configuration. It
