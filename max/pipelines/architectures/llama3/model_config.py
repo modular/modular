@@ -43,6 +43,103 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
+def _parse_float8_config_from_compressed_tensors(
+    huggingface_config: AutoConfig,
+    state_dict: dict[str, WeightData],
+    dtype: DType,
+) -> Float8Config | None:
+    """Parses Float8Config from HuggingFace config using 'compressed-tensors' format."""
+    if dtype != DType.float8_e4m3fn:
+        return None
+
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if (
+        not hf_quant_config
+        # NOTE: only support the compressed-tensors format currently.
+        or hf_quant_config.get("quant_method") != "compressed-tensors"
+    ):
+        raise ValueError(
+            "FP8 dtype specified, but a compatible 'quantization_config' "
+            "with quant_method='compressed-tensors' was not found in the Hugging Face config."
+        )
+
+    # Extract group config.
+    # Assume only one group 'group_0' matters for now.
+    group_config = hf_quant_config["config_groups"]["group_0"]
+    input_act_config = group_config["input_activations"]
+    weight_config = group_config["weights"]
+
+    # Parse input scaling spec.
+    input_origin = (
+        Float8ScaleOrigin.DYNAMIC
+        if input_act_config["dynamic"]
+        else Float8ScaleOrigin.STATIC
+    )
+    input_strategy_str = input_act_config["strategy"]
+    if input_strategy_str == "tensor":
+        input_granularity = Float8ScaleGranularity.TENSOR
+    elif input_strategy_str == "channel":
+        input_granularity = Float8ScaleGranularity.ROWWISE
+    elif input_strategy_str == "token":
+        input_granularity = Float8ScaleGranularity.COLWISE
+    else:
+        raise ValueError(
+            f"unsupported FP8 input activation strategy: {input_strategy_str}"
+        )
+
+    input_scale_name = "layers.0.mlp.down_proj.input_scale"
+    input_spec = Float8InputScaleSpec(
+        granularity=input_granularity,
+        origin=input_origin,
+        dtype=state_dict[input_scale_name].dtype
+        if input_scale_name in state_dict
+        else dtype,
+        # Ignore activation_scale_ub, which is not present in compressed-tensors.
+    )
+
+    # Parse weight spec.
+    weight_strategy_str = weight_config["strategy"]
+    if weight_strategy_str == "tensor":
+        weight_granularity = Float8ScaleGranularity.TENSOR
+    elif weight_strategy_str == "channel":
+        weight_granularity = Float8ScaleGranularity.ROWWISE
+    elif weight_strategy_str == "token":
+        weight_granularity = Float8ScaleGranularity.COLWISE
+    else:
+        raise ValueError(
+            f"unsupported FP8 weight strategy: {weight_strategy_str}"
+        )
+
+    # Validate weight config, which shouldn't dynamically quantize.
+    if weight_config["dynamic"]:
+        # This method uses static weight scaling according to the examples provided.
+        raise ValueError(
+            "dynamic weight scaling is not supported for compressed-tensors FP8 method"
+        )
+
+    weight_spec = Float8WeightScaleSpec(
+        granularity=weight_granularity,
+        dtype=state_dict["layers.0.mlp.down_proj.weight_scale"].dtype,
+    )
+
+    # Determine whether QKV proj is in float8.
+    attn_qkv_in_float8 = (
+        state_dict["layers.0.self_attn.k_proj.weight"].dtype
+        == DType.float8_e4m3fn
+    )
+
+    return Float8Config(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        attn_qkv_in_float8=attn_qkv_in_float8,
+        embedding_output_dtype=(
+            state_dict["lm_head.weight"].dtype
+            if "lm_head.weight" in state_dict
+            else None
+        ),
+    )
+
+
 @dataclass
 class Llama3ConfigBase(MAXModelConfigBase):
     """Base configuration for Llama3 models."""
@@ -200,59 +297,19 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             for spec in pipeline_config.model_config.device_specs
         ]
 
+        # Parse the float8 config from compressed-tensors, which is currently
+        # the only supported format.
+        float8_config = _parse_float8_config_from_compressed_tensors(
+            huggingface_config, state_dict, dtype
+        )
+
+        # Determine norm_dtype.
+        # Note: due to automatic weight dtype casting, norm dtype is not always
+        # correct. To avoid any issue, only set norm_dtype for float8 models
+        # for now.
         norm_dtype = None
-        float8_config = None
-        if dtype == DType.float8_e4m3fn:
-            input_scale_name = "layers.0.mlp.down_proj.input_scale"
-            weight_scale_name = "layers.0.mlp.down_proj.weight_scale"
-
-            has_static_input_scale = input_scale_name in state_dict
-            input_scale_scalar = False
-            if has_static_input_scale:
-                input_scale_scalar = state_dict[input_scale_name].shape in [
-                    [],
-                    [1],
-                ]
-            weight_scale_scalar = state_dict[weight_scale_name].shape in [
-                [],
-                [1],
-            ]
-
-            attn_float8 = (
-                state_dict["layers.0.self_attn.k_proj.weight"].dtype
-                == DType.float8_e4m3fn
-            )
-
-            if (
-                not has_static_input_scale
-                or not input_scale_scalar
-                or not weight_scale_scalar
-            ):
-                msg = "float8 models only support static scaling input and weight scaling currently"
-                raise ValueError(msg)
-
-            float8_config = Float8Config(
-                input_scale=Float8InputScaleSpec(
-                    granularity=Float8ScaleGranularity.TENSOR,
-                    origin=Float8ScaleOrigin.STATIC,
-                    dtype=state_dict[input_scale_name].dtype,
-                ),
-                weight_scale=Float8WeightScaleSpec(
-                    granularity=Float8ScaleGranularity.TENSOR,
-                    dtype=state_dict[weight_scale_name].dtype,
-                ),
-                attn_in_float8=attn_float8,
-                embedding_output_dtype=(
-                    state_dict["lm_head.weight"].dtype
-                    if "lm_head.weight" in state_dict
-                    else None
-                ),
-            )
-            norm_dtype = (
-                state_dict["layers.0.input_layernorm.weight"].dtype
-                if "layers.0.input_layernorm.weight" in state_dict
-                else None
-            )
+        if float8_config and "layers.0.input_layernorm.weight" in state_dict:
+            norm_dtype = state_dict["layers.0.input_layernorm.weight"].dtype
 
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.

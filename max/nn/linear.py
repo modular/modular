@@ -110,8 +110,8 @@ class Float8Config:
     weight_scale: Float8WeightScaleSpec
     """Specification for weight scaling."""
 
-    attn_in_float8: bool
-    """Whether attention projection inputs are in float8."""
+    attn_qkv_in_float8: bool
+    """Whether attention QKV projections are in float8."""
 
     embedding_output_dtype: DType | None = None
     """The data type of the output from the embedding layer."""
@@ -220,6 +220,8 @@ class Linear(Module):
             if (
                 float8_config.input_scale.granularity
                 == Float8ScaleGranularity.TENSOR
+            ) and (
+                float8_config.input_scale.origin == Float8ScaleOrigin.STATIC
             ):
                 self.input_scale = Weight(
                     name=f"{name}.input_scale" if name else "input_scale",
@@ -228,6 +230,7 @@ class Linear(Module):
                     device=DeviceRef.CPU(),
                     quantization_encoding=quantization_encoding,
                 )
+
             if (
                 float8_config.weight_scale.granularity
                 == Float8ScaleGranularity.TENSOR
