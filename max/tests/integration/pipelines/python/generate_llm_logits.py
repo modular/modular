@@ -568,6 +568,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 516, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
         prompts=[prompt[:1500] for prompt in evaluate.PROMPTS],
+        # upstream modeling_deepsek.py uses a deprecated transformers function
+        use_cache=False,
     ),
 }
 

@@ -876,14 +876,11 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="deepseek-v2-lite",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation=(
-                "torch_deepseek_golden/torch_V2_lite_chat_bfloat16_golden.json"
-            ),
             # TODO(MODELS-516): Investigate need for high tolerances here.
-            absolute_tolerance=26,
-            relative_tolerance=0.90,
-            cos_dist_threshold=6.0e-1,
-            kl_div_threshold=18,
+            absolute_tolerance=3.0,
+            relative_tolerance=0.1,
+            cos_dist_threshold=3.0e-03,
+            kl_div_threshold=1.8e-01,
         ),
     ),
     "Gemma-3-1B-bfloat16": PipelineDef(
