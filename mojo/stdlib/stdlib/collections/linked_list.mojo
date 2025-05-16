@@ -91,7 +91,7 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, Movable, Sized):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 
@@ -131,7 +131,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: Copyable & Movable,
-](Sized):
+](Sized, Boolable, Copyable, Movable):
     """A doubly-linked list implementation.
 
     Parameters:
