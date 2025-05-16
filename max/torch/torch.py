@@ -39,16 +39,15 @@ except ImportError:
 class CustomOpLibrary:
     """A PyTorch interface to custom operations implemented in Mojo.
 
-    A CustomOpLibrary implements an interface to custom operations implemented
-    in Mojo. The library allows for easy passing of PyTorch data as
-    obj:`torch.Tensor` values to the corresponding custom op. The CustomOpLibrary
+    This API allows for easy passing of PyTorch data as
+    ``torch.Tensor`` values to the corresponding custom op. ``CustomOpLibrary``
     handles the compilation of the Mojo custom ops and marshalling of data between
     PyTorch and the executable Mojo code.
 
     For example, consider a grayscale operation implemented in Mojo:
 
     .. code-block:: mojo
-        # file: library.mojo
+       :caption: my_library/grayscale.mojo
 
         @register("grayscale")
         struct Grayscale:
@@ -63,13 +62,14 @@ class CustomOpLibrary:
             ) raises:
                 ...
 
-    The CustomOpLibrary can be used to call invoke the Mojo operations like so:
+    You can then use ``CustomOpLibrary`` to invoke the Mojo operation like so:
 
     .. code-block:: python
+
         import torch
         from max.torch import CustomOpLibrary
 
-        op_library = CustomOpLibrary("library.mojopkg")
+        op_library = CustomOpLibrary("my_library")
         grayscale_op = op_library.grayscale
 
         def grayscale(pic: torch.Tensor) -> torch.Tensor:
@@ -80,11 +80,12 @@ class CustomOpLibrary:
         img = (torch.rand(64, 64, 3) * 255).to(torch.uint8)
         result = grayscale(img)
 
-    The custom operation produced by obj:`op_library.<opname>` will have the
-    same interface as the backing Mojo operation. Each obj:`InputTensor` or
-    obj:`OutputTensor` argument corresponds to a obj:`torch.Tensor` value in
-    Python. Each argument corresponding to an obj:`OutputTensor` in the Mojo
-    operation will be modified in-place.
+    The custom operation produced by ``op_library.<opname>`` will have the
+    same interface as the backing Mojo operation. Each ``InputTensor`` or
+    ``OutputTensor`` argument corresponds to a
+    :code_link:`https://docs.pytorch.org/docs/stable/tensors.html#tensor-class-reference|torch.Tensor`
+    value in Python. Each argument corresponding to an ``OutputTensor`` in the
+    Mojo operation will be modified in-place.
     """
 
     _context: Context
@@ -95,8 +96,8 @@ class CustomOpLibrary:
     def __init__(self, kernel_library: Path | KernelLibrary):
         """
         Args:
-            kernel_library: The kernel library or path to load a kernel library
-                from.
+            kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
+              your custom op kernels, or the corresponding library object.
         """
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
