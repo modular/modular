@@ -32,7 +32,7 @@ async def test_basic_usage():
 
     # Consumer is running.  call() works
     async with atc:
-        client = atc.Client(Settings())
+        client = atc.Client(Settings().metric_level)
         client.send_measurement(spy, level=MetricLevel.BASIC)
     assert spy.commit.called
 
@@ -46,7 +46,7 @@ async def test_basic_usage():
 async def test_fast():
     """Queuing a metric measurement should be fast"""
     async with AsyncioTelemetryController() as atc:
-        client = atc.Client(Settings())
+        client = atc.Client(Settings().metric_level)
         start = time.perf_counter()
         client.send_measurement(
             MaxMeasurement("maxserve.request_count", 1),
@@ -61,7 +61,7 @@ async def test_shutdown():
     spy = mock.Mock(spec=MaxMeasurement)
     N = 10
     async with AsyncioTelemetryController() as atc:
-        client = atc.Client(Settings())
+        client = atc.Client(Settings().metric_level)
         for i in range(N):
             client.send_measurement(spy, level=MetricLevel.BASIC)
         # we haven't waited long enough for everything to run

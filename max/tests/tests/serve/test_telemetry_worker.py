@@ -98,7 +98,7 @@ async def test_metric_asyncio_client_filtering():
     assert settings.metric_level == MetricLevel.BASIC
 
     q = mock.MagicMock()
-    client = AsyncioMetricClient(settings, q)
+    client = AsyncioMetricClient(settings.metric_level, q)
 
     # detailed metrics are dropped
     client.send_measurement(
