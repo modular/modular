@@ -561,7 +561,7 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 LogicalResult LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
                                          Block::iterator symTableIt) {
   flattenAndRenameSymbol(traitDecl, symbolTable, symTableIt);
-  traitDecl.erase();
+  symbolTable.erase(traitDecl);
   return success();
 }
 

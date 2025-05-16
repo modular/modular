@@ -39,9 +39,10 @@ static void sliceDependenciesFrom(AttrOrType value, SymbolTable &sliceSymtab,
       // visited this attribute.
       StringAttr name = ref.getAttr();
       Operation *symbol = symtab.lookup(name);
-      // If the symbol reference attribute doesn't reference a symbol, somehow
-      // invalid IR made it to the ObjectCompiler.
-      assert(symbol && "missing symbol, invalid IR?");
+      // If the symbol reference attribute doesn't reference a symbol, it must
+      // be a reference that is not relative to `symtab`. Do not clone it.
+      if (!symbol)
+        return;
 
       // Clone the symbol into the new symbol table. Reuse an IRMapping to save
       // memory pressure.

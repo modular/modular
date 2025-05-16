@@ -566,6 +566,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
+    DefaultValuedAttr<M_SymbolRefArrayAttr, "std::nullopt">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
     OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
