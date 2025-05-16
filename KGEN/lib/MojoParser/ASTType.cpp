@@ -599,6 +599,18 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         if (auto it = binaryOpNames.find(name); it != binaryOpNames.end())
           return printOperands(operandsToPrint, /*separator=*/it->second);
 
+        // Print `x.__getitem__(args...)` as `x[args...]`
+        if (name == "__getitem__" && !operandsToPrint.empty()) {
+          printDemangledParam(os, operandsToPrint.front(), diagShared);
+          os << '[';
+          llvm::interleaveComma(operandsToPrint.slice(1), os,
+                                [&](const TypedAttr &value) {
+                                  printDemangledParam(os, value, diagShared);
+                                });
+          os << ']';
+          return;
+        }
+
         // If we can tell that this is a method call, print the receiver first.
         if (!operandsToPrint.empty() &&
             isKnownNonStaticMethod(diagShared, nameAttr)) {
