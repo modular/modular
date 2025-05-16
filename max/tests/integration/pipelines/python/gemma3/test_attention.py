@@ -138,10 +138,7 @@ def generate_max_outputs(
 
     state_dict = {}
     for weight_name, value in attention_weights.items():
-        if "norm" in weight_name:
-            state_dict[weight_name] = value.to(torch.float32).cpu()
-        else:
-            state_dict[weight_name] = value.cpu()
+        state_dict[weight_name] = value.cpu()
 
     kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
     kv_params = MaxGemma3Config.get_kv_params(

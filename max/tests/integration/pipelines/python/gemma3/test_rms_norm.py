@@ -40,6 +40,7 @@ def generate_max_outputs(
 ) -> torch.Tensor:
     layer = MaxRMSNorm(
         dim=text_config.hidden_size,
+        dtype=DType.float32,
         eps=1e-6,
     )
     state_dict = {"weight": rms_weight.cpu()}

@@ -212,7 +212,7 @@ modular_run_binary_test(
         "generate",
         "--draft-model-path=hf-internal-testing/tiny-random-LlamaForCausalLM",
         "--model-path=hf-internal-testing/tiny-random-LlamaForCausalLM",
-        "--quantization-encoding=bfloat16",
+        "--quantization-encoding=float32",
         "--devices=gpu",
         "--cache-strategy=paged",
         "--kv-cache-page-size=128",

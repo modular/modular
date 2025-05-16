@@ -259,7 +259,7 @@ def test_config__validates_supported_device():
         config = PipelineConfig(
             model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
             device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.bfloat16,
+            quantization_encoding=SupportedEncoding.float32,
             max_length=1,
         )
 

@@ -14,7 +14,7 @@ import pipelines_lm_eval
 from click.testing import CliRunner
 from max.pipelines.lib import generate_local_model_path
 
-REPO_ID = "HuggingFaceTB/SmolLM2-135M"
+REPO_ID = "HuggingFaceTB/SmolLM-135M"
 REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 logger = logging.getLogger("max.pipelines")

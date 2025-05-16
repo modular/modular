@@ -24,17 +24,17 @@ from test_common.registry import prepare_registry
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__validate_device_and_encoding_combinations(
-    smollm2_135m_local_path,
+    smollm_135m_local_path,
     llama_3_1_8b_instruct_local_path,
 ):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Valid device/encoding combinations
     config = PipelineConfig(
-        model_path=smollm2_135m_local_path,
+        model_path=smollm_135m_local_path,
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.cpu()],
-        draft_model_path=smollm2_135m_local_path,
+        draft_model_path=smollm_135m_local_path,
     )
 
     with pytest.raises(ValueError):
@@ -43,7 +43,7 @@ def test_config__validate_device_and_encoding_combinations(
             model_path=llama_3_1_8b_instruct_local_path,
             quantization_encoding=SupportedEncoding.float32,
             device_specs=[DeviceSpec.cpu()],
-            draft_model_path=smollm2_135m_local_path,
+            draft_model_path=smollm_135m_local_path,
             engine=PipelineEngine.HUGGINGFACE,
         )
 
@@ -51,7 +51,7 @@ def test_config__validate_device_and_encoding_combinations(
 @pytest.mark.skip(reason="TODO(AITLIB-363): Division by zero error.")
 def test_config__validate_target_and_draft_architecture(
     exaone_2_4b_local_path,
-    smollm2_135m_local_path,
+    smollm_135m_local_path,
     deepseek_r1_distill_llama_8b_local_path,
 ):
     with pytest.raises(ValueError):
@@ -61,7 +61,7 @@ def test_config__validate_target_and_draft_architecture(
             model_path=exaone_2_4b_local_path,
             quantization_encoding=SupportedEncoding.q4_k,
             device_specs=[DeviceSpec.cpu()],
-            draft_model_path=smollm2_135m_local_path,
+            draft_model_path=smollm_135m_local_path,
         )
 
     with pytest.raises(ValueError):
@@ -75,7 +75,7 @@ def test_config__validate_target_and_draft_architecture(
                     "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
                 )
             ],
-            draft_model_path=smollm2_135m_local_path,
+            draft_model_path=smollm_135m_local_path,
         )
 
 

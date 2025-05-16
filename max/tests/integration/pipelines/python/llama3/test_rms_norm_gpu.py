@@ -49,6 +49,7 @@ def generate_max_outputs(
 ) -> torch.Tensor:
     layer = LlamaStyleRMSNorm(
         dim=config.hidden_size,
+        dtype=DType.float32,
         eps=config.rms_norm_eps,
     )
 

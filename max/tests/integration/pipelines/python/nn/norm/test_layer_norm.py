@@ -38,6 +38,7 @@ def _test_layer_norm(
         "layer_norm",
         forward=LayerNorm(
             dims=weight.shape[0],
+            dtype=DType.float32,
             eps=1e-6,
             use_bias=True,
             device=DeviceRef.CPU(),

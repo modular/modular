@@ -22,6 +22,10 @@ MODULAR_AI_LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
 LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 
+# used in cases where float32 is needed. SmolLM3 is bfloat16.
+SMOLLM_HF_REPO_ID = "HuggingFaceTB/SmolLM-135M"
+SMOLLM_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM_HF_REPO_ID)
+
 SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M"
 SMOLLM2_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM2_HF_REPO_ID)
 
@@ -183,6 +187,21 @@ def llama_3_1_8b_instruct_local_path():
             f"Falling back to repo_id: {LLAMA_3_1_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = LLAMA_3_1_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def smollm_135m_local_path():
+    try:
+        model_path = generate_local_model_path(
+            SMOLLM_HF_REPO_ID, SMOLLM_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {SMOLLM_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = SMOLLM_HF_REPO_ID
     return model_path
 
 
