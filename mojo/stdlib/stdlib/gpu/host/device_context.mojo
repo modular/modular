@@ -3076,6 +3076,72 @@ struct DeviceContext(Copyable, Movable):
         ]()
 
     @always_inline
+    fn compile_function_experimental[
+        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        func: fn (* args: * declared_arg_types) -> None,
+        *,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            declared_arg_types,
+            target=_target,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
+        """Compiles the provided function for execution on this device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+            _target: Change the target to different device type than the
+                one associated with this `DeviceContext`.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
+
+        Returns:
+            The compiled function.
+        """
+        debug_assert(
+            not func_attribute
+            or func_attribute.value().attribute
+            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            or func_attribute.value().value
+            <= self.device_info.shared_memory_per_multiprocessor,
+            "Requested more than available shared memory.",
+        )
+        alias result_type = __type_of(result)
+        result = result_type(
+            self,
+            func_attribute=func_attribute,
+        )
+
+        result.dump_rep[
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+        ]()
+
+    @always_inline
     fn compile_function_checked[
         func_type: AnyTrivialRegType,
         declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
@@ -3107,6 +3173,72 @@ struct DeviceContext(Copyable, Movable):
             signature_func: The function to compile, passed in again. Used for
                 checking argument types later.
                 Note: This will disappear in future versions.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+            _target: Change the target to different device type than the
+                one associated with this `DeviceContext`.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
+
+        Returns:
+            The compiled function.
+        """
+        debug_assert(
+            not func_attribute
+            or func_attribute.value().attribute
+            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            or func_attribute.value().value
+            <= self.device_info.shared_memory_per_multiprocessor,
+            "Requested more than available shared memory.",
+        )
+        alias result_type = __type_of(result)
+        result = result_type(
+            self,
+            func_attribute=func_attribute,
+        )
+
+        result.dump_rep[
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+        ]()
+
+    @always_inline
+    fn compile_function_experimental[
+        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        func: fn (* args: * declared_arg_types) capturing -> None,
+        *,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            declared_arg_types,
+            target=_target,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
+        """Compiles the provided function for execution on this device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -3745,6 +3877,101 @@ struct DeviceContext(Copyable, Movable):
 
     @parameter
     @always_inline
+    fn enqueue_function_experimental[
+        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        func: fn (* args: * declared_arg_types) -> None,
+        *actual_arg_types: DevicePassable,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The types of the arguments being passed to the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        var gpu_kernel = self.compile_function_experimental[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+        self._enqueue_function_checked(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
     fn enqueue_function_checked[
         func_type: AnyTrivialRegType,
         declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
@@ -3829,6 +4056,102 @@ struct DeviceContext(Copyable, Movable):
         var gpu_kernel = self.compile_function_checked[
             func,
             signature_func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+        self._enqueue_function_checked(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn enqueue_function_experimental[
+        declared_arg_types: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+        func: fn (* args: * declared_arg_types) capturing -> None,
+        *actual_arg_types: DevicePassable,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device. This
+        overload takes in a function that's `capturing`.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The types of the arguments being passed to the function.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
+        first to remove the overhead:
+
+        ```mojo
+        with DeviceContext() as ctx:
+            var compile_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        var gpu_kernel = self.compile_function_experimental[
+            func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
