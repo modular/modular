@@ -564,31 +564,4 @@ def POP_StringConcatAttr : POP_ExprAttr<"StringConcat", "string_concat"> {
   let extraClassDeclaration = [{ Type getType() const; }];
 }
 
-//===----------------------------------------------------------------------===//
-// StringHashAttr
-//===----------------------------------------------------------------------===//
-
-def POP_StringHashAttr : POP_ExprAttr<"StringHash", "string_hash"> {
-  let summary = "Hash a string using XXH3 128-bit hash function.";
-  let description = [{
-    The `#pop.string_hash` attribute hashes a !kgen.string value using the XXH3
-    hash algorithm.
-  }];
-
-  let parameters = (ins "TypedAttr":$str);
-
-  let assemblyFormat = [{
-    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
-  }];
-
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return a StringHashAttr.
-    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
-  ];
-
-  let extraClassDeclaration = [{ Type getType() const; }];
-}
-
 #endif // KGEN_POPDIALECT_POPATTRS_TD
