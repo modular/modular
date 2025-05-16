@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import inspect
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Union
@@ -38,7 +40,7 @@ class CustomOpLibrary:
     _kernel_library: KernelLibrary
     _session: InferenceSession
 
-    def __init__(self, kernel_library: Union[Path, KernelLibrary]):
+    def __init__(self, kernel_library: Path | KernelLibrary):
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
         self._context = Context()
@@ -52,6 +54,7 @@ class CustomOpLibrary:
     def __getattr__(self, attr: str):
         if attr.startswith("_"):
             return super().__getattribute__(attr)
+
         return CustomOp(self, attr)
 
 
@@ -106,9 +109,7 @@ def torch_tensor_to_type(tensor: torch.Tensor) -> TensorType:
 ###############################################################################
 
 
-def to_torch_tensors(
-    tensor: Sequence[Tensor],
-) -> Union[torch.Tensor, Sequence[torch.Tensor]]:
+def to_torch_tensors(tensor: Sequence[Tensor]) -> TorchTensors:
     """Convert a MAX tensor to a torch.Tensor.
 
     This function handles the special case of most Torch operations which
@@ -118,7 +119,11 @@ def to_torch_tensors(
     return torch_tensors[0] if len(torch_tensors) == 1 else torch_tensors
 
 
-def custom_op_graph(op: CustomOp, *args, out_like: list[torch.Tensor]) -> Graph:
+def custom_op_graph(
+    op: CustomOp,
+    input_types: Iterable[TensorType],
+    result_types: Iterable[TensorType],
+) -> Graph:
     """Construct the Graph API graph representing a call to a Mojo CustomOp.
 
     This function builds a graph which invokes the given Mojo CustomOp through
@@ -127,16 +132,15 @@ def custom_op_graph(op: CustomOp, *args, out_like: list[torch.Tensor]) -> Graph:
 
     Args:
         op: The custom operation to be called.
-        out_like: The tensors which serve as a specification of the output
+        result_types: The tensors which serve as a specification of the output
             types of the graph.
 
     Returns:
         Graph: The MAX graph calling the provided custom op.
     """
 
-    input_types = [torch_tensor_to_type(t) for t in args]
-    output_types = [torch_tensor_to_type(t) for t in out_like]
-    graph_types = [*(t.as_buffer() for t in output_types), *input_types]
+    output_types = [t.as_buffer() for t in result_types]
+    graph_types = [*output_types, *input_types]
 
     with Graph(
         op.name,
@@ -147,7 +151,7 @@ def custom_op_graph(op: CustomOp, *args, out_like: list[torch.Tensor]) -> Graph:
         results = ops.custom(
             op.name,
             list(graph.inputs[len(output_types) :]),
-            out_types=output_types,
+            out_types=list(result_types),
         )
         for input, result in zip(graph.inputs, results):
             input.buffer[...] = result.tensor
@@ -208,52 +212,76 @@ def op_signature(op: mlir.Operation) -> inspect.Signature:
     return inspect.Signature(args, return_annotation=result_type)
 
 
-TensorValues = Union[torch.Tensor, Sequence[torch.Tensor]]
+TorchTensors = Union[torch.Tensor, Sequence[torch.Tensor]]
+
+CompiledModelKey = tuple[tuple[mlir.Type, ...], tuple[mlir.Type, ...]]
+ModelSignature = tuple[tuple[TensorType, ...], tuple[TensorType, ...]]
+
+
+def model_signature(
+    args: Iterable[torch.Tensor],
+    results: TorchTensors,
+) -> ModelSignature:
+    results = (results,) if isinstance(results, torch.Tensor) else results
+
+    input_types = tuple(torch_tensor_to_type(arg) for arg in args)
+    result_types = tuple(torch_tensor_to_type(result) for result in results)
+    return (input_types, result_types)
+
+
+def model_key(
+    context: mlir.Context,
+    args: Iterable[torch.Tensor],
+    results: TorchTensors,
+) -> CompiledModelKey:
+    sig_args, sig_results = model_signature(args, results)
+
+    with context:
+        input_types = tuple(arg.to_mlir() for arg in sig_args)
+        result_types = tuple(result.to_mlir() for result in sig_results)
+    return (input_types, result_types)
 
 
 def register_custom_op(op: CustomOp, name: Optional[str] = None):
     # This will hold the compiled model once the registered fake tensor function
     # is invoked for the first time.
-    model: Optional[Model] = None
-    registered_fake: Optional[Callable[..., TensorValues]] = None
+    # model_cache = op.operation_cache
+    model_cache: dict[CompiledModelKey, Model] = {}
+
+    # model: Optional[CompiledOperation] = None
+    registered_fake: Optional[Callable[..., TorchTensors]] = None
 
     signature: inspect.Signature = op_signature(op.kernel)
 
     # Compile the model if it has not been compiled already.
-    def compile_model(*args: torch.Tensor) -> TensorValues:
-        nonlocal model
+    def compile_model(*args: torch.Tensor) -> TorchTensors:
         assert registered_fake is not None, (
             "Must register_fake for pytorch custom op before compiling"
         )
         results = registered_fake(*args)
 
-        if model is not None:
-            return results
+        key = model_key(op.context, args, results)
+        if key not in model_cache:
+            sig = model_signature(args, results)
+            graph = custom_op_graph(op, *sig)
+            model = op.library._session.load(graph)
+            model_cache[key] = model
 
-        result_like = (
-            [results] if isinstance(results, torch.Tensor) else list(results)
-        )
-        model = op.library._session.load(
-            custom_op_graph(op, *args, out_like=result_like)
-        )
         return results
 
-    def custom_op(
-        *args: torch.Tensor,
-    ) -> Union[torch.Tensor, Sequence[torch.Tensor]]:
+    def custom_op(*args: torch.Tensor) -> TorchTensors:
         # In eager mode, the fake_tensor function will not be called,
         # so we call it here.
-        if model is None:
-            compile_model(*args)
-
-        assert model is not None
         assert registered_fake is not None, (
             "Must register_fake for pytorch custom op before invoking a "
             "custom op"
         )
 
         # registered_fake with real inputs will create buffers for the outputs
-        outputs = registered_fake(*args)
+        outputs = compile_model(*args)
+
+        model = model_cache[model_key(op.context, args, outputs)]
+
         dps = outputs if isinstance(outputs, tuple) else (outputs,)
         converted = map(Tensor.from_dlpack, (*dps, *args))
         model(*converted)
