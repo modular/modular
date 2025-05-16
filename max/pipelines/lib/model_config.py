@@ -204,17 +204,6 @@ class MAXModelConfig(MAXModelConfigBase):
             # weight_path should not be used directly anymore.
             self.model_path = self._weights_repo_id
 
-        # TODO(KERN-1737): Restore to default after fixing sharded
-        # output linear shapes.
-        # Set device memory utilization conservatively when tensor parallelism
-        # degree is greater than 1.
-        # This works around assumptions about uniform weight sharding that would
-        # otherwise cause a CUDA OOM.
-        if len(self.device_specs) > 1:
-            self._kv_cache_config.device_memory_utilization = min(
-                0.8, self._kv_cache_config.device_memory_utilization
-            )
-
     @property
     def kv_cache_config(self) -> KVCacheConfig:
         return self._kv_cache_config

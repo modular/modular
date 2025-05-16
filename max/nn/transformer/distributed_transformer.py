@@ -37,8 +37,8 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import LayerList, Module
-from ..linear import Linear
-from ..norm import DistributedRMSNorm, LayerNorm, RMSNorm
+from ..linear import ColumnParallelLinear
+from ..norm import DistributedRMSNorm
 from .transformer import ReturnLogits
 
 
@@ -215,8 +215,8 @@ class DistributedTransformer(Module):
         dim: int,
         n_heads: int,
         layers: list[DistributedTransformerBlock],
-        norm: RMSNorm | LayerNorm,
-        output: Linear,
+        norm: DistributedRMSNorm,
+        output: ColumnParallelLinear,
         embedding: VocabParallelEmbedding,
         kv_params: KVCacheParams,
         kv_collection_constructor: (
@@ -272,16 +272,40 @@ class DistributedTransformer(Module):
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
+        last_token_distributed = distribute_value(last_token_h, self.devices)
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_h)), DType.float32
+            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
         )
 
         logits = None
         offsets = None
 
-        # NOTE: ReturnLogits.VARIABLE is unsupported and the ctor checks this.
-        if self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h0)), DType.float32)
+        if self.return_logits == ReturnLogits.VARIABLE:
+            return_n_logits_range = ops.range(
+                return_n_logits[0],
+                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+                ops.constant(-1, DType.int64, device=DeviceRef.CPU()),
+                out_dim="return_n_logits_range",
+                device=self.devices[0],
+            )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            logits = ops.gather(
+                ops.cast(self.lm_head(self.norm(h))[0], DType.float32),
+                last_indices,
+                axis=0,
+            )
+            offsets = ops.range(
+                ops.constant(0, DType.int64, device=DeviceRef.CPU()),
+                last_indices.shape[0] + return_n_logits[0],
+                return_n_logits[0],
+                out_dim="logit_offsets",
+                device=self.devices[0],
+            )
+        elif self.return_logits == ReturnLogits.ALL:
+            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
 
         if logits is not None and offsets is not None:

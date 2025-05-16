@@ -14,17 +14,17 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 
 from max.nn import (
+    ColumnParallelLinear,
     DistributedAttentionWithRope,
     DistributedMLP,
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    Linear,
     OptimizedRotaryEmbedding,
-    RMSNorm,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -53,6 +53,13 @@ class DistributedMistral(DistributedTransformer):
             device=config.devices[0],
         )
 
+        distributed_norm = functools.partial(
+            DistributedRMSNorm,
+            dim=config.hidden_size,
+            eps=config.rms_norm_eps,
+            devices=config.devices,
+        )
+
         layers = [
             DistributedTransformerBlock(
                 devices=config.devices,
@@ -77,16 +84,8 @@ class DistributedMistral(DistributedTransformer):
                     feed_forward_length=config.feed_forward_length,
                     devices=config.devices,
                 ),
-                attention_norm=DistributedRMSNorm(
-                    config.hidden_size,
-                    config.rms_norm_eps,
-                    devices=config.devices,
-                ),
-                mlp_norm=DistributedRMSNorm(
-                    config.hidden_size,
-                    config.rms_norm_eps,
-                    devices=config.devices,
-                ),
+                attention_norm=distributed_norm(),
+                mlp_norm=distributed_norm(),
             )
             for i in range(config.num_hidden_layers)
         ]
@@ -100,11 +99,11 @@ class DistributedMistral(DistributedTransformer):
             quantization_encoding=None,
         )
 
-        output = Linear(
+        output = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
             config.dtype,
-            config.devices[0],
+            devices=config.devices,
             quantization_encoding=None,
         )
 
@@ -122,10 +121,7 @@ class DistributedMistral(DistributedTransformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=RMSNorm(
-                config.hidden_size,
-                config.rms_norm_eps,
-            ),
+            norm=distributed_norm(),
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
