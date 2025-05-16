@@ -1814,9 +1814,9 @@ struct SqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: FusedOutputTensor[type=type, rank=1],
-        input_shape: FusedInputTensor[type=type, rank=1],
-        remove_indices: FusedInputTensor[type=indices_type, rank=1],
+        output_shape: OutputTensor[type=type, rank=1],
+        input_shape: InputTensor[type=type, rank=1],
+        remove_indices: InputTensor[type=indices_type, rank=1],
     ) capturing:
         # remove_indices may not be sorted so our strategy is to use -1 to
         # represent removed dimensions in a copied version of our input shape buffer
@@ -1883,9 +1883,9 @@ struct UnsqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: FusedOutputTensor[type=type, rank=1],
-        input_shape: FusedInputTensor[type=type, rank=1],
-        padding_indices: FusedInputTensor[type=indices_type, rank=1],
+        output_shape: OutputTensor[type=type, rank=1],
+        input_shape: InputTensor[type=type, rank=1],
+        padding_indices: InputTensor[type=indices_type, rank=1],
     ) capturing:
         # represent uninitialized dimensions, add the padding dimensions, and copy
         # over the remaining dimensions later.
