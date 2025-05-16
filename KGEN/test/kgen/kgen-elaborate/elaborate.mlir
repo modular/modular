@@ -2193,9 +2193,10 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
   %0 = pop.stack_allocation 1 x index marked
   pop.compiler.global_store "CAPTURE_0", %0 : !kgen.pointer<index>
   kgen.param.declare *"foo()": () capturing -> index = <@FOO>
-  // CHECK: %string = kgen.param.constant: string = <"{{.*}}">
-  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
-  // CHECK: %1 = kgen.struct.create(%string, %index1) : !kgen.struct<(string, index)>
+  // CHECK: [[STR:%.*]] = kgen.param.constant: string = <"{{.*}}">
+  // CHECK-NEXT: [[STR1:%.*]] = kgen.param.constant: string = <"{{.*}}">
+  // CHECK-NEXT: [[NUM:%.*]] = kgen.param.constant = <1>
+  // CHECK: %1 = kgen.struct.create([[STR]], [[STR1]], [[NUM]]) : !kgen.struct<(string, string, index)>
 
   kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda",
                                          arch = "sm_80",

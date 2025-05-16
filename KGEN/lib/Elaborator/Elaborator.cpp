@@ -2189,15 +2189,19 @@ static WalkResult rewriteCompileOffloadOp(
 
   OpBuilder b(op);
   StringAttr content = iter->second.contents[emissionKind];
+  StringAttr moduleName = iter->second.moduleNames[emissionKind];
   IntegerAttr numCaptures = iter->second.numCaptures;
-  auto structType = StructType::get(op->getContext(),
-                                    {content.getType(), numCaptures.getType()});
+  auto structType = StructType::get(
+      op->getContext(),
+      {content.getType(), moduleName.getType(), numCaptures.getType()});
 
   SmallVector<Value> values;
 
   auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
+  auto moduleNameV = b.create<ParamConstantOp>(op.getLoc(), moduleName);
   auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
   values.push_back(constantV);
+  values.push_back(moduleNameV);
   values.push_back(numCapturesV);
   auto newOp = b.create<StructCreateOp>(op->getLoc(), structType, values);
 
