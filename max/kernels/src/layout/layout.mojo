@@ -72,6 +72,7 @@ from .int_tuple import (
     abs,
     compact_order,
     crd2idx,
+    is_flat,
     flatten,
     idx2crd,
     inner_product,
@@ -1961,3 +1962,26 @@ fn is_row_major[rank: Int](layout: Layout) -> Bool:
         correct_stride *= flat_shape[i].value()
 
     return True
+
+
+fn is_contiguous_dim(layout: Layout, dim: Int) -> Bool:
+    """Checks if a flat layout is contiguous in a specific dimension.
+
+    This function checks if a flat layout is contiguous in a specified
+    dimension, considering both positive strides and zero strides with a single
+    element. The latter case is necessary for coalesced layouts.
+
+    Args:
+        layout: The layout to check.
+        dim: The dimension to check.
+
+    Returns:
+        True if the layout is contiguous in the specified dimension,
+        False otherwise.
+    """
+    if not is_flat(layout.shape):
+        abort("layout must be flat")
+
+    return layout.stride[dim] == 1 or (
+        layout.stride[dim] == 0 and layout.shape[dim] == 1
+    )

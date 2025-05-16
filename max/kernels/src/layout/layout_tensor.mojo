@@ -48,9 +48,11 @@ from .int_tuple import (
     _get_layout_type,
     depth,
     fill_like,
+    to_nest,
     flatten,
     idx2crd,
     product,
+    congruent,
 )
 from .layout import *
 from .runtime_layout import RuntimeLayout
@@ -1692,6 +1694,27 @@ struct LayoutTensor[
         )
 
     @always_inline("nodebug")
+    fn _load_offset(
+        self, offset: Scalar[Self.linear_idx_type]
+    ) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified offset.
+
+        This method provides array-like linear indexing for the tensor.
+
+        Args:
+            offset: The integer offset for array indexing.
+
+        Returns:
+            The element at the specified offset with the tensor's data type.
+        """
+
+        return (
+            Element[index_type=linear_idx_type]
+            .load(self.ptr.offset(offset), self.runtime_element_layout)
+            .element_data
+        )
+
+    @always_inline("nodebug")
     fn __getitem__(self, *dims: Int) -> Self.element_type:
         """Retrieves a single element from the tensor at the specified indices.
 
@@ -1709,12 +1732,25 @@ struct LayoutTensor[
 
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset(strides, dims)
+        return self._load_offset(offset)
 
-        return (
-            Element[index_type=linear_idx_type]
-            .load(self.ptr.offset(offset), self.runtime_element_layout)
-            .element_data
-        )
+    @always_inline("nodebug")
+    fn __getitem__(self, crd: RuntimeTuple) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            crd: The coordinate specifying the element's position in each dimension. For example, in a 3D tensor, you would use (i, j, k).
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+
+        var offset = self.runtime_layout(crd)
+        return self._load_offset(offset)
 
     @always_inline("nodebug")
     fn __setitem__(self, d0: Int, val: Self.element_type):
@@ -2357,6 +2393,65 @@ struct LayoutTensor[
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
         alias tiler = MakeTileLayoutList[*tile_sizes]()
+        return zipped_divide(layout, tiler)
+
+    @staticmethod
+    fn _fast_varying_dim_tiler(shape: Int) -> Layout:
+        var flat_stride = flatten(layout.stride)
+        var min_stride = Int.MAX
+        var min_idx = -1
+        for i in range(len(flat_stride)):
+            var s = flat_stride[i]
+            if s == UNKNOWN_VALUE:
+                continue
+            if s < min_stride:
+                min_stride = Int(flat_stride[i])
+                min_idx = i
+        if min_stride != 1:
+            abort(
+                "Linear vectorization is limited to tensors with a contiguous"
+                " dimension"
+            )
+        if min_idx == -1:
+            abort("No known stride found to vectorize!")
+        var flat_tiler_shape = IntTuple()
+        for i in range(len(flat_stride)):
+            if i == min_idx:
+                flat_tiler_shape.append(shape)
+            else:
+                flat_tiler_shape.append(Int(1))
+        var tiler_shape = to_nest(layout.stride, flat_tiler_shape)
+        var unit_stride = fill_like(layout.shape, 1)
+        return Layout(tiler_shape, unit_stride)
+
+    @staticmethod
+    fn _tuple_divide_tiler(
+        shape: IntTuple, linear_vectorize: Bool = False
+    ) -> Layout:
+        if is_int(shape):
+            if linear_vectorize:
+                # If the shape is a single int, and we are vectorizing wrt the
+                # linear indexing. We should then vectorize the fastest varying
+                # dimension.
+                return Self._fast_varying_dim_tiler(Int(shape))
+            else:
+                # If the shape is a single int, we need to use the LayoutList
+                # dispatch
+                return Layout(shape, 1)
+        else:
+            # Otherwise, the shape should be compatible, so we can use the
+            # nested layout dispatch
+            var tiler_stride = fill_like(shape, 1)
+            return Layout(shape, tiler_stride)
+
+    @staticmethod
+    fn _tuple_divide_tiles(
+        shape: IntTuple, linear_vectorize: Bool = False
+    ) -> Layout:
+        var tiler = Self._tuple_divide_tiler(shape, linear_vectorize)
+        if is_int(shape) and not linear_vectorize:
+            # legacy behavior
+            return zipped_divide(layout, LayoutList(tiler))
         return zipped_divide(layout, tiler)
 
     @staticmethod
@@ -3170,10 +3265,174 @@ struct LayoutTensor[
                 )
 
     @always_inline
-    fn vectorize[
-        *vector_shape: Int
+    @staticmethod
+    fn _vectorize_type_2[
+        origin: ImmutableOrigin,
+        vector_shape: IntTuple[origin],
+        linear_vectorize: Bool,
+    ](
+        out result: LayoutTensor[
+            dtype,
+            coalesce(
+                Self._tuple_divide_tiles(vector_shape, linear_vectorize)[1],
+                keep_rank=True,
+            ),
+            origin,
+            address_space=address_space,
+            element_layout = Self._tuple_divide_tiles(
+                vector_shape, linear_vectorize
+            )[0],
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+        ],
+    ):
+        """Returns the type of a vectorized view using IntTuple.
+
+        Parameters:
+            origin: The origin type for the IntTuple.
+            vector_shape: The dimensions of each vector unit as an IntTuple.
+            linear_vectorize: Whether to vectorize in a linear manner. Defaults to True.
+
+        Returns:
+            The type of a view into the original tensor with a vectorized layout.
+        """
+        while True:
+            pass
+
+    @always_inline
+    fn _vectorize_2[
+        vector_len: Int,
+        linear_vectorize: Bool = True,
     ](
         self,
+        out result: __type_of(
+            Self._vectorize_type_2[
+                __origin_of(), IntTuple(vector_len), linear_vectorize
+            ]()
+        ),
+    ):
+        """Wrap the integer `vector_len` in an `IntTuple` and call the
+        `_vectorize_2` function.
+
+        Parameters:
+            vector_len: The length of vectorization.
+            linear_vectorize: Whether to vectorize in a linear manner. Defaults to True.
+
+        Returns:
+            A view of the tensor with a vectorized layout based on the specified
+            vector length.
+        """
+        return self._vectorize_2[
+            __origin_of(),
+            IntTuple(vector_len),
+            linear_vectorize=linear_vectorize,
+        ]()
+
+    @always_inline
+    fn _vectorize_2[
+        origin: ImmutableOrigin,  # FIXME: MOCO-1912
+        vector_shape: IntTuple[origin],
+        check_rank: Bool = True,
+        linear_vectorize: Bool = vector_shape.is_value(),
+    ](
+        self,
+        out result: __type_of(
+            Self._vectorize_type_2[origin, vector_shape, linear_vectorize]()
+        ),
+    ):
+        """Experimental implementation of the generalized vectorize operation
+        using IntTuple.
+
+        This function creates a vectorized view of the tensor using an IntTuple
+        to specify the vector dimensions rather than variadic parameters.
+
+        Parameters:
+            origin: The origin of the IntTuple.
+            vector_shape: The dimensions of each vector unit as an IntTuple.
+            check_rank: Whether to verify that vector_shape is congruent with
+                the tensor's shape. Defaults to True.
+            linear_vectorize: Whether to vectorize in a linear manner. Defaults to True.
+
+        Returns:
+            A view of the tensor with a vectorized layout based on the specified
+            vector shape.
+        """
+        constrained[
+            (vector_shape.is_value() and linear_vectorize)
+            or (not linear_vectorize),
+            (
+                "Only contiguous vectorization or vectorization of a"
+                " congruent shape is supported!"
+            ),
+        ]()
+        runtime_shape = __type_of(result.runtime_layout.shape)()
+        runtime_stride = __type_of(result.runtime_layout.stride)()
+
+        @parameter
+        if check_rank:
+            constrained[
+                is_int(vector_shape) or congruent(vector_shape, layout.shape),
+                "vector_shape has to be congruent to layout.shape = ",
+                String(layout.shape),
+            ]()
+
+        alias tiler = Self._tuple_divide_tiler(vector_shape, linear_vectorize)
+        alias flat_vector_shape = flatten(tiler.shape)
+
+        @parameter
+        if result.masked or not layout.all_dims_known():
+
+            @parameter
+            for i in range(len(flat_vector_shape)):
+                alias vector_shape_i = Int(flat_vector_shape[i])
+                runtime_shape.value[i] = ceildiv(
+                    self.runtime_layout.shape.value[i], vector_shape_i
+                )
+                runtime_stride.value[i] = (
+                    self.runtime_layout.stride.value[i] * vector_shape_i
+                )
+
+        @parameter
+        if layout.all_dims_known():
+
+            @parameter
+            if result.masked:
+                return __type_of(result)(
+                    self.ptr,
+                    __type_of(result.runtime_layout)(
+                        runtime_shape, runtime_stride
+                    ),
+                )
+            else:
+                return __type_of(result)(self.ptr)
+        else:
+            constrained[
+                coalesce(result.element_layout).known_shape(),
+                "Result element layout should have known shape",
+            ]()
+
+            runtime_element_layout_shape = __type_of(
+                result.runtime_element_layout.shape
+            )()
+            runtime_element_layout_stride = __type_of(
+                result.runtime_element_layout.stride
+            )(self.runtime_layout.stride.value)
+
+            return __type_of(result)(
+                self.ptr,
+                __type_of(result.runtime_layout)(runtime_shape, runtime_stride),
+                __type_of(result.runtime_element_layout)(
+                    runtime_element_layout_shape,
+                    runtime_element_layout_stride,
+                ),
+            )
+
+    @always_inline
+    @staticmethod
+    fn vectorize_type[
+        *vector_shape: Int
+    ](
         out result: LayoutTensor[
             dtype,
             coalesce(
@@ -3187,6 +3446,23 @@ struct LayoutTensor[
             masked=masked,
         ],
     ):
+        """Returns the type of a vectorized view of the tensor with specified
+        vector dimensions.
+
+        Parameters:
+            vector_shape: The dimensions of each vector unit along each axis of
+                the tensor.
+
+        Returns:
+            The type of a view into the original tensor with a vectorized layout.
+        """
+        while True:
+            pass
+
+    @always_inline
+    fn vectorize[
+        *vector_shape: Int
+    ](self, out result: __type_of(Self.vectorize_type[*vector_shape]()),):
         """Reshape a tensor into a vectorized form for efficient SIMD
         operations.
 
@@ -3238,82 +3514,15 @@ struct LayoutTensor[
             processor optimizations.
         """
 
-        @parameter
-        @always_inline
-        fn _check_vector_shape[*vec_shape: Int]():
-            @parameter
-            for i in range(_get_len[*vec_shape]()):
-                alias shape_i = Int(self.layout.shape[i])
-
-                @parameter
-                if shape_i == UNKNOWN_VALUE:
-                    constrained[
-                        vec_shape[i] == 1,
-                        "vector dim has to be 1 when layout shape is unknown.",
-                    ]()
-                else:
-                    constrained[
-                        shape_i % vec_shape[i] == 0,
-                        (
-                            "tensor dim has to be an integer multiple of vector"
-                            " dim."
-                        ),
-                    ]()
-
-                    constrained[
-                        shape_i >= vec_shape[i],
-                        "vectorize shape has to be smaller than tensor shape.",
-                    ]()
-
-        runtime_shape = __type_of(result.runtime_layout.shape)()
-        runtime_stride = __type_of(result.runtime_layout.stride)()
-
-        @parameter
-        if result.masked or not layout.all_dims_known():
-
-            @parameter
-            for i in range(runtime_shape.scalar_length):
-                runtime_shape.value[i] = ceildiv(
-                    self.runtime_layout.shape.value[i], vector_shape[i]
-                )
-                runtime_stride.value[i] = (
-                    self.runtime_layout.stride.value[i] * vector_shape[i]
-                )
-
-        @parameter
-        if layout.all_dims_known():
-
-            @parameter
-            if result.masked:
-                return __type_of(result)(
-                    self.ptr,
-                    __type_of(result.runtime_layout)(
-                        runtime_shape, runtime_stride
-                    ),
-                )
-            else:
-                return __type_of(result)(self.ptr)
-        else:
-            constrained[
-                coalesce(result.element_layout).known_shape(),
-                "Result element layout should have known shape",
-            ]()
-
-            runtime_element_layout_shape = __type_of(
-                result.runtime_element_layout.shape
-            )()
-            runtime_element_layout_stride = __type_of(
-                result.runtime_element_layout.stride
-            )(self.runtime_layout.stride.value)
-
-            return __type_of(result)(
-                self.ptr,
-                __type_of(result.runtime_layout)(runtime_shape, runtime_stride),
-                __type_of(result.runtime_element_layout)(
-                    runtime_element_layout_shape,
-                    runtime_element_layout_stride,
-                ),
-            )
+        alias shape = IntTuple(vector_shape)
+        alias origin = __origin_of()  # FIXME: MOCO-1912
+        var ret = self._vectorize_2[
+            origin,
+            shape,
+            check_rank=False,
+            linear_vectorize=False,
+        ]()
+        return rebind[__type_of(result)](ret)
 
     @staticmethod
     fn _compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:

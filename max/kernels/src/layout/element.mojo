@@ -29,6 +29,7 @@ follow optimal patterns defined by the layout system.
 from sys import alignof, bitwidthof
 
 from memory import AddressSpace, UnsafePointer
+from layout.layout import coalesce, is_contiguous_dim
 
 from utils import IndexList
 
@@ -188,16 +189,17 @@ struct Element[
         Returns:
             A new `Element` containing the loaded data.
         """
-        constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
+        alias flat_layout = coalesce(layout)
+        constrained[flat_layout.rank() <= 2, "Only supports rank <= 2"]()
 
         var element_data = Self.element_data_type()
 
         @parameter
-        if layout.rank() == 1:
-            alias size = layout.size()
+        if flat_layout.rank() == 1:
+            alias size = flat_layout.size()
 
             @parameter
-            if layout.stride[0] == 1:
+            if is_contiguous_dim(flat_layout, 0):
                 alias alignment = alignof[Self.element_data_type]()
                 return ptr.load[
                     width = Self.element_data_type.size, alignment=alignment
@@ -209,9 +211,9 @@ struct Element[
             return Element(element_data, runtime_layout)
 
         @parameter
-        if layout.stride[0] == 1:
-            alias size = Int(layout.shape[0])
-            alias elements = Int(layout.shape[1])
+        if is_contiguous_dim(flat_layout, 0):
+            alias size = Int(flat_layout.shape[0])
+            alias elements = Int(flat_layout.shape[1])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
 
@@ -223,9 +225,9 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        elif layout.stride[1] == 1:
-            alias size = Int(layout.shape[1])
-            alias elements = Int(layout.shape[0])
+        elif is_contiguous_dim(flat_layout, 1):
+            alias size = Int(flat_layout.shape[1])
+            alias elements = Int(flat_layout.shape[0])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
 
@@ -237,8 +239,8 @@ struct Element[
                 element_data = element_data.insert[offset = i * size](vec_i)
             return Element(element_data, runtime_layout)
 
-        alias dim_0 = Int(layout.shape[0])
-        alias dim_1 = Int(layout.shape[1])
+        alias dim_0 = Int(flat_layout.shape[0])
+        alias dim_1 = Int(flat_layout.shape[1])
 
         @parameter
         for i in range(dim_0):

@@ -1646,6 +1646,25 @@ fn reduce[
 
 
 @always_inline("nodebug")
+fn is_flat(t: IntTuple) -> Bool:
+    """Check if an `IntTuple` is flat.
+
+    This function checks if the `IntTuple` is flat, meaning it has no nested
+    elements.
+
+    Args:
+        t: The `IntTuple` to check.
+
+    Returns:
+        True if the `IntTuple` is flat, False otherwise.
+    """
+    for i in range(len(t)):
+        if is_tuple(t[i]):
+            return False
+    return True
+
+
+@always_inline("nodebug")
 fn flatten(t: IntTuple) -> IntTuple:
     """Flatten a nested `IntTuple` into a single-level `IntTuple`.
 
