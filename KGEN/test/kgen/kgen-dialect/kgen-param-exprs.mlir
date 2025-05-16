@@ -939,3 +939,17 @@ kgen.generator @string_address<s1: string>() {
 
   kgen.return
 }
+
+// CHECK-LABEL: @gen_attr
+kgen.generator @gen_attr<a: index>() {
+  // CHECK: = kgen.param.constant: <>index = <#kgen.gen<add(a, 3)>>
+  %0 = kgen.param.constant: !kgen.generator<<>index> = <#kgen.gen<add(a, 3)>>
+
+  // CHECK: = kgen.param.constant: <index>index = <#kgen.gen<add(*(0,0), 1)>>
+  %1 = kgen.param.constant: !kgen.generator<<index>index> = <#kgen.gen<add(*(0,0), 1)>>
+
+  // CHECK: = kgen.param.constant: <index, index>index = <#kgen.gen<add(*(0,0), *(0,1))>>
+  %2 = kgen.param.constant: !kgen.generator<<index, index>index> = <#kgen.gen<add(*(0,0), *(0,1))>>
+
+  kgen.return
+}

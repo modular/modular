@@ -554,7 +554,7 @@ kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(2,0), i32>) -> ()>() {
 
 // -----
 
-// expected-error-re @below {{index reference 1 is out of bounds: referenced signature {{.*}} has 1 input parameters}}
+// expected-error-re @below {{index reference 1 is out of bounds: referenced signature has 1 input parameters}}
 kgen.generator @bad_index_ref<fn: <index>(!pop.array<*(0,1), i32>) -> ()>() {
   kgen.return
 }

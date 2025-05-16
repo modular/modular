@@ -96,6 +96,9 @@ class IndexParameterReplacer
     if (auto result = static_cast<DerivedT *>(this)->tryReplace(value, depth))
       return result;
 
+    if constexpr (std::is_base_of_v<Attribute, T>)
+      if (isa<ParameterScopeAttrInterface>(value))
+        ++depth;
     if constexpr (std::is_base_of_v<Type, T>)
       if (isa<ParameterScopeTypeInterface>(value))
         ++depth;
