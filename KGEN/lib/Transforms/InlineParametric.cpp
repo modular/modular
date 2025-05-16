@@ -39,95 +39,6 @@ using namespace KGEN;
 // AttrTypeMangler
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// Signature types define a nested parameter scope inside a parameter
-/// expression. Manually walk and mangle parameter references in attributes and
-/// types in an expression tree while accounting for name shadowing in a
-/// signature type.
-class AttrTypeMangler {
-public:
-  using Cache = DenseSet<const void *>;
-
-  explicit AttrTypeMangler(Cache &manglerCache) : manglerCache(manglerCache) {}
-
-  /// Mangle references within a type.
-  Type mangleRefsIn(Type type, bool &hasRefs) {
-    return mangleRefsInImpl(type, hasRefs);
-  }
-  Type mangleRefsIn(Type type) {
-    bool unused = false;
-    return mangleRefsIn(type, unused);
-  }
-
-  /// Mangle references within an attribute.
-  Attribute mangleRefsIn(Attribute attr, bool &hasRefs);
-  Attribute mangleRefsIn(Attribute type) {
-    bool unused = false;
-    return mangleRefsIn(type, unused);
-  }
-
-  /// Populate the mangler using the decls in two potentially conflicting
-  /// scopes. Returns false if there is nothing to mangle.
-  bool populate(Builder &b, const ParameterUseDefGraph &curScope,
-                const llvm::SetVector<StringAttr> &calleeDecls,
-                const ParameterUseDefGraph &topLevelGraph);
-
-  /// Optionally mangle a declaration.
-  ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
-
-  /// Mangle attributes and types.
-  void mangleElementsIn(Operation *op);
-
-  /// Recursively mangle declarations in the nested scope.
-  void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph);
-
-private:
-  template <typename T, typename U = std::conditional_t<
-                            std::is_base_of_v<Type, T>, Type, Attribute>>
-  U mangleRefsInImpl(T value, bool &hasRefs) {
-    if (manglerCache.contains(value.getAsOpaquePointer()))
-      return value;
-
-    SmallVector<Attribute, 16> replAttrs;
-    SmallVector<Type, 16> replTypes;
-    bool changed = false;
-    bool hasNestedRefs = false;
-    value.walkImmediateSubElements(
-        [&](Attribute attr) {
-          Attribute result = mangleRefsIn(attr, hasNestedRefs);
-          replAttrs.push_back(result);
-          changed |= result != attr;
-        },
-        [&](Type type) {
-          Type result = mangleRefsIn(type, hasNestedRefs);
-          replTypes.push_back(result);
-          changed |= result != type;
-        });
-
-    hasRefs |= hasNestedRefs;
-    if (!hasNestedRefs)
-      manglerCache.insert(value.getAsOpaquePointer());
-    return changed ? value.replaceImmediateSubElements(replAttrs, replTypes)
-                   : value;
-  }
-
-  /// The map of mangled declarations.
-  DenseMap<StringAttr, StringAttr> mangledDecls;
-  /// A cache of attributes and types known to have no parameter references.
-  Cache &manglerCache;
-};
-} // namespace
-
-Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
-  if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
-    hasRefs = true;
-    if (StringAttr mangled = mangledDecls.lookup(ref.getName()))
-      return ParamDeclRefAttr::get(mangled,
-                                   mangleRefsIn(ref.getType(), hasRefs));
-  }
-  return mangleRefsInImpl(attr, hasRefs);
-}
-
 /// This uniquing scheme involves splitting each decl name into a key string
 /// and a substring of trailing digits. We track the max of such digits of the
 /// same key string and use that to generate the next unique ID.
@@ -196,7 +107,96 @@ private:
   const ParameterUseDefGraph &topLevelGraph;
 };
 
-bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
+namespace {
+/// Signature types define a nested parameter scope inside a parameter
+/// expression. Manually walk and mangle parameter references in attributes and
+/// types in an expression tree while accounting for name shadowing in a
+/// signature type.
+class AttrTypeMangler {
+public:
+  using Cache = DenseSet<const void *>;
+
+  explicit AttrTypeMangler(Cache &manglerCache) : manglerCache(manglerCache) {}
+
+  /// Mangle references within a type.
+  Type mangleRefsIn(Type type, bool &hasRefs) {
+    return mangleRefsInImpl(type, hasRefs);
+  }
+  Type mangleRefsIn(Type type) {
+    bool unused = false;
+    return mangleRefsIn(type, unused);
+  }
+
+  /// Mangle references within an attribute.
+  Attribute mangleRefsIn(Attribute attr, bool &hasRefs);
+  Attribute mangleRefsIn(Attribute type) {
+    bool unused = false;
+    return mangleRefsIn(type, unused);
+  }
+
+  /// Populate the mangler using the decls in two potentially conflicting
+  /// scopes. Returns false if there is nothing to mangle.
+  bool populate(Builder &b, NameUniquer &uniquer,
+                const llvm::SetVector<StringAttr> &calleeDecls,
+                const ParameterUseDefGraph &topLevelGraph);
+
+  /// Optionally mangle a declaration.
+  ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
+
+  /// Mangle attributes and types.
+  void mangleElementsIn(Operation *op);
+
+  /// Recursively mangle declarations in the nested scope.
+  void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph);
+
+private:
+  template <typename T, typename U = std::conditional_t<
+                            std::is_base_of_v<Type, T>, Type, Attribute>>
+  U mangleRefsInImpl(T value, bool &hasRefs) {
+    if (manglerCache.contains(value.getAsOpaquePointer()))
+      return value;
+
+    SmallVector<Attribute, 16> replAttrs;
+    SmallVector<Type, 16> replTypes;
+    bool changed = false;
+    bool hasNestedRefs = false;
+    value.walkImmediateSubElements(
+        [&](Attribute attr) {
+          Attribute result = mangleRefsIn(attr, hasNestedRefs);
+          replAttrs.push_back(result);
+          changed |= result != attr;
+        },
+        [&](Type type) {
+          Type result = mangleRefsIn(type, hasNestedRefs);
+          replTypes.push_back(result);
+          changed |= result != type;
+        });
+
+    hasRefs |= hasNestedRefs;
+    if (!hasNestedRefs)
+      manglerCache.insert(value.getAsOpaquePointer());
+    return changed ? value.replaceImmediateSubElements(replAttrs, replTypes)
+                   : value;
+  }
+
+  /// The map of mangled declarations.
+  DenseMap<StringAttr, StringAttr> mangledDecls;
+  /// A cache of attributes and types known to have no parameter references.
+  Cache &manglerCache;
+};
+} // namespace
+
+Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
+    hasRefs = true;
+    if (StringAttr mangled = mangledDecls.lookup(ref.getName()))
+      return ParamDeclRefAttr::get(mangled,
+                                   mangleRefsIn(ref.getType(), hasRefs));
+  }
+  return mangleRefsInImpl(attr, hasRefs);
+}
+
+bool AttrTypeMangler::populate(Builder &b, NameUniquer &uniquer,
                                const llvm::SetVector<StringAttr> &calleeDecls,
                                const ParameterUseDefGraph &topLevelGraph) {
   VerboseCompilerTimeTraceScope traceScope("AttrTypeMangler::populate");
@@ -206,21 +206,26 @@ bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
   // these are the declarations that will project into the inlined body. We need
   // to mangle parameters in the inlined body such that they do not collide with
   // any declarations visible in the call scope, or in any nested scopes.
-  NameUniquer uniquer(curScope, topLevelGraph);
-  bool needsMangling = false;
-  for (StringAttr decl : calleeDecls) {
-    if (!uniquer.needsMangling(decl))
-      continue;
-    if (!needsMangling) {
-      // Lazily populate with the callee decls
-      for (StringAttr name : calleeDecls)
-        uniquer.updateWith(name);
-    }
+
+  // Populate `mangleIdx` with the indices of the declarations that need
+  // mangling. This ensures we rename as few declarations as possible.
+  SmallVector<size_t> mangleIdx;
+  for (auto [i, decl] : llvm::enumerate(calleeDecls)) {
+    if (uniquer.needsMangling(decl))
+      mangleIdx.push_back(i);
+    uniquer.updateWith(decl);
+  }
+
+  if (mangleIdx.empty())
+    return false;
+
+  for (size_t i : mangleIdx) {
+    StringAttr decl = calleeDecls[i];
     auto mangled = uniquer.mangle(decl);
     mangledDecls.try_emplace(decl, mangled);
-    needsMangling = true;
   }
-  return needsMangling;
+
+  return true;
 }
 
 ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,
@@ -352,7 +357,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                 const ParameterUseDefGraph &calleeParams,
                                 const llvm::SetVector<StringAttr> &calleeDecls,
                                 AttrTypeMangler::Cache &manglerCache,
-                                bool updateDebugInfo, bool debugCallsite) {
+                                NameUniquer &nameUniquer, bool updateDebugInfo,
+                                bool debugCallsite) {
   VerboseCompilerTimeTraceScope traceScope(
       "inlineGeneratorCall", [&] { return callee.getSymName().str(); });
 
@@ -368,7 +374,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   IRRewriter b{OpBuilder(call)};
   AttrTypeMangler mangler(manglerCache);
   bool needsMangling =
-      mangler.populate(b, *callScope, calleeDecls, topLevelGraph);
+      mangler.populate(b, nameUniquer, calleeDecls, topLevelGraph);
 
   // Make sure to rebind the call operands based on the mangled types of the
   // callee's argument types.
@@ -782,11 +788,12 @@ void ParametricInliningGraph::performInlining(
     ParametricInliningGraphNode *caller) {
   ParameterUseDefGraph callerParams(caller->func.getBodyRegion());
   callerParams.calculate(paramCaches.getThreadLocalCache());
+  NameUniquer uniquer(callerParams, callerParams);
   for (auto [call, callee] : caller->callsites) {
     inlineGeneratorCall(caller->func, call, callee->func, callee->level,
                         callerParams, callee->calleeParamGraph,
                         callee->allDecls, manglerCaches.getThreadLocalCache(),
-                        updateDebugInfo, !optimizationLevel);
+                        uniquer, updateDebugInfo, !optimizationLevel);
   }
 }
 
@@ -837,10 +844,11 @@ void InlineParametricPass::runOnOperation() {
       // Skip nodes that are not complete.
       if (callee->numProcessedCalls != callee->callsites.size())
         continue;
+      NameUniquer uniquer(callerParams, callerParams);
       inlineGeneratorCall(caller.func, call, callee->func, callee->level,
                           callerParams, callee->calleeParamGraph,
                           callee->allDecls,
-                          graph.manglerCaches.getThreadLocalCache(),
+                          graph.manglerCaches.getThreadLocalCache(), uniquer,
                           updateDebugInfo, !optimizationLevel);
     }
   };
