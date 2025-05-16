@@ -4,6 +4,9 @@
 
 * @modular/max-code-reviewers
 
+# CI
+/.github/ @modular/sdlc
+
 # Standard Library
 /mojo/stdlib/         @modular/stdlib
 /mojo/stdlib/stdlib/gpu/host @modular/stdlib
