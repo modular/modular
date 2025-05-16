@@ -6,5 +6,4 @@
 
 from .torch import (
     CustomOpLibrary,
-    register_custom_op,
 )
