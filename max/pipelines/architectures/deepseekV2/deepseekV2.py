@@ -78,10 +78,12 @@ class DeepseekV2(Transformer):
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(
                     config.hidden_size,
+                    config.dtype,
                     config.rms_norm_eps,
                 ),
                 mlp_norm=RMSNorm(
                     config.hidden_size,
+                    config.dtype,
                     config.rms_norm_eps,
                 ),
             )
@@ -109,6 +111,7 @@ class DeepseekV2(Transformer):
             layers=layers,
             norm=RMSNorm(
                 config.hidden_size,
+                config.dtype,
                 config.rms_norm_eps,
             ),
             output=lm_head,

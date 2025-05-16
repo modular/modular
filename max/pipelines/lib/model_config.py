@@ -32,7 +32,6 @@ from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 
 from .config_enums import (
-    _ALTERNATE_ENCODINGS,
     RepoType,
     RopeType,
     SupportedEncoding,
@@ -504,20 +503,8 @@ class MAXModelConfig(MAXModelConfigBase):
         # If no weight_path is provided, we should grab the default.
         if not self.weight_path:
             # Retrieve the default files for each weights format.
-
-            # Get alternate encoding (e.g. if float32 is requested and there are
-            # only bfloat16 weights, allow retrieving the bfloat16 weights
-            # because they can be cast to float32).
-            if self.quantization_encoding:
-                alternate_encoding = _ALTERNATE_ENCODINGS.get(
-                    self.quantization_encoding
-                )
-            else:
-                alternate_encoding = None
-
             weight_files = self.huggingface_weight_repo.files_for_encoding(
                 encoding=self.quantization_encoding,
-                alternate_encoding=alternate_encoding,
             )
 
             if default_weight_files := weight_files.get(
@@ -529,15 +516,8 @@ class MAXModelConfig(MAXModelConfigBase):
                 self.weight_path = next(iter(weight_files.values()))
 
         if not self.weight_path:
-            if self.quantization_encoding not in [
-                SupportedEncoding.bfloat16,
-                SupportedEncoding.float32,
-            ]:
-                msg = f"compatible weights cannot be found for '{self.quantization_encoding}' in 'gguf' format, in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
-                raise ValueError(msg)
-            else:
-                msg = f"compatible weights cannot be found for '{self.quantization_encoding}'"
-                raise ValueError(msg)
+            msg = f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
+            raise ValueError(msg)
 
     def _resolve_kv_cache_strategy(
         self,

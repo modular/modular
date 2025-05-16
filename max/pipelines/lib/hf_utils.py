@@ -510,7 +510,6 @@ class HuggingFaceRepo:
         self,
         encoding: SupportedEncoding,
         weights_format: Optional[WeightsFormat] = None,
-        alternate_encoding: Optional[SupportedEncoding] = None,
     ) -> dict[WeightsFormat, list[Path]]:
         if weights_format == WeightsFormat.pytorch:
             logger.warning(
@@ -531,13 +530,6 @@ class HuggingFaceRepo:
         pytorch_files = self._get_pytorch_files_for_encoding(encoding)
         gguf_files.update(pytorch_files)
 
-        if not gguf_files and alternate_encoding:
-            logger.warning(
-                "Could not find checkpoint with %s encoding, searching for %s files instead.",
-                encoding,
-                alternate_encoding,
-            )
-            return self.files_for_encoding(alternate_encoding, weights_format)
         return gguf_files
 
     def file_exists(self, filename: str) -> bool:

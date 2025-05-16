@@ -301,8 +301,6 @@ def _array_from_weight_loader(
         # GPTLinear).
         weight.original_dtype_and_shape = (data.dtype, data.shape)
         data = data.view(DType.uint8)
-    else:
-        data = data.astype(weight.dtype)
 
     if weight.quantization_encoding:
         # TODO: Set the quantized weight shape correctly when initializing the

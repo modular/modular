@@ -709,7 +709,9 @@ class LatentAttentionWithRope(AttentionWithRope):
                 shape=(self.q_lora_rank, self.hidden_size),
                 device=self.devices[0],
             )
-            self.q_a_layernorm = RMSNorm(dim=self.q_lora_rank, eps=1e-6)
+            self.q_a_layernorm = RMSNorm(
+                dim=self.q_lora_rank, dtype=dtype, eps=1e-6
+            )
             self.q_b_proj = Weight(
                 name="q_b_proj.weight",
                 dtype=dtype,

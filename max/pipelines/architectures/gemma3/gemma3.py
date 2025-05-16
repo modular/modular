@@ -109,6 +109,7 @@ class Gemma3TextModel(Module):
 
         self.norm = Gemma3RMSNorm(
             config.hidden_size,
+            config.dtype,
             config.rms_norm_eps,
         )
 
@@ -123,7 +124,10 @@ class Gemma3TextModel(Module):
             self.lm_head.set_shared_weight("weight", self.embed_tokens.weight)
 
         create_norm = functools.partial(
-            Gemma3RMSNorm, config.hidden_size, eps=config.rms_norm_eps
+            Gemma3RMSNorm,
+            config.hidden_size,
+            config.dtype,
+            eps=config.rms_norm_eps,
         )
 
         layers = [

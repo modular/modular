@@ -67,13 +67,16 @@ class LayerNorm(Module):
     """Layer normalization block."""
 
     def __init__(
-        self, dims: int, device: DeviceRef, eps: float = 1e-5, use_bias=True
+        self,
+        dims: int,
+        device: DeviceRef,
+        dtype: DType,
+        eps: float = 1e-5,
+        use_bias=True,
     ):
-        self.weight = Weight("weight", DType.float32, (dims,), device=device)
+        self.weight = Weight("weight", dtype, (dims,), device=device)
         self.bias = (
-            Weight("bias", DType.float32, (dims,), device=device)
-            if use_bias
-            else None
+            Weight("bias", dtype, (dims,), device=device) if use_bias else None
         )
         self.eps = eps
 

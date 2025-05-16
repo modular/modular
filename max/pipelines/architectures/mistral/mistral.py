@@ -74,11 +74,13 @@ class Mistral(Transformer):
                 ),
                 attention_norm=RMSNorm(
                     config.hidden_size,
+                    config.dtype,
                     config.rms_norm_eps,
                     multiply_before_cast=False,
                 ),
                 mlp_norm=RMSNorm(
                     config.hidden_size,
+                    config.dtype,
                     config.rms_norm_eps,
                     multiply_before_cast=False,
                 ),
@@ -120,6 +122,7 @@ class Mistral(Transformer):
             layers=layers,
             norm=RMSNorm(
                 config.hidden_size,
+                config.dtype,
                 config.rms_norm_eps,
                 multiply_before_cast=False,
             ),

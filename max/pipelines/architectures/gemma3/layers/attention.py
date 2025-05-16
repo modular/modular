@@ -101,8 +101,12 @@ class _Gemma3Attention(Module):
                 " in Attention layer."
             )
 
-        self.q_norm = Gemma3RMSNorm(self.kv_params.head_dim, self.qk_norm_eps)
-        self.k_norm = Gemma3RMSNorm(self.kv_params.head_dim, self.qk_norm_eps)
+        self.q_norm = Gemma3RMSNorm(
+            self.kv_params.head_dim, dtype, self.qk_norm_eps
+        )
+        self.k_norm = Gemma3RMSNorm(
+            self.kv_params.head_dim, dtype, self.qk_norm_eps
+        )
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 

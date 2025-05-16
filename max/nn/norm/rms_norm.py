@@ -75,9 +75,9 @@ class RMSNorm(Module):
     def __init__(
         self,
         dim: int,
+        dtype: DType,
         eps: float = 1e-6,
         weight_offset: float = 0.0,
-        dtype: DType = DType.float32,
         multiply_before_cast: bool = True,
     ):
         super().__init__()

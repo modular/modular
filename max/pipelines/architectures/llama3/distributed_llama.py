@@ -70,6 +70,7 @@ class DistributedLlama3(DistributedTransformer):
         create_distributed_norm = functools.partial(
             DistributedRMSNorm,
             dim=config.hidden_size,
+            dtype=config.norm_dtype or config.dtype,
             eps=config.rms_norm_eps,
             devices=config.devices,
         )

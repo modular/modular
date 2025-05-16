@@ -94,8 +94,8 @@ class ConstantLayerNorm(Module):
         self,
         dims,
         device: DeviceRef,
+        dtype: DType,
         eps: float = 1e-5,
-        dtype: DType = DType.float32,
     ):
         super().__init__()
         self.gamma = np.ones(dims)
@@ -141,8 +141,8 @@ class Llama3(Transformer):
             create_norm = functools.partial(
                 RMSNorm,
                 config.hidden_size,
+                config.norm_dtype or config.dtype,
                 config.rms_norm_eps,
-                dtype=config.norm_dtype or DType.float32,
                 multiply_before_cast=False,  # disable Gemma3-style scaling
             )
         else:
@@ -150,7 +150,7 @@ class Llama3(Transformer):
                 ConstantLayerNorm,
                 config.hidden_size,
                 config.devices[0],
-                dtype=config.norm_dtype or DType.float32,
+                config.norm_dtype or config.dtype,
             )
 
         # Select linear layer class.

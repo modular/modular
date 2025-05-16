@@ -180,11 +180,3 @@ _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     SupportedEncoding.q6_k: ("cpu",),
     SupportedEncoding.gptq: ("gpu",),
 }
-
-# Store a map of checkpoint encodings that can be cast to another dtype while
-# keeping similar results. Maps the requested encoding to an acceptable
-# alternate checkpoint encoding.
-_ALTERNATE_ENCODINGS = {
-    SupportedEncoding.float32: SupportedEncoding.bfloat16,
-    SupportedEncoding.bfloat16: SupportedEncoding.float32,
-}

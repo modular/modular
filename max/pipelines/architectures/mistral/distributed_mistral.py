@@ -56,6 +56,7 @@ class DistributedMistral(DistributedTransformer):
         distributed_norm = functools.partial(
             DistributedRMSNorm,
             dim=config.hidden_size,
+            dtype=config.dtype,
             eps=config.rms_norm_eps,
             devices=config.devices,
         )
