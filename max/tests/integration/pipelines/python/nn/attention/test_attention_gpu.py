@@ -304,6 +304,7 @@ class CrossAttentionModel:
         self.cross_attention = CrossSdpaAttention(
             config.num_attention_heads,
             kv_params,
+            layer_idx=0,
             q_proj=LinearV1(
                 Weight(
                     name="wq",
@@ -364,7 +365,6 @@ class CrossAttentionModel:
         """Builds the cross attention model graph."""
         kv_collection = self.fetch(*fetch_args)
         return self.cross_attention(
-            ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             hidden_states,
             hidden_input_row_offsets,
             hidden_max_seq_len,
