@@ -10,6 +10,8 @@ import enum
 from collections.abc import Mapping, Sequence
 from typing import overload
 
+from numpy.typing import ArrayLike
+
 class Agent:
     def __init__(self, name: str, config: AgentConfig) -> None: ...
     def get_available_plugins(self) -> list[str]: ...
@@ -149,14 +151,33 @@ class RegistrationDescriptorList:
     @overload
     def __init__(
         self, type: MemoryType, sorted: bool = False, init_size: int = 0
-    ) -> None: ...
+    ) -> None:
+        """
+        Constructs an empty descriptor list.
+
+        Args:
+          type: The type of memory each element describes
+          sorted: Initial value of the 'sorted' field
+          init_size: Initial capacity of the list
+        """
+
     @overload
     def __init__(
         self,
         type: MemoryType,
-        descs: Sequence[tuple[int, int, int, str]],
+        descs: list[ArrayLike | tuple[int, int, int, str]],
         sorted: bool = False,
-    ) -> None: ...
+    ) -> None:
+        """
+        Constructs a descriptor list with given values.
+
+        Args:
+          type: The type of memory each element describes
+          descs: A list of descriptors, each describing a section of memory.
+                 Each element is either a tuple or a dlpack object.
+          sorted: Whether to verify if the list is sorted or not.
+        """
+
     @property
     def type(self) -> MemoryType: ...
     @property
@@ -216,14 +237,33 @@ class TransferDescriptorList:
     @overload
     def __init__(
         self, type: MemoryType, sorted: bool = False, init_size: int = 0
-    ) -> None: ...
+    ) -> None:
+        """
+        Constructs an empty descriptor list.
+
+        Args:
+          type: The type of memory each element describes
+          sorted: Initial value of the 'sorted' field
+          init_size: Initial capacity of the list
+        """
+
     @overload
     def __init__(
         self,
         type: MemoryType,
-        descs: Sequence[tuple[int, int, int]],
+        descs: list[ArrayLike | tuple[int, int, int]],
         sorted: bool = False,
-    ) -> None: ...
+    ) -> None:
+        """
+        Constructs a descriptor list with given values.
+
+        Args:
+          type: The type of memory each element describes
+          descs: A list of descriptors, each describing a section of memory.
+                 Each element is either a tuple or a dlpack object.
+          sorted: Whether to verify if the list is sorted or not.
+        """
+
     @property
     def type(self) -> MemoryType: ...
     @property
