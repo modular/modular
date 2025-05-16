@@ -226,6 +226,8 @@ fn exclusivity[
 fn mutate_two[A: AnyType, B: AnyType](mut a: A, mut b: B):
     pass
 
+fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
+    pass
 
 fn mutate_two_AnyLifetime(
     ref [MutableAnyOrigin]a: Int, ref [MutableAnyOrigin]b: Int
@@ -259,8 +261,12 @@ fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_two(s.a, s)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s' memory accessed through reference embedded in value of type 'Int'}}
+    # expected-note @below {{'s.a' value is passed through aliasing 'mut' argument}}
     mutate_two(s, s.a)
+
+    # expected-error @below {{argument of 'mutate_one_read_one' call allows reading a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s.a' value is passed through aliasing 'read' argument}}
+    mutate_one_read_one(s, s.a)
 
     # expected-error @below {{argument of 'mutate_two_AnyLifetime' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'a' value is passed through aliasing 'ref' argument}}
@@ -305,7 +311,7 @@ fn capture_exclusivity(owned x: MemExample):
     fn capture_and_read(y: MemExample):
         _ = x^
 
-    # expected-error @below {{argument of call allows writing a memory location previously writable through implicit closure captures}}
+    # expected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
     # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
     capture_and_read(x)
 
