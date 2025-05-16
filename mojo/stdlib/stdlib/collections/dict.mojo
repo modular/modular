@@ -211,7 +211,8 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable](
     """
 
     var hash: UInt64
-    """`key.__hash__()`, stored so hashing isn't re-computed during dict lookup."""
+    """`key.__hash__()`, stored so hashing isn't re-computed during dict
+    lookup."""
     var key: K
     """The unique key for the entry."""
     var value: V
@@ -348,6 +349,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
 ):
     """A container that stores key-value pairs.
 
+    Parameters:
+        K: The type of the dictionary key. Must be `Hashable` and
+            `EqualityComparable` so we can find the key in the map.
+        V: The value type of the dictionary. Currently must be
+            Copyable & Movable.
+
     The key type and value type must be specified statically, unlike a Python
     dictionary, which can accept arbitrary key and value types.
 
@@ -369,11 +376,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
     print(d.pop("b"))  # prints 2
     print(len(d))      # prints 1
     ```
-
-    Parameters:
-        K: The type of the dictionary key. Must be Hashable and EqualityComparable
-           so we can find the key in the map.
-        V: The value type of the dictionary. Currently must be Copyable & Movable.
 
     For more information on the Mojo `Dict` type, see the
     [Mojo `Dict` manual](/mojo/manual/types/#dict). To learn more about using
@@ -494,7 +496,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         Args:
             power_of_two_initial_capacity: At least 8, has to be a power of two.
 
-        Example usage:
+        Examples:
 
         ```mojo
         from collections import Dict
@@ -502,7 +504,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         var x = Dict[Int, Int](power_of_two_initial_capacity = 1024)
         # Insert (2/3 of 1024) entries without reallocation.
         ```
-
         """
         debug_assert(
             power_of_two_initial_capacity.is_power_of_two()
@@ -666,7 +667,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         """Check if the dictionary is empty or not.
 
         Returns:
-            `False` if the dictionary is empty, `True` if there is at least one element.
+            `False` if the dictionary is empty, `True` if there is at least one
+            element.
         """
         return len(self).__bool__()
 
@@ -676,26 +678,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
     ](self: Dict[T, U]) -> String:
         """Returns a string representation of a `Dict`.
 
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        from collections import Dict
-
-        var my_dict = Dict[Int, Float64]()
-        my_dict[1] = 1.1
-        my_dict[2] = 2.2
-        dict_as_string = my_dict.__str__()
-        print(dict_as_string)
-        # prints "{1: 1.1, 2: 2.2}"
-        ```
-
-        When the compiler supports conditional methods, then a simple `String(my_dict)` will
-        be enough.
-
-        Note that both they keys and values' types must implement the `__repr__()` method
-        for this to work. See the `Representable` trait for more information.
-
         Parameters:
             T: The type of the keys in the Dict. Must implement the
                 traits `Representable` and `KeyElement`.
@@ -704,6 +686,24 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
 
         Returns:
             A string representation of the Dict.
+
+        Notes:
+            Since we can't condition methods on a trait yet, the way to call
+            this method is a bit special. Here is an example below:
+
+            ```mojo
+            from collections import Dict
+
+            var my_dict = Dict[Int, Float64]()
+            my_dict[1] = 1.1
+            my_dict[2] = 2.2
+            dict_as_string = my_dict.__str__()
+            print(dict_as_string)
+            # prints "{1: 1.1, 2: 2.2}"
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `String(my_dict)` will be enough.
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
         var result = String(capacity=minimum_capacity)
@@ -843,17 +843,19 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         raise "KeyError"
 
     fn popitem(mut self) raises -> DictEntry[K, V]:
-        """Remove and return a (key, value) pair from the dictionary. Pairs are returned in LIFO order.
-        popitem() is useful to destructively iterate over a dictionary, as often used in set algorithms.
-        If the dictionary is empty, calling popitem() raises a KeyError.
-
-        Args: None
+        """Remove and return a (key, value) pair from the dictionary.
 
         Returns:
             Last dictionary item
 
         Raises:
             "KeyError" if the dictionary is empty.
+
+        Notes:
+            Pairs are returned in LIFO order. popitem() is useful to
+            destructively iterate over a dictionary, as often used in set
+            algorithms. If the dictionary is empty, calling popitem() raises a
+            KeyError.
         """
 
         var key = Optional[K](None)
@@ -889,8 +891,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
     fn items(ref self) -> _DictEntryIter[K, V, __origin_of(self)]:
         """Iterate over the dict's entries as immutable references.
 
-        These can't yet be unpacked like Python dict items, but you can
-        access the key and value as attributes ie.
+        Returns:
+            An iterator of immutable references to the dictionary entries.
+
+        Examples:
 
         ```mojo
         from collections import Dict
@@ -903,17 +907,21 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             print(e[].key, e[].value)
         ```
 
-        Returns:
-            An iterator of immutable references to the dictionary entries.
+        Notes:
+            These can't yet be unpacked like Python dict items, but you can
+            access the key and value as attributes.
         """
         return _DictEntryIter(0, 0, self)
 
     fn update(mut self, other: Self, /):
-        """Update the dictionary with the key/value pairs from other, overwriting existing keys.
-        The argument must be positional only.
+        """Update the dictionary with the key/value pairs from other,
+        overwriting existing keys.
 
         Args:
             other: The dictionary to update from.
+
+        Notes:
+            The argument must be positional only.
         """
         for entry in other.items():
             self[entry[].key] = entry[].value
@@ -928,14 +936,16 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
     fn setdefault(
         mut self, key: K, owned default: V
     ) raises -> ref [self._find_ref(key)] V:
-        """Get a value from the dictionary by key, or set it to a default if it doesn't exist.
+        """Get a value from the dictionary by key, or set it to a default if it
+        doesn't exist.
 
         Args:
             key: The key to search for in the dictionary.
             default: The default value to set if the key is not present.
 
         Returns:
-            The value associated with the key, or the default value if it wasn't present.
+            The value associated with the key, or the default value if it wasn't
+            present.
         """
         try:
             return self._find_ref(key)
@@ -1055,12 +1065,12 @@ struct OwnedKwargsDict[V: Copyable & Movable](
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 
+    Parameters:
+        V: The value type of the dictionary. Currently must be Copyable & Movable.
+
     This type mimics the interface of a dictionary with `String` keys, and
     should be usable more-or-less like a dictionary. Notably, however, this type
     should not be instantiated directly by users.
-
-    Parameters:
-        V: The value type of the dictionary. Currently must be Copyable & Movable.
     """
 
     # Fields
@@ -1236,10 +1246,13 @@ struct OwnedKwargsDict[V: Copyable & Movable](
     fn items(
         ref self,
     ) -> _DictEntryIter[Self.key_type, V, __origin_of(self._dict)]:
-        """Iterate over the keyword dictionary's entries as immutable references.
+        """Iterate over the keyword dictionary's entries as immutable
+        references.
 
-        These can't yet be unpacked like Python dict items, but you can
-        access the key and value as attributes ie.
+        Returns:
+            An iterator of immutable references to the dictionary entries.
+
+        Examples:
 
         ```mojo
         from collections import Dict
@@ -1252,8 +1265,9 @@ struct OwnedKwargsDict[V: Copyable & Movable](
             print(e[].key, e[].value)
         ```
 
-        Returns:
-            An iterator of immutable references to the dictionary entries.
+        Notes:
+            These can't yet be unpacked like Python dict items, but you can
+            access the key and value as attributes.
         """
 
         # TODO(#36448): Use this instead of the current workaround
