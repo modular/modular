@@ -1582,6 +1582,25 @@ def test_python_object():
         _ = String(a)
 
 
+def test_copyinit():
+    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    assert_equal(len(sizes), 10)
+    var test_current_size = 1
+
+    @parameter
+    for sizes_index in range(len(sizes)):
+        alias current_size = sizes[sizes_index]
+        x = String("")
+        for i in range(current_size):
+            x += String(i)[0]
+        y = x
+        assert_equal(test_current_size, current_size)
+        assert_equal(len(y), current_size)
+        # TODO: check pointer equality?
+        test_current_size *= 2
+    assert_equal(test_current_size, 1024)
+
+
 def main():
     test_constructors()
     test_copy()
@@ -1630,3 +1649,4 @@ def main():
     test_variadic_ctors()
     test_sso()
     test_python_object()
+    test_copyinit()
