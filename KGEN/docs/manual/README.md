@@ -50,9 +50,9 @@ of LLVM IR.
 
 Useful background on MLIR:
 
-* [MLIR Documentation Overview](https://mlir.llvm.org/docs/)
-* [MLIR Language Reference](https://mlir.llvm.org/docs/LangRef/)
-* [Builtin Dialect](https://mlir.llvm.org/docs/Dialects/Builtin)
+- [MLIR Documentation Overview](https://mlir.llvm.org/docs/)
+- [MLIR Language Reference](https://mlir.llvm.org/docs/LangRef/)
+- [Builtin Dialect](https://mlir.llvm.org/docs/Dialects/Builtin)
 
 ### Mojo Dialects
 
@@ -74,23 +74,25 @@ Here we see instructions from two dialects (`lit` and `kgen`) working together.
 
 Some things from the `lit` dialect:
 
-* `lit.call` - A call operation.
-* `!lit.ref` - A reference type.
-* `!lit.trait` - A trait.
+- `lit.call` - A call operation.
+- `!lit.ref` - A reference type.
+- `!lit.trait` - A trait.
 
 Some things from the `kgen` dialect:
 
-* `!kgen.none` - The "none" type.
-* `!kgen.param.constant` - Makes a compile-time value.
+- `!kgen.none` - The "none" type.
+- `!kgen.param.constant` - Makes a compile-time value.
 
-(We'll cover these, the rest of the `lit`/`kgen` things, and things from other dialects further below.)
+(We'll cover these, the rest of the `lit`/`kgen` things, and things from other
+dialects further below.)
 
 Mojo has several dialects: `kgen`, `lit`, `kgen`, `pop`, and `hlcf`. KGEN IR
-also uses the upstream `index`, and `llvm` dialects.  The `lit` dialect should
-more properly be named `mojo` perhaps but currently reflects how “lit” Mojo is 🔥.
+also uses the upstream `index`, and `llvm` dialects. The `lit` dialect should
+more properly be named `mojo` perhaps but currently reflects how “lit” Mojo is
+🔥.
 
-`lit` is a high-level dialect for building kernel libraries.  It is lowered
-to `kgen` before elaboration. The `kgen` dialect is the canonical dialect for
+`lit` is a high-level dialect for building kernel libraries. It is lowered to
+`kgen` before elaboration. The `kgen` dialect is the canonical dialect for
 describing parametric IR. The dialect defines the parameter system and the
 types, attributes, and operations for interacting with parameters.
 
@@ -104,29 +106,33 @@ target-independent dialects used to build parametric kernels.
 
 In summary:
 
-* `lit` exist pre-elaboration. They are lowered to `kgen` and `pop`
-  before elaboration.
-* `kgen` contains all the instructions that must be understood and monomorphized
+- `lit` exist pre-elaboration. They are lowered to `kgen` and `pop` before
+  elaboration.
+- `kgen` contains all the instructions that must be understood and monomorphized
   by the elaborator.
-* `pop` exists pre and post elaboration. Operations in the dialect
-  become non-parametric post-elaboration. They are lowered to `llvm` when
-  executing kernels.
-* `index` and `hlcf` exist pre and post elaboration. They are lowered to `llvm`
+- `pop` exists pre and post elaboration. Operations in the dialect become
+  non-parametric post-elaboration. They are lowered to `llvm` when executing
+  kernels.
+- `index` and `hlcf` exist pre and post elaboration. They are lowered to `llvm`
   when executing kernels.
-* `llvm` can exist at all levels of KGEN IR to describe target-specific
+- `llvm` can exist at all levels of KGEN IR to describe target-specific
   operations, but then the kernel can only target LLVM.
 
 ### MLIR Guide
 
-* `%name` — A run-time value; an MLIR SSA value; the result of an MLIR operation.
-* `@name` — A [SymbolRefAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#symbolrefattr)
-* `!name` — An MLIR type.
-* `#expr` or `{expr}` — Compile-time data.
-* Anything else is an MLIR **operation.**
+- `%name` — A run-time value; an MLIR SSA value; the result of an MLIR
+  operation.
+- `@name` — A
+  [SymbolRefAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#symbolrefattr)
+- `!name` — An MLIR type.
+- `#expr` or `{expr}` — Compile-time data.
+- Anything else is an MLIR **operation.**
 
 All these are explained in the next sections.
 
-For now, forget about compile-time data (`#expr`), and pretend they only come into play with generics are involved. Let's start with a program that just uses run-time values, operations, and types.
+For now, forget about compile-time data (`#expr`), and pretend they only come
+into play with generics are involved. Let's start with a program that just uses
+run-time values, operations, and types.
 
 #### Operations, run-time values, and types
 
@@ -152,17 +158,21 @@ lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind 
 
 Here's what each of those lines means.
 
-`%x = lit.var.decl "x" var : !lit.ref<!Int, mut *"x``">`
+` %x = lit.var.decl "x" var : !lit.ref<!Int, mut *"x``"> `
 
-This is declaring a **run-time value** (or in other words an **MLIR SSA value**) named `%x`.
+This is declaring a **run-time value** (or in other words an **MLIR SSA value**)
+named `%x`.
 
-It will contain the result of `lit.var.decl "x" var` which is an **MLIR operation**. Every MLIR operation is followed by **operands**, like the `"x"` and `var` here.
+It will contain the result of `lit.var.decl "x" var` which is an **MLIR
+operation**. Every MLIR operation is followed by **operands**, like the `"x"`
+and `var` here.
 
-After that and the `:`, we specify the operations resulting **MLIR type**, `!lit.ref<!Int, mut *"x``">```.
+After that and the `:`, we specify the operations resulting **MLIR type**,
+`!lit.ref<!Int, mut \*"x``">```.
 
 Note that the type directly describes the operation's result specifically.
 
-`%x = ( lit.var.decl "x" var : !lit.ref<!Int, mut *"x``"> )`
+` %x = ( lit.var.decl "x" var : !lit.ref<!Int, mut *"x``"> ) `
 
 In our MLIR, the `%x =` is always the lowest precedence.
 
@@ -170,25 +180,35 @@ Now the next line:
 
 `%0 = kgen.param.constant: !Int = <{42}>`
 
-The `%0 =` is always the lowest precedence, so we first look at the `kgen.param.constant: !Int = <{42}>` part.
+The `%0 =` is always the lowest precedence, so we first look at the
+`kgen.param.constant: !Int = <{42}>` part.
 
-That `=` is not an assignment like the first `=`. One should interpret this like a (hypothetical) `kgen.param.constant <{42}> : !Int`.
+That `=` is not an assignment like the first `=`. One should interpret this like
+a (hypothetical) `kgen.param.constant <{42}> : !Int`.
 
-Since there's no `%`/`@`/`!`/`#`/`{` symbol in front of `kgen.param.constant`, it's an MLIR operation.
+Since there's no `%`/`@`/`!`/`#`/`{` symbol in front of `kgen.param.constant`,
+it's an MLIR operation.
 
-That operation's operand is `<{42}>`, which is how we write constants (and parameter expressions in general, but we'll get there later).
+That operation's operand is `<{42}>`, which is how we write constants (and
+parameter expressions in general, but we'll get there later).
 
 Now the next line:
 
-`lit.ref.store %0, %x : <!Int, mut *"x``">`
+` lit.ref.store %0, %x : <!Int, mut *"x``"> `
 
-This follows the same rules; The `lit.ref.store` operation takes operands `%0` and `%x`, and the operation's result type is `<!Int, mut *"x``">`. Let's explore that type a little more.
+This follows the same rules; The `lit.ref.store` operation takes operands `%0`
+and `%x`, and the operation's result type is ` <!Int, mut *"x``"> `. Let's
+explore that type a little more.
 
-For lit.ref.store specifically, the `<..., ...>` is actually shorthand for `!lit.ref<..., ...>`. So that line is more like:
+For lit.ref.store specifically, the `<..., ...>` is actually shorthand for
+`!lit.ref<..., ...>`. So that line is more like:
 
-`lit.ref.store %0, %x : !lit.ref<!Int, mut *"x``">`
+` lit.ref.store %0, %x : !lit.ref<!Int, mut *"x``"> `
 
-As you can see, there's a lot of context-dependent sugar in our MLIR. If you don't know what something means, ask in slack (and then add the answer to this guide!). Or, if you're feeling brave, you can try and trace the printing logic (usually in a *.td and its corresponding *.cpp file).
+As you can see, there's a lot of context-dependent sugar in our MLIR. If you
+don't know what something means, ask in slack (and then add the answer to this
+guide!). Or, if you're feeling brave, you can try and trace the printing logic
+(usually in a _.td and its corresponding_.cpp file).
 
 #### Symbols
 
@@ -220,13 +240,19 @@ Let's talk about this line:
 
 `%1 = lit.call @mymain::@"my_func(::Int)"(%0) : !lit.generator<("x": !Int) -> !kgen.none>`
 
-The `@mymain::@"my_func(::Int)"` is an **MLIR symbol ref**. It refers to something defined somewhere else.
+The `@mymain::@"my_func(::Int)"` is an **MLIR symbol ref**. It refers to
+something defined somewhere else.
 
-In the above `lit.call` line, the type after the `:` doesn't describe the operation's type, it describes the type of the symbol ref. In other words, that's `my_func`'s type, not the `lit.call`'s result type.
+In the above `lit.call` line, the type after the `:` doesn't describe the
+operation's type, it describes the type of the symbol ref. In other words,
+that's `my_func`'s type, not the `lit.call`'s result type.
 
 #### Compile-time Data
 
-Anything with a `#` in front of it (`#Thing`), or surrounded with curly braces like `{Thing}` is **compile-time data**, often referred to as an "attribute", "value", "constant", or "parameter". The terminology is confusing, so for now, just call it "compile-time data".
+Anything with a `#` in front of it (`#Thing`), or surrounded with curly braces
+like `{Thing}` is **compile-time data**, often referred to as an "attribute",
+"value", "constant", or "parameter". The terminology is confusing, so for now,
+just call it "compile-time data".
 
 Let's see some compile-time data. This program:
 
@@ -250,21 +276,25 @@ lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind 
 }
 ```
 
-Notice the `lit.call` line's new part: `<:!Int {73}>`. That `{73}` is making some compile-time data (`{73}`) of type `!Int`.
+Notice the `lit.call` line's new part: `<:!Int {73}>`. That `{73}` is making
+some compile-time data (`{73}`) of type `!Int`.
 
-We've also seen this before; `%0 = kgen.param.constant: !Int = <{42}>` had a `<{42}>` which was a compile-time data operand to the `kgen.param.constant` op, though that one didn't have the type (`:!Int`) in front.
+We've also seen this before; `%0 = kgen.param.constant: !Int = <{42}>` had a
+`<{42}>` which was a compile-time data operand to the `kgen.param.constant` op,
+though that one didn't have the type (`:!Int`) in front.
 
 All compile-time data has a type. We'll talk about that more further below.
 
 #### Compile-time Data Terminology: Parameters, Attributes, Constants, Values
 
 Every stage of the compiler, up to the elaborator, deals with Mojo's
-compile-time metaprogramming, and handling data at compile-time. We call that compile-time
-data "**parameters**".
+compile-time metaprogramming, and handling data at compile-time. We call that
+compile-time data "**parameters**".
 
 In Mojo, a "parameter" is not an argument. "Parameter" means compile-time data.
 
-More specifically, “parameter” means one of three things. For example, in this snippet:
+More specifically, “parameter” means one of three things. For example, in this
+snippet:
 
 ```mojo
 struct Foo[T: Stringable]:
@@ -274,64 +304,82 @@ fn main():
   var f = Foo[Int]()
 ```
 
-* A "parameter declaration" (or "param decl" or "input param"), is like the `T: Stringable` in that first line.
-* A "parameter reference" (or "param ref"), is like the mention of `T` in `var field: T`. It refers to a param decl.
-* A "parameter value" (or "param value"), is the `Int`.
+- A "parameter declaration" (or "param decl" or "input param"), is like the
+  `T: Stringable` in that first line.
+- A "parameter reference" (or "param ref"), is like the mention of `T` in
+  `var field: T`. It refers to a param decl.
+- A "parameter value" (or "param value"), is the `Int`.
 
-All of them in the same sentence: The param value `Int` is fed into `Foo`'s param decl `T: Stringable` and makes its way to the param ref `T` in `field: T`.
+All of them in the same sentence: The param value `Int` is fed into `Foo`'s
+param decl `T: Stringable` and makes its way to the param ref `T` in `field: T`.
 
-When people say “in parameter-space” or "in the parameter domain", that means “at compile time”.
+When people say “in parameter-space” or "in the parameter domain", that means
+“at compile time”.
 
 There can be subtle differences between the various terms:
 
- * "Attribute" refers to MLIR attributes. There are typed attributes and untyped attributes. All parameters are typed attributes, and most (but not all) typed attributes are parameters.
- * "Value" is often short for "parameter value", but in rare cases it can mean a run-time value.
- * "Constant" is equivalent to "parameter value", but probably refers to hard-coded parameter values.
+- "Attribute" refers to MLIR attributes. There are typed attributes and untyped
+  attributes. All parameters are typed attributes, and most (but not all) typed
+  attributes are parameters.
+- "Value" is often short for "parameter value", but in rare cases it can mean a
+  run-time value.
+- "Constant" is equivalent to "parameter value", but probably refers to
+  hard-coded parameter values.
 
 #### Compile-time Data Has Types Too
 
 In Mojo, compile-time data has types.
 
-Let's start by observing some things about C++. In C++, compile-time data _kind of_ has types.
+Let's start by observing some things about C++. In C++, compile-time data _kind
+of_ has types.
 
- * The `N` in `template<int N> ...` has type `Int`.
- * The `T` in `template<typename T>` kind of has a type, `typename`.
+- The `N` in `template<int N> ...` has type `Int`.
+- The `T` in `template<typename T>` kind of has a type, `typename`.
 
-This is not how Mojo works. However, **that is how kgen works.** kgen's `type` is basically C++'s `typename`.
+This is not how Mojo works. However, **that is how kgen works.** kgen's `type`
+is basically C++'s `typename`.
 
-Mojo itself is a bit more strict, to enable better type-checking (akin to Java generics) compared to C++'s "duck-typed" templates.
+Mojo itself is a bit more strict, to enable better type-checking (akin to Java
+generics) compared to C++'s "duck-typed" templates.
 
 In Mojo, we need to specify the rough shape of `T`, by specifying a trait.
 
-`template<int N, typename T> class Vec { ...` in C++ would therefore be equivalent to
+`template<int N, typename T> class Vec { ...` in C++ would therefore be
+equivalent to
 
 `struct Vec[N: Int, T: Copyable]: ...` in Mojo.
 
 In that `Vec`, we can say two things:
 
- * `N`'s type is `Int`.
- * `T`'s type is `Copyable`.
+- `N`'s type is `Int`.
+- `T`'s type is `Copyable`.
 
-"Type" is a relative term. `N`'s type is `Int`, and Int's type is something else, and that has a type, and so on. Everything has a type.
-
+"Type" is a relative term. `N`'s type is `Int`, and Int's type is something
+else, and that has a type, and so on. Everything has a type.
 
 #### "Metatype"
 
 We sometimes also talk about **metatypes**.
 
-A useful (but probably inaccurate) mental model is that a metatype is a specific trait (`Copyable`) or the type that describes all traits (`_AnyTypeMetaType`).
+A useful (but probably inaccurate) mental model is that a metatype is a specific
+trait (`Copyable`) or the type that describes all traits (`_AnyTypeMetaType`).
 
-Note that a trait's supertrait != the trait's metatype. If you have a `trait Spaceship(Launchable): ...`, `Launchable` isn't the metatype, it's the supertrait.
+Note that a trait's supertrait != the trait's metatype. If you have a
+`trait Spaceship(Launchable): ...`, `Launchable` isn't the metatype, it's the
+supertrait.
 
-For more on this interpretation, see [Mojo Type Taxonomy](https://docs.google.com/document/d/1TqQjyiJogQ6gPjmUEtO6Q7gLFs0edkU3lWCLSOt8QyY/edit?tab=t.0#heading=h.djo6baws2lua).
+For more on this interpretation, see
+[Mojo Type Taxonomy](https://docs.google.com/document/d/1TqQjyiJogQ6gPjmUEtO6Q7gLFs0edkU3lWCLSOt8QyY/edit?tab=t.0#heading=h.djo6baws2lua).
 
-However, if you want to go deeper than that mental model, then know that **a metatype is not actually a trait**.
+However, if you want to go deeper than that mental model, then know that **a
+metatype is not actually a trait**.
 
 It's easy to confuse traits and metatypes because there are some similarities:
 
- * Both metatypes and traits are a set of requirements.
- * There are subtyping relationships between traits.
- * They can both be used to the right of a `:` (see `VariadicPack`'s `_AnyTypeMetaType`)
+- Both metatypes and traits are a set of requirements.
+- There are subtyping relationships between traits.
+- They can both be used to the right of a `:` (see `VariadicPack`'s
+  `_AnyTypeMetaType`)
 
 But a metatype is actually a **set of requirements.**
 
@@ -344,7 +392,9 @@ struct Spaceship:
         ...
 ```
 
-The metatype describes "what it takes for a value to be" a `Spaceship`. In this case, it's that it must have been explicitly specifically declared to be a `Spaceship`, like `var s: Spaceship`.
+The metatype describes "what it takes for a value to be" a `Spaceship`. In this
+case, it's that it must have been explicitly specifically declared to be a
+`Spaceship`, like `var s: Spaceship`.
 
 The metatype for this trait:
 
@@ -356,33 +406,39 @@ trait Launchable:
 
 ...has a more complex metatype. To be a `Launchable`, a value can either be:
 
- * Any struct with a similar `launch` function (until we remove implicit conformance, that is).
- * Any struct that explicitly declares itself to conform to Launchable, like `struct Enterprise(Launchable): ...`
- * Any struct that indirectly conforms to Launchable, like `struct Enterprise(Constitution): ...` and `trait Constitution(Launchable): ...`.
+- Any struct with a similar `launch` function (until we remove implicit
+  conformance, that is).
+- Any struct that explicitly declares itself to conform to Launchable, like
+  `struct Enterprise(Launchable): ...`
+- Any struct that indirectly conforms to Launchable, like
+  `struct Enterprise(Constitution): ...` and
+  `trait Constitution(Launchable): ...`.
 
-A trait (like `Launchable`) is a collection of metatypes with a set of shared requirements. Here are some example metatypes for that trait:
+A trait (like `Launchable`) is a collection of metatypes with a set of shared
+requirements. Here are some example metatypes for that trait:
 
- * This metatype / these requirements:
-    * `fn launch(mut self)`
- * This metatype / these requirements:
-    * `fn launch(mut self)`
-    * `fn land(mut self)`
- * This metatype / these requirements:
-    * `fn launch(mut self)`
-    * `fn fire(mut self, num_missiles: Int)`
+- This metatype / these requirements:
+  - `fn launch(mut self)`
+- This metatype / these requirements:
+  - `fn launch(mut self)`
+  - `fn land(mut self)`
+- This metatype / these requirements:
+  - `fn launch(mut self)`
+  - `fn fire(mut self, num_missiles: Int)`
 
 Any type conforming to any of these metatypes can satisfy that trait.
 
-In a way, a trait is "all metatypes that have *at least* these requirements".
+In a way, a trait is "all metatypes that have _at least_ these requirements".
 
 #### Metatypes in KGEN
 
-There is only one trait/metatype in KGEN, `!kgen.type`, also known as TypeType. It's
-oftened shortened to just `type` in our MLIR.
+There is only one trait/metatype in KGEN, `!kgen.type`, also known as TypeType.
+It's oftened shortened to just `type` in our MLIR.
 
 Every trait in Mojo lowers to `!kgen.type`.
 
-All traits are metatypes. All traits lower to `type`. Therefore, **`type` = metatype**. Try not to think about it.
+All traits are metatypes. All traits lower to `type`. Therefore, **`type` =
+metatype**. Try not to think about it.
 
 In KGEN, `<x: type>` is exactly equivalent to `template<typename T>` in C++.
 
@@ -402,62 +458,74 @@ struct Flamscrankle[N: Int]:
 
 Here are involved concepts in those lines (not in order).
 
-* In `var x: Int = 42`:
-  * `42` is the “runtime value”
-  * `Int` is the “type”
-* In `var blork: Blork[N]`:
-  * `N` is a “parameter value”
-  * `N` is not a type (which makes sense, it’s declared as `N: Int` ).
-* In `fn foo[T: Stringable](x: T):`
-  * `x` is an “argument”. `x` is **not** a “parameter” ⚠️
-  * The first `T` is a “parameter decl”.
-  * The second `T` is a “parameter reference”.
-* In `struct Flamscrankle[N: Int]: ...`
-  * `N` here is a “parameter decl”.
-* Revisiting `fn foo[T: Stringable](x: T):`:
-  * In this case, the second mention of `T` is also a “type”.
-  * A “type” is a “parameter value”.
-    * Well, not technically, but it’s so easy to convert it that it basically is.
-  * A “parameter value” is **not** always a “type”. ⚠️ For example, `N` is a value that’s not a type.
-  * `Stringable` is a trait, but since it’s after `T:` we say it’s `T`'s “meta type”.
-  * `Stringable` is not a “type” *in this context specifically*. ⚠️ It’s a meta type.
-    * I like to think of it like: `Stringable` is a type, `: Stringable` is a meta type.
-  * Meta types are not values; meta types are not parameters.
-* Revisiting `var x: Int = 42` :
-  * `Int` is the “type”, but it’s **not** a “value”. A type is only a “value” when it’s in a parameter; only parameters have values.
-  * `x` is not a “value” (despite LLVM handling it with `LLVMValueRef`)
-* Revisiting `struct Flamscrankle[N: Int]: ...` :
-  * `Int` is a metatype in this context.
+- In `var x: Int = 42`:
+  - `42` is the “runtime value”
+  - `Int` is the “type”
+- In `var blork: Blork[N]`:
+  - `N` is a “parameter value”
+  - `N` is not a type (which makes sense, it’s declared as `N: Int` ).
+- In `fn foo[T: Stringable](x: T):`
+  - `x` is an “argument”. `x` is **not** a “parameter” ⚠️
+  - The first `T` is a “parameter decl”.
+  - The second `T` is a “parameter reference”.
+- In `struct Flamscrankle[N: Int]: ...`
+  - `N` here is a “parameter decl”.
+- Revisiting `fn foo[T: Stringable](x: T):`:
+  - In this case, the second mention of `T` is also a “type”.
+  - A “type” is a “parameter value”.
+    - Well, not technically, but it’s so easy to convert it that it basically
+      is.
+  - A “parameter value” is **not** always a “type”. ⚠️ For example, `N` is a
+    value that’s not a type.
+  - `Stringable` is a trait, but since it’s after `T:` we say it’s `T`'s “meta
+    type”.
+  - `Stringable` is not a “type” _in this context specifically_. ⚠️ It’s a meta
+    type.
+    - I like to think of it like: `Stringable` is a type, `: Stringable` is a
+      meta type.
+  - Meta types are not values; meta types are not parameters.
+- Revisiting `var x: Int = 42` :
+  - `Int` is the “type”, but it’s **not** a “value”. A type is only a “value”
+    when it’s in a parameter; only parameters have values.
+  - `x` is not a “value” (despite LLVM handling it with `LLVMValueRef`)
+- Revisiting `struct Flamscrankle[N: Int]: ...` :
+  - `Int` is a metatype in this context.
 
-See also [Modular Jargon, Slang and Lingo](https://www.notion.so/modularai/Modular-Jargon-Slang-and-Lingo-d71a8b9aad66401d914309cc2f3c3eca)
+See also
+[Modular Jargon, Slang and Lingo](https://www.notion.so/modularai/Modular-Jargon-Slang-and-Lingo-d71a8b9aad66401d914309cc2f3c3eca)
 
 More terms:
 
- * A "generator" is a function.
- * Everything in MLIR is either an **operation** or an **attribute**.
-    * An **operation** generally describes computation, like a a function or an
-      expression.
-       * And for some reason, structs and traits are also operations.
-    * An **attribute** is metadata, values, and flags.
-      * Pre-elaboration, an attribute is generally a parameter expression.
-      * Post-elaboration, an attribute is generally a parameter value.
- * "Bindings" are the mapping of a caller-supplied argument (or parameter) to
-   the callee's argument (or parameter) declaration. When calling
-   `foo[a: Int, b: Bool]()` like `foo[42, True]`, the bindings are `a=42` and
-   `b=True`.
- * Structs and functions can both have **signatures**. A signature is the name,
-   parameter types, and (if for a function) argument types.
+- A "generator" is a function.
+- Everything in MLIR is either an **operation** or an **attribute**.
+  - An **operation** generally describes computation, like a a function or an
+    expression.
+    - And for some reason, structs and traits are also operations.
+  - An **attribute** is metadata, values, and flags.
+    - Pre-elaboration, an attribute is generally a parameter expression.
+    - Post-elaboration, an attribute is generally a parameter value.
+- "Bindings" are the mapping of a caller-supplied argument (or parameter) to the
+  callee's argument (or parameter) declaration. When calling
+  `foo[a: Int, b: Bool]()` like `foo[42, True]`, the bindings are `a=42` and
+  `b=True`.
+- Structs and functions can both have **signatures**. A signature is the name,
+  parameter types, and (if for a function) argument types.
 
 We'll cover these more below:
 
-* POC — Parameter Operator Code
-* POG — Parameter or argument (also a joke by Jeff, as “pog” is a gaming term)
+- POC — Parameter Operator Code
+- POG — Parameter or argument (also a joke by Jeff, as “pog” is a gaming term)
 
 ### Parameter Operator Code
 
-Parameter Operator Code’s are named operations that are variants of the `POC` enum. POC defines the names of operations supported by the `#kgen.param.expr<op, args...>` MLIR attribute. This mechanism provides a way for Mojo code to query values from the compiler at compile time.
+Parameter Operator Code’s are named operations that are variants of the `POC`
+enum. POC defines the names of operations supported by the
+`#kgen.param.expr<op, args...>` MLIR attribute. This mechanism provides a way
+for Mojo code to query values from the compiler at compile time.
 
-This is used for a variety of reasons, from “simple” operations like `sizeof()`, to innovative use-cases like `compile_assembly` (a way to compile a Mojo function to assembly that is then embedded in the resulting binary).
+This is used for a variety of reasons, from “simple” operations like `sizeof()`,
+to innovative use-cases like `compile_assembly` (a way to compile a Mojo
+function to assembly that is then embedded in the resulting binary).
 
 <wolfram-cell ctext="Input07.wl" />
 
@@ -476,9 +544,12 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 
 ## Mojo ↔ IR Correspondence
 
-The goal of this section is to give you an intuition for how the same “thing” is modeled in each of those domains. As a very basic example, consider the question of how a named function call is represented.
+The goal of this section is to give you an intuition for how the same “thing” is
+modeled in each of those domains. As a very basic example, consider the question
+of how a named function call is represented.
 
-**In Mojo**, you can call any named function that is in scope, through its identifier:
+**In Mojo**, you can call any named function that is in scope, through its
+identifier:
 
 ```mojo
 fn foo():
@@ -488,7 +559,8 @@ fn bar():
 	pass
 ```
 
-**In MLIR code**, a named function is spelled as a @-prefixed “symbol reference”:
+**In MLIR code**, a named function is spelled as a @-prefixed “symbol
+reference”:
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -507,7 +579,6 @@ $ kgen-translate --import-mojo example.mojo
         }
       }
     }
-
 
 ### Parsing to IR
 
@@ -531,7 +602,6 @@ $ kgen-translate --import-mojo example.mojo
         }
       }
     }
-
 
 #### Argument Conventions
 
@@ -557,7 +627,6 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 ##### Inout
 
 ```python
@@ -579,7 +648,6 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
-
 
 ##### Owned
 
@@ -603,13 +671,11 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 #### Argument Conventions: Register Passability
 
       // PRECOMMIT: Subtle that args vs ret type convention is different for
       // register-passable vs register-passable trivial. Write about this in
       // compiler manual.
-
 
 #### Structs
 
@@ -641,7 +707,6 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
-
 
 ##### Struct Type Symbol Reference
 
@@ -682,7 +747,6 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 #### Aliases
 
 ```python
@@ -700,12 +764,10 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 #### Variable Declarations
 
     fn foo():
     	var x: Int = 5
-
 
 <wolfram-cell ctext="Input16.wl" />
 
@@ -724,7 +786,6 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
-
 
 #### Function Calls
 
@@ -748,8 +809,11 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
-When we see a “lit” instruction like `lit.call`, that’s not something built into MLIR, that’s something we define (in [KGEN/include/KGEN/LITDialect/LITOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/LITDialect/LITOps.td#L159) actually). Same with kgen instructions, which are defined in [KGEN/include/KGEN/KGENDialect/KGENOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/KGENDialect/KGENOps.td#L39).
+When we see a “lit” instruction like `lit.call`, that’s not something built into
+MLIR, that’s something we define (in
+[KGEN/include/KGEN/LITDialect/LITOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/LITDialect/LITOps.td#L159)
+actually). Same with kgen instructions, which are defined in
+[KGEN/include/KGEN/KGENDialect/KGENOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/KGENDialect/KGENOps.td#L39).
 
 <wolfram-cell ctext="Input18.wl" />
 
@@ -832,7 +896,6 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 #### Overloads
 
 ```python
@@ -880,12 +943,11 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 #### Variadics
 
-* `fn foo(*args: Int)`
+- `fn foo(*args: Int)`
 
-* `fn foo[T: Stringable](*args: T)`
+- `fn foo[T: Stringable](*args: T)`
 
 ##### `fn foo(*args: Int)`
 
@@ -909,7 +971,6 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 ##### `fn foo[T: Stringable](*args: T)`
 
 ```mojo
@@ -931,7 +992,6 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
-
 
 ##### `fn foo[T: Stringable](*args: *T)`
 
@@ -997,21 +1057,24 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 ### KGEN IR vs Generic MLIR
 
 #### MLIR IR By Example
 
-##### Typed Values:
+##### Typed Values
 
-Our `lit.struct` is both a type and a value. When prefixed by !, that indicates an MLIR type of the given name. When prefixed by #, that indicates an MLIR attribute value of the given name. In this way, separately sigiled names exist in independent name spaces in MLIR.
+Our `lit.struct` is both a type and a value. When prefixed by !, that indicates
+an MLIR type of the given name. When prefixed by #, that indicates an MLIR
+attribute value of the given name. In this way, separately sigiled names exist
+in independent name spaces in MLIR.
 
     #lit.struct<{value: i1 = 0}> : !lit.struct<@stdlib::@builtin::@bool::@Bool>
 
-
 #### Inlining Behavior
 
-Guaranteed inlining in Mojo enables a neat trick: you can return a pointer to stack-allocated data that is valid in the frame of the *caller*, as long as the function calling `stack_allocation()` is marked with `@always_inline`:
+Guaranteed inlining in Mojo enables a neat trick: you can return a pointer to
+stack-allocated data that is valid in the frame of the _caller_, as long as the
+function calling `stack_allocation()` is marked with `@always_inline`:
 
 ```python
 from memory import stack_allocation, UnsafePointer
@@ -1082,7 +1145,6 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 ```wolfram,cell:Input
 BuildSourceCode["Mojo"]
 ```
@@ -1091,19 +1153,22 @@ BuildSourceCode["Mojo"]
 
 ### IR Navigation Techniques
 
-Reading MLIR is often difficult, due to the verbose nature of IR. This section documents a few low-tech techniques for navigating IR.
+Reading MLIR is often difficult, due to the verbose nature of IR. This section
+documents a few low-tech techniques for navigating IR.
 
 #### Parsed IR
 
-* Grepping for a struct definition: `lit.struct.decl @Foo`
+- Grepping for a struct definition: `lit.struct.decl @Foo`
 
-* Grepping for a function definition: `lit.func @”foo(`
+- Grepping for a function definition: `lit.func @”foo(`
 
 #### Elaborated IR
 
 #### How method signatures vary based on value category
 
-The examples below show how the signature of the `copy()` method changes depending on whether a type is memory-only, register-passable, or register-passable trivial.
+The examples below show how the signature of the `copy()` method changes
+depending on whether a type is memory-only, register-passable, or
+register-passable trivial.
 
 ```mojo
 trait MyExplicitlyCopyable:
@@ -1167,7 +1232,6 @@ $ kgen-translate --import-mojo example.mojo
       lit.package @stdlib { }
     }
 
-
 ##### Register Passable (Non-Trivial)
 
 $ kgen-translate --import-mojo example.mojo
@@ -1217,7 +1281,6 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
-
 
 ##### Memory Only
 
@@ -1272,3 +1335,8 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
+
+## Debugging
+
+See [Parser Debugging](ParserDebugging.md). A lot of those tricks are applicable
+to other stages as well.
