@@ -22,3 +22,10 @@ fn test_unbound_pack_with_variadic():
 fn test_unbound_pack_arg():
     # expected-error @+1 {{unbound packs not supported yet in runtime arguments}}
     test_unbound_pack_arg(*_)
+
+
+fn test_unpack(d: Index):
+    # expected-error @+1 {{unpacked arguments are not supported yet}}
+    test_unpack(**d)
+    # expected-error @+1 {{unpacked arguments are not supported yet}}
+    test_unpack(*d)
