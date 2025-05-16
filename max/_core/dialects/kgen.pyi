@@ -588,13 +588,20 @@ class ConformanceOp(max._core.Operation):
     The `kgen.conformance` operation defines the conformance table of a struct
     type for a trait.
 
-    Its body contains the conformance table entries the map trait requirements to
-    the struct type's definitions.
+    Its body contains the conformance table entries that map trait requirements
+    to the struct type's definitions.
 
-    The optional `traitRef` parameter is a reference to the trait being
-    conformed to.
+    - The optional `traitRef` parameter is a reference to the trait being
+      conformed to.
+    - The `immediateParents` parameter contains the conformance tables that this
+      conformance table directly inherits from. It only includes the first level
+      of parents, not any further ancestors.
 
-    TODO: Support references to parent conformance tables.
+    Logically, a ConformanceOp represents a witness table whose contents is a
+    concatenation of each parent ConformanceOp's conformance table followed by
+    the entries of the ConformanceOp itself. The parent conformance tables are
+    ordered by the name of the ConformanceOps (also the order in
+    `immediateParents`).
 
     Example:
 
@@ -615,6 +622,7 @@ class ConformanceOp(max._core.Operation):
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
         trait_ref: max._core.dialects.builtin.SymbolRefAttr,
+        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
     ) -> None: ...
     @property
     def sym_name(self) -> str: ...
@@ -627,6 +635,14 @@ class ConformanceOp(max._core.Operation):
     @trait_ref.setter
     def trait_ref(
         self, arg: max._core.dialects.builtin.SymbolRefAttr, /
+    ) -> None: ...
+    @property
+    def immediate_parents(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    @immediate_parents.setter
+    def immediate_parents(
+        self, arg: max._core.dialects.m.SymbolRefArrayAttr, /
     ) -> None: ...
 
 class ContextuallyEvaluatedAttrInterface(Protocol):
