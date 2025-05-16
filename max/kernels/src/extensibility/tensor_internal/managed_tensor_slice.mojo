@@ -653,6 +653,10 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
+        constrained[
+            not static_spec.in_lambda,
+            "Direct load on fused tensor is forbidden",
+        ]()
         var offset = _dot_prod(indices, self.strides())
         return self._ptr[offset]
 
@@ -666,6 +670,10 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
+        constrained[
+            not static_spec.in_lambda,
+            "Direct load on fused tensor is forbidden",
+        ]()
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
         )
@@ -680,6 +688,10 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
+        constrained[
+            not static_spec.out_lambda,
+            "Direct store on fused tensor is forbidden",
+        ]()
         debug_assert(
             len(indices) == rank, "mismatch between requested index and rank"
         )
@@ -694,6 +706,10 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
+        constrained[
+            not static_spec.out_lambda,
+            "Direct store on fused tensor is forbidden",
+        ]()
         var offset = _dot_prod(indices, self.strides())
         self._ptr[offset] = val
 
