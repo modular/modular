@@ -10,7 +10,7 @@ import inspect
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Union
 
 from max import mlir
 from max.driver import Accelerator, Tensor, accelerator_count
@@ -29,6 +29,7 @@ from max.mlir import Context
 
 try:
     import torch
+    from torch._library.custom_ops import CustomOpDef
 except ImportError:
     raise ImportError(
         "torch not found - install `max[torch]` (if using pip/uv) or max-conda (if using magic/conda)"
@@ -39,6 +40,7 @@ class CustomOpLibrary:
     _context: Context
     _kernel_library: KernelLibrary
     _session: InferenceSession
+    _ops: dict[str, CustomOpDef]
 
     def __init__(self, kernel_library: Path | KernelLibrary):
         devices = [Accelerator(i) for i in range(accelerator_count())]
@@ -50,12 +52,15 @@ class CustomOpLibrary:
             else KernelLibrary(self._context, [kernel_library])
         )
         self._session = InferenceSession(devices=devices)
+        self._ops = {}
 
-    def __getattr__(self, attr: str):
-        if attr.startswith("_"):
-            return super().__getattribute__(attr)
-
-        return CustomOp(self, attr)
+    def __getattr__(self, attr: str) -> CustomOpDef:
+        compiled = self._ops
+        if not (result := compiled.get(attr)):
+            new_op = CustomOp(self, attr)
+            result = compile_custom_op(new_op)
+            compiled[attr] = result
+        return result
 
 
 @dataclass
@@ -166,6 +171,10 @@ def get_strings(attr: mlir.Attribute) -> list[str]:
     return [mlir.StringAttr(s).value for s in as_array]
 
 
+def num_outputs(op: mlir.Operation) -> int:
+    return mlir.IntegerAttr(op.attributes["mogg.num_dps_outputs"]).value
+
+
 def op_signature(op: mlir.Operation) -> inspect.Signature:
     """Compute the Python-level signature of the provided custom op.
 
@@ -185,9 +194,7 @@ def op_signature(op: mlir.Operation) -> inspect.Signature:
     """
 
     # TODO(GEX-2219): support non-dps outputs
-    num_dps_outputs = mlir.IntegerAttr(
-        op.attributes["mogg.num_dps_outputs"]
-    ).value
+    num_dps_outputs = num_outputs(op)
 
     # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
     # hard code MLIR attributes.
@@ -195,26 +202,20 @@ def op_signature(op: mlir.Operation) -> inspect.Signature:
     arg_names = get_strings(op.attributes["mogg.arg_src_names"])
     input_specs = io_specs[num_dps_outputs:]
     nargs = len(input_specs)
-    arg_names = arg_names[num_dps_outputs : num_dps_outputs + nargs]
     args = [
         inspect.Parameter(
             name,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
             annotation=torch.Tensor,
         )
-        for name in arg_names
+        for name in arg_names[: nargs + num_dps_outputs]
     ]
-    result_type = (
-        torch.Tensor
-        if num_dps_outputs == 1
-        else tuple([torch.Tensor] * num_dps_outputs)
-    )
-    return inspect.Signature(args, return_annotation=result_type)
+    return inspect.Signature(args, return_annotation=None)
 
 
 TorchTensors = Union[torch.Tensor, Sequence[torch.Tensor]]
 
-CompiledModelKey = tuple[tuple[mlir.Type, ...], tuple[mlir.Type, ...]]
+CompiledModelKey = tuple[mlir.Type, ...]
 ModelSignature = tuple[tuple[TensorType, ...], tuple[TensorType, ...]]
 
 
@@ -232,76 +233,50 @@ def model_signature(
 def model_key(
     context: mlir.Context,
     args: Iterable[torch.Tensor],
-    results: TorchTensors,
-) -> CompiledModelKey:
-    sig_args, sig_results = model_signature(args, results)
-
+) -> tuple[mlir.Type, ...]:
+    sig_args = tuple(torch_tensor_to_type(arg) for arg in args)
     with context:
         input_types = tuple(arg.to_mlir() for arg in sig_args)
-        result_types = tuple(result.to_mlir() for result in sig_results)
-    return (input_types, result_types)
+    return input_types
 
 
-def register_custom_op(op: CustomOp, name: Optional[str] = None):
+def compile_custom_op(op: CustomOp):
     # This will hold the compiled model once the registered fake tensor function
     # is invoked for the first time.
-    # model_cache = op.operation_cache
     model_cache: dict[CompiledModelKey, Model] = {}
-
-    # model: Optional[CompiledOperation] = None
-    registered_fake: Optional[Callable[..., TorchTensors]] = None
 
     signature: inspect.Signature = op_signature(op.kernel)
 
-    # Compile the model if it has not been compiled already.
-    def compile_model(*args: torch.Tensor) -> TorchTensors:
-        assert registered_fake is not None, (
-            "Must register_fake for pytorch custom op before compiling"
-        )
-        results = registered_fake(*args)
+    num_dps_outputs = num_outputs(op.kernel)
+    mutated_args = list(signature.parameters.keys())[:num_dps_outputs]
 
-        key = model_key(op.context, args, results)
-        if key not in model_cache:
-            sig = model_signature(args, results)
+    # Compile the model if it has not been compiled already.
+    def compile_model(*args: torch.Tensor) -> Model:
+        key = model_key(op.context, args)
+
+        if not (model := model_cache.get(key)):
+            sig = model_signature(
+                args[num_dps_outputs:], args[:num_dps_outputs]
+            )
             graph = custom_op_graph(op, *sig)
             model = op.library._session.load(graph)
             model_cache[key] = model
 
-        return results
+        return model
 
-    def custom_op(*args: torch.Tensor) -> TorchTensors:
+    def callable(*args: torch.Tensor):
         # In eager mode, the fake_tensor function will not be called,
         # so we call it here.
-        assert registered_fake is not None, (
-            "Must register_fake for pytorch custom op before invoking a "
-            "custom op"
-        )
-
         # registered_fake with real inputs will create buffers for the outputs
-        outputs = compile_model(*args)
-
-        model = model_cache[model_key(op.context, args, outputs)]
-
-        dps = outputs if isinstance(outputs, tuple) else (outputs,)
-        converted = map(Tensor.from_dlpack, (*dps, *args))
+        model = compile_model(*args)
+        converted = map(Tensor.from_dlpack, args)
         model(*converted)
-        return outputs
+        return None
 
-    custom_op.__signature__ = signature  # type: ignore
-    name = name or f"max::torch.{op.name}"
-    custom_op = torch.library.custom_op(name, custom_op, mutates_args=())
+    name = f"max::torch.{op.name}"
+    callable.__signature__ = signature  # type: ignore
+    custom_op = torch.library.custom_op(
+        name, callable, mutates_args=mutated_args
+    )
 
-    @custom_op.register_fake  # type: ignore
-    def fake_fn(*args: torch.Tensor):
-        assert registered_fake is not None, (
-            "Must register_fake for pytorch custom op before compiling"
-        )
-        return compile_model(*args)
-
-    def register_fake(fn):
-        nonlocal registered_fake
-        registered_fake = fn
-        return fn
-
-    custom_op.register_fake = register_fake  # type: ignore
     return custom_op
