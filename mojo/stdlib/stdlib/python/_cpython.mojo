@@ -76,7 +76,7 @@ alias newfunc = fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr
 
 
 # GIL
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PyGILState_STATE:
     """Represents the state of the Python Global Interpreter Lock (GIL).
@@ -101,7 +101,7 @@ struct PyThreadState:
     pass
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PyKeysValuePair:
     """Represents a key-value pair in a Python dictionary iteration.
@@ -120,7 +120,7 @@ struct PyKeysValuePair:
     """Indicates whether the iteration was successful."""
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PyObjectPtr(Copyable, Movable):
     """Equivalent to `PyObject*` in C.
@@ -246,9 +246,9 @@ struct PyObjectPtr(Copyable, Movable):
         return Int(self.unsized_obj_ptr)
 
 
-@value
+@fieldwise_init
 @register_passable
-struct PythonVersion:
+struct PythonVersion(Copyable, Movable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -300,7 +300,7 @@ fn _py_finalize(lib: DLHandle):
     lib.call["Py_Finalize"]()
 
 
-@value
+@fieldwise_init
 struct PyMethodDef(Copyable, Movable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
@@ -405,7 +405,7 @@ struct PyTypeObject:
     pass
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PyType_Spec:
     """Structure defining a type's behavior.
@@ -421,7 +421,7 @@ struct PyType_Spec:
     var slots: UnsafePointer[PyType_Slot]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct PyType_Slot(Copyable, Movable):
     """Structure defining optional functionality of a type, containing a slot ID
@@ -459,8 +459,8 @@ struct PyType_Slot(Copyable, Movable):
         return PyType_Slot(0, OpaquePointer())
 
 
-@value
-struct PyObject(Stringable, Representable, Writable):
+@fieldwise_init
+struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
     """All object types are extensions of this type. This is a type which
     contains the information Python needs to treat a pointer to an object as an
     object. In a normal “release” build, it contains only the object's reference
@@ -609,7 +609,7 @@ struct PyModuleDef_Base(Stringable, Representable, Writable):
         writer.write(")")
 
 
-@value
+@fieldwise_init
 struct PyModuleDef_Slot:
     """[Reference](
     https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot).
@@ -771,8 +771,8 @@ alias PyLong_FromSsize_t = ExternalFunction[
 ]
 
 
-@value
-struct CPython:
+@fieldwise_init
+struct CPython(Copyable, Movable):
     """Handle to the CPython interpreter present in the current process."""
 
     # ===-------------------------------------------------------------------===#
