@@ -38,6 +38,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/xxhash.h"
 #include "llvm/Target/TargetMachine.h"
 
 #define DEBUG_TYPE "kgen-compiler"
@@ -201,6 +202,14 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
       b.create<ParamConstantOp>(b.getAttr<NoneAttr>()).getResult());
 
   return {std::move(func), captures.size()};
+}
+
+static StringAttr getXXH3Hash(StringAttr strAttr) {
+  llvm::XXH128_hash_t hash =
+      llvm::xxh3_128bits(arrayRefFromStringRef(strAttr.getValue()));
+  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+  return StringAttr::get(llvm::toHex(hashStr, true),
+                         StringType::get(strAttr.getContext()));
 }
 
 static ElaboratorCompileOffloadRetType compileOffloads(
@@ -543,20 +552,23 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         auto populate = cast<FuncOp>(func.get());
         auto populateFnRef = SymbolConstantAttr::get(populate);
         DenseMap<EmitAs, StringAttr> contents;
+        DenseMap<EmitAs, StringAttr> moduleNames;
 
         for (auto kindAndContent : bufs) {
           EmitAs kind = kindAndContent.first;
-          contents.insert(
-              {kind,
-               StringAttr::get(kindAndContent.second->getBuffer(),
-                               StringType::get(theModule->getContext()))});
+          StringAttr content =
+              StringAttr::get(kindAndContent.second->getBuffer(),
+                              StringType::get(theModule->getContext()));
+          contents.insert({kind, content});
+          moduleNames.insert({kind, getXXH3Hash(content)});
         }
 
         targetResult.insert(
             {kernelID, OffloadCompilationResult{{std::move(func)},
                                                 b.getIndexAttr(numCaptures),
                                                 populateFnRef,
-                                                std::move(contents)}});
+                                                std::move(contents),
+                                                std::move(moduleNames)}});
       }
 
       // Reset the global llvm options once compiling this target is done.

@@ -137,6 +137,9 @@ struct OffloadCompilationResult {
   IntegerAttr numCaptures;
   SymbolConstantAttr populate;
   DenseMap<EmitAs, StringAttr> contents;
+
+  /// Hashed module name based on contents.
+  DenseMap<EmitAs, StringAttr> moduleNames;
 };
 
 using EmissionOptions = ArrayRef<StringRef>;

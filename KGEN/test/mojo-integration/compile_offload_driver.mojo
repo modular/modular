@@ -20,6 +20,7 @@ from collections.string.string_slice import StaticString, _get_kgen_string
 @register_passable("trivial")
 struct _Info:
     var kernel: __mlir_type.`!kgen.string`
+    var name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
 
 
@@ -27,6 +28,7 @@ struct _Info:
 @register_passable("trivial")
 struct Info:
     var kernel: StaticString
+    var name: StaticString
     var num_captures: Int
 
 
@@ -47,7 +49,9 @@ fn _compile_info[
         _type=_Info,
     ]()
 
-    return Info(kernel=info.kernel, num_captures=info.num_captures)
+    return Info(
+        kernel=info.kernel, name=info.name, num_captures=info.num_captures
+    )
 
 
 fn hello():
