@@ -366,8 +366,8 @@ fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
 @no_inline
 fn _mixed_precision_output_fusion_hook_impl[
     mut: Bool, //,
-    dst_type: DType,  # The concrete tensor storage DType.
-    src_type: DType,  # The DType used by lambda (before casting).
+    dst_type: DType,  # The DType after casting.
+    src_type: DType,  # The DType before casting.
     rank: Int,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[dst_type, rank],
@@ -391,6 +391,66 @@ fn _mixed_precision_output_fusion_hook_impl[
         ](
             static_spec,
             _output_lambda,
+        )
+    ]()
+
+
+@register_internal(
+    "rebuild_mix_precision_static_tensor_specs_with_input_lambda"
+)
+@no_inline
+fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
+    func_type: AnyTrivialRegType, //,
+    src_type: DType,
+    dst_type: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[src_type, rank],
+    in_lambda: func_type,
+    out result: StaticTensorSpec[dst_type, rank],
+):
+    return StaticTensorSpec[dst_type, rank](
+        shape=spec.shape,
+        strides=spec.strides,
+        alignment=spec.alignment,
+        address_space=spec.address_space,
+        exclusive=spec.exclusive,
+        in_lambda=rebind[result.in_lambda_t](in_lambda),
+        out_lambda=None,
+        out_compute_lambda=None,
+    )
+
+
+@__mogg_intrinsic_attr("mogg.dps_mixed_precision_input_fusion_hook")
+@register_internal("mogg.dps_mixed_precision_input_fusion_hook")
+@no_inline
+fn _mixed_precision_input_fusion_hook_impl[
+    mut: Bool, //,
+    dst_type: DType,  # The DType after casting.
+    src_type: DType,  # The DType before casting.
+    rank: Int,
+    io_spec: IOSpec[mut],
+    static_spec: StaticTensorSpec[src_type, rank],
+](
+    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
+) -> StaticTensorSpec[dst_type, rank]:
+    @always_inline
+    @parameter
+    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[dst_type, _w]:
+        # We use these methods to help with fusion passes which manipulates
+        # calls. It is helpful to have a registered function.
+        var v = rebind[SIMD[src_type, _w]](
+            simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
+        )
+        # .... compiler-generated-code here to bridge between src and dst_type
+        return rebind[SIMD[dst_type, _w]](v)
+
+    return _extract_tensor_spec[
+        rebuild_mix_precision_static_tensor_specs_with_input_lambda[
+            src_type, dst_type, rank
+        ](
+            static_spec,
+            _input_lambda,
         )
     ]()
 
