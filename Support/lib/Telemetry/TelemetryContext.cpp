@@ -213,10 +213,6 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
 
 TelemetryContext::TelemetryContext(
     Config &settings, const llvm::StringMap<AttributeValue> &resources) {
-  [[maybe_unused]] bool isProdBuild = false;
-#ifdef MODULAR_PRODUCTION
-  isProdBuild = true;
-#endif
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
   // -------- Resources --------
