@@ -219,11 +219,6 @@ The dialect supports various comparison operations:
    - `array.replace` - Replace array element
    - `array.gep` - Get element pointer
 
-### String Operations
-
-1. String Manipulation:
-   - `string.hash` - Hash string using XXH3
-
 ### Control Flow
 
 1. Selection:

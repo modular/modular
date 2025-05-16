@@ -271,9 +271,6 @@ fn compile_info[
     var result = Info[func_type, func, target](
         asm=offload.asm,
         function_name=get_linkage_name[target, func](),
-        # HACK: This is super low-level processing of !kgen.string values.
-        # pop.string.hash should move to an attribute representation or
-        # something.
         module_name=offload.module_name,
         num_captures=offload.num_captures,
     )
