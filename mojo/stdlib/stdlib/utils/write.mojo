@@ -409,9 +409,8 @@ fn write_buffered[
         var arg_bytes = _TotalWritableBytes()
         write_args(arg_bytes, args, sep=sep, end=end)
 
-        var buffer = _WriteBufferHeap(arg_bytes.size + 1)
+        var buffer = _WriteBufferHeap(arg_bytes.size)
         write_args(buffer, args, sep=sep, end=end)
-        buffer.data[buffer.pos] = 0
         writer.write_bytes(
             Span[Byte, ImmutableAnyOrigin](ptr=buffer.data, length=buffer.pos)
         )
