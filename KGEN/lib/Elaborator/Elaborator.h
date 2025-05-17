@@ -512,10 +512,6 @@ private:
 
   Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
 
-  /// Mutex to protect diagnostic handler in MLIRContext. Mutex must be locked
-  /// for a short period of time and only to set diagnostics.
-  std::mutex scopedDiagnosticHandleMutex;
-
   friend class IREvaluator;
 };
 

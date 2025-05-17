@@ -5,22 +5,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/DiagnosticHandler.h"
+#include "llvm/Support/Threading.h"
 
 using namespace M;
 
-DiagnosticHandler::DiagnosticHandler(MLIRContext *ctx) : ctx(ctx) {
+DiagnosticHandler::DiagnosticHandler(MLIRContext *ctx, bool capturePerThread)
+    : ctx(ctx), capturePerThread(capturePerThread) {
+  threadID = llvm::get_threadid();
   handlerID = ctx->getDiagEngine().registerHandler([this](Diagnostic &diag) {
-    // Filter out processing diag that is does not have the same handlerID.
-    auto shouldProcess = [handlerID =
-                              this->handlerID](mlir::DiagnosticArgument &arg) {
-      return (arg.getKind() ==
-                  mlir::DiagnosticArgument::DiagnosticArgumentKind::Unsigned &&
-              arg.getAsUnsigned() == handlerID);
-    };
-
-    SmallVectorImpl<mlir::DiagnosticArgument> &metadata = diag.getMetadata();
-
-    if (llvm::any_of(metadata, shouldProcess)) {
+    if (!this->capturePerThread || this->threadID == llvm::get_threadid()) {
       diagnostics.push_back(std::move(diag));
       return mlir::success();
     }

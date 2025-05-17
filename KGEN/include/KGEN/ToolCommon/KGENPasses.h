@@ -149,7 +149,7 @@ using EmissionOptions = ArrayRef<StringRef>;
 using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr, EmitAs, EmissionOptions, CompilationOptions,
-    ElaborateGeneratorsOptions, mlir::DiagnosticEngine::HandlerID);
+    ElaborateGeneratorsOptions);
 
 /// Function to prepare slice and compile the generator to its offload target
 /// with the provided input parameters and target. The actual compilation
@@ -165,8 +165,7 @@ using ElaboratorCompileOffloadRetType = ErrorOr<DenseMap<
 using ElaboratorCompileOffloadFn = ElaboratorCompileOffloadRetType (*)(
     ModuleOp module,
     llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
-    const SymbolTable &, CompilationOptions, ElaborateGeneratorsOptions,
-    mlir::DiagnosticEngine::HandlerID);
+    const SymbolTable &, CompilationOptions, ElaborateGeneratorsOptions);
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

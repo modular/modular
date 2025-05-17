@@ -216,7 +216,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     ModuleOp theModule,
     llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
     const SymbolTable &symtab, CompilationOptions compilationOptions,
-    ElaborateGeneratorsOptions elabOptions, mlir::DiagnosticEngine::HandlerID);
+    ElaborateGeneratorsOptions elabOptions);
 
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and
@@ -225,8 +225,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     EmissionOptions emissionOptions, CompilationOptions compilationOptions,
-    ElaborateGeneratorsOptions elaboratorOptions,
-    mlir::DiagnosticEngine::HandlerID diagHandlerID) {
+    ElaborateGeneratorsOptions elaboratorOptions) {
   // Configure the compilation options given the new target.
   compilationOptions.targetTriple = target.getTripleStr();
   compilationOptions.targetCpu = target.getArch();
@@ -350,7 +349,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     ModuleOp theModule,
     llvm::MapVector<TargetInfoAttr, OffloadInfo> &targetOffloadInfos,
     const SymbolTable &symtab, CompilationOptions compilationOptions,
-    ElaborateGeneratorsOptions elabOptions, mlir::DiagnosticEngine::HandlerID) {
+    ElaborateGeneratorsOptions elabOptions) {
 
   DenseMap<TargetInfoAttr,
            DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
