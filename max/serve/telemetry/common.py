@@ -87,7 +87,7 @@ logs_resource = Resource.create(
         "cpu.description": platform.processor(),
         "cpu.arch": platform.architecture()[0],
         # MAGIC-55: disable gpu info for now
-        # Because it initilizes the CUDA driver in the API process
+        # Because it initializes the CUDA driver in the API process
         # while we initialize models in the Model worker process
         # CUDA doesn't like it and crashes.
         # "system.gpu": _getGPUInfo(),
