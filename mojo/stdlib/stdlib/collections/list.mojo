@@ -46,8 +46,8 @@ struct _ListIter[
     Parameters:
         list_mutability: Whether the reference to the list is mutable.
         T: The type of the elements in the list.
-        hint_trivial_type: Set to `True` if the type `T` is trivial, this is not mandatory,
-            but it helps performance. Will go away in the future.
+        hint_trivial_type: Set to `True` if the type `T` is trivial, this is not
+            mandatory, but it helps performance. Will go away in the future.
         list_origin: The origin of the List
         forward: The iteration direction. `False` is backwards.
     """
@@ -90,13 +90,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 ):
     """The `List` type is a dynamically-allocated list.
 
-    It supports pushing and popping from the back resizing the underlying
-    storage as needed.  When it is deallocated, it frees its memory.
-
     Parameters:
         T: The type of the elements.
         hint_trivial_type: A hint to the compiler that the type T is trivial.
             It's not mandatory, but if set, it allows some optimizations.
+
+    Notes:
+        It supports pushing and popping from the back resizing the underlying
+        storage as needed.  When it is deallocated, it frees its memory.
     """
 
     # Fields
@@ -232,13 +233,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are equal.
 
-        Examples:
-        ```mojo
-        var x = List[Int](1, 2, 3)
-        var y = List[Int](1, 2, 3)
-        if x == y: print("x and y are equal")
-        ```
-
         Parameters:
             U: The type of the elements in the list. Must implement the
                trait `EqualityComparable`.
@@ -248,6 +242,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Returns:
             True if the lists are equal, False otherwise.
+
+        Examples:
+
+        ```mojo
+        var x = List[Int](1, 2, 3)
+        var y = List[Int](1, 2, 3)
+        print("x and y are equal" if x == y else "x and y are not equal")
+        ```
         """
         if len(self) != len(other):
             return False
@@ -264,14 +266,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
-        Examples:
-
-        ```mojo
-        var x = List[Int](1, 2, 3)
-        var y = List[Int](1, 2, 4)
-        if x != y: print("x and y are not equal")
-        ```
-
         Parameters:
             U: The type of the elements in the list. Must implement the
                trait `EqualityComparable`.
@@ -281,6 +275,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Returns:
             True if the lists are not equal, False otherwise.
+
+        Examples:
+
+        ```mojo
+        var x = List[Int](1, 2, 3)
+        var y = List[Int](1, 2, 4)
+        print("x and y are not equal" if x != y else "x and y are equal")
+        ```
         """
         return not (self == other)
 
@@ -289,10 +291,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
-        ```mojo
-        var x = List[Int](1,2,3)
-        if 3 in x: print("x contains 3")
-        ```
         Parameters:
             U: The type of the elements in the list. Must implement the
               trait `EqualityComparable`.
@@ -302,6 +300,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Returns:
             True if the value is contained in the list, False otherwise.
+
+        Examples:
+
+        ```mojo
+        var x = List[Int](1,2,3)
+        print("x contains 3" if 3 in x else "x does not contain 3")
+        ```
         """
         for i in self:
             if i[] == value:
@@ -348,7 +353,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """Concatenates self with other and returns the result as a new list.
 
         Args:
-            other: List whose elements will be combined with the elements of self.
+            other: List whose elements will be combined with the elements of
+                self.
 
         Returns:
             The newly created list.
@@ -400,7 +406,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """Checks whether the list has any elements or not.
 
         Returns:
-            `False` if the list is empty, `True` if there is at least one element.
+            `False` if the list is empty, `True` if there is at least one
+            element.
         """
         return len(self) > 0
 
@@ -410,25 +417,25 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        var my_list = List[Int](1, 2, 3)
-        print(my_list.__str__())
-        ```
-
-        When the compiler supports conditional methods, then a simple `String(my_list)` will
-        be enough.
-
-        The elements' type must implement the `__repr__()` method for this to work.
-
         Parameters:
             U: The type of the elements in the list. Must implement the
               trait `Representable`.
 
         Returns:
             A string representation of the list.
+
+        Notes:
+            Note that since we can't condition methods on a trait yet,
+            the way to call this method is a bit special. Here is an example
+            below:
+
+            ```mojo
+            var my_list = List[Int](1, 2, 3)
+            print(my_list.__str__())
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `String(my_list)` will be enough.
         """
         # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
         var l = len(self)
@@ -444,7 +451,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Parameters:
             W: A type conforming to the Writable trait.
-            U: The type of the List elements. Must have the trait `Representable`.
+            U: The type of the List elements. Must have the trait
+                `Representable`.
 
         Args:
             writer: The object to write to.
@@ -462,25 +470,24 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below:
-
-        ```mojo
-        var my_list = List[Int](1, 2, 3)
-        print(my_list.__repr__())
-        ```
-
-        When the compiler supports conditional methods, then a simple `repr(my_list)` will
-        be enough.
-
-        The elements' type must implement the `__repr__()` for this to work.
-
         Parameters:
             U: The type of the elements in the list. Must implement the
               trait `Representable`.
 
         Returns:
             A string representation of the list.
+
+        Notes:
+            Note that since we can't condition methods on a trait yet, the way
+            to call this method is a bit special. Here is an example below:
+
+            ```mojo
+            var my_list = List[Int](1, 2, 3)
+            print(my_list.__repr__())
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `repr(my_list)` will be enough.
         """
         return self.__str__()
 
@@ -583,7 +590,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """Extends this list by consuming the elements of `other`.
 
         Args:
-            other: List whose elements will be added in order at the end of this list.
+            other: List whose elements will be added in order at the end of this
+                list.
         """
 
         var other_len = len(other)
@@ -641,7 +649,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Args:
             value: The value to append.
             count: The ammount of items to append. Must be less than or equal to
-                   `value.size`.
+                `value.size`.
 
         Notes:
             If there is no capacity left, resizes to `len(self) + count`.
@@ -695,11 +703,12 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
 
-        If the current capacity is greater or equal, this is a no-op.
-        Otherwise, the storage is reallocated and the date is moved.
-
         Args:
             new_capacity: The new capacity.
+
+        Notes:
+            If the current capacity is greater or equal, this is a no-op.
+            Otherwise, the storage is reallocated and the date is moved.
         """
         if self.capacity >= new_capacity:
             return
@@ -708,13 +717,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     fn resize(mut self, new_size: Int, value: T):
         """Resizes the list to the given new size.
 
-        If the new size is smaller than the current one, elements at the end
-        are discarded. If the new size is larger than the current one, the
-        list is appended with new values elements up to the requested size.
-
         Args:
             new_size: The new size.
             value: The value to use to populate new elements.
+
+        Notes:
+            If the new size is smaller than the current one, elements at the end
+            are discarded. If the new size is larger than the current one, the
+            list is appended with new values elements up to the requested size.
         """
         if new_size <= self._len:
             self.shrink(new_size)
@@ -744,11 +754,12 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     fn shrink(mut self, new_size: Int):
         """Resizes to the given new size which must be <= the current size.
 
-        With no new value provided, the new size must be smaller than or equal
-        to the current one. Elements at the end are discarded.
-
         Args:
             new_size: The new size.
+
+        Notes:
+            With no new value provided, the new size must be smaller than or
+            equal to the current one. Elements at the end are discarded.
         """
         if len(self) < new_size:
             abort(
@@ -794,14 +805,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         start: Int = 0,
         stop: Optional[Int] = None,
     ) raises -> Int:
-        """
-        Returns the index of the first occurrence of a value in a list
+        """Returns the index of the first occurrence of a value in a list
         restricted by the range given the start and stop bounds.
-
-        ```mojo
-        var my_list = List[Int](1, 2, 3)
-        print(my_list.index(2)) # prints `1`
-        ```
 
         Args:
             value: The value to search for.
@@ -819,6 +824,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Raises:
             ValueError: If the value is not found in the list.
+
+        Examples:
+
+        ```mojo
+        var my_list = List[Int](1, 2, 3)
+        print(my_list.index(2)) # prints `1`
+        ```
         """
         var start_normalized = start
 
@@ -847,15 +859,16 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ](self: List[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
 
-        This function will return an unspecified index if `self` is not
-        sorted in ascending order.
-
         Args:
             needle: The value to binary search for.
 
         Returns:
             Returns None if `needle` is not present, or if `self` was not
             sorted.
+
+        Notes:
+            This function will return an unspecified index if `self` is not
+            sorted in ascending order.
         """
         var cursor = UInt(0)
         var b = self.data
@@ -944,20 +957,21 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:
         """Get a reference to an element of self without checking index bounds.
 
-        Users should consider using `__getitem__` instead of this method as it
-        is unsafe. If an index is out of bounds, this method will not abort, it
-        will be considered undefined behavior.
-
-        Note that there is no wraparound for negative indices, caution is
-        advised. Using negative indices is considered undefined behavior. Never
-        use `my_list.unsafe_get(-1)` to get the last element of the list.
-        Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
-
         Args:
             idx: The index of the element to get.
 
         Returns:
             A reference to the element at the given index.
+
+        Notes:
+            Users should consider using `__getitem__` instead of this method as
+            it is unsafe. If an index is out of bounds, this method will not
+            abort, it will be considered undefined behavior.
+
+            Note that there is no wraparound for negative indices, caution is
+            advised. Using negative indices is considered undefined behavior.
+            Never use `my_list.unsafe_get(-1)` to get the last element of the
+            list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
         debug_assert(
             0 <= idx < len(self),
@@ -972,18 +986,19 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     fn unsafe_set(mut self, idx: Int, owned value: T):
         """Write a value to a given location without checking index bounds.
 
-        Users should consider using `my_list[idx] = value` instead of this method as it
-        is unsafe. If an index is out of bounds, this method will not abort, it
-        will be considered undefined behavior.
-
-        Note that there is no wraparound for negative indices, caution is
-        advised. Using negative indices is considered undefined behavior. Never
-        use `my_list.unsafe_set(-1, value)` to set the last element of the list.
-        Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
-
         Args:
             idx: The index of the element to set.
             value: The value to set.
+
+        Notes:
+            Users should consider using `my_list[idx] = value` instead of this
+            method as it is unsafe. If an index is out of bounds, this method
+            will not abort, it will be considered undefined behavior.
+
+            Note that there is no wraparound for negative indices, caution is
+            advised. Using negative indices is considered undefined behavior.
+            Never use `my_list.unsafe_set(-1, value)` to set the last element of
+            the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         debug_assert(
             0 <= idx < len(self),
@@ -999,20 +1014,10 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         T: EqualityComparable & Copyable & Movable, //
     ](self: List[T, *_], value: T) -> Int:
         """Counts the number of occurrences of a value in the list.
-        Note that since we can't condition methods on a trait yet,
-        the way to call this method is a bit special. Here is an example below.
-
-        ```mojo
-        var my_list = List[Int](1, 2, 3)
-        print(my_list.count(1))
-        ```
-
-        When the compiler supports conditional methods, then a simple `my_list.count(1)` will
-        be enough.
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-              trait `EqualityComparable`.
+                trait `EqualityComparable`.
 
         Args:
             value: The value to count.
@@ -1029,18 +1034,21 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     fn swap_elements(mut self, elt_idx_1: Int, elt_idx_2: Int):
         """Swaps elements at the specified indexes if they are different.
 
+        Args:
+            elt_idx_1: The index of one element.
+            elt_idx_2: The index of the other element.
+
+        Examples:
+
         ```mojo
         var my_list = List[Int](1, 2, 3)
         my_list.swap_elements(0, 2)
         print(my_list.__str__()) # 3, 2, 1
         ```
 
-        This is useful because `swap(my_list[i], my_list[j])` cannot be
-        supported by Mojo, because a mutable alias may be formed.
-
-        Args:
-            elt_idx_1: The index of one element.
-            elt_idx_2: The index of the other element.
+        Notes:
+            This is useful because `swap(my_list[i], my_list[j])` cannot be
+            supported by Mojo, because a mutable alias may be formed.
         """
         debug_assert(
             0 <= elt_idx_1 < len(self) and 0 <= elt_idx_2 < len(self),
@@ -1078,12 +1086,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     ]:
         """Retrieves a pointer to the next uninitialized element position.
 
-        This returns a pointer that points to the element position immediately
-        after the last initialized element.
-
-        This is equivalent to `list.unsafe_ptr() + len(list)`.
-
-        # Safety
+        Safety:
 
         - This pointer MUST not be used to read or write memory beyond the
         allocated capacity of this list.
@@ -1091,6 +1094,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         - Ensure that `List._len` is updated to reflect the new number of
           initialized elements, otherwise elements may be unexpectedly
           overwritten or not destroyed correctly.
+
+        Notes:
+            This returns a pointer that points to the element position immediately
+            after the last initialized element. This is equivalent to
+            `list.unsafe_ptr() + len(list)`.
         """
         debug_assert(
             self.capacity > 0 and self.capacity > self._len,
