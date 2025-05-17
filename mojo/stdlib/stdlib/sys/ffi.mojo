@@ -162,7 +162,6 @@ struct _OwnedDLHandle(Movable):
         return self._handle
 
 
-@value
 @register_passable("trivial")
 struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
     """Represents a dynamically linked library that can be loaded and unloaded.

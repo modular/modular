@@ -51,8 +51,7 @@ alias SEEK_END: UInt8 = 2
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct _dirent_linux:
+struct _dirent_linux(Copyable, Movable):
     alias MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
@@ -66,8 +65,7 @@ struct _dirent_linux:
     """Name of entry."""
 
 
-@value
-struct _dirent_macos:
+struct _dirent_macos(Copyable, Movable):
     alias MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""

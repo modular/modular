@@ -79,8 +79,8 @@ alias OptimizationLevel = _OptimizationLevel()
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct _DebugLevel(Stringable, Writable):
+@fieldwise_init
+struct _DebugLevel(Copyable, Movable, Stringable, Writable):
     """Represents the debug level used during compilation.
 
     The debug level is determined by the __DEBUG_LEVEL environment variable,

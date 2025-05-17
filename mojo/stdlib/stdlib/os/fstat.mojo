@@ -45,8 +45,7 @@ fn _constrain_unix():
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct stat_result(Stringable, Writable):
+struct stat_result(Copyable, Movable, Stringable, Writable):
     """Object whose fields correspond  to the members of the stat structure."""
 
     var st_mode: Int
