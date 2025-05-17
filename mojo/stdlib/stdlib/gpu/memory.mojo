@@ -1901,26 +1901,5 @@ fn _get_type_mnemonic[type: DType]() -> StaticString:
 
 
 fn _int_to_str[val: Int]() -> StaticString:
-    """Converts specific integer values to their string representation."""
-
-    @parameter
-    if val == 1:
-        return "1"
-    elif val == 2:
-        return "2"
-    elif val == 4:
-        return "4"
-    elif val == 8:
-        return "8"
-    elif val == 16:
-        return "16"
-    elif val == 32:
-        return "32"
-    elif val == 64:
-        return "64"
-    elif val == 128:
-        return "128"
-    elif val == 256:
-        return "256"
-
+    """Converts an integer value to a static string."""
     return get_static_string[String(val)]()
