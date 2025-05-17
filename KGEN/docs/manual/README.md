@@ -582,32 +582,6 @@ Some miscellaneous other terms:
 - POG — Parameter or argument (also a joke by Jeff, as
   [“pog” is a gaming term](https://modular-ai.slack.com/archives/C03GM7S2VMZ/p1736555603471169?thread_ts=1736479123.803939&cid=C03GM7S2VMZ))
 
-### Parameter Operator Code
-
-Parameter Operator Code’s are named operations that are variants of the `POC`
-enum. POC defines the names of operations supported by the
-`#kgen.param.expr<op, args...>` MLIR attribute. This mechanism provides a way
-for Mojo code to query values from the compiler at compile time.
-
-This is used for a variety of reasons, from “simple” operations like `sizeof()`,
-to innovative use-cases like `compile_assembly` (a way to compile a Mojo
-function to assembly that is then embedded in the resulting binary).
-
-<wolfram-cell ctext="Input07.wl" />
-
-```
-def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
-  /// Fully associative variadic expressions.
-  I32EnumAttrCase<"Add", 0, "add">,
-  I32EnumAttrCase<"Mul", 1, "mul">,
-  I32EnumAttrCase<"MulNuw", 2, "mul_nuw">,
-  I32EnumAttrCase<"And", 3, "and">,
-  I32EnumAttrCase<"Or",  4, "or">,
-  I32EnumAttrCase<"Xor", 5, "xor">,
-  I32EnumAttrCase<"Max", 6, "max">,
-  I32EnumAttrCase<"Min", 7, "min">,
-```
-
 ## Mojo ↔ IR ↔ C++ Correspondence
 
 The goal of this section is to give you an intuition for how the same “thing” is
