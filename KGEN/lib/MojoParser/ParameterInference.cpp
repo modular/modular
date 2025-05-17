@@ -1022,7 +1022,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (auto initValue = operand.ir.getIfInitializer()) {
     FailureOr<PValue> initFn = OverloadSet::canConstructType(
         getPartiallySpecializedType().getWithoutParameters(shared),
-        CallOperands(initValue.get()), operand.expr, declScope,
+        CallOperands(initValue->get()), operand.expr, declScope,
         /*isImplicitConversion=*/false);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
