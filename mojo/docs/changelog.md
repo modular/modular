@@ -49,6 +49,9 @@ what we publish.
 
 - `try` and `raise` now work at comptime.
 
+- List literals are being redesigned and are temporarily disabled. The
+  `ListLiteral` type has been removed.
+
 ### Standard library changes
 
 - The `CollectionElement` trait has been removed.

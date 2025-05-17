@@ -67,8 +67,7 @@ from builtin.int import (
 from builtin.int_literal import IntLiteral
 from builtin.io import input, print
 from builtin.len import Sized, SizedRaising, UIntSized, len
-from builtin.list_literal import (
-    ListLiteral,
+from builtin.variadics import (
     VariadicList,
     VariadicListMem,
     VariadicPack,

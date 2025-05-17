@@ -10,123 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the ListLiteral class.
+"""Implements the VariadicList and VariadicPack types.
 
 These are Mojo built-ins, so you don't need to import them.
 """
 
 from memory import Pointer, UnsafePointer
-
-# ===-----------------------------------------------------------------------===#
-# ListLiteral
-# ===-----------------------------------------------------------------------===#
-
-
-struct ListLiteral[*Ts: Copyable & Movable](Sized, Copyable, Movable):
-    """The type of a literal heterogeneous list expression.
-
-    A list consists of zero or more values, separated by commas.
-
-    Parameters:
-        Ts: The type of the elements.
-    """
-
-    var storage: Tuple[*Ts]
-    """The underlying storage for the list."""
-
-    # ===-------------------------------------------------------------------===#
-    # Life cycle methods
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn __init__(out self, owned *args: *Ts):
-        """Construct the list literal from the given values.
-
-        Args:
-            args: The init values.
-        """
-        self.storage = Tuple(storage=args^)
-
-    @always_inline
-    fn __copyinit__(out self, existing: Self):
-        """Copy construct the tuple.
-
-        Args:
-            existing: The value to copy from.
-        """
-        self.storage = existing.storage
-
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        return self
-
-    fn __moveinit__(out self, owned existing: Self):
-        """Move construct the list.
-
-        Args:
-            existing: The value to move from.
-        """
-
-        self.storage = existing.storage^
-
-    # ===-------------------------------------------------------------------===#
-    # Trait implementations
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn __len__(self) -> Int:
-        """Get the list length.
-
-        Returns:
-            The length of this ListLiteral.
-        """
-        return len(self.storage)
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    # FIXME: This should have a getitem like Tuple does, not a "get" method.
-    @always_inline
-    fn get[i: Int, T: Copyable & Movable](self) -> ref [self.storage] T:
-        """Get a list element at the given index.
-
-        Parameters:
-            i: The element index.
-            T: The element type.
-
-        Returns:
-            The element at the given index.
-        """
-        return rebind[T](self.storage[i])
-
-    # ===-------------------------------------------------------------------===#
-    # Operator dunders
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn __contains__[
-        T: EqualityComparable & Copyable & Movable
-    ](self, value: T) -> Bool:
-        """Determines if a given value exists in the ListLiteral.
-
-        Parameters:
-            T: The type of the value to search for. Must implement the
-              `EqualityComparable` trait.
-
-        Args:
-            value: The value to search for in the ListLiteral.
-
-        Returns:
-            True if the value is found in the ListLiteral, False otherwise.
-        """
-        return value in self.storage
-
 
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem

@@ -1000,10 +1000,12 @@ fn create_tile_configs[
         num_k_partitions=1,
         num_warp_k_partitions=1,
     )
-    """
-    The except is a dead branch, it will not execute because if the input is not in the dictionary, then the check_in_dict function will have already raised an error. 
-    The only reason the except here exists is because the compiler does not allow a direct return because a dictionary could, in theory, return an error.
-    """
+
+    # The except is a dead branch, it will not execute because if the input is
+    # not in the dictionary, then the check_in_dict function will have already
+    # raised an error. The only reason the except here exists is because the
+    # compiler does not allow a direct return because a dictionary could, in
+    # theory, return an error.
     try:
         return tile_configs[input]
     except not_here:
