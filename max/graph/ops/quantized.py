@@ -50,6 +50,9 @@ def _repack_quantized_weights(
     )[0].tensor
 
 
+# TODO(E2EOPT-243): gptq models actually have a dtype of float16 not bfloat16.
+# Sadly, MMA does not support float16 currently, so we must use bfloat16 for
+# now.
 MODE_TO_DTYPE = {"gptq": DType.bfloat16, "vroom": DType.float32}
 
 
