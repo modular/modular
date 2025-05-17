@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 fn var_let_decls():
@@ -17,9 +17,8 @@ fn var_let_decls():
     alias il = 43
 
     # CHECK: %yy = lit.var.decl "yy" var
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: {{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<1|1>>
-    # CHECK: %[[V3:.*]] = lit.call {{.*}}SIMD::@"__init__{{.*}}([[TMP]])
-    # CHECK: lit.ref.store %[[V3]], %yy
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !FloatDyn = <{:scalar<f64> "1"}> 
+    # CHECK: lit.ref.store [[TMP]], %yy
     var yy = 1.0
 
     # CHECK: lit.alias.decl {{.*}}fl1{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<2|1>> = <*?>
