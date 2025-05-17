@@ -14,8 +14,9 @@
 from __future__ import annotations
 
 import numpy as np
+from max.dtype import DType
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, SupportedEncoding
 from transformers import LlamaConfig
 
 # Maps from Safetensor to MAX weight names.
@@ -45,6 +46,20 @@ def convert_safetensor_state_dict(
                 new_state_dict[key] = WeightData.from_numpy(
                     np.argsort(weight_data.data).astype(np.int32), key
                 )
+    if (
+        pipeline_config.model_config.quantization_encoding
+        == SupportedEncoding.gptq
+    ):
+        for key, weight_data in new_state_dict.items():
+            # TODO(E2EOPT-243): gptq models actually have a dtype of float16
+            # not bfloat16. Sadly, MMA does not support float16 currently, so
+            # we must use bfloat16 for now.
+            # That said, leave scale and bias in float16 (apparently that is
+            # needed for correctness). The rest must be converted to bfloat16.
+            if weight_data.dtype == DType.float16 and not (
+                key.endswith("bias") or key.endswith("scales")
+            ):
+                new_state_dict[key] = weight_data.astype(DType.bfloat16)
     return new_state_dict
 
 

@@ -93,10 +93,16 @@ class Llama4DecoderLayer(Module):
                 devices=config.devices,
             )
         self.input_layernorm = DistributedRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps, devices=config.devices
+            config.hidden_size,
+            eps=config.rms_norm_eps,
+            dtype=config.dtype,
+            devices=config.devices,
         )
         self.post_attention_layernorm = DistributedRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps, devices=config.devices
+            config.hidden_size,
+            eps=config.rms_norm_eps,
+            dtype=config.dtype,
+            devices=config.devices,
         )
         self.devices = devices
 
@@ -152,7 +158,10 @@ class Llama4TextModel(Module):
             ]
         )
         self.norm = DistributedRMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps, devices=config.devices
+            config.hidden_size,
+            eps=config.rms_norm_eps,
+            dtype=config.dtype,
+            devices=config.devices,
         )
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,

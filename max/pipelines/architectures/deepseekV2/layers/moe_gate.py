@@ -75,7 +75,7 @@ class MaxMoEGate(Module):
         self.gate_score = Linear(
             in_dim=gating_dim,
             out_dim=n_routed_experts,
-            dtype=DType.float32,
+            dtype=DType.bfloat16,
             device=device,
             has_bias=False,
         )
@@ -102,7 +102,7 @@ class MaxMoEGate(Module):
         """
 
         # compute gating score
-        logits = self.gate_score(hidden_states.cast(DType.float32))
+        logits = self.gate_score(hidden_states)
         scores = ops.softmax(logits.cast(DType.float32))
 
         # select top k experts
