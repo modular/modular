@@ -1,6 +1,6 @@
 """Define the Mojo toolchain"""
 
-MOJO_VERSION = "25.4.0.dev2025051505"
+MOJO_VERSION = "25.4.0.dev2025051623"
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
