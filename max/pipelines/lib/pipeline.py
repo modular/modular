@@ -29,6 +29,7 @@ from typing import (
     runtime_checkable,
 )
 
+import numpy as np
 import torch
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
@@ -676,12 +677,75 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )
 
     @traced
+    def _build_token_frequency_csr(
+        self, batch: list[T], padding_size: int
+    ) -> tuple[Tensor, Tensor]:
+        """Build a CSR matrix of token frequency in the batch.
+        The original matrix is (batch_size, vocab_size), where each element is
+        the number of times a token appears in the batch.
+
+        The CSR representation consists of three arrays:
+        - frequency_row_offsets: 1D array of the starting index of each row in
+        the data array.
+        - token_frequency_pairs[:, 0]: 1D array of the column indices of the
+        non-zero elements in the data array.
+        - token_frequency_pairs[:, 1]: 1D array of the non-zero elements in the
+         matrix (data array).
+        """
+        tracer: Tracer = Tracer("build_token_frequency_csr")
+
+        PADDING_TOKEN = -1
+
+        frequency_row_offsets = np.zeros(len(batch) + 1, dtype=np.uint32)
+        # Calculate max size needed for token frequency pairs
+        total_tokens = sum(
+            len(context.generated_tokens) + padding_size for context in batch
+        )
+        token_frequency_pairs = np.zeros((total_tokens, 2), dtype=np.int32)
+
+        tracer.next("build_token_frequency_csr_loop")
+        for i, context in enumerate(batch):
+            unique_tokens, counts = np.unique(
+                context.generated_tokens, return_counts=True
+            )
+            # Pad the tokens and counts to reserve space for new tokens
+            unique_tokens = np.pad(
+                unique_tokens,
+                (0, padding_size),
+                mode="constant",
+                constant_values=PADDING_TOKEN,
+            )
+            counts = np.pad(
+                counts, (0, padding_size), mode="constant", constant_values=0
+            )
+            frequency_row_offsets[i + 1] = frequency_row_offsets[i] + len(
+                unique_tokens
+            )
+            token_frequency_pairs[
+                frequency_row_offsets[i] : frequency_row_offsets[i + 1], 0
+            ] = unique_tokens
+            token_frequency_pairs[
+                frequency_row_offsets[i] : frequency_row_offsets[i + 1], 1
+            ] = counts
+
+        token_frequency_pairs = token_frequency_pairs[
+            : frequency_row_offsets[-1], :
+        ]
+
+        return Tensor.from_dlpack(token_frequency_pairs).to(
+            self._devices[0]
+        ), Tensor.from_dlpack(frequency_row_offsets).to(self._devices[0])
+
+    @traced
     def sample_logits(
         self,
         logits: Tensor,
         prev_tokens: Tensor,
         logit_offsets: Optional[Tensor],
         bitmask: Optional[Tensor],
+        *,
+        token_frequency_data: Optional[Tensor] = None,
+        token_frequency_row_offsets: Optional[Tensor] = None,
     ) -> tuple[Tensor, Tensor]:
         graph_inputs = [logits, prev_tokens]
 
@@ -690,6 +754,12 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         if bitmask:
             graph_inputs.append(bitmask)
+
+        if token_frequency_data:
+            graph_inputs.append(token_frequency_data)
+
+        if token_frequency_row_offsets:
+            graph_inputs.append(token_frequency_row_offsets)
 
         a, b = self._sampler(*graph_inputs)[:2]
         assert isinstance(a, Tensor)
@@ -730,6 +800,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
             device=self._devices[0],
         )
 
+        if self._pipeline_config.sampling_config.do_penalties:
+            token_frequency_data, token_frequency_row_offsets = (
+                self._build_token_frequency_csr(context_batch, num_steps)
+            )
+        else:
+            token_frequency_data = None
+            token_frequency_row_offsets = None
+
         curr_step_inputs = model_inputs
         batch_log_probabilities = []
         tracer.next(f"multistep_execution_loop_{num_steps}_steps")
@@ -760,6 +838,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 generated_tokens,
                 model_outputs.logit_offsets,
                 bitmask,
+                token_frequency_data=token_frequency_data,
+                token_frequency_row_offsets=token_frequency_row_offsets,
             )
 
             assert isinstance(new_tokens, Tensor)

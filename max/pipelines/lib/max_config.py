@@ -115,6 +115,15 @@ class SamplingConfig(MAXConfig):
     out_dtype: DType = DType.float32
     """The data type of the output logits."""
 
+    frequency_penalty: float = 0.0
+    """The frequency penalty to apply to the model's output. A positive value will penalize new tokens
+    based on their frequency in the generated text: tokens will receive a penalty proportional to the
+    count of appearances."""
+
+    presence_penalty: float = 0.0
+    """The presence penalty to apply to the model's output. A positive value will penalize new tokens
+    that have already appeared in the generated text at least once by applying a constant penalty."""
+
     enable_structured_output: bool = False
     """Enable structured generation/guided decoding for the server. This allows the user to pass a json
     schema in the response_format field, which the LLM will adhere to."""
@@ -124,11 +133,16 @@ class SamplingConfig(MAXConfig):
     their associated logit_offsets. This is needed to produce additional logits for echo and speculative
     decoding purposes."""
 
+    do_penalties: bool = False
+    """Whether to apply frequency and presence penalties to the model's output."""
+
     @staticmethod
     def help() -> dict[str, str]:
         return {
             "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
             "temperature": "Controls the randomness of the model's output; higher values produce more diverse responses.",
+            "frequency_penalty": "The frequency penalty to apply to the model's output. A positive value will penalize new tokens based on their frequency in the generated text: tokens will receive a penalty proportional to the count of appearances.",
+            "presence_penalty": "The presence penalty to apply to the model's output. A positive value will penalize new tokens that have already appeared in the generated text at least once by applying a constant penalty.",
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
         }
 

@@ -293,6 +293,16 @@ class PipelineConfig(MAXConfig):
                     "enable_structured_output is not currently supported on CPU."
                 )
 
+        if (
+            self.sampling_config.frequency_penalty != 0
+            or self.sampling_config.presence_penalty != 0
+        ):
+            if self.draft_model_config:
+                raise ValueError(
+                    "frequency_penalty and presence_penalty are not currently supported with speculative decoding."
+                )
+            self.sampling_config.do_penalties = True
+
         # Run Baseline Validation
         self._validate_and_resolve_remaining_pipeline_config(self.model_config)
 

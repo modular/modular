@@ -10,11 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 """Token sampling algorithms."""
 
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, TensorValue, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Dim,
+    Graph,
+    Shape,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn.sampling import RejectionSampler
 
 from .max_config import SamplingConfig
@@ -22,19 +32,19 @@ from .max_config import SamplingConfig
 
 def _sampling_input_types(
     sampling_config: SamplingConfig, return_logits: bool, device: DeviceRef
-) -> dict[str, TensorType]:
-    inputs = {}
+) -> dict[str, TensorType | BufferType]:
+    inputs: dict[str, TensorType | BufferType] = {}
 
     # Logits are always provided
     if sampling_config.enable_variable_logits:
-        logits_in_type = TensorType(
+        logits_in_type = BufferType(
             sampling_config.in_dtype,
             ["total_output_len", "vocab_size"],
             device=device,
         )
         inputs["logits"] = logits_in_type
     else:
-        logits_in_type = TensorType(
+        logits_in_type = BufferType(
             sampling_config.in_dtype,
             ["batch", "vocab_size"],
             device=device,
@@ -68,6 +78,18 @@ def _sampling_input_types(
         )
         inputs["bitmask"] = bitmask_type
 
+    # If we have frequency or presence penalties enabled
+    if sampling_config.do_penalties:
+        compressed_frequency_data_type = BufferType(
+            DType.int32, ["unique_tokens", 2], device=device
+        )
+        inputs["compressed_frequency_data"] = compressed_frequency_data_type
+
+        frequency_offsets_type = TensorType(
+            DType.uint32, ["batch_add_1"], device=device
+        )
+        inputs["frequency_offsets"] = frequency_offsets_type
+
     return inputs
 
 
@@ -84,9 +106,40 @@ def token_sampler(
         # TODO: Explore better ways of indexing into these input values
         # tightly coupling the input order with element indices feels
         # quite brittle.
-        logits = graph.inputs[list(_input_dict).index("logits")].tensor
+        logits_buffer = graph.inputs[list(_input_dict).index("logits")].buffer
+        if sampling_config.do_penalties:
+            compressed_frequency_data = graph.inputs[
+                list(_input_dict).index("compressed_frequency_data")
+            ].buffer
 
+            frequency_offsets = graph.inputs[
+                list(_input_dict).index("frequency_offsets")
+            ].tensor
+
+            ops.inplace_custom(
+                "sampler.apply_penalties",
+                values=[
+                    logits_buffer,
+                    ops.buffer_load(compressed_frequency_data),
+                    frequency_offsets,
+                    ops.constant(
+                        sampling_config.frequency_penalty,
+                        DType.float32,
+                        device=DeviceRef.CPU(),
+                    ),
+                    ops.constant(
+                        sampling_config.presence_penalty,
+                        DType.float32,
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+                device=device,
+            )
+
+        # freeze the logits buffer (no more writes)
+        logits = ops.buffer_load(logits_buffer)
         logits = ops.cast(logits, sampling_config.out_dtype)
+
         prev_tokens = graph.inputs[
             list(_input_dict).index("prev_tokens")
         ].tensor
@@ -132,6 +185,17 @@ def token_sampler(
             [TensorType(DType.int64, shape, device=device)],
         )[0]
         assert isinstance(tokens, TensorValue)
+
+        if sampling_config.do_penalties:
+            ops.inplace_custom(
+                "sampler.update_frequency_data",
+                values=[
+                    compressed_frequency_data,
+                    frequency_offsets,
+                    ops.squeeze(tokens, axis=1),
+                ],
+                device=device,
+            )
 
         # Concat tokens to previous tokens.
         all_tokens = ops.concat([prev_tokens, tokens], -1)
