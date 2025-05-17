@@ -62,7 +62,6 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-@value
 struct Codepoint(
     Copyable,
     Movable,

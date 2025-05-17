@@ -13,15 +13,19 @@
 """This module includes utilities for working with the SM100 MMA instructions."""
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import DEFAULT_GPU_ARCH, B200, Info
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
+from utils.index import IndexList
+from sys._assembly import inlined_assembly
+from sys.info import _has_blackwell_tcgen05
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct UMMAKind(Stringable, Writable):
     """Struct for UMMA instruction types.
@@ -42,15 +46,6 @@ struct UMMAKind(Stringable, Writable):
 
     alias KIND_I8 = Self(4)
     """i8 type"""
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        """Initialize UMMA kind with an integer value.
-
-        Args:
-            value: The integer value representing the UMMA instruction type.
-        """
-        self._value = value
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -845,7 +840,7 @@ struct MMASmemDescriptor:
         alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
         # Extract 18 bits and ignore 4 LSB.
-        var base_ptr = UInt64(smem_ptr)
+        var base_ptr = UInt32(Int(smem_ptr))
         var start_address = UInt64((base_ptr & 0x3FFFF) >> 4)
 
         # Ignore 4 LSB.
@@ -892,3 +887,136 @@ struct MMASmemDescriptor:
             New descriptor with updated base address.
         """
         return self.desc + ((offset & 0x3FFFF) >> 4)
+
+
+# ===----------------------------------------------------------------------=== #
+# UMMA
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn mma[
+    kind: UMMAKind, //,
+    cta_group: Int = 1,
+    /,
+    *,
+    c_scale: UInt32 = 1,
+](
+    a_desc: MMASmemDescriptor,
+    b_desc: MMASmemDescriptor,
+    c_tmem: UInt32,
+    inst_desc: UMMAInsDescriptor[kind],
+):
+    """Perform a matrix multiply-accumulate operation using the tcgen05.mma instruction.
+
+    Parameters:
+        kind: Data type of the matrices.
+        cta_group: Number of ctas used by MMA.
+        c_scale: Scale factor for the C matrix, 0 or 1.
+
+    Args:
+        a_desc: The descriptor for the A matrix.
+        b_desc: The descriptor for the B matrix.
+        c_tmem: The address of the C matrix in the tensor memory.
+        inst_desc: The descriptor for the MMA instruction.
+    """
+    constrained[
+        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
+    ]()
+
+    constrained[
+        c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
+    ]()
+
+    @parameter
+    if cta_group == 1:
+        var masks = IndexList[4, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::1."""
+            + String(kind)
+            + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
+            }""",
+            NoneType,
+            constraints="r,l,l,r,n,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+        )
+    elif cta_group == 2:
+        var masks = IndexList[8, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::2."""
+            + String(kind)
+            + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+            }""",
+            NoneType,
+            constraints="r,l,l,r,n,r,r,r,r,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+            masks[4],
+            masks[5],
+            masks[6],
+            masks[7],
+        )
+    else:
+        constrained[False, String("Unsupported cta group: ", cta_group)]()
+
+
+# ===----------------------------------------------------------------------=== #
+# UMMA Sync
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn mma_arrive[
+    cta_group: Int = 1,
+](mbar_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED, *_, **_],):
+    """Arrive at the mbar pointer for the MMA instruction.
+
+    Parameters:
+        cta_group: Number of ctas used by MMA.
+
+    Args:
+        mbar_ptr: Pointer to the mbar.
+    """
+
+    constrained[
+        cta_group == 1 or cta_group == 2,
+        String("Unsupported cta group: ", cta_group),
+    ]()
+
+    alias type = mbar_ptr.type
+    constrained[sizeof[type]() == 8, "mbar_ptr must be 8 bytes"]()
+
+    alias cta_str = "cta_group::" + String(cta_group)
+
+    inlined_assembly[
+        "tcgen05.commit."
+        + cta_str
+        + ".mbarrier::arrive::one.shared::cluster.b64 [$0];",
+        NoneType,
+        constraints="r",
+    ](Int32(Int(mbar_ptr)))

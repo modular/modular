@@ -37,8 +37,6 @@ from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
     CacheEviction,
-    async_copy_commit_group,
-    async_copy_wait_all,
     external_memory,
 )
 from gpu.sync import async_copy_arrive, named_barrier

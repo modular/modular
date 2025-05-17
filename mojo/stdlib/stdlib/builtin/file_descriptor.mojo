@@ -39,7 +39,6 @@ from builtin.io import _printf
 from memory import Span, UnsafePointer
 
 
-@value
 @register_passable("trivial")
 struct FileDescriptor(Writer):
     """File descriptor of a file."""

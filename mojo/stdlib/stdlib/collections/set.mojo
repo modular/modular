@@ -88,14 +88,6 @@ struct Set[T: KeyElement](
         for e in elements:
             self.add(e[])
 
-    fn __moveinit__(out self, owned other: Self):
-        """Move constructor.
-
-        Args:
-            other: The existing Set instance to move from.
-        """
-        self._data = other._data^
-
     fn __copyinit__(out self, other: Self):
         """Copy constructor.
 

@@ -14,58 +14,8 @@
 
 from os.atomic import Atomic
 
-from runtime.asyncrt import create_task, run
+from runtime.asyncrt import create_task
 from testing import assert_true
-
-
-# CHECK-LABEL: test_sync_coro
-fn test_sync_coro():
-    print("== test_sync_coro")
-
-    @parameter
-    async fn test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
-        return lhs + rhs
-
-    @parameter
-    async fn test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
-        return await test_asyncrt_add[5](a) + await test_asyncrt_add[2](b)
-
-    # CHECK: 57
-    print(run(test_asyncrt_add_two_of_them(20, 30)))
-
-
-fn test_sync_raising_coro():
-    # CHECK: == test_sync_raising_coro
-    print("== test_sync_raising_coro")
-
-    # FIXME(#26008): Raising async functions do not work.
-    # @parameter
-    # async fn might_throw(a: Int) raises -> Int:
-    #    if a > 10:
-    #        raise Error("oops")
-    #    return a + 1
-
-    # @parameter
-    # async fn also_might_throw(a: Int) raises -> Int:
-    #    if a == 20:
-    #        raise Error("doh!")
-    #    return await might_throw(a) + 100
-
-    # try:
-    #    print(also_might_throw(20)())
-    # except e:
-    #    # XCHECK-NEXT: doh!
-    #    print(e)
-    # try:
-    #    print(also_might_throw(25)())
-    # except e:
-    #    # XCHECK-NEXT: oops
-    #    print(e)
-    # try:
-    #    # XCHECK-NEXT: 102
-    #    print(also_might_throw(1)())
-    # except:
-    #    pass
 
 
 # CHECK-LABEL: test_runtime_task
@@ -108,7 +58,5 @@ fn test_runtime_taskgroup():
 
 
 def main():
-    test_sync_coro()
-    test_sync_raising_coro()
     test_runtime_task()
     test_runtime_taskgroup()

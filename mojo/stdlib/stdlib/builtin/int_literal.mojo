@@ -15,7 +15,6 @@
 from math import Ceilable, Floorable, Truncable
 
 
-@value
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](

@@ -45,7 +45,7 @@ def test_bool():
     assert_false(c)
     c["a"] = 1
     assert_true(c)
-    c.pop("a")
+    _ = c.pop("a")
     assert_false(c)
 
 
@@ -91,10 +91,11 @@ def test_counter_construction():
     _ = Counter[Int]()
     _ = Counter[Int](List[Int]())
     _ = Counter[String](List[String]())
+    _ = Counter[Int](1, 2)
 
 
 def test_counter_getitem():
-    c = Counter[Int](List[Int](1, 2, 2, 3, 3, 3, 4))
+    c = Counter[Int](1, 2, 2, 3, 3, 3, 4)
     assert_equal(c[1], 1)
     assert_equal(c[2], 2)
     assert_equal(c[3], 3)
@@ -199,7 +200,7 @@ def test_len():
     c["b"] = 2
 
     assert_equal(len(c), 2)
-    c.pop("a")
+    _ = c.pop("a")
     assert_equal(len(c), 1)
     c.clear()
     assert_equal(len(c), 0)
@@ -453,7 +454,7 @@ def test_popitem():
     assert_equal(item[1][Int], 1)
 
     with assert_raises():
-        counter.popitem()
+        _ = counter.popitem()
 
 
 def main():

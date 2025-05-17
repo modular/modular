@@ -754,7 +754,8 @@ fn sum[
     return lane_group_sum[num_lanes=WARP_SIZE](val)
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct ReductionMethod:
     """Enumerates the supported reduction methods."""
 

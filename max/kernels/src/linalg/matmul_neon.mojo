@@ -91,7 +91,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
                 for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_val = c_local[row, col]
-                    c_val = fma[c_local.type, simd_size](
+                    c_val = fma[dtype = c_local.type, width=simd_size](
                         a_val[lane], b_val, c_val
                     )
                     c_local[row, col] = c_val
@@ -143,7 +143,9 @@ struct Inner_matmul_neon(InnerMatmulKernel):
 
             var partition_end = simd_size * (tile_n_k[1] // simd_size)
             for idx_k0 in range(0, partition_end, simd_size):
-                self._accumulate_lane[simd_size, simd_size](
+                self._accumulate_lane[
+                    simd_size, simd_size, kernel_rows, kernel_cols
+                ](
                     a,
                     b_packed,
                     acc,
@@ -153,7 +155,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
 
             for idx_k1 in range(partition_end, tile_n_k[1]):
                 # accumulate data for this (n, k) index
-                self._accumulate_lane[simd_size, 1](
+                self._accumulate_lane[simd_size, 1, kernel_rows, kernel_cols](
                     a,
                     b_packed,
                     acc,

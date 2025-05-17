@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from layout import Layout, LayoutTensor
 from memory import UnsafePointer
 from nn.argsort import argsort
 from testing import assert_true
@@ -29,11 +28,12 @@ fn test_argsort[
     alias n = 16384
 
     var input_ptr = UnsafePointer[Float32].alloc(n)
-    var input = NDBuffer[DType.float32, 1, _, DimList(n)](input_ptr)
+    var input = LayoutTensor[DType.float32, Layout.row_major(n)](input_ptr)
 
     var indices_ptr = UnsafePointer[Int32].alloc(n)
-    var indices = NDBuffer[DType.int32, 1, _, DimList(n)](indices_ptr)
-    indices.fill(0)
+    var indices = LayoutTensor[DType.int32, Layout.row_major(n)](
+        indices_ptr
+    ).fill(0)
 
     for i in range(n):
         input[i] = filler(i, n)

@@ -24,11 +24,10 @@ def custom_op_example_py_binary(
         use_sitecustomize = True,
         imports = ["."],
         mojo_deps = [
-            "//SDK/lib/API/mojo/max/max",
-            "//SDK/lib/API/mojo/max/tensor",
             "@mojo//:compiler",
             "@mojo//:layout",
             "@mojo//:stdlib",
+            "@mojo//:tensor_internal",
         ],
         deps = [
             "//SDK/lib/API/python/max/driver",

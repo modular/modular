@@ -18,11 +18,10 @@ from __future__ import annotations
 import logging
 import queue
 import tempfile
-import threading
 import uuid
 import weakref
 from collections import deque
-from typing import Generic, Optional, TypeVar, Union
+from typing import Generic, Optional, TypeVar
 
 import psutil
 import zmq
@@ -47,7 +46,7 @@ def _open_zmq_socket(
     zmq_ctx: zmq.Context,
     path: str,
     mode: int,
-) -> Union[zmq.Socket, zmq.asyncio.Socket]:
+) -> zmq.Socket:
     """Open a ZMQ socket with the proper bind/connect semantics."""
     mem = psutil.virtual_memory()
     socket = zmq_ctx.socket(mode)
@@ -79,92 +78,33 @@ def _open_zmq_socket(
     return socket
 
 
-class ZmqSocket(Generic[T]):
-    # One zmq context should be created per process AFTER process forks.
-    # The Python GC is responsible for cleaning up the zmq context when the
-    # process exits. A lock is needed to ensure that the zmq context is only
-    # created once across all Queue instances.
-    mutex: threading.Lock = threading.Lock()
-    zmq_ctx: Optional[zmq.Context] = None
+class ZmqPushSocket(Generic[T]):
+    def __init__(
+        self,
+        zmq_ctx: zmq.Context,
+        zmq_endpoint: Optional[str] = None,
+    ):
+        self.zmq_endpoint = (
+            zmq_endpoint
+            if zmq_endpoint is not None
+            else _generate_zmq_ipc_path()
+        )
+        self.push_socket = _open_zmq_socket(
+            zmq_ctx, self.zmq_endpoint, mode=zmq.PUSH
+        )
 
-    def __init__(self):
-        # Generate a unique path for the ZMQ socket.
-        self.zmq_ipc_path = _generate_zmq_ipc_path()
-
-        # These sockets are lazily initialized when needed.
-        # They are initially None to allow this Queue class to be trivially
-        # picklable.
-        self.zmq_pull_socket: Optional[zmq.Socket] = None
-        self.zmq_push_socket: Optional[zmq.Socket] = None
-
-        # Register a finalizer to clean up resource handles.
-        self._finalizer = weakref.finalize(self, self._cleanup)
+        self._finalize = weakref.finalize(self, self._cleanup)
 
     def _cleanup(self) -> None:
-        # https://github.com/vllm-project/vllm/blob/72a8639b68964ba50a019856f2fabd3c4fdbaa3f/vllm/v1/engine/core_client.py#L221
-        # ZMQ context termination can hang if the sockets aren't explicitly closed first.
-        if self.zmq_pull_socket is not None:
-            self.zmq_pull_socket.close(linger=0)
-            self.zmq_pull_socket = None
+        self.push_socket.close(linger=0)
 
-        if self.zmq_push_socket is not None:
-            self.zmq_push_socket.close(linger=0)
-            self.zmq_push_socket = None
-
-    def _get_or_init_zmq_ctx(self) -> zmq.Context:
-        with ZmqSocket.mutex:
-            if ZmqSocket.zmq_ctx is None:
-                ZmqSocket.zmq_ctx = zmq.Context(io_threads=2)
-        return ZmqSocket.zmq_ctx
-
-    def _get_or_init_pull_socket(self) -> zmq.Socket:
-        zmq_ctx = self._get_or_init_zmq_ctx()
-        if self.zmq_pull_socket is None:
-            self.zmq_pull_socket = _open_zmq_socket(
-                zmq_ctx, self.zmq_ipc_path, zmq.constants.PULL
-            )
-
-        return self.zmq_pull_socket
-
-    def _get_or_init_push_socket(self) -> zmq.Socket:
-        zmq_ctx = self._get_or_init_zmq_ctx()
-        if self.zmq_push_socket is None:
-            self.zmq_push_socket = _open_zmq_socket(
-                zmq_ctx, self.zmq_ipc_path, zmq.constants.PUSH
-            )
-
-        return self.zmq_push_socket
-
-    def get_nowait(self) -> T:
-        return self.get(flags=zmq.NOBLOCK)
-
-    def put_nowait(self, item: T) -> None:
-        self.put(item, flags=zmq.NOBLOCK)
-
-    def get(self, *args, **kwargs) -> T:
-        pull_socket = self._get_or_init_pull_socket()
-
-        try:
-            return pull_socket.recv_pyobj(*args, **kwargs)
-        except zmq.ZMQError as e:
-            # If we get EAGAIN, this is probably:
-            #   - the queue is empty
-            #   - the push socket is not yet ready
-            if e.errno == zmq.EAGAIN:
-                raise queue.Empty()
-
-            # For all other unknown errors, log it and let caller handle it
-            logger.error(
-                f"Failed to receive message on ZMQ socket for unknown reason: {e}"
-            )
-            raise e
+    def put_nowait(self, *args, **kwargs):
+        self.put(*args, **kwargs, flags=zmq.NOBLOCK)
 
     def put(self, *args, **kwargs) -> None:
-        push_socket = self._get_or_init_push_socket()
-
         while True:
             try:
-                push_socket.send_pyobj(*args, **kwargs)
+                self.push_socket.send_pyobj(*args, **kwargs)
 
                 # Exit since we succeeded
                 break
@@ -184,43 +124,57 @@ class ZmqSocket(Generic[T]):
 
 
 class ZmqPullSocket(Generic[T]):
-    """A wrapper around the ZmqSocket that adds a local buffer.
-
-    This allows the user to add requests to the front of the buffer and check
-    the buffer size. This should probably only be used on the PULL side.
-    """
-
-    def __init__(self, queue: ZmqSocket[T]):
-        self.queue = queue
+    def __init__(
+        self, zmq_ctx: zmq.Context, zmq_endpoint: Optional[str] = None
+    ):
+        self.zmq_endpoint = (
+            zmq_endpoint
+            if zmq_endpoint is not None
+            else _generate_zmq_ipc_path()
+        )
+        self.pull_socket = _open_zmq_socket(
+            zmq_ctx, self.zmq_endpoint, mode=zmq.PULL
+        )
         self.local_queue: deque[T] = deque()
+
+        self._finalize = weakref.finalize(self, self._cleanup)
+
+    def _cleanup(self) -> None:
+        self.pull_socket.close(linger=0)
 
     def put_front_nowait(self, item: T):
         """A new method that allows us to add requests to the front of the queue."""
         self.local_queue.append(item)
 
-    def put(self, *args, **kwargs) -> None:
-        return self.queue.put(*args, **kwargs)
+    def _pull_from_socket(self, *args, **kwargs) -> T:
+        try:
+            return self.pull_socket.recv_pyobj(*args, **kwargs)
 
-    def put_nowait(self, item: T) -> None:
-        return self.queue.put_nowait(item)
+        except zmq.ZMQError as e:
+            if e.errno == zmq.EAGAIN:
+                raise queue.Empty()
+
+            logger.error(
+                f"Failed to receive message on ZMQ socket for unknown reason: {e}"
+            )
+            raise e
 
     def get(self, *args, **kwargs) -> T:
         if self.local_queue:
             return self.local_queue.pop()
-        return self.queue.get(*args, **kwargs)
+
+        return self._pull_from_socket(*args, **kwargs)
 
     @traced
     def get_nowait(self) -> T:
-        if self.local_queue:
-            return self.local_queue.pop()
-        return self.queue.get_nowait()
+        return self.get(flags=zmq.NOBLOCK)
 
     def qsize(self) -> int:
         """Return the size of the queue by repeatedly polling the ZmqSocket and
         adding the items to the local queue."""
         while True:
             try:
-                item = self.queue.get_nowait()
+                item = self._pull_from_socket(flags=zmq.NOBLOCK)
                 self.local_queue.appendleft(item)
             except queue.Empty:
                 break

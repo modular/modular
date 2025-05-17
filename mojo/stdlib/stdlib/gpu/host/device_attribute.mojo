@@ -96,8 +96,14 @@ struct DeviceAttribute:
     alias COMPUTE_CAPABILITY_MINOR = Self(76)
     """Minor compute capability version number
     """
+    alias MAX_SHARED_MEMORY_PER_MULTIPROCESSOR = Self(81)
+    """Maximum shared memory available per multiprocessor in bytes
+    """
     alias MAX_REGISTERS_PER_MULTIPROCESSOR = Self(82)
     """Maximum number of 32-bit registers available per multiprocessor
+    """
+    alias MAX_BLOCKS_PER_MULTIPROCESSOR = Self(106)
+    """Maximum resident blocks per multiprocessor
     """
     alias MAX_ACCESS_POLICY_WINDOW_SIZE = Self(109)
     """ CUDA-only: Maximum value of CUaccessPolicyWindow::num_bytes.

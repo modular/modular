@@ -144,17 +144,20 @@ class DistributedTransformerBlock(Module):
                         )
 
                         # prevent re-entry
-                        outer_self.use_subgraph = False
-                        subgraph.output(
-                            subgraph._current_chain,
-                            *outer_self(
+                        try:
+                            outer_self.use_subgraph = False
+                            results = outer_self(
                                 arg_xs,
                                 arg_signal_buffers,
                                 arg_kv_collections,
                                 input_row_offsets=arg_input_row_offsets,
-                            ),
+                            )
+                        finally:
+                            outer_self.use_subgraph = True
+                        subgraph.output(
+                            subgraph._current_chain,
+                            *results,
                         )
-                        outer_self.use_subgraph = True
 
                 call_args = [
                     *xs,

@@ -983,13 +983,13 @@ struct Deque[ElementType: Copyable & Movable](
         self._capacity = new_capacity
 
 
-@value
+@fieldwise_init
 struct _DequeIter[
     deque_mutability: Bool, //,
     ElementType: Copyable & Movable,
     deque_lifetime: Origin[deque_mutability],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     """Iterator for Deque.
 
     Parameters:

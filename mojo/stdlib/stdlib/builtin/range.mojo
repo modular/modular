@@ -89,9 +89,9 @@ struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
         return range(self.end - 1, -1, -1)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(Sized, ReversibleRange, _IntIterable, Movable):
+struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
     alias _IndexType = Int
     var start: Int
     var end: Int
@@ -124,7 +124,7 @@ struct _SequentialRange(Sized, ReversibleRange, _IntIterable, Movable):
         return range(self.end - 1, self.start - 1, -1)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _StridedRangeIterator(Sized, _IntIter):
     alias _IndexType = Int
@@ -152,7 +152,7 @@ struct _StridedRangeIterator(Sized, _IntIter):
         return self.__len__() > 0
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _StridedRange(Sized, ReversibleRange, _StridedIterable):
     alias _IndexType = Int
@@ -429,7 +429,7 @@ struct _UIntZeroStartingRange(UIntSized, _UIntIterable):
         return idx
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _UIntStridedRangeIterator(UIntSized, _UIntIter):
     alias _IndexType = UInt
@@ -452,7 +452,6 @@ struct _UIntStridedRangeIterator(UIntSized, _UIntIter):
         return self.__len__() > 0
 
 
-@value
 @register_passable("trivial")
 struct _UIntStridedRange(UIntSized, _UIntStridedIterable):
     alias _IndexType = UInt
@@ -580,7 +579,7 @@ struct _ZeroStartingScalarRange[dtype: DType]:
         return range(self.end - 1, Scalar[dtype](-1), Scalar[dtype](-1))
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _SequentialScalarRange[dtype: DType]:
     alias _IndexType = Scalar[dtype]
@@ -615,7 +614,7 @@ struct _SequentialScalarRange[dtype: DType]:
         return range(self.end - 1, self.start - 1, -1)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _StridedScalarRangeIterator[dtype: DType]:
     alias _IndexType = Scalar[dtype]
@@ -641,7 +640,7 @@ struct _StridedScalarRangeIterator[dtype: DType]:
         return result
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _StridedScalarRange[dtype: DType]:
     alias _IndexType = Scalar[dtype]

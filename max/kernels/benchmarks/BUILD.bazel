@@ -1,5 +1,14 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//bazel:api.bzl", "mojo_binary", "mojo_test", "pkg_files", "strip_prefix")
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "mojo_binary",
+    "mojo_test",
+    "pkg_files",
+    "requirement",
+    "strip_prefix",
+)
 
 _RUN_BENCHMARKS = [
     "algorithm/parallelize_overhead.mojo",
@@ -111,4 +120,33 @@ pkg_files(
     prefix = "kernel-benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
     visibility = ["//visibility:public"],
+)
+
+modular_py_library(
+    name = "autotune",
+    srcs = [
+        "autotune/kplot.py",
+        "autotune/kprofile.py",
+    ],
+    imports = ["autotune"],
+    visibility = ["//visibility:public"],
+    deps = [
+        # Deps required for kbench/kplot/kprofile
+        requirement("numpy"),
+        requirement("click"),
+        requirement("pandas"),
+        requirement("rich"),
+        requirement("plotly"),
+        requirement("kaleido"),
+        requirement("pyyaml"),
+        "//GenericML/tools/model:lib",
+    ],
+)
+
+modular_py_test(
+    name = "autotune_tests",
+    srcs = glob(["autotune/tests/*.py"]),
+    deps = [
+        ":autotune",
+    ],
 )

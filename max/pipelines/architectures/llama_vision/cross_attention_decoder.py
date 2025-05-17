@@ -27,7 +27,7 @@ from max.nn.kernels import (
     matmul_kv_cache_ragged,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import ContinuousBatchingKVCacheCollection, KVCacheParams
+from max.nn.kv_cache import KVCacheParams, PagedKVCacheCollection
 from max.nn.layer import Layer
 from max.nn.linear import LinearV1
 
@@ -39,7 +39,7 @@ class CrossSdpaAttention(Layer):
     n_heads: int
     """The number of attention heads."""
 
-    kv_params: KVCacheParams
+    vision_kv_params: KVCacheParams
     """KV Cache Params, including the number of kv heads, the head dim, and data type."""
 
     layer_idx: int
@@ -70,7 +70,7 @@ class CrossSdpaAttention(Layer):
         hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
     ) -> TensorValue:
         """Computes attention on hidden (query) and cross (key and value).
 
@@ -84,13 +84,13 @@ class CrossSdpaAttention(Layer):
             [
                 -1,
                 self.n_heads,
-                self.kv_params.head_dim,
+                self.vision_kv_params.head_dim,
             ]
         )
         query_states = self.q_norm(query_states)
 
         matmul_kv_cache_ragged(
-            kv_params=self.kv_params,
+            kv_params=self.vision_kv_params,
             # Here, hidden_states correspond to cross_attention_states.
             hidden_states=cross_attention_states,
             layer_idx=self.layer_idx,
@@ -99,7 +99,7 @@ class CrossSdpaAttention(Layer):
             kv_collection=kv_collection,
         )
         rms_norm_key_cache(
-            self.kv_params,
+            self.vision_kv_params,
             kv_collection,
             gamma=ops.cast(self.k_norm.weight, hidden_states.dtype),
             epsilon=self.k_norm.eps,
@@ -112,7 +112,7 @@ class CrossSdpaAttention(Layer):
 
         # Calculate Flash Attention.
         attn_out = cross_attention_ragged(
-            self.kv_params,
+            self.vision_kv_params,
             input=query_states,
             kv_collection=kv_collection,
             layer_idx=ops.constant(
@@ -123,7 +123,7 @@ class CrossSdpaAttention(Layer):
             mask_variant=MHAMaskVariant.NULL_MASK,
             kv_input_row_offsets=cross_input_row_offsets,
             q_max_seq_len=hidden_max_seq_len,
-            scale=math.sqrt(1.0 / self.kv_params.head_dim),
+            scale=math.sqrt(1.0 / self.vision_kv_params.head_dim),
         )
 
         # Reshape back to (hidden total seq len, hidden size).
@@ -150,7 +150,7 @@ class CrossAttentionDecoderLayer(Layer):
         hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection,
+        kv_collection: PagedKVCacheCollection,
     ) -> TensorValue:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)

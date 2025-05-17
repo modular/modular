@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.roi_align import roi_align_nhwc
 from testing import *
 
@@ -22,22 +21,18 @@ from utils import IndexList
 def test_roi_align_avg[scale_type: DType]():
     print("=== test_roi_align_avg")
 
-    alias in_shape = DimList(1, 10, 10, 1)
-    alias out_shape = DimList(1, 5, 5, 1)
-    alias roi_shape = DimList(1, 5)
+    alias in_layout = Layout.row_major(1, 10, 10, 1)
+    alias out_layout = Layout.row_major(1, 5, 5, 1)
+    alias roi_layout = Layout.row_major(1, 5)
 
-    var input_stack = InlineArray[Float32, Int(in_shape.product())](
+    var input_stack = InlineArray[Float32, in_layout.size()](uninitialized=True)
+    var input = LayoutTensor[DType.float32, in_layout](input_stack)
+    var output_stack = InlineArray[Float32, out_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[DType.float32, 4, _, in_shape](input_stack)
-    var output_stack = InlineArray[Float32, Int(out_shape.product())](
-        uninitialized=True
-    )
-    var output = NDBuffer[DType.float32, 4, _, out_shape](output_stack)
-    var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
-        uninitialized=True
-    )
-    var rois = NDBuffer[DType.float32, 2, _, roi_shape](rois_stack)
+    var output = LayoutTensor[DType.float32, out_layout](output_stack)
+    var rois_stack = InlineArray[Float32, roi_layout.size()](uninitialized=True)
+    var rois = LayoutTensor[DType.float32, roi_layout](rois_stack)
 
     for i in range(10):
         for j in range(10):
@@ -49,12 +44,20 @@ def test_roi_align_avg[scale_type: DType]():
     rois[0, 3] = 4
     rois[0, 4] = 4
 
+    alias out_layout_unknown = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
     roi_align_nhwc[aligned=False](
-        output.make_dims_unknown(),
+        LayoutTensor[__type_of(output).dtype, out_layout_unknown](
+            output_stack,
+            RuntimeLayout[out_layout_unknown].row_major(
+                IndexList[4](1, 5, 5, 1)
+            ),
+        ),
         input,
         rois,
-        out_shape.at[1]().get(),
-        out_shape.at[2]().get(),
+        out_layout.shape[1].value(),
+        out_layout.shape[2].value(),
         Scalar[scale_type](1.0),
         Scalar[scale_type](2.0),
     )
@@ -93,22 +96,18 @@ def test_roi_align_avg[scale_type: DType]():
 def test_roi_align_max():
     print("=== test_roi_align_max")
 
-    alias in_shape = DimList(1, 10, 10, 1)
-    alias out_shape = DimList(1, 5, 5, 1)
-    alias roi_shape = DimList(1, 5)
+    alias in_layout = Layout.row_major(1, 10, 10, 1)
+    alias out_layout = Layout.row_major(1, 5, 5, 1)
+    alias roi_layout = Layout.row_major(1, 5)
 
-    var input_stack = InlineArray[Float32, Int(in_shape.product())](
+    var input_stack = InlineArray[Float32, in_layout.size()](uninitialized=True)
+    var input = LayoutTensor[DType.float32, in_layout](input_stack)
+    var output_stack = InlineArray[Float32, out_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[DType.float32, 4, _, in_shape](input_stack)
-    var output_stack = InlineArray[Float32, Int(out_shape.product())](
-        uninitialized=True
-    )
-    var output = NDBuffer[DType.float32, 4, _, out_shape](output_stack)
-    var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
-        uninitialized=True
-    )
-    var rois = NDBuffer[DType.float32, 2, _, roi_shape](rois_stack)
+    var output = LayoutTensor[DType.float32, out_layout](output_stack)
+    var rois_stack = InlineArray[Float32, roi_layout.size()](uninitialized=True)
+    var rois = LayoutTensor[DType.float32, roi_layout](rois_stack)
 
     for i in range(10):
         for j in range(10):
@@ -120,12 +119,20 @@ def test_roi_align_max():
     rois[0, 3] = 4
     rois[0, 4] = 4
 
+    alias out_layout_unknown = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
     roi_align_nhwc[aligned=False, mode="MAX"](
-        output.make_dims_unknown(),
+        LayoutTensor[__type_of(output).dtype, out_layout_unknown](
+            output_stack,
+            RuntimeLayout[out_layout_unknown].row_major(
+                IndexList[4](1, 5, 5, 1)
+            ),
+        ),
         input,
         rois,
-        out_shape.at[1]().get(),
-        out_shape.at[2]().get(),
+        out_layout.shape[1].value(),
+        out_layout.shape[2].value(),
         1.0,
         2.0,
     )
@@ -164,22 +171,18 @@ def test_roi_align_max():
 def test_roi_align_KERN_692():
     print("=== test_roi_align_KERN_692")
 
-    alias in_shape = DimList(1, 6, 6, 1)
-    alias out_shape = DimList(1, 3, 3, 1)
-    alias roi_shape = DimList(1, 5)
+    alias in_layout = Layout.row_major(1, 6, 6, 1)
+    alias out_layout = Layout.row_major(1, 3, 3, 1)
+    alias roi_layout = Layout.row_major(1, 5)
 
-    var input_stack = InlineArray[Float32, Int(in_shape.product())](
+    var input_stack = InlineArray[Float32, in_layout.size()](uninitialized=True)
+    var input = LayoutTensor[DType.float32, in_layout](input_stack)
+    var output_stack = InlineArray[Float32, out_layout.size()](
         uninitialized=True
     )
-    var input = NDBuffer[DType.float32, 4, _, in_shape](input_stack)
-    var output_stack = InlineArray[Float32, Int(out_shape.product())](
-        uninitialized=True
-    )
-    var output = NDBuffer[DType.float32, 4, _, out_shape](output_stack)
-    var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
-        uninitialized=True
-    )
-    var rois = NDBuffer[DType.float32, 2, _, roi_shape](rois_stack)
+    var output = LayoutTensor[DType.float32, out_layout](output_stack)
+    var rois_stack = InlineArray[Float32, roi_layout.size()](uninitialized=True)
+    var rois = LayoutTensor[DType.float32, roi_layout](rois_stack)
 
     for i in range(6):
         for j in range(6):
@@ -191,12 +194,20 @@ def test_roi_align_KERN_692():
     rois[0, 3] = 22
     rois[0, 4] = 22
 
+    alias out_layout_unknown = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
     roi_align_nhwc[aligned=False](
-        output.make_dims_unknown(),
+        LayoutTensor[__type_of(output).dtype, out_layout_unknown](
+            output_stack,
+            RuntimeLayout[out_layout_unknown].row_major(
+                IndexList[4](1, 3, 3, 1)
+            ),
+        ),
         input,
         rois,
-        out_shape.at[1]().get(),
-        out_shape.at[2]().get(),
+        out_layout.shape[1].value(),
+        out_layout.shape[2].value(),
         0.25,
         2.0,
     )

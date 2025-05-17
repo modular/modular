@@ -159,15 +159,12 @@ fn create_task(
 
 
 @always_inline
-fn run(owned handle: Coroutine[*_], out result: handle.type):
+fn _run(owned handle: Coroutine[*_], out result: handle.type):
     """Executes a coroutine and waits for its completion.
-
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.
-
     Args:
         handle: The coroutine to execute. Ownership is transferred.
-
     Returns:
         The `result` output parameter is initialized with the coroutine's result.
     """
@@ -179,42 +176,6 @@ fn run(owned handle: Coroutine[*_], out result: handle.type):
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(_AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
-    handle^.force_destroy()
-
-
-@always_inline
-fn run(owned handle: RaisingCoroutine[*_], out result: handle.type) raises:
-    """Executes a raising coroutine and waits for its completion.
-
-    This function runs the given raising coroutine on the async runtime and blocks
-    until it completes. The result of the coroutine is stored in the output parameter.
-    If the coroutine raises an error, that error is propagated to the caller.
-
-    Args:
-        handle: The raising coroutine to execute. Ownership is transferred.
-
-    Returns:
-        The `result` output parameter is initialized with the coroutine's result.
-    """
-    var ctx = handle._get_ctx[_AsyncContext]()
-    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
-    ctx[].callback = _AsyncContext.complete
-    handle._set_result_slot(
-        __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-        __mlir_op.`lit.ref.to_pointer`(
-            __get_mvalue_as_litref(__get_nearest_error_slot())
-        ),
-    )
-    _async_execute[handle.type](handle._handle, -1)
-    _async_wait(_AsyncContext.get_chain(ctx))
-    _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
-    if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
-        handle^.force_destroy()
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(__get_nearest_error_slot())
-        )
-        __mlir_op.`lit.raise`()
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
     handle^.force_destroy()
 
 

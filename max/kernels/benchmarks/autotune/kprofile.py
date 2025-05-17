@@ -220,7 +220,7 @@ help_str = "Profile kbench output pickle"
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files: click.UNPROCESSED,
+    files,
     output_path,
     top,
     snippet_path,

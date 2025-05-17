@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:tensor_internal",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

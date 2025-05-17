@@ -21,7 +21,7 @@ _EXTRA_CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         srcs = _TEST_DATA + [src],
-        args = [
+        copts = [
             "-D",
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu",
         ],
@@ -29,9 +29,9 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "//SDK/lib/API/mojo/max/tensor",
             "@mojo//:layout",
             "@mojo//:stdlib",
+            "@mojo//:tensor_internal",
         ],
     )
     for src in glob(
@@ -44,17 +44,16 @@ _EXTRA_CONSTRAINTS = {
     mojo_test(
         name = src + ".cpu.test",
         srcs = _TEST_DATA + [src],
-        args = [
+        copts = [
             "-D",
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu",
         ],
         main = src,
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "//SDK/lib/API/mojo/max/tensor",
             "@mojo//:layout",
             "@mojo//:stdlib",
+            "@mojo//:tensor_internal",
         ],
     )
     for src in _CPU_TESTS

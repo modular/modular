@@ -93,8 +93,8 @@ class LLM:
             RuntimeError: If the model fails to generate completions.
         """
         if isinstance(prompts, str):
-            # Handle the degenerate case where the users just passes in a single string
-            return self.generate((prompts,), max_new_tokens, use_tqdm)
+            # Handle the edge case where the user passes in a single string
+            prompts = (prompts,)
 
         self._request_queue.put((prompts, max_new_tokens, use_tqdm))
         return self._response_queue.get()

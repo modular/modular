@@ -25,9 +25,11 @@ from enum import Enum
 from typing import Generic, Optional, TypeVar
 
 import sentinel
+import zmq
+from max.pipelines.core import InputContext
 from max.serve.process_control import ProcessControl
 
-from .zmq_queue import ZmqPullSocket, ZmqSocket
+from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -84,14 +86,25 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self,
         context: multiprocessing.context.BaseContext,
         worker_pc: ProcessControl,
+        request_zmq_endpoint: str,
+        response_zmq_endpoint: str,
+        cancel_zmq_endpoint: str,
+        zmq_ctx: zmq.Context,
     ):
         super().__init__()
         self.context = context
-        self.request_q = ZmqSocket[tuple[ReqId, ReqInput]]()
-        self.response_q = ZmqPullSocket(
-            ZmqSocket[list[dict[ReqId, ReqOutput]]]()
+
+        # Create Queues
+        self.request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
+            zmq_ctx, request_zmq_endpoint
         )
-        self.cancel_q = ZmqPullSocket(ZmqSocket[list[ReqId]]())
+        self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
+            zmq_ctx, response_zmq_endpoint
+        )
+        self.cancel_push_socket = ZmqPushSocket[list[str]](
+            zmq_ctx, cancel_zmq_endpoint
+        )
+
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
         self._proc: Optional[multiprocessing.process.BaseProcess] = None
@@ -125,7 +138,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         try:
             out_queue: asyncio.Queue = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
-            self.request_q.put_nowait((req_id, data))
+            self.request_push_socket.put_nowait((req_id, data))
             yield out_queue
         finally:
             del self.pending_out_queues[req_id]
@@ -141,17 +154,10 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         try:
             while True:
                 try:
-                    while self.response_q.empty():
-                        # If the worker dies this loop will keep running,
-                        # so we have to check the worker status.
-                        if not self.is_worker_healthy():
-                            logger.error("Model worker process is not healthy")
-                            self.worker_pc.set_canceled()
-                            raise Exception("Worker failed!")
-                        await asyncio.sleep(0)
+                    responses_list = self.response_pull_socket.get_nowait()
 
                     cancelled = set()
-                    for responses in self.response_q.get_nowait():
+                    for responses in responses_list:
                         for req_id, response in responses.items():
                             if req_id in self.pending_out_queues:
                                 await self.pending_out_queues[req_id].put(
@@ -161,10 +167,17 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                                 cancelled.add(req_id)
 
                     if cancelled:
-                        self.cancel_q.put_nowait(list(cancelled))
+                        self.cancel_push_socket.put_nowait(list(cancelled))
 
                 except queue.Empty:
+                    # If the worker dies this loop will keep running,
+                    # so we have to check the worker status.
+                    if not self.is_worker_healthy():
+                        logger.error("Model worker process is not healthy")
+                        self.worker_pc.set_canceled()
+                        raise Exception("Worker failed!")
                     await asyncio.sleep(0)
+
         except asyncio.CancelledError:
             raise
         finally:

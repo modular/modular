@@ -469,7 +469,7 @@ def matmul_kv_cache_ragged(
     hidden_states: TensorValue,
     input_row_offsets: TensorValue,
     weight: TensorValue,
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: PagedKVCacheCollection,
     layer_idx: int | np.integer,
 ) -> None:
     """Computes key and value projections with ragged input.
@@ -500,7 +500,7 @@ def matmul_kv_cache_ragged(
         )
         raise ValueError(msg)
 
-    if kv_params.cache_strategy != KVCacheStrategy.CONTINUOUS:
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
         msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
@@ -755,8 +755,12 @@ def flash_attention(
         raise ValueError(msg)
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.mha.padded.{cache_strategy_str}.tensor_mask.no_pos"
-
+    op_name = f"mo.mha.padded.{cache_strategy_str}.tensor_mask"
+    parameters: dict[str, bool | int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "score_mod_str": PositionalEncodingVariant.NO_POS.value,
+    }
     return ops.inplace_custom(
         op_name,
         values=[
@@ -774,10 +778,7 @@ def flash_attention(
                 dtype=input.dtype, shape=input.shape, device=input.device
             )
         ],
-        parameters={
-            "num_heads": kv_params.n_kv_heads_per_device,
-            "head_dim": kv_params.head_dim,
-        },
+        parameters=parameters,
     )[0].tensor
 
 
@@ -819,8 +820,13 @@ def flash_attention_with_causal_mask(
         raise ValueError(msg)
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.mha.padded.{cache_strategy_str}.causal_mask.no_pos"
-
+    op_name = f"mo.mha.padded.{cache_strategy_str}"
+    parameters: dict[str, bool | int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "mask_str": MHAMaskVariant.CAUSAL_MASK.value,
+        "score_mod_str": PositionalEncodingVariant.NO_POS.value,
+    }
     return ops.inplace_custom(
         op_name,
         values=[
@@ -836,10 +842,7 @@ def flash_attention_with_causal_mask(
                 dtype=input.dtype, shape=input.shape, device=input.device
             )
         ],
-        parameters={
-            "num_heads": kv_params.n_kv_heads_per_device,
-            "head_dim": kv_params.head_dim,
-        },
+        parameters=parameters,
     )[0].tensor
 
 
@@ -850,11 +853,11 @@ class MHAMaskConfig:
 
 
 class AttentionMaskVariant(str, Enum):
-    NULL_MASK = "null_mask"
-    CAUSAL_MASK = "causal_mask"
+    NULL_MASK = "null"
+    CAUSAL_MASK = "causal"
     TENSOR_MASK = "tensor_mask"
-    CHUNKED_CAUSAL_MASK = "chunked_causal_mask"
-    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal_mask"
+    CHUNKED_CAUSAL_MASK = "chunked_causal"
+    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal"
 
 
 class PositionalEncodingVariant(str, Enum):
@@ -894,6 +897,106 @@ _MHA_MASK_CONFIG_DICT = {
 }
 
 
+def causal_flash_attention_gpu(
+    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
+) -> TensorValue:
+    """Computes causal flash attention using GPU-optimized kernel.
+    Args:
+        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
+        scale: Scaling factor for attention scores
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        msg = (
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+        raise ValueError(msg)
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            msg = f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            raise ValueError(msg)
+
+    # Validate head dimension matches across all inputs
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        msg = (
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+        raise ValueError(msg)
+
+    return ops.custom(
+        "causal_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=q.dtype,
+                shape=q.shape,
+                device=q.device,
+            )
+        ],
+    )[0].tensor
+
+
+def null_mask_flash_attention_gpu(
+    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
+) -> TensorValue:
+    """Computes flash attention using GPU-optimized kernel.
+    Args:
+        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
+        scale: Scaling factor for attention scores
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        msg = (
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+        raise ValueError(msg)
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            msg = f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            raise ValueError(msg)
+
+    # Validate head dimension matches across all inputs
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        msg = (
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+        raise ValueError(msg)
+
+    return ops.custom(
+        "no_mask_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=q.dtype,
+                shape=q.shape,
+                device=q.device,
+            )
+        ],
+    )[0].tensor
+
+
 def flash_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -902,7 +1005,7 @@ def flash_attention_ragged(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
-    local_window_size: int = 8192,
+    local_window_size: int = -1,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -952,15 +1055,15 @@ def flash_attention_ragged(
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
-    if (
-        mask_variant == MHAMaskVariant.CHUNKED_CAUSAL_MASK
-        or mask_variant == MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-    ):
-        parameters["local_window_size"] = local_window_size
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.mha.ragged.{cache_strategy_str}.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = f"mo.mha.ragged.{cache_strategy_str}"
+
+    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
+    parameters["score_mod_str"] = (
+        mha_mask_config.positional_encoding_variant.value
+    )
+    parameters["local_window_size"] = local_window_size
 
     return ops.inplace_custom(
         op_name,
@@ -1029,14 +1132,16 @@ def flare_mla_decode_ragged(
         raise ValueError(msg)
 
     assert kv_params.page_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "page_size": kv_params.page_size,
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.mla.decode.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = "mo.mla.decode.ragged.paged"
 
     return ops.inplace_custom(
         op_name,
@@ -1137,15 +1242,17 @@ def flare_mla_prefill_ragged(
         raise ValueError(msg)
 
     assert kv_params.page_size is not None
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "page_size": kv_params.page_size,
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     is_init_str = ".init" if prev_output is None else ""
-    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = f"mo.mla.prefill{is_init_str}.ragged.paged"
 
     input_values = [
         input,
@@ -1364,6 +1471,7 @@ def cross_attention_ragged(
     kv_input_row_offsets: TensorValue,
     q_max_seq_len: TensorValue,
     scale: float,
+    local_window_size: int = -1,
 ) -> TensorValue:
     """Computes cross attention provided the `!mo.opaque` KV Cache.
 
@@ -1409,17 +1517,20 @@ def cross_attention_ragged(
         )
         raise ValueError(msg)
 
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
+        "local_window_size": local_window_size,
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    op_name = f"mo.cross_attention.ragged.{cache_strategy_str}.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+    op_name = f"mo.cross_attention.ragged.{cache_strategy_str}"
 
     return ops.inplace_custom(
         op_name,
@@ -1713,6 +1824,10 @@ def quantize_static_scaled_float8(
         msg = f"expected input rank to be 2, but got {x.rank}"
         raise ValueError(msg)
 
+    if scale.device != DeviceRef.CPU():
+        msg = f"expected scale to be on CPU, but got {scale.device}"
+        raise ValueError(msg)
+
     return ops.custom(
         "mo.quantize_static_scaled_float8",
         values=[x, scale.reshape([])],
@@ -1870,6 +1985,16 @@ def matmul_static_scaled_float8(
 
     if input.shape[1] != weight.shape[1]:
         raise ValueError("K dimension does not match for matmul")
+
+    if input_scale.device != DeviceRef.CPU():
+        msg = f"expected input_scale to be on CPU, but got {input_scale.device}"
+        raise ValueError(msg)
+
+    if weight_scale.device != DeviceRef.CPU():
+        msg = (
+            f"expected weight_scale to be on CPU, but got {weight_scale.device}"
+        )
+        raise ValueError(msg)
 
     return ops.custom(
         "mo.matmul_static_scaled_float8",

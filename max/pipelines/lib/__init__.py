@@ -29,7 +29,6 @@ from .hf_utils import (
     generate_local_model_path,
     repo_exists_with_retry,
 )
-from .log_probabilities import compute_log_probabilities, log_softmax
 from .max_config import (
     KVCacheConfig,
     ProfilingConfig,
@@ -57,7 +56,6 @@ from .tokenizer import (
 )
 
 __all__ = [
-    "compute_log_probabilities",  # Deprecated: Please import from log_probabilities directly
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",
@@ -66,7 +64,6 @@ __all__ = [
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
-    "log_softmax",  # Deprecated: Please import from log_probabilities directly
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",

@@ -104,7 +104,7 @@ fn barrier():
         ]()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct AMDScheduleBarrierMask(Intable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.

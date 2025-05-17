@@ -14,8 +14,7 @@
 from collections.string import StaticString
 from math import ceil
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout
 
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
@@ -109,14 +108,15 @@ fn _bilinear_interpolate[
 @always_inline
 fn roi_align_nhwc[
     type: DType,
-    input_shape: DimList,
-    roi_shape: DimList, //,
+    output_layout: Layout,
+    input_layout: Layout,
+    roi_layout: Layout, //,
     aligned: Bool,
     mode: StaticString = "AVG",
 ](
-    output: NDBuffer[mut=True, type, 4, *_],
-    input: NDBuffer[type, 4, _, input_shape, *_],
-    rois: NDBuffer[type, 2, _, roi_shape, *_],
+    output: LayoutTensor[mut=True, type, output_layout, **_],
+    input: LayoutTensor[type, input_layout, **_],
+    rois: LayoutTensor[type, roi_layout, **_],
     output_height: Int,
     output_width: Int,
     in_spatial_scale: Scalar,
@@ -145,6 +145,11 @@ fn roi_align_nhwc[
         in_sampling_ratio: Number of sampling points in the interpolation grid
           used to compute the output value of each pooled bin.
     """
+    constrained[
+        output.rank == 4 and input.rank == 4,
+        "expect rank 4 tensors for input and output",
+    ]()
+    constrained[rois.rank == 2, "rois must be of rank 2"]()
 
     constrained[
         type.is_floating_point(),
@@ -160,10 +165,10 @@ fn roi_align_nhwc[
     var spatial_scale = in_spatial_scale.cast[DType.float32]()
     var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
 
-    var n_regions = rois.dim(0)
-    var height = input.dim(1)
-    var width = input.dim(2)
-    var channels = input.dim(3)
+    var n_regions = rois.shape[0]()
+    var height = input.shape[1]()
+    var width = input.shape[2]()
+    var channels = input.shape[3]()
 
     var pooled_height = output_height
     var pooled_width = output_width
@@ -172,10 +177,10 @@ fn roi_align_nhwc[
     for ri in range(n_regions):
         # Region coordinates and batch index
         var roi_batch_idx = Int(rois[ri, 0])
-        var roi_start_w = Float32(rois[ri, 1]) * spatial_scale - offset
-        var roi_start_h = Float32(rois[ri, 2]) * spatial_scale - offset
-        var roi_end_w = Float32(rois[ri, 3]) * spatial_scale - offset
-        var roi_end_h = Float32(rois[ri, 4]) * spatial_scale - offset
+        var roi_start_w = Float32(rois[ri, 1][0]) * spatial_scale - offset
+        var roi_start_h = Float32(rois[ri, 2][0]) * spatial_scale - offset
+        var roi_end_w = Float32(rois[ri, 3][0]) * spatial_scale - offset
+        var roi_end_h = Float32(rois[ri, 4][0]) * spatial_scale - offset
 
         # Region size (roi_h, roi_w) with 1x1 lower bound
         var roi_height = roi_end_h - roi_start_h if aligned else max(
@@ -261,20 +266,18 @@ fn roi_align_nhwc[
                             var p4 = p[3]
                             pool_val = update_fn(
                                 pool_val,
-                                p1.w * input[roi_batch_idx, p1.y, p1.x, c],
+                                p1.w * input[roi_batch_idx, p1.y, p1.x, c][0],
                             )
                             pool_val = update_fn(
                                 pool_val,
-                                p2.w * input[roi_batch_idx, p2.y, p2.x, c],
+                                p2.w * input[roi_batch_idx, p2.y, p2.x, c][0],
                             )
                             pool_val = update_fn(
                                 pool_val,
-                                p3.w * input[roi_batch_idx, p3.y, p3.x, c],
+                                p3.w * input[roi_batch_idx, p3.y, p3.x, c][0],
                             )
                             pool_val = update_fn(
                                 pool_val,
-                                p4.w * input[roi_batch_idx, p4.y, p4.x, c],
+                                p4.w * input[roi_batch_idx, p4.y, p4.x, c][0],
                             )
-                    output[IndexList[4](ri, ph, pw, c)] = reduce_fn(
-                        pool_val, pool_elemn_num
-                    )
+                    output[ri, ph, pw, c] = reduce_fn(pool_val, pool_elemn_num)

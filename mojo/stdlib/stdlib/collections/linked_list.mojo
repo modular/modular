@@ -18,10 +18,9 @@ from os import abort
 from memory import UnsafePointer
 
 
-@value
 struct Node[
     ElementType: Copyable & Movable,
-]:
+](Copyable, Movable):
     """A node in a linked list data structure.
 
     Parameters:
@@ -86,13 +85,13 @@ struct Node[
         writer.write(self.value)
 
 
-@value
+@fieldwise_init
 struct _LinkedListIter[
     mut: Bool, //,
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-]:
+](Copyable, Movable):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 

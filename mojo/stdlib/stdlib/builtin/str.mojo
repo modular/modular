@@ -34,7 +34,6 @@ trait Stringable:
     For example:
 
     ```mojo
-    @value
     struct Foo(Stringable):
         var s: String
 
@@ -89,7 +88,6 @@ trait StringableRaising:
     method, which can raise an error. For example:
 
     ```mojo
-    @value
     struct Foo(StringableRaising):
         var s: String
 

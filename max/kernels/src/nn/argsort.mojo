@@ -18,11 +18,11 @@ from sys.info import alignof, bitwidthof, simdwidthof
 
 from algorithm import elementwise
 from bit import next_power_of_two
-from buffer import NDBuffer
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, IndexList, StaticTuple
@@ -31,7 +31,10 @@ from utils.index import Index, IndexList, StaticTuple
 fn _argsort_cpu[
     *,
     ascending: Bool = True,
-](indices: NDBuffer[mut=True, *_], input: NDBuffer) raises:
+](
+    indices: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor,
+) raises:
     """
     Performs argsort on CPU.
 
@@ -45,24 +48,25 @@ fn _argsort_cpu[
 
     @parameter
     fn fill_indices_iota[width: Int, rank: Int](offset: IndexList[rank]):
-        indices.store(offset[0], iota[indices.type, width](offset[0]))
+        indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
-    elementwise[fill_indices_iota, simdwidthof[indices.type](), target="cpu"](
-        len(indices)
+    elementwise[fill_indices_iota, simdwidthof[indices.dtype](), target="cpu"](
+        indices.size()
     )
 
     @parameter
-    fn cmp_fn(a: Scalar[indices.type], b: Scalar[indices.type]) -> Bool:
+    fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
         @parameter
         if ascending:
-            return input[Int(a)] < input[Int(b)]
+            return Bool(input[Int(a)] < input[Int(b)])
         else:
-            return input[Int(a)] > input[Int(b)]
+            return Bool(input[Int(a)] > input[Int(b)])
 
     sort[cmp_fn](
-        Span[Scalar[indices.type], indices.origin](
-            ptr=indices.data, length=len(indices)
-        )
+        Span[
+            Scalar[indices.dtype],
+            indices.origin,
+        ](ptr=indices.ptr, length=indices.size())
     )
 
 
@@ -89,7 +93,11 @@ fn _sentinel_val[type: DType, ascending: Bool]() -> Scalar[type]:
 fn _argsort_gpu_impl[
     *,
     ascending: Bool = True,
-](indices: NDBuffer[mut=True, *_], input: NDBuffer, ctx: DeviceContext,) raises:
+](
+    indices: LayoutTensor[mut=True, **_],
+    input: LayoutTensor,
+    ctx: DeviceContext,
+) raises:
     """
     Implements GPU argsort using bitonic sort algorithm.
 
@@ -102,7 +110,7 @@ fn _argsort_gpu_impl[
         ctx: Device context for GPU execution.
     """
     # Create a device buffer to store a copy of the input data
-    var n = len(indices)
+    var n = indices.size()
 
     debug_assert(n.is_power_of_two(), "n must be a power of two")
 
@@ -114,8 +122,8 @@ fn _argsort_gpu_impl[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
     fn bitonic_sort_step(
-        indices: NDBuffer[mut=True, indices.type, indices.rank],
-        input: NDBuffer[mut=True, input.type, input.rank],
+        indices: LayoutTensor[mut=True, indices.dtype, indices.layout],
+        input: LayoutTensor[mut=True, input.dtype, input.layout],
         n: Int,
         step: Int,
         stage: Int,
@@ -142,9 +150,9 @@ fn _argsort_gpu_impl[
 
             @parameter
             if ascending:
-                cmp_val = input[i] > input[partner]
+                cmp_val = Bool(input[i] > input[partner])
             else:
-                cmp_val = input[i] < input[partner]
+                cmp_val = Bool(input[i] < input[partner])
 
             # Determine if we are in ascending or descending part of bitonic merge.
             var bitonic_merge_direction = (i & stage) == 0
@@ -175,7 +183,11 @@ fn _argsort_gpu_impl[
 fn _argsort_gpu[
     *,
     ascending: Bool = True,
-](indices: NDBuffer[mut=True, *_], input: NDBuffer, ctx: DeviceContext) raises:
+](
+    indices: LayoutTensor[mut=True, **_],
+    input: LayoutTensor,
+    ctx: DeviceContext,
+) raises:
     """
     Performs argsort on GPU with padding to power-of-two size if needed.
 
@@ -188,7 +200,7 @@ fn _argsort_gpu[
         ctx: Device context for GPU execution.
     """
     # Create a device buffer to store a copy of the input data
-    var n = len(indices)
+    var n = indices.size()
 
     if n.is_power_of_two():
         # Initialize indices with iota.
@@ -197,12 +209,12 @@ fn _argsort_gpu[
         fn fill_indices_iota_no_padding[
             width: Int, rank: Int
         ](offset: IndexList[rank]):
-            indices.store(offset[0], iota[indices.type, width](offset[0]))
+            indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
         elementwise[
             fill_indices_iota_no_padding,
             simd_width = simdwidthof[
-                indices.type, target = _get_gpu_target()
+                indices.dtype, target = _get_gpu_target()
             ](),
             target="gpu",
         ](n, ctx)
@@ -213,19 +225,29 @@ fn _argsort_gpu[
 
     # Else we need to pad the input and indices with sentinel values.
 
-    var padded_input_buffer = ctx.enqueue_create_buffer[input.type](
+    var padded_input_buffer = ctx.enqueue_create_buffer[input.dtype](
         pow_2_length
     )
-    var padded_input = NDBuffer[
-        mut=True, input.type, input.rank, indices.origin
-    ](padded_input_buffer._unsafe_ptr(), (pow_2_length))
+    var padded_input = LayoutTensor[
+        mut=True, input.dtype, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        padded_input_buffer,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](pow_2_length)
+        ),
+    )
 
-    var padded_indices_buffer = ctx.enqueue_create_buffer[indices.type](
+    var padded_indices_buffer = ctx.enqueue_create_buffer[indices.dtype](
         pow_2_length
     )
-    var padded_indices = NDBuffer[
-        mut=True, indices.type, indices.rank, indices.origin
-    ](padded_indices_buffer._unsafe_ptr(), (pow_2_length))
+    var padded_indices = LayoutTensor[
+        mut=True, indices.dtype, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        padded_indices_buffer,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](pow_2_length)
+        ),
+    )
 
     # Initialize indices with sequential values and copy input data to device
     @parameter
@@ -233,16 +255,21 @@ fn _argsort_gpu[
     fn fill_indices_iota[width: Int, rank: Int](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
-            padded_indices.store(i, iota[padded_indices.type, width](i))
-            padded_input.store[width=width, alignment = padded_input.alignment](
-                i, input.load[width=width](i)
+            padded_indices.ptr.store(i, iota[padded_indices.dtype, width](i))
+            padded_input.ptr.store[alignment = padded_input.alignment](
+                i, input.ptr.load[width=width](i)
             )
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
-        padded_indices.store[width=width](i, -1)
-        padded_input.store[width=width](
-            i, _sentinel_val[padded_input.type, ascending]()
+        padded_indices.ptr.store(
+            i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
+        )
+        padded_input.ptr.store(
+            i,
+            SIMD[padded_input.dtype, width](
+                _sentinel_val[padded_input.dtype, ascending]()
+            ),
         )
 
     # we want to fill one element at a time to handle the case where n is not a
@@ -258,12 +285,14 @@ fn _argsort_gpu[
     @parameter
     @__copy_capture(padded_indices, indices)
     fn extract_indices[width: Int, rank: Int](offset: IndexList[rank]):
-        indices.store(offset[0], padded_indices.load[width=width](offset[0]))
+        indices.ptr.store(
+            offset[0], padded_indices.ptr.load[width=width](offset[0])
+        )
 
     # Extract the unpadded indices from the padded indices.
     elementwise[
         extract_indices,
-        simd_width = simdwidthof[indices.type, target = _get_gpu_target()](),
+        simd_width = simdwidthof[indices.dtype, target = _get_gpu_target()](),
         target="gpu",
     ](n, ctx)
 
@@ -272,13 +301,13 @@ fn _argsort_gpu[
     _ = padded_indices_buffer^
 
 
-fn _validate_argsort(output: NDBuffer, input: NDBuffer) raises:
+fn _validate_argsort(input: LayoutTensor, output: LayoutTensor) raises:
     """
     Validates input and output buffers for argsort operation.
 
     Args:
-        output: Buffer to store sorted indices.
         input: Buffer containing values to sort.
+        output: Buffer to store sorted indices.
 
     Raises:
         Error if buffers don't meet requirements for argsort.
@@ -293,10 +322,10 @@ fn _validate_argsort(output: NDBuffer, input: NDBuffer) raises:
         raise "input must be a 1D tensor"
 
     @parameter
-    if not output.type.is_integral():
+    if not output.dtype.is_integral():
         raise "output must be an integer type"
 
-    if len(output) != len(input):
+    if output.size() != input.size():
         raise "output and input must have the same length"
 
 
@@ -304,7 +333,9 @@ fn argsort[
     *,
     ascending: Bool = True,
     target: StaticString = "cpu",
-](output: NDBuffer[mut=True, *_], input: NDBuffer, ctx: DeviceContext) raises:
+](
+    output: LayoutTensor[mut=True, **_], input: LayoutTensor, ctx: DeviceContext
+) raises:
     """
     Performs argsort on input buffer, storing indices in output buffer.
 
@@ -318,18 +349,20 @@ fn argsort[
         ctx: Device context for execution.
     """
     with Trace[TraceLevel.OP, target=target]("argsort"):
-        _validate_argsort(output, input)
+        _validate_argsort(input, output)
 
         @parameter
         if is_cpu[target]():
-            return _argsort_cpu[ascending=ascending](output, input)
+            return _argsort_cpu[ascending=ascending](
+                output.address_space_cast[AddressSpace.GENERIC](), input
+            )
         else:
             return _argsort_gpu[ascending=ascending](output, input, ctx)
 
 
 fn argsort[
     ascending: Bool = True
-](output: NDBuffer[mut=True, *_], input: NDBuffer) raises:
+](output: LayoutTensor[mut=True, **_], input: LayoutTensor) raises:
     """
     CPU-only version of argsort.
 
@@ -341,5 +374,7 @@ fn argsort[
         input: Buffer containing values to sort.
     """
     with Trace[TraceLevel.OP]("argsort"):
-        _validate_argsort(output, input)
-        _argsort_cpu[ascending=ascending](output, input)
+        _validate_argsort(input, output)
+        _argsort_cpu[ascending=ascending](
+            output.address_space_cast[AddressSpace.GENERIC](), input
+        )

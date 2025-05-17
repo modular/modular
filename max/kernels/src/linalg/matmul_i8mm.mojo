@@ -268,7 +268,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
                 )
             var kl = align_up(tile_n_k[1], 8)
             for idx_k in range(0, kl, 8):
-                self._accumulate[simd_size](
+                self._accumulate[simd_size, kernel_rows2, kernel_cols](
                     a,
                     b_packed,
                     acc.output_tile,

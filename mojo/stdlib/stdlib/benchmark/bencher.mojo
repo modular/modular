@@ -30,7 +30,7 @@ from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
-@value
+@fieldwise_init
 struct BenchMetric(Copyable, Movable, Stringable, Writable):
     """Defines a benchmark throughput metric."""
 
@@ -509,7 +509,7 @@ struct Mode:
         return self.value == other.value
 
 
-struct Bench(Writable):
+struct Bench(Writable, Stringable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 

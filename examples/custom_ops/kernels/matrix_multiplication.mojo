@@ -28,7 +28,12 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor, foreach
+from tensor_internal import (
+    InputTensor,
+    ManagedTensorSlice,
+    OutputTensor,
+    foreach,
+)
 
 from utils.index import Index
 

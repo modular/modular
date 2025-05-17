@@ -172,7 +172,6 @@ struct DataType:
         return Int(self._value)
 
 
-@value
 @register_passable("trivial")
 struct ComputeType:
     var _value: Int32

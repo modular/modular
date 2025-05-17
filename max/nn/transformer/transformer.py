@@ -20,10 +20,7 @@ from typing import Callable, TypeVar, cast
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 
-from ..attention.interfaces import (
-    AttentionImpl,
-    AttentionImplQKV,
-)
+from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
 from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,

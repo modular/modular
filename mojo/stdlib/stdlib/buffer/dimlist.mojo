@@ -27,7 +27,6 @@ from utils import IndexList, StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable, Indexer):
     """A static or dynamic dimension modeled with an optional integer.
