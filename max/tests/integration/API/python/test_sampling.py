@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 import xgrammar as xgr
-from max.driver import Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
@@ -325,3 +325,96 @@ def test_apply_penalties_to_logits(session: InferenceSession):
             ref_result[i][token] -= PRESENCE_PENALTY_SCALAR
 
     torch.testing.assert_close(max_result.to("cpu"), ref_result)
+
+
+def test_update_frequency_data(session: InferenceSession):
+    device = session.devices[0]
+    device_ref = DeviceRef.from_device(device)
+    compressed_frequency_data_type = BufferType(
+        DType.int32,
+        ["unique_tokens", 2],
+        device=device_ref,
+    )
+    frequency_offsets_type = TensorType(
+        DType.uint32,
+        ["batch_size_plus_1"],
+        device=device_ref,
+    )
+    new_tokens_type = TensorType(
+        DType.int64,
+        ["batch_size"],
+        device=device_ref,
+    )
+
+    PADDING_TOKEN = -1
+
+    frequency_offsets_np = np.array([0, 6, 10], dtype=np.uint32)
+    compressed_frequency_data_np = np.array(
+        [
+            [0, 1],
+            [1, 1],
+            [2, 1],
+            [3, 1],
+            [4, 1],
+            [PADDING_TOKEN, 0],
+            [0, 1],
+            [1, 1],
+            [2, 1],
+            [PADDING_TOKEN, 0],
+        ],
+        dtype=np.int32,
+    )
+    new_tokens_np = np.array([3, 6], dtype=np.int64)
+
+    with Graph(
+        "update_frequency_data",
+        input_types=(
+            compressed_frequency_data_type,
+            frequency_offsets_type,
+            new_tokens_type,
+        ),
+    ) as graph:
+        compressed_frequency_data = graph.inputs[0].buffer
+        frequency_offsets = graph.inputs[1].tensor
+        new_tokens = graph.inputs[2].tensor
+
+        ops.inplace_custom(
+            "sampler.update_frequency_data",
+            values=[
+                compressed_frequency_data,
+                frequency_offsets,
+                new_tokens,
+            ],
+            device=device_ref,
+        )
+
+        graph.output(compressed_frequency_data)
+
+    model = session.load(graph)
+
+    compressed_frequency_data_out = model(
+        Tensor.from_dlpack(compressed_frequency_data_np).to(device),
+        Tensor.from_dlpack(frequency_offsets_np).to(device),
+        Tensor.from_dlpack(new_tokens_np).to(device),
+    )[0]
+
+    assert isinstance(compressed_frequency_data_out, Tensor)
+    compressed_frequency_data_out = compressed_frequency_data_out.to(CPU())
+
+    ref_result = np.array(
+        [
+            [0, 1],
+            [1, 1],
+            [2, 1],
+            [3, 2],  # incremented
+            [4, 1],
+            [PADDING_TOKEN, 0],
+            [0, 1],
+            [1, 1],
+            [2, 1],
+            [6, 1],  # added
+        ],
+        dtype=np.int32,
+    )
+
+    assert np.all(ref_result == np.from_dlpack(compressed_frequency_data_out))
