@@ -23,6 +23,9 @@ from test_common.registry import prepare_registry
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@pytest.mark.skip(
+    reason="TODO(AITLIB-339): This test is flaky due to bad huggingface cache hydration"
+)
 def test_config__validate_device_and_encoding_combinations(
     smollm_135m_local_path,
     llama_3_1_8b_instruct_local_path,
