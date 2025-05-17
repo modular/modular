@@ -20,22 +20,29 @@ from hashlib.hash import _hash_simd
 from math import CeilDivable
 from sys import bitwidthof
 
-from documentation import doc_private
+from builtin.math import Absable
 
+from utils import Writable, Writer
+from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
-from utils.write import Writable
 
 
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct UInt(
-    Indexer,
-    _HashableWithHasher,
-    Stringable,
-    Comparable,
-    CeilDivable,
-    Writable,
+    Absable,
     Boolable,
+    CeilDivable,
+    Movable,
+    Comparable,
+    ExplicitlyCopyable,
+    Hashable,
+    _HashableWithHasher,
+    Indexer,
+    KeyElement,
+    Representable,
+    Stringable,
+    Writable,
 ):
     """This type represents an unsigned integer.
 
@@ -102,16 +109,6 @@ struct UInt(
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: Int):
-        """Construct UInt from the given index value.
-
-        Args:
-            value: The init value.
-        """
-        self.value = value.value
-
-    @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: IntLiteral):
         """Construct UInt from the given IntLiteral value.
 
@@ -119,6 +116,16 @@ struct UInt(
             value: The init value.
         """
         self = value.__uint__()
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(out self, value: Int):
+        """Construct UInt from the given index value.
+
+        Args:
+            value: The init value.
+        """
+        self.value = value.value
 
     @always_inline("nodebug")
     fn __init__[T: Indexer](out self, value: T):
@@ -136,7 +143,7 @@ struct UInt(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    @always_inline("nodebug")
+    @always_inline("nodebug")  # TODO: should be "builtin"
     fn __lt__(self, rhs: UInt) -> Bool:
         """Return whether this UInt is strictly less than another.
 
@@ -150,7 +157,7 @@ struct UInt(
             pred = __mlir_attr.`#index<cmp_predicate ult>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("nodebug")  # TODO: should be "builtin"
     fn __le__(self, rhs: UInt) -> Bool:
         """Compare this Int to the RHS using LE comparison.
 
@@ -158,7 +165,8 @@ struct UInt(
             rhs: The other UInt to compare against.
 
         Returns:
-            True if this Int is less-than the RHS Int and False otherwise.
+            True if this Int is less-or-equal than the RHS Int and False
+            otherwise.
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate ule>`
@@ -174,11 +182,9 @@ struct UInt(
         Returns:
             True if this UInt is equal to the RHS UInt and False otherwise.
         """
-        return Bool(
-            __mlir_op.`index.cmp`[
-                pred = __mlir_attr.`#index<cmp_predicate eq>`
-            ](self.value, rhs.value)
-        )
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate eq>`
+        ](self.value, rhs.value)
 
     @always_inline("builtin")
     fn __ne__(self, rhs: UInt) -> Bool:
@@ -190,13 +196,11 @@ struct UInt(
         Returns:
             True if this UInt is non-equal to the RHS UInt and False otherwise.
         """
-        return Bool(
-            __mlir_op.`index.cmp`[
-                pred = __mlir_attr.`#index<cmp_predicate ne>`
-            ](self.value, rhs.value)
-        )
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate ne>`
+        ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("nodebug")  # TODO: should be "builtin"
     fn __gt__(self, rhs: UInt) -> Bool:
         """Return whether this UInt is strictly greater than another.
 
@@ -211,7 +215,7 @@ struct UInt(
             pred = __mlir_attr.`#index<cmp_predicate ugt>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("nodebug")  # TODO: should be "builtin"
     fn __ge__(self, rhs: UInt) -> Bool:
         """Return whether this UInt is greater than or equal to another.
 
@@ -318,7 +322,7 @@ struct UInt(
             The remainder of dividing self by rhs.
         """
         if rhs == 0:
-            # this should raise an exception.
+            # this should raise an exception
             return 0
         return __mlir_op.`index.remu`(self.value, rhs.value)
 
@@ -333,7 +337,8 @@ struct UInt(
             The quotient and remainder as a `Tuple(self // rhs, self % rhs)`.
         """
         if rhs == 0:
-            return Tuple[UInt, UInt](0, 0)
+            # this should raise an exception
+            return UInt(0), UInt(0)
         return self // rhs, self % rhs
 
     @always_inline("nodebug")
@@ -370,7 +375,7 @@ struct UInt(
         """
         return __mlir_op.`index.shl`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("nodebug")  # TODO: should be "builtin"
     fn __rshift__(self, rhs: UInt) -> UInt:
         """Return `self >> rhs`.
 
@@ -449,6 +454,7 @@ struct UInt(
         """
         self = self * rhs
 
+    @always_inline("nodebug")
     fn __itruediv__(mut self, rhs: UInt):
         """Compute `self / rhs`, convert to int, and save the result in self.
 
@@ -469,6 +475,7 @@ struct UInt(
         """
         self = self // rhs
 
+    @always_inline("nodebug")
     fn __imod__(mut self, rhs: UInt):
         """Compute `self % rhs` and save the result in self.
 
@@ -559,7 +566,7 @@ struct UInt(
         """
         return value - self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rmul__(self, value: UInt) -> UInt:
         """Return `value * self`.
 
@@ -619,7 +626,7 @@ struct UInt(
         """
         return value << self
 
-    @always_inline("nodebug")
+    @always_inline("nodebug")  # TODO: should be "builtin"
     fn __rrshift__(self, value: UInt) -> UInt:
         """Return `value >> self`.
 
@@ -698,59 +705,6 @@ struct UInt(
         """
         return self.value
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert this UInt to a string.
-
-        A small example.
-        ```mojo
-        %# from testing import assert_equal
-        x = UInt(50)
-        assert_equal(String(x), "50")
-        ```
-
-        Returns:
-            The string representation of this UInt.
-        """
-        return String.write(self)
-
-    fn __repr__(self) -> String:
-        """Convert this UInt to a string.
-
-        A small example.
-        ```mojo
-        %# from testing import assert_equal
-        x = UInt(50)
-        assert_equal(repr(x), "UInt(50)")
-        ```
-
-        Returns:
-            The string representation of this UInt.
-        """
-        return String("UInt(", String(self), ")")
-
-    fn __hash__(self) -> UInt:
-        """Hash the UInt using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        # TODO(MOCO-636): switch to DType.index
-        return _hash_simd(Scalar[DType.uint64](self))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
-        """Updates hasher with this uint value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher._update_with_simd(UInt64(self))
-
     @always_inline("builtin")
     fn __abs__(self) -> Self:
         """Return the absolute value of the UInt value.
@@ -787,7 +741,7 @@ struct UInt(
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __round__(self, ndigits: UInt) -> Self:
         """Return the rounded value of the UInt value, which is itself.
 
@@ -828,7 +782,7 @@ struct UInt(
         Returns:
             True if the integer is a power of two, False otherwise.
         """
-        return (self & (self - 1) == 0) & self.__bool__()
+        return (self & (self - 1) == 0) & (self != 0)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -842,3 +796,56 @@ struct UInt(
         """
 
         writer.write(UInt64(self))
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Convert this UInt to a string.
+
+        A small example.
+        ```mojo
+        %# from testing import assert_equal
+        x = UInt(50)
+        assert_equal(String(x), "50")
+        ```
+
+        Returns:
+            The string representation of this UInt.
+        """
+        return String.write(self)
+
+    fn __repr__(self) -> String:
+        """Convert this UInt to a string.
+
+        A small example.
+        ```mojo
+        %# from testing import assert_equal
+        x = UInt(50)
+        assert_equal(repr(x), "UInt(50)")
+        ```
+
+        Returns:
+            The string representation of this UInt.
+        """
+        return String("UInt(", self, ")")
+
+    fn __hash__(self) -> UInt:
+        """Hash the UInt using builtin hash.
+
+        Returns:
+            A 64-bit hash value. This value is _not_ suitable for cryptographic
+            uses. Its intended usage is for data structures. See the `hash`
+            builtin documentation for more details.
+        """
+        # TODO(MOCO-636): switch to DType.index
+        return _hash_simd(Scalar[DType.uint64](self))
+
+    fn __hash__[H: _Hasher](self, mut hasher: H):
+        """Updates hasher with this uint value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher._update_with_simd(UInt64(self))
