@@ -90,7 +90,7 @@ fn main():
 
     var a_string_literal = "fofofo"
 
-    var a_list = [1, 2.125, 3]
+    var a_list = List[Int](1, 2, 3)
 
     var a_simd = SIMD[DType.float16, 4](1.125, 2.5, 0, -3.725)
 

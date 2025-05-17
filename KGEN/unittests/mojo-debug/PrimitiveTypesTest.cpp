@@ -204,7 +204,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   // FIXME(37682): Reenable list printing
   // (*index, scalar<f64>, index) a_list = {
   //   [0] = 1
-  //   [1] = ([0] = 2.125)
+  //   [1] = 2
   //   [2] = 3
   // }
   EXPECT_EQ(ctx.runCommand("v a_simd").output,
