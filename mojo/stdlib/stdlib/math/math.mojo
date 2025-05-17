@@ -1037,7 +1037,10 @@ fn tanh[
 # TODO: control symmetric behavior with flag so we can be compatible with Python
 @always_inline
 fn isclose[
-    dtype: DType, width: Int
+    dtype: DType,
+    width: Int,
+    *,
+    symmetrical: Bool = True,
 ](
     a: SIMD[dtype, width],
     b: SIMD[dtype, width],
@@ -1059,6 +1062,9 @@ fn isclose[
     Parameters:
         dtype: The `dtype` of the input and output SIMD vector.
         width: The width of the input and output SIMD vector.
+        symmetrical: Whether to use the symmetrical version of the
+            isclose function. If set to `False`, then the formula used is
+            $abs(a - b) <= atol + rtol * abs(b)$.
 
     Args:
         a: The first value to compare.
@@ -1075,27 +1081,24 @@ fn isclose[
         a.dtype is DType.bool or a.dtype.is_numeric(),
         "input type must be boolean, integral, or floating-point",
     ]()
+    alias T = __type_of(a)
 
     @parameter
     if a.dtype is DType.bool or a.dtype.is_integral():
         return a == b
+
+    var check_nan = isnan(a) & isnan(b)
+    var check_fin: SIMD[DType.bool, width]
+    var in_range: SIMD[DType.bool, width]
+
+    @parameter
+    if symmetrical:
+        check_fin = isfinite(a) & isfinite(b)
+        in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
     else:
-        var both_nan = isnan(a) & isnan(b)
-        if equal_nan and all(both_nan):
-            return True
-
-        var res = (a == b) | (
-            isfinite(a)
-            & isfinite(b)
-            & (
-                abs(a - b)
-                <= max(
-                    __type_of(a)(atol), __type_of(a)(rtol) * max(abs(a), abs(b))
-                )
-            )
-        )
-
-        return res | both_nan if equal_nan else res
+        check_fin = isfinite(b)
+        in_range = abs(a - b) <= T(atol) + T(rtol) * abs(b)
+    return (a == b) | (check_nan & equal_nan) | (check_fin & in_range)
 
 
 # ===----------------------------------------------------------------------=== #
