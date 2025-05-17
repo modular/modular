@@ -13,7 +13,7 @@ import xgrammar as xgr
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.pipelines.lib import SamplingConfig, rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
@@ -220,3 +220,108 @@ def test_rejection_sampler(session: InferenceSession):
                 )
 
                 break
+
+
+def test_apply_penalties_to_logits(session: InferenceSession):
+    BATCH_SIZE = 14
+    VOCAB_SIZE = 1024
+    FREQ_PENALTY_SCALAR = 0.5
+    PRESENCE_PENALTY_SCALAR = 1.2
+
+    device = session.devices[0]
+    device_ref = DeviceRef.from_device(device)
+    logits_in_type = BufferType(
+        DType.float32,
+        ["total_output_len", "vocab_size"],
+        device=device_ref,
+    )
+    compressed_frequency_data_type = TensorType(
+        DType.int32,
+        ["unique_tokens", 2],
+        device=device_ref,
+    )
+    frequency_offsets_type = TensorType(
+        DType.uint32,
+        ["batch_size_plus_1"],
+        device=device_ref,
+    )
+
+    prompt_lens = np.random.randint(10, 20, [BATCH_SIZE])
+    prompt_tokens = [
+        np.random.randint(0, VOCAB_SIZE, [prompt_len])
+        for prompt_len in prompt_lens
+    ]
+
+    frequency_offsets_np = np.zeros(BATCH_SIZE + 1, dtype=np.uint32)
+    compressed_frequency_data_np = np.zeros(
+        [np.sum(prompt_lens), 2], dtype=np.int32
+    )
+
+    for i in range(BATCH_SIZE):
+        unique_tokens, counts = np.unique(prompt_tokens[i], return_counts=True)
+
+        start_idx = frequency_offsets_np[i]
+        end_idx = start_idx + len(unique_tokens)
+        frequency_offsets_np[i + 1] = end_idx
+
+        compressed_frequency_data_np[start_idx:end_idx, 0] = unique_tokens
+        compressed_frequency_data_np[start_idx:end_idx, 1] = counts
+
+    # resize compressed_frequency_data to the correct size
+    compressed_frequency_data_np = compressed_frequency_data_np[
+        : frequency_offsets_np[BATCH_SIZE], :
+    ]
+
+    logits_np = torch.randn([BATCH_SIZE, VOCAB_SIZE], dtype=torch.float32)
+
+    with Graph(
+        "apply_penalties_to_logits",
+        input_types=(
+            logits_in_type,
+            compressed_frequency_data_type,
+            frequency_offsets_type,
+        ),
+    ) as graph:
+        logits = graph.inputs[0].buffer
+        compressed_frequency_data = graph.inputs[1].tensor
+        frequency_offsets = graph.inputs[2].tensor
+
+        ops.inplace_custom(
+            "sampler.apply_penalties",
+            values=[
+                logits,
+                compressed_frequency_data,
+                frequency_offsets,
+                ops.constant(
+                    FREQ_PENALTY_SCALAR, DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    PRESENCE_PENALTY_SCALAR,
+                    DType.float32,
+                    device=DeviceRef.CPU(),
+                ),
+            ],
+            device=device_ref,
+        )
+
+        graph.output(logits)
+
+    model = session.load(graph)
+
+    logits_out = model(
+        Tensor.from_dlpack(logits_np).to(device),
+        Tensor.from_dlpack(compressed_frequency_data_np).to(device),
+        Tensor.from_dlpack(frequency_offsets_np).to(device),
+    )[0]
+
+    max_result = torch.from_dlpack(logits_out)
+
+    # create reference result
+    ref_result = logits_np.clone()
+    for i in range(BATCH_SIZE):
+        unique_tokens, counts = np.unique(prompt_tokens[i], return_counts=True)
+        for token, count in zip(unique_tokens, counts):
+            ref_result[i][token] -= FREQ_PENALTY_SCALAR * count
+            ref_result[i][token] -= PRESENCE_PENALTY_SCALAR
+
+    torch.testing.assert_close(max_result.to("cpu"), ref_result)
