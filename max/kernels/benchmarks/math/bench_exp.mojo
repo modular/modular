@@ -205,7 +205,7 @@ fn exp_sleef[
 fn _exp_taylor0[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    alias coefficients = List[SIMD[type, simd_width]](
+    alias coefficients = List[Scalar[type]](
         1.0,
         1.0,
         0.5,
@@ -275,7 +275,7 @@ fn exp_mojo_opt2[
 fn _exp_taylor3[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    alias coefficients = List[SIMD[type, simd_width]](
+    alias coefficients = List[Scalar[type]](
         0.5,
         0.16666666666666666667,
         0.041666666666666666667,
@@ -315,7 +315,7 @@ fn _exp_taylor_mlas[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return polynomial_evaluate[
-        List[SIMD[type, simd_width]](
+        List[Scalar[type]](
             1.0,
             1.0,
             0.499999851,
