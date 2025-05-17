@@ -936,48 +936,31 @@ fn isfinite[
 
 
 @always_inline
-fn get_accum_type[
-    dtype: DType, *, preferred_accum_type: DType = DType.float32
-]() -> DType:
-    """Returns the recommended dtype for accumulation operations.
-
-    Half precision and float8 types can introduce numerical error if they are
-    used in reduction/accumulation operations. This method returns a higher
-    precision dtype to use for accumulation if a half precision types is
-    provided, otherwise it returns the original dtype.
+fn get_accum_type[dtype: DType, *, high_precision: Bool = True]() -> DType:
+    """Returns the dtype for accumulation some operations.
 
     The rules are as follows:
-        - If the dtype is a float8 type, return a float16 type.
-        - If the dtype is a bfloat16 precision type, return a float32 type.
-        - If the dtype is a float16 precision type, return a float32 dtype if
-            the preferred_accum_type is float32, otherwise return a float16
-            type.
-        - Otherwise, return the original type.
+    - If the `dtype` is a `float8` type, reutrn `float32` if `high_precision`, otherwise return `bfloat16`.
+    - If the `dtype` is `bfloat16`, return `float32`.
+    - If the `dtype` is `float16`, return `float32` if `high_precision`, otherwise return `float16`.
+    - Otherwise, return the original `dtype`.
 
     Parameters:
         dtype: The dtype of some accumulation operation.
-        preferred_accum_type: The preferred dtype for accumulation.
+        high_precision: Use high precision accumulation type as defined above.
+            Defaults to `True`.
 
     Returns:
-        DType.float32 if dtype is a half-precision float, dtype otherwise.
+        The dtype for accumulation operations.
     """
 
     @parameter
     if dtype.is_float8():
-        if preferred_accum_type is DType.float32:
-            return preferred_accum_type
-        else:
-            return DType.bfloat16
+        return DType.float32 if high_precision else DType.bfloat16
     elif dtype is DType.bfloat16:
         return DType.float32
     elif dtype is DType.float16:
-        # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
-        # performance and use fp32 only when it's specified via preferred type.
-        @parameter
-        if preferred_accum_type is DType.float32:
-            return preferred_accum_type
-        else:
-            return DType.float16
+        return DType.float32 if high_precision else DType.float16
     else:
         return dtype
 
