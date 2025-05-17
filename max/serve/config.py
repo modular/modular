@@ -57,7 +57,7 @@ class MetricRecordingMethod(Enum):
     SYNC = "SYNC"
     # Record metrics asynchronously using asyncio
     ASYNCIO = "ASYNCIO"
-    # Send metric observations to a seperate process for recording
+    # Send metric observations to a separate process for recording
     PROCESS = "PROCESS"
 
 

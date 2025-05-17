@@ -397,7 +397,7 @@ fn flash_attention_dispatch[
     alias depth = config.depth
     alias group = config.num_heads // kv_num_heads
 
-    # K V smem is only seperate for GPUs with shared memory greater or equal to A100's.
+    # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     alias is_shared_kv = ctx.device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
     constrained[depth == q.shape.get[rank - 1]()]()
@@ -508,7 +508,7 @@ fn flash_attention_dispatch[
             # smem for q
             var shared_mem_bytes = BM * depth * sizeof[q.type]()
 
-            # seperate KV smem if we have enough smem
+            # separate KV smem if we have enough smem
             @parameter
             if not is_shared_kv:
                 shared_mem_bytes += 2 * BN * depth * sizeof[k_t.type]()
