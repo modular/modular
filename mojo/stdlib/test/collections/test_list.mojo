@@ -68,6 +68,14 @@ def test_list():
     assert_equal(7, list[-1])
 
 
+def test_list_literal():
+    var list: List[Int] = [1, 2, 3]
+    assert_equal(3, len(list))
+    assert_equal(1, list[0])
+    assert_equal(2, list[1])
+    assert_equal(3, list[2])
+
+
 def test_list_unsafe_get():
     var list = List[Int]()
 
@@ -954,6 +962,7 @@ def test_copyinit_trivial_types_dtypes():
 def main():
     test_mojo_issue_698()
     test_list()
+    test_list_literal()
     test_list_unsafe_get()
     test_list_unsafe_set()
     test_list_clear()
