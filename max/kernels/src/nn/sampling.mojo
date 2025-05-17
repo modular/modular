@@ -70,3 +70,52 @@ fn apply_penalties_to_logits[
         target=target,
         _trace_description="apply_penalties_to_logits",
     ](dispatch_shape, ctx)
+
+
+fn update_frequency_data[
+    token_type: DType, //,
+    target: StaticString,
+](
+    compressed_frequency_data: LayoutTensor[mut=True, DType.int32, **_],
+    frequency_offsets: LayoutTensor[DType.uint32, **_],
+    new_tokens: LayoutTensor[token_type, **_],
+    ctx: DeviceContextPtr,
+) raises:
+    """
+    Update the frequency data for the given new tokens.
+
+    The frequency data is stored in a CSR format. This kernel expects there will be
+    enough padding for each sequence to store the new tokens.
+    """
+
+    @always_inline
+    @parameter
+    fn update_frequency_data_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+        constrained[rank_ == 1, "update_frequency_data_fn: rank must be 1"]()
+
+        var tok_start = frequency_offsets[idx[0]]
+        var tok_end = frequency_offsets[idx[0] + 1]
+
+        var new_token = rebind[Scalar[token_type]](new_tokens[idx[0]]).cast[
+            DType.int32
+        ]()
+
+        for tok_id in range(tok_start, tok_end):
+            if compressed_frequency_data[tok_id, 0] == new_token:
+                compressed_frequency_data[tok_id, 1] += 1
+                break
+
+            # if we encounter a padding token, add the new token to the
+            # occurrences tensor
+            elif compressed_frequency_data[tok_id, 0] == -1:
+                compressed_frequency_data[tok_id, 0] = new_token
+                compressed_frequency_data[tok_id, 1] = 1
+                break
+
+    var dispatch_shape = IndexList[1](new_tokens.size())
+    elementwise[
+        func=update_frequency_data_fn,
+        simd_width=1,
+        target=target,
+        _trace_description="update_frequency_data",
+    ](dispatch_shape, ctx)

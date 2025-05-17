@@ -168,7 +168,7 @@ from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
-from nn.sampling import apply_penalties_to_logits
+from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.slice import (
     copy_to_slice,
     slice_as_view,
@@ -8510,6 +8510,33 @@ struct Struct_sampler_apply_penalties:
                 frequency_offsets.to_layout_tensor(),
                 frequency_penalty,
                 presence_penalty,
+                ctx,
+            )
+
+
+@compiler.register("sampler.update_frequency_data")
+struct Struct_sampler_update_frequency_data:
+    @always_inline
+    @staticmethod
+    fn execute[
+        token_type: DType, //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        compressed_frequency_data: MutableInputTensor[
+            type = DType.int32, rank=2
+        ],
+        frequency_offsets: InputTensor[type = DType.uint32, rank=1],
+        new_tokens: InputTensor[type=token_type, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_valid_target[target](), "not a valid target"]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            update_frequency_data[target=target](
+                compressed_frequency_data.to_layout_tensor(),
+                frequency_offsets.to_layout_tensor(),
+                new_tokens.to_layout_tensor(),
                 ctx,
             )
 
