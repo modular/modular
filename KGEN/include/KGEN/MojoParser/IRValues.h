@@ -304,16 +304,9 @@ raw_ostream &operator<<(raw_ostream &os, OverloadSetUValue value);
 /// This is used in slice operands to subscripts.
 class InitializerUValue {
 public:
-  InitializerUValue(); // Used by dyn_cast.
   InitializerUValue(const InitializerUValue &existing);
   InitializerUValue &operator=(const InitializerUValue &existing);
   ~InitializerUValue();
-
-  // InitializerUValue must be "nullable" so getIfInitializer() can return an
-  // InitializerUValue.  Maybe it should return optional?
-  bool isNull() const { return !storage; }
-  bool operator!() const { return isNull(); }
-  explicit operator bool() const { return !isNull(); }
 
   const CallOperands &get() const;
 
@@ -454,17 +447,16 @@ struct VariantUValue {
     if (value)
       getStorageR() = std::move(value);
   }
-  VariantUValue(InitializerUValue value) {
-    if (value)
-      getStorageR() = std::move(value);
-  }
+  VariantUValue(InitializerUValue value) { getStorageR() = std::move(value); }
 
   OverloadSetUValue getIfOverloadSet() const {
     return dyn_cast<OverloadSetUValue>(getStorageR());
   }
 
-  InitializerUValue getIfInitializer() const {
-    return dyn_cast<InitializerUValue>(getStorageR());
+  std::optional<InitializerUValue> getIfInitializer() const {
+    if (isa<InitializerUValue>(getStorageR()))
+      return cast<InitializerUValue>(getStorageR());
+    return {};
   }
 
 private:

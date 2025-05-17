@@ -600,7 +600,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return {};
   }
 
-  return emitConstructorCall(expectedType, CallOperands(initValue.get()),
+  return emitConstructorCall(expectedType, CallOperands(initValue->get()),
                              value.expr, CallSyntax::kTypeCall, dest);
 }
 

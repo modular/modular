@@ -58,10 +58,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "OverloadSetUValue: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
-  } else if (auto val = dyn_cast<InitializerUValue>(storage)) {
+  } else if (isa<InitializerUValue>(storage)) {
     if (isDump)
       os << "InitializerUValue: ";
-    os << val.get();
+    os << cast<InitializerUValue>(storage).get();
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
       os << "ML: ";
@@ -360,7 +360,6 @@ struct InitializerUValue::CallOperandsWrapper
   CallOperands operands;
 };
 
-InitializerUValue::InitializerUValue() {}
 InitializerUValue::InitializerUValue(const InitializerUValue &existing)
     : storage(existing.storage.copy()) {}
 InitializerUValue::InitializerUValue(RCRef<CallOperandsWrapper> storage)
