@@ -70,7 +70,7 @@ def test_exp_libm[type: DType]():
         )
 
 
-@value
+@fieldwise_init
 struct Float32Expable(EqualityComparable, Stringable):
     """This is a test struct that implements the Expable trait for Float32."""
 
@@ -89,14 +89,11 @@ struct Float32Expable(EqualityComparable, Stringable):
         return String("Float32Expable(", self.x, ")")
 
 
-@value
+@fieldwise_init
 struct FakeExpable(EqualityComparable, Stringable):
     """This is a test struct that has a dummy definition of exp function."""
 
     var x: Int
-
-    fn __init__(out self, x: Int):
-        self.x = x
 
     fn __exp__(self) -> Self:
         return Self(99)

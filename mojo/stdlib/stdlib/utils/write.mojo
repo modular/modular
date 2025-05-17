@@ -467,7 +467,7 @@ fn write_buffered[
     buffer.flush()
 
 
-@value
+@fieldwise_init
 @register_passable
 struct WritableVariadicPack[
     mut: Bool, //,

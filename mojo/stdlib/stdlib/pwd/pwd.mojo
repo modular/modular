@@ -20,8 +20,8 @@ from ._linux import _getpw_linux
 from ._macos import _getpw_macos
 
 
-@value
-struct Passwd(Stringable, Writable):
+@fieldwise_init
+struct Passwd(Stringable, Writable, Copyable, Movable):
     """Represents user account information retrieved from the user password
     database related to a user ID."""
 

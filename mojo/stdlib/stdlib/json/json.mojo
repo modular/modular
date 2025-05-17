@@ -27,7 +27,7 @@ from sys import simdwidthof
 from collections import InlineArray
 
 
-@value
+@fieldwise_init
 struct JSONList[mut: Bool, //, origin: Origin[mut]](
     Representable, Copyable, Movable, Writable, Stringable
 ):
@@ -81,7 +81,7 @@ struct JSONList[mut: Bool, //, origin: Origin[mut]](
         return String(self)
 
 
-@value
+@fieldwise_init
 struct JSONDict[mut: Bool, //, origin: Origin[mut]](
     Representable, Copyable, Movable, Writable, Stringable
 ):
