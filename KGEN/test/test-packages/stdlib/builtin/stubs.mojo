@@ -824,6 +824,9 @@ struct Pointer[
 
 
 struct Tuple[*element_types: AnyType]:
+    fn __init__(out self: Tuple[]):
+        pass
+
     @implicit
     fn __init__(out self, *args: *element_types):
         pass
