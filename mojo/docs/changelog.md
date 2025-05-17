@@ -98,6 +98,11 @@ Changes to Python-Mojo interoperability:
   Similarly, a new `def_method` API is added to `PythonTypeBuilder` to allow
   declaring Python bindings for methods that take and return `PythonObject`s.
 
+- `Span` now has `find()` and `rfind()` methods which work for any
+  `Span[Scalar[D]]` e.g. `Span[Byte]`. The `rfind()` implementation is
+  now vectorized. PR [#3548](https://github.com/modularml/mojo/pull/3548) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
