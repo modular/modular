@@ -189,23 +189,20 @@ class EmbeddingsMetrics:
         )
 
     def _calculate_results(self):
-        begin_generation = self._signposts.get("begin_encoding")
-        if begin_generation:
+        begin_encoding = self._signposts.get("begin_encoding")
+        if begin_encoding:
             self.startup_time = (
-                self._signposts["begin_encoding"] - self._start_time
+                begin_encoding - self._start_time
             ) * 1000.0
         else:
             self.startup_time = "n/a"
 
-        # Calculate TPOT & token-gen throughput
-        end_generation = self._signposts.get("end_generation")
-        if end_generation and begin_generation:
-            total_batch_time = (
-                self._signposts["end_generation"]
-                - self._signposts["begin_generation"]
-            )
-            self.requests_per_second: Any = self.batch_size / total_batch_time
-            self.total_exe_time: Any = total_batch_time * 1000
+        # Calculate total latency and throughput
+        end_encoding = self._signposts.get("end_encoding")
+        if end_encoding and begin_encoding:
+            total_batch_time = end_encoding - begin_encoding
+            self.requests_per_second = self.batch_size / total_batch_time
+            self.total_exe_time = total_batch_time * 1000
         else:
             self.total_exe_time = "n/a"
             self.requests_per_second = "n/a"
