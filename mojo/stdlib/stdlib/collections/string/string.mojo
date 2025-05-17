@@ -387,7 +387,7 @@ struct String(
                 length,
             )
         else:
-            self._ptr_or_data = data.unsafe_ptr()
+            self._ptr_or_data = rebind[UnsafePointer[Byte]](data.unsafe_ptr())
             self._len_or_data = length
             self._capacity_or_data = cap_field
 
@@ -550,11 +550,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline
     fn __init__(
@@ -570,11 +566,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, owned other: Self):
@@ -1049,7 +1041,10 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        # FIXME: implement logic here manually instead of going through string.write
+        var sep = rebind[StaticString](
+            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+        )
         return String(elems, sep=sep)
 
     fn join[
@@ -1164,9 +1159,13 @@ struct String(
         """
         if self._capacity_or_data.is_inline():
             # The string itself holds the data.
-            return UnsafePointer(to=self).bitcast[Byte]()
+            return rebind[
+                UnsafePointer[Byte, mut=False, origin = __origin_of(self)]
+            ](UnsafePointer(to=self).bitcast[Byte]())
         else:
-            return self._ptr_or_data
+            return rebind[
+                UnsafePointer[Byte, mut=False, origin = __origin_of(self)]
+            ](self._ptr_or_data)
 
     fn unsafe_ptr_mut(
         mut self,

@@ -43,14 +43,8 @@ fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
     var result = hipDevice_t()
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
-        external_call[
-            "AsyncRT_DeviceContext_hip_device",
-            _CharPtr,
-            UnsafePointer[hipDevice_t],
-            _DeviceContextPtr,
-        ](
-            UnsafePointer(to=result),
-            ctx._handle,
+        external_call["AsyncRT_DeviceContext_hip_device", _CharPtr](
+            UnsafePointer(to=result), ctx._handle
         )
     )
     return result
@@ -63,14 +57,8 @@ fn HIP(stream: DeviceStream) raises -> hipStream_t:
     var result = hipStream_t()
     # const char *AsyncRT_DeviceStream_hip_stream(hipStream_t *result, const DeviceStream *stream)
     _checked(
-        external_call[
-            "AsyncRT_DeviceStream_hip_stream",
-            _CharPtr,
-            UnsafePointer[hipStream_t],
-            _DeviceStreamPtr,
-        ](
-            UnsafePointer(to=result),
-            stream._handle,
+        external_call["AsyncRT_DeviceStream_hip_stream", _CharPtr](
+            UnsafePointer(to=result), stream._handle
         )
     )
     return result

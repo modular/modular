@@ -97,7 +97,6 @@ struct UnsafePointer[
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    # Fields
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         type,
@@ -146,16 +145,94 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        out self, other: UnsafePointer[type, address_space=address_space, **_]
+        other: UnsafePointer[*_, **_],
+        out self: UnsafePointer[
+            type = other.type,
+            address_space = other.address_space,
+            alignment = other.alignment,
+            mut=False,
+            origin = ImmutableOrigin.cast_from[other.origin].result,
+        ],
     ):
         """Exclusivity parameter cast a pointer.
 
         Args:
             other: Pointer to cast.
         """
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
-            other.address
-        )
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        out self,
+        other: UnsafePointer[type, mut=mut, origin = origin.empty, **_],
+    ):
+        """Exclusivity parameter cast a pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        out self,
+        other: UnsafePointer[
+            type, address_space=address_space, mut=mut, origin=origin, **_
+        ],
+    ):
+        """Exclusivity parameter cast a pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: UnsafePointer[
+            type,
+            mut=mut,
+            origin = Origin[mut].cast_from[MutableAnyOrigin].result, **_,
+        ],
+        out self: UnsafePointer[
+            type = other.type,
+            address_space = other.address_space,
+            alignment = other.alignment,
+            mut = other.mut,
+            origin=origin,
+        ],
+    ):
+        """Exclusivity parameter cast a pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        out self: UnsafePointer[NoneType], other: UnsafePointer[NoneType, **_]
+    ):
+        """Exclusivity parameter cast a pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
 
     @always_inline
     fn copy(self) -> Self:
@@ -217,7 +294,9 @@ struct UnsafePointer[
         """
         alias sizeof_t = sizeof[type]()
         constrained[sizeof_t > 0, "size must be greater than zero"]()
-        return _malloc[type, alignment=alignment](sizeof_t * count)
+        return _malloc[type, alignment=alignment](sizeof_t * count).origin_cast[
+            origin = MutableOrigin.empty
+        ]()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -933,7 +1012,11 @@ struct UnsafePointer[
         scatter(val, base, mask, alignment)
 
     @always_inline
-    fn free(self: UnsafePointer[_, address_space = AddressSpace.GENERIC, **_]):
+    fn free(
+        self: UnsafePointer[
+            _, address_space = AddressSpace.GENERIC, mut=True, **_
+        ]
+    ):
         """Free the memory referenced by the pointer."""
         _free(self)
 

@@ -129,7 +129,7 @@ struct BlockingScopedLock:
             lock: A mutable reference to the underlying lock.
         """
 
-        self.lock = UnsafePointer(to=lock)
+        self.lock = rebind[__type_of(self.lock)](UnsafePointer(to=lock))
 
     @no_inline
     fn __enter__(mut self):

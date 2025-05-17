@@ -114,7 +114,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         ](self._handle)
 
     @always_inline
-    fn _set_result_slot(self, slot: UnsafePointer[type]):
+    fn _set_result_slot(self, slot: UnsafePointer[type, **_]):
         __mlir_op.`co.set_byref_error_result`(
             self._handle,
             slot.address,

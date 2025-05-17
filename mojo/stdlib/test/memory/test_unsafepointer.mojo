@@ -142,15 +142,21 @@ def test_unsafepointer_string():
 
 def test_eq():
     var local = 1
-    var p1 = UnsafePointer(to=local).origin_cast[mut=False]()
+    var p1 = UnsafePointer(to=local).origin_cast[
+        mut=False, origin=ImmutableAnyOrigin
+    ]()
     var p2 = p1
     assert_equal(p1, p2)
 
     var other_local = 2
-    var p3 = UnsafePointer(to=other_local).origin_cast[mut=False]()
+    var p3 = UnsafePointer(to=other_local).origin_cast[
+        mut=False, origin=ImmutableAnyOrigin
+    ]()
     assert_not_equal(p1, p3)
 
-    var p4 = UnsafePointer(to=local).origin_cast[mut=False]()
+    var p4 = UnsafePointer(to=local).origin_cast[
+        mut=False, origin=ImmutableAnyOrigin
+    ]()
     assert_equal(p1, p4)
     _ = local
     _ = other_local

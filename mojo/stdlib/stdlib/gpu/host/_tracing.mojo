@@ -62,7 +62,7 @@ fn _setup_category(
     value: Int,
     name: StaticString,
 ):
-    name_category(value, name.unsafe_ptr())
+    name_category(value, rebind[UnsafePointer[UInt8]](name.unsafe_ptr()))
 
 
 fn _setup_categories(
@@ -228,7 +228,7 @@ struct EventAttributes:
             _reserved=0,
             event_payload=0,
             message_type=ASCII,
-            message=message.unsafe_ptr(),
+            message=rebind[UnsafePointer[UInt8]](message.unsafe_ptr()),
         )
 
 
@@ -422,9 +422,17 @@ fn _start_range(
         var info = EventAttributes(
             message=message, color=color, category=category
         )
-        return _RangeStart()(UnsafePointer(to=info._value))
+        return _RangeStart()(
+            UnsafePointer(to=info._value).origin_cast[
+                mut=True, origin=MutableAnyOrigin
+            ]()
+        )
     else:
-        return _RangeStart()(message.unsafe_ptr())
+        return _RangeStart()(
+            message.unsafe_ptr().origin_cast[
+                mut=True, origin=MutableAnyOrigin
+            ]()
+        )
 
 
 @always_inline
@@ -451,9 +459,17 @@ fn _mark(
         var info = EventAttributes(
             message=message, color=color, category=category
         )
-        _Mark()(UnsafePointer(to=info._value))
+        _Mark()(
+            UnsafePointer(to=info._value).origin_cast[
+                mut=True, origin=MutableAnyOrigin
+            ]()
+        )
     else:
-        _Mark()(message.unsafe_ptr())
+        _Mark()(
+            message.unsafe_ptr().origin_cast[
+                mut=True, origin=MutableAnyOrigin
+            ]()
+        )
 
 
 struct Range:
@@ -482,9 +498,17 @@ struct Range:
     fn __enter__(mut self):
         @parameter
         if has_nvidia_gpu_accelerator():
-            self._id = self._start_fn(UnsafePointer(to=self._info._value))
+            self._id = self._start_fn(
+                rebind[UnsafePointer[_C_EventAttributes]](
+                    UnsafePointer(to=self._info._value)
+                )
+            )
         else:
-            self._id = self._start_fn(self._info._value.message)
+            self._id = self._start_fn(
+                rebind[UnsafePointer[_C_EventAttributes]](
+                    self._info._value.message
+                )
+            )
 
     @always_inline
     fn __exit__(self):
@@ -529,9 +553,17 @@ struct RangeStack:
     fn __enter__(mut self):
         @parameter
         if has_nvidia_gpu_accelerator():
-            _ = self._push_fn(UnsafePointer(to=self._info._value))
+            _ = self._push_fn(
+                rebind[UnsafePointer[_C_EventAttributes]](
+                    UnsafePointer(to=self._info._value)
+                )
+            )
         else:
-            _ = self._push_fn(self._info._value.message)
+            _ = self._push_fn(
+                rebind[UnsafePointer[_C_EventAttributes]](
+                    self._info._value.message
+                )
+            )
 
     @always_inline
     fn __exit__(self):

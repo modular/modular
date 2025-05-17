@@ -346,10 +346,14 @@ struct PyMethodDef(Copyable, Movable):
 
         This is suitable for use terminating an array of PyMethodDef values.
         """
-        self.method_name = UnsafePointer[c_char]()
+        self.method_name = UnsafePointer[
+            c_char, mut=False, origin=StaticConstantOrigin
+        ]()
         self.method_impl = _null_fn_ptr[PyCFunction]()
         self.method_flags = 0
-        self.method_docstring = UnsafePointer[c_char]()
+        self.method_docstring = UnsafePointer[
+            c_char, mut=False, origin=StaticConstantOrigin
+        ]()
 
     fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
@@ -414,11 +418,13 @@ struct PyType_Spec:
         [Reference](https://docs.python.org/3/c-api/type.html#c.PyType_Spec).
     """
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
-    var slots: UnsafePointer[PyType_Slot]
+    var slots: UnsafePointer[
+        PyType_Slot, mut=False, origin=StaticConstantOrigin
+    ]
 
 
 @value
@@ -660,7 +666,9 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
     @implicit
     fn __init__(out self, name: StaticString):
         self.base = PyModuleDef_Base()
-        self.name = name.unsafe_ptr().bitcast[c_char]()
+        self.name = rebind[__type_of(self.name)](
+            name.unsafe_ptr().bitcast[c_char]()
+        )
         self.docstring = UnsafePointer[c_char]()
         # means that the module does not support sub-interpreters
         self.size = -1
@@ -1288,7 +1296,9 @@ struct CPython:
     fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
         return self.lib.call["PyType_GetName", PyObjectPtr](type)
 
-    fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
+    fn PyType_FromSpec(
+        self, spec: UnsafePointer[PyType_Spec, **_]
+    ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec).
         """

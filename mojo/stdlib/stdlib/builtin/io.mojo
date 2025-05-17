@@ -140,8 +140,10 @@ struct _fdopen[mode: StaticString = "a"]:
             Int,
             OpaquePointer,
         ](
-            UnsafePointer(to=buffer),
-            UnsafePointer(to=UInt64(0)),
+            UnsafePointer(to=buffer).origin_cast[origin=MutableAnyOrigin](),
+            UnsafePointer(to=UInt64(0)).origin_cast[
+                mut=True, origin=MutableAnyOrigin
+            ](),
             ord(delimiter),
             self.handle,
         )
