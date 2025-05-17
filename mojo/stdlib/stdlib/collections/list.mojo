@@ -1100,9 +1100,10 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             ),
         )
 
-        return (self.data + self._len).origin_cast[
-            mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-        ]()
+        # self.unsafe_ptr() + self._len won't work because .unsafe_ptr()
+        # takes a ref that might mutate self
+        var length = self._len
+        return self.unsafe_ptr() + length
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
