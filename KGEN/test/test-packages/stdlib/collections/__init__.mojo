@@ -3,3 +3,5 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+from .dict import OwnedKwargsDict
