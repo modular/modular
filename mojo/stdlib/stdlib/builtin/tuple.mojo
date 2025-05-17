@@ -51,6 +51,14 @@ struct Tuple[*element_types: Copyable & Movable](
     var storage: Self._mlir_type
     """The underlying storage for the tuple."""
 
+    # Overload that crushes down IR generated on the caller side.
+    @always_inline("nodebug")
+    fn __init__(out self: Tuple[]):
+        """Construct an empty tuple."""
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(self.storage)
+        )
+
     @always_inline("nodebug")
     fn __init__(out self, owned *args: *element_types):
         """Construct the tuple.
