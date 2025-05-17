@@ -33,6 +33,7 @@ Example:
 from .inline_array import InlineArray
 from sys import bitwidthof, simdwidthof
 from math import ceildiv
+from memory import pack_bits
 from bit import pop_count, log2_floor
 from algorithm import vectorize
 
@@ -103,7 +104,7 @@ struct BitSet[size: UInt](
     lookup speed are critical.
     """
 
-    alias _words_size = max(1, ceildiv(size, _WORD_BITS))
+    alias _words_size: Int = max(1, ceildiv(size, _WORD_BITS))
     var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
@@ -112,20 +113,25 @@ struct BitSet[size: UInt](
 
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
-        self._words = __type_of(self._words)(0)
+        self._words = __type_of(self._words)(fill=0)
 
-    fn __init__(init: SIMD[DType.bool], out self: BitSet[UInt(init.size)]):
+    fn __init__(init: SIMD[DType.bool, _], out self: BitSet[UInt(init.size)]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        self._words = __type_of(self._words)(0)
+        constrained[
+            max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
+        ]()
+        self._words = __type_of(self._words)(uninitialized=True)
 
         @parameter
-        for i in range(Int(size)):
-            if init[i]:
-                self.set(i)
+        for i in range(Self._words_size):
+            alias step = min(init.size, _WORD_BITS)
+            self._words.unsafe_get(i) = pack_bits(
+                init.slice[step, offset = i * step]()
+            ).cast[DType.uint64]()
 
     # --------------------------------------------------------------------- #
     # Capacity queries
