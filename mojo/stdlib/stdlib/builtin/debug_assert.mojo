@@ -20,7 +20,7 @@ from os import abort
 from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys._build import is_debug_build
 from sys.ffi import c_char, c_size_t, c_uint, external_call
-from sys.intrinsics import block_idx, thread_idx
+from sys.intrinsics import block_idx, thread_idx, assume
 from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
@@ -62,9 +62,11 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 @always_inline
 fn debug_assert[
     cond: fn () capturing [_] -> Bool,
+    /,
     write_mode: WRITE_MODE = WRITE_MODE_REG,
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
+    llvm_assume: Bool = False,
     *Ts: Writable,
 ](*messages: *Ts):
     """Asserts that the condition is true at run time.
@@ -143,6 +145,7 @@ fn debug_assert[
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
         cpu_only: If true, only run the assert on CPU.
+        llvm_assume: Insert a `llvm.assume(cond())` if enabled.
         Ts: The element types for the message arguments.
 
     Args:
@@ -152,7 +155,11 @@ fn debug_assert[
 
     @parameter
     if _assert_enabled[assert_mode, cpu_only]():
-        if cond():
+        if c := cond():
+
+            @parameter
+            if llvm_assume:
+                assume(c)
             return
 
         # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
@@ -166,6 +173,8 @@ fn debug_assert[
             _debug_assert_msg_mem(__call_location(), str)
         else:
             _debug_assert_msg(messages, __call_location())
+    elif llvm_assume:
+        assume(cond())
 
 
 @always_inline
@@ -173,8 +182,9 @@ fn debug_assert[
     write_mode: WRITE_MODE = WRITE_MODE_REG,
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
+    llvm_assume: Bool = False,
     *Ts: Writable,
-](cond: Bool, *messages: *Ts):
+](cond: Bool, /, *messages: *Ts):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -250,6 +260,7 @@ fn debug_assert[
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
         cpu_only: If true, only run the assert on CPU.
+        llvm_assume: Insert a `llvm.assume(cond)` if enabled.
         Ts: The element types for the message arguments.
 
     Args:
@@ -261,6 +272,10 @@ fn debug_assert[
     @parameter
     if _assert_enabled[assert_mode, cpu_only]():
         if cond:
+
+            @parameter
+            if llvm_assume:
+                assume(cond)
             return
 
         # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
@@ -274,6 +289,8 @@ fn debug_assert[
             _debug_assert_msg_mem(__call_location(), str)
         else:
             _debug_assert_msg(messages, __call_location())
+    elif llvm_assume:
+        assume(cond)
 
 
 @no_inline
