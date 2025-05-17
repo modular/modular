@@ -627,7 +627,7 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
+    for i in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         u = i[]
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         s = StringSlice(item)

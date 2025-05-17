@@ -867,7 +867,7 @@ def test_splitlines():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
-    for elt in List(next_line, unicode_line_sep, unicode_paragraph_sep):
+    for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         u = String(bytes=elt[])
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
