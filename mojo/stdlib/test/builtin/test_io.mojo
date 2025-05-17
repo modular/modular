@@ -10,17 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""IO constants and functions."""
-from sys.ffi import _Global
-from builtin.io import _fdopen
+# RUN: %mojo -debug-level full %s < %S/test_io_dummy_input.txt
 
-alias stdin = FileDescriptor(0)
-alias STDIN = _Global["STDIN", _fdopen["r"], _init_stdin]
+from testing import assert_equal
 
 
-fn _init_stdin() -> _fdopen["r"]:
-    return _fdopen["r"](stdin)
+def test_input():
+    assert_equal(input(), "Hello")
+    assert_equal(input(), "World")
 
 
-alias stdout = FileDescriptor(1)
-alias stderr = FileDescriptor(2)
+def main():
+    test_input()
