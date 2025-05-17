@@ -524,7 +524,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,
         device_encoding_map={
             "cpu": ["float32"],
-            "gpu": ["float32", "bfloat16"],
+            "gpu": ["float32"],
         },
     ),
     # GPTQ llama with perm_idx

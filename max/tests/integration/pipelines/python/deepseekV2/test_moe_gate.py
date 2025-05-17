@@ -42,7 +42,7 @@ def generate_max_outputs(
     is_gpu = isinstance(device, Accelerator)
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
-    state_dict = {"gate_score.weight": dummy_moe_weight.to(torch.float32).cpu()}
+    state_dict = {"gate_score.weight": dummy_moe_weight.cpu()}
     model = MaxMoEGate(DeviceRef.GPU() if is_gpu else DeviceRef.CPU())
     model.load_state_dict(state_dict)
     session = InferenceSession(devices=[device])

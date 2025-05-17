@@ -95,7 +95,7 @@ def dummy_moe_weight(
         config.n_routed_experts if config.n_routed_experts is not None else 64
     )
     return (
-        torch.randn(n_experts, config.hidden_size, dtype=torch.float32)
+        torch.randn(n_experts, config.hidden_size, dtype=torch.bfloat16)
         * WEIGHT_STDDEV
     )
 
