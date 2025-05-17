@@ -57,7 +57,7 @@ struct UInt128Decomposed:
 
 
 fn _get_w_and_q_from_float_string(
-    input_string: StringSlice,
+    input_string: StringSlice[mut=False],
 ) raises -> Tuple[UInt64, Int64]:
     """We suppose the number is in the form '123.2481' or '123' or '123e-2' or '12.3e2'.
 
@@ -94,8 +94,8 @@ fn _get_w_and_q_from_float_string(
         )
 
     if (
-        not (ord_0 <= buffer[len(input_string) - 1] <= ord_9)
-        and buffer[len(input_string) - 1] != ord_dot
+        not (ord_0 <= buffer[input_string.byte_length() - 1] <= ord_9)
+        and buffer[input_string.byte_length() - 1] != ord_dot
     ):
         raise Error(
             "The last character of '",
@@ -105,7 +105,7 @@ fn _get_w_and_q_from_float_string(
 
     dot_or_e_found = False
 
-    for i in range(len(input_string) - 1, -1, -1):
+    for i in range(input_string.byte_length() - 1, -1, -1):
         array_index -= 1
         if array_index < 0:
             raise Error(
@@ -154,15 +154,11 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice) -> String:
-    result = String(x.strip())
-    result = result.removesuffix("f")
-    result = result.removesuffix("F")
-    result = result.removeprefix("+")
-    return result
+fn strip_unused_characters(x: StringSlice[mut=False]) -> __type_of(x):
+    return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: String) -> Tuple[Float64, String]:
+fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
     return (1.0, x)
@@ -317,7 +313,7 @@ fn _atof(x: StringSlice) raises -> Float64:
     if lowercase == "infinity" or lowercase == "in":  # f was removed previously
         return FloatLiteral.infinity * sign
     try:
-        w_and_q = _get_w_and_q_from_float_string(stripped.as_string_slice())
+        w_and_q = _get_w_and_q_from_float_string(stripped)
     except e:
         raise Error(
             "String is not convertible to float: " + repr(x) + ". " + String(e)
