@@ -39,7 +39,7 @@ def test_bool_none():
     assert_equal(Bool(test), False)
 
 
-@value
+@fieldwise_init
 struct MyTrue:
     fn __bool__(self) -> Bool:
         return True

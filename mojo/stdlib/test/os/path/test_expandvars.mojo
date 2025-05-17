@@ -18,8 +18,8 @@ from os.path import expandvars
 from testing import assert_equal
 
 
-@value
-struct EnvVar:
+@fieldwise_init
+struct EnvVar(Copyable, Movable):
     var name: String
 
     fn __init__(out self, name: String, value: String):

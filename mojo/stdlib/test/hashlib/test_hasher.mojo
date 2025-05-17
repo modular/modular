@@ -43,8 +43,8 @@ struct DummyHasher(_Hasher):
         return self._dummy_value
 
 
-@value
-struct SomeHashableStruct(_HashableWithHasher):
+@fieldwise_init
+struct SomeHashableStruct(_HashableWithHasher, Copyable, Movable):
     var _value: Int64
 
     fn __hash__[H: _Hasher](self, mut hasher: H):
@@ -63,8 +63,8 @@ def test_hash_with_hasher():
     assert_equal(_hash_with_hasher[HasherType=DummyHasher](hashable), 10)
 
 
-@value
-struct ComplexeHashableStruct(_HashableWithHasher):
+@fieldwise_init
+struct ComplexHashableStruct(_HashableWithHasher):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
 
@@ -75,21 +75,21 @@ struct ComplexeHashableStruct(_HashableWithHasher):
 
 def test_complex_hasher():
     var hasher = DummyHasher()
-    var hashable = ComplexeHashableStruct(
+    var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 52)
 
 
-def test_complexe_hash_with_hasher():
-    var hashable = ComplexeHashableStruct(
+def test_complex_hash_with_hasher():
+    var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
     assert_equal(_hash_with_hasher[HasherType=DummyHasher](hashable), 52)
 
 
-@value
+@fieldwise_init
 struct ComplexHashableStructWithList(_HashableWithHasher):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
@@ -107,7 +107,7 @@ struct ComplexHashableStructWithList(_HashableWithHasher):
         _ = self._value3
 
 
-@value
+@fieldwise_init
 struct ComplexHashableStructWithListAndWideSIMD(_HashableWithHasher):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
@@ -170,7 +170,7 @@ def main():
     test_hasher()
     test_hash_with_hasher()
     test_complex_hasher()
-    test_complexe_hash_with_hasher()
+    test_complex_hash_with_hasher()
     test_update_with_bytes()
     test_with_ahasher()
     test_hash_hashable_with_hasher_types()

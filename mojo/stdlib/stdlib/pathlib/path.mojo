@@ -72,6 +72,7 @@ struct Path(
     ExplicitlyCopyable,
     PathLike,
     KeyElement,
+    _HashableWithHasher,
 ):
     """The Path object."""
 

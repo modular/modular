@@ -32,7 +32,7 @@ from testing import (
 from math import isinf, isnan
 
 
-@value
+@fieldwise_init
 struct AString(Stringable):
     fn __str__(self) -> String:
         return "a string"
