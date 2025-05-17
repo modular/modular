@@ -322,7 +322,7 @@ void TupleNode::print(raw_indented_ostream &os) const {
   os.unindent() << "}\n";
 }
 
-void ListNode::print(raw_indented_ostream &os) const {
+void ListLiteralNode::print(raw_indented_ostream &os) const {
   os << "List {\n";
   os.indent() << "exprs: [\n";
   for (const ExprNode *expr : exprs)

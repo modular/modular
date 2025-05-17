@@ -900,7 +900,9 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return argVal;
 
     OverloadSetUValue orValue = value.getIfOverloadSet();
-    assert(orValue && "Unknown UValue!");
+    if (!orValue)
+      return {}; // TODO: Handle list literal and init lists?.
+
     // Try to refine the OverloadSetUValue into a PValue.
     CValue argVal = orValue->getDirectSymbol(expectedType, declScope);
     if (!argVal)
@@ -1029,6 +1031,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // declarations.
     return success(failed(initFn) || bool(initFn.value()));
   }
+
+  // TODO: Infer from InitializerUValue
 
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can

@@ -48,3 +48,44 @@ fn var_let_decls():
     # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "hello"> = <*?>
     # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"
+
+# ===----------------------------------------------------------------------=== #
+# List Literals
+# ===----------------------------------------------------------------------=== #
+
+@register_passable("trivial")
+struct IntList:
+   fn __init__(out self, *list_elements: Int, __list_literal__: ()): pass
+
+@register_passable("trivial")
+struct List[T: AnyType]:
+   fn __init__(out self, *list_elements: T, __list_literal__: ()): pass
+
+
+fn inspect(list: List[FloatDyn]):
+    pass
+
+# CHECK-LABEL: lit.fn @"test_list_literal
+fn test_list_literal():
+    #var a = [1, 2, 3]
+
+    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
+    # CHECK-NEXT: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
+    # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[TMP1]], [[TMP2]], [[TMP3]]]
+    # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
+    # CHECK-NEXT: lit.call {{.*}}IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
+    var b : IntList = [1, 2, 3]
+
+    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
+    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!Int> = <[]>
+    # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
+    # CHECK-NEXT: lit.call {{.*}}IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
+    var c : IntList = []
+
+
+
+    # CHECK: lit.call {{.*}}List::@"__init__{{.*}}<:!AnyType #FloatDyn1>
+    inspect([1.0, 2])
+

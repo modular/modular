@@ -13,9 +13,9 @@
 // is both a BValue and RValue):
 //
 // AnyValue       <- Expr emitted to MLIR...
-//   UValue         <- unresolved value that cannot be materialized
-//     OverloadSetUValue  <- with an unresolved overload set
-//     InitializerUValue  <- constructor operands for an unknown type
+//   UValue         <- a value with an unresolved type
+//     OverloadSetUValue  <- an unresolved overload set
+//     InitializerUValue  <- constructor operands {a=1, b="foo"}
 //   CValue        <- Concrete value: something with a known type.
 //     LValue         <- mutable reference to storage
 //       MLValue        <- value is in memory with a mutable reference
@@ -308,14 +308,24 @@ public:
   InitializerUValue &operator=(const InitializerUValue &existing);
   ~InitializerUValue();
 
+  const enum Syntax {
+    kSlice,       // Operands of 'a[1:2:3]'
+    kListLiteral, // [a, b, c]
+  } syntax;
+
   const CallOperands &get() const;
 
-  static InitializerUValue create(CallOperands &&operands);
+  static InitializerUValue create(Syntax syntax, CallOperands &&operands);
+
+  /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
+  /// error and return null.
+  CValue emitAsCValue(ExprEmitter &emitter, const ExprNode *expr,
+                      ValueDest &dest);
 
 private:
-  struct CallOperandsWrapper;
-  InitializerUValue(RCRef<CallOperandsWrapper> storage);
-  RCRef<CallOperandsWrapper> storage;
+  struct ImplWrapper;
+  InitializerUValue(Syntax syntax, RCRef<ImplWrapper> storage);
+  RCRef<ImplWrapper> storage;
 };
 raw_ostream &operator<<(raw_ostream &os, InitializerUValue value);
 
@@ -447,6 +457,7 @@ struct VariantUValue {
     if (value)
       getStorageR() = std::move(value);
   }
+
   VariantUValue(InitializerUValue value) { getStorageR() = std::move(value); }
 
   OverloadSetUValue getIfOverloadSet() const {
@@ -481,9 +492,7 @@ public:
   static UValue getFrom(Storage storage) {
     UValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<OverloadSetUValue>(storage))
-      result.storage = std::move(storage);
-    if (isa<InitializerUValue>(storage))
+    if (isa<OverloadSetUValue, InitializerUValue>(storage))
       result.storage = std::move(storage);
     return result;
   }

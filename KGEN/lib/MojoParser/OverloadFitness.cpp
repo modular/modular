@@ -290,12 +290,17 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
   }
 }
 
-static void printRValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
-  if (ASTType type = value.getRValueTypeIfResolvable())
-    diag << type;
-  else if (value.getIfInitializer())
-    diag << "initializer list";
-  else
+static void printUValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
+  if (auto initList = value.getIfInitializer()) {
+    switch (initList->syntax) {
+    case InitializerUValue::kSlice:
+      diag << "slice initializer";
+      break;
+    case InitializerUValue::kListLiteral:
+      diag << "list literal";
+      break;
+    }
+  } else
     diag << "unknown overload";
 }
 
@@ -311,7 +316,10 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
          callSyntax == CallSyntax::kMethodCallSynthetic) &&
         argIdx == 0) {
       diag << "invalid use of mutating method on rvalue of type ";
-      printRValueTypeInfo(operand.ir, diag);
+      if (ASTType type = operand.ir.getRValueTypeIfResolvable())
+        diag << type;
+      else
+        printUValueTypeInfo(operand.ir, diag);
     } else {
       describeArgumentNo(diag, argIdx);
       diag << " must be mutable in order to pass to a mutating argument";
@@ -327,7 +335,10 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
   case ArgTypeMismatchKind::kWrongType: {
     // Special case implicit conversions with a custom message.
     if (callSyntax == CallSyntax::kImplicitConvert) {
-      printRValueTypeInfo(operand.ir, diag);
+      if (ASTType type = operand.ir.getRValueTypeIfResolvable())
+        diag << type;
+      else
+        printUValueTypeInfo(operand.ir, diag);
       diag << " value to " << ty;
       return diag;
     }
@@ -341,10 +352,8 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
         diag << "type value " << ty;
       else
         diag << rValueType;
-    } else if (operand.ir.getIfInitializer()) {
-      diag << "initializer list";
     } else {
-      diag << "unknown overload";
+      printUValueTypeInfo(operand.ir, diag);
     }
     diag << " to ";
 

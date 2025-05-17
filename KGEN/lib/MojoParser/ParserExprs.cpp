@@ -660,15 +660,15 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
   SmallVector<ExprNode *> exprs;
   // Handle empty list: []
   if (consumeIf(Token::r_square, &rsquareLoc)) {
-    result = alloc<ListNode>(lsquareLoc, exprs, rsquareLoc);
+    result = alloc<ListLiteralNode>(lsquareLoc, exprs, rsquareLoc);
     return success();
   }
 
   if (parseStarredList(exprs, Token::r_square) || getLocation(rsquareLoc) ||
       parseToken(Token::r_square, "expected ']' in list expression"))
     return failure();
-  result =
-      alloc<ListNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs), rsquareLoc);
+  result = alloc<ListLiteralNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs),
+                                  rsquareLoc);
   return success();
 }
 

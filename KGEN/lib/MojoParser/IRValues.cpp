@@ -10,6 +10,9 @@
 
 #include "KGEN/MojoParser/IRValues.h"
 #include "CallEmission.h"
+#include "ExprEmitter.h"
+#include "ExprNodes.h"
+
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -60,7 +63,15 @@ static raw_ostream &printStorage(raw_ostream &os,
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
   } else if (isa<InitializerUValue>(storage)) {
     if (isDump)
-      os << "InitializerUValue: ";
+      os << "InitializerUValue";
+    switch (cast<InitializerUValue>(storage).syntax) {
+    case InitializerUValue::kSlice:
+      os << "[Slice]:";
+      break;
+    case InitializerUValue::kListLiteral:
+      os << "[ListLiteral]:";
+      break;
+    }
     os << cast<InitializerUValue>(storage).get();
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
@@ -353,17 +364,16 @@ OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
 
 /// This provides a wrapper around CallOperands which is reference counted,
 /// allowing InitializerUValue to maintain it while still being copyable.
-struct InitializerUValue::CallOperandsWrapper
-    : public NonAtomicallyReferenceCounted<CallOperandsWrapper> {
-  CallOperandsWrapper(CallOperands &&operands)
-      : operands(std::move(operands)) {}
+struct InitializerUValue::ImplWrapper
+    : public NonAtomicallyReferenceCounted<ImplWrapper> {
+  ImplWrapper(CallOperands &&operands) : operands(std::move(operands)) {}
   CallOperands operands;
 };
 
 InitializerUValue::InitializerUValue(const InitializerUValue &existing)
-    : storage(existing.storage.copy()) {}
-InitializerUValue::InitializerUValue(RCRef<CallOperandsWrapper> storage)
-    : storage(std::move(storage)) {}
+    : syntax(existing.syntax), storage(existing.storage.copy()) {}
+InitializerUValue::InitializerUValue(Syntax syntax, RCRef<ImplWrapper> storage)
+    : syntax(syntax), storage(std::move(storage)) {}
 InitializerUValue::~InitializerUValue() = default;
 
 InitializerUValue &
@@ -372,9 +382,36 @@ InitializerUValue::operator=(const InitializerUValue &existing) {
   return *this;
 }
 
-InitializerUValue InitializerUValue::create(CallOperands &&operands) {
-  return InitializerUValue(
-      takeRCRef(new CallOperandsWrapper{std::move(operands)}));
+InitializerUValue InitializerUValue::create(Syntax syntax,
+                                            CallOperands &&operands) {
+  return InitializerUValue(syntax,
+                           takeRCRef(new ImplWrapper{std::move(operands)}));
 }
 
 const CallOperands &InitializerUValue::get() const { return storage->operands; }
+
+/// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
+/// error and return null.
+CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
+                                       const ExprNode *expr, ValueDest &dest) {
+  // If we have the inferred contextual type, we can emit the constructor call.
+  if (ASTType expectedType = dest.getExpectedTypeIfSpecified())
+    return emitter.emitConstructorCall(expectedType, CallOperands(get()), expr,
+                                       CallSyntax::kTypeCall, dest);
+
+  // Otherwise, we have an error.
+  switch (syntax) {
+  case Syntax::kSlice:
+    emitter.emitError(expr->getLoc(),
+                      "cannot emit slice expression without a contextual type");
+    return {};
+  case Syntax::kListLiteral:
+    // TODO: if there are any elements, we can merge them to form a unified type
+    // and generate a List[T] constructor call.
+
+    emitter.emitError(expr->getLoc(),
+                      "cannot emit list literal without a contextual type");
+    break;
+  }
+  return {};
+}
