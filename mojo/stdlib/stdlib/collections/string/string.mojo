@@ -100,7 +100,7 @@ from python import PythonObject, PythonConvertible
 from python._bindings import ConvertibleFromPython
 
 from utils import IndexList, Variant, Writable, Writer, write_args
-from utils.write import write_buffered
+from utils.write import write_buffered, _TotalWritableBytes, _WriteBufferHeap, _WriteBufferStack
 from os.atomic import Atomic
 
 # ===----------------------------------------------------------------------=== #
@@ -1049,24 +1049,17 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        var sep = StaticString(ptr=self.unsafe_ptr(), length=self.byte_length())
         return String(elems, sep=sep)
 
     fn join[
-        T: Copyable & Movable & Writable, //, buffer_size: Int = 4096
+        T: Copyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
-        Defaults to writing to the stack if total bytes of `elems` is less than
-        `buffer_size`, otherwise will allocate once to the heap and write
-        directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64, but you can increase this if
-        you're joining a very large `List` of elements to write into the stack
-        instead of the heap.
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
                 `Movable` and `Writable` traits.
-            buffer_size: The max size of the stack buffer.
 
         Args:
             elems: The input values.
@@ -1074,14 +1067,7 @@ struct String(
         Returns:
             The joined string.
         """
-        var result = String()
-        if not len(elems):
-            return result^
-        result.write(elems[0])
-        for i in range(1, len(elems)):
-            result.write(self)
-            result.write(elems[i])
-        return result^
+        return self.as_string_slice().join(elems)
 
     @always_inline
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
