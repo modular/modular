@@ -314,9 +314,7 @@ struct _WriteBufferStack[
 
     fn flush(mut self):
         self.writer[].write_bytes(
-            Span[Byte, ImmutableAnyOrigin](
-                ptr=self.data.unsafe_ptr(), length=self.pos
-            )
+            Span(ptr=self.data.unsafe_ptr(), length=self.pos)
         )
         self.pos = 0
 

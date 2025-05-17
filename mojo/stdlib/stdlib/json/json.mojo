@@ -1043,7 +1043,7 @@ struct JSONParser[mut: Bool, //, origin: Origin[mut]]:
             while self._peek_slice().is_ascii_digit():
                 self._idx += 1
 
-        var sl = Span[Byte, __origin_of(self._slice)](
+        var sl = Span(
             ptr=self._slice.unsafe_ptr() + start,
             length=self._idx - start,
         )

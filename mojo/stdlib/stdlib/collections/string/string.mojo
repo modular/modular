@@ -550,11 +550,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline
     fn __init__(
@@ -570,11 +566,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, owned other: Self):
@@ -1049,7 +1041,9 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
+            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+        )
         return String(elems, sep=sep)
 
     fn join[
