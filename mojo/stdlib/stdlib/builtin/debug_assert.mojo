@@ -67,7 +67,7 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
-](*messages: *Ts):
+](*messages: *Ts, location: Optional[_SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -149,6 +149,7 @@ fn debug_assert[
     Args:
         messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
             arguments to convert to a `String` message.
+        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -164,9 +165,9 @@ fn debug_assert[
             @parameter
             for i in range(messages.__len__()):
                 messages[i].write_to(str)
-            _debug_assert_msg_mem(__call_location(), str)
+            _debug_assert_msg_mem(location.or_else(__call_location()), str)
         else:
-            _debug_assert_msg(messages, __call_location())
+            _debug_assert_msg(messages, location.or_else(__call_location()))
 
 
 @always_inline
@@ -175,7 +176,7 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
-](cond: Bool, *messages: *Ts):
+](cond: Bool, *messages: *Ts, location: Optional[_SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -257,6 +258,7 @@ fn debug_assert[
         cond: The bool value to assert.
         messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
             arguments to convert to a `String` message.
+        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -272,9 +274,9 @@ fn debug_assert[
             @parameter
             for i in range(messages.__len__()):
                 messages[i].write_to(str)
-            _debug_assert_msg_mem(__call_location(), str)
+            _debug_assert_msg_mem(location.or_else(__call_location()), str)
         else:
-            _debug_assert_msg(messages, __call_location())
+            _debug_assert_msg(messages, location.or_else(__call_location()))
 
 
 @no_inline
