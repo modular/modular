@@ -102,7 +102,7 @@ class MaxMoEGate(Module):
         """
 
         # compute gating score
-        logits = self.gate_score(hidden_states)
+        logits = self.gate_score(hidden_states.cast(DType.float32))
         scores = ops.softmax(logits.cast(DType.float32))
 
         # select top k experts
