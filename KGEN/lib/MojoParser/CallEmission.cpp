@@ -896,7 +896,9 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   [[maybe_unused]] auto calleeSignature =
       cast<FnTypeGeneratorType>(directSymbolAttr.getType().mlirType);
 
-  assert(!calleeSignature.isAnyVarArg(0) && "Error: self shouldn't be varargs");
+  if (!calleeSignature.getArguments().empty())
+    assert(!calleeSignature.isAnyVarArg(0) &&
+           "Error: self shouldn't be varargs");
 
   // TODO: Need to emit a closure instance that partially applies the 'self'
   // argument here.
