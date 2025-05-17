@@ -174,6 +174,26 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ):
         result = __type_of(result)()
 
+    @always_inline("builtin")
+    fn __sub__(
+        self,
+        rhs: IntLiteral[_],
+        out result: IntLiteral[
+            __mlir_attr[
+                `#pop<int_literal_bin<sub `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : !pop.int_literal`,
+            ]
+        ],
+    ):
+        result = __type_of(result)()
+
+    @always_inline("builtin")
+    fn __neg__(self) -> __type_of(0 - self):
+        return 0 - self
+
 
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
@@ -190,6 +210,42 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
             __mlir_attr[
                 `#pop<int_to_float_literal<`,
                 value.value,
+                `>> : !pop.float_literal`,
+            ]
+        ],
+    ):
+        result = __type_of(result)()
+
+    @always_inline("builtin")
+    fn __neg__(self, out result: __type_of(self * -1)):
+        result = __type_of(result)()
+
+    @always_inline("builtin")
+    fn __mul__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#pop<float_literal_bin<mul `,
+                value,
+                `,`,
+                rhs.value,
+                `>> : !pop.float_literal`,
+            ]
+        ],
+    ):
+        result = __type_of(result)()
+
+    @always_inline("builtin")
+    fn __truediv__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#pop<float_literal_bin<truediv `,
+                value,
+                `,`,
+                rhs.value,
                 `>> : !pop.float_literal`,
             ]
         ],
