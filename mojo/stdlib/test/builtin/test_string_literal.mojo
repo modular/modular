@@ -351,6 +351,14 @@ def test_float_conversion():
         _ = ("not a float").__float__()
 
 
+def test_format():
+    assert_equal("hello".format(), "hello")
+    assert_equal("hello {}".format("world"), "hello world")
+    assert_equal("hello {}".format(123), "hello 123")
+    assert_equal("hello {}".format(4.5), "hello 4.5")
+    assert_equal("hello {}".format(True), "hello True")
+
+
 def main():
     test_add()
     test_mul()

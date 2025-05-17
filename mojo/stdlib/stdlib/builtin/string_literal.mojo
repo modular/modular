@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List
-from collections.string.format import _CurlyEntryFormattable
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char
@@ -529,6 +529,40 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if the `self[start:end]` is suffixed by the input suffix.
         """
         return self.as_string_slice().endswith(suffix, start, end)
+
+    @always_inline
+    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
+        """Produce a formatted string using the current string as a template.
+
+        The template, or "format string" can contain literal text and/or
+        replacement fields delimited with curly braces (`{}`). Returns a copy of
+        the format string with the replacement fields replaced with string
+        representations of the `args` arguments.
+
+        For more information, see the discussion in the
+        [`format` module](/mojo/stdlib/collections/string/format/).
+
+        Args:
+            args: The substitution values.
+
+        Parameters:
+            Ts: The types of substitution values that implement `Representable`
+                and `Stringable` (to be changed and made more flexible).
+
+        Returns:
+            The template with the given values substituted.
+
+        Example:
+
+        ```mojo
+        # Manual indexing:
+        print(String("{0} {1} {0}").format("Mojo", 1.125)) # Mojo 1.125 Mojo
+        # Automatic indexing:
+        print(String("{} {}").format(True, "hello world")) # True hello world
+        ```
+        """
+        # TODO: Replace with String(self).format(*args) when unpacked arguments are supported
+        return _FormatCurlyEntry.format(self, args)
 
     fn isdigit(self) -> Bool:
         """Returns True if all characters in the string literal are digits.

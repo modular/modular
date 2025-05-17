@@ -1767,7 +1767,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @always_inline
     fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
-        """Produce a formatted string using the current string as a template.
+        """Produce a formatted string using the current literal as a template.
 
         The template, or "format string" can contain literal text and/or
         replacement fields delimited with curly braces (`{}`). Returns a copy of
@@ -1791,9 +1791,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         ```mojo
         # Manual indexing:
-        print(StringSlice("{0} {1} {0}").format("Mojo", 1.125)) # Mojo 1.125 Mojo
+        print("{0} {1} {0}".format("Mojo", 1.125)) # Mojo 1.125 Mojo
         # Automatic indexing:
-        print(StringSlice("{} {}").format(True, "hello world")) # True hello world
+        print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
         return _FormatCurlyEntry.format(self, args)
