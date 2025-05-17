@@ -399,19 +399,60 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
     return emitter.emitConstructorCall(expectedType, CallOperands(get()), expr,
                                        CallSyntax::kTypeCall, dest);
 
-  // Otherwise, we have an error.
+  // Otherwise, handle defaulting.
   switch (syntax) {
   case Syntax::kSlice:
     emitter.emitError(expr->getLoc(),
                       "cannot emit slice expression without a contextual type");
     return {};
   case Syntax::kListLiteral:
-    // TODO: if there are any elements, we can merge them to form a unified type
-    // and generate a List[T] constructor call.
+    if (get().size() == 1) { // Empty: Just the __list_literal__ kwarg.
+      emitter.emitError(expr->getLoc(),
+                        "cannot emit an empty list without a contextual type");
+      return {};
+    }
 
-    emitter.emitError(expr->getLoc(),
-                      "cannot emit list literal without a contextual type");
-    break;
+    // Emit all the values as CValues without a contextual type.
+    SmallVector<CValue> elements;
+    for (const auto &operand : ArrayRef(get().values).drop_back()) {
+      auto value = emitter.emitCValue(operand, EC_ListLiteral);
+      if (!value)
+        return {};
+      elements.push_back(value);
+    }
+
+    // Okay, now we can pairwise merge the elements into the first element to
+    // get a final unified element type (as the first element's type).
+    const ExprNode *lhsExpr = get()[0].expr;
+    for (size_t i = 1; i != elements.size(); ++i) {
+      if (failed(emitter.coerceTypesToEachOther(lhsExpr->getLoc(), elements[0],
+                                                lhsExpr, elements[i],
+                                                get()[i].expr, {})))
+        return {};
+    }
+
+    // If that succeeded, then the final result type of the first element is
+    // the unified element type form the new constructor list with a consistent
+    // element type which will be used for the constructor call, allowing it to
+    // infer the element type.
+    auto elementType = elements[0].getRValueType();
+    CallOperands newOperands;
+    for (auto [i, elt] : llvm::enumerate(elements)) {
+      auto *expr = get()[i].expr;
+      elt = emitter.emitCValue({elt, expr}, EC_ListLiteral, elementType);
+      if (!elt)
+        return {};
+      newOperands.add({elt, expr});
+    }
+    // Add the __list_literal__ kwarg.
+    assert(get().values.back().keyword && "missing __list_literal__ kwarg");
+    newOperands.add(get().values.back().keyword, get().values.back());
+
+    auto listType = emitter.shared.getListType(expr->getLoc());
+    if (!listType)
+      return {};
+    return emitter.emitConstructorCall(listType, std::move(newOperands), expr,
+                                       CallSyntax::kTypeCall, dest);
   }
   return {};
 }

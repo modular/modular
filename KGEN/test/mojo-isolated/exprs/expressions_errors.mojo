@@ -404,10 +404,9 @@ struct MyIntPair:
   var b: Int
 
 fn list_literals():
-  # expected-error @+1 {{cannot emit list literal without a contextual type}}
+  # expected-error @+1 {{cannot emit an empty list without a contextual type}}
   _ = []
 
-  # expected-error @+1 {{cannot emit list literal without a contextual type}}
   _ = [1, 2]
 
 fn dict_expression(a: Int):
