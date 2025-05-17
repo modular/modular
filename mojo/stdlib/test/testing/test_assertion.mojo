@@ -129,8 +129,6 @@ def test_assert_almost_equal():
             lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
         )
 
-    _should_succeed[DType.bool, 1](True, True)
-    _should_succeed(SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, 1))
     _should_succeed(
         SIMD[float_type, 2](-_inf, _inf), SIMD[float_type, 2](-_inf, _inf)
     )
@@ -167,10 +165,6 @@ def test_assert_almost_equal():
                 lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
             )
 
-    _should_fail[DType.bool, 1](True, False)
-    _should_fail(
-        SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, -1), atol=5
-    )
     _should_fail(
         SIMD[float_type, 2](-_inf, 0.0),
         SIMD[float_type, 2](_inf, 0.0),

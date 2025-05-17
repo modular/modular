@@ -1053,10 +1053,12 @@ fn tanh[
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: control symmetric behavior with flag so we can be compatible with Python
 @always_inline
 fn isclose[
-    dtype: DType, width: Int
+    dtype: DType,
+    width: Int,
+    *,
+    symmetrical: Bool = True,
 ](
     a: SIMD[dtype, width],
     b: SIMD[dtype, width],
@@ -1065,44 +1067,55 @@ fn isclose[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) -> SIMD[DType.bool, width]:
-    """Checks if the two input values are numerically within a tolerance.
+    """Returns a boolean SIMD vector indicating which element pairs of `a` and `b`
+    are equal within a given tolerance.
 
-    When the type is integral, then equality is checked. When the type is
-    floating point, then this checks if the two input values are numerically the
-    close using the $abs(a - b) <= max(rtol * max(abs(a), abs(b)), atol)$
-    formula.
+    For floating-point dtypes, the following criteria apply:
 
-    Unlike Pythons's `math.isclose`, this implementation is symmetric. I.e.
-    `isclose(a,b) == isclose(b,a)`.
+    - Symmetric (Python `math.isclose` style), when `symmetrical` is true:
+        ```
+        |a - b| ≤ max(atol, rtol * max(|a|, |b|))
+        ```
+    - Asymmetric (NumPy style), when `symmetrical` is false:
+        ```
+        |a - b| ≤ atol + rtol * |b|
+        ```
+
+    NaN values are considered equal only if `equal_nan` is true.
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-        width: The width of the input and output SIMD vector.
+        dtype: Element type of the input and output vectors.
+        width: Number of lanes in each SIMD vector.
+        symmetrical: If true, use the symmetric comparison formula (default: true).
 
     Args:
-        a: The first value to compare.
-        b: The second value to compare.
-        atol: The absolute tolerance.
-        rtol: The relative tolerance.
-        equal_nan: Whether to treat nans as equal.
+        a: First input vector.
+        b: Second input vector.
+        atol: Absolute tolerance.
+        rtol: Relative tolerance.
+        equal_nan: If true, treat NaNs as equal (default: false).
 
     Returns:
-        A boolean vector where a and b are equal within the specified tolerance.
+        A boolean vector where `a` and `b` are equal within the given tolerance.
     """
-
     constrained[
-        a.dtype is DType.bool or a.dtype.is_numeric(),
-        "input type must be boolean, integral, or floating-point",
+        a.dtype.is_floating_point(),
+        "isclose only supports floating-point types",
     ]()
     alias T = __type_of(a)
 
+    var check_nan = isnan(a) & isnan(b)
+    var check_fin: SIMD[DType.bool, width]
+    var in_range: SIMD[DType.bool, width]
+
     @parameter
-    if a.dtype is DType.bool or a.dtype.is_integral():
-        return a == b
-    var both_nan = isnan(a) & isnan(b)
-    var both_finite = isfinite(a) & isfinite(b)
-    var in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
-    return (a == b) | (both_nan & equal_nan) | (both_finite & in_range)
+    if symmetrical:
+        check_fin = isfinite(a) & isfinite(b)
+        in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
+    else:
+        check_fin = isfinite(b)
+        in_range = abs(a - b) <= T(atol) + T(rtol) * abs(b)
+    return (a == b) | (check_nan & equal_nan) | (check_fin & in_range)
 
 
 # ===----------------------------------------------------------------------=== #
