@@ -37,6 +37,9 @@ fn main():
     print(Float64(1.1234567e-320))  # CHECK-NEXT: 1.1235e-320
     print(Float64(1.1234567e-322))  # CHECK-NEXT: 1.14e-322
     print(Float64(1.1234567e-323))  # CHECK-NEXT: 1e-323
+    # Smallest positive float (moco-1796)
+    print(Float64(5e-324))  # CHECK-NEXT: 5e-324
+    # Non-representable floats round to 0 or inf.
     print(Float64(1.1234567e-324))  # CHECK-NEXT: 0.0
     print(999e9000)  # CHECK-NEXT: inf
     print(-999e9000)  # CHECK-NEXT: -inf

@@ -26,19 +26,23 @@ fn var_let_decls():
     alias fl1 = 2.0
     # CHECK: lit.alias.decl {{.*}}fl2{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<63|10>> = <*?>
     alias fl2 = 6.3
-    # CHECK: lit.alias.decl {{.*}}fl3{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<41|2>> = <*?> 
+    # CHECK: lit.alias.decl {{.*}}fl3{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<41|2>> = <*?>
     alias fl3 = 20.5
-    # CHECK: lit.alias.decl {{.*}}fl4{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<-41|2>> = <*?> 
+    # CHECK: lit.alias.decl {{.*}}fl4{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<-41|2>> = <*?>
     alias fl4 = -20.5
     # CHECK: lit.alias.decl {{.*}}fl5{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<neg_zero>> = <*?>
     alias fl5 = -0.0
 
+    # Smallest positive float (moco-1796)
+    # CHECK: lit.alias.decl {{.*}}fl6{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<1|2{{(0)+}}>> = <*?>
+    alias fl6 = 5e-324
+
     # TODO - Python raises an error when dividing by zero.  We need support for
     # parameter-time evaluation of `raise` to support that semantics, in which
     # case these will be static errors instead.
-    # CHECK: lit.alias.decl {{.*}}flDivZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?> 
+    # CHECK: lit.alias.decl {{.*}}flDivZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?>
     alias flDivZero = 5.0 / 0.0
-    # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?> 
+    # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?>
     alias flDivNegZero = 5.0 / -0.0
 
     # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<{{.*}}StringLiteral<:string "hello">
