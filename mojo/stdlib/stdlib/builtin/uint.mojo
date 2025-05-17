@@ -33,6 +33,7 @@ struct UInt(
     Absable,
     Boolable,
     CeilDivable,
+    Copyable,
     Movable,
     Comparable,
     ExplicitlyCopyable,
@@ -46,21 +47,19 @@ struct UInt(
 ):
     """This type represents an unsigned integer.
 
-    An unsigned integer represents a positive integral number.
-
     The size of this unsigned integer is platform-dependent.
 
     If you wish to use a fixed size unsigned integer, consider using
     `UInt8`, `UInt16`, `UInt32`, or `UInt64`.
     """
 
-    alias BITWIDTH: Int = bitwidthof[DType.index]()
+    alias BITWIDTH = Int(bitwidthof[DType.index]())
     """The bit width of the integer type."""
 
-    alias MAX: UInt = (1 << Self.BITWIDTH) - 1
+    alias MAX = UInt((1 << Self.BITWIDTH) - 1)
     """Returns the maximum integer value."""
 
-    alias MIN: UInt = 0
+    alias MIN = UInt(0)
     """Returns the minimum value of type."""
 
     var value: __mlir_type.index
@@ -120,7 +119,7 @@ struct UInt(
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int):
-        """Construct UInt from the given index value.
+        """Construct UInt from the given Int value.
 
         Args:
             value: The init value.
