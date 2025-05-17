@@ -249,7 +249,7 @@ fn vectorize[
     ```
 
     If the remainder is not an exponent of 2 (2, 4, 8, 16 ...) there will be a
-    seperate iteration for each element. However passing `size` as a parameter
+    separate iteration for each element. However passing `size` as a parameter
     also allows the loop for the remaining elements to be unrolled.
 
     You can also unroll the main loop to potentially improve performance at the
