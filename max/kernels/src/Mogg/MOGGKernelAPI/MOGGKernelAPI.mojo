@@ -168,6 +168,7 @@ from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
+from nn.sampling import apply_penalties_to_logits
 from nn.slice import (
     copy_to_slice,
     slice_as_view,
@@ -8389,7 +8390,7 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
 
 
 # ===-----------------------------------------------------------------------===#
-# Misc Operations
+# Sampling Operations
 # ===-----------------------------------------------------------------------===#
 
 
@@ -8480,6 +8481,42 @@ struct Struct_min_p_sampling:
                     out_token_ids_buf,
                     temperature,
                 )
+
+
+@compiler.register("sampler.apply_penalties")
+struct Struct_sampler_apply_penalties:
+    @always_inline
+    @staticmethod
+    fn execute[
+        logit_type: DType,
+        penalty_type: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        logits: MutableInputTensor[type=logit_type, rank=rank],
+        compressed_frequency_data: InputTensor[type = DType.int32, rank=2],
+        frequency_offsets: InputTensor[type = DType.uint32, rank=1],
+        frequency_penalty: Scalar[penalty_type],
+        presence_penalty: Scalar[penalty_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_valid_target[target](), "not a valid target"]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            apply_penalties_to_logits[target=target](
+                logits.to_layout_tensor(),
+                compressed_frequency_data.to_layout_tensor(),
+                frequency_offsets.to_layout_tensor(),
+                frequency_penalty,
+                presence_penalty,
+                ctx,
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# Misc Operations
+# ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("swishGLU")
