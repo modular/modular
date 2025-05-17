@@ -217,7 +217,7 @@ class ProcessMonitor:
         self.pc.set_canceled()
         if not self.proc.is_alive():
             logger.info(
-                "Early exit. Process was already dead. exitcode:{self.proc.exitcode}"
+                f"Early exit. Process was already dead. exitcode: {self.proc.exitcode}"
             )
             return
 
