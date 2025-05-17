@@ -103,6 +103,16 @@ class InputContext(Protocol):
         """All tokens in the context."""
         ...
 
+    @property
+    def prompt_tokens(self) -> np.ndarray:
+        """Prompt tokens in the context."""
+        ...
+
+    @property
+    def generated_tokens(self) -> np.ndarray:
+        """All generated tokens in the context."""
+        ...
+
     def update(
         self,
         new_token: int,
@@ -230,6 +240,7 @@ class TextContext:
         self._end_idx = self._active_idx
         self._completion_start_idx = self._active_idx
         self._completion_end_idx = self._active_idx
+        self._prompt_len = len(tokens)
 
         # Which prefix of tokens have been committed into the prefix cache.
         # This should be a multiple of page_size and less than start_idx.
@@ -370,6 +381,14 @@ class TextContext:
     @property
     def tokens(self) -> np.ndarray:
         return self._tokens[: self._end_idx]
+
+    @property
+    def prompt_tokens(self) -> np.ndarray:
+        return self._tokens[: self._prompt_len]
+
+    @property
+    def generated_tokens(self) -> np.ndarray:
+        return self._tokens[self._prompt_len : self._end_idx]
 
     def _upsize(self) -> None:
         if self._end_idx >= self.size:
