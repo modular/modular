@@ -2310,43 +2310,10 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitExpr(subExpr, dest);
 }
 
-/// Both tuple literals and list literals are emitted as heterogenous sequences,
-/// with each element type encoded in a variadic type parameter.
-static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
-                                         ASTType type, const ExprNode *node,
-                                         ArrayRef<ExprNode *> exprs) {
-  // If we failed to look up the tuple/list type, fail.
-  if (!type || type.isTypeCheckErrorType()) {
-    dest.resetForError();
-    return {};
-  }
-
-  // Emit each of the tuple elements.
-  CallOperands operands;
-  for (ExprNode *expr : exprs) {
-    auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
-    if (!exprVal) {
-      dest.resetForError();
-      return {};
-    }
-    operands.add({std::move(exprVal), expr});
-  }
-
-  // The ASTType will carry around parameters bound, we want to unbind them so
-  // they can be inferred from the elements.
-  type = type.getWithoutParameters(emitter.shared);
-
-  // Emit a call to the builtin type constructor as an implicit conversion.
-  // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(type, std::move(operands), node,
-                                     CallSyntax::kTypeCall, dest);
-}
-
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // Lookup the builtin ListLiteral type, in order to call its constructor.
-  ASTType type =
-      emitter.shared.getBuiltinListLiteralType(emitter.declScope, getLoc());
-  return emitHeterogenousSequence(dest, emitter, type, this, exprs);
+  emitter.emitError(getLoc(), "TODO: cannot emit list literals yet")
+      << getRange();
+  return {};
 }
 
 AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

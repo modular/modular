@@ -553,17 +553,6 @@ z
   # CHECK-NEXT: lit.return [[TMP]]
   return x
 
-# CHECK-LABEL: lit.fn @"listValues()"
-fn listValues():
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
-  var a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
-  a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
-  a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}({{.*}}, %b)
-  var b = []
-
 # CHECK-LABEL: lit.fn @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"

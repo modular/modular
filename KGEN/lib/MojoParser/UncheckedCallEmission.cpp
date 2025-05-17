@@ -665,6 +665,11 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // because the whole value isn't initialized.  Address this by not assigning
   // into submembers in throwing functions.
   if (calleeSig.isThrows()) {
+    // FIXME: This is pretty grotty, basically doing dataflow analysis here in
+    // the parser.  It would be better to just always emit a temporary (when the
+    // type movable and the function throws) and then use a pass (CheckLifetimes
+    // or similar) to eliminate the moveinit+temporary when possible.
+
     // See if the destination buffer is something that ownership can track.
     Value underlyingDest =
         OriginTrackable::findUnderlyingValueFromField(destBuffer);
