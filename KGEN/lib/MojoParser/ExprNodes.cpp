@@ -2159,8 +2159,10 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   operands.add(getOperand(stride));
   if (!operands.values.back().ir)
     return {};
-  return emitter.emitResult(InitializerUValue::create(std::move(operands)),
-                            this, dest);
+
+  return emitter.emitResult(
+      InitializerUValue::create(InitializerUValue::kSlice, std::move(operands)),
+      this, dest);
 }
 
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2310,10 +2312,25 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitExpr(subExpr, dest);
 }
 
-AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  emitter.emitError(getLoc(), "TODO: cannot emit list literals yet")
-      << getRange();
-  return {};
+AnyValue ListLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  CallOperands operands;
+
+  for (ExprNode *expr : exprs) {
+    auto value = emitter.emitExpr(expr, EC_ListLiteral);
+    if (!value)
+      return {};
+    operands.add({value, this});
+  }
+  TupleNode emptyTuple(getLoc(), {});
+  auto tupleValue = emitter.emitExprRValue(&emptyTuple, EC_ListLiteral);
+  if (!tupleValue)
+    return {};
+  operands.add(StringAttr::get(emitter.getContext(), "__list_literal__"),
+               {tupleValue, this});
+  return emitter.emitResult(
+      InitializerUValue::create(InitializerUValue::kListLiteral,
+                                std::move(operands)),
+      this, dest);
 }
 
 AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

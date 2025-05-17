@@ -101,8 +101,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in MLIR magic";
   case EC_TopLevelStmt:
     return " in expression statement";
-  case EC_ListField: // [x, y]
-    return " in list field initializer";
+  case EC_ListLiteral: // [x, y]
+    return " in list literal";
   case EC_TupleElement: // (x, y)
     return " in tuple element";
   case EC_SubscriptBase: // x[y]
@@ -587,21 +587,10 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return overloads->emitAsCValue(*this, dest);
   }
 
-  // Otherwise we must have an initializer list.
-  auto initValue = value.ir.getIfInitializer();
-  assert(initValue && "Unknown UValue!");
+  if (auto initValue = value.ir.getIfInitializer())
+    return initValue->emitAsCValue(*this, value.expr, dest);
 
-  // We can't emit an initializer list without a contextual type.  See if we
-  // have one.
-  ASTType expectedType = dest.getExpectedTypeIfSpecified();
-  if (!expectedType) {
-    emitError(value.expr->getLoc(),
-              "cannot emit initializer list without a contextual type");
-    return {};
-  }
-
-  return emitConstructorCall(expectedType, CallOperands(initValue->get()),
-                             value.expr, CallSyntax::kTypeCall, dest);
+  llvm_unreachable("unknown UValue in emitCValue");
 }
 
 /// Emit an expression providing an immutable borrowed reference to a value.

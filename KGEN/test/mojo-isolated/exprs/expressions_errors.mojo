@@ -403,6 +403,13 @@ struct MyIntPair:
   var a: Int
   var b: Int
 
+fn list_literals():
+  # expected-error @+1 {{cannot emit list literal without a contextual type}}
+  _ = []
+
+  # expected-error @+1 {{cannot emit list literal without a contextual type}}
+  _ = [1, 2]
+
 fn dict_expression(a: Int):
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = {}

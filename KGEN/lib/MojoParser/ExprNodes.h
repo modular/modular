@@ -408,8 +408,9 @@ struct TupleNode final : public ExprNode {
 };
 
 /// [a, b, c]
-struct ListNode final : public ExprNode {
-  ListNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs, SMLoc rsquareLoc)
+struct ListLiteralNode final : public ExprNode {
+  ListLiteralNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs,
+                  SMLoc rsquareLoc)
       : ExprNode(kList), lsquareLoc(lsquareLoc), exprs(exprs),
         rsquareLoc(rsquareLoc) {}
 
