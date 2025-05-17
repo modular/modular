@@ -78,7 +78,7 @@ alias cudnnCTCLossStruct = UnsafePointer[NoneType]
 alias cudnnRuntimeTag_t = NoneType
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnSoftmaxMode_t(Writable):
     var _value: Int8
@@ -142,7 +142,7 @@ fn cudnnCreate(
     ]()(handle)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnReduceTensorIndices_t(Writable):
     var _value: Int8
@@ -329,7 +329,7 @@ fn cudnnSetPoolingNdDescriptor(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnReduceTensorOp_t(Writable):
     var _value: Int8
@@ -443,7 +443,7 @@ fn cudnnLRNCrossChannelForward(
     ]()(handle, norm_desc, lrn_mode, alpha, x_desc, x, beta, y_desc, y)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnDeterminism_t(Writable):
     var _value: Int8
@@ -491,7 +491,7 @@ alias cudnnAlgorithmDescriptor_t = UnsafePointer[cudnnAlgorithmStruct]
 alias cudnnActivationDescriptor_t = UnsafePointer[cudnnActivationStruct]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnStatus_t(Writable):
     var _value: Int8
@@ -573,7 +573,7 @@ struct cudnnStatus_t(Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnCTCLossAlgo_t(Writable):
     var _value: Int8
@@ -639,7 +639,7 @@ fn cudnnGetFilter4dDescriptor(
     ]()(filter_desc, data_type, format, k, c, h, w)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnTensorFormat_t(Writable):
     var _value: Int8
@@ -808,7 +808,7 @@ fn cudnnSetActivationDescriptor(
     ]()(activation_desc, mode, relu_nan_opt, coef)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnNormAlgo_t(Writable):
     var _value: Int8
@@ -851,7 +851,7 @@ struct cudnnNormAlgo_t(Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnOpTensorOp_t(Writable):
     var _value: Int8
@@ -1151,7 +1151,7 @@ fn cudnnDeriveBNTensorDescriptor(
     ]()(derived_bn_desc, x_desc, mode)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnActivationMode_t(Writable):
     var _value: Int8
@@ -1237,7 +1237,7 @@ fn cudnnGetTensorSizeInBytes(
     ]()(tensor_desc, size)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnConvolutionBwdDataAlgo_t(Writable):
     var _value: Int8
@@ -1344,7 +1344,7 @@ fn cudnnGetPooling2dForwardOutputDim(
 alias cudnnLRNDescriptor_t = UnsafePointer[cudnnLRNStruct]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnSamplerType_t(Writable):
     var _value: Int8
@@ -1411,7 +1411,7 @@ fn cudnnSpatialTfSamplerForward(
     ]()(handle, st_desc, alpha, x_desc, x, grid, beta, y_desc, y)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnNormMode_t(Writable):
     var _value: Int8
@@ -1528,7 +1528,7 @@ fn cudnnGetPooling2dDescriptor(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnNormOps_t(Writable):
     var _value: Int8
@@ -1606,7 +1606,7 @@ alias cudnnSpatialTransformerDescriptor_t = UnsafePointer[
 ]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnSoftmaxAlgorithm_t(Writable):
     var _value: Int8
@@ -1696,7 +1696,7 @@ fn cudnnGetStream(
     ]()(handle, stream_id)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnBatchNormOps_t(Writable):
     var _value: Int8
@@ -1742,7 +1742,7 @@ struct cudnnBatchNormOps_t(Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnConvolutionFwdAlgo_t(Writable):
     var _value: Int8
@@ -1958,7 +1958,8 @@ fn cudnnCreateActivationDescriptor(
     ]()(activation_desc)
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct libraryPropertyType_t:
     var _value: Int32
     alias MAJOR_VERSION = Self(0)
@@ -1995,7 +1996,7 @@ fn cudnnGetFilterSizeInBytes(
     ]()(filter_desc, size)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnLRNMode_t(Writable):
     var _value: Int8
@@ -2120,7 +2121,7 @@ fn cudnnGetAlgorithmDescriptor(
     ]()(algo_desc, algorithm)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnFoldingDirection_t(Writable):
     var _value: Int8
@@ -2184,7 +2185,7 @@ fn cudnnGetTensorNdDescriptor(
     ]()(tensor_desc, nb_dims_requested, data_type, nb_dims, dim_a, stride_a)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnErrQueryMode_t(Writable):
     var _value: Int8
@@ -2345,7 +2346,7 @@ fn cudnnSetTensor4dDescriptorEx(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnBatchNormMode_t(Writable):
     var _value: Int8
@@ -2435,7 +2436,7 @@ fn cudnnScaleTensor(
     ]()(handle, y_desc, y, alpha)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnSeverity_t(Writable):
     var _value: Int8
@@ -2487,7 +2488,7 @@ struct cudnnSeverity_t(Writable):
 alias cudnnDebug_t = cudnnDebugStruct
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnMathType_t(Writable):
     var _value: Int8
@@ -2536,7 +2537,7 @@ struct cudnnMathType_t(Writable):
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnNanPropagation_t(Writable):
     var _value: Int8
@@ -2582,7 +2583,7 @@ struct cudnnNanPropagation_t(Writable):
 alias cudnnFilterDescriptor_t = UnsafePointer[cudnnFilterStruct]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnRNNAlgo_t(Writable):
     var _value: Int8
@@ -2712,7 +2713,7 @@ fn cudnnGetAlgorithmSpaceSize(
     ]()(handle, algo_desc, algo_space_size_in_bytes)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnDataType_t(Writable):
     var _value: Int8
@@ -2914,7 +2915,7 @@ fn cudnnSetSpatialTransformerNdDescriptor(
 alias cudnnAlgorithm_t = cudnnAlgorithmUnionStruct
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnIndicesType_t(Writable):
     var _value: Int8
@@ -3200,7 +3201,7 @@ fn cudnnNormalizationForwardInference(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnConvolutionBwdFilterAlgo_t(Writable):
     var _value: Int8
@@ -3361,7 +3362,7 @@ fn cudnnDestroyOpTensorDescriptor(
     ]()(op_tensor_desc)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnPoolingMode_t(Writable):
     var _value: Int8
@@ -3463,7 +3464,7 @@ fn cudnnGetDropoutDescriptor(
     ]()(dropout_desc, handle, dropout, states, seed)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cudnnDivNormMode_t(Writable):
     var _value: Int8

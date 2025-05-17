@@ -19,7 +19,7 @@ constant memory that can be used for efficient data transfer between host and GP
 from collections.string import StaticString
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ConstantMemoryMapping(Copyable, Movable):
     """Represents a mapping of constant memory between host and device.
@@ -57,20 +57,3 @@ struct ConstantMemoryMapping(Copyable, Movable):
     runtime to determine how much data to transfer between host and device. The size
     must be sufficient to hold all data needed by GPU kernels.
     """
-
-    fn __init__(
-        out self,
-        name: StaticString,
-        ptr: UnsafePointer[NoneType],
-        byte_count: Int,
-    ):
-        """Initializes a new constant memory mapping.
-
-        Args:
-            name: A string identifier for the constant memory mapping.
-            ptr: Pointer to the memory location to be mapped.
-            byte_count: Size of the memory mapping in bytes.
-        """
-        self.name = name
-        self.ptr = ptr
-        self.byte_count = byte_count

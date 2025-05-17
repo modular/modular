@@ -27,7 +27,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 """
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Attribute(Writable):
     """Represents GPU kernel function attributes.
@@ -205,7 +205,7 @@ struct Attribute(Writable):
             return writer.write("REQUIRED_CLUSTER_DEPTH")
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct FuncAttribute(Copyable, Movable, EqualityComparable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.

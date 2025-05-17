@@ -759,7 +759,7 @@ fn cublasStrmv(
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasPointerMode_t:
     var _value: Int32
@@ -921,7 +921,7 @@ fn cublasDgemmStridedBatched(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasMath_t:
     var _value: Int32
@@ -2038,7 +2038,7 @@ fn cublasSrotm(
     ]()(handle, n, x, incx, y, incy, param)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Algorithm:
     var _value: Int32
@@ -2610,7 +2610,7 @@ fn cublasRotgEx(
     ]()(handle, a, b, ab_type, c, s, cs_type, executiontype)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasDiagType_t:
     var _value: Int32
@@ -2639,7 +2639,7 @@ struct cublasDiagType_t:
         return Int(self._value)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ComputeType:
     var _value: Int32
@@ -4655,7 +4655,7 @@ fn cublasAsumEx(
     ]()(handle, n, x, x_type, incx, result, result_type, executiontype)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct FillMode:
     var _value: Int32
@@ -6104,7 +6104,7 @@ fn cublasDtbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasAtomicsMode_t:
     var _value: Int32
@@ -6406,7 +6406,7 @@ fn cublasCherkEx(
     )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasSideMode_t:
     var _value: Int32
@@ -7034,7 +7034,7 @@ fn cublasStrmm(
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct cublasOperation_t:
     var _value: Int32

@@ -96,7 +96,7 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 alias _flag_t = DType.uint32
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Signal:
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.

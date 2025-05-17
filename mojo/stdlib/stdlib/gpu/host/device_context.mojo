@@ -131,7 +131,8 @@ struct _DeviceTimer:
         )
 
 
-@value
+@fieldwise_init
+@register_passable("trivial")
 struct _DeviceBufferMode:
     var _mode: Int
 

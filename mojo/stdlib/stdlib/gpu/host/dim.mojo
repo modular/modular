@@ -15,7 +15,7 @@
 from utils.index import Index, IndexList
 
 
-@value
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct Dim(Stringable, Writable):
     """Represents a dimension with up to three components (x, y, z).
@@ -30,15 +30,6 @@ struct Dim(Stringable, Writable):
     This field stores the values for all three dimensions using an IndexList
     with a fixed size of 3. The dimensions are accessed in order: x, y, z.
     """
-
-    @implicit
-    fn __init__(out self, value: IndexList[3]):
-        """Initializes Dim with an IndexList[3].
-
-        Args:
-            value: The IndexList[3] representing the dimension.
-        """
-        self._value = value
 
     @implicit
     fn __init__[I: Indexer](out self, x: I):
