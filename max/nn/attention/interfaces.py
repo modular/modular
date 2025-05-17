@@ -36,7 +36,7 @@ from ..linear import LinearV1
 class AttentionImpl(Layer, ABC):
     """
     A generalized attention interface, that will be used upstream by a general Transformer.
-    We would expect a seperate subclass, articulating each variation of Attention:
+    We would expect a separate subclass, articulating each variation of Attention:
 
     - AttentionWithRope
     - AttentionWithAlibi
@@ -138,7 +138,7 @@ class DistributedAttentionImpl(Module, ABC):
 class AttentionImplQKV(Layer, ABC):
     """
     A generalized attention interface, that will be used upstream by a general Transformer.
-    We would expect a seperate subclass, articulating each variation of Attention:
+    We would expect a separate subclass, articulating each variation of Attention:
 
     - AttentionWithRope
     - AttentionWithAlibi
