@@ -4,33 +4,42 @@ This directory contains tests for calling Mojo from Python.
 
 ## Tests
 
-> [!WARNING]
->
-> These tests are not representative of what the final state of the Python <=>
-> Mojo interop experience will look like. Do not attempt to copy the structure
-> used in these tests, as it will likely change and your code will break. This
-> functionality is not ready for usage yet.
-
 The tests can be run using Bazel:
 
 ```shell
 bazel test //open-source/max/mojo/integration-test:lit
 ```
 
-### Test #1: [./basic](./basic/)
-
-This is a minimal smoke test, testing calling a simple Mojo function from
-Python.
-
-The initial contents are:
+The tests typically have the following structure:
 
 ```text
-basic-raw
-├── mojo_module.mojo
-└── main.py
+<name>
+├── main.py
+└── mojo_module.mojo
 ```
 
-Build manually using:
+where `main.py` is the test entrypoint, which compiles and loads
+`mojo_module.mojo` as a
+[Python extension module](https://docs.python.org/3/extending/extending.html).
+
+`mojo_module.mojo` should contain Mojo code written to be called from Python,
+and `main.py` should test that exposed Mojo code.
+
+## File Overview
+
+- [./basic-raw](./basic-raw/) — a minimal low-level smoke test, calling a simple
+  Mojo function from Python. Uses the low-level "raw" function bindings, which
+  are more error prone.
+
+- [./feature-overview](./feature-overview/) — This test aims to include a basic
+  test for each supported Mojo language feature that is usable across the
+  Python <=> Mojo interop boundary.
+
+## Manual Test Procedure
+
+Python extension modules are just dynamic libraries that expose a suitable
+`PyInit_<module_name>()` function. To build a Mojo library into an extension
+module, you can use the following command:
 
 ```shell
 mojo build mojo_module.mojo --emit shared-lib -o mojo_module.so
@@ -40,14 +49,11 @@ Which will result in a `mojo_module.so` being built and placed alongside the
 existing files:
 
 ```text
-basic
-├── mojo_module.a
+<name>
 ├── mojo_module.mojo
 ├── mojo_module.so
 └── main.py
 ```
-
-(The mojo_module.a file is an intermediate artifact that can be deleted.)
 
 Running the Python `main.py` code will load and run compiled Mojo code
 from `mojo_module.so`:
@@ -55,9 +61,3 @@ from `mojo_module.so`:
 ```shell
 % python main.py
 Result from Mojo 🔥: 2
-```
-
-### Test #2: [./feature-overview](./feature-overview/)
-
-This test aims to include a basic test for each supported Mojo language
-feature that is usable across the Python <=> Mojo interop boundary.
