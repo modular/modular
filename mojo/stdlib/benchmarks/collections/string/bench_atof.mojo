@@ -32,7 +32,7 @@ from pathlib import _dir_of_current_file
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_parsing_all_floats_in_file[](
+fn bench_parsing_all_floats_in_file(
     mut b: Bencher, items_to_parse: List[String]
 ) raises:
     @always_inline
@@ -51,10 +51,7 @@ fn bench_parsing_all_floats_in_file[](
 # ===-----------------------------------------------------------------------===#
 def main():
     var bench = Bench()
-    alias files = List[StaticString](
-        "canada",
-        "mesh",
-    )
+    alias files = List[StaticString]("canada", "mesh")
 
     @parameter
     for i in range(len(files)):
