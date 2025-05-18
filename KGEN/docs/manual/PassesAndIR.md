@@ -115,68 +115,6 @@ In summary:
 - `llvm` can exist at all levels of KGEN IR to describe target-specific
   operations, but then the kernel can only target LLVM.
 
-## Passes
-
-The Mojo compiler has a lot of stages. Some of the big ones are:
-
-- Parsing, which does lexing, parsing, and type-checking.
-- Elaborating, which instantiates generics, for example `fn add[x: Int](...)`
-  into `fn add[3](...)`, `fn add[42](...)`, `fn add[1337](...)` etc.
-- Lowering to LLVM.
-
-...but there are a lot more.
-
-You can learn about all of them in Weiwei's excellent
-[Mojo Compilation Model](https://www.notion.so/modularai/Mojo-Compilation-Model-Now-and-Future-6028a58015034f38b037e520ee2e2d78)
-doc.
-
-You can see all the passes that run for a particular program by running
-`kgen --mlir-print-ir-before-all -elaborate main.mojo 2>&1 | grep 'IR Dump Before'`.
-For example when run on a simple `fn main(): pass` it mentions these passes
-coming after the parser:
-
-- DebugInfoStrip
-- LowerSemanticCF
-- VerifyParameters
-- CheckLifetimes
-- AnnotateKernels
-- VerifyKernels
-- LowerLIT
-- MOGGPreElabPipeline
-- RemoveUnusedParams
-- EliminateDeadSymbols
-- SROA
-- Mem2Reg
-- Canonicalizer
-- InlineParametric
-- SCCP
-- ApplyInliner
-- OutlineClosures
-- CSE
-- LiftAndFoldApply
-- ElaborateGenerators
-- EliminateDuplicateFunctions
-- ResolveCompilerPromises
-- LowerArgConventions
-- LowerCallingConventions
-- EnsureNoParameters
-- AutomaticInline
-- RaiseForLoops
-- LoopUnrolling
-- ArgPromotion
-- SimplifyCF
-- LowerLoops
-- LowerClosures
-- LowerAsyncFunctions
-- DeadArgumentElimination
-
-...and many of these passes are run multiple times.
-
-The `mojo` command will run the entire pipeline from beginning to end, but you
-can use `kgen` to run specific passes, and `kgen-translate` to run only the
-parser. For more details on those, and other commands, see
-[Mojo Dev Tools](https://www.notion.so/modularai/Mojo-Dev-Tools-027879ef5e4d480ea6f8f73b1cbc2ad3).
-
 ## MLIR Guide
 
 - `%name` — A run-time value; an MLIR SSA value; the result of an MLIR
@@ -187,7 +125,10 @@ parser. For more details on those, and other commands, see
 - `#expr` or `{expr}` — Compile-time data.
 - Anything else is an MLIR **operation.**
 
-All these are explained in the next sections.
+It's important to know these, because `!kgen.none` and `#kgen.none` are very
+different things.
+
+All of them are explained in the next sections.
 
 For now, forget about compile-time data (`#expr`), and pretend they only come
 into play with generics are involved. Let's start with a program that just uses
@@ -418,3 +359,65 @@ In that `Vec`, we can say two things:
 
 "Type" is a relative term. `N`'s type is `Int`, and Int's type is something
 else, and that has a type, and so on. Everything has a type.
+
+## Passes
+
+The Mojo compiler has a lot of stages. Some of the big ones are:
+
+- Parsing, which does lexing, parsing, and type-checking.
+- Elaborating, which instantiates generics, for example `fn add[x: Int](...)`
+  into `fn add[3](...)`, `fn add[42](...)`, `fn add[1337](...)` etc.
+- Lowering to LLVM.
+
+...but there are a lot more.
+
+You can learn about all of them in Weiwei's excellent
+[Mojo Compilation Model](https://www.notion.so/modularai/Mojo-Compilation-Model-Now-and-Future-6028a58015034f38b037e520ee2e2d78)
+doc.
+
+You can see all the passes that run for a particular program by running
+`kgen --mlir-print-ir-before-all -elaborate main.mojo 2>&1 | grep 'IR Dump Before'`.
+For example when run on a simple `fn main(): pass` it mentions these passes
+coming after the parser:
+
+- DebugInfoStrip
+- LowerSemanticCF
+- VerifyParameters
+- CheckLifetimes
+- AnnotateKernels
+- VerifyKernels
+- LowerLIT
+- MOGGPreElabPipeline
+- RemoveUnusedParams
+- EliminateDeadSymbols
+- SROA
+- Mem2Reg
+- Canonicalizer
+- InlineParametric
+- SCCP
+- ApplyInliner
+- OutlineClosures
+- CSE
+- LiftAndFoldApply
+- ElaborateGenerators
+- EliminateDuplicateFunctions
+- ResolveCompilerPromises
+- LowerArgConventions
+- LowerCallingConventions
+- EnsureNoParameters
+- AutomaticInline
+- RaiseForLoops
+- LoopUnrolling
+- ArgPromotion
+- SimplifyCF
+- LowerLoops
+- LowerClosures
+- LowerAsyncFunctions
+- DeadArgumentElimination
+
+...and many of these passes are run multiple times.
+
+The `mojo` command will run the entire pipeline from beginning to end, but you
+can use `kgen` to run specific passes, and `kgen-translate` to run only the
+parser. For more details on those, and other commands, see
+[Mojo Dev Tools](https://www.notion.so/modularai/Mojo-Dev-Tools-027879ef5e4d480ea6f8f73b1cbc2ad3).
