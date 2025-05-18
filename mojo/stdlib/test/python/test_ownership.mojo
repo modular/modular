@@ -26,7 +26,7 @@ fn test_import(mut python: Python) raises:
 
 fn test_list(mut python: Python) raises:
     var b: PythonObject = Python.import_module("builtins")
-    var my_list = Python.list(1, 2.34, "False")
+    var my_list: PythonObject = [1, 2.34, "False"]
     var py_string = String(my_list)
     assert_equal(py_string, "[1, 2.34, 'False']")
 
@@ -39,14 +39,14 @@ fn test_tuple(mut python: Python) raises:
 
 
 fn test_call_ownership(mut python: Python) raises:
-    var obj = Python.list(1, "5")
+    var obj: PythonObject = [1, "5"]
     var py_string = String(obj)
     var string = python.as_string_slice(py_string)
     assert_true(string == "[1, '5']")
 
 
 fn test_getitem_ownership(mut python: Python) raises:
-    var obj = Python.list(1, "5")
+    var obj: PythonObject = [1, "5"]
     var py_string = String(obj[1])
     var string = python.as_string_slice(py_string)
     assert_true(string == "5")

@@ -278,9 +278,11 @@ struct TypedPythonObject[type_hint: StaticString](
 
 @register_passable
 struct PythonObject(
+    Boolable,
     Copyable,
-    Movable,
     EqualityComparable,
+    Floatable,
+    Movable,
     SizedRaising,
     Writable,
     PythonConvertible,
@@ -479,6 +481,24 @@ struct PythonObject(
             slice: The dictionary value.
         """
         self.py_object = _slice_to_py_object_ptr(slice)
+
+    @always_inline
+    fn __init__[
+        *Ts: PythonConvertible
+    ](out self, owned *values: *Ts, __list_literal__: () = ()):
+        """Construct an Python list of objects.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the list with.
+            __list_literal__: Tell Mojo to use this method for list literals.
+
+        Returns:
+            The constructed Python list.
+        """
+        return Python._list(values)
 
     fn __copyinit__(out self, existing: Self):
         """Copy the object.

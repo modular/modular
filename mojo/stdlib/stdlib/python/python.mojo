@@ -227,7 +227,7 @@ struct Python:
 
         # This is equivalent to Python's `import numpy as np`
         np = Python.import_module("numpy")
-        a = np.array(Python.list(1, 2, 3))
+        a = np.array([1, 2, 3])
         ```
 
         Args:

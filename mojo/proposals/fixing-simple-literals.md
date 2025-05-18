@@ -4,7 +4,7 @@ Author: Chris Lattner
 Date: March 1, 2025
 Status: Implemented, complete
 
-This doc proposals a redesign of the Int/Float/String literal types in Mojo to
+This doc proposes a redesign of the Int/Float/String literal types in Mojo to
 make them lower correctly and define away a large category of bugs that people
 run into. This feature depends on powerful dependent types support which Mojo
 now supports.  This is specific to Int/Float/String literals - `Bool` and
