@@ -440,7 +440,7 @@ fn select_config[
         128, 256, 2 * _bk_base[a_type](), 3
     ) if gpu_info is A100 else Index(1024, 1024, 1024, 1024)
 
-    alias opt_list = List(_128x128_4, _256x64_4, _256x128_3)
+    alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
     for bmnk_stage in opt_list:
         var bm = bmnk_stage[][0]

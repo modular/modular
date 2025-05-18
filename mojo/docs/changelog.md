@@ -49,8 +49,11 @@ what we publish.
 
 - `try` and `raise` now work at comptime.
 
-- List literals are being redesigned and are temporarily disabled. The
-  `ListLiteral` type has been removed.
+- List literals have been redesigned to work better.  They produce homogenous
+  sequences by invoking the `T(<elements>, __list_literal__: ())` constructor
+  of a type `T` that is inferred by context, or otherwise defaulting to the
+  standard library `List[Elt]` type.  The `ListLiteral` type has been removed
+  from the standard library.
 
 ### Standard library changes
 

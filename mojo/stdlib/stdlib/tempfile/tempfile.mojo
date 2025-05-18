@@ -58,7 +58,7 @@ fn _candidate_tempdir_list() -> List[String]:
             dirlist.append(dirname^)
 
     # Failing that, try OS-specific locations.
-    dirlist.extend(List(String("/tmp"), String("/var/tmp"), String("/usr/tmp")))
+    dirlist.extend([String("/tmp"), String("/var/tmp"), String("/usr/tmp")])
 
     # As a last resort, the current directory if possible,
     # os.path.getcwd() could raise

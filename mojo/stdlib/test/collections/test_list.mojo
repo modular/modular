@@ -68,6 +68,35 @@ def test_list():
     assert_equal(7, list[-1])
 
 
+struct WeirdList[T: AnyType]:
+    fn __init__(out self, owned *values: T, __list_literal__: ()):
+        pass
+
+
+fn take_generic_weird_list(list: WeirdList[_]):
+    pass
+
+
+def test_list_literal():
+    var list: List[Int] = [1, 2, 3]
+    assert_equal(3, len(list))
+    assert_equal(1, list[0])
+    assert_equal(2, list[1])
+    assert_equal(3, list[2])
+
+    var list2 = [1, 2.5]
+    assert_equal(2, len(list2))
+    assert_equal(1.0, list2[0])
+    assert_equal(2.5, list2[1])
+
+    # Test parameter inference of the T element type.
+    take_generic_weird_list([1.0, 2.0])
+
+    # Heterogenous lists
+    # take_generic_weird_list([1.0, 2])
+    # take_generic_weird_list([1, 2.0])
+
+
 def test_list_unsafe_get():
     var list = List[Int]()
 
@@ -784,9 +813,9 @@ def test_list_contains():
 
     # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
     # var y = List[List[Int]]()
-    # y.append(List(1,2))
-    # assert_equal(List(1,2) in y,True)
-    # assert_equal(List(0,1) in y,False)
+    # y.append([1, 2])
+    # assert_equal([1, 2] in y,True)
+    # assert_equal([0, 1] in y,False)
 
 
 def test_list_eq_ne():
@@ -869,7 +898,7 @@ def test_destructor_trivial_elements():
 
 
 def test_list_repr():
-    var l = List(1, 2, 3)
+    var l = [1, 2, 3]
     assert_equal(l.__repr__(), "[1, 2, 3]")
     var empty = List[Int]()
     assert_equal(empty.__repr__(), "[]")
@@ -954,6 +983,7 @@ def test_copyinit_trivial_types_dtypes():
 def main():
     test_mojo_issue_698()
     test_list()
+    test_list_literal()
     test_list_unsafe_get()
     test_list_unsafe_set()
     test_list_clear()

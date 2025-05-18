@@ -158,12 +158,12 @@ fn tcgen05_ld[
     ]()
 
     constrained[
-        repeat in List[Int](1, 2, 4, 8, 16, 32, 64, 128),
+        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
         "`repeat` must be a power of 2 in the range [1, 128].",
     ]()
 
     constrained[
-        width in List[Int](1, 2, 4, 8, 16, 32, 64),
+        width in [1, 2, 4, 8, 16, 32, 64],
         "`width` must be a power of 2 in the range [1, 64].",
     ]()
 

@@ -1005,9 +1005,8 @@ fn _hipblasLt_matmul(
 ) raises:
     constrained[
         (
-            a.type in List[DType](DType.float32, DType.float16, DType.bfloat16)
-            and b.type
-            in List[DType](DType.float32, DType.float16, DType.bfloat16)
+            a.type in [DType.float32, DType.float16, DType.bfloat16]
+            and b.type in [DType.float32, DType.float16, DType.bfloat16]
         ),
         (
             "Only FP32, FP16, BF16 input data types are supported. Please"

@@ -373,7 +373,7 @@ def test_log2():
 
 
 def test_gcd():
-    var l = List(2, 4, 6, 8, 16)
+    var l = [2, 4, 6, 8, 16]
     var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
     assert_equal(gcd(Span[Int](il)), 2)
     assert_equal(gcd(2, 4, 6, 8, 16), 2)
@@ -391,18 +391,18 @@ def test_gcd():
     assert_equal(gcd(8), 8)
     assert_equal(gcd(), 0)
     assert_equal(gcd(List[Int]()), 0)
-    assert_equal(gcd(List(16)), 16)
+    assert_equal(gcd([16]), 16)
 
 
 def test_lcm():
     assert_equal(lcm(-2, 4), 4)
     assert_equal(lcm(2345, 23452), 54994940)
-    var l = List(4, 6, 7, 3)
+    var l = [4, 6, 7, 3]
     assert_equal(lcm(Span(l)), 84)
     assert_equal(lcm(l), 84)
     assert_equal(lcm(4, 6, 7, 3), 84)
     assert_equal(lcm(), 1)
-    assert_equal(lcm(List(3)), 3)
+    assert_equal(lcm([3]), 3)
     assert_equal(lcm(List[Int]()), 1)
     assert_equal(lcm(0, 4), 0)
     assert_equal(lcm(5, 33), 165)

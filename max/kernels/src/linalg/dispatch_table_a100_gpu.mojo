@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+from utils import IndexList
 from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
@@ -34,16 +34,44 @@ from .utils import elementwise_epilogue_type
 fn create_matmul_configs_ampere[
     key: String, a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    alias input = key
+    alias dict = get_dispatch_table[a_type, b_type, c_type, transpose_b]()
+    try:
+        return dict[key]
+    except error:
+        return MatmulConfig[a_type, b_type, c_type, transpose_b](
+            num_pipeline_stages=0,
+        )  # 128x128_4
 
+
+fn get_dispatch_table[
+    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool
+]() -> Dict[String, MatmulConfig[a_type, b_type, c_type, transpose_b]]:
     var tile_configs = Dict[
         String, MatmulConfig[a_type, b_type, c_type, transpose_b]
     ]()
+
+    @always_inline
+    fn insert(
+        name: StaticString,
+        *,
+        block_tile_shape: IndexList[3],
+        warp_tile_shape: IndexList[3],
+        num_pipeline_stages: Int,
+        num_k_partitions: Int,
+        num_warp_k_partitions: Int,
+    ):
+        tile_configs[name] = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=block_tile_shape,
+            warp_tile_shape=warp_tile_shape,
+            num_pipeline_stages=num_pipeline_stages,
+            num_k_partitions=num_k_partitions,
+            num_warp_k_partitions=num_warp_k_partitions,
+        )
+
     # --------------------------------K=4096, N=4096--------------------------------
 
-    tile_configs["16_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_4096_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -51,9 +79,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_4096_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -61,9 +88,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_4096_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -71,9 +97,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_4096_4096",
         block_tile_shape=(64, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -81,9 +106,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["256_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "256_4096_4096",
         block_tile_shape=(64, 256, 32),
         warp_tile_shape=(32, 128, 32),
         num_pipeline_stages=4,
@@ -91,9 +115,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_4096_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -101,9 +124,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_4096_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -111,9 +133,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1280_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1280_4096_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -121,9 +142,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1606_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1606_4096_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -131,9 +151,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_4096_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_4096_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -142,9 +161,8 @@ fn create_matmul_configs_ampere[
     )
 
     # K=4096, N=14336
-    tile_configs["16_14336_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_14336_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -152,9 +170,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_14336_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_14336_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -162,9 +179,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_14336_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_14336_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -173,9 +189,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=14336, N=4096--------------------------------
-    tile_configs["16_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_4096_14336",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -183,9 +198,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_4096_14336",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -193,9 +207,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_4096_14336",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -203,9 +216,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_4096_14336",
         block_tile_shape=(64, 256, 64),
         warp_tile_shape=(32, 128, 32),
         num_pipeline_stages=4,
@@ -213,9 +225,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_4096_14336",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -223,9 +234,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_4096_14336",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -233,9 +243,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_4096_14336",
         block_tile_shape=(128, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -243,9 +252,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1024_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1024_4096_14336",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -253,9 +261,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1152_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1152_4096_14336",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -263,9 +270,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1280_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1280_4096_14336",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -273,9 +279,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1606_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1606_4096_14336",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -283,9 +288,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_4096_14336",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -294,9 +298,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=128256--------------------------------
-    tile_configs["128_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_128256_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -304,9 +307,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_128256_4096",
         block_tile_shape=(128, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -314,9 +316,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_128256_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -324,9 +325,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_128256_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -335,9 +335,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=28672--------------------------------
-    tile_configs["16_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_28672_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -345,9 +344,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_28672_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -355,9 +353,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_28672_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -365,9 +362,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_28672_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -375,9 +371,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["256_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "256_28672_4096",
         block_tile_shape=(64, 256, 64),
         warp_tile_shape=(32, 128, 32),
         num_pipeline_stages=4,
@@ -385,9 +380,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_28672_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -395,9 +389,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -405,9 +398,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_28672_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -415,9 +407,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1024_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1024_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -425,9 +416,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1152_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1152_28672_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -435,9 +425,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1280_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1280_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -445,9 +434,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1606_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1606_28672_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -455,9 +443,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -466,9 +453,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=6144--------------------------------
-    tile_configs["16_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_6144_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -476,9 +462,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_6144_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -486,9 +471,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_6144_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -496,9 +480,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_6144_4096",
         block_tile_shape=(64, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=3,
@@ -506,9 +489,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["256_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "256_6144_4096",
         block_tile_shape=(128, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -516,9 +498,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_6144_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -526,9 +507,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_6144_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -536,9 +516,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_6144_4096",
         block_tile_shape=(128, 256, 32),
         warp_tile_shape=(64, 128, 16),
         num_pipeline_stages=3,
@@ -547,9 +526,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=14336--------------------------------
-    tile_configs["16_14336_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_14336_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -557,9 +535,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_14336_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_14336_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -567,9 +544,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_14336_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_14336_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -578,9 +554,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=14336, N=4096--------------------------------
-    tile_configs["16_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_4096_14336",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -588,9 +563,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_4096_14336",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -598,9 +572,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_4096_14336",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -608,9 +581,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_4096_14336",
         block_tile_shape=(64, 256, 64),
         warp_tile_shape=(32, 128, 32),
         num_pipeline_stages=4,
@@ -618,9 +590,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_4096_14336",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -628,9 +599,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_4096_14336",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -638,9 +608,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_4096_14336",
         block_tile_shape=(128, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -648,9 +617,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1024_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1024_4096_14336",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -658,9 +626,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1152_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1152_4096_14336",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -668,9 +635,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1280_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1280_4096_14336",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -678,9 +644,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1606_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1606_4096_14336",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -688,9 +653,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_4096_14336"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_4096_14336",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -699,9 +663,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=128256--------------------------------
-    tile_configs["128_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_128256_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -709,9 +672,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_128256_4096",
         block_tile_shape=(128, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -719,9 +681,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_128256_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -729,9 +690,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_128256_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_128256_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -740,9 +700,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=28672--------------------------------
-    tile_configs["16_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_28672_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -750,9 +709,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_28672_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -760,9 +718,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_28672_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -770,9 +727,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_28672_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -780,9 +736,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["256_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "256_28672_4096",
         block_tile_shape=(64, 256, 64),
         warp_tile_shape=(32, 128, 32),
         num_pipeline_stages=4,
@@ -790,9 +745,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_28672_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -800,9 +754,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -810,9 +763,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_28672_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -820,9 +772,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1024_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1024_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -830,9 +781,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1152_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1152_28672_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -840,9 +790,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1280_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1280_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -850,9 +799,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1606_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1606_28672_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -860,9 +808,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_28672_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_28672_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -871,9 +818,8 @@ fn create_matmul_configs_ampere[
     )
 
     # --------------------------------K=4096, N=6144--------------------------------
-    tile_configs["16_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "16_6144_4096",
         block_tile_shape=(16, 64, 128),
         warp_tile_shape=(16, 32, 32),
         num_pipeline_stages=4,
@@ -881,9 +827,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["32_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "32_6144_4096",
         block_tile_shape=(32, 64, 64),
         warp_tile_shape=(16, 64, 32),
         num_pipeline_stages=6,
@@ -891,9 +836,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["64_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "64_6144_4096",
         block_tile_shape=(64, 64, 64),
         warp_tile_shape=(32, 64, 32),
         num_pipeline_stages=5,
@@ -901,9 +845,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["128_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "128_6144_4096",
         block_tile_shape=(64, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=3,
@@ -911,9 +854,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=2,
     )
 
-    tile_configs["256_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "256_6144_4096",
         block_tile_shape=(128, 128, 64),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -921,9 +863,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["512_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "512_6144_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -931,9 +872,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["768_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "768_6144_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -941,9 +881,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["896_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "896_6144_4096",
         block_tile_shape=(128, 256, 32),
         warp_tile_shape=(64, 128, 16),
         num_pipeline_stages=3,
@@ -951,9 +890,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1024_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1024_6144_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 64, 32),
         num_pipeline_stages=3,
@@ -961,9 +899,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1152_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1152_6144_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -971,9 +908,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1280_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1280_6144_4096",
         block_tile_shape=(128, 128, 32),
         warp_tile_shape=(64, 64, 32),
         num_pipeline_stages=4,
@@ -981,9 +917,8 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["1606_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "1606_6144_4096",
         block_tile_shape=(128, 256, 64),
         warp_tile_shape=(64, 128, 32),
         num_pipeline_stages=3,
@@ -991,18 +926,13 @@ fn create_matmul_configs_ampere[
         num_warp_k_partitions=1,
     )
 
-    tile_configs["2048_6144_4096"] = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
+    insert(
+        "2048_6144_4096",
         block_tile_shape=(256, 128, 64),
         warp_tile_shape=(128, 128, 64),
         num_pipeline_stages=3,
         num_k_partitions=1,
         num_warp_k_partitions=1,
     )
-    try:
-        return tile_configs[input]
-    except error:
-        return MatmulConfig[a_type, b_type, c_type, transpose_b](
-            num_pipeline_stages=0,
-        )  # 128x128_4
+
+    return tile_configs

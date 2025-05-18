@@ -14,12 +14,12 @@
 from gridv1 import Grid
 from testing import *
 
-alias data4x4 = List(
-    List(0, 1, 1, 0),
-    List(1, 1, 0, 0),
-    List(0, 0, 1, 1),
-    List(1, 0, 0, 1),
-)
+alias data4x4 = [
+    [0, 1, 1, 0],
+    [1, 1, 0, 0],
+    [0, 0, 1, 1],
+    [1, 0, 0, 1],
+]
 var str4x4 = " ** \n**  \n  **\n*  *"
 
 
@@ -49,18 +49,18 @@ def test_gridv1_str():
 
 
 def test_gridv1_evolve():
-    data_gen2 = List(
-        List(0, 0, 1, 0),
-        List(1, 0, 0, 0),
-        List(0, 0, 1, 0),
-        List(1, 0, 0, 0),
-    )
-    data_gen3 = List(
-        List(0, 1, 0, 1),
-        List(0, 1, 0, 1),
-        List(0, 1, 0, 1),
-        List(0, 1, 0, 1),
-    )
+    data_gen2 = [
+        [0, 0, 1, 0],
+        [1, 0, 0, 0],
+        [0, 0, 1, 0],
+        [1, 0, 0, 0],
+    ]
+    data_gen3 = [
+        [0, 1, 0, 1],
+        [0, 1, 0, 1],
+        [0, 1, 0, 1],
+        [0, 1, 0, 1],
+    ]
 
     grid_gen1 = Grid(4, 4, data4x4)
 

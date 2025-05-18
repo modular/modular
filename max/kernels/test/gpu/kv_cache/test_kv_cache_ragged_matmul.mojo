@@ -966,7 +966,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
         alias type = types_tolerances[type_idx][0]
         alias rtol = types_tolerances[type_idx][1]
 
-        for bs_ref in List[Int](1, 16):
+        for bs_ref in [1, 16]:
             bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()

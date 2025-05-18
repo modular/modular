@@ -128,7 +128,7 @@ def test_span_slice():
                 return False
         return True
 
-    var l = List(1, 2, 3, 4, 5)
+    var l = [1, 2, 3, 4, 5]
     var s = Span(l)
     var res = s[1:2]
     assert_equal(res[0], 2)
@@ -139,8 +139,8 @@ def test_span_slice():
 
 
 def test_copy_from():
-    var a = List[Int](0, 1, 2, 3)
-    var b = List[Int](4, 5, 6, 7, 8, 9, 10)
+    var a = [0, 1, 2, 3]
+    var b = [4, 5, 6, 7, 8, 9, 10]
     var s = Span(a)
     var s2 = Span(b)
     s.copy_from(s2[: len(a)])
