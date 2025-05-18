@@ -25,12 +25,12 @@ from sys import (
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
-    stdin,
+    STDIN,
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import OpaquePointer, c_char, c_int, c_size_t, c_ssize_t
 from sys.intrinsics import _type_is_eq
 
 from builtin.dtype import _get_dtype_printf_format
@@ -103,6 +103,9 @@ struct _fdopen[mode: StaticString = "a"]:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
+        Constraints:
+            The delimiter must be a single character long.
+
         Args:
             delimiter: The delimiter to read until.
 
@@ -128,21 +131,16 @@ struct _fdopen[mode: StaticString = "a"]:
         Hello
         ```
         """
+        debug_assert(len(delimiter) == 1, "delimiter must be a single char")
+        var delim = ord(delimiter)
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8]()
+        var buffer = UnsafePointer[c_char]()
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call[
-            "getdelim",
-            Int,
-            UnsafePointer[UnsafePointer[UInt8]],
-            UnsafePointer[UInt64],
-            Int,
-            OpaquePointer,
-        ](
+        var bytes_read = external_call["getdelim", c_ssize_t](
             UnsafePointer(to=buffer),
-            UnsafePointer(to=UInt64(0)),
-            ord(delimiter),
+            UnsafePointer(to=c_size_t(0)),
+            c_int(delim),
             self.handle,
         )
         # Per man getdelim(3), getdelim will return -1 if an error occurs
@@ -150,14 +148,12 @@ struct _fdopen[mode: StaticString = "a"]:
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            if buffer:
-                libc.free(buffer.bitcast[NoneType]())
+            libc.free(buffer.bitcast[NoneType]())
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
-        var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
-        )
+        var len = bytes_read - Int(buffer[bytes_read - 1] == delim)
+        var s = String(StringSlice(ptr=buffer.bitcast[Byte](), length=len))
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         libc.free(buffer.bitcast[NoneType]())
         return s
@@ -434,7 +430,7 @@ fn input(prompt: String = "") raises -> String:
     """
     if prompt != "":
         print(prompt, end="")
-    return _fdopen["r"](stdin).readline()
+    return STDIN.get_or_create_ptr()[].readline()
 
 
 fn _get_stdout_stream() -> OpaquePointer:
