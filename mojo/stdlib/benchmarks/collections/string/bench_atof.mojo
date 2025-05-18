@@ -14,18 +14,27 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run, ThroughputMeasure, BenchMetric
+from benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    Unit,
+    keep,
+    run,
+    ThroughputMeasure,
+    BenchMetric,
+)
 from pathlib import _dir_of_current_file
+
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_parsing_all_floats_in_file[
-](mut b: Bencher, items_to_parse: List[String]) raises:
-
-
-
+fn bench_parsing_all_floats_in_file[](
+    mut b: Bencher, items_to_parse: List[String]
+) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
@@ -46,10 +55,11 @@ def main():
         "canada",
         "mesh",
     )
+
     @parameter
     for i in range(len(files)):
         alias filename = files[i]
-        var file_path =  _dir_of_current_file() / "data" / (filename + ".txt") 
+        var file_path = _dir_of_current_file() / "data" / (filename + ".txt")
 
         var items_to_parse = file_path.read_text().splitlines()
         var nb_of_bytes = 0
@@ -59,12 +69,8 @@ def main():
         bench.bench_with_input[List[String], bench_parsing_all_floats_in_file](
             BenchId("atof", filename),
             items_to_parse,
-            ThroughputMeasure(
-                BenchMetric.elements, len(items_to_parse)
-            ),
-            ThroughputMeasure(
-                BenchMetric.bytes, nb_of_bytes
-            )
+            ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
+            ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
         )
 
     print(bench)
