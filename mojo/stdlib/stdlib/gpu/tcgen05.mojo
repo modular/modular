@@ -14,7 +14,7 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
-from sys import _RegisterPackType
+from sys import _RegisterPackType, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 from memory import UnsafePointer, bitcast

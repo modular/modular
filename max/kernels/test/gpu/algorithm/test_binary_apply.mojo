@@ -18,6 +18,7 @@ from testing import assert_equal
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
+from memory import UnsafePointer
 
 
 fn vec_func[

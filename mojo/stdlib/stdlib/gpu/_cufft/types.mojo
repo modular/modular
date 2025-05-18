@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
+
 
 @fieldwise_init
 @register_passable("trivial")

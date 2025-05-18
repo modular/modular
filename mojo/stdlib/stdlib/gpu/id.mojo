@@ -23,6 +23,7 @@ optimal performance through hardware-specific optimizations where applicable."""
 
 from math import fma
 from os import abort
+from sys import is_nvidia_gpu, llvm_intrinsic
 from sys.intrinsics import block_dim as _block_dim
 from sys.intrinsics import block_id_in_cluster as _block_id_in_cluster
 from sys.intrinsics import block_idx as _block_idx

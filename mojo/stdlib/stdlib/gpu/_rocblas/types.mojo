@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import UnsafePointer
+from os import abort
+
 
 @fieldwise_init
 @register_passable("trivial")

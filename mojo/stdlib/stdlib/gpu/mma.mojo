@@ -15,7 +15,7 @@ warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from collections import InlineArray
 from collections.string.string_slice import _get_kgen_string
-from sys import _RegisterPackType, llvm_intrinsic, sizeof
+from sys import _RegisterPackType, llvm_intrinsic, sizeof, is_nvidia_gpu
 from sys._assembly import inlined_assembly
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle

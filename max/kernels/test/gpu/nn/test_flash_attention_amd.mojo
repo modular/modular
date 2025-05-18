@@ -34,6 +34,7 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf, neg_inf
+from collections import OptionalReg
 
 
 fn is_benchmark() -> Bool:

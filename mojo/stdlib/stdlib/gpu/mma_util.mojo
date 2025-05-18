@@ -31,6 +31,9 @@ NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wa
 AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
+from memory import UnsafePointer
+from sys import is_nvidia_gpu
+
 
 @always_inline
 fn load_matrix_a[

@@ -19,6 +19,7 @@ from sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
+    sizeof,
 )
 from sys.ffi import (
     _get_dylib_function as _ffi_get_dylib_function,

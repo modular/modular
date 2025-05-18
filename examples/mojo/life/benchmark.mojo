@@ -29,16 +29,16 @@ def main():
 
     # Warm up
     warmv1 = gridv1
-    for i in range(warmup_iterations):
+    for _ in range(warmup_iterations):
         warmv1 = warmv1.evolve()
 
     warmv2 = gridv2
-    for i in range(warmup_iterations):
+    for _ in range(warmup_iterations):
         warmv2 = warmv2.evolve()
 
     # Benchmark
     start_time = perf_counter_ns()
-    for i in range(benchmark_iterations):
+    for _ in range(benchmark_iterations):
         gridv1 = gridv1.evolve()
     stop_time = perf_counter_ns()
     elapsed = round((stop_time - start_time) / 1e6, 3)

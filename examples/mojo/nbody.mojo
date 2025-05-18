@@ -179,7 +179,7 @@ def run_system():
 
     print("Energy of System:", energy(system))
 
-    for i in range(50_000_000):
+    for _ in range(50_000_000):
         advance(system, 0.01)
 
     var system_energy = energy(system)
@@ -193,7 +193,7 @@ def benchmark():
         offset_momentum(system)
         keep(energy(system))
 
-        for i in range(50_000_000):
+        for _ in range(50_000_000):
             advance(system, 0.01)
 
         keep(energy(system))

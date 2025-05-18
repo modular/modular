@@ -36,6 +36,7 @@ from utils.numerics import get_accum_type
 from tensor_internal import ManagedTensorSlice
 from tensor_internal import IOUnknown
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from collections import OptionalReg
 
 
 fn is_benchmark() -> Bool:

@@ -38,8 +38,13 @@ Limitations:
 """
 
 from collections import InlineArray
+from memory import UnsafePointer
+from utils import IndexList, StaticTuple
+from builtin.device_passable import DevicePassable
+
+from collections import InlineArray
 from math import ceildiv
-from sys import simdwidthof, env_get_int
+from sys import simdwidthof, env_get_int, alignof, sizeof
 
 from buffer import NDBuffer
 from gpu import (
@@ -61,8 +66,6 @@ from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
-
-from utils.index import StaticTuple
 from utils.numerics import get_accum_type
 
 from sys.ffi import external_call, _get_global_or_null, OpaquePointer
@@ -475,11 +478,11 @@ fn _multi_gpu_barrier[
             # broadcast the value to all peers that I reached the barrier
             store_release(peer_counter_ptr, val)
             while load_acquire(self_counter_ptr) != val:
-                continue
+                pass
         else:
             peer_counter_ptr.store[volatile=True](val)
             while self_counter_ptr.load[volatile=True]() != val:
-                continue
+                pass
 
     @parameter
     if is_start or need_fence:

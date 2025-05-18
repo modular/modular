@@ -25,6 +25,7 @@ from utils import StaticTuple
 from .cublas import ComputeType
 from .dtype import DataType, Property
 from .result import Result
+from memory import UnsafePointer
 
 alias Context = NoneType
 

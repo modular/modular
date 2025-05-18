@@ -35,6 +35,7 @@ from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
+from collections import OptionalReg
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf

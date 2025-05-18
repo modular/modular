@@ -15,6 +15,8 @@ into an output buffer.
 """
 
 from collections import InlineArray
+from memory import UnsafePointer
+from utils import IndexList
 
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext

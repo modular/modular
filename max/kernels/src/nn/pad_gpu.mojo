@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from gpu import *
+from gpu import block_idx, block_dim, thread_idx, grid_dim, barrier
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
 
-from utils.index import IndexList
+from utils.index import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # pad GPU

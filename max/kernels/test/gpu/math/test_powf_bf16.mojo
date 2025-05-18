@@ -20,7 +20,7 @@ from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from testing import assert_almost_equal
 
-from utils import Index
+from utils import Index, IndexList
 
 alias type = DType.float32
 

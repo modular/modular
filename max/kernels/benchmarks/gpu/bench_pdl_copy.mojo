@@ -20,6 +20,7 @@ from gpu import *
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from testing import assert_equal
+from memory import UnsafePointer
 
 
 fn copy1(

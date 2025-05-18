@@ -19,6 +19,8 @@ from memory import UnsafePointer, bitcast
 from utils.index import IndexList
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
+from os import abort
+from sys import sizeof
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor

@@ -19,11 +19,21 @@ which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
-from collections import List, Optional
+from collections import List, Optional, OptionalReg
 from collections.string import StaticString, StringSlice
 from math import align_up
 from pathlib import Path
-from sys import env_get_int, env_get_string, external_call, is_defined, sizeof
+from sys import (
+    env_get_int,
+    env_get_string,
+    external_call,
+    is_defined,
+    sizeof,
+    bitwidthof,
+    is_gpu,
+    env_get_bool,
+)
+from os import abort
 from sys.ffi import c_char
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
@@ -40,7 +50,8 @@ from gpu.host._compile import (
     _ptxas_compile,
     _to_sass,
 )
-from memory import stack_allocation, memcpy
+from memory import stack_allocation, memcpy, UnsafePointer
+from memory.unsafe import bitcast
 
 from utils import Variant
 from utils._serialize import _serialize_elements, _serialize_elements_compact

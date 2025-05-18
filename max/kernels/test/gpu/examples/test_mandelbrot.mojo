@@ -20,6 +20,7 @@ from complex import ComplexSIMD
 from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal
+from memory import UnsafePointer
 
 from utils.index import Index
 

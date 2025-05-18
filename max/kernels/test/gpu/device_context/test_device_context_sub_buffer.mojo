@@ -14,6 +14,7 @@
 from testing import assert_equal
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from memory import UnsafePointer
 
 
 fn vec_func(

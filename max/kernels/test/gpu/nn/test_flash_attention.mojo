@@ -32,6 +32,7 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
+from collections import OptionalReg
 
 
 fn is_benchmark() -> Bool:

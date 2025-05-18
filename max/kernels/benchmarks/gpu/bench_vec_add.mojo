@@ -20,6 +20,7 @@ from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal
 from internal_utils import update_bench_config
+from memory import UnsafePointer
 
 
 fn vec_func(
