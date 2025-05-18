@@ -1029,10 +1029,17 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
-    return success(failed(initFn) || bool(initFn.value()));
+    if (failed(initFn) || !initFn.value())
+      return failure();
+    // If we found one, we recursively call inferOneOperand (but with implicit
+    // conversions disabled of course) to resolve our value as the init
+    // methods argument.  This allows us to infer parameters from it.
+    auto initSig = cast<FnTypeGeneratorType>(initFn.value().getType());
+    // We expect the initializer to return the constructed type.
+    // Infer the parameters of this overload candidate against the computed
+    // result type of the initializer.
+    return matchTypes(initSig.getUserResultType(), expectedType);
   }
-
-  // TODO: Infer from InitializerUValue
 
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can

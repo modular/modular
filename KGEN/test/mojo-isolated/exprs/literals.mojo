@@ -57,7 +57,7 @@ fn var_let_decls():
 struct IntList:
    fn __init__(out self, *list_elements: Int, __list_literal__: ()): pass
 
-fn inspect(list: List[FloatDyn]):
+fn inspect(list: List[_]):
     pass
 
 # CHECK-LABEL: lit.fn @"test_list_literal
@@ -82,8 +82,6 @@ fn test_list_literal():
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
     var c : IntList = []
-
-
 
     # CHECK: lit.call {{.*}}List::@"__init__{{.*}}<:!AnyType #FloatDyn1>
     inspect([1.0, 2])
