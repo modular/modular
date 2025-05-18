@@ -959,13 +959,16 @@ fn get_accum_type[
         preferred_accum_type: The preferred dtype for accumulation.
 
     Returns:
-        DType.float32 if dtype is a half-precision float, dtype otherwise.
+        The recommended dtype for accumulation operations based on the input
+        dtype and the preferred accumulation type.
     """
 
     @parameter
     if dtype.is_float8():
+
+        @parameter
         if preferred_accum_type is DType.float32:
-            return preferred_accum_type
+            return DType.float32
         else:
             return DType.bfloat16
     elif dtype is DType.bfloat16:
@@ -975,7 +978,7 @@ fn get_accum_type[
         # performance and use fp32 only when it's specified via preferred type.
         @parameter
         if preferred_accum_type is DType.float32:
-            return preferred_accum_type
+            return DType.float32
         else:
             return DType.float16
     else:
