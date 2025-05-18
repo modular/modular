@@ -164,11 +164,8 @@ void ValueDest::dump() const { llvm::errs() << *this; }
   } else if (isa<LValueBufferTaken>(representation)) {
     os << "LValueBufferTaken";
   } else if (auto expr = dyn_cast<const ExprNode *>(representation)) {
-    const char *startPtr = expr->getRangeStart().getPointer();
-    size_t length = expr->getRangeEnd().getPointer() - startPtr;
-    os << "ExprNode: " << StringRef(startPtr, std::min(length, size_t(80)))
-       << "\n---- 8< ----";
-
+    os << "ExprNode: ";
+    expr->print(os);
   } else if (auto *op = dyn_cast<Operation *>(representation)) {
     os << "Operation*: " << *op;
   } else if (auto type = dyn_cast<ASTType>(representation)) {

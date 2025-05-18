@@ -155,6 +155,7 @@ public:
 
   /// Print the expression node.
   virtual void print(mlir::raw_indented_ostream &os) const = 0;
+  void print(raw_ostream &os) const;
   /// Dump the expression node for debugging.
   LLVM_DUMP_METHOD void dump() const;
 

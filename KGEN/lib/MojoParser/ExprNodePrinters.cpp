@@ -18,6 +18,11 @@ using namespace LIT;
 
 using mlir::raw_indented_ostream;
 
+void ExprNode::print(raw_ostream &os) const {
+  raw_indented_ostream ios(os);
+  print(ios);
+}
+
 static StringRef stringifyExprKind(ExprNode::Kind kind) {
   switch (kind) {
   case ExprNode::kSynthetic:
