@@ -312,7 +312,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
 def main():
     var m = Bench(BenchConfig(max_runtime_secs=0.1))
 
-    alias dtypes = List(
+    alias dtypes = [
         DType.uint8,
         DType.uint16,
         DType.float16,
@@ -320,10 +320,10 @@ def main():
         DType.float32,
         DType.uint64,
         DType.float64,
-    )
-    var small_counts = List(10, 20, 32, 64, 100)
-    var large_counts = List(2**12, 2**16, 2**20)
-    var deltas = List(0, 2, 5, 20, 100)
+    ]
+    var small_counts = [10, 20, 32, 64, 100]
+    var large_counts = [2**12, 2**16, 2**20]
+    var deltas = [0, 2, 5, 20, 100]
 
     @parameter
     for i in range(len(dtypes)):

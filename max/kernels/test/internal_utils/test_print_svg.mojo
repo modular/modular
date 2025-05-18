@@ -31,7 +31,7 @@ fn test_svg_nvidia_shape() raises:
         )
 
     fn color_map(t: Int, v: Int) -> String:
-        colors = List(
+        colors = [
             StaticString("red"),
             StaticString("blue"),
             StaticString("green"),
@@ -43,7 +43,7 @@ fn test_svg_nvidia_shape() raises:
             StaticString("gray"),
             StaticString("black"),
             StaticString("white"),
-        )
+        ]
         return String(colors[t // 4])
 
     print_svg(tensor, tensor_list, color_map)
@@ -107,7 +107,7 @@ fn test_svg_wgmma_shape() raises:
     ](3)
 
     fn color_map(t: Int, v: Int) -> String:
-        colors = List(
+        colors = [
             StaticString("red"),
             StaticString("blue"),
             StaticString("green"),
@@ -119,7 +119,7 @@ fn test_svg_wgmma_shape() raises:
             StaticString("gray"),
             StaticString("black"),
             StaticString("white"),
-        )
+        ]
         return String(colors[t])
 
     print_svg(

@@ -50,7 +50,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var expected = List(
+    var expected = [
         0.0,
         1.0,
         2.0,
@@ -67,7 +67,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         13.0,
         14.0,
         15.0,
-    )
+    ]
     for i in range(16):
         print(res_host_ptr[i])
         assert_equal(res_host_ptr[i], expected[i])
