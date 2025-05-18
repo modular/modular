@@ -19,11 +19,11 @@ from typing import Callable, Optional, TextIO, Union
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
-from llama3.verify import DiscrepancyReport, verify
 from max.entrypoints.cli import DevicesOptionType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
+from verify import DiscrepancyReport, verify
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from

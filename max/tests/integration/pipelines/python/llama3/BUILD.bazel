@@ -2,30 +2,8 @@
 
 load(
     "//bazel:api.bzl",
-    "modular_py_binary",
     "modular_py_test",
     "requirement",
-)
-
-modular_py_binary(
-    name = "verify",
-    srcs = ["verify.py"],
-    data = [
-        "@test_llama_golden",
-    ],
-    env = {
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
-    },
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//GenericML/tools/model:lib",
-        "//SDK/integration-test/pipelines/python/test_common",
-        requirement("click"),
-        requirement("numpy"),
-    ],
 )
 
 [

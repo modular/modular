@@ -22,6 +22,27 @@ modular_py_test(
 )
 
 modular_py_binary(
+    name = "verify",
+    srcs = ["verify.py"],
+    data = [
+        "@test_llama_golden",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/llama3/testdata"
+        ),
+    },
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//GenericML/tools/model:lib",
+        "//SDK/integration-test/pipelines/python/test_common",
+        requirement("click"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
     name = "verify_pipelines",
     srcs = ["verify_pipelines.py"],
     data = [
@@ -48,7 +69,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":generate_llm_logits",
-        "//SDK/integration-test/pipelines/python/llama3:verify",
+        ":verify",
         requirement("click"),
         "@rules_python//python/runfiles",
     ],
