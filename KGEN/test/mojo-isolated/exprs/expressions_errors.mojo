@@ -403,11 +403,28 @@ struct MyIntPair:
   var a: Int
   var b: Int
 
+struct TwoAndThreeList:
+   
+   # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
+   # expected-note @below {{missing 2 required positional arguments: 'a', 'b'}}
+   fn __init__(out self, a: Int, b: Int, __list_literal__: ()): pass
+   # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
+   # expected-note @below {{missing 3 required positional arguments: 'a', 'b', 'c'}}
+   fn __init__(out self, a: Int, b: Int, c: Int, __list_literal__: ()): pass
+
 fn list_literals():
   # expected-error @+1 {{cannot emit an empty list without a contextual type}}
   _ = []
-
   _ = [1, 2]
+
+  var a: TwoAndThreeList = [1, 2]
+  var b: TwoAndThreeList = [1, 2, 3]
+
+  # expected-error @+1 {{no matching function in initialization}}
+  var c: TwoAndThreeList = [1, 2, 3, 4]
+  # expected-error @+1 {{no matching function in initialization}}
+  var d: TwoAndThreeList = []
+
 
 fn dict_expression(a: Int):
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
