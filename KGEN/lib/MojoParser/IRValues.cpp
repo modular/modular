@@ -71,6 +71,9 @@ static raw_ostream &printStorage(raw_ostream &os,
     case InitializerUValue::kListLiteral:
       os << "[ListLiteral]:";
       break;
+    case InitializerUValue::kDictLiteral:
+      os << "[DictLiteral]:";
+      break;
     }
     os << cast<InitializerUValue>(storage).get();
   } else if (auto val = dyn_cast<MLValue>(storage)) {
@@ -405,7 +408,7 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
     emitter.emitError(expr->getLoc(),
                       "cannot emit slice expression without a contextual type");
     return {};
-  case Syntax::kListLiteral:
+  case Syntax::kListLiteral: {
     if (get().size() == 1) { // Empty: Just the __list_literal__ kwarg.
       emitter.emitError(expr->getLoc(),
                         "cannot emit an empty list without a contextual type");
@@ -436,7 +439,6 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
     // elements. Form the constructor's operand list with a consistent element
     // type which will be used for the constructor call, allowing it to infer
     // the element type.
-    auto elementType = elements[0].getRValueType();
     CallOperands newOperands;
     for (auto [i, elt] : llvm::enumerate(elements)) {
       auto *expr = get()[i].expr;
@@ -457,6 +459,16 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
       return {};
     return emitter.emitConstructorCall(listType, std::move(newOperands), expr,
                                        CallSyntax::kTypeCall, dest);
+  }
+  case Syntax::kDictLiteral: {
+    // Let the nested list literals try to infer their own common element types
+    // recursively.  We just default to Dict.
+    auto dictType = emitter.shared.getDictType(expr->getLoc());
+    if (!dictType)
+      return {};
+    return emitter.emitConstructorCall(dictType, CallOperands(get()), expr,
+                                       CallSyntax::kTypeCall, dest);
+  }
   }
   return {};
 }

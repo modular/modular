@@ -299,6 +299,9 @@ static void printUValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
     case InitializerUValue::kListLiteral:
       diag << "list literal";
       break;
+    case InitializerUValue::kDictLiteral:
+      diag << "dictionary literal";
+      break;
     }
   } else
     diag << "unknown overload";

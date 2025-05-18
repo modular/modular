@@ -334,7 +334,7 @@ void ListLiteralNode::print(raw_indented_ostream &os) const {
   os.unindent() << "}\n";
 }
 
-void DictionaryNode::print(raw_indented_ostream &os) const {
+void DictLiteralNode::print(raw_indented_ostream &os) const {
   os << "Dictionary {\n";
   os.indent() << "values: [\n";
   for (auto [name, expr] : values) {

@@ -105,7 +105,7 @@ private:
   ParseResult parsePrimaryExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
-  ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc);
+  ParseResult parsePrefixLBrace(DictLiteralNode *&result, SMLoc lbraceLoc);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   FailureOr<Operand> parseOperand(
       function_ref<ParseResult(ExprNode *&, Precedence)> parseOperandValue);
@@ -529,7 +529,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     break;
   case Token::l_brace: { // dict_display
     consumeToken(Token::l_brace);
-    DictionaryNode *dict = nullptr;
+    DictLiteralNode *dict = nullptr;
     if (parsePrefixLBrace(dict, startTok.getLoc()))
       return failure();
     result = dict;
@@ -665,7 +665,7 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
 /// key_datum_list     ::=  key_datum ("," key_datum)* [","]
 /// key_datum          ::=  expression ":" expression | "**" or_expr
 /// dict_comprehension ::=  expression ":" expression comp_for
-ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
+ParseResult ExprParser::parsePrefixLBrace(DictLiteralNode *&result,
                                           SMLoc lbraceLoc) {
   SMLoc rbraceLoc;
   // Handle empty dict: {}
@@ -691,7 +691,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
 
     ExprNode *key = nullptr, *value = nullptr;
     // Handle normal key:value and dictionary unpacking.  The later has a null
-    // key in the DictionaryNode representation.
+    // key in the DictLiteralNode representation.
     if (!consumeIf(Token::star_star)) {
       if (parseExpression(key) || parseColonOrEqual())
         return failure();
@@ -718,7 +718,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
                  &rbraceLoc))
     return failure();
 
-  result = alloc<DictionaryNode>(
+  result = alloc<DictLiteralNode>(
       lbraceLoc, copyArrayRef<std::pair<ExprNode *, ExprNode *>>(elements),
       rbraceLoc);
   return success();

@@ -1162,6 +1162,11 @@ ASTType SharedState::getListType(llvm::SMLoc loc) {
       importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
   return lookupNamedType("List", collectionsModule, loc);
 }
+ASTType SharedState::getDictType(llvm::SMLoc loc) {
+  ASTDecl &collectionsModule =
+      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
+  return lookupNamedType("Dict", collectionsModule, loc);
+}
 
 ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
   ASTDecl &closureModule =
