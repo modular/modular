@@ -240,12 +240,16 @@ struct InlineArray[
 
     @always_inline
     @implicit
-    fn __init__(out self, owned *elems: Self.ElementType):
+    fn __init__(
+        out self, owned *elems: Self.ElementType, __list_literal__: () = ()
+    ):
         """Constructs an array from a variadic list of elements.
 
         Args:
             elems: The elements to initialize the array with. Must match the
                 array size.
+            __list_literal__: Specifies that this constructor can be used for
+                list literals.
 
         Examples:
 
