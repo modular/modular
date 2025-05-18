@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from memory import UnsafePointer
 
+from memory import UnsafePointer
 from python import Python, PythonObject
 from python._bindings import PythonModuleBuilder
 

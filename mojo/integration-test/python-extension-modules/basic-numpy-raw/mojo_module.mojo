@@ -15,8 +15,8 @@ from os import abort
 
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
-from python._cpython import PyObjectPtr
 from python._bindings import PythonModuleBuilder
+from python._cpython import PyObjectPtr
 
 
 @export

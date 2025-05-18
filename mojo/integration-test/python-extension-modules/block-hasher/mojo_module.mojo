@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
+from sys import sizeof
 
 from memory import UnsafePointer
 from python import Python, PythonObject, TypedPythonObject
-from python._cpython import PyObjectPtr
-from sys import sizeof
 from python._bindings import PythonModuleBuilder
+from python._cpython import PyObjectPtr
 
 
 @export
