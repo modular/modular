@@ -311,6 +311,7 @@ public:
   const enum Syntax {
     kSlice,       // Operands of 'a[1:2:3]'
     kListLiteral, // [a, b, c]
+    kDictLiteral, // {a:b, c:d}
   } syntax;
 
   const CallOperands &get() const;

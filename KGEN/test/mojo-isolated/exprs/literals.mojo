@@ -86,3 +86,32 @@ fn test_list_literal():
     # CHECK: lit.call {{.*}}List::@"__init__{{.*}}<:!AnyType #FloatDyn1>
     inspect([1.0, 2])
 
+# ===----------------------------------------------------------------------=== #
+# Dictionary Literals
+# ===----------------------------------------------------------------------=== #
+
+struct MyDict[K: Movable, V: AnyType]:
+    fn __init__(out self, owned keys: List[K], owned values: List[V], __dict_literal__: ()):
+        pass
+
+struct IntDict:
+    fn __init__(out self, keys: IntList, values: IntList, __dict_literal__: () = ()):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"test_dict_literal
+fn test_dict_literal(aBool: Bool):
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[KEYS_LIST:%.*]]) :
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[VALUES_LIST:%.*]]) :
+    # CHECK: lit.call {{.*}}@Dict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %a) :
+    var a = {1: aBool, 2: aBool}
+
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[KEYS_LIST:%.*]]) :
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[VALUES_LIST:%.*]]) :
+    # CHECK: lit.call {{.*}}@MyDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %b) :
+    var b : MyDict[Int, Bool] = {1: aBool, 2: aBool} 
+
+    # CHECK: [[KEYS_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
+    # CHECK: [[VALUES_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
+    # CHECK: lit.call {{.*}}@IntDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %c) :
+    var c : IntDict = {1: 7, 2: 8} 

@@ -103,6 +103,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in expression statement";
   case EC_ListLiteral: // [x, y]
     return " in list literal";
+  case EC_DictLiteral: // {x:y, q:r}
+    return " in dictionary literal";
   case EC_TupleElement: // (x, y)
     return " in tuple element";
   case EC_SubscriptBase: // x[y]

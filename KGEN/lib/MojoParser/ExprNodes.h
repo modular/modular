@@ -428,10 +428,10 @@ struct ListLiteralNode final : public ExprNode {
 /// This represents `{key1: value1, key2: value2, **dictunpack}` expressions.
 /// The dictionary unpacking syntax is represented with a null key and with the
 /// unpack expression as the value.
-struct DictionaryNode final : public ExprNode {
-  DictionaryNode(SMLoc lbraceLoc,
-                 ArrayRef<std::pair<ExprNode *, ExprNode *>> values,
-                 SMLoc rbraceLoc)
+struct DictLiteralNode final : public ExprNode {
+  DictLiteralNode(SMLoc lbraceLoc,
+                  ArrayRef<std::pair<ExprNode *, ExprNode *>> values,
+                  SMLoc rbraceLoc)
       : ExprNode(kDictionary), lbraceLoc(lbraceLoc), values(values),
         rbraceLoc(rbraceLoc) {}
 

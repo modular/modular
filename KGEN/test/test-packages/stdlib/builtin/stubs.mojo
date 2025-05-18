@@ -525,6 +525,16 @@ struct List[T: AnyType]:
         pass
 
 
+struct Dict[K: AnyType, V: Copyable & Movable]:
+    fn __init__(
+        out self,
+        owned keys: List[K],
+        owned values: List[V],
+        __dict_literal__: (),
+    ):
+        pass
+
+
 # ===----------------------------------------------------------------------=== #
 # Value Stubs
 # ===----------------------------------------------------------------------=== #

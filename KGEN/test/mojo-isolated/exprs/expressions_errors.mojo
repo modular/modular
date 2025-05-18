@@ -427,13 +427,10 @@ fn list_literals():
 
 
 fn dict_expression(a: Int):
-  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
+  # expected-error @+1 {{empty dictionary literals are going to behave differently in the future}}
   _ = {}
-  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = {a: 4}
-  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
-  var dict = {a: 4, "b": 17}
-  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
+  # expected-error @+1 {{TODO: unpack emission in dict literal not supported yet}}
   _ = {a: 4, **dict, "b": 17}
 
   # expected-error @+1 {{TODO: dictionary comprehension parsing}}
