@@ -821,3 +821,20 @@ fn test_mergewith(cond: Bool, a: TypeA, b: TypeB, c: TypeC):
   # expected-error @+2 {{value of types 'TypeA' and 'TypeC' cannot be merged to type 'Int'}}
   # expected-note @+1 {{'TypeC' does not implicitly convert to 'Int'}}
   _ = a if cond else c
+
+fn test_mergewith_pointer():
+    var a = 1
+    var b = 2
+    var c = 3
+ 
+    # FIXME: This really should work, we need to figure out how exclusivity
+    # works here. 
+
+    # expected-error @below {{'List[Pointer[Int, {a, b}]]' does not implement the '__iter__' method}}
+    # expected-error @below {{argument of '__init__' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
+    # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
+    for elt in [Pointer(to=a), Pointer(to=b)]:
+        elt[] *= 2
+
+
