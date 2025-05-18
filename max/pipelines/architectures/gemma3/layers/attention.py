@@ -44,7 +44,8 @@ class _Gemma3Attention(Module):
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope_global: OptimizedRotaryEmbedding,
+        rope_local: OptimizedRotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -62,11 +63,15 @@ class _Gemma3Attention(Module):
         """Initializes the attention layer.
 
         Args:
-            rope: The rope layer to borrow the freq_cis value from.
+            rope_global: Rotary embedding used for global (non-sliding window)
+                attention layers.
+            rope_local: Rotary embedding used for sliding window attention
+                layers.
             num_attention_heads: The number of attention heads.
-            num_key_value_heads: Number of key/value heads.
+            num_key_value_heads: The number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            kv_params: KV Cache Params, including the number of kv heads, the
+                head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
             dtype: DType of the attention inputs and weights.
             devices: Device to place the weights and run the computation. If
@@ -80,7 +85,8 @@ class _Gemma3Attention(Module):
         """
 
         super().__init__()
-        self.rope = rope
+        self.rope_global = rope_global
+        self.rope_local = rope_local
         self.n_heads = num_attention_heads
         self.layer_idx = layer_idx
         self.kv_params = kv_params
@@ -216,10 +222,13 @@ class _Gemma3Attention(Module):
         )
 
         # Apply rotary embedding.
+        use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
+        rope = self.rope_local if use_local else self.rope_global
+
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(rope.freqs_cis, xq.dtype)
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
@@ -227,7 +236,7 @@ class _Gemma3Attention(Module):
             kv_collection,
             freqs_cis,
             layer_idx,
-            interleaved=self.rope.interleaved,
+            interleaved=rope.interleaved,
         )
 
         # Calculate Flash Attention.
