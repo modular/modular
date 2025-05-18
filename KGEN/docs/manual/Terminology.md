@@ -3,11 +3,15 @@ title: Terminology - Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-terminology/
 ---
 
+In this page, we'll talk about the terminology we use internally for various
+concepts in Mojo. Some of it will be unusual, marked with a ⚠️. Knowing these
+will help you understand Modular conversations and code!
+
 Using this snippet:
 
 ```mojo
-struct Flamscrankle[N: Int]:
-    var blork: Blork[N]
+struct Spaceship[N: Int]:
+    var engine: Engine[N]
 
     fn foo[T: Stringable](x: T):
         var i: Int = 42
@@ -16,32 +20,36 @@ struct Flamscrankle[N: Int]:
 Here are involved concepts in those lines (not in order).
 
 - In `var x: Int = 42`:
-  - `42` is the “runtime value”
-  - `Int` is the “type”
-- In `var blork: Blork[N]`:
-  - `N` is a “parameter value”
-  - `N` is not a type (which makes sense, it’s declared as `N: Int` ).
+  - `42` is the "runtime value". Try not to call it just a "value" because also
+    have compile-time values.
+  - `Int` is the "type"
 - In `fn foo[T: Stringable](x: T):`
-  - `x` is an “argument”. `x` is **not** a “parameter” ⚠️
+  - `x` is an “argument”. `x` is **not** a “parameter”. ⚠️ Because...
+  - `T` is a "parameter". ⚠️ Outsiders call them "generic arguments" or "generic
+    parameters", but here they're just "parameters".
   - The first `T` is a “parameter decl”.
-  - The second `T` is a “parameter reference”.
-- In `struct Flamscrankle[N: Int]: ...`
-  - `N` here is a “parameter decl”.
-- Revisiting `fn foo[T: Stringable](x: T):`:
-  - In this case, the second mention of `T` is also a “type”.
-  - A “type” is a “parameter value”.
-    - Well, not technically, but it’s so easy to convert it that it basically
-      is.
+  - The second `T` is a “parameter reference” (or "param ref").
+- In `struct Spaceship[N: Int]: ...`
+  - `N` here is a "parameter decl".
+- In `var engine: Engine[N]`
+  - `Engine` is a "symbol ref" that refers to a "type".
+  - `N` is a "parameter reference" (or "param ref").
+  - `N`, `Engine[N]`, and a hypothetical `N + 1` are all "parameter expressions"
+    because they happen at compile-time.
+  - `N`'s value is a "parameter value".
+  - Types are also parameter values (well not technically, but one just wraps a
+    type in a `TypeParamAttr`, easy).
+  - `N`'s value and the `Engine` type are both parameter values.
+  - Anything that ever appears to the right of a `:` is a parameter expression
+    made up of parameter values.
   - A “parameter value” is **not** always a “type”. ⚠️ For example, `N` is a
     value that’s not a type.
-  - `Stringable` is a trait, but since it’s after `T:` we say it’s `T`'s
-    **metatype**.
-  - `Stringable` is not a “type” _in this context specifically_. ⚠️ It’s a meta
-    type.
-    - I like to think of it like: `Stringable` is a type, `: Stringable` is a
-      meta type.
-  - Meta types are not values; meta types are not parameters.
-- Revisiting `var x: Int = 42` :
+- Revisiting `fn foo[T: Stringable](x: T):`:
+  - In this case, the second mention of `T` is also a “type”, but more often
+    you'll hear it referred to as a "trait" or a "metatype".
+    - "Metatype" = "trait" is a good rule of thumb, though sometimes people say
+      "metatype" as if it refers to a trait's set of methods. ⚠️
+- Revisiting `var x: Int = 42`:
   - `Int` is the “type”, but it’s **not** a “value”. A type is only a “value”
     when it’s in a parameter; only parameters have values.
   - `x` is not a “value” (despite LLVM handling it with `LLVMValueRef`)
@@ -87,8 +95,8 @@ supertrait.
 For more on this interpretation, see
 [Mojo Type Taxonomy](https://docs.google.com/document/d/1TqQjyiJogQ6gPjmUEtO6Q7gLFs0edkU3lWCLSOt8QyY/edit?tab=t.0#heading=h.djo6baws2lua).
 
-However, if you want to go deeper than that mental model, then know that **a
-metatype is not actually a trait**.
+However, if you want to go deeper than that mental model (I recommend not), then
+know that **a metatype is not actually a trait**.
 
 It's easy to confuse traits and metatypes because there are some similarities:
 
