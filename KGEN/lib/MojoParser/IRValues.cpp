@@ -432,15 +432,19 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
     }
 
     // If that succeeded, then the final result type of the first element is
-    // the unified element type form the new constructor list with a consistent
-    // element type which will be used for the constructor call, allowing it to
-    // infer the element type.
+    // the unified element type, which could have changed across each of the
+    // elements. Form the constructor's operand list with a consistent element
+    // type which will be used for the constructor call, allowing it to infer
+    // the element type.
     auto elementType = elements[0].getRValueType();
     CallOperands newOperands;
     for (auto [i, elt] : llvm::enumerate(elements)) {
       auto *expr = get()[i].expr;
-      elt = emitter.emitCValue({elt, expr}, EC_ListLiteral, elementType);
-      if (!elt)
+
+      // Make sure all of the elements agree with the first element's unified.
+      if (failed(emitter.coerceTypesToEachOther(lhsExpr->getLoc(), elements[0],
+                                                lhsExpr, elements[i],
+                                                get()[i].expr, {})))
         return {};
       newOperands.add({elt, expr});
     }
