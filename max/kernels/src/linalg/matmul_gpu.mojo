@@ -606,7 +606,16 @@ fn _matmul_gpu[
                 @parameter
                 fn scheduler_hint_helper[m: Int, n: Int]() -> IndexList[3]:
                     @parameter
-                    if m == n == 256:
+                    if (
+                        env_get_bool["AUTOTUNING_MODE", False]()
+                        and env_get_bool["AMD_SCHEDULER_TUNING", False]()
+                    ):
+                        return Index(
+                            env_get_int["TUNE_SCHED_X", 2](),
+                            env_get_int["TUNE_SCHED_Y", 2](),
+                            env_get_int["TUNE_SCHED_Z", 2](),
+                        )
+                    elif m == n == 256:
                         return Index(4, 8, 2)
                     elif m == 224 and n == 256:
                         return Index(4, 7, 2)
@@ -622,8 +631,8 @@ fn _matmul_gpu[
                 @always_inline
                 @parameter
                 fn kernel_helper[
-                    m: Int,
-                    n: Int,
+                    block_m: Int,
+                    block_n: Int,
                     *,
                     num_k_partitions: Int = 1,
                     num_pipeline_stages: Int = 1,
@@ -631,12 +640,16 @@ fn _matmul_gpu[
                     alias config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(m, n, _bk_base[a_type, True]()),
+                        block_tile_shape=Index(
+                            block_m, block_n, _bk_base[a_type, True]()
+                        ),
                         warp_tile_shape=Index(
-                            m // 2, n // 2, _bk_base[a_type, True]()
+                            block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
                         num_pipeline_stages=num_pipeline_stages,
-                        scheduler_hint=scheduler_hint_helper[m, n](),
+                        scheduler_hint=scheduler_hint_helper[
+                            block_m, block_n
+                        ](),
                         num_k_partitions=num_k_partitions,
                     )
                     multistage_gemm[
@@ -654,6 +667,15 @@ fn _matmul_gpu[
                 @parameter
                 if not transpose_b:
                     kernel_helper[128, 128, num_pipeline_stages=2]()
+                elif env_get_bool["AUTOTUNING_MODE", False]():
+                    alias block_m = env_get_int["TUNE_BM", 128]()
+                    alias block_n = env_get_int["TUNE_BN", 128]()
+                    alias num_k_partitions = env_get_int[
+                        "TUNE_NUM_K_PARTITIONS", 1
+                    ]()
+                    kernel_helper[
+                        block_m, block_n, num_k_partitions=num_k_partitions
+                    ]()
                 elif static_N >= 28672 and static_K >= 4096:
                     if m >= 1024:
                         kernel_helper[224, 256]()
