@@ -23,9 +23,9 @@ from collections import List
 from sys import simdwidthof
 
 import bit
-from memory import Span
+from memory import Span, UnsafePointer
 
-from ._b64encode import b64encode_with_buffers as _b64encode_with_buffers
+from ._b64encode import _b64encode
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -33,42 +33,49 @@ from ._b64encode import b64encode_with_buffers as _b64encode_with_buffers
 
 
 @always_inline
-fn _ascii_to_value[
-    validate: Bool = False
-](char: StringSlice[mut=False]) raises -> Int:
+fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
     """Converts an ASCII character to its integer value for base64 decoding.
 
     Args:
-        char: A single character string.
+        char: A single ascii byte.
 
     Returns:
         The integer value of the character for base64 decoding, or -1 if
         invalid.
     """
-    var char_val = ord(char)
+    alias `A` = Byte(ord("A"))
+    alias `a` = Byte(ord("a"))
+    alias `Z` = Byte(ord("Z"))
+    alias `z` = Byte(ord("z"))
+    alias `0` = Byte(ord("0"))
+    alias `9` = Byte(ord("9"))
+    alias `=` = Byte(ord("="))
+    alias `+` = Byte(ord("+"))
+    alias `/` = Byte(ord("/"))
 
-    if char == "=":
-        return 0
-    elif ord("A") <= char_val <= ord("Z"):
-        return char_val - ord("A")
-    elif ord("a") <= char_val <= ord("z"):
-        return char_val - ord("a") + 26
-    elif ord("0") <= char_val <= ord("9"):
-        return char_val - ord("0") + 52
-    elif char == "+":
-        return 62
-    elif char == "/":
-        return 63
+    # TODO: Measure perf against lookup table approach
+    if char == `=`:
+        return Byte(0)
+    elif `A` <= char <= `Z`:
+        return char - `A`
+    elif `a` <= char <= `z`:
+        return char - `a` + Byte(26)
+    elif `0` <= char <= `9`:
+        return char - `0` + Byte(52)
+    elif char == `+`:
+        return Byte(62)
+    elif char == `/`:
+        return Byte(63)
     else:
 
         @parameter
         if validate:
             raise Error(
-                StaticString(
-                    'ValueError: Unexpected character "{}" encountered'
-                ).format(char)
+                "ValueError: Unexpected character '",
+                chr(Int(char)),
+                "' encountered",
             )
-        return -1
+        return Byte(-1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -76,24 +83,23 @@ fn _ascii_to_value[
 # ===-----------------------------------------------------------------------===#
 
 
-fn b64encode(input_bytes: Span[Byte, _], mut result: List[Byte, _]):
+@always_inline
+fn b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
     """Performs base64 encoding on the input string.
 
     Args:
         input_bytes: The input string buffer.
-        result: The buffer in which to store the values.
+        result: The string in which to store the values.
 
     Notes:
-        This method reserves the necessary buffer capacity. `result` can be a 0
-        capacity buffer.
+        This method reserves the necessary capacity. `result` can be a 0
+        capacity string.
     """
-    # 4 character bytes for each 3 bytes (or less) block + null terminator
-    result.reserve(Int(4 * ((len(input_bytes) + 3 - 1) / 3)) + 1)
-    _b64encode_with_buffers(input_bytes, result)
+    _b64encode(input_bytes, result)
 
 
-# For a nicer API, we provide those overloads:
-fn b64encode(input_string: StringSlice) -> String:
+@always_inline
+fn b64encode(input_string: StringSlice[mut=False]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -105,7 +111,8 @@ fn b64encode(input_string: StringSlice) -> String:
     return b64encode(input_string.as_bytes())
 
 
-fn b64encode(input_bytes: Span[Byte, _]) -> String:
+@always_inline
+fn b64encode(input_bytes: Span[mut=False, Byte]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -114,9 +121,9 @@ fn b64encode(input_bytes: Span[Byte, _]) -> String:
     Returns:
         The ASCII base64 encoded string.
     """
-    var result = List[UInt8, True]()
+    var result = String()
     b64encode(input_bytes, result)
-    return String(bytes=result)
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -124,44 +131,45 @@ fn b64encode(input_bytes: Span[Byte, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
+fn b64decode[
+    *, validate: Bool = False
+](str: StringSlice[mut=False]) raises -> String:
     """Performs base64 decoding on the input string.
 
     Parameters:
-      validate: If true, the function will validate the input string.
+        validate: If true, the function will validate the input string.
 
     Args:
-      str: A base64 encoded string.
+        str: A base64 encoded string.
 
     Returns:
-      The decoded string.
+        The decoded string.
     """
+    alias `=` = Byte(ord("="))
+    var data = str.as_bytes()
     var n = str.byte_length()
 
     @parameter
     if validate:
         if n % 4 != 0:
             raise Error(
-                StaticString(
-                    "ValueError: Input length {} must be divisible by 4"
-                ).format(n)
+                "ValueError: Input length '", n, "' must be divisible by 4"
             )
 
     var result = String(capacity=n)
 
     # This algorithm is based on https://arxiv.org/abs/1704.00605
     for i in range(0, n, 4):
-        var a = _ascii_to_value[validate](str[i])
-        var b = _ascii_to_value[validate](str[i + 1])
-        var c = _ascii_to_value[validate](str[i + 2])
-        var d = _ascii_to_value[validate](str[i + 3])
+        var a = _ascii_to_value[validate](data[i])
+        var b = _ascii_to_value[validate](data[i + 1])
+        var c = _ascii_to_value[validate](data[i + 2])
+        var d = _ascii_to_value[validate](data[i + 3])
 
         result.append_byte((a << 2) | (b >> 4))
-        if str[i + 2] == "=":
+        if data[i + 2] == `=`:
             break
         result.append_byte(((b & 0x0F) << 4) | (c >> 2))
-        if str[i + 3] == "=":
+        if data[i + 3] == `=`:
             break
         result.append_byte(((c & 0x03) << 6) | d)
 
@@ -173,34 +181,30 @@ fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16encode(str: StringSlice) -> String:
+fn b16encode(str: StringSlice[mut=False]) -> String:
     """Performs base16 encoding on the input string slice.
 
     Args:
-      str: The input string slice.
+        str: The input string slice.
 
     Returns:
-      Base16 encoding of the input string.
+        Base16 encoding of the input string.
     """
     alias lookup = "0123456789ABCDEF"
     var b16chars = lookup.unsafe_ptr()
 
+    var data = str.as_bytes()
     var length = str.byte_length()
-    var out = List[UInt8](capacity=length * 2 + 1)
-
-    @parameter
-    @always_inline
-    fn str_bytes(idx: UInt8) -> UInt8:
-        return str._slice[Int(idx)]
+    var result = String(capacity=length * 2)
 
     for i in range(length):
-        var str_byte = str_bytes(i)
+        var str_byte = data[i]
         var hi = str_byte >> 4
         var lo = str_byte & 0b1111
-        out.append(b16chars[Int(hi)])
-        out.append(b16chars[Int(lo)])
+        result.append_byte(b16chars[hi])
+        result.append_byte(b16chars[lo])
 
-    return String(bytes=out)
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -208,40 +212,45 @@ fn b16encode(str: StringSlice) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-fn b16decode(str: StringSlice) -> String:
+fn b16decode(str: StringSlice[mut=False]) -> String:
     """Performs base16 decoding on the input string.
 
     Args:
-      str: A base16 encoded string.
+        str: A base16 encoded string.
 
     Returns:
-      The decoded string.
+        The decoded string.
     """
 
-    # TODO: Replace with dict literal when possible
+    alias `A` = Byte(ord("A"))
+    alias `a` = Byte(ord("a"))
+    alias `Z` = Byte(ord("Z"))
+    alias `z` = Byte(ord("z"))
+    alias `0` = Byte(ord("0"))
+    alias `9` = Byte(ord("9"))
+
+    # TODO: Measure perf against lookup table approach
     @parameter
     @always_inline
-    fn decode(c: StringSlice) -> Int:
-        var char_val = ord(c)
+    fn decode(c: Byte) -> Byte:
+        if `A` <= c <= `Z`:
+            return c - `A` + Byte(10)
+        elif `a` <= c <= `z`:
+            return c - `a` + Byte(10)
+        elif `0` <= c <= `9`:
+            return c - `0`
+        else:
+            return Byte(-1)
 
-        if ord("A") <= char_val <= ord("Z"):
-            return char_val - ord("A") + 10
-        elif ord("a") <= char_val <= ord("z"):
-            return char_val - ord("a") + 10
-        elif ord("0") <= char_val <= ord("9"):
-            return char_val - ord("0")
-
-        return -1
-
+    var data = str.as_bytes()
     var n = str.byte_length()
-    debug_assert(n % 2 == 0, "Input length must be divisible by 2")
+    debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
 
-    var p = List[UInt8](capacity=n // 2 + 1)
+    var result = String(capacity=n // 2)
 
     for i in range(0, n, 2):
-        var hi = str[i]
-        var lo = str[i + 1]
-        p.append(decode(hi) << 4 | decode(lo))
+        var hi = data[i]
+        var lo = data[i + 1]
+        result.append_byte(decode(hi) << 4 | decode(lo))
 
-    return String(bytes=p)
+    return result^

@@ -118,16 +118,16 @@ fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
 
 
 fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
-    simd_width: Int
-]() -> SIMD[DType.uint8, simd_width]:
+    width: Int
+]() -> SIMD[DType.uint8, width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
     for a given number of bytes to encode in base64. Including the '=' sign.
 
     This table lookup is smaller than the simd size, because we only use it for the last chunk.
     This should be called at compile time, otherwise it's quite slow.
     """
-    var result = SIMD[DType.uint8, simd_width](0)
-    for i in range(1, simd_width):
+    var result = SIMD[DType.uint8, width](0)
+    for i in range(1, width):
         # We have "i" bytes to encode in base64, how many bytes do
         # we need to store in the output buffer? Including the '=' sign.
 
@@ -150,16 +150,16 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
 
 
 fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
-    simd_width: Int
-]() -> SIMD[DType.uint8, simd_width]:
+    width: Int
+]() -> SIMD[DType.uint8, width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
     for a given number of bytes to encode in base64. This is **not** including the '=' sign.
 
     This table lookup is smaller than the simd size, because we only use it for the last chunk.
     This should be called at compile time, otherwise it's quite slow.
     """
-    var result = SIMD[DType.uint8, simd_width]()
-    for i in range(simd_width):
+    var result = SIMD[DType.uint8, width]()
+    for i in range(width):
         # We have "i" bytes to encode in base64, how many bytes do
         # we need to store in the output buffer? NOT including the '=' sign.
         # We count the number of groups of 6 bits and we add 1 byte if there is an incomplete group.
@@ -185,29 +185,30 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 
 
 fn load_incomplete_simd[
-    simd_width: Int
+    width: Int
 ](
-    pointer: UnsafePointer[UInt8, mut=False, origin=_],
-    nb_of_elements_to_load: Int,
-) -> SIMD[DType.uint8, simd_width]:
-    var result = SIMD[DType.uint8, simd_width](0)
+    pointer: UnsafePointer[UInt8, mut=False], nb_of_elements_to_load: Int
+) -> SIMD[DType.uint8, width]:
+    var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
     memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
     return result
 
 
 @no_inline
-fn b64encode_with_buffers(
-    input_bytes: Span[Byte, _],
-    mut result: List[UInt8, _],
-):
+fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
     alias simd_width = sys.simdbytewidth()
     alias input_simd_width = simd_width * 3 // 4
     alias equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
+    # 4 character bytes for each 3 bytes (or less) block
+    result.resize(
+        unsafe_uninit_length=Int(4 * ((len(input_bytes) + 3 - 1) / 3))
+    )
     var input_bytes_len = len(input_bytes)
-
     var input_index = 0
+    var res_ptr = result.unsafe_ptr_mut()
+    var res_offset = 0
 
     # Main loop
     while input_index + simd_width <= input_bytes_len:
@@ -215,7 +216,9 @@ fn b64encode_with_buffers(
 
         var input_vector = start_of_input_chunk.load[width=simd_width]()
 
-        result.extend(_to_b64_ascii(input_vector))
+        var result_vector = _to_b64_ascii(input_vector)
+        (res_ptr + res_offset).store(result_vector)
+        res_offset += result_vector.size
         input_index += input_simd_width
 
     # We handle the last 0, 1 or 2 chunks
@@ -231,7 +234,7 @@ fn b64encode_with_buffers(
             nb_of_elements_to_load=nb_of_elements_to_load,
         )
 
-        result_vector = _to_b64_ascii(input_vector)
+        var result_vector = _to_b64_ascii(input_vector)
 
         # We place the '=' where needed
         var non_equal_chars_number = _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
@@ -250,8 +253,13 @@ fn b64encode_with_buffers(
         ](
             nb_of_elements_to_load
         )
-        result.extend(result_vector_with_equals, count=nb_of_elements_to_store)
+
+        var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
+        memcpy(res_ptr + res_offset, v_ptr, nb_of_elements_to_store)
+        res_offset += nb_of_elements_to_store
         input_index += input_simd_width
+
+    result.resize(res_offset)
 
 
 # Utility functions
