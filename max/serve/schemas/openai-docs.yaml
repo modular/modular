@@ -60,6 +60,27 @@ paths:
         and
         [chat-streaming](https://platform.openai.com/docs/api-reference/chat-streaming)
         response formats have limitations.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            completion = client.chat.completions.create(
+                model="modularai/Llama-3.1-8B-Instruct-GGUF",
+                messages=[
+                    {
+                      "role": "user",
+                      "content": "Who won the world series in 2020?"
+                    },
+                ],
+            )
+
+            print(completion.choices[0].message.content)
       requestBody:
         required: true
         content:
@@ -72,10 +93,8 @@ paths:
                 value:
                   model: "modularai/Llama-3.1-8B-Instruct-GGUF"
                   messages:
-                    - role: "system"
-                      content: "You are a helpful assistant."
                     - role: "user"
-                      content: "Hello, how are you?"
+                      content: "Who won the world series in 2020?"
                   max_tokens: 100
               streaming:
                 summary: Streaming chat completion
@@ -162,7 +181,7 @@ paths:
                       - index: 0
                         message:
                           role: "assistant"
-                          content: " I'm doing well, thank you for asking. How can I assist you today?"
+                          content: "The Los Angeles Dodgers won the 2020 World Series. They defeated the Tampa Bay Rays in the series 4 games to 2. This was the Dodgers' first World Series title since 1988."
                           refusal: ""
                           tool_calls: null
                           function_call: null
