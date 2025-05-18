@@ -515,6 +515,32 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         self._entries = Self._new_entries(power_of_two_initial_capacity)
         self._index = _DictIndex(len(self._entries))
 
+    @always_inline
+    fn __init__(
+        out self,
+        owned keys: List[K],
+        owned values: List[V],
+        __dict_literal__: (),
+    ):
+        """Constructs a dictionary from the given keys and values.
+
+        Args:
+            keys: The list of keys to build the dictionary with.
+            values: The corresponding values to pair with the keys.
+            __dict_literal__: Tell Mojo to use this method for dict literals.
+        """
+        # TODO: Use power_of_two_initial_capacity to reserve space.
+        self = Self()
+        debug_assert(
+            len(keys) == len(values),
+            "keys and values must have the same length",
+        )
+
+        # TODO: Should transfer the key/value's from the list to avoid copying
+        # the values.
+        for i in range(len(keys)):
+            self._insert(keys[i], values[i])
+
     # TODO: add @property when Mojo supports it to make
     # it possible to do `self._reserved`.
     @always_inline

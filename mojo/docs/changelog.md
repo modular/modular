@@ -55,6 +55,9 @@ what we publish.
   standard library `List[Elt]` type.  The `ListLiteral` type has been removed
   from the standard library.
 
+- Dictionary literals now work and default to creating instances of the `Dict`
+  type.
+
 ### Standard library changes
 
 - The `CollectionElement` trait has been removed.

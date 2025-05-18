@@ -51,6 +51,13 @@ This gives us the power of easy of use of ergonomic defaults, while also
 enabling the construction of efficient datatypes and interoperability with
 existing APIs.
 
+## Defaulting rule
+
+If Mojo knows the contextual type for a collection literal, it will use that
+type to construct the literal.  Otherwise it will default to the corresponding
+standard library type defined in the collections package: `List`, `Set`, `Dict`
+etc.
+
 ## List literals
 
 In order to support list literal syntax, a type implements an initializer that
@@ -104,19 +111,35 @@ While this is possible, this isn't something you should actually do.  The reason
 that this is important to support is `PythonObject` which takes a heterogenous
 collection of values that conform to `PythonConvertible`.
 
-### Defaulting rule
-
-If Mojo knows the contextual type for a literal, it will impose use that type to
-construct the literal.  Otherwise it will default to the standard library `List`
-type defined in the collections package.
-
 ## Set literals
 
 TODO.
 
 ## Dictionary literals
 
-TODO.
+Like other forms of literals, a type enables support for Dictionary literals by
+implementing a constructor.  Here is `Dict` for example:
+
+```mojo
+struct Dict[K: KeyElement, V: Copyable & Movable](...):
+    fn __init__(
+        out self,
+        owned keys: List[K],
+        owned values: List[V],
+        __dict_literal__: (),
+    ): ...
+```
+
+As with other literal types, the `__dict_literal__` argument avoids ambiguity
+with other constructors.  The constructor takes a list of keys and a list of
+values.  These are passed separately (rather than as a list of tuples) because
+this enables more flexibility in type merging for slightly different types,
+e.g. we want `{k1: 4.0, k2: 5}` to produce a value of type `Float64` even though
+the literals have different types.
+
+The actual type of the `keys` and `values` lists are flexible: the compiler
+passes the keys and values as a list literal, so all the rules for list literals
+apply to these arguments.
 
 ## Initializer lists
 

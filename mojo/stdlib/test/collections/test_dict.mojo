@@ -25,6 +25,17 @@ def test_dict_construction():
     _ = Dict[String, Int]()
 
 
+def test_dict_literals():
+    a = {String("foo"): 1, String("bar"): 2}
+    assert_equal(a["foo"], 1)
+
+    b = {1: 4, 2: 7, 3: 18}
+    assert_equal(b[1], 4)
+    assert_equal(b[2], 7)
+    assert_equal(b[3], 18)
+    assert_false(4 in b)
+
+
 def test_dict_fromkeys():
     alias keys = List[String]("a", "b")
     var expected_dict = Dict[String, Int]()
@@ -618,6 +629,7 @@ def test_compile_time_dict():
 
 def main():
     test_dict()
+    test_dict_literals()
     test_dict_fromkeys()
     test_dict_fromkeys_optional()
     test_dict_string_representation_string_int()
