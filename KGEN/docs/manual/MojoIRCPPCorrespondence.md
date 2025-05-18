@@ -1,4 +1,7 @@
-# Mojo ↔ IR ↔ C++ Correspondence
+---
+title: Mojo ↔ IR ↔ C++ Correspondence - Mojo 🔥 Compiler Dev Manual
+markdown-notebook-data-directory: mdnb-data/manual-correspondence/
+---
 
 The goal of this section is to give you an intuition for how the same “thing” is
 modeled in each of those domains. As a very basic example, consider the question

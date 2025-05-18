@@ -1,4 +1,7 @@
-# Common Types and Tools
+---
+title: Common Types and Tools - Mojo 🔥 Compiler Dev Manual
+markdown-notebook-data-directory: mdnb-data/manual-common-types-tools/
+---
 
 There are two main kinds of data types in Mojo:
 

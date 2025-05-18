@@ -1,4 +1,7 @@
-# Terminology
+---
+title: Terminology - Mojo 🔥 Compiler Dev Manual
+markdown-notebook-data-directory: mdnb-data/manual-terminology/
+---
 
 Using this snippet:
 

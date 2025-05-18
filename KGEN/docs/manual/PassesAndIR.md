@@ -1,4 +1,7 @@
-# Passes and Intermediate Representations
+---
+title: Passes and IR - Mojo 🔥 Compiler Dev Manual
+markdown-notebook-data-directory: mdnb-data/manual-passes-ir/
+---
 
 The best way to start understanding a compiler is to understand the various IR
 stages, the differences between them, and which code makes those transformations

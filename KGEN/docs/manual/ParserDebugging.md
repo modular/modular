@@ -1,4 +1,7 @@
-# Parser Debugging Tricks
+---
+title: Parser Debugging - Mojo 🔥 Compiler Dev Manual
+markdown-notebook-data-directory: mdnb-data/manual-parser-debugging/
+---
 
 This doc has various tricks to help you debug the parser.
 
