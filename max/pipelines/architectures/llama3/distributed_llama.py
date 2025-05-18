@@ -16,23 +16,18 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Callable
 
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
-    AttentionWithRope,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
     DistributedMLP,
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    GPTQAttentionWithRope,
-    GPTQLinear,
     Linear,
     Llama3RotaryEmbedding,
-    Module,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -41,8 +36,6 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
 )
 
-from .llama3 import StackedMLP
-
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config
 
@@ -50,6 +43,22 @@ from .model_config import Llama3Config
 class DistributedLlama3(DistributedTransformer):
     def __init__(self, config: Llama3Config):
         assert len(config.devices) > 1
+
+        if config.quantization_config:
+            raise ValueError(
+                "Model contains GPTQ weights. This is currently not supported with multiple GPUs."
+            )
+
+        if config.stacked_mlp:
+            raise ValueError(
+                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs.",
+            )
+
+        if config.norm_method != "rms_norm" or config.rms_norm_eps is None:
+            raise ValueError(
+                "`norm_method` must be `RMSNorm` and `rms_norm_eps` cannot be "
+                "None for model that uses `RMSNorm`."
+            )
 
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
@@ -61,12 +70,6 @@ class DistributedLlama3(DistributedTransformer):
             device=config.devices[0],
         )
 
-        # Select norm layer class.
-        assert config.norm_method == "rms_norm"
-        if config.rms_norm_eps is None:
-            raise ValueError(
-                "rms_norm_eps cannot be None for model that uses RMSNorm."
-            )
         create_distributed_norm = functools.partial(
             DistributedRMSNorm,
             dim=config.hidden_size,
@@ -75,49 +78,16 @@ class DistributedLlama3(DistributedTransformer):
             devices=config.devices,
         )
 
-        # Select linear layer class.
-        linear_cls: Callable[..., Linear]
-        if config.quantization_config:
-            logger.warning(
-                "Model contains GPTQ weights. This is currently not supported with multiple GPUs, and will run on %s.",
-                config.devices[0],
-            )
-            linear_cls = functools.partial(
-                GPTQLinear, quantization_config=config.quantization_config
-            )
-        else:
-            linear_cls = Linear
-
-        # Select MLP class.
-        mlp_cls: Callable[..., Module]
-        if config.stacked_mlp:
-            logger.warning(
-                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs, and will run on %s.",
-                config.devices[0],
-            )
-            mlp_cls = StackedMLP
-        else:
-            mlp_cls = DistributedMLP
-
-        # Select attention class.
-        attention_cls: Callable[..., AttentionWithRope]
-        if config.quantization_config:
-            attention_cls = functools.partial(
-                GPTQAttentionWithRope,
-                quantization_config=config.quantization_config,
-                scale=config.attention_multiplier,
-            )
-        else:
-            attention_cls = functools.partial(
-                DistributedAttentionWithRope,
-                stacked_qkv=config.stacked_qkv,
-                scale=config.attention_multiplier,
-                clip_qkv=config.clip_qkv,
-            )
+        linear_cls = functools.partial(
+            Linear, float8_config=config.float8_config
+        )
 
         layers = [
             DistributedTransformerBlock(
-                attention=attention_cls(
+                attention=DistributedAttentionWithRope(
+                    stacked_qkv=config.stacked_qkv,
+                    scale=config.attention_multiplier,
+                    clip_qkv=config.clip_qkv,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
@@ -126,8 +96,9 @@ class DistributedLlama3(DistributedTransformer):
                     rope=rope,
                     linear_cls=linear_cls,
                     devices=config.devices,
+                    float8_config=config.float8_config,
                 ),
-                mlp=mlp_cls(
+                mlp=DistributedMLP(
                     config.dtype,
                     config.model_quantization_encoding,
                     config.hidden_size,
