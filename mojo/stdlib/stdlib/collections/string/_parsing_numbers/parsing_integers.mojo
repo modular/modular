@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import memcmp, memcpy
+
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
-from memory import memcpy, memcmp
 
 
 fn standardize_string_slice(

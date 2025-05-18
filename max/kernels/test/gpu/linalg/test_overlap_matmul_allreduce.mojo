@@ -17,7 +17,7 @@ from math import floor
 from sys import sizeof
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
+from buffer.dimlist import Dim, DimList
 from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,

@@ -16,16 +16,15 @@ from sys import alignof, sizeof
 
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
-from python import Python, PythonObject, PythonModule, TypedPythonObject
-from python.python_object import PyFunctionRaising
+from python import Python, PythonModule, PythonObject, TypedPythonObject
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
     PythonModuleBuilder,
+    _get_type_name,
     check_argument_type,
     check_arguments_arity,
     python_type_object,
-    _get_type_name,
 )
 from python._cpython import (
     CPython,
@@ -34,6 +33,7 @@ from python._cpython import (
     PyType_Slot,
     PyType_Spec,
 )
+from python.python_object import PyFunctionRaising
 
 
 fn get_cpython() -> CPython:

@@ -13,6 +13,7 @@
 
 from sys import external_call, sizeof
 
+from gpu._utils import to_llvm_ptr
 from gpu.host import DeviceContext, DeviceStream
 from gpu.host.device_context import (
     _CharPtr,
@@ -23,8 +24,8 @@ from gpu.host.device_context import (
 )
 from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
+
 from utils import IndexList, StaticTuple
-from gpu._utils import to_llvm_ptr
 
 
 struct _CUctx_st:

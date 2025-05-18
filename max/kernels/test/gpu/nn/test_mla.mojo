@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import ceildiv, isclose, isqrt
 from random import rand, randn
 from sys import argv
@@ -28,15 +29,12 @@ from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mla import flare_mla_decoding, flare_mla_prefill
+from tensor_internal import IOUnknown, ManagedTensorSlice
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import get_accum_type
-
-from tensor_internal import ManagedTensorSlice
-from tensor_internal import IOUnknown
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
-from collections import OptionalReg
 
 
 fn is_benchmark() -> Bool:

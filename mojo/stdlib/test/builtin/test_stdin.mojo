@@ -13,6 +13,7 @@
 # RUN: echo "Hello, World" | %mojo %s
 
 import sys
+
 from builtin.io import _fdopen
 from testing import testing
 

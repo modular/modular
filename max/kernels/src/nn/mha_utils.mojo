@@ -13,6 +13,7 @@
 
 
 from collections import OptionalReg
+from math import align_up, ceildiv
 from sys import (
     alignof,
     env_get_int,
@@ -24,26 +25,26 @@ from sys import (
 )
 from sys.info import _accelerator_arch
 
+from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.memory import AddressSpace
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
-from math import ceildiv, align_up
-from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
-from buffer import NDBuffer
 from nn.mha_mask import (
-    MaskName,
     CausalMask,
-    ChunkedMask,
-    NullMask,
-    MHAMask,
-    SlidingWindowCausalMask,
     ChunkedCausalMask,
+    ChunkedMask,
+    MaskName,
     MaterializedMask,
+    MHAMask,
+    NullMask,
+    SlidingWindowCausalMask,
 )
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+
+from utils.index import Index, IndexList
+from utils.numerics import min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention

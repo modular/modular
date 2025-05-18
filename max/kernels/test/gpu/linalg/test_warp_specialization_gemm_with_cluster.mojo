@@ -43,11 +43,12 @@ from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
+    assert_with_measure,
     fill,
     random,
     zero,
-    assert_with_measure,
 )
+from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -64,7 +65,7 @@ from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
 from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils_gpu import MatmulConfig
 from memory import stack_allocation
-from internal_utils._measure import relative_difference
+
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple

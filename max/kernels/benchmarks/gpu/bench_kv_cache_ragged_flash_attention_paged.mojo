@@ -25,12 +25,10 @@ from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
+from tensor_internal import IOUnknown, ManagedTensorSlice
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 from utils import IndexList
-
-from tensor_internal import ManagedTensorSlice
-from tensor_internal import IOUnknown
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 
 def flops(

@@ -16,9 +16,9 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List, Set
-from hashlib._hasher import _Hasher, _HashableWithHasher
+from hashlib._hasher import _HashableWithHasher, _Hasher
 
-from python import PythonObject, PythonConvertible, Python
+from python import Python, PythonConvertible, PythonObject
 from python._bindings import ConvertibleFromPython
 
 from utils._select import _select_register_value

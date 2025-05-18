@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .json import loads, dumps
+from .json import dumps, loads

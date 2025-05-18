@@ -14,11 +14,11 @@
 
 from pathlib import Path
 from sys.info import is_nvidia_gpu
-from testing import assert_equal
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
+from testing import assert_equal
 
 
 fn vec_func[

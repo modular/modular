@@ -14,11 +14,11 @@
 from collections.string import StaticString
 from os import abort, getenv
 from sys.ffi import (
+    _find_dylib,
     _get_dylib_function,
     _Global,
     _OwnedDLHandle,
     external_call,
-    _find_dylib,
 )
 from sys.param_env import env_get_string, is_defined
 

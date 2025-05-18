@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 from os import abort
+
+from memory import UnsafePointer
 
 
 @fieldwise_init

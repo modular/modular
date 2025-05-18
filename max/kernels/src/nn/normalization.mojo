@@ -32,9 +32,9 @@ from gpu import (
     block_dim,
     block_idx,
     lane_id,
-    warp_id,
     syncwarp,
     thread_idx,
+    warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext

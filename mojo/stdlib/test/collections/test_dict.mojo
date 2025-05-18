@@ -14,9 +14,9 @@
 
 from collections import Dict, KeyElement, Optional
 from collections.dict import OwnedKwargsDict
-
-from test_utils import CopyCounter, AbortOnCopy
 from os import abort
+
+from test_utils import AbortOnCopy, CopyCounter
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 

@@ -11,15 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compiler import register
-from tensor_internal import InputTensor, OutputTensor, foreach
-from runtime.asyncrt import DeviceContextPtr
-from utils.index import IndexList
-from layout import LayoutTensor, Layout
-from gpu import global_idx
 from math import ceildiv
-from builtin.simd import SIMD
+
 from algorithm.functional import vectorize
+from builtin.simd import SIMD
+from compiler import register
+from gpu import global_idx
+from layout import Layout, LayoutTensor
+from runtime.asyncrt import DeviceContextPtr
+from tensor_internal import InputTensor, OutputTensor, foreach
+
+from utils.index import IndexList
 
 
 @register("grayscale")

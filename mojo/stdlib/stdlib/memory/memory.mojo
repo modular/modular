@@ -34,8 +34,8 @@ from sys import (
     simdwidthof,
     sizeof,
 )
-from algorithm import vectorize
 
+from algorithm import vectorize
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 # ===-----------------------------------------------------------------------===#

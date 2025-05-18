@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .add_custom import *
+from .image_pipeline import *
 from .mandelbrot import *
 from .top_k import *
 from .vector_addition import *
-from .image_pipeline import *

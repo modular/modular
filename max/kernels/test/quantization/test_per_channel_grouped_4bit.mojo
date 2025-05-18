@@ -13,11 +13,11 @@
 
 from math import ceildiv
 from sys.info import alignof, sizeof
-from testing import assert_true
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from quantization import Q4sym
+from testing import assert_true
 
 from utils import IndexList
 

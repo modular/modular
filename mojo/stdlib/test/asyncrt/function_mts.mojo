@@ -11,17 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+
 from asyncrt_test_utils import create_test_device_context, expect_eq
+from buffer.dimlist import DimList
 from gpu.id import global_idx
 from layout import Layout, LayoutTensor
-from math import ceildiv
-from tensor_internal import (
-    InputTensor,
-    OutputTensor,
-    StaticTensorSpec,
-)
+from tensor_internal import InputTensor, OutputTensor, StaticTensorSpec
+
 from utils import IndexList
-from buffer.dimlist import DimList
 
 alias WIDTH = 5
 alias HEIGHT = 10

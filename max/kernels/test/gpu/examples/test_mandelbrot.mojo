@@ -19,8 +19,8 @@ from buffer import DimList, NDBuffer
 from complex import ComplexSIMD
 from gpu import *
 from gpu.host import DeviceContext
-from testing import assert_equal
 from memory import UnsafePointer
+from testing import assert_equal
 
 from utils.index import Index
 

@@ -22,7 +22,7 @@ from os import PathLike
 from sys.ffi import c_char
 
 from memory import Span, UnsafePointer, memcpy
-from python import PythonObject, PythonConvertible
+from python import PythonConvertible, PythonObject
 
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type

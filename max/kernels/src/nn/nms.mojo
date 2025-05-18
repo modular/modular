@@ -14,7 +14,7 @@
 from collections import List
 from math import iota
 
-from layout import LayoutTensor, Layout, RuntimeTuple
+from layout import Layout, LayoutTensor, RuntimeTuple
 from memory import Span, UnsafePointer
 
 from utils import IndexList

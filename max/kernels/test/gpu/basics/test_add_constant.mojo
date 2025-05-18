@@ -13,8 +13,8 @@
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
-from testing import *
 from memory import UnsafePointer
+from testing import *
 
 
 fn add_constant_fn(

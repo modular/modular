@@ -14,12 +14,14 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import alignof, simdwidthof, sizeof, env_get_int
+from sys import alignof, env_get_int, simdwidthof, sizeof
 
 import gpu.warp as warp
 from algorithm.functional import tile_and_unswitch, unswitch
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from builtin.device_passable import DevicePassable
+from compiler_internal import StaticTensorSpec
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -31,14 +33,11 @@ from gpu import (
 )
 from gpu.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import H100
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import H100
+from gpu.id import sm_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import (
-    AddressSpace,
-    CacheEviction,
-    external_memory,
-)
+from gpu.memory import AddressSpace, CacheEviction, external_memory
 from gpu.sync import async_copy_arrive, named_barrier
 from layout.int_tuple import IntTuple
 from layout.layout import Layout
@@ -66,6 +65,18 @@ from memory import UnsafePointer, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import ScoreModTrait
+from nn.mha_tile_scheduler import (
+    MHASchedule,
+    MHASchedulerSynchronization,
+    MHATileScheduler,
+    MHATileState,
+    MHATileSummary,
+    QueuedTileScheduler,
+    SeqInfo,
+    TileScheduler,
+    TransientScheduler,
+    WorkInfo,
+)
 from nn.mha_utils import (
     FlashAttentionAlgorithm,
     MHAConfig,
@@ -79,27 +90,11 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from nn.mha_tile_scheduler import (
-    MHASchedule,
-    MHASchedulerSynchronization,
-    MHATileScheduler,
-    MHATileState,
-    MHATileSummary,
-    QueuedTileScheduler,
-    SeqInfo,
-    TransientScheduler,
-    TileScheduler,
-    WorkInfo,
-)
+from tensor_internal import ManagedTensorSlice
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
-
-from gpu.id import sm_id
-from builtin.device_passable import DevicePassable
-from tensor_internal import ManagedTensorSlice
-from compiler_internal import StaticTensorSpec
 
 
 # The motivationn here is to be able to pass `StaticInt[1]()`

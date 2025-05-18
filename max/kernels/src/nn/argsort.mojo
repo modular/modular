@@ -22,7 +22,7 @@ from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import Index, IndexList, StaticTuple

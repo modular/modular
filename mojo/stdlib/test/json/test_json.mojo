@@ -13,9 +13,10 @@
 # RUN: %bare-mojo %s
 
 
-from json import loads, dumps
+from json import dumps, loads
 from json.json import JSONValue
-from testing import assert_equal, assert_true, assert_false, assert_raises
+
+from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_loads():

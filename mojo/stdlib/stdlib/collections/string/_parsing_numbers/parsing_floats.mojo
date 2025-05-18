@@ -22,22 +22,22 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-import sys
-
-from math import ceil, log10
-from collections import InlineArray
-from testing import assert_equal
-import bit
 import random
+import sys
+from collections import InlineArray
+from math import ceil, log10
+
+import bit
 import memory
 from memory import UnsafePointer
+from testing import assert_equal
 
 from .constants import (
-    POWERS_OF_10,
-    get_power_of_5,
     CONTAINER_SIZE,
-    SMALLEST_POWER_OF_5,
     MANTISSA_EXPLICIT_BITS,
+    POWERS_OF_10,
+    SMALLEST_POWER_OF_5,
+    get_power_of_5,
 )
 from .parsing_integers import to_integer
 

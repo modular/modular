@@ -14,10 +14,11 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
-from random import seed
 from collections import List
 from random import *
+from random import seed
+
+from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
 
 
 # ===-----------------------------------------------------------------------===#

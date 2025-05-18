@@ -13,7 +13,6 @@
 
 from collections import OptionalReg
 from sys import argv
-from testing import assert_true
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
@@ -25,6 +24,7 @@ from nn.concat import (
     _concat_inner_most_single_dim,
     elementwise_epilogue_type,
 )
+from testing import assert_true
 
 from utils import IndexList, StaticTuple
 

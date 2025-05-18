@@ -17,6 +17,7 @@ constant memory that can be used for efficient data transfer between host and GP
 """
 
 from collections.string import StaticString
+
 from memory import UnsafePointer
 
 

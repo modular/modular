@@ -14,14 +14,15 @@
 from math import ceildiv
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
+from gpu import WARP_SIZE, barrier
+from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
+from gpu.mma_sm100 import *
+from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

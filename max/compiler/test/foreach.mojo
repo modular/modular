@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from tensor_internal import (
-    foreach,
     DynamicTensor,
     ManagedTensorSlice,
     Tensor,
     TensorShape,
     TensorSpec,
+    foreach,
 )
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_equal

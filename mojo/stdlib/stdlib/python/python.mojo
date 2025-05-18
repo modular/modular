@@ -20,10 +20,10 @@ from python import Python
 """
 
 from collections import Dict
+from collections.dict import OwnedKwargsDict
 from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global
-from collections.dict import OwnedKwargsDict
 
 from memory import UnsafePointer
 
@@ -35,7 +35,7 @@ from ._cpython import (
     PyMethodDef,
     PyObjectPtr,
 )
-from .python_object import PythonObject, TypedPythonObject, PythonModule
+from .python_object import PythonModule, PythonObject, TypedPythonObject
 
 alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal, _init_python_global]
 

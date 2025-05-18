@@ -23,14 +23,14 @@ from gpu import (
     block_idx,
     grid_dim,
     lane_id,
-    warp_id,
     thread_idx,
+    warp_id,
 )
 from gpu.grid_controls import (
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace

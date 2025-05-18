@@ -16,6 +16,7 @@ from collections import InlineArray, List
 from math import (
     align_down,
     align_up,
+    atanh,
     ceil,
     ceildiv,
     clamp,
@@ -36,7 +37,6 @@ from math import (
     sqrt,
     trunc,
     ulp,
-    atanh,
 )
 from sys.info import has_neon
 

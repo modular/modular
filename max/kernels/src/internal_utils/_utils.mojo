@@ -14,6 +14,7 @@
 from collections import InlineArray
 from collections.string import StaticString
 from os import abort
+from pathlib import Path
 from random import rand, random_float64
 from sys import argv, bitwidthof, env_get_string, is_defined
 from sys.info import alignof
@@ -32,7 +33,7 @@ from buffer.dimlist import _make_tuple
 from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 from stdlib.builtin.io import _snprintf
@@ -41,7 +42,6 @@ from testing import assert_almost_equal, assert_equal, assert_true
 
 from utils import Index, IndexList
 from utils.index import product
-from pathlib import Path
 
 
 struct ValOrDim[dim: Dim = Dim()]:

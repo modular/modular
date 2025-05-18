@@ -27,8 +27,8 @@ from internal_utils._utils import (
     ValOrDim,
     dynamic,
     initialize,
-    static,
     random,
+    static,
 )
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer

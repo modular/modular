@@ -13,8 +13,8 @@
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import ldg
-from memory import UnsafePointer
 from layout import Layout, LayoutTensor
+from memory import UnsafePointer
 from testing import assert_true
 
 

@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from math import ceildiv
+from sys import has_accelerator
+
 from gpu.host import DeviceContext
 from gpu.id import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
-from math import ceildiv
-from sys import has_accelerator
 
 # Vector data type and size
 alias float_dtype = DType.float32

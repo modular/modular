@@ -12,15 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for working with the SM100 MMA instructions."""
 
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.host.info import DEFAULT_GPU_ARCH, B200, Info
-from gpu.memory import AddressSpace
-from memory import UnsafePointer, bitcast
-from utils.index import IndexList
-from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
 from os import abort
 from sys import sizeof
+from sys._assembly import inlined_assembly
+from sys.info import _has_blackwell_tcgen05
+
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import B200, DEFAULT_GPU_ARCH, Info
+from gpu.memory import AddressSpace
+from memory import UnsafePointer, bitcast
+
+from utils.index import IndexList
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor

@@ -11,14 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys.info import _current_target, simdwidthof
+
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
-from sys.info import _current_target, simdwidthof
 from tensor_internal import ManagedTensorSlice
+
 from utils import IndexList
 
 

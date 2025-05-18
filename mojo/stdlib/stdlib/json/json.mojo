@@ -18,13 +18,13 @@ This module provides functionality for parsing JSON strings into structured
 data types and serializing them back to JSON format.
 """
 
-from utils import Variant
-from collections import Dict, List
-from utils import Writer
+from collections import Dict, InlineArray, List
 from collections.optional import _NoneType
-from memory import Pointer
 from sys import simdwidthof
-from collections import InlineArray
+
+from memory import Pointer
+
+from utils import Variant, Writer
 
 
 @value

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray, OptionalReg
-from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from math import align_down, align_up, ceildiv
 from pathlib import Path
 from sys import (
@@ -73,6 +72,7 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
+from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from .gemv import gemv_gpu
 from .matmul_sm90 import (
     hopper_matmul_tma_wgmma,
@@ -82,8 +82,8 @@ from .matmul_vendor import matmul as matmul_vendor
 from .utils import (
     GemmShape,
     apply_epilogue,
-    elementwise_epilogue_type,
     elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
 )
 from .utils_gpu import (
     MatmulConfig,

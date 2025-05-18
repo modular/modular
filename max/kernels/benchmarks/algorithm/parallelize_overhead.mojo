@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.info import num_physical_cores
-from testing import assert_true
 
 from algorithm import parallelize, sync_parallelize
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from testing import assert_true
 
 
 @parameter

@@ -18,8 +18,7 @@ from sys.ffi import c_int
 from sys.info import sizeof
 
 from memory import UnsafePointer
-from python import PythonObject, TypedPythonObject, Python, PythonConvertible
-from python.python_object import PyFunctionRaising, PyFunction, PythonModule
+from python import Python, PythonConvertible, PythonObject, TypedPythonObject
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
@@ -31,6 +30,7 @@ from python._cpython import (
     destructor,
     newfunc,
 )
+from python.python_object import PyFunction, PyFunctionRaising, PythonModule
 
 
 trait ConvertibleFromPython(Copyable, Movable):

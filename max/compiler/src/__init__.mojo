@@ -11,8 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compiler_internal import (
-    StaticTensorSpec,
-    register,
-    view_kernel,
-)
+from compiler_internal import StaticTensorSpec, register, view_kernel

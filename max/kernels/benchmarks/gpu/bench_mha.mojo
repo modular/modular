@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import env_get_dtype, env_get_int, env_get_string, is_defined
@@ -35,7 +36,6 @@ from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-from collections import OptionalReg
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf

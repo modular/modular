@@ -13,7 +13,6 @@
 
 from math import ceildiv
 from random import random_si64
-from testing import assert_equal
 
 from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
@@ -22,6 +21,7 @@ from gpu.mma_util import load_matrix_a_amd as load_matrix_a
 from gpu.mma_util import load_matrix_b_amd as load_matrix_b
 from gpu.mma_util import store_matrix_d
 from memory import UnsafePointer
+from testing import assert_equal
 
 from utils.numerics import isnan
 

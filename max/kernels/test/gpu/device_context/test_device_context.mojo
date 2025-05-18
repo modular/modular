@@ -15,8 +15,8 @@ from math import iota
 
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
-from testing import assert_equal
 from memory import UnsafePointer
+from testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays

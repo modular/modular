@@ -26,12 +26,12 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
+from os import abort
+from os.atomic import Consistency
+from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x, alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic, readfirstlane
-from os.atomic import Consistency
-from os import abort
-from sys import is_gpu, is_nvidia_gpu, is_amd_gpu, sizeof
 
 from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer

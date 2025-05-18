@@ -19,7 +19,7 @@ from math import erf
 from random import randn, seed
 
 from memory import UnsafePointer
-from test_utils import libm_call, compare
+from test_utils import compare, libm_call
 from testing import assert_almost_equal, assert_equal
 
 

@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from gpu.host import DeviceContext, Dim
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from gpu import block_idx, block_dim, thread_idx, grid_dim, barrier
-from gpu.host import DeviceContext, Dim
 from memory import UnsafePointer
 
 from utils.index import IndexList, StaticTuple

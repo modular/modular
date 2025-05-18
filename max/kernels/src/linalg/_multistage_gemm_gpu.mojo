@@ -15,10 +15,10 @@ from collections import OptionalReg
 from math import ceildiv
 from sys import (
     alignof,
+    has_amd_gpu_accelerator,
     is_nvidia_gpu,
     simdwidthof,
     sizeof,
-    has_amd_gpu_accelerator,
 )
 
 import gpu.warp as warp
@@ -69,11 +69,10 @@ from utils import StaticTuple
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
+from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
-
-from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 
 
 @always_inline

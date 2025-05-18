@@ -38,15 +38,13 @@ Limitations:
 """
 
 from collections import InlineArray
-from memory import UnsafePointer
-from utils import IndexList, StaticTuple
-from builtin.device_passable import DevicePassable
-
-from collections import InlineArray
 from math import ceildiv
-from sys import simdwidthof, env_get_int, alignof, sizeof
+from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
+from builtin.device_passable import DevicePassable
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -56,20 +54,19 @@ from gpu import (
     thread_idx,
 )
 from gpu.grid_controls import (
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from memory import stack_allocation
+from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
-from utils.numerics import get_accum_type
 
-from sys.ffi import external_call, _get_global_or_null, OpaquePointer
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
+from utils import IndexList, StaticTuple
+from utils.numerics import get_accum_type
 
 alias elementwise_epilogue_type = fn[
     input_index: Int, type: DType, rank: Int, width: Int, *, alignment: Int

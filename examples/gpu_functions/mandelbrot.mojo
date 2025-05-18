@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+
 from complex import ComplexSIMD
 from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from math import ceildiv
-from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 alias GRID_WIDTH = 60
 alias GRID_HEIGHT = 25

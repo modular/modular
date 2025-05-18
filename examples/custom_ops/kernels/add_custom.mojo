@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
+from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import (
     InputTensor,
     ManagedTensorSlice,
     OutputTensor,
     foreach,
 )
-from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
 

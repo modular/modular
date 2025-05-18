@@ -15,17 +15,18 @@ from collections import List
 from collections.string import StaticString
 from os import abort
 from pathlib import Path
+from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, _find_dylib
+from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import _CUstream_st
+from memory import UnsafePointer
 
 from utils import StaticTuple
 
 from .cublas import ComputeType
 from .dtype import DataType, Property
 from .result import Result
-from memory import UnsafePointer
 
 alias Context = NoneType
 

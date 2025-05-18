@@ -19,6 +19,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
+
 from utils.index import Index, IndexList
 
 

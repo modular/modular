@@ -23,8 +23,13 @@ from test_utils import (
     MoveCounter,
     g_dtor_count,
 )
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import assert_not_equal
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_raises,
+    assert_true,
+)
 
 
 def test_mojo_issue_698():

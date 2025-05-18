@@ -22,25 +22,26 @@ accelerator, and compile and execute functions on the accelerator."""
 from collections import List, Optional, OptionalReg
 from collections.string import StaticString, StringSlice
 from math import align_up
+from os import abort
 from pathlib import Path
 from sys import (
+    bitwidthof,
+    env_get_bool,
     env_get_int,
     env_get_string,
     external_call,
     is_defined,
-    sizeof,
-    bitwidthof,
     is_gpu,
-    env_get_bool,
+    sizeof,
 )
-from os import abort
-from sys.ffi import c_char
 from sys.compile import DebugLevel, OptimizationLevel
+from sys.ffi import c_char
 from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
-from sys.param_env import _is_bool_like
 from sys.intrinsics import _type_is_eq
+from sys.param_env import _is_bool_like
 
 from builtin._location import __call_location, _SourceLocation
+from builtin.device_passable import DevicePassable
 from compile.compile import Info
 from gpu.host._compile import (
     _compile_code,
@@ -50,13 +51,11 @@ from gpu.host._compile import (
     _ptxas_compile,
     _to_sass,
 )
-from memory import stack_allocation, memcpy, UnsafePointer
+from memory import UnsafePointer, memcpy, stack_allocation
 from memory.unsafe import bitcast
 
 from utils import Variant
 from utils._serialize import _serialize_elements, _serialize_elements_compact
-
-from builtin.device_passable import DevicePassable
 
 from .info import DEFAULT_GPU
 

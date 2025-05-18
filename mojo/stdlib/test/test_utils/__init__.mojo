@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .compare_helpers import compare
+from .math_helpers import ulp_distance
 from .test_utils import libm_call
 from .types import (
     AbortOnCopy,
@@ -28,5 +30,3 @@ from .types import (
     ObservableMoveOnly,
     g_dtor_count,
 )
-from .compare_helpers import compare
-from .math_helpers import ulp_distance

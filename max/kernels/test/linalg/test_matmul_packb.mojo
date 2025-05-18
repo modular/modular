@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.info import simdwidthof
-from testing import assert_equal
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.packing import PackMatrixCols
+from testing import assert_equal
 
 from utils.index import Index
 

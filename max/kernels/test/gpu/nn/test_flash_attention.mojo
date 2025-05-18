@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import argv, has_amd_gpu_accelerator
@@ -32,7 +33,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
-from collections import OptionalReg
 
 
 fn is_benchmark() -> Bool:

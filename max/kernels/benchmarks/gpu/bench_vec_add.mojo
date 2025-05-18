@@ -18,9 +18,9 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
-from testing import assert_equal
 from internal_utils import update_bench_config
 from memory import UnsafePointer
+from testing import assert_equal
 
 
 fn vec_func(

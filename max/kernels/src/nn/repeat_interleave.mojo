@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import List
+from sys import simdwidthof
+
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from collections import List
 from nn.gather_scatter import normalize_neg_index
-from sys import simdwidthof
-from utils import IndexList
-
 from tensor_internal._indexing import _row_major_strides
+
+from utils import IndexList
 
 
 fn _collapse_dims_around_axis(

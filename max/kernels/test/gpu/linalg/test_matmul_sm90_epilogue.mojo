@@ -60,11 +60,11 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
+from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils_gpu import MatmulConfig
 from memory import stack_allocation
 

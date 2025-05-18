@@ -82,8 +82,8 @@ from layout.tma_async import (
 from linalg.matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
-    producer_main_loop,
     consumer_main_loop,
+    producer_main_loop,
     warp_specialized_gemm_output,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler

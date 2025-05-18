@@ -13,7 +13,8 @@
 # RUN: %mojo %s
 
 from math import inf, isinf, isnan
-from testing import assert_equal, assert_true, assert_raises
+
+from testing import assert_equal, assert_raises, assert_true
 
 
 def test_basic_parsing():

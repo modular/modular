@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal, assert_true, assert_false
 from sys.intrinsics import _type_is_eq
+
+from testing import assert_equal, assert_false, assert_true
 
 
 def test_uint_for():

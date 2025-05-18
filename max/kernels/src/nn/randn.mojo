@@ -13,7 +13,6 @@
 
 from random import randn
 
-
 from layout import Layout, LayoutTensor
 
 

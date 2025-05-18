@@ -18,6 +18,7 @@
 from collections import InlineArray, List, Optional, OptionalReg
 from collections.string import StaticString
 from math import (
+    atanh,
     ceil,
     cos,
     erf,
@@ -31,7 +32,6 @@ from math import (
     sin,
     sqrt,
     tanh,
-    atanh,
 )
 from random import randn, seed
 from sys import bitwidthof, external_call, llvm_intrinsic
@@ -61,23 +61,26 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
+from layout.layout_tensor import Layout, LayoutTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.dual_gemm import swishGLU
 from linalg.fp8_quantization import (
+    matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
-    matmul_dynamic_scaled_fp8,
 )
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
-    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
     elementwise_compute_lambda_type as matmul_elementwise_compute_lambda_type,
+)
+from linalg.utils import (
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
@@ -96,11 +99,10 @@ from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
-from nn.fold import fold
-from nn.irfft import irfft
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
+from nn.fold import fold
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.gather_scatter import (
     Axis,
@@ -123,6 +125,7 @@ from nn.index_tensor import (
     advanced_indexing_setitem_inplace,
     index_tensor,
 )
+from nn.irfft import irfft
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_padded,
     generic_flash_attention_kv_cache_padded_materialized_mask,
@@ -140,8 +143,8 @@ from nn.kv_cache import (
 from nn.kv_cache_ragged import (
     generic_cross_attention_kv_cache,
     generic_flare_mla_decode_kv_cache_ragged,
-    generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_decompress_k_cache_ragged_paged,
+    generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
     generic_fused_qk_rope_bshd_continuous_batch_ragged,
@@ -155,8 +158,8 @@ from nn.kv_cache_ragged import (
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
 from nn.mha import flash_attention
-from nn.mha_mask import MaskName, CausalMask, NullMask
-from nn.mha_score_mod import IdentityScoreMod, AlibiScoreMod
+from nn.mha_mask import CausalMask, MaskName, NullMask
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
@@ -218,36 +221,42 @@ from tensor_internal import (
     OutputVariadicTensors,
     VariadicTensors,
     _input_fusion_hook_impl,
-    _output_fusion_hook_impl,
     _mixed_precision_input_fusion_hook_impl,
     _mixed_precision_output_fusion_hook_impl,
+    _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
-from tensor_internal._indexing import (
-    _row_major_strides,
-    _dot_prod,
-)
+from tensor_internal._indexing import _dot_prod, _row_major_strides
 from tensor_internal.io_spec import IO
+from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
 from tensor_internal.managed_tensor_slice import (
-    _FusedComputeOutputTensor,
     _FusedInputTensor as FusedInputTensor,
-    _FusedInputVariadicTensors as FusedInputVariadicTensors,
-    _FusedOutputTensor as FusedOutputTensor,
-    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
-    _MutableInputTensor as MutableInputTensor,
-    _MutableInputVariadicTensors as MutableInputVariadicTensors,
-    get_kernel_simd_width,
 )
+from tensor_internal.managed_tensor_slice import (
+    _FusedInputVariadicTensors as FusedInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputTensor as FusedOutputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
-from layout.layout_tensor import Layout, LayoutTensor
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.

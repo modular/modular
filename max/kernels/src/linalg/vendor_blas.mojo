@@ -39,6 +39,7 @@ from gpu._cublas.cublaslt import (
     cublasLtCreate,
     cublasLtDestroy,
     cublasLtGetVersion,
+    cublasLtLoggerSetLevel,
     cublasLtMatmul,
     cublasLtMatmulAlgoGetHeuristic,
     cublasLtMatmulAlgoInit,
@@ -55,7 +56,6 @@ from gpu._cublas.cublaslt import (
     cublasLtMatrixLayout_t,
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
-    cublasLtLoggerSetLevel,
 )
 from gpu._cublas.dtype import DataType
 from gpu._cublas.result import Result
@@ -86,11 +86,11 @@ from gpu._rocblas.hipblaslt import (
 from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
+from gpu.host.info import DEFAULT_GPU, H100
 from layout import Layout
 from memory import UnsafePointer
 
 from utils.variant import Variant
-from gpu.host.info import DEFAULT_GPU, H100
 
 # ===----------------------------------------------------------------------===#
 # Backend

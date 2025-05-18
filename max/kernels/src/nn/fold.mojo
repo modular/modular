@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the fold operation."""
 
-from algorithm import vectorize
-from buffer.dimlist import DimList
-from buffer.buffer import NDBuffer
-from utils.index import Index, IndexList
 from sys.info import simdwidthof
+
+from algorithm import vectorize
+from buffer.buffer import NDBuffer
+from buffer.dimlist import DimList
+
+from utils.index import Index, IndexList
 
 
 fn fold[

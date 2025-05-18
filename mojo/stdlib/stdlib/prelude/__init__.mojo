@@ -42,10 +42,10 @@ from builtin.comparable import (
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import (
-    debug_assert,
     WRITE_MODE,
     WRITE_MODE_MEM,
     WRITE_MODE_REG,
+    debug_assert,
 )
 from builtin.dtype import DType
 from builtin.equality_comparable import EqualityComparable
@@ -67,11 +67,6 @@ from builtin.int import (
 from builtin.int_literal import IntLiteral
 from builtin.io import input, print
 from builtin.len import Sized, SizedRaising, UIntSized, len
-from builtin.variadics import (
-    VariadicList,
-    VariadicListMem,
-    VariadicPack,
-)
 from builtin.math import (
     Absable,
     Powable,
@@ -129,12 +124,8 @@ from builtin.type_aliases import (
     StaticConstantOrigin,
 )
 from builtin.uint import UInt
-from builtin.value import (
-    Copyable,
-    Defaultable,
-    ExplicitlyCopyable,
-    Movable,
-)
+from builtin.value import Copyable, Defaultable, ExplicitlyCopyable, Movable
+from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
 from memory import AddressSpace, Pointer, Span
 

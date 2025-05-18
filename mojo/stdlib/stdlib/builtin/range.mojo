@@ -22,9 +22,9 @@ from math import ceildiv
 from builtin._stubs import (
     _IntIter,
     _IntIterable,
+    _StridedIterable,
     _UIntIter,
     _UIntIterable,
-    _StridedIterable,
     _UIntStridedIterable,
 )
 from python import PythonObject
