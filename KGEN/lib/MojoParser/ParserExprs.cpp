@@ -105,8 +105,7 @@ private:
   ParseResult parsePrimaryExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
-  ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc,
-                                bool isSubscript);
+  ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   FailureOr<Operand> parseOperand(
       function_ref<ParseResult(ExprNode *&, Precedence)> parseOperandValue);
@@ -531,8 +530,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::l_brace: { // dict_display
     consumeToken(Token::l_brace);
     DictionaryNode *dict = nullptr;
-    if (parsePrefixLBrace(dict, startTok.getLoc(),
-                          /*isSubscript=*/false))
+    if (parsePrefixLBrace(dict, startTok.getLoc()))
       return failure();
     result = dict;
     break;
@@ -596,15 +594,6 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     if (consumeIf(Token::l_square)) {
       if (parseSubscriptSuffix(result, loc))
         return failure();
-      continue;
-    }
-
-    // Handle dictionary indexing.
-    if (consumeIf(Token::l_brace)) {
-      DictionaryNode *dict = nullptr;
-      if (parsePrefixLBrace(dict, loc, /*isSubscript=*/true))
-        return failure();
-      result = alloc<DictSubscriptNode>(result, dict);
       continue;
     }
 
@@ -677,7 +666,7 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
 /// key_datum          ::=  expression ":" expression | "**" or_expr
 /// dict_comprehension ::=  expression ":" expression comp_for
 ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
-                                          SMLoc lbraceLoc, bool isSubscript) {
+                                          SMLoc lbraceLoc) {
   SMLoc rbraceLoc;
   // Handle empty dict: {}
   SmallVector<std::pair<ExprNode *, ExprNode *>> elements;

@@ -184,7 +184,7 @@ atom: ('(' [yield_expr|testlist_gexp] ')' |
 listmaker: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 lambdef: 'lambda' [varargslist] ':' test
-trailer: '(' [arglist] ')' | '{' [dictsetmaker] '}' | '[' [subscriptlist] ']' | '.' NAME
+trailer: '(' [arglist] ')' | '[' [subscriptlist] ']' | '.' NAME
 subscriptlist: (subscript|star_expr) (',' (subscript|star_expr))* [',']
 subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' test] | '**' test
 sliceop: ':' [test]

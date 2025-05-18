@@ -58,7 +58,6 @@ public:
     kSubscript,      // thing[a, b:c]
     kSubscriptArrow, // thing[x, y -> a, b]
     kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
-    kDictSubscript,  // thing{a: 1, x: 2}
     kChainedCmp,     // a < b <= c
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
 
