@@ -540,7 +540,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     cache_lengths_host.tensor[0] = 0
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
-    # intialize our max_prompt_length and max_cache_length
+    # initialize our max_prompt_length and max_cache_length
     var max_prompt_length = Int(seq_len)
     var max_cache_length = Int(0)
 

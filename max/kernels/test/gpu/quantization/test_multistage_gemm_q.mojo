@@ -238,9 +238,9 @@ fn repack_Q4_0_for_sm8x[
                 64, group_size // pack_factor
             ](warp_x, warp_y)
             # The repack_warp_tile is of shape [64, (2, 2)]. In this case,
-            # elements [0, 0], [0, 1], [1, 0] and [1, 1] are stored continously
+            # elements [0, 0], [0, 1], [1, 0] and [1, 1] are stored continuously
             # in the memory. We need to use a element shape of [2, 2] to
-            # correctly vectorize this tenosr.
+            # correctly vectorize this tensor.
             repack_warp_tile.vectorize[2, 2]().store(
                 lane_id, 0, pack_Q_tile(frag_0)
             )

@@ -144,7 +144,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decompress_k_cache_ragged_paged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
-    generic_fused_qk_rope_bshd_continous_batch_ragged,
+    generic_fused_qk_rope_bshd_continuous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
@@ -7038,7 +7038,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     layer_idx: UInt32,
     ctx: DeviceContextPtr,
 ) raises:
-    generic_fused_qk_rope_bshd_continous_batch_ragged[
+    generic_fused_qk_rope_bshd_continuous_batch_ragged[
         interleaved=interleaved, target=target
     ](
         managed_tensor_slice_to_ndbuffer(q_proj),

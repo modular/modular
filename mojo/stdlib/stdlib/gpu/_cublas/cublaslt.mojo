@@ -1031,7 +1031,7 @@ struct cublasLtMatmulDescAttributes_t:
     """
     alias CUBLASLT_MATMUL_DESC_POINTER_MODE = Self(2)
     """UnsafePointer mode of alpha and beta, see PointerMode. When DEVICE_VECTOR is in use,
-    alpha/beta vector lenghts must match number of output matrix rows.
+    alpha/beta vector lengths must match number of output matrix rows.
 
     int32_t, default: HOST.
     """

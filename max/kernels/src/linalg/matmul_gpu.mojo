@@ -1423,7 +1423,7 @@ fn multistage_gemm[
             ]()
             alias work_space_type = config.split_k_reduction_type
 
-            # For the serial reduction we dont use workspace
+            # For the serial reduction we don't use workspace
             var work_space = NDBuffer[work_space_type, 3](
                 UnsafePointer[Scalar[work_space_type]](),
                 Index(0, 0, 0),

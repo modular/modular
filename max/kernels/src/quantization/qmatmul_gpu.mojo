@@ -878,7 +878,7 @@ fn multistage_qgemm_kernel[
 #      | tile | tile |     |
 #   128+------+------+-----+
 #
-# Elements within each tile are stored continously
+# Elements within each tile are stored continuously
 #                  K
 #      0     1     2     3     4
 #     0+-----+-----+-----+-----+

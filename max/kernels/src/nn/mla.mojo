@@ -621,13 +621,13 @@ fn mla_decoding_single_batch[
     alias kv_smem_size = BN * depth
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
 
-    # For MLA, We define V = K[:, :nope_dim], thus we spilt the K tensor
+    # For MLA, We define V = K[:, :nope_dim], thus we split the K tensor
     # in two parts when storing it in the smem: K[:, :nope_dim] and
     # K[:, nope_dim:(nope_dim+rope_dim)].
-    # Instead of intializing the tiled iterator with a row-major layout
-    # (BN, BK) like standard mha kernels, we manully set the following
+    # Instead of initializing the tiled iterator with a row-major layout
+    # (BN, BK) like standard mha kernels, we manually set the following
     # layout. This ensures that once Q @ K calculation is complete, the
-    # K[:, :nope_dim] tensor stored continously in the smem.
+    # K[:, :nope_dim] tensor stored continuously in the smem.
     var kv_nope_smem_iter = LayoutTensorIter[
         k_type,
         Layout(IntTuple(BN, BK), IntTuple(nope_dim, 1)),
