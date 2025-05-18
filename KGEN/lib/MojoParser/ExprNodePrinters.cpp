@@ -61,8 +61,6 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "SubscriptArrow";
   case ExprNode::kSlice:
     return "Slice";
-  case ExprNode::kDictSubscript:
-    return "DictSubscript";
   case ExprNode::kChainedCmp:
     return "ChainedCmp";
   case ExprNode::kFunctionType:
@@ -348,15 +346,6 @@ void DictionaryNode::print(raw_indented_ostream &os) const {
     os.unindent() << "}\n";
   }
   os.unindent() << "]\n";
-  os.unindent() << "}\n";
-}
-
-void DictSubscriptNode::print(raw_indented_ostream &os) const {
-  os << "DictSubscript {\n";
-  os.indent() << "base: ";
-  base->print(os);
-  os << "indices: ";
-  indices->print(os);
   os.unindent() << "}\n";
 }
 

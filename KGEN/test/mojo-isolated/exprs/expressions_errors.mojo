@@ -439,14 +439,6 @@ fn dict_expression(a: Int):
   # expected-error @+1 {{TODO: dictionary comprehension parsing}}
   var comprehension = {key:value for (key,value) in dict.items()}
 
-  # Dictionary subscripts.
-
-  # expected-error @+1 {{cannot use a dynamic value in type}}
-  _ = a{1: 2, **dict}
-
-  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
-  _ = MyIntPair{"a": 4}
-
 fn dict_parse_errors(a: Int):
   # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}
   _ = {key:value, key:value for (key,value) in dict.items()}

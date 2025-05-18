@@ -2339,20 +2339,6 @@ AnyValue DictionaryNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue DictSubscriptNode::emitIR(ValueDest &dest,
-                                   ExprEmitter &emitter) const {
-  // TODO: T{...} is a Mojo extension for typed dictionary literals.  This is
-  // speculative.  If it isn't the right thing, then remove the parsing and
-  // ExprNode entirely.
-  ASTType typeValue = emitter.emitExprType(base);
-  if (!typeValue)
-    return {};
-
-  emitter.emitError(getLoc(), "TODO: cannot emit dictionary literals yet")
-      << getRange();
-  return {};
-}
-
 /// Given an operator, return the SpecialFunctionInfo that implements it.
 static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
                                                  bool isReversed) {
