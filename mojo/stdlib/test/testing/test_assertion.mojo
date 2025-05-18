@@ -90,28 +90,22 @@ def test_assert_equal_with_simd():
 
 def test_assert_equal_with_list():
     assert_equal(
-        List(String("This"), String("is"), String("Mojo")),
+        [String("This"), String("is"), String("Mojo")],
         List(String("This"), String("is"), String("Mojo")),
     )
 
     with assert_raises():
         assert_equal(
-            List(String("This"), String("is"), String("Mojo")),
+            [String("This"), String("is"), String("Mojo")],
             List(String("This"), String("is"), String("mojo")),
         )
 
 
 def test_assert_not_equal_with_list():
-    assert_not_equal(
-        List(3, 2, 1),
-        List(3, 1, 0),
-    )
+    assert_not_equal([3, 2, 1], [3, 1, 0])
 
     with assert_raises():
-        assert_not_equal(
-            List(3, 2, 1),
-            List(3, 2, 1),
-        )
+        assert_not_equal([3, 2, 1], [3, 2, 1])
 
 
 def test_assert_almost_equal():

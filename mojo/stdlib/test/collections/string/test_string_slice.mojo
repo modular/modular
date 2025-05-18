@@ -632,7 +632,7 @@ def test_splitlines():
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         s = StringSlice(item)
         assert_equal(s.splitlines(), hello_mojo)
-        items = List("hello" + u, "world" + u, "mojo" + u, "language" + u)
+        items = ["hello" + u, "world" + u, "mojo" + u, "language" + u]
         _assert_equal(s.splitlines(keepends=True), items)
 
 

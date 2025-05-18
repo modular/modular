@@ -459,7 +459,7 @@ fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     alias TV_to_idx = make_layout(T_to_idx, V_to_idx)
     alias tiler = Layout.col_major(num_m_mma, num_n_mma)
     alias TV_tile_to_idx = logical_product(TV_to_idx, tiler)
-    return List(proj_i, proj_j, TV_tile_to_idx)
+    return [proj_i, proj_j, TV_tile_to_idx]
 
 
 fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:

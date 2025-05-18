@@ -146,10 +146,7 @@ fn main() raises:
     with DeviceContext() as ctx:
         bench_concat[num_inputs=num_inputs](
             b,
-            List(
-                IndexList[4](W0, X0, Y0, Z0),
-                IndexList[4](W1, X1, Y1, Z1),
-            ),
+            [IndexList[4](W0, X0, Y0, Z0), IndexList[4](W1, X1, Y1, Z1)],
             ctx,
             axis=axis,
         )

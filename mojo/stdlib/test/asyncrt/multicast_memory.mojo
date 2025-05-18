@@ -44,4 +44,4 @@ fn main() raises:
 
     var ctx1 = create_test_device_context(device_id=1)
 
-    test_multicast_memory(List(ctx0, ctx1))
+    test_multicast_memory([ctx0, ctx1])

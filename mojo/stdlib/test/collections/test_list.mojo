@@ -92,6 +92,10 @@ def test_list_literal():
     # Test parameter inference of the T element type.
     take_generic_weird_list([1.0, 2.0])
 
+    # Heterogenous lists
+    # take_generic_weird_list([1.0, 2])
+    # take_generic_weird_list([1, 2.0])
+
 
 def test_list_unsafe_get():
     var list = List[Int]()
@@ -809,9 +813,9 @@ def test_list_contains():
 
     # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
     # var y = List[List[Int]]()
-    # y.append(List(1,2))
-    # assert_equal(List(1,2) in y,True)
-    # assert_equal(List(0,1) in y,False)
+    # y.append([1, 2])
+    # assert_equal([1, 2] in y,True)
+    # assert_equal([0, 1] in y,False)
 
 
 def test_list_eq_ne():
@@ -894,7 +898,7 @@ def test_destructor_trivial_elements():
 
 
 def test_list_repr():
-    var l = List(1, 2, 3)
+    var l = [1, 2, 3]
     assert_equal(l.__repr__(), "[1, 2, 3]")
     var empty = List[Int]()
     assert_equal(empty.__repr__(), "[]")

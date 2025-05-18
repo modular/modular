@@ -53,28 +53,28 @@ fn test_svg_nvidia_tile() raises:
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
-    print_svg(tensor, List(tensor_dist))
+    print_svg(tensor, [tensor_dist])
 
 
 fn test_svg_nvidia_tile_memory_bank() raises:
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
-    print_svg[memory_bank= (4, 32)](tensor, List(tensor_dist))
+    print_svg[memory_bank= (4, 32)](tensor, [tensor_dist])
 
 
 fn test_svg_amd_shape_a() raises:
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.distribute[Layout.col_major(16, 4)](0)
-    print_svg(tensor, List(tensor_dist))
+    print_svg(tensor, [tensor_dist])
 
 
 fn test_svg_amd_shape_b() raises:
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.distribute[Layout.row_major(4, 16)](0)
-    print_svg(tensor, List(tensor_dist))
+    print_svg(tensor, [tensor_dist])
 
 
 fn test_svg_amd_shape_d() raises:
@@ -86,7 +86,7 @@ fn test_svg_amd_shape_d() raises:
     var tensor_dist2 = tensor.vectorize[4, 1]().distribute[
         Layout.row_major(4, 16)
     ](11)
-    print_svg(tensor, List(tensor_dist, tensor_dist2))
+    print_svg(tensor, [tensor_dist, tensor_dist2])
 
 
 fn test_svg_wgmma_shape() raises:
@@ -139,7 +139,7 @@ fn test_svg_swizzle() raises:
     # the figure generated here is identical to
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/async-warpgroup-smem-layout-128B-k.png
     fn color_map(t: Int, v: Int) -> String:
-        var colors = List(
+        var colors = [
             StaticString("blue"),
             StaticString("green"),
             StaticString("yellow"),
@@ -148,7 +148,7 @@ fn test_svg_swizzle() raises:
             StaticString("lightgreen"),
             StaticString("lightyellow"),
             StaticString("salmon"),  # lighter variant of red
-        )
+        ]
         return String(colors[t % len(colors)])
 
     print_svg[swizzle](

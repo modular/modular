@@ -1220,7 +1220,7 @@ def test_string_char_slices_iter():
         "álO",
         "етйувтсвардЗ",
     )
-    var items_amount_characters = List(5, 12, 9, 5, 7, 6, 5, 5, 2, 3, 12)
+    var items_amount_characters = [5, 12, 9, 5, 7, 6, 5, 5, 2, 3, 12]
     for item_idx in range(len(items)):
         var item = items[item_idx]
         var ptr = item.unsafe_ptr()
