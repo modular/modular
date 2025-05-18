@@ -51,7 +51,7 @@ fn bench_parsing_all_floats_in_file(
 # ===-----------------------------------------------------------------------===#
 def main():
     var bench = Bench()
-    alias files = List[StaticString]("canada", "mesh")
+    alias files = ["canada", "mesh"]
 
     @parameter
     for i in range(len(files)):
