@@ -877,11 +877,10 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="gemma3-1b",
             encoding="bfloat16",
-            # TODO(MODELS-525): Investigate need for high tolerances here.
-            absolute_tolerance=54,
+            absolute_tolerance=1.7,
             relative_tolerance=2.1,
             cos_dist_threshold=0.24,
-            kl_div_threshold=21,
+            kl_div_threshold=1.1e-02,
         ),
     ),
 }

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import copy
 from collections.abc import Sequence
 
 import numpy as np
@@ -50,10 +51,17 @@ def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
 def _get_position_embeddings(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
+    use_global_rope: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generates rotary position embeddings based on the input tensor shape."""
     seq_len = input_tensor.shape[1]
-    rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+    if use_global_rope:
+        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+    else:
+        config = copy.deepcopy(text_config)
+        config.rope_theta = config.rope_local_base_freq
+        config.rope_scaling = {"rope_type": "default"}
+        rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
     position_ids = torch.arange(
         seq_len, dtype=torch.long, device="cuda"
     ).unsqueeze(0)
@@ -80,11 +88,18 @@ def generate_torch_outputs(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
+    layer_idx: int,
 ) -> torch.Tensor:
+    """Generates the outputs of the MAX and PyTorch attention layers.
+
+    `layer_idx` affects whether the local or global `RoPE` is used. When
+    `layer_idx % 6 == 5`, the global `RoPE` is used. Otherwise, the local `RoPE`
+    is used.
+    """
     layer = (
         Gemma3Attention(
             text_config,
-            layer_idx=0,
+            layer_idx=layer_idx,
         )
         .to(torch.bfloat16)
         .to("cuda")
@@ -94,7 +109,10 @@ def generate_torch_outputs(
         param.data = attention_weights[name].to(torch.bfloat16).to("cuda")
 
     attention_mask = _causal_attention_mask(input_tensor.shape[1])
-    position_embeddings = _get_position_embeddings(text_config, input_tensor)
+    use_global_rope = layer_idx % 6 == 5
+    position_embeddings = _get_position_embeddings(
+        text_config, input_tensor, use_global_rope
+    )
 
     return layer(input_tensor, position_embeddings, attention_mask)[0]
 
@@ -124,12 +142,17 @@ def generate_max_outputs(
     attention_weights: dict[str, torch.Tensor],
     dtype: DType,
     device: Device,
+    layer_idx: int,
 ) -> torch.Tensor:
     """Runs the MAX Llama4 attention layer.
 
     Returns the outputs:
     1) Layer with rope
     2) Attention without rope but with attention tuning
+
+    `layer_idx` affects whether the local or global `RoPE` is used. When
+    `layer_idx % 6 == 5`, the global `RoPE` is used. Otherwise, the local `RoPE`
+    is used.
     """
     is_gpu = isinstance(device, Accelerator)
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
@@ -154,10 +177,19 @@ def generate_max_outputs(
     session = InferenceSession(devices=[Accelerator(0)])
 
     attention = MaxGemma3Attention(
-        rope=OptimizedRotaryEmbedding(
+        rope_global=OptimizedRotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
             text_config.rope_theta,
+            MAX_SEQ_LEN,
+            interleaved=False,
+            head_dim=text_config.head_dim,
+            device=device_ref,
+        ),
+        rope_local=OptimizedRotaryEmbedding(
+            text_config.hidden_size,
+            text_config.num_attention_heads,
+            text_config.rope_local_base_freq,
             MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,
@@ -169,7 +201,7 @@ def generate_max_outputs(
         kv_params=kv_params,
         dtype=dtype,
         devices=[device_ref],
-        layer_idx=0,
+        layer_idx=layer_idx,
         sliding_window_pattern=text_config.sliding_window_pattern,
     )
     attention.load_state_dict(state_dict)
@@ -253,13 +285,13 @@ def generate_max_outputs(
     return output
 
 
-def test_attention(
+def test_attention_local_rope(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
 ) -> None:
     torch_output = generate_torch_outputs(
-        text_config, input_tensor, attention_weights
+        text_config, input_tensor, attention_weights, layer_idx=0
     )
 
     max_output = generate_max_outputs(
@@ -268,6 +300,36 @@ def test_attention(
         attention_weights,
         DType.bfloat16,
         Accelerator(),
+        layer_idx=0,
+    )
+
+    torch.testing.assert_close(
+        torch_output.squeeze(0).to(torch.bfloat16),
+        from_dlpack(max_output).to(torch.bfloat16),
+        rtol=2 * torch.finfo(torch.bfloat16).eps,
+        atol=8 * torch.finfo(torch.bfloat16).eps,
+    )
+
+
+def test_attention_global_rope(
+    text_config: Gemma3TextConfig,
+    input_tensor: torch.Tensor,
+    attention_weights: dict[str, torch.Tensor],
+) -> None:
+    torch_output = generate_torch_outputs(
+        text_config,
+        input_tensor,
+        attention_weights,
+        layer_idx=5,
+    )
+
+    max_output = generate_max_outputs(
+        text_config,
+        input_tensor,
+        attention_weights,
+        DType.bfloat16,
+        Accelerator(),
+        layer_idx=5,
     )
 
     torch.testing.assert_close(
