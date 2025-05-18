@@ -1725,7 +1725,7 @@ fn _qmatmul_gguf_quantized_common[
 
 
 @always_inline
-fn generic_fused_qk_rope_bshd_continous_batch_ragged[
+fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
     type: DType, //,
     *,
     interleaved: Bool,
