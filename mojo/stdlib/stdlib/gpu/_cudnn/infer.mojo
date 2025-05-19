@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -22,8 +21,6 @@ from gpu.host._nvidia_cuda import CUstream
 from memory import UnsafePointer
 
 from utils import StaticTuple
-
-from .backend import *
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
