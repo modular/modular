@@ -25,7 +25,7 @@ https://arxiv.org/abs/1704.00605
 """
 
 from collections import InlineArray
-from math.math import _compile_time_iota
+from math import iota
 from sys import llvm_intrinsic
 
 from memory import Span, UnsafePointer, bitcast, memcpy
@@ -38,7 +38,7 @@ alias Bytes = SIMD[DType.uint8, _]
 fn _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
-    alias mask = _compile_time_iota[DType.uint8, simd_width]()
+    alias mask = iota[DType.uint8, simd_width]()
     return mask < UInt8(nb_value_to_load)
 
 
