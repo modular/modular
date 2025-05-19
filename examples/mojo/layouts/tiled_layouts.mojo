@@ -17,8 +17,8 @@ from layout.layout import blocked_product, make_ordered_layout, tile_to_shape
 fn use_layout_constructor():
     print("layout constructor")
     var tiled_layout = Layout(
-        IntTuple(IntTuple(3, 2), IntTuple(2, 5)),  # shape
-        IntTuple(IntTuple(1, 6), IntTuple(3, 12)),  # strides
+        [[3, 2], [2, 5]],  # shape
+        [[1, 6], [3, 12]],  # strides
     )
     print_layout(tiled_layout)
     print()
@@ -26,7 +26,7 @@ fn use_layout_constructor():
 
 fn use_tile_to_shape():
     print("tile to shape")
-    var tts = tile_to_shape(Layout.col_major(3, 2), IntTuple(6, 10))
+    var tts = tile_to_shape(Layout.col_major(3, 2), [6, 10])
     print_layout(tts)
     print()
 
@@ -51,8 +51,8 @@ fn use_blocked_product():
 fn use_make_ordered_layout():
     print("make ordered layout")
     var ordered = make_ordered_layout(
-        IntTuple(IntTuple(3, 2), IntTuple(2, 5)),  # shape
-        IntTuple(IntTuple(0, 2), IntTuple(1, 3)),  # order
+        [[3, 2], [2, 5]],  # shape
+        [[0, 2], [1, 3]],  # order
     )
     print(ordered)
 
