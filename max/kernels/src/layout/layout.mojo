@@ -48,10 +48,10 @@ from layout.layout import blocked_product
 var layout = Layout.row_major(3, 4)
 
 # Access the memory location for logical coordinates (1, 2)
-var memory_idx = layout(IntTuple(1, 2))
+var memory_idx = layout([1, 2])
 
 # Create a tiled layout for blocked matrix multiplication
-var tiled = blocked_product(layout, Layout(IntTuple(2, 2)))
+var tiled = blocked_product(layout, Layout([2, 2]))
 ```
 """
 
@@ -210,8 +210,8 @@ fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
         A new `Layout` with concatenated shapes and strides from the input layouts.
     """
     return Layout(
-        IntTuple(layout_a.shape, layout_b.shape),
-        IntTuple(layout_a.stride, layout_b.stride),
+        [layout_a.shape, layout_b.shape],
+        [layout_a.stride, layout_b.stride],
     )
 
 
@@ -1661,7 +1661,7 @@ fn format_layout[W: Writer](layout: Layout, mut writer: W):
 
         for n in range(layout[1].size()):
             writer.write("| ")
-            Int(layout(IntTuple(m, n))).write_padded(
+            Int(layout([m, n])).write_padded(
                 writer,
                 width=idx_width - 2,
             )

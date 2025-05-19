@@ -250,7 +250,7 @@ fn _checked_tile_shape[
         ]()
         # swizzled WGMMA cannot be tiled in K if we constraint the layout to 2D.
 
-    return IntTuple(BM, BK)
+    return [BM, BK]
 
 
 fn tile_layout_k_major[
@@ -343,28 +343,28 @@ fn tile_layout_mn_major[
         # See comments in file header.
         alias row_len = swizzle_mode.bytes() // sizeof[type]()
         return Layout(
-            IntTuple(
-                IntTuple(row_len, mn_dim // row_len),
-                IntTuple(_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS),
-            ),
-            IntTuple(
-                IntTuple(1, _CM_NUM_ROWS * row_len),
-                IntTuple(row_len, _CM_NUM_ROWS * mn_dim),
-            ),
+            [
+                [row_len, mn_dim // row_len],
+                [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
+            ],
+            [
+                [1, _CM_NUM_ROWS * row_len],
+                [row_len, _CM_NUM_ROWS * mn_dim],
+            ],
         )
 
     # No swizzle
     # Number of elements per row in core matrix
     alias _CM_ROW_LEN = _CM_ROW_BYTES // sizeof[type]()
     return Layout(
-        IntTuple(
-            IntTuple(_CM_ROW_LEN, mn_dim // _CM_ROW_LEN),
-            IntTuple(_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS),
-        ),
-        IntTuple(
-            IntTuple(1, _CM_NUM_ROWS * _CM_ROW_LEN),
-            IntTuple(_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim),
-        ),
+        [
+            [_CM_ROW_LEN, mn_dim // _CM_ROW_LEN],
+            [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
+        ],
+        [
+            [1, _CM_NUM_ROWS * _CM_ROW_LEN],
+            [_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim],
+        ],
     )
 
 
@@ -381,8 +381,8 @@ fn wgmma_c_thread_layout[C: Layout]() -> Layout:
         `Layout` - A layout mapping thread coordinates to linearized indices.
     """
     return Layout(
-        IntTuple(4, 8, 4),
-        IntTuple(C(IntTuple(0, 2)), C(IntTuple(1, 0)), C(IntTuple(16, 0))),
+        [4, 8, 4],
+        [C([0, 2]), C([1, 0]), C([16, 0])],
     )
 
 
@@ -400,8 +400,8 @@ fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
         `Layout` - A layout mapping output vector coordinates to linearized indices.
     """
     return Layout(
-        IntTuple(2, 2, mma_n // 8),
-        IntTuple(C(IntTuple(0, 1)), C(IntTuple(8, 0)), C(IntTuple(0, 8))),
+        [2, 2, mma_n // 8],
+        [C([0, 1]), C([8, 0]), C([0, 8])],
     )
 
 
@@ -449,9 +449,9 @@ fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     # idx -> col(i, j)
     alias inv_c = right_inverse(C)
     # idx -> col(i, j) -> i
-    alias proj_i = composition(Layout(IntTuple(M, N), IntTuple(1, 0)), inv_c)
+    alias proj_i = composition(Layout([M, N], [1, 0]), inv_c)
     # idx -> col(i, j) -> j
-    alias proj_j = composition(Layout(IntTuple(M, N), IntTuple(0, 1)), inv_c)
+    alias proj_j = composition(Layout([M, N], [0, 1]), inv_c)
     # ((lane_j, lane_i, warp_id), (vec_12, value_i, value_j)) -> idx
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     alias T_to_idx = wgmma_c_thread_layout[C]()
@@ -480,8 +480,8 @@ fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
     # C with the granularity of 128-bit per element
     alias C = Layout.row_major(64, 2 * num_stmatrix)
     return Layout(
-        IntTuple(16, 2, 4),
-        IntTuple(C(IntTuple(1, 0)), C(IntTuple(0, 1)), C(IntTuple(16, 0))),
+        [16, 2, 4],
+        [C([1, 0]), C([0, 1]), C([16, 0])],
     )
 
 

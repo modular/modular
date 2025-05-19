@@ -147,7 +147,7 @@ fn _print_svg_impl[
     # Draw base layout
     for i in range(tensor_base.layout[0].size()):
         for j in range(tensor_base.layout[1].size()):
-            var idx = tensor_base.layout(IntTuple(i, j))
+            var idx = tensor_base.layout([i, j])
             var non_swizzled_idx = idx
 
             @parameter
@@ -248,11 +248,11 @@ fn _print_svg_impl[
                                 Int(tensor.ptr) - Int(tensor_base.ptr)
                             ) // sizeof[Scalar[tensor.dtype]]()
                             var element_offset = tensor.element_layout(
-                                IntTuple(e_i, e_j)
+                                [e_i, e_j]
                             )
-                            var idx = tensor.layout(
-                                IntTuple(i, j)
-                            ) + offset + element_offset
+                            var idx = (
+                                tensor.layout([i, j]) + offset + element_offset
+                            )
                             var orig_pos = map[idx]
                             var x = margin + text_margin + orig_pos[
                                 1
@@ -272,7 +272,7 @@ fn _print_svg_impl[
                     var offset = (
                         Int(tensor.ptr) - Int(tensor_base.ptr)
                     ) // sizeof[Scalar[tensor.dtype]]()
-                    var idx = tensor.layout(IntTuple(i, j)) + offset
+                    var idx = tensor.layout([i, j]) + offset
                     var orig_pos = map[idx]
                     var x = margin + text_margin + orig_pos[
                         1

@@ -134,8 +134,8 @@ fn _tma_desc_tile_layout[
         constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
-            IntTuple(dim0, dim1, swizzle_mode.bytes() // sizeof[type]()),
-            IntTuple(1, 1, 1),
+            [dim0, dim1, swizzle_mode.bytes() // sizeof[type]()],
+            [1, 1, 1],
         )
 
 

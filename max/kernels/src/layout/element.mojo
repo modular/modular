@@ -80,7 +80,7 @@ fn _get_offset[
 
     @parameter
     if runtime_layout.layout.all_dims_known():
-        alias offset = runtime_layout.layout(IntTuple(i, j))
+        alias offset = runtime_layout.layout([i, j])
         return offset
     else:
         return runtime_layout(

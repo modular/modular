@@ -1269,8 +1269,8 @@ fn _load_matrix_frag[
 
     # 4 submatrices layout
     alias x4_layout = Layout(
-        IntTuple(8, 2, 2), IntTuple(num_mat_per_row, 1, 8 * num_mat_per_row)
-    ) if x4_row_major else Layout(IntTuple(16, 2), IntTuple(num_mat_per_row, 1))
+        [8, 2, 2], [num_mat_per_row, 1, 8 * num_mat_per_row]
+    ) if x4_row_major else Layout([16, 2], [num_mat_per_row, 1])
 
     alias ldmatrix_layout = ComposedLayout(
         x4_layout,
