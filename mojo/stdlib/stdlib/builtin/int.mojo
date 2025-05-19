@@ -259,7 +259,7 @@ struct Int(
         """
         return Self.get_type_name()
 
-    alias BITWIDTH: Int = bitwidthof[DType.index]()
+    alias BITWIDTH = Int(bitwidthof[DType.index]())
     """The bit width of the integer type."""
 
     alias MAX = Int(Scalar[DType.index].MAX)
@@ -279,14 +279,6 @@ struct Int(
     fn __init__(out self):
         """Default constructor that produces zero."""
         self.value = __mlir_attr.`0 : index`
-
-    fn copy(self) -> Self:
-        """Explicitly copy the provided value.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
 
     @doc_private
     @always_inline("builtin")
