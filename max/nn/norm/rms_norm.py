@@ -18,12 +18,10 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
-    Graph,
     TensorType,
     TensorValue,
     TensorValueLike,
     Weight,
-    _ChainType,
     ops,
 )
 
@@ -86,54 +84,6 @@ class RMSNorm(Module):
         self.weight_offset = weight_offset
         self.multiply_before_cast = multiply_before_cast
 
-    def build_subgraph(self, name: str, x_type: TensorType) -> Module:
-        weight_type = TensorType(
-            dtype=x_type.dtype, shape=self.weight.shape, device=x_type.device
-        )
-        graph_inputs = [_ChainType(), x_type, weight_type]
-        subgraph = Graph.current._subgraphs.get(name)
-
-        if subgraph is None:
-            with Graph.current.add_subgraph(
-                name, input_types=graph_inputs
-            ) as subgraph:
-                subgraph._current_chain._mlir_value = subgraph.inputs[
-                    0
-                ]._mlir_value
-                x = subgraph.inputs[1]
-                weight = subgraph.inputs[2]
-
-                result = ops.custom(
-                    "rms_norm",
-                    [
-                        x,
-                        weight,
-                        ops.constant(
-                            self.eps, dtype=x.dtype, device=DeviceRef.CPU()
-                        ),
-                        ops.constant(
-                            self.weight_offset,
-                            dtype=x.dtype,
-                            device=DeviceRef.CPU(),
-                        ),
-                    ],
-                    [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-                )[0].tensor
-
-                subgraph.output(subgraph._current_chain, result)
-
-        outer_self = self
-
-        class RMSNormSubgraph(Module):
-            def __call__(self, x: TensorValueLike) -> TensorValue:
-                x = TensorValue(x)
-                weight: TensorValue = ops.cast(outer_self.weight, x.dtype)
-                if x.device:
-                    weight = weight.to(x.device)
-                return ops.call(subgraph, x, weight)[0].tensor
-
-        return RMSNormSubgraph()
-
     def __call__(self, x: TensorValue) -> TensorValue:
         weight: TensorValue = ops.cast(self.weight, x.dtype)
         if x.device:
@@ -167,23 +117,6 @@ class DistributedRMSNorm(RMSNorm):
             layer = RMSNorm(*args, **kwargs)
             layer.weight = self.weight.shard(n, device)
             self.rms_norms.append(layer)
-
-    def build_subgraph(self, name: str, x_type: list[TensorType]) -> Module:  # type: ignore[override]
-        rms_norm_subgraphs = []
-        for i, rms_norm in enumerate(self.rms_norms):
-            rms_norm_subgraphs.append(
-                rms_norm.build_subgraph(f"{name}_rms_norm_{i}", x_type[i])
-            )
-
-        class DistributedRMSNormSubgraph(Module):
-            def __call__(self, x: list[TensorValue]) -> list[TensorValue]:
-                rms_norm_outs = [
-                    rms_norm(x[i])
-                    for i, rms_norm in enumerate(rms_norm_subgraphs)
-                ]
-                return rms_norm_outs
-
-        return DistributedRMSNormSubgraph()
 
     def __call__(self, xs: list[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
         return [self.rms_norms[i](xs[i]) for i in range(self.num_devices)]
