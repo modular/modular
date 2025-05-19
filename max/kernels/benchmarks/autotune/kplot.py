@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import plotly
 import plotly.graph_objects as go
-from kprofile import read_kbench_pickle
+from kprofile import KbenchPKL
 
 MARKER_COLORS = [
     "#4285f4",  # blue
@@ -275,7 +275,7 @@ def parse_and_plot(
             table = pd.read_csv(path)
         else:
             # add support for build_df
-            table = read_kbench_pickle(path)["merged_df"]
+            table = KbenchPKL.load(path)["merged_df"]
             if "mesh_idx" in table.columns:
                 table = table.drop(columns=["mesh_idx"])
         tables.append(table)
