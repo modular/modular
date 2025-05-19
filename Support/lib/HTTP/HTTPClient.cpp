@@ -70,7 +70,7 @@ void HTTPContext::setCAInfo(std::string caInfo) {
 }
 
 HTTPContext::~HTTPContext() {
-  // Flush/free all caches and close persistant connections
+  // Flush/free all caches and close persistent connections
   curl_global_cleanup();
 }
 

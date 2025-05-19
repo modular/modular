@@ -28,7 +28,7 @@ public:
   /// archive.
   std::string emitArchive(const EmitArchiveParams &params);
 
-  /// Recieve MLIR module, convert it to an op and send it back.
+  /// Receive MLIR module, convert it to an op and send it back.
   std::string echoMLIR(StringRef module);
 
 private:

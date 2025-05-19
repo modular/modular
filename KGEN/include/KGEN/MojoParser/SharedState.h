@@ -49,7 +49,7 @@ enum class CallSyntax : uint8_t;
 /// parent function.
 ///
 /// In the case of a __move_capture/__copy_capture, the 'value' of the capture
-/// is an RValue defined in parent function, which is transfered into the
+/// is an RValue defined in parent function, which is transferred into the
 /// closure struct.
 ///
 /// If the case of a captured reference, this an LValue for a 'var', a BValue

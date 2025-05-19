@@ -92,6 +92,6 @@ size_t M::getProcessPhysicalMemUsage() {
 std::string M::getProcessExecutablePath() {
   std::string executable = llvm::sys::fs::getMainExecutable(nullptr, nullptr);
   if (executable.empty())
-    return "<unkown>";
+    return "<unknown>";
   return executable;
 }

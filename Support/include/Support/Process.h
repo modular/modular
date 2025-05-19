@@ -32,7 +32,7 @@ std::vector<StringRef> getEnv();
 /// page value, and may not very reliable.
 size_t getProcessPhysicalMemUsage();
 
-// Returns the full path to the current executable, or "<unkown>" if the path
+// Returns the full path to the current executable, or "<unknown>" if the path
 // cannot be obtained.
 std::string getProcessExecutablePath();
 } // namespace M
