@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_down, align_up, ceildiv, exp, exp2, log
+from math import align_down, ceildiv, exp, exp2, log
 from sys import alignof, is_amd_gpu, is_nvidia_gpu, simdwidthof
 
 import gpu.warp as warp
@@ -708,11 +708,9 @@ fn softmax_kernel[
     type: DType,
     rank: Int,
     accum_type: DType = get_accum_type[type](),
-](
-    shape: IndexList[rank],
-    output: NDBuffer[type, rank, MutableAnyOrigin],
-    axis: Int,
-):
+](shape: IndexList[rank], output: NDBuffer[type, rank, MutableAnyOrigin]):
+    alias axis = rank - 1
+
     var row_size = UInt(shape[axis])
     var num_rows = UInt(shape.flattened_length()) // row_size
 
@@ -737,16 +735,12 @@ fn softmax_kernel[
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return x + y
 
-    var row_size_padded = align_up(row_size, UInt(BLOCK_SIZE))
+    var tid = thread_idx.x
 
     # grid stride loop over rows
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
-    for row_idx in range(
-        block_idx.x,
-        num_rows,
-        grid_dim.x,
-    ):
+    for row_idx in range(block_idx.x, num_rows, grid_dim.x):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
             Int(row_idx), shape, axis
@@ -761,23 +755,20 @@ fn softmax_kernel[
             accum_type=accum_type,
         ](row_coords, axis, Scalar[type].MIN, Int(row_size))
 
-        if thread_idx.x == 0:
+        if tid == 0:
             max_buf[0] = row_max
         barrier()
 
+        row_max = max_buf[0]
+
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
         var exp_sum = Scalar[accum_type](0)
-        for offset_in_row in range(UInt(0), row_size_padded, UInt(BLOCK_SIZE)):
-            var idx_in_padded_row = thread_idx.x + offset_in_row
-            if idx_in_padded_row >= row_size:
-                break
-
-            row_coords[axis] = Int(idx_in_padded_row)
+        for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
+            row_coords[axis] = Int(row_offset)
 
             # loads from input_fn twice
             var val = exp(
-                input_fn[type, 1, rank](row_coords).cast[accum_type]()
-                - max_buf[0]
+                input_fn[type, 1, rank](row_coords).cast[accum_type]() - row_max
             )
 
             # TODO we're writing to and reading from global memory twice
@@ -786,18 +777,14 @@ fn softmax_kernel[
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
-        if thread_idx.x == 0:
+        if tid == 0:
             exp_sum_buf[0] = block_exp_sum
         barrier()
 
         # Step 3: Normalize output
         var block_exp_sum_recip = 1 / exp_sum_buf[0]
-        for offset_in_row in range(UInt(0), row_size_padded, UInt(BLOCK_SIZE)):
-            var idx_in_padded_row = thread_idx.x + offset_in_row
-            if idx_in_padded_row >= row_size:
-                break
-
-            row_coords[axis] = Int(idx_in_padded_row)
+        for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
+            row_coords[axis] = Int(row_offset)
             output[row_coords] *= block_exp_sum_recip.cast[type]()
 
 
@@ -832,13 +819,7 @@ fn _softmax_gpu[
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
     ctx.enqueue_function[
         softmax_kernel[BLOCK_SIZE, input_fn_wrapper, type, rank]
-    ](
-        shape,
-        output,
-        axis,
-        grid_dim=(num_blocks,),
-        block_dim=(BLOCK_SIZE,),
-    )
+    ](shape, output, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
 
 
 fn softmax[
