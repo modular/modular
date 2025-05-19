@@ -412,7 +412,7 @@ private:
 
       Value roundedVal =
           createInlineAsm(rewriter, loc, "v_add3_u32 $0, $1, $2, $3",
-                          "=v,v,v,v", vecI32, {value, lsb, roundedBias})
+                          "=v,v,v,s", vecI32, {value, lsb, roundedBias})
               .getResult(0);
 
       Value nan = createConstant(
