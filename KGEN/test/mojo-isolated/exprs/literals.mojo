@@ -125,6 +125,8 @@ struct MySet[T: AnyType]:
     fn __init__(out self, owned *values: T, __set_literal__: ()):
         pass
 
+fn param_infer_equal[T: AnyType](a: T, b: T): pass
+
 # CHECK-LABEL: lit.fn @"test_set_literal
 fn test_set_literal():
     # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
@@ -132,6 +134,9 @@ fn test_set_literal():
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
     var a = {1, 2, 3}
+
+    param_infer_equal(a, {})
+
 
 
 # ===----------------------------------------------------------------------=== #
