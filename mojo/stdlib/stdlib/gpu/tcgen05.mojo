@@ -181,10 +181,11 @@ fn tcgen05_ld[
     alias num_str = String(repeat)
     alias pack_str = ".pack::16b" if pack else ""
     alias constraints_str = "=r," * width + "r"
-    alias output_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "},"
+    alias output_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
     alias addr_str = "[$" + String(width) + "]"
 
     @parameter
+    @always_inline
     fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[type, width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
@@ -194,6 +195,7 @@ fn tcgen05_ld[
             + pack_str
             + ".b32 "
             + output_args_str
+            + ", "
             + addr_str
             + ";",
             pack_type,
@@ -246,6 +248,122 @@ fn tcgen05_ld[
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
             ]
         ]()
+    # fmt: on
+
+
+fn tcgen05_st[
+    type: DType,
+    width: Int, //,
+    *,
+    datapaths: Int,
+    bits: Int,
+    repeat: Int,
+    pack: Bool,
+](tmem_addr: UInt32, data: SIMD[type, width]):
+    """Stores data from registers into tensor memory.
+
+    Parameters:
+        type: The data type to load.
+        width: The number of elements in the data vector.
+        datapaths: The first dimension of the shape.
+        bits: The second dimension of the shape.
+        repeat: The repeat factor.
+        pack: Whether to pack two 16-bit chunks of adjacent columns into a single 32-bit register.
+
+    Args:
+        tmem_addr: The address of the tensor memory to store to.
+        data: The data to store into the tensor memory.
+    """
+    check_blackwell_constraint()
+
+    constrained[
+        (datapaths == 16 and bits == 64)
+        or (datapaths == 16 and bits == 128)
+        or (datapaths == 16 and bits == 256)
+        or (datapaths == 32 and bits == 32),
+        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
+    ]()
+
+    constrained[
+        repeat in [1, 2, 4, 8, 16, 32, 64, 128],
+        "`repeat` must be a power of 2 in the range [1, 128].",
+    ]()
+
+    constrained[
+        width in [1, 2, 4, 8, 16, 32, 64],
+        "`width` must be a power of 2 in the range [1, 64].",
+    ]()
+
+    constrained[
+        width == (repeat * bits * datapaths) // (32 * 32)
+        and sizeof[type]() == 4,
+        (
+            "Only support 4B data type and width must be equal to (num * n"
+            " * m) // (32 * 32)."
+        ),
+    ]()
+
+    alias shape_str = String(datapaths) + "x" + String(bits)
+    alias num_str = String(repeat)
+    alias pack_str = ".pack::16b" if pack else ""
+    alias constraints_str = "r," * width + "r"
+    alias addr_str = "[$0]"
+    alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
+
+    alias asm_str = (
+        "tcgen05.st.sync.aligned."
+        + shape_str
+        + "b.x"
+        + num_str
+        + pack_str
+        + ".b32 "
+        + addr_str
+        + ", "
+        + input_args_str
+        + ";"
+    )
+
+    # fmt: off
+    @parameter
+    if width == 1:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0],
+            tmem_addr)
+    elif width == 2:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0], data[1],
+            tmem_addr)
+    elif width == 4:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0], data[1], data[2], data[3],
+            tmem_addr)
+    elif width == 8:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+            tmem_addr)
+    elif width == 16:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+            tmem_addr)
+    elif width == 32:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+            data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
+            data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
+            tmem_addr)
+    else:
+        inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+            data[16], data[17], data[18], data[19], data[20], data[21], data[22], data[23],
+            data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
+            data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
+            data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
+            data[48], data[49], data[50], data[51], data[52], data[53], data[54], data[55],
+            data[56], data[57], data[58], data[59], data[60], data[61], data[62], data[63],
+            tmem_addr)
     # fmt: on
 
 

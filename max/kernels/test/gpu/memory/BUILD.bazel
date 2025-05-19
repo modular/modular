@@ -15,6 +15,7 @@ _OTHER_TESTS = [
     "test_load_cache.mojo",
     "test_semaphore_reduction.mojo",
     "test_tma.mojo",
+    "test_tcgen05.mojo",
 ]
 
 mojo_filecheck_test(
@@ -85,6 +86,18 @@ mojo_test(
     srcs = ["test_ldmatrix_fp8.mojo"],
     tags = ["gpu"],
     target_compatible_with = ["//:h100_gpu"],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_tcgen05.test",
+    srcs = ["test_tcgen05.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "@mojo//:layout",
         "@mojo//:linalg",

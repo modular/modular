@@ -18,6 +18,7 @@ from gpu.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
+    tcgen05_st,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
@@ -101,7 +102,36 @@ fn test_tcgen05_ld() raises:
     assert_true("tcgen05.wait::ld.sync.aligned;" in asm)
 
 
+fn st_test_fn():
+    var ptr_tmem_addr = UnsafePointer[
+        UInt32, address_space = AddressSpace.SHARED, alignment=16
+    ]()
+    var num_cols: UInt32 = 32
+    tcgen05_alloc[1](ptr_tmem_addr, num_cols)
+    var tmem_addr = ptr_tmem_addr[0]
+    var data = SIMD[DType.float32, 64](0)
+    tcgen05_st[
+        datapaths=32,
+        bits=32,
+        repeat=64,
+        pack=False,
+    ](tmem_addr, data)
+    tcgen05_store_wait()
+    tcgen05_dealloc[1](tmem_addr, num_cols)
+
+
+fn test_tcgen05_st() raises:
+    var asm = _compile_code_asm[
+        st_test_fn,
+        target = _get_gpu_target["sm_100a"](),
+    ]()
+    print(asm)
+    assert_true("tcgen05.st.sync.aligned.32x32b.x64.b32" in asm)
+    assert_true("tcgen05.wait::st.sync.aligned;" in asm)
+
+
 fn main() raises:
     test_tcgen05_alloc()
     test_tcgen05_dealloc()
     test_tcgen05_ld()
+    test_tcgen05_st()
