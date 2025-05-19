@@ -105,7 +105,7 @@ private:
   ParseResult parsePrimaryExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
-  ParseResult parsePrefixLBrace(DictLiteralNode *&result, SMLoc lbraceLoc);
+  ParseResult parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   FailureOr<Operand> parseOperand(
       function_ref<ParseResult(ExprNode *&, Precedence)> parseOperandValue);
@@ -529,10 +529,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     break;
   case Token::l_brace: { // dict_display
     consumeToken(Token::l_brace);
-    DictLiteralNode *dict = nullptr;
-    if (parsePrefixLBrace(dict, startTok.getLoc()))
+    if (parsePrefixLBrace(result, startTok.getLoc()))
       return failure();
-    result = dict;
     break;
   }
 
@@ -665,23 +663,20 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
 /// key_datum_list     ::=  key_datum ("," key_datum)* [","]
 /// key_datum          ::=  expression ":" expression | "**" or_expr
 /// dict_comprehension ::=  expression ":" expression comp_for
-ParseResult ExprParser::parsePrefixLBrace(DictLiteralNode *&result,
-                                          SMLoc lbraceLoc) {
+/// set_display ::= "{" (flexible_expression_list | comprehension) "}"
+///
+/// This function handles parsing of dictionary literals as well as set and
+/// initializer lists.
+ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
   SMLoc rbraceLoc;
-  // Handle empty dict: {}
   SmallVector<std::pair<ExprNode *, ExprNode *>> elements;
 
-  /// Parse either a colon or an equal sign.  If we have an equal sign,
-  /// diagnose it as a typo error.
-  auto parseColonOrEqual = [&]() -> ParseResult {
-    auto loc = getToken().getLoc();
-    if (consumeIf(Token::equal)) {
-      emitTokenError("expected ':' after dictionary key, not '='")
-          << FixIt::replaceToken(loc, ":");
-      return success();
-    }
-    return parseToken(Token::colon, "expected ':' in dictionary");
-  };
+  // As a mojo extension, we support parsing set initializer lists that have
+  // keyword arguments in them.  This will be treated as an initializer list
+  // for a value, e.g. `{a, kwarg=42}` will be interpreted as `T(a, kwarg=42)`
+  // when the inferred type is `T`.  We need to keep track of whether we're
+  // parsing a dict or set/init, which we determine on the first element parsed.
+  bool isDict = false;
 
   // Parse all the comma separated elements.
   while (elements.empty() || consumeIf(Token::comma)) {
@@ -690,14 +685,45 @@ ParseResult ExprParser::parsePrefixLBrace(DictLiteralNode *&result,
       break;
 
     ExprNode *key = nullptr, *value = nullptr;
+
     // Handle normal key:value and dictionary unpacking.  The later has a null
     // key in the DictLiteralNode representation.
-    if (!consumeIf(Token::star_star)) {
-      if (parseExpression(key) || parseColonOrEqual())
+    bool isDictEntry = false;
+    auto loc = getToken().getLoc();
+    if (consumeIf(Token::star_star)) { // **x is an unpack.
+      // Sets and init lists don't support unpacking so this is a dict entry.
+      isDictEntry = true;
+      if (parseExpression(value))
         return failure();
+    } else {
+      if (parseExpression(key))
+        return failure();
+
+      // If we have an equal sign or colon, then we have an additional value.
+      isDictEntry = consumeIf(Token::colon);
+      if (isDictEntry || consumeIf(Token::equal)) {
+        if (parseExpression(value))
+          return failure();
+      } else {
+        // Otherwise we have a set, and the first expression we parsed is the
+        // value.
+        value = key;
+        key = nullptr;
+      }
+
+      // Make sure all the elements are consistent if this is an additional
+      // element.
+      if (elements.empty()) {
+        isDict = isDictEntry;
+      } else if (isDict != isDictEntry) {
+        if (isDict)
+          emitError(loc, "expected 'key: value' in dictionary expression");
+        else
+          emitError(loc, "cannot have a 'key: value' pair in set initializer");
+        // Maintain invariant by not adding this element, but keep parsing.
+        continue;
+      }
     }
-    if (parseExpression(value))
-      return failure();
     elements.push_back({key, value});
   }
 
@@ -714,13 +740,17 @@ ParseResult ExprParser::parsePrefixLBrace(DictLiteralNode *&result,
   }
 
   // Otherwise we must be out of elements.
-  if (parseToken(Token::r_brace, "expected '}' at end of dictionary",
+  if (parseToken(Token::r_brace,
+                 isDict ? "expected '}' at end of dictionary"
+                        : "expected '}' at end of set",
                  &rbraceLoc))
     return failure();
 
-  result = alloc<DictLiteralNode>(
-      lbraceLoc, copyArrayRef<std::pair<ExprNode *, ExprNode *>>(elements),
-      rbraceLoc);
+  auto stableElts = copyArrayRef<std::pair<ExprNode *, ExprNode *>>(elements);
+  if (isDict)
+    result = alloc<DictLiteralNode>(lbraceLoc, stableElts, rbraceLoc);
+  else
+    result = alloc<SetInitLiteralNode>(lbraceLoc, stableElts, rbraceLoc);
   return success();
 }
 

@@ -411,14 +411,16 @@ struct TupleNode final : public ExprNode {
 struct ListLiteralNode final : public ExprNode {
   ListLiteralNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs,
                   SMLoc rsquareLoc)
-      : ExprNode(kList), lsquareLoc(lsquareLoc), exprs(exprs),
+      : ExprNode(kListLiteral), lsquareLoc(lsquareLoc), exprs(exprs),
         rsquareLoc(rsquareLoc) {}
 
   const SMLoc lsquareLoc;
   ArrayRef<ExprNode *> exprs;
   const SMLoc rsquareLoc;
 
-  static bool classof(const ExprNode *node) { return node->kind == kList; }
+  static bool classof(const ExprNode *node) {
+    return node->kind == kListLiteral;
+  }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
@@ -432,7 +434,7 @@ struct DictLiteralNode final : public ExprNode {
   DictLiteralNode(SMLoc lbraceLoc,
                   ArrayRef<std::pair<ExprNode *, ExprNode *>> values,
                   SMLoc rbraceLoc)
-      : ExprNode(kDictionary), lbraceLoc(lbraceLoc), values(values),
+      : ExprNode(kDictLiteral), lbraceLoc(lbraceLoc), values(values),
         rbraceLoc(rbraceLoc) {}
 
   const SMLoc lbraceLoc;
@@ -440,7 +442,30 @@ struct DictLiteralNode final : public ExprNode {
   const SMLoc rbraceLoc;
 
   static bool classof(const ExprNode *node) {
-    return node->kind == kDictionary;
+    return node->kind == kDictLiteral;
+  }
+  SMLoc getLoc() const override { return lbraceLoc; }
+  SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
+
+  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
+/// This represents `{v1, v2}` and `{v1, arg=v2}` expressions which are either
+/// set literals or initializer lists.
+struct SetInitLiteralNode final : public ExprNode {
+  SetInitLiteralNode(SMLoc lbraceLoc,
+                     ArrayRef<std::pair<ExprNode *, ExprNode *>> values,
+                     SMLoc rbraceLoc)
+      : ExprNode(kSetInitLiteral), lbraceLoc(lbraceLoc), values(values),
+        rbraceLoc(rbraceLoc) {}
+
+  const SMLoc lbraceLoc;
+  const ArrayRef<std::pair<ExprNode *, ExprNode *>> values;
+  const SMLoc rbraceLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kSetInitLiteral;
   }
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }

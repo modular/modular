@@ -74,6 +74,9 @@ static raw_ostream &printStorage(raw_ostream &os,
     case InitializerUValue::kDictLiteral:
       os << "[DictLiteral]:";
       break;
+    case InitializerUValue::kSetInitLiteral:
+      os << "[SetInitLiteral]:";
+      break;
     }
     os << cast<InitializerUValue>(storage).get();
   } else if (auto val = dyn_cast<MLValue>(storage)) {
@@ -398,9 +401,11 @@ const CallOperands &InitializerUValue::get() const { return storage->operands; }
 CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
                                        const ExprNode *expr, ValueDest &dest) {
   // If we have the inferred contextual type, we can emit the constructor call.
-  if (ASTType expectedType = dest.getExpectedTypeIfSpecified())
+  if (ASTType expectedType = dest.getExpectedTypeIfSpecified()) {
+    // FIXME: Disambiguate set literals from initializer lists.
     return emitter.emitConstructorCall(expectedType, CallOperands(get()), expr,
                                        CallSyntax::kTypeCall, dest);
+  }
 
   // Otherwise, handle defaulting.
   switch (syntax) {
@@ -468,6 +473,12 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
       return {};
     return emitter.emitConstructorCall(dictType, CallOperands(get()), expr,
                                        CallSyntax::kTypeCall, dest);
+  }
+  case Syntax::kSetInitLiteral: {
+    // FIXME: Disambiguate set literals from initializer lists.
+    emitter.emitError(expr->getLoc(),
+                      "cannot emit initializer list without a contextual type");
+    return {};
   }
   }
   return {};
