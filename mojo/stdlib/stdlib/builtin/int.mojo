@@ -39,9 +39,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer(
-    Intable,
-):
+trait Indexer(Intable):
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
@@ -176,8 +174,12 @@ trait ImplicitlyIntable(Intable):
     struct Foo(ImplicitlyIntable):
         var i: Int
 
-        fn __as_int__(self) -> Int:
+        fn __int__(self) -> Int:
             return self.i
+
+        fn __as_int__(self) -> Int:
+            return self.__int__()
+
     ```
 
     Now you can use `Foo` anywhere that an `Int` is expected, e.g. equality
@@ -186,7 +188,7 @@ trait ImplicitlyIntable(Intable):
     ```mojo
     %# from testing import assert_equal
     foo = Foo(42)
-    assert_equal(foo, 42)
+    assert_equal(Int(42), foo)
     ```
     """
 
