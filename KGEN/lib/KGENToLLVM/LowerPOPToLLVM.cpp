@@ -1737,7 +1737,7 @@ struct ConvertPOPStringAddress
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     // The first operand is a !kgen.string lowered to
-    // !llvm.struct<(ptr<i8>, index)>, grab the the first field: the address
+    // !llvm.struct<(ptr<i8>, index)>, grab the first field: the address
     // of the string.
     Value extractedAddr =
         b.create<LLVM::ExtractValueOp>(adaptor.getOperands().front(), 0);
@@ -1758,7 +1758,7 @@ struct ConvertPOPStringSize : public ConvertPOPToLLVMPattern<StringSizeOp> {
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     // The first operand is a !kgen.string lowered to
-    // !llvm.struct<(ptr<i8>, index)>, grab the the second field: the size
+    // !llvm.struct<(ptr<i8>, index)>, grab the second field: the size
     // of the string.
     Value extractedAddr =
         b.create<LLVM::ExtractValueOp>(adaptor.getOperands().front(), 1);

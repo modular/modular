@@ -2397,7 +2397,7 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
       structDecl, structDecl.getTypeDeclSelf(), methodName, decorator,
       CallSyntax::kMethodCallSynthetic, callbackOnMissing);
 
-  // Case where we did not find the `impl` method or an error occured.
+  // Case where we did not find the `impl` method or an error occurred.
   if (!methods)
     return {};
 

@@ -322,7 +322,7 @@ We find it appealing to follow the Swift approach by making "full dynamic" an
 opt-in choice for a Mojo class.  This choice would make Mojo not strictly a
 superset of Python (because you may need to add the decorator in some cases),
 but it is already a non-goal of Mojo is syntactic compatibility with
-Python.  Instead, we expect to provide an automatic mechanical tranformer from
+Python.  Instead, we expect to provide an automatic mechanical transformer from
 Python code to Mojo code (e.g. to deal with new keywords we take). In this case,
 all Python classes will be translated by sticking `@dynamic` on them, and they
 can be removed for incremental boosts to performance.

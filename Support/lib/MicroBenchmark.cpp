@@ -182,7 +182,7 @@ bool MicroBenchmark::isSignificantMeasurement(const Measurement &measurement,
       measurement.duration >= runOptions.minRuntime)
     return true;
 
-  // This measument occured in the last 10% of the run.
+  // This measurement occurred in the last 10% of the run.
   if ((idx + 1) >= 0.9 * measurements.size())
     return true;
 
@@ -243,7 +243,7 @@ static StringRef toString(MicroBenchmark::TimeUnit timeUnit) {
     return "s";
   }
   llvm_unreachable("Invalid time unit");
-  return "<unkown time unit>";
+  return "<unknown time unit>";
 }
 
 /// Gets the report metric name as a string.

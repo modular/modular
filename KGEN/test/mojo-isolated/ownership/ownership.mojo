@@ -1004,7 +1004,7 @@ fn overwrite(y: MemExample, x: Bool) raises:
 
 
 # CHECK-LABEL: lit.fn @"test_if_ownership
-# MOCO-721: Test that ownership is transfered and all the move optimizations are
+# MOCO-721: Test that ownership is transferred and all the move optimizations are
 # done.
 fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegExample:
     # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
