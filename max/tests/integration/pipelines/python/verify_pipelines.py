@@ -378,36 +378,12 @@ class PipelineDef:
 
 
 PIPELINES = {
-    # TODO(MODELS-454): Investigate sign flips.
-    # We have sign flips that are seen across many models.
-    # I definitely suspect a bug. The only place I don't see this is llama3_1-float32 on cpu.
-    # Many of these values are far enough away from zero that they shouldn't be cause by minor rounding errors.
-    # That said, they might be minor rounding errors that get magnified later in the model.
-    # Layer by layer golden tests would be exceptionally useful.
-    # For now, using atol alone to check correctness for these models.
-    # Setting rtol high hides other issues.
-    "Llama-3-8B-Instruct-q4_k": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="llama3-8b",
-            encoding="q4_k",
-            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
-            # pipeline.  We only pass with these sky-high tolerances --
-            # something is very wrong but at least we will be able to detect
-            # further regressions with this.
-            absolute_tolerance=13,
-            relative_tolerance=0.69,
-            cos_dist_threshold=0.39,
-            kl_div_threshold=6.5,
-        ),
-    ),
+    # ========== Robust Pipelines ==========
+    # The models here are considered robust. They are tested with all metrics.
+    # Other models avoid absolute and relative tolerance because they are quite
+    # noisy for inaccurate models.
+    # Generally speaking, these models should have absolute and relative
+    # tolerances below ~5e-2.
     "Llama-3-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
@@ -424,47 +400,7 @@ PIPELINES = {
             absolute_tolerance=2.6e-2,
             relative_tolerance=2.7e-2,
             cos_dist_threshold=2.1e-6,
-            kl_div_threshold=7.7e-6,
-        ),
-    ),
-    "Llama-3-8B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="llama3-8b",
-            encoding="bfloat16",
-            absolute_tolerance=0.35,
-            relative_tolerance=0.15,
-            cos_dist_threshold=3.0e-4,
-            kl_div_threshold=4.0e-3,
-        ),
-    ),
-    "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="llama3.1-8b",
-            encoding="q4_k",
-            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
-            # pipeline.  We only pass with these sky-high tolerances --
-            # something is very wrong but at least we will be able to detect
-            # further regressions with this.
-            absolute_tolerance=14,
-            relative_tolerance=0.75,
-            cos_dist_threshold=0.62,
-            kl_div_threshold=6.8,
+            kl_div_threshold=3.0e-7,
         ),
     ),
     "Llama-3.1-8B-Instruct-float32": PipelineDef(
@@ -483,7 +419,111 @@ PIPELINES = {
             absolute_tolerance=2.1e-02,
             relative_tolerance=7.2e-3,
             cos_dist_threshold=1.7e-6,
-            kl_div_threshold=9.1e-6,
+            kl_div_threshold=1.0e-10,
+        ),
+    ),
+    "mpnet-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="mpnet",
+            encoding="float32",
+            pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
+            # On CPU, mpnet passes with all values set to `1e-4`
+            # GPU specifically requires these higher tolerances (30x worse).
+            absolute_tolerance=2.3e-3,
+            relative_tolerance=2.5e-2,
+            cos_dist_threshold=2e-5,
+            kl_div_threshold=1.0e-10,
+        ),
+    ),
+    "OLMo-1B-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="olmo",
+            encoding="float32",
+            # On CPU, olmo passes with atol set to `5e-4`
+            # GPU specifically requires these higher tolerances (160x worse).
+            absolute_tolerance=3.5e-2,
+            relative_tolerance=4.2e-2,
+            cos_dist_threshold=8.2e-6,
+            kl_div_threshold=5.5e-5,
+        ),
+    ),
+    # ========== Brittle Pipelines ==========
+    # The models here are considered brittle. They have never reached high
+    # accuracy. They tend to be more sensitive to noise as code changes.
+    # These models are only tested with aggregate metrics of cosine distance
+    # and kl divergence.
+    # Likely as cosine distance and kl divergence drop below ~1e-5, they should
+    # be migrated to being a robust pipelines.
+    "Llama-3-8B-Instruct-q4_k": PipelineDef(
+        compatible_with=[DeviceKind.CPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3-8b",
+            encoding="q4_k",
+            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
+            # pipeline.  We only pass with these sky-high tolerances --
+            # something is very wrong but at least we will be able to detect
+            # further regressions with this.
+            cos_dist_threshold=0.39,
+            kl_div_threshold=6.5,
+        ),
+    ),
+    "Llama-3-8B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3-8b",
+            encoding="bfloat16",
+            cos_dist_threshold=3.0e-4,
+            kl_div_threshold=3.8e-3,
+        ),
+    ),
+    "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
+        compatible_with=[DeviceKind.CPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3.1-8b",
+            encoding="q4_k",
+            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
+            # pipeline.  We only pass with these sky-high tolerances --
+            # something is very wrong but at least we will be able to detect
+            # further regressions with this.
+            cos_dist_threshold=0.62,
+            kl_div_threshold=6.8,
         ),
     ),
     "Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
@@ -498,10 +538,8 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3.1-8b",
             encoding="bfloat16",
-            absolute_tolerance=0.25,
-            relative_tolerance=0.11,
-            cos_dist_threshold=3.3e-4,
-            kl_div_threshold=5.0e-3,
+            cos_dist_threshold=2.6e-4,
+            kl_div_threshold=4.8e-3,
         ),
     ),
     "Llama-3.1-8B-Instruct-float8-static": PipelineDef(
@@ -524,8 +562,6 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            absolute_tolerance=1.4,
-            relative_tolerance=0.67,
             cos_dist_threshold=7.6e-3,
             kl_div_threshold=8.6e-2,
         ),
@@ -550,8 +586,6 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            absolute_tolerance=0.79,
-            relative_tolerance=1.8,
             cos_dist_threshold=5.6e-3,
             kl_div_threshold=3.9e-2,
         ),
@@ -570,8 +604,6 @@ PIPELINES = {
             pipeline="llama3.3-70b",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            absolute_tolerance=0.39,
-            relative_tolerance=0.35,
             cos_dist_threshold=2.8e-4,
             kl_div_threshold=1.9e-3,
         ),
@@ -593,8 +625,6 @@ PIPELINES = {
             pipeline="llama4-scout",
             encoding="bfloat16",
             # TODO (MODELS-480): Debug Llama4 Accuracy.
-            absolute_tolerance=33,
-            relative_tolerance=0.75,
             cos_dist_threshold=7.2e-1,
             kl_div_threshold=6.5,
         ),
@@ -614,10 +644,8 @@ PIPELINES = {
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
-            absolute_tolerance=2.2,
-            relative_tolerance=1.4,
-            cos_dist_threshold=1.5e-2,
-            kl_div_threshold=2.8e-2,
+            cos_dist_threshold=1.3e-2,
+            kl_div_threshold=2.7e-2,
         ),
     ),
     "mistral-small-3.1-24b-instruct-bfloat16": PipelineDef(
@@ -633,10 +661,8 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="mistral3",
             encoding="bfloat16",
-            absolute_tolerance=2.1e-1,
-            relative_tolerance=1.1e-1,
-            cos_dist_threshold=6.6e-4,
-            kl_div_threshold=2.8e-3,
+            cos_dist_threshold=6.3e-4,
+            kl_div_threshold=2.6e-3,
         ),
     ),
     "llama3-vision-bfloat16": PipelineDef(
@@ -659,9 +685,7 @@ PIPELINES = {
             # small values near zero.
             # We should account for this since otherwise relative elementwise
             # tolerance isn't useful.
-            absolute_tolerance=0.61,
-            relative_tolerance=0.17,
-            cos_dist_threshold=1.2e-3,
+            cos_dist_threshold=1.1e-3,
             kl_div_threshold=5.4e-3,
         ),
     ),
@@ -679,31 +703,8 @@ PIPELINES = {
             pipeline="pixtral",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
-            absolute_tolerance=0.66,
-            relative_tolerance=0.74,
-            cos_dist_threshold=2.2e-3,
-            kl_div_threshold=5.2e-3,
-        ),
-    ),
-    "mpnet-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="mpnet",
-            encoding="float32",
-            pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
-            # On CPU, mpnet passes with all values set to `1e-4`
-            # GPU specifically requires these higher tolerances (30x worse).
-            absolute_tolerance=2.3e-3,
-            relative_tolerance=2.5e-2,
-            cos_dist_threshold=2e-5,
-            kl_div_threshold=2.6e-7,
+            cos_dist_threshold=1.5e-3,
+            kl_div_threshold=3.0e-3,
         ),
     ),
     "Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
@@ -719,8 +720,6 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="qwen",
             encoding="bfloat16",
-            absolute_tolerance=0.5,
-            relative_tolerance=8.1e-2,
             cos_dist_threshold=2.7e-3,
             kl_div_threshold=1.3e-1,
         ),
@@ -740,30 +739,8 @@ PIPELINES = {
             encoding="float32",
             # TODO: Accuracy is much better on AMD.
             # so we might have an nvidia kernel bug here
-            absolute_tolerance=3.0,
-            relative_tolerance=0.24,
             cos_dist_threshold=2.4e-2,
             kl_div_threshold=1.3e-2,
-        ),
-    ),
-    "OLMo-1B-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="olmo",
-            encoding="float32",
-            # On CPU, olmo passes with atol set to `5e-4`
-            # GPU specifically requires these higher tolerances (160x worse).
-            absolute_tolerance=3.5e-2,
-            relative_tolerance=4.2e-2,
-            cos_dist_threshold=8.2e-6,
-            kl_div_threshold=8.4e-5,
         ),
     ),
     "Phi-3.5-mini-instruct-bfloat16": PipelineDef(
@@ -779,8 +756,6 @@ PIPELINES = {
             pipeline="phi-3.5-mini",
             encoding="bfloat16",
             # TODO(MODELS-458): This model seems broken based on the thresholds
-            absolute_tolerance=6.8,
-            relative_tolerance=0.66,
             cos_dist_threshold=1.2e-1,
             kl_div_threshold=1.1,
         ),
@@ -798,10 +773,8 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="phi-4",
             encoding="bfloat16",
-            absolute_tolerance=0.19,
-            relative_tolerance=1.7,
             cos_dist_threshold=9.8e-5,
-            kl_div_threshold=7.0e-3,
+            kl_div_threshold=6.9e-3,
         ),
     ),
     "llama-gptq": PipelineDef(
@@ -818,8 +791,6 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
             pipeline="llama-gptq",
             encoding="gptq",
-            absolute_tolerance=0.20,
-            relative_tolerance=0.24,
             cos_dist_threshold=3.3e-4,
             kl_div_threshold=2.7e-3,
         ),
@@ -838,8 +809,6 @@ PIPELINES = {
             pipeline="llama-gptq-no-perm-idx",
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
             encoding="gptq",
-            absolute_tolerance=0.34,
-            relative_tolerance=0.29,
             cos_dist_threshold=3.6e-4,
             kl_div_threshold=1.4e-3,
         ),
@@ -859,8 +828,6 @@ PIPELINES = {
             pipeline="deepseek-v2-lite",
             encoding="bfloat16",
             # TODO(MODELS-516): Investigate need for high tolerances here.
-            absolute_tolerance=3.0,
-            relative_tolerance=0.1,
             cos_dist_threshold=3.0e-03,
             kl_div_threshold=1.8e-01,
         ),
@@ -877,9 +844,7 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="gemma3-1b",
             encoding="bfloat16",
-            absolute_tolerance=1.7,
-            relative_tolerance=2.1,
-            cos_dist_threshold=0.24,
+            cos_dist_threshold=8.3e-04,
             kl_div_threshold=1.1e-02,
         ),
     ),
