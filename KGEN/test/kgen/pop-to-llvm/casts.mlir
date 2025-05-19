@@ -204,7 +204,7 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
     // CHECK-NEXT: %[[ROUNDED_BIAS:.*]] = llvm.mlir.constant(32767 : i32) : i32
     // CHECK-NEXT: %[[UNORDERED_MASK:.*]] = llvm.inline_asm asm_dialect = att "v_cmp_u_f32 $0, $1, $1", "=s,v" %arg0 : (f32) -> i64
     // CHECK-NEXT: %[[LSB:.*]] = llvm.inline_asm asm_dialect = att "v_bfe_u32 $0, $1, 16, 1", "=v,v" %arg0 : (f32) -> i32
-    // CHECK-NEXT: %[[ROUNDED_VALUE:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,v" %arg0, %[[LSB]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
+    // CHECK-NEXT: %[[ROUNDED_VALUE:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,s" %arg0, %[[LSB]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
     // CHECK-NEXT: %[[FLOAT_BITS:.*]] = llvm.inline_asm asm_dialect = att "v_cndmask_b32 $0, $1, $2, $3", "=v,v,v,s" %[[ROUNDED_VALUE]], %[[NAN]], %[[UNORDERED_MASK]] : (i32, f32, i64) -> i32
     // CHECK-NEXT: %[[SHIFTED_I32:.*]] = llvm.lshr %[[FLOAT_BITS]], %[[MANTISSA_DIFF]] : i32
     // CHECK-NEXT: %[[SHIFTED_I16:.*]] = llvm.trunc %[[SHIFTED_I32]] : i32 to i16
@@ -228,7 +228,7 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
     // CHECK-NEXT: %[[F32_0:.*]] = llvm.extractelement %arg0[%[[ZERO]] : i32] : vector<2xf32>
     // CHECK-NEXT: %[[UNORDERED_MASK_0:.*]] = llvm.inline_asm asm_dialect = att "v_cmp_u_f32 $0, $1, $1", "=s,v" %[[F32_0]] : (f32) -> i64
     // CHECK-NEXT: %[[LSB_0:.*]] = llvm.inline_asm asm_dialect = att "v_bfe_u32 $0, $1, 16, 1", "=v,v" %[[F32_0]] : (f32) -> i32
-    // CHECK-NEXT: %[[ROUNDED_VALUE_0:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,v" %[[F32_0]], %[[LSB_0]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
+    // CHECK-NEXT: %[[ROUNDED_VALUE_0:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,s" %[[F32_0]], %[[LSB_0]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
     // CHECK-NEXT: %[[FLOAT_BITS_0:.*]] = llvm.inline_asm asm_dialect = att "v_cndmask_b32 $0, $1, $2, $3", "=v,v,v,s" %[[ROUNDED_VALUE_0]], %[[NAN]], %[[UNORDERED_MASK_0]] : (i32, f32, i64) -> i32
     // CHECK-NEXT: %[[SHIFTED_I32_0:.*]] = llvm.lshr %[[FLOAT_BITS_0]], %[[MANTISSA_DIFF]] : i32
     // CHECK-NEXT: %[[SHIFTED_I16_0:.*]] = llvm.trunc %[[SHIFTED_I32_0]] : i32 to i16
@@ -238,7 +238,7 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
     // CHECK-NEXT: %[[F32_1:.*]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<2xf32>
     // CHECK-NEXT: %[[UNORDERED_MASK_1:.*]] = llvm.inline_asm asm_dialect = att "v_cmp_u_f32 $0, $1, $1", "=s,v" %[[F32_1]] : (f32) -> i64
     // CHECK-NEXT: %[[LSB_1:.*]] = llvm.inline_asm asm_dialect = att "v_bfe_u32 $0, $1, 16, 1", "=v,v" %[[F32_1]] : (f32) -> i32
-    // CHECK-NEXT: %[[ROUNDED_VALUE_1:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,v" %[[F32_1]], %[[LSB_1]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
+    // CHECK-NEXT: %[[ROUNDED_VALUE_1:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,s" %[[F32_1]], %[[LSB_1]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
     // CHECK-NEXT: %[[FLOAT_BITS_1:.*]] = llvm.inline_asm asm_dialect = att "v_cndmask_b32 $0, $1, $2, $3", "=v,v,v,s" %[[ROUNDED_VALUE_1]], %[[NAN]], %[[UNORDERED_MASK_1]] : (i32, f32, i64) -> i32
     // CHECK-NEXT: %[[SHIFTED_I32_1:.*]] = llvm.lshr %[[FLOAT_BITS_1]], %[[MANTISSA_DIFF]] : i32
     // CHECK-NEXT: %[[SHIFTED_I16_1:.*]] = llvm.trunc %[[SHIFTED_I32_1]] : i32 to i16
