@@ -89,10 +89,20 @@ class Gemma3TextModel(Module):
             "Only single-device configuration is supported."
         )
 
-        rope = OptimizedRotaryEmbedding(
+        rope_global = OptimizedRotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
+            max_seq_len=config.max_position_embeddings,
+            device=config.devices[0],
+            head_dim=config.head_dim,
+            interleaved=False,
+        )
+
+        rope_local = OptimizedRotaryEmbedding(
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_local_base_freq,
             max_seq_len=config.max_position_embeddings,
             device=config.devices[0],
             head_dim=config.head_dim,
@@ -133,7 +143,8 @@ class Gemma3TextModel(Module):
         layers = [
             TransformerBlock(
                 attention=Gemma3Attention(
-                    rope=rope,
+                    rope_global=rope_global,
+                    rope_local=rope_local,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,

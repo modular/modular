@@ -15,6 +15,7 @@ from collections import OptionalReg
 from collections.string import StaticString
 from math import align_down, align_up, ceildiv, recip
 from math.constants import log2e
+from pathlib import Path
 from sys import (
     alignof,
     bitwidthof,
@@ -56,6 +57,7 @@ from gpu.memory import (
     external_memory,
 )
 from kv_cache.types import KVCacheStaticParams, KVCacheT, PagedKVCache
+from layout import Layout
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -88,11 +90,11 @@ from nn.mha_mask import MaterializedMask, MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import (
-    mha_sm90_dispatch,
     DynamicInt,
-    StaticInt,
     NoPartition,
     SplitKPartition,
+    StaticInt,
+    mha_sm90_dispatch,
 )
 from nn.mha_utils import (
     MHAConfig,
@@ -102,11 +104,18 @@ from nn.mha_utils import (
 )
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
+from tensor_internal import IOUnknown, ManagedTensorSlice
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
+from .mha_tile_scheduler import (
+    QueuedTileScheduler,
+    TileScheduler,
+    TransientScheduler,
+)
 from .softmax import (
     _exp2_concrete,
     _exp_concrete,
@@ -115,16 +124,6 @@ from .softmax import (
     _softmax_gpu,
     softmax,
 )
-from .mha_tile_scheduler import (
-    TransientScheduler,
-    TileScheduler,
-    QueuedTileScheduler,
-)
-from tensor_internal import ManagedTensorSlice
-from tensor_internal import IOUnknown
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
-from layout import Layout
-from pathlib import Path
 
 # ===-----------------------------------------------------------------------===#
 # Flash attention

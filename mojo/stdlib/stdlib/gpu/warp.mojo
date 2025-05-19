@@ -32,14 +32,15 @@ integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
 from collections.string import StringSlice
-from sys import is_nvidia_gpu, llvm_intrinsic
-from sys.info import _is_sm_100x_or_newer
+from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
+from sys.info import _is_sm_100x_or_newer
 
 from bit import log2_floor
 from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu import lane_id
+from gpu.globals import WARP_SIZE
 from memory import bitcast
 
 from .tensor_ops import tc_reduce

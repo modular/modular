@@ -14,34 +14,26 @@
 
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
+from math import ceildiv
 from sys import simdwidthof
-from utils.numerics import FPUtils, max_finite, min_finite
+from sys.info import _is_sm_9x_or_newer
+
 import gpu.warp as warp
-from algorithm.functional import (
-    _elementwise_impl_gpu,
-)
+from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
+from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
+from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig
-from math import ceildiv
 from memory import UnsafePointer, stack_allocation
-from utils.index import Index, IndexList
 from runtime.tracing import trace_arg
-from sys.info import _is_sm_9x_or_newer
-from gpu import (
-    WARP_SIZE,
-    barrier,
-    block_idx,
-    lane_id,
-    warp_id,
-    thread_idx,
-)
-from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.memory import AddressSpace
 
+from utils.index import Index, IndexList
+from utils.numerics import FPUtils, max_finite, min_finite
 
 ########################################################
 # Static scaled fp8 quantization

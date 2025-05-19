@@ -117,7 +117,7 @@ def test_array_int():
 
 
 def test_array_str():
-    var arr = InlineArray[String, 3]("hi", "hello", "hey")
+    var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
 
     assert_equal(arr[0], "hi")
     assert_equal(arr[1], "hello")

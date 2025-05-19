@@ -22,12 +22,7 @@ from algorithm import map
 from collections.string.string_slice import StaticString, get_static_string
 from math import align_down, ceildiv
 from os import abort
-from sys import (
-    bitwidthof,
-    is_nvidia_gpu,
-    num_physical_cores,
-    simdwidthof,
-)
+from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -37,10 +32,10 @@ from gpu import (
     thread_idx,
 )
 from gpu.grid_controls import (
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target

@@ -470,7 +470,7 @@ class Spec:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
-        # For all params in each config either, update the exisiting `value_set``
+        # For all params in each config either, update the existing `value_set`
         # with the new param value(s).
         for cfg in self.params:
             for k, v in extra_params.items():
@@ -1221,7 +1221,7 @@ help_str = (
     "--filter",
     "filter",
     help=(
-        "Define a single filter (should match a valid paramter, can have"
+        "Define a single filter (should match a valid parameter, can have"
         " multiple ones). The filters should of the format `--filter"
         " PARAM=VALUE`, that is, the subset of parameters that satisfy this"
         " condition will be included."

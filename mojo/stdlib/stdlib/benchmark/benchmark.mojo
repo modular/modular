@@ -648,7 +648,7 @@ fn _is_significant_measurement(
     idx: Int, batch: Batch, num_batches: Int, opts: _RunOptions
 ) -> Bool:
     # The measurement number of iteration is the same as the requested
-    # maxBatchSize and the measurement duration execeeded the requested min
+    # maxBatchSize and the measurement duration exceeded the requested min
     # runtime.
     if (
         opts.max_batch_size
@@ -657,9 +657,9 @@ fn _is_significant_measurement(
     ):
         return True
 
-    # This measument occured in the last 10% of the run.
+    # This measurement occurred in the last 10% of the run.
     if Float64(idx + 1) >= 0.9 * num_batches:
         return True
 
-    # Otherwise the result is not statically significant.
+    # Otherwise the result is not statistically significant.
     return False

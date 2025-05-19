@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from math.math import exp, _Expable
+from math.math import _Expable, exp
 from random import randn_float64, seed
 from sys import has_neon
 

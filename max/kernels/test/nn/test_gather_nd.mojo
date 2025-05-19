@@ -22,8 +22,8 @@ from utils import IndexList
 
 # CHECK-LABEL: test_gather_nd
 fn main():
-    """
-    Note: Examples 1-5 are from:
+    """Note: Examples 1-5 are from.
+
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND
     """
 

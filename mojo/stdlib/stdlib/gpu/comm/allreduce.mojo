@@ -39,9 +39,12 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import simdwidthof, env_get_int
+from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
+from builtin.device_passable import DevicePassable
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -51,22 +54,19 @@ from gpu import (
     thread_idx,
 )
 from gpu.grid_controls import (
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from memory import stack_allocation
+from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
 
-from utils.index import StaticTuple
+from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
-
-from sys.ffi import external_call, _get_global_or_null, OpaquePointer
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 alias elementwise_epilogue_type = fn[
     input_index: Int, type: DType, rank: Int, width: Int, *, alignment: Int
@@ -475,11 +475,11 @@ fn _multi_gpu_barrier[
             # broadcast the value to all peers that I reached the barrier
             store_release(peer_counter_ptr, val)
             while load_acquire(self_counter_ptr) != val:
-                continue
+                pass
         else:
             peer_counter_ptr.store[volatile=True](val)
             while self_counter_ptr.load[volatile=True]() != val:
-                continue
+                pass
 
     @parameter
     if is_start or need_fence:

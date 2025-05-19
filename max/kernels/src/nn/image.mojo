@@ -100,7 +100,7 @@ struct ImageData[
 
     fn get_layout(self) -> Image2DLayout:
         """The getter function of the underlying data layout, resolving from
-        either staticall or dynamicall information.
+        either statically or dynamically provided information.
 
         Returns:
             The resolved data layout tag for this image instance.

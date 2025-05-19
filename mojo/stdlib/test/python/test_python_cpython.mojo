@@ -13,9 +13,9 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
+from memory import UnsafePointer
 from python import Python, PythonObject
 from python._cpython import PyObjectPtr
-from memory import UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 

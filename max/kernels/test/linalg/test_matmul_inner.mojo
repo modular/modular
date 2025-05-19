@@ -13,7 +13,6 @@
 
 from math import align_up
 from sys import alignof, has_neon, has_vnni
-from testing import assert_equal
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -31,6 +30,7 @@ from linalg.utils import (
     use_vnni_fn,
 )
 from memory import UnsafePointer
+from testing import assert_equal
 
 from utils import IndexList
 from utils.index import Index

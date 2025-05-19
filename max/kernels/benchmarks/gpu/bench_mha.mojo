@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import env_get_dtype, env_get_int, env_get_string, is_defined

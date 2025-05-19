@@ -22,12 +22,12 @@ from collections.string.string import (
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
 from math import CeilDivable
-from memory import UnsafePointer
 from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, Powable
-from python import Python, PythonObject, PythonConvertible
+from memory import UnsafePointer
+from python import Python, PythonConvertible, PythonObject
 
 from utils import Writable, Writer
 from utils._select import _select_register_value as select

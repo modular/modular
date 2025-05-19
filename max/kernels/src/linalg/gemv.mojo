@@ -32,8 +32,8 @@ from gpu import (
     global_idx,
     lane_id,
     thread_idx,
-    warp_id as get_warp_id,
 )
+from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty

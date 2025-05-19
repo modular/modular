@@ -25,24 +25,24 @@ from sys.intrinsics import strided_load, strided_store
 import algorithm
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
+from builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import is_cpu, is_gpu as _is_gpu
+from gpu.host.info import is_cpu
+from gpu.host.info import is_gpu as _is_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import RuntimeTensorSpec, TensorSpec
-from builtin.device_passable import DevicePassable
 
 from utils import IndexList, StaticTuple
 from utils._serialize import _serialize
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .io_spec import IO, IOSpec
-from runtime.tracing import trace_arg
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives

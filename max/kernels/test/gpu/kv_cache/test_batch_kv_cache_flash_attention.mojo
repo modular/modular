@@ -26,13 +26,11 @@ from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
+from tensor_internal import IOUnknown, ManagedTensorSlice
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-
-from tensor_internal import ManagedTensorSlice
-from tensor_internal import IOUnknown
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

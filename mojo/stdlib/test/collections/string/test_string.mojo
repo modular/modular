@@ -18,6 +18,7 @@ from collections.string.string import (
     _calc_initial_buffer_size_int64,
     _StringCapacityField,
 )
+from math import isinf, isnan
 
 from memory import UnsafePointer, memcpy
 from python import Python, PythonObject
@@ -28,8 +29,6 @@ from testing import (
     assert_raises,
     assert_true,
 )
-
-from math import isinf, isnan
 
 
 @fieldwise_init

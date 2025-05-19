@@ -20,12 +20,11 @@ from os import Atomic
 """
 
 from collections.string.string_slice import _get_kgen_string
-from sys.info import is_nvidia_gpu
 from sys import is_compile_time
+from sys.info import is_nvidia_gpu
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from memory import UnsafePointer, bitcast
-
 
 # ===-----------------------------------------------------------------------===#
 # Consistency

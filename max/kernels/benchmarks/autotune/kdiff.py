@@ -81,7 +81,7 @@ def check_argo_workflow_exists(git_sha):
 
 def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):
     print(
-        f"Checking {last_n_commits} of origin/main for exisiting CI workflows"
+        f"Checking {last_n_commits} of origin/main for existing CI workflows"
         " (baseline)"
     )
     main_git_sha_list = shell(

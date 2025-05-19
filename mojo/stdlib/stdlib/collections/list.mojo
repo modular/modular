@@ -151,13 +151,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self = Self()
         self.resize(length, fill)
 
+    @always_inline
     fn __init__(out self, owned *values: T, __list_literal__: () = ()):
         """Constructs a list from the given values.
 
         Args:
             values: The values to populate the list with.
-            __list_literal__: Specifies that this constructor can be used for
-                list literals.
+            __list_literal__: Tell Mojo to use this method for list literals.
         """
         self = Self(elements=values^)
 

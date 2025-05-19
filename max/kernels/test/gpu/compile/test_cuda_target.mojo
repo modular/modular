@@ -26,8 +26,8 @@ from gpu import (
     block_idx,
     global_idx,
     lane_id,
-    warp_id,
     thread_idx,
+    warp_id,
 )
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target

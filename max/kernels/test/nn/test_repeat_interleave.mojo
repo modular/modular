@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import stderr
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from nn.repeat_interleave import (
-    _collapse_dims_around_axis,
-    repeat_interleave,
-)
+from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
+
 from utils.index import Index, IndexList
-from sys import stderr
 
 
 fn test_collapse_dims_around_axis() raises:

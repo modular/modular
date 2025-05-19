@@ -13,9 +13,9 @@
 
 from algorithm import sum
 from algorithm.reduction import _reduce_generator, max, min
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from builtin.math import max as _max
 from builtin.math import min as _min
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from memory import UnsafePointer
 from nn.argmaxmin import argmax, argmin
 

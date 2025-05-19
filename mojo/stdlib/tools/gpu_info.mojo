@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.host
-import gpu.host.info
-import gpu.host._nvidia_cuda as cuda
-from sys.ffi import c_int, DLHandle
 from sys.arg import argv
+from sys.ffi import DLHandle, c_int
+
+import gpu.host
+import gpu.host._nvidia_cuda as cuda
+import gpu.host.info
 
 
 fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:

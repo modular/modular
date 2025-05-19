@@ -245,7 +245,7 @@ class PrefillScheduler(Scheduler):
                     pass
 
             except Exception as e:
-                logger.exception("An error occured during scheduling.")
+                logger.exception("An error occurred during scheduling.")
                 raise e
 
 

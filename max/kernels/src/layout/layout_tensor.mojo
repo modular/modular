@@ -44,15 +44,15 @@ from utils.index import Index
 from ._utils import get_amd_buffer_descriptor
 from .int_tuple import (
     _get_index_type,
-    _get_unsigned_type,
     _get_layout_type,
+    _get_unsigned_type,
+    congruent,
     depth,
     fill_like,
-    to_nest,
     flatten,
     idx2crd,
     product,
-    congruent,
+    to_nest,
 )
 from .layout import *
 from .runtime_layout import RuntimeLayout

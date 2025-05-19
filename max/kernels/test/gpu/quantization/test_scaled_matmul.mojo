@@ -11,19 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import Optional
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from internal_utils._utils import ValOrDim, dynamic, static
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
-from testing import assert_almost_equal
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
+from testing import assert_almost_equal
 
 
 fn test_matmul_dynamic_scaled_fp8[

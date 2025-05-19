@@ -22,6 +22,6 @@ from .device_context import (
     DeviceStream,
     HostBuffer,
 )
-from .dim import *
+from .dim import Dim
 from .func_attribute import Attribute, FuncAttribute
 from .launch_attribute import LaunchAttribute

@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import warp, global_idx
-from memory import UnsafePointer, memset
-from gpu.host import DeviceContext
 from math import ceildiv
+
+from gpu import global_idx, warp
+from gpu.host import DeviceContext
+from memory import UnsafePointer, memset
 from testing import assert_equal
 
 

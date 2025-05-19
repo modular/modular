@@ -78,7 +78,7 @@ from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
-from python import PythonObject, PythonConvertible
+from python import PythonConvertible, PythonObject
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type

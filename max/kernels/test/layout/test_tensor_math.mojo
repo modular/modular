@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import exp
+
 from layout import Layout, LayoutTensor, stack_allocation_like
 from layout._fillers import arange
 from layout.math import max, sum
-from math import exp
 
 
 # CHECK-LABEL: test_reduce_sum

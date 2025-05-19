@@ -79,7 +79,7 @@ trait FloatableRaising:
     try:
         print(Float64(MaybeFloat(4.6)))
     except:
-        print("error occured")
+        print("error occurred")
     ```
     """
 

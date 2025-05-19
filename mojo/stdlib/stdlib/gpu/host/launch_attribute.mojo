@@ -29,6 +29,12 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from sys import sizeof
+
+from memory import UnsafePointer
+
+from utils import StaticTuple
+
 
 @fieldwise_init
 @register_passable("trivial")

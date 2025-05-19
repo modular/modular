@@ -505,7 +505,7 @@ struct TMATensorTile[
 
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
         # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-        # one continous chunk in shared memory. We need to break down tile shape in K by 16B.
+        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
         #
         # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
         # row_major(K, MN) for the latter.
@@ -567,7 +567,7 @@ struct TMATensorTile[
 
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
         # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-        # one continous chunk in shared memory. We need to break down tile shape in K by 16B.
+        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
         #
         # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
         # row_major(K, MN) for the latter.
@@ -765,7 +765,7 @@ struct TMATensorTile[
         """
         Wait for the completion of asynchronous copy until a specified number of groups are waiting.
 
-        This funtion behaves the same as `cp_async_bulk_wait_group`, which causes causes the executing
+        This function behaves the same as `cp_async_bulk_wait_group`, which causes the executing
         thread to wait until a specified number of the most recent TMA copy are pending.
 
         Parameters:

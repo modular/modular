@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import bitwidthof
+
 from builtin.dtype import _integral_type_of
 from memory import bitcast
-from sys import bitwidthof
 
 
 fn ulp_distance[type: DType](a: Scalar[type], b: Scalar[type]) -> Int:

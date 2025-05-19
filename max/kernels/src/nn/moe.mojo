@@ -15,10 +15,10 @@
 from math import ceildiv
 
 from bit import next_power_of_two
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.info import is_gpu
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 

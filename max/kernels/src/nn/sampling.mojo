@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm.functional import elementwise
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
+
 from utils import IndexList
 
 

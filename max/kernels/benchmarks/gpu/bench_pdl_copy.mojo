@@ -19,6 +19,7 @@ from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
+from memory import UnsafePointer
 from testing import assert_equal
 
 

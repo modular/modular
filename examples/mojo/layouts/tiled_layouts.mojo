@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from layout import Layout, IntTuple, print_layout
-from layout.layout import tile_to_shape, blocked_product, make_ordered_layout
+from layout import IntTuple, Layout, print_layout
+from layout.layout import blocked_product, make_ordered_layout, tile_to_shape
 
 
 fn use_layout_constructor():

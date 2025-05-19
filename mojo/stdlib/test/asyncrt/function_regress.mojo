@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import is_gpu
+
 from asyncrt_test_utils import create_test_device_context, expect_eq
+from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-
-from builtin.device_passable import DevicePassable
+from memory import UnsafePointer
 
 alias T = DType.float64
 alias S = Scalar[T]

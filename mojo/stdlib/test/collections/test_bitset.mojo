@@ -13,7 +13,8 @@
 # RUN: %mojo %s
 
 from collections import BitSet
-from testing import assert_equal, assert_true, assert_false
+
+from testing import assert_equal, assert_false, assert_true
 
 
 def test_bitset_init():

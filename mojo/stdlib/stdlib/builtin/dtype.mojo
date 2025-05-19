@@ -17,8 +17,8 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from hashlib._hasher import _HashableWithHasher, _Hasher
-from sys import bitwidthof, os_is_windows, sizeof
 from os import abort
+from sys import bitwidthof, os_is_windows, sizeof
 
 alias _mIsSigned = UInt8(1)
 alias _mIsInteger = UInt8(1 << 7)

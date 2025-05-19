@@ -14,9 +14,8 @@
 from os import abort
 
 from complex import ComplexFloat32, ComplexFloat64
-from memory import UnsafePointer
-
 from gpu.host._amdgpu_hip import hipStream_t
+from memory import UnsafePointer
 
 from .types import (
     Algorithm,

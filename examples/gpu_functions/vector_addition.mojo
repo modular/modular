@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+
 from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from math import ceildiv
-from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias VECTOR_WIDTH = 10

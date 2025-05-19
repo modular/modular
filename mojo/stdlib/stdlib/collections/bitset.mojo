@@ -30,11 +30,13 @@ Example:
 # ---------------------------------------------------------------------------
 
 
-from .inline_array import InlineArray
-from sys import bitwidthof, simdwidthof
 from math import ceildiv
-from bit import pop_count, log2_floor
+from sys import bitwidthof, simdwidthof
+
 from algorithm import vectorize
+from bit import log2_floor, pop_count
+
+from .inline_array import InlineArray
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

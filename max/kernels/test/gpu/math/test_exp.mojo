@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from testing import *
 
-from utils import Index
+from utils import Index, IndexList
 
 
 def run_elementwise[type: DType](ctx: DeviceContext):

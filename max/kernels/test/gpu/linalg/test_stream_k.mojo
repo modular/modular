@@ -18,7 +18,7 @@ from sys import _RegisterPackType, bitwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_idx, thread_idx, block_dim, barrier, Semaphore
+from gpu import Semaphore, barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import AddressSpace
 from linalg.matmul_gpu import matmul_kernel_naive

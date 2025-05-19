@@ -14,8 +14,8 @@
 from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
 from layout import *
-from memory import UnsafePointer
 from layout.layout_tensor import LayoutTensor
+from memory import UnsafePointer
 
 
 fn gpu_kernel(

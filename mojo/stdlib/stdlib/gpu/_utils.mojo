@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import UnsafePointer
+
+from .memory import AddressSpace as GPUAddressSpace
+
 # ===-----------------------------------------------------------------------===#
 # MLIR type conversion utils
 # ===-----------------------------------------------------------------------===#

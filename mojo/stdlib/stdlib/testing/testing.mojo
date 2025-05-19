@@ -32,10 +32,10 @@ def main():
 """
 from collections import Optional
 from math import isclose
-from python import PythonObject
 
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
+from python import PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # Assertions

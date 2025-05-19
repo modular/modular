@@ -20,14 +20,8 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
-from gpu import (
-    WARP_SIZE,
-    barrier,
-    block_dim,
-    block_idx,
-    thread_idx,
-    warp_id as get_warp_id,
-)
+from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from gpu import warp_id as get_warp_id
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.int_tuple import IntTuple

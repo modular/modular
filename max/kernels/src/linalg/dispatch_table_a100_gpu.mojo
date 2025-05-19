@@ -10,7 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from collections import Dict, InlineArray, OptionalReg
+from pathlib import Path
+
+from algorithm.functional import elementwise, tile_and_unswitch
+from buffer.buffer import NDBuffer
+from buffer.dimlist import DimList
+from gpu.host import DeviceContext
+
 from utils import IndexList
+
+from .matmul_gpu import multistage_gemm
+from .utils import elementwise_epilogue_type
 from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
@@ -18,17 +29,6 @@ from .utils_gpu import (
     _get_block_warp_tile_shape,
     select_config,
 )
-from .matmul_gpu import multistage_gemm
-from collections import InlineArray, OptionalReg, Dict
-from pathlib import Path
-
-from algorithm.functional import elementwise, tile_and_unswitch
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-
-from gpu.host import DeviceContext
-
-from .utils import elementwise_epilogue_type
 
 
 fn create_matmul_configs_ampere[

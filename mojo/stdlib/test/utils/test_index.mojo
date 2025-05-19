@@ -63,7 +63,15 @@ def test_index():
     assert_equal(String(Index[dtype = DType.uint32](1, 2, 3)), "(1, 2, 3)")
 
 
+def test_list_literal():
+    var list: IndexList[3] = [1, 2, 3]
+    assert_equal(list[0], 1)
+    assert_equal(list[1], 2)
+    assert_equal(list[2], 3)
+
+
 def main():
     test_basics()
     test_cast()
     test_index()
+    test_list_literal()

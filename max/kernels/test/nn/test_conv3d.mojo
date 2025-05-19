@@ -193,11 +193,11 @@ fn test[
     var max_diff_idx = -1
 
     var idx = 0
-    for n in range(N):
-        for do in range(DO):
-            for ho in range(HO):
-                for wo in range(WO):
-                    for f in range(F):
+    for _ in range(N):
+        for _ in range(DO):
+            for _ in range(HO):
+                for _ in range(WO):
+                    for _ in range(F):
                         var gpu_val = Float64(output_ptr[idx])
                         var ref_val = Float64(output_ref_ptr[idx])
                         var diff = abs(gpu_val - ref_val)
@@ -211,27 +211,19 @@ fn test[
 
                         idx += 1
 
+    _ = max_diff_idx  # silence warning
+
     var match_percentage = Float64(matching_elements) / Float64(
         total_elements
     ) * 100.0
 
     if matching_elements == total_elements:
         print("RESULT: PASS - All elements match within tolerance")
-        pass
     else:
-        print("RESULT: FAIL - Elements do not match")
-        if max_diff_idx >= 0:
-            var flat_idx = max_diff_idx
-            var f_idx = flat_idx % F
-            flat_idx = flat_idx // F
-            var wo_idx = flat_idx % WO
-            flat_idx = flat_idx // WO
-            var ho_idx = flat_idx % HO
-            flat_idx = flat_idx // HO
-            var do_idx = flat_idx % DO
-            var n_idx = flat_idx // DO
-
-            pass
+        print(
+            "RESULT: FAIL - Elements do not match with a max percentage of ",
+            match_percentage,
+        )
 
     input_ptr.free()
     filter_ptr.free()
@@ -241,7 +233,6 @@ fn test[
 
     if matching_elements == total_elements:
         print("Succeed")
-        pass
 
 
 fn main() raises:

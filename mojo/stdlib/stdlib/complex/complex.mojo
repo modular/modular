@@ -19,8 +19,8 @@ from complex import ComplexSIMD
 ```
 """
 
-from sys import llvm_intrinsic
 import math
+from sys import llvm_intrinsic
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
 alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]

@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from memory import UnsafePointer
 
 
 fn vec_func[

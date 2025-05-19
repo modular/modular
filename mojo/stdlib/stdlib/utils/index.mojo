@@ -21,7 +21,7 @@ from utils import IndexList
 """
 
 from collections.string.string import _calc_initial_buffer_size
-from hashlib._hasher import _Hasher, _HashableWithHasher
+from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
@@ -301,11 +301,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__(out self, *elems: Int):
+    fn __init__(out self, *elems: Int, __list_literal__: () = ()):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
             elems: The elements to construct the tuple.
+            __list_literal__: Specifies that this constructor can be used for
+               list literals.
         """
         constrained[
             element_type.is_integral(), "Element type must be of integral type."

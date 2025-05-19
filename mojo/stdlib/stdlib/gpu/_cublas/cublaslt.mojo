@@ -15,10 +15,12 @@ from collections import List
 from collections.string import StaticString
 from os import abort
 from pathlib import Path
+from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, _find_dylib
+from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import _CUstream_st
+from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -1030,7 +1032,7 @@ struct cublasLtMatmulDescAttributes_t:
     """
     alias CUBLASLT_MATMUL_DESC_POINTER_MODE = Self(2)
     """UnsafePointer mode of alpha and beta, see PointerMode. When DEVICE_VECTOR is in use,
-    alpha/beta vector lenghts must match number of output matrix rows.
+    alpha/beta vector lengths must match number of output matrix rows.
 
     int32_t, default: HOST.
     """

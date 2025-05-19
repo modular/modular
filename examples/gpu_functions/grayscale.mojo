@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from math import ceildiv
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+
 from gpu.host import DeviceContext
 from gpu.id import global_idx
 from layout import Layout, LayoutTensor
-from math import ceildiv
-from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 alias WIDTH = 5
 alias HEIGHT = 10

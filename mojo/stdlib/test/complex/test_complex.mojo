@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
+
 from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
 

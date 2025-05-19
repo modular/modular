@@ -14,7 +14,6 @@ from collections import OptionalReg
 from math import ceildiv
 from pathlib import Path
 from sys import alignof, simdwidthof, sizeof
-from memory import UnsafePointer
 
 import linalg.vendor_blas
 from buffer.buffer import NDBuffer
@@ -27,10 +26,10 @@ from gpu.cluster import (
     elect_one_sync,
 )
 from gpu.grid_controls import (
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
@@ -42,9 +41,9 @@ from gpu.id import (
     block_idx,
     grid_dim,
     lane_id,
-    warp_id as get_warp_id,
     thread_idx,
 )
+from gpu.id import warp_id as get_warp_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
@@ -86,7 +85,7 @@ from layout.tma_async import (
     create_tma_tile,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
-from memory import bitcast, stack_allocation
+from memory import UnsafePointer, bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from stdlib.bit import log2_floor
 
@@ -94,7 +93,7 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from .utils import elementwise_epilogue_type, elementwise_compute_lambda_type
+from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
 
 alias WARP_GROUP_SIZE = 128

@@ -21,6 +21,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.top_k import TopK
+from memory import AddressSpace, UnsafePointer
 from tensor_internal import (
     Input,
     InputTensor,
@@ -31,7 +32,6 @@ from tensor_internal import (
     OutputTensor,
     StaticTensorSpec,
 )
-from memory import AddressSpace, UnsafePointer
 
 from utils import IndexList
 

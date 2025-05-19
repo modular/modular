@@ -21,11 +21,10 @@ from gpu._cufft.cufft import (
     cufftPlan1d,
     cufftSetStream,
 )
-
-from gpu.host._nvidia_cuda import CUDA
-from gpu._cufft.types import Type, Status
+from gpu._cufft.types import Status, Type
 from gpu._cufft.utils import check_error
 from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import CUDA
 from memory import UnsafePointer
 
 

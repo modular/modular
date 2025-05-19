@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from layout import Layout, print_layout, IntTuple
+from layout import IntTuple, Layout, print_layout
 
 
 fn row_and_column_major():

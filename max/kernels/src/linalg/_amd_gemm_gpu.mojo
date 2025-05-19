@@ -26,10 +26,11 @@ from gpu import (
     grid_dim,
     lane_id,
     thread_idx,
-    warp_id as get_warp_id,
 )
+from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
+from gpu.mma import mma as mma_simd
 from gpu.sync import AMDScheduleBarrierMask
 from gpu.sync import schedule_barrier as amd_schedule_barrier
 from gpu.sync import schedule_group_barrier
@@ -53,7 +54,6 @@ from utils.numerics import get_accum_type
 
 from .utils import apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
-from gpu.mma import mma as mma_simd
 
 
 struct MMATileBuffers[

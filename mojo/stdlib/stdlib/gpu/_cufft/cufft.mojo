@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 from os import abort
-from .utils import _get_dylib_function
-from .types import Status, Type, Compatibility, Property, LibraryProperty
-from gpu.host._nvidia_cuda import CUstream
 
 from complex import ComplexFloat32, ComplexFloat64
+from gpu.host._nvidia_cuda import CUstream
+from memory import UnsafePointer
 
+from .types import Compatibility, LibraryProperty, Property, Status, Type
+from .utils import _get_dylib_function
 
 alias cufftHandle = Int16
 

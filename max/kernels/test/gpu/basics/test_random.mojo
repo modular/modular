@@ -22,7 +22,7 @@ from gpu.host._compile import _get_gpu_target
 from gpu.random import Random
 from testing import *
 
-from utils.index import Index
+from utils.index import Index, IndexList
 
 
 def run_elementwise[type: DType](ctx: DeviceContext):
