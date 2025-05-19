@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import os
 import signal
 from collections.abc import AsyncGenerator
@@ -30,15 +29,11 @@ from max.pipelines.core import (
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
-from max.pipelines.lib import PipelineRole
 from max.pipelines.lib.config import PipelineConfig
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
-from max.serve.scheduler.queues import (
-    BatchingStrategy,
-    BatchQueueConfig,
-    EngineQueue,
-)
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
+from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -58,172 +53,6 @@ class TokenGeneratorOutput:
 @dataclass(frozen=True)
 class EmbeddingsGeneratorOutput:
     embeddings: np.ndarray
-
-
-@dataclass(frozen=True)
-class TokenGeneratorPipelineConfig:
-    """
-    Example config
-
-    .. code-block:: json
-
-        {
-            "context_encoding": {
-                "strategy": "dynamic",
-                "size": 1,
-                "timeout": 0.1
-            },
-            "token_generation": {
-                "strategy": "continuous",
-                "size": 64,
-                "timeout": 0.0
-            }
-        }
-    """
-
-    token_generation: BatchQueueConfig
-    context_encoding: Optional[BatchQueueConfig] = None
-    pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
-
-    @property
-    def max_batch_size_tg(self) -> int:
-        return self.token_generation.size
-
-    @property
-    def max_batch_size_ce(self) -> int:
-        if self.context_encoding:
-            return self.context_encoding.size
-
-        return self.token_generation.size
-
-    @property
-    def max_forward_steps_tg(self) -> int:
-        return self.token_generation.max_forward_steps
-
-    @property
-    def max_forward_steps_ce(self) -> int:
-        if self.context_encoding:
-            return self.context_encoding.max_forward_steps
-
-        return self.token_generation.max_forward_steps
-
-    @property
-    def target_tokens_per_batch_tg(self) -> Optional[int]:
-        return self.token_generation.target_sum_seq_len
-
-    @property
-    def target_tokens_per_batch_ce(self) -> Optional[int]:
-        if self.context_encoding:
-            return self.context_encoding.target_sum_seq_len
-
-        return self.token_generation.target_sum_seq_len
-
-    @property
-    def enable_chunked_prefill(self) -> bool:
-        return self.token_generation.enable_chunked_prefill
-
-    @property
-    def enable_in_flight_batching(self) -> bool:
-        return self.token_generation.enable_in_flight_batching
-
-    @property
-    def batch_timeout(self) -> Optional[float]:
-        if self.context_encoding:
-            timeout = self.context_encoding.timeout
-        else:
-            timeout = self.token_generation.timeout
-
-        if math.isclose(timeout, 0.0):
-            return None
-
-        return timeout
-
-    @classmethod
-    def no_cache(
-        cls,
-        batch_size: int,
-        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
-    ) -> TokenGeneratorPipelineConfig:
-        """The no-cache config uses a single queue with no cache.
-        Requests are dequeued into a batch and the entire batch is
-        executed until all requests are completed.
-        """
-        token_generation_config = BatchQueueConfig(
-            strategy=BatchingStrategy.CONTINUOUS,
-            size=batch_size,
-            enable_chunked_prefill=False,
-        )
-        config = cls(
-            token_generation=token_generation_config,
-            pipeline_role=pipeline_role,
-        )
-        return config
-
-    @classmethod
-    def continuous_heterogenous(
-        cls,
-        tg_batch_size: int,
-        ce_batch_size: int,
-        ce_batch_timeout=0.1,
-        max_forward_steps=1,
-        target_ce_batch_tokens=4096,
-        enable_chunked_prefill: bool = True,
-        enable_in_flight_batching: bool = False,
-        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
-    ) -> TokenGeneratorPipelineConfig:
-        """The continuous-hetrogenous config creates 2 queues.
-        Context-encoding is done via dynamic batching.
-        Token-generation is done via continuous batching.
-        """
-        token_generation_config = BatchQueueConfig(
-            strategy=BatchingStrategy.CONTINUOUS,
-            size=tg_batch_size,
-            timeout=0.0,
-            max_forward_steps=max_forward_steps,
-            enable_chunked_prefill=enable_chunked_prefill,
-            enable_in_flight_batching=enable_in_flight_batching,
-        )
-        context_encoding_config = BatchQueueConfig(
-            strategy=BatchingStrategy.DYNAMIC,
-            size=ce_batch_size,
-            timeout=ce_batch_timeout,
-            target_sum_seq_len=target_ce_batch_tokens,
-        )
-        config = cls(
-            context_encoding=context_encoding_config,
-            token_generation=token_generation_config,
-            pipeline_role=pipeline_role,
-        )
-        return config
-
-    @classmethod
-    def paged(
-        cls,
-        tg_batch_size: int,
-        ce_batch_size: int,
-        ce_batch_timeout: float = 0.1,
-        max_forward_steps: int = 1,
-        target_ce_batch_tokens: int = 4096,
-        enable_chunked_prefill: bool = True,
-        enable_in_flight_batching: bool = False,
-        pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
-    ) -> TokenGeneratorPipelineConfig:
-        """The paged config creates 2 queues.
-        Context-encoding is done via dynamic batching.
-        Token-generation is done via continuous batching.
-
-        This config is identical to the config returned by continuous_heterogenous.
-        """
-        return cls.continuous_heterogenous(
-            tg_batch_size=tg_batch_size,
-            ce_batch_size=ce_batch_size,
-            ce_batch_timeout=ce_batch_timeout,
-            max_forward_steps=max_forward_steps,
-            target_ce_batch_tokens=target_ce_batch_tokens,
-            enable_chunked_prefill=enable_chunked_prefill,
-            enable_in_flight_batching=enable_in_flight_batching,
-            pipeline_role=pipeline_role,
-        )
 
 
 @dataclass
@@ -494,14 +323,14 @@ def batch_config_from_pipeline_config(
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
     batch_timeout: float = 0.0,
-) -> TokenGeneratorPipelineConfig:
+) -> TokenGeneratorSchedulerConfig:
     assert pipeline_config.max_batch_size is not None
     if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
         logger.info(
             "Server configured with no cache and batch size %s",
             pipeline_config.max_batch_size,
         )
-        return TokenGeneratorPipelineConfig.no_cache(
+        return TokenGeneratorSchedulerConfig.no_cache(
             batch_size=pipeline_config.max_batch_size,
             pipeline_role=pipeline_config.pipeline_role,
         )
@@ -511,7 +340,7 @@ def batch_config_from_pipeline_config(
     kv_cache_config = pipeline_config.model_config.kv_cache_config
     cache_strategy = kv_cache_config.cache_strategy
     if cache_strategy == KVCacheStrategy.CONTINUOUS:
-        batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+        batch_config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
             tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(
                 pipeline_config.max_batch_size,
@@ -525,7 +354,7 @@ def batch_config_from_pipeline_config(
             pipeline_role=pipeline_config.pipeline_role,
         )
     elif cache_strategy == KVCacheStrategy.PAGED:
-        batch_config = TokenGeneratorPipelineConfig.paged(
+        batch_config = TokenGeneratorSchedulerConfig.paged(
             tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(
                 pipeline_config.max_batch_size,

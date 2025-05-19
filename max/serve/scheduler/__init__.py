@@ -22,12 +22,19 @@ from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
+from .config import TokenGeneratorSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
-__all__ = ["Scheduler", "ZmqPushSocket", "ZmqPullSocket", "load_scheduler"]
+__all__ = [
+    "Scheduler",
+    "ZmqPushSocket",
+    "ZmqPullSocket",
+    "load_scheduler",
+    "TokenGeneratorSchedulerConfig",
+]
 
 
 def load_scheduler(

@@ -30,16 +30,14 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.kvcache_worker import start_kvcache_agent
-from max.serve.pipelines.llm import (
-    TokenGeneratorPipeline,
-    TokenGeneratorPipelineConfig,
-)
+from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.telemetry.common import (
     configure_logging,
     configure_metrics,
@@ -62,7 +60,7 @@ class ServingTokenGeneratorSettings:
     # Pipeline config
     model_name: str
     model_factory: PipelinesFactory
-    pipeline_config: TokenGeneratorPipelineConfig
+    pipeline_config: TokenGeneratorSchedulerConfig
     tokenizer: PipelineTokenizer
 
 
@@ -213,7 +211,7 @@ async def main() -> None:
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorPipelineConfig.continuous_heterogenous(
+        pipeline_config=TokenGeneratorSchedulerConfig.continuous_heterogenous(
             tg_batch_size=1, ce_batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),

@@ -32,14 +32,13 @@ from max.pipelines.core import (
 )
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.scheduler import (
     EmbeddingsScheduler,
     EmbeddingsSchedulerConfig,
 )
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler import load_scheduler
+from max.serve.scheduler import TokenGeneratorSchedulerConfig, load_scheduler
 from max.serve.scheduler.base import Scheduler
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
@@ -99,7 +98,7 @@ class ModelWorker:
     async def run(
         pc: ProcessControl,
         model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorPipelineConfig,
+        pipeline_config: TokenGeneratorSchedulerConfig,
         settings: Settings,
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
@@ -159,7 +158,7 @@ class ModelWorker:
         pipeline: EmbeddingsGenerator,
         zmq_ctx: zmq.Context,
         settings: Settings,
-        pipeline_config: TokenGeneratorPipelineConfig,
+        pipeline_config: TokenGeneratorSchedulerConfig,
     ) -> Scheduler:
         config = pipeline_config
         max_batch_size = config.token_generation.size
@@ -184,7 +183,7 @@ class ModelWorker:
         pipeline: Union[TokenGenerator, EmbeddingsGenerator],
         zmq_ctx: zmq.Context,
         settings: Settings,
-        pipeline_config: TokenGeneratorPipelineConfig,
+        pipeline_config: TokenGeneratorSchedulerConfig,
     ) -> Scheduler:
         """Retrieves the appropriate scheduler based on the pipeline type.
 
@@ -231,7 +230,7 @@ class ModelWorker:
     def __call__(
         pc: ProcessControl,
         model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorPipelineConfig,
+        pipeline_config: TokenGeneratorSchedulerConfig,
         settings: Settings,
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
@@ -275,7 +274,7 @@ class ModelWorker:
 @asynccontextmanager
 async def start_model_worker(
     model_factory: PipelinesFactory,
-    batch_config: TokenGeneratorPipelineConfig,
+    batch_config: TokenGeneratorSchedulerConfig,
     settings: Settings,
     metric_client: MetricClient,
     kvcache_agent_queue: Optional[multiprocessing.Queue] = None,
