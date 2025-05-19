@@ -35,6 +35,9 @@ what we publish.
 
 ### Language changes
 
+- The type [`Dict`](/mojo/stdlib/collections/dict/Dict/) is now part of the
+  prelude, so there is no need to import them anymore.
+
 - The Mojo compiler will now synthesize `__moveinit__` and `__copyinit__` and
   `copy()` methods for structs that conform to `Movable`, `Copyable`, and
   `ExplicitlyCopyable` (respectively) but that do not implement the methods

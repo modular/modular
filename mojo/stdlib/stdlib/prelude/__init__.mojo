@@ -14,7 +14,13 @@
 that are automatically imported into every Mojo program.
 """
 
-from collections import InlineArray, KeyElement, List, Optional
+from collections import (
+    Dict,
+    InlineArray,
+    KeyElement,
+    List,
+    Optional,
+)
 from collections.string import (
     Codepoint,
     StaticString,

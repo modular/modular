@@ -197,7 +197,7 @@ may not be clear. Like an `OwnedPointer`, it points to a single value, and it
 allocates memory when you initialize the `ArcPointer` with a value:
 
 ```python
-attributesDict = Dict[String, String]()
+attributesDict: Dict[String, String] = {}
 attributes = ArcPointer(attributesDict)
 ```
 
@@ -214,13 +214,12 @@ store a dictionary. Copying an instance of `SharedDict` only copies the
 
 ```python
 from memory import ArcPointer
-from collections import Dict
 
 struct SharedDict:
     var attributes: ArcPointer[Dict[String, String]]
 
     fn __init__(out self):
-        attributesDict = Dict[String, String]()
+        attributesDict: Dict[String, String] = {}
         self.attributes = ArcPointer(attributesDict)
 
     fn __copyinit__(out self, other: Self):

@@ -295,12 +295,11 @@ There are two techniques for iterating over a Mojo
 using the `Dict`, which produces a sequence of the dictionary's keys.
 
 ```mojo
-from collections import Dict
-
-capitals = Dict[String, String]()
-capitals["California"] = "Sacramento"
-capitals["Hawaii"] = "Honolulu"
-capitals["Oregon"] = "Salem"
+capitals: Dict[String, String] = {
+    "California": "Sacramento",
+    "Hawaii": "Honolulu",
+    "Oregon": "Salem"
+}
 
 for state in capitals:
     print(capitals[state[]] + ", " + state[])

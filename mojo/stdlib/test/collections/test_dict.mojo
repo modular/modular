@@ -54,10 +54,11 @@ def test_dict_fromkeys():
 
 def test_dict_fromkeys_optional():
     alias keys = List[String]("a", "b", "c")
-    var expected_dict = Dict[String, Optional[Int]]()
-    expected_dict["a"] = None
-    expected_dict["b"] = None
-    expected_dict["c"] = None
+    var expected_dict: Dict[String, Optional[Int]] = {
+        "a": None,
+        "b": None,
+        "c": None,
+    }
     var dict = Dict[_, Int].fromkeys(keys)
 
     assert_equal(len(dict), len(expected_dict))
@@ -70,7 +71,7 @@ def test_dict_fromkeys_optional():
 
 
 def test_basic():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -88,7 +89,7 @@ def test_basic_no_copies():
 
 
 def test_multiple_resizes():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     for i in range(20):
         dict[String("key", i)] = i + 1
     assert_equal(11, dict["key10"])
@@ -96,7 +97,7 @@ def test_multiple_resizes():
 
 
 def test_bool_conversion():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     assert_false(dict)
     dict["a"] = 1
     assert_true(dict)
@@ -109,14 +110,14 @@ def test_bool_conversion():
 
 
 def test_big_dict():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     for i in range(2000):
         dict[String("key", i)] = i + 1
     assert_equal(2000, len(dict))
 
 
 def test_dict_string_representation_string_int():
-    var some_dict = Dict[String, Int]()
+    var some_dict: Dict[String, Int] = {}
     some_dict["a"] = 1
     some_dict["b"] = 2
     dict_as_string = some_dict.__str__()
@@ -128,7 +129,7 @@ def test_dict_string_representation_string_int():
 
 
 def test_dict_string_representation_int_int():
-    var some_dict = Dict[Int, Int]()
+    var some_dict: Dict[Int, Int] = {}
     some_dict[3] = 1
     some_dict[4] = 2
     some_dict[5] = 3
@@ -142,7 +143,7 @@ def test_dict_string_representation_int_int():
 
 
 def test_compact():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     for i in range(20):
         var key = String("key", i)
         dict[key] = i + 1
@@ -151,7 +152,7 @@ def test_compact():
 
 
 def test_compact_with_elements():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     for i in range(5):
         var key = String("key", i)
         dict[key] = i + 1
@@ -163,7 +164,7 @@ def test_compact_with_elements():
 
 
 def test_pop_default():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -173,7 +174,7 @@ def test_pop_default():
 
 
 def test_key_error():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
 
     with assert_raises(contains="KeyError"):
         _ = dict["a"]
@@ -182,7 +183,7 @@ def test_key_error():
 
 
 def test_iter():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -194,7 +195,7 @@ def test_iter():
 
 
 def test_iter_keys():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -206,7 +207,7 @@ def test_iter_keys():
 
 
 def test_iter_values():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -218,7 +219,7 @@ def test_iter_values():
 
 
 def test_iter_values_mut():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -231,7 +232,7 @@ def test_iter_values_mut():
 
 
 def test_iter_items():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -246,7 +247,7 @@ def test_iter_items():
 
 
 def test_dict_copy():
-    var orig = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
     orig["a"] = 1
 
     # test values copied to new Dict
@@ -261,7 +262,7 @@ def test_dict_copy():
 
 
 def test_dict_copy_delete_original():
-    var orig = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
     orig["a"] = 1
 
     # test values copied to new Dict
@@ -272,7 +273,7 @@ def test_dict_copy_delete_original():
 
 
 def test_dict_copy_add_new_item():
-    var orig = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
     orig["a"] = 1
 
     # test values copied to new Dict
@@ -286,7 +287,7 @@ def test_dict_copy_add_new_item():
 
 
 def test_dict_copy_calls_copy_constructor():
-    var orig = Dict[String, CopyCounter]()
+    var orig: Dict[String, CopyCounter] = {}
     orig["a"] = CopyCounter()
 
     # test values copied to new Dict
@@ -298,11 +299,11 @@ def test_dict_copy_calls_copy_constructor():
 
 
 def test_dict_update_nominal():
-    var orig = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
     orig["a"] = 1
     orig["b"] = 2
 
-    var new = Dict[String, Int]()
+    var new: Dict[String, Int] = {}
     new["b"] = 3
     new["c"] = 4
 
@@ -314,8 +315,8 @@ def test_dict_update_nominal():
 
 
 def test_dict_update_empty_origin():
-    var orig = Dict[String, Int]()
-    var new = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
+    var new: Dict[String, Int] = {}
     new["b"] = 3
     new["c"] = 4
 
@@ -326,8 +327,8 @@ def test_dict_update_empty_origin():
 
 
 def test_dict_or():
-    var orig = Dict[String, Int]()
-    var new = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
+    var new: Dict[String, Int] = {}
 
     new["b"] = 3
     new["c"] = 4
@@ -386,11 +387,11 @@ def test_dict_or():
 
 
 def test_dict_update_empty_new():
-    var orig = Dict[String, Int]()
+    var orig: Dict[String, Int] = {}
     orig["a"] = 1
     orig["b"] = 2
 
-    var new = Dict[String, Int]()
+    var new: Dict[String, Int] = {}
 
     orig.update(new)
 
@@ -427,7 +428,7 @@ def test_mojo_issue_1729():
         -649171104678427962,
         -6981562940350531355,
     ]
-    var d = Dict[DummyKey, Int]()
+    var d: Dict[DummyKey, Int] = {}
     for i in range(len(keys)):
         d[DummyKey(keys[i])] = i
     assert_equal(len(d), len(keys))
@@ -525,7 +526,7 @@ def test_owned_kwargs_dict():
 
 
 def test_find_get():
-    var some_dict = Dict[String, Int]()
+    var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
     assert_equal(some_dict.find("key").value(), 1)
     assert_equal(some_dict.get("key").value(), 1)
@@ -534,7 +535,7 @@ def test_find_get():
 
 
 def test_dict_popitem():
-    var dict = Dict[String, Int]()
+    var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
 
@@ -549,7 +550,7 @@ def test_dict_popitem():
 
 
 def test_pop_string_values():
-    var dict = Dict[String, String]()
+    var dict: Dict[String, String] = {}
     dict["mojo"] = "lang"
     dict["max"] = "engine"
     dict["a"] = ""
@@ -564,7 +565,7 @@ def test_pop_string_values():
 
 
 fn test_clear() raises:
-    var some_dict = Dict[String, Int]()
+    var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
     some_dict.clear()
     assert_equal(len(some_dict), 0)
@@ -589,7 +590,7 @@ def test_init_initial_capacity():
 
 
 fn test_dict_setdefault() raises:
-    var some_dict = Dict[String, Int]()
+    var some_dict: Dict[String, Int] = {}
     some_dict["key1"] = 1
     some_dict["key2"] = 2
     assert_equal(some_dict.setdefault("key1", 0), 1)
@@ -598,7 +599,7 @@ fn test_dict_setdefault() raises:
     assert_equal(some_dict["not_key"], 0)
 
     # Check that there is no copy of the default value, so it's performant
-    var other_dict = Dict[String, CopyCounter]()
+    var other_dict: Dict[String, CopyCounter] = {}
     var a = CopyCounter()
     var a_def = CopyCounter()
     var b_def = CopyCounter()

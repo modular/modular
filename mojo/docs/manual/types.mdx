@@ -595,16 +595,14 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-There are some notable limitations when using `List`:
-
-* You can't currently initialize a list from a list literal, like this:
+* Mojo supports list and dictionary literals for collection initialization:
 
   ```mojo
-  # Doesn't work!
-  var list: List[Int] = [2, 3, 5]
+  # List literal
+  var nums: List[Int] = [2, 3, 5]
   ```
 
-  But you can use variadic arguments to achieve the same thing:
+  You can also use variadic arguments for lists:
 
   ```mojo
   var list = List(2, 3, 5)
@@ -653,7 +651,17 @@ for i in range(len(list)):
 
 The [`Dict`](/mojo/stdlib/collections/dict/Dict) type is an associative array
 that holds key-value pairs. You can create a `Dict` by specifying the key type
-and value type as parameters, like this:
+and value type as parameters and using dictionary literals:
+
+```mojo
+# Empty dictionary
+var empty_dict: Dict[String, Float64] = {}
+
+# Dictionary with initial key-value pairs
+var values: Dict[String, Float64] = {"pi": 3.14159, "e": 2.71828}
+```
+
+You can also use the constructor syntax:
 
 ```mojo
 var values = Dict[String, Float64]()
@@ -671,12 +679,11 @@ The `Dict` iterators all yield references, so you need to use the dereference
 operator `[]` as shown in the following example:
 
 ```mojo
-from collections import Dict
-
-var d = Dict[String, Float64]()
-d["plasticity"] = 3.1
-d["elasticity"] = 1.3
-d["electricity"] = 9.7
+var d: Dict[String, Float64] = {
+    "plasticity": 3.1,
+    "elasticity": 1.3,
+    "electricity": 9.7
+}
 for item in d.items():
     print(item[].key, item[].value)
 ```
@@ -696,6 +703,8 @@ intersections between two sets.
 
 Sets are generic and the element type must conform to the
 [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait.
+
+Unlike lists and dictionaries, sets do not yet support literal syntax.
 
 ```mojo
 from collections import Set

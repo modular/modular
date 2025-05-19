@@ -858,11 +858,8 @@ contexts. For example, you can alias a partially-bound type to create a new type
 that requires fewer parameters:
 
 ```mojo
-from collections import Dict
-
 alias StringKeyDict = Dict[String, _]
-var b = StringKeyDict[UInt8]()
-b["answer"] = 42
+var b: StringKeyDict[UInt8] = {"answer": 42}
 ```
 
 Here, `StringKeyDict` is a type alias for a `Dict` that takes `String` keys. The
