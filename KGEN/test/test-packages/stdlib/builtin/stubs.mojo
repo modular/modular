@@ -526,7 +526,7 @@ struct List[T: AnyType]:
 
 
 struct Set[T: AnyType]:
-    fn __init__(out self, *elements: T, __set_literal__: ()):
+    fn __init__(out self, *elements: T, __set_literal__: () = ()):
         pass
 
 

@@ -1023,8 +1023,11 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
     ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
-    auto inferredType =
-        getPartiallySpecializedType().getWithoutParameters(shared);
+    auto inferredType = getPartiallySpecializedType();
+
+    // If we have a type like List[$0] replace it with List[?] so we can infer
+    // the unbound parameter.
+    inferredType = inferredType.getWithUnknownParametersReplaced(shared);
     CallOperands operands =
         initValue->getOperandsForInferredType(inferredType, emitter);
 
