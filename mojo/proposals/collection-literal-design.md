@@ -113,7 +113,8 @@ collection of values that conform to `PythonConvertible`.
 
 ## Set literals
 
-TODO.
+Set literals work the same way as list literals, but choose an initializer with
+the `__set_literal__` keyword argument.
 
 ## Dictionary literals
 
@@ -143,4 +144,24 @@ apply to these arguments.
 
 ## Initializer lists
 
-TODO.
+Mojo supports a syntax extension vs Python to express C++-style "initializer
+lists". This is a list of argument values that is bound up into an expression
+which is applied to a contextual type.  This can be useful if you have a
+complicated type that you don't want to spell.
+
+```mojo
+fn foo(x: SomeComplicatedType): ...
+
+# Example with normal initializer.
+foo(SomeComplicatedType(1, kwarg=42))
+# Example with initializer list.
+foo({1, kwarg=42})
+```
+
+While this is a minor convenience in this case, it can be more significant when
+working with more complex types that have lots of parameters that would
+otherwise require complicated uses of `__type_of(x)`.
+
+## Ambiguity resolution
+
+TODO: Talk about `{}` and set vs init list ambiguity resolution.

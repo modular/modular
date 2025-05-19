@@ -179,28 +179,27 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return 0 - self
 
     @always_inline("builtin")
-    fn __invert__(self, out result: __type_of(self ^ -1)):
+    fn __invert__(self) -> __type_of(self ^ -1):
         """Return ~self.
 
         Returns:
             The ~self value.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __add__(
         self,
         rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<add `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<add `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self + rhs`.
 
         Args:
@@ -209,7 +208,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self + rhs` value.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __sub__(

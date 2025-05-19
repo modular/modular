@@ -49,6 +49,18 @@ what we publish.
 
 - `try` and `raise` now work at comptime.
 
+- "Initializer lists" are now supported for creating struct instances with an
+  inferred type based on context, for example:
+
+  ```mojo
+  fn foo(x: SomeComplicatedType): ...
+
+  # Example with normal initializer.
+  foo(SomeComplicatedType(1, kwarg=42))
+  # Example with initializer list.
+  foo({1, kwarg=42})
+  ```
+
 - List literals have been redesigned to work better.  They produce homogenous
   sequences by invoking the `T(<elements>, __list_literal__: ())` constructor
   of a type `T` that is inferred by context, or otherwise defaulting to the
