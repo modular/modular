@@ -170,6 +170,15 @@ def test_optional_copied():
     assert_equal(opt_owned.value(), String("foo"))
 
 
+def test_optional_unwrap():
+    var a = Optional(123)
+    assert_true(a)
+    assert_equal(123, a[])
+    a = Optional[Int](None)
+    with assert_raises(contains="on empty Optional"):
+        _ = a[]
+
+
 def main():
     test_basic()
     test_optional_reg_basic()
@@ -182,3 +191,4 @@ def main():
     test_optional_str_repr()
     test_optional_equality()
     test_optional_copied()
+    test_optional_unwrap()

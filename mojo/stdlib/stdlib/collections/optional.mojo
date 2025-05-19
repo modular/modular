@@ -256,6 +256,20 @@ struct Optional[T: Copyable & Movable](
         """
         return not self
 
+    @always_inline
+    fn __getitem__(ref self) raises -> ref [self._value] T:
+        """Retrieve a reference to the value inside the `Optional`.
+
+        Returns:
+            A reference to the value inside the `Optional`.
+
+        Raises:
+            On empty `Optional`.
+        """
+        if not self:
+            raise Error(".value() on empty Optional")
+        return self.value()
+
     fn __str__[
         U: Copyable & Movable & Representable, //
     ](self: Optional[U]) -> String:
