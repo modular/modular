@@ -20,7 +20,7 @@ from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
+from max.serve.pipelines.llm import TokenGeneratorSchedulerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def token_generator(request):
 def app(token_generator):
     """Fixture for a FastAPI app using a given pipeline."""
     model_name, model_factory = token_generator
-    config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+    config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
         tg_batch_size=1, ce_batch_size=1
     )
     serving_settings = ServingTokenGeneratorSettings(

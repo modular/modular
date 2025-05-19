@@ -17,7 +17,7 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
 
 MAX_CHUNK_TO_READ_BYTES: int = 1024 * 10
 
@@ -43,7 +43,7 @@ def stream_app():
     serving_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorPipelineConfig.continuous_heterogenous(
+        pipeline_config=TokenGeneratorSchedulerConfig.continuous_heterogenous(
             tg_batch_size=1, ce_batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),

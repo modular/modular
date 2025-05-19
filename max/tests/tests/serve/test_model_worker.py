@@ -11,8 +11,8 @@ import pytest
 from max.pipelines.core import TokenGenerator
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.telemetry.metrics import NoopClient
 
 
@@ -22,7 +22,7 @@ async def test_model_worker_propagates_exception() -> None:
     with pytest.raises(AssertionError):
         async with start_model_worker(
             EchoTokenGenerator,
-            TokenGeneratorPipelineConfig.continuous_heterogenous(
+            TokenGeneratorSchedulerConfig.continuous_heterogenous(
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
             settings=Settings(),
@@ -53,7 +53,7 @@ async def test_model_worker_propagates_construction_exception() -> None:
     ):
         async with start_model_worker(
             MockInvalidTokenGenerator,
-            TokenGeneratorPipelineConfig.continuous_heterogenous(
+            TokenGeneratorSchedulerConfig.continuous_heterogenous(
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
             settings=Settings(),
@@ -79,7 +79,7 @@ async def test_model_worker_start_timeout() -> None:
     with pytest.raises(TimeoutError):
         async with start_model_worker(
             MockSlowTokenGenerator,
-            TokenGeneratorPipelineConfig.continuous_heterogenous(
+            TokenGeneratorSchedulerConfig.continuous_heterogenous(
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
             settings=Settings(MAX_SERVE_MW_TIMEOUT=0.1),

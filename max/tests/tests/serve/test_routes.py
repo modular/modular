@@ -12,8 +12,8 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.router import openai_routes
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.schemas.openai import CreateCompletionRequest  # type: ignore
 
 
@@ -26,7 +26,7 @@ def app():
     pipeline_settings = ServingTokenGeneratorSettings(
         model_name="echo",
         model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorPipelineConfig.continuous_heterogenous(
+        pipeline_config=TokenGeneratorSchedulerConfig.continuous_heterogenous(
             tg_batch_size=1, ce_batch_size=1
         ),
         tokenizer=EchoPipelineTokenizer(),

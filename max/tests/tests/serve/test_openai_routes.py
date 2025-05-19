@@ -20,11 +20,11 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
     get_performance_fake,
 )
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
 )
@@ -37,7 +37,7 @@ def app(fixture_tokenizer, model_name: str):
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )
-    pipeline_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
+    pipeline_config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
         tg_batch_size=1, ce_batch_size=1
     )
     model_factory = (
