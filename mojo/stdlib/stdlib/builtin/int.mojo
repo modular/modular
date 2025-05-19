@@ -28,6 +28,7 @@ from builtin.device_passable import DevicePassable
 from builtin.math import Absable, Powable
 from memory import UnsafePointer
 from python import Python, PythonConvertible, PythonObject
+from python._bindings import ConvertibleFromPython
 
 from utils import Writable, Writer
 from utils._select import _select_register_value as select
@@ -203,6 +204,7 @@ trait ImplicitlyIntable(Intable):
 @register_passable("trivial")
 struct Int(
     Absable,
+    Defaultable,
     CeilDivable,
     Copyable,
     Movable,
@@ -220,6 +222,7 @@ struct Int(
     Roundable,
     Stringable,
     Writable,
+    ConvertibleFromPython,
 ):
     """This type represents an integer value."""
 

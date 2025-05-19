@@ -25,6 +25,7 @@ from python._cpython import (
     PyMethodDef,
     PyObject,
     PyObjectPtr,
+    PyTypeObject,
     PyType_Slot,
     PyType_Spec,
     destructor,
@@ -63,6 +64,13 @@ alias Typed_initproc = fn (
     PyObjectPtr,
 ) -> c_int
 
+# Must be ABI compatible with `newfunc`
+alias Typed_newfunc = fn (
+    UnsafePointer[PyTypeObject],
+    TypedPythonObject["Tuple"],
+    PyObjectPtr,
+) -> PyObjectPtr
+
 
 struct PyMojoObject[T: AnyType]:
     """Storage backing a PyObject* wrapping a Mojo value."""
@@ -91,10 +99,7 @@ fn python_type_object[
 
     var slots = List[PyType_Slot](
         # All wrapped Mojo types are allocated generically.
-        PyType_Slot.tp_new(
-            cpython.lib.get_function[newfunc]("PyType_GenericNew")
-        ),
-        PyType_Slot.tp_init(empty_tp_init_wrapper[T]),
+        PyType_Slot.tp_new(default_tp_new_wrapper[T]),
         PyType_Slot.tp_dealloc(tp_dealloc_wrapper[T]),
         PyType_Slot.tp_repr(tp_repr_wrapper[T]),
     )
@@ -127,28 +132,13 @@ fn python_type_object[
     )
 
 
-# Impedance match between:
-#
-#   Mojo:   fn(UnsafePointer[T]) -> None
-#   Python: fn(PyObjectPtr, PyObjectPtr, PyObjectPtr)
-#
-# The latter is the C function signature that the CPython API expects a
-# PyObject initializer function to have. The former is an unsafe form of the
-# `fn(mut self)` signature that Mojo types with default constructors provide.
-#
-# To support CPython calling a Mojo types default constructor, we need to
-# provide a wrapper function (around the Mojo constructor) that has the
-# signature the C API expects.
-#
-# This function creates that wrapper function, and returns a pointer pointer to
-# it.
-fn empty_tp_init_wrapper[
-    T: Defaultable & Representable
+fn default_tp_new_wrapper[
+    T: Defaultable
 ](
-    py_self: PyObjectPtr,
+    subtype: UnsafePointer[PyTypeObject],
     args: TypedPythonObject["Tuple"],
     keyword_args: PyObjectPtr,
-) -> c_int:
+) -> PyObjectPtr:
     """Python-compatible wrapper around a Mojo initializer function.
 
     Parameters:
@@ -156,6 +146,15 @@ fn empty_tp_init_wrapper[
     """
 
     var cpython = Python().cpython()
+
+    # Allocates and zero-initializes the new object.
+    # For some objects, zeroed values are valid. But that isn't guaranteed
+    # for any given Mojo object, so we further call `T`'s default initializer.
+    var py_self = cpython.PyType_GenericAlloc(subtype, 0)
+
+    # If we failed to allocate, return NULL.
+    if not py_self.unsized_obj_ptr:
+        return py_self
 
     try:
         if len(args) != 0 or keyword_args != PyObjectPtr():
@@ -167,16 +166,19 @@ fn empty_tp_init_wrapper[
 
         # Call the user-provided initialization function on uninit memory.
         __get_address_as_uninit_lvalue(obj_ptr.address) = T()
-        return 0
+        return py_self
 
     except e:
+        # Free the object memory we just allocated but failed to initialize.
+        cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
+
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
         cpython.PyErr_SetString(
             error_type,
             e.unsafe_cstr_ptr(),
         )
-        return -1
+        return PyObjectPtr()
 
 
 fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
@@ -187,6 +189,10 @@ fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
     #   evaluate arbitrary code?
     # Destroy this `Person` instance.
     self_ptr.destroy_pointee()
+
+    var cpython = Python().cpython()
+
+    cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
 
 
 fn tp_repr_wrapper[

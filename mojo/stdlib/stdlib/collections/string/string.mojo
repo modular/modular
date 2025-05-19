@@ -279,6 +279,7 @@ struct _StringOutOfLineHeader:
 
 struct String(
     Sized,
+    Defaultable,
     Stringable,
     Representable,
     IntableRaising,
