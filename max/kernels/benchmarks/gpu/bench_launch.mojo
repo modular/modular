@@ -54,15 +54,15 @@ fn bench_empty_launch_many_params_caller(
     mut m: Bench, ctx: DeviceContext
 ) raises:
     alias func_alias = empty_kernel_many_params[
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
-        Layout(IntTuple(1, 2), IntTuple(3, 3)),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
+        Layout([1, 2], [3, 3]),
     ]
 
     @parameter

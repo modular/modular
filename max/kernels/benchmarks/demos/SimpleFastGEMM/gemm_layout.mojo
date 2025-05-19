@@ -140,7 +140,7 @@ fn gemm[
             # var c_tile = c_strip.tile[MR, NR](0, jc)
 
             # Possibly a slightly more efficient way of building c_tile
-            alias c_tile_layout = Layout(IntTuple(MR, NR), IntTuple(N, 1))
+            alias c_tile_layout = Layout([MR, NR], [N, 1])
             var c_tile = LayoutTensor[c_tile_layout, dtype](
                 c.data.offset(N * MR * ir + NR * jc)
             )
