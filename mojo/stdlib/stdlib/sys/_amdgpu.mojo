@@ -41,8 +41,8 @@ alias amd_signal_kind64_t = Int64
 
 # Must match the ABI of:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/inc/amd_hsa_signal.h#L61
-@value
-struct amd_signal_t:
+@fieldwise_init
+struct amd_signal_t(Copyable, Movable):
     var kind: amd_signal_kind64_t
     var value: UInt64
     var event_mailbox_ptr: UInt64
@@ -299,7 +299,6 @@ fn message_append_args(
 
 # Matches the values described in:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/services.cl#L243
-@value
 struct FprintfCtrl:
     alias stdout = 0
     alias stderr = 1
@@ -515,9 +514,9 @@ fn printf_append_string_n(
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Header:
+struct Header(Copyable, Movable):
     var _handle: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -604,18 +603,18 @@ struct Header:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/hostcall_impl.cl#L30
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct header_t:
+struct header_t(Copyable, Movable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
     var control: UInt32
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Payload:
+struct Payload(Copyable, Movable):
     var _handle: UnsafePointer[payload_t]
 
     @always_inline
@@ -627,14 +626,14 @@ struct Payload:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/src/hostcall_impl.cl#L37
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
-@value
-struct payload_t:
+@fieldwise_init
+struct payload_t(Copyable, Movable):
     var slots: InlineArray[InlineArray[UInt64, 8], 64]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Buffer:
+struct Buffer(Copyable, Movable):
     var _handle: UnsafePointer[
         buffer_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -733,9 +732,9 @@ struct Buffer:
 # AMD's note: Hostcall buffer struct defined here is not an exact
 # match of runtime buffer layout but matches its prefix that
 # this code tries to access.
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct buffer_t:
+struct buffer_t(Copyable, Movable):
     var headers: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -746,9 +745,9 @@ struct buffer_t:
     var index_mask: UInt64
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ControlOffset:
+struct ControlOffset(Copyable, Movable):
     var value: UInt32
     alias ready_flag = Self(0)
     alias reserved0 = Self(1)
@@ -762,9 +761,9 @@ struct ControlOffset:
         return self.value == rhs.value
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ControlWidth:
+struct ControlWidth(Copyable, Movable):
     var value: UInt32
     alias ready_flag = Self(1)
     alias reserved0 = Self(31)
