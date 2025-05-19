@@ -60,7 +60,7 @@ problems:
    In this example, it would canonicalization “n+n” to “2*n” and these canonical
    forms are important to reduce rebinds.
 3. ✅ We have complicated and fragile logic to work around this in the case when
-   the the operands are “simple constants” (see
+   the operands are “simple constants” (see
    `inlineFunctionCallIntoPValueIfPossible` and transitive code it calls,
     *shudder*) which has lots of problems, e.g. it completely fails on
     parametric function calls.

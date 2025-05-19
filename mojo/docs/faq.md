@@ -364,7 +364,7 @@ more coarse-grain updates.
 
 ### Will Mojo be open-sourced?
 
-We have commited to open-sourcing Mojo in 2026.
+We have committed to open-sourcing Mojo in 2026.
 Mojo is still young, so we will continue to incubate it within Modular until
 more of its internal architecture is fleshed out.
 

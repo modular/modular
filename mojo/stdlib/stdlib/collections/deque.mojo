@@ -762,7 +762,7 @@ struct Deque[ElementType: Copyable & Movable](
         """Inspect the last (rightmost) element of the deque without removing it.
 
         Returns:
-            The the last (rightmost) element of the deque.
+            The last (rightmost) element of the deque.
 
         Raises:
             IndexError: If the deque is empty.
@@ -776,7 +776,7 @@ struct Deque[ElementType: Copyable & Movable](
         """Inspect the first (leftmost) element of the deque without removing it.
 
         Returns:
-            The the first (leftmost) element of the deque.
+            The first (leftmost) element of the deque.
 
         Raises:
             IndexError: If the deque is empty.

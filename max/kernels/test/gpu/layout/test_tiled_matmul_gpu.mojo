@@ -122,8 +122,8 @@ fn sram_blocked_matmul[
     # Block the dst matrix with [BM, BN] tile size.
     var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
 
-    # Distribute thread layout into a block of size [BM, BN], It repeats the
-    # layout accross the BMxBN block, e.g row major layout will repeate as the
+    # Distribute thread layout into a block of size [BM, BN]. It repeats the
+    # layout across the BMxBN block, e.g. row major layout will repeat as the
     # the following:
     # +---------------------------------BN-+----------------------------------+-------------
     # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N
@@ -357,8 +357,8 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Block the dst matrix with [BM, BN] tile size.
     var dst_tile = dst.tile[BM, BN](IndexList[2](block_idx.y, block_idx.x))
 
-    # Distribute thread layout into a block of size [BM, BN], It repeats the
-    # layout accross the BMxBN block, e.g row major layout will repeate as the
+    # Distribute thread layout into a block of size [BM, BN]. It repeats the
+    # layout across the BMxBN block, e.g. row major layout will repeat as the
     # the following:
     # +---------------------------------BN-+----------------------------------+-------------
     # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N

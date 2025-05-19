@@ -130,7 +130,7 @@ fn mlirInferShapedTypeOpInterfaceTypeID() -> MlirTypeID:
 
 # These callbacks are used to return multiple shaped type components from
 # functions while transferring ownership to the caller. The first argument is
-# the has rank boolean followed by the the rank and a pointer to the shape
+# the 'has rank' boolean followed by the rank and a pointer to the shape
 # (if applicable). The next argument is the element type, then the attribute.
 # The last argument is an opaque pointer forwarded to the callback by the
 # caller. This callback will be called potentially multiple times for each

@@ -925,7 +925,7 @@ fn _simd_load_maybe_partial[
     offset: Int,
     partial_load_size: OptionalReg[Int] = None,
 ) -> SIMD[dt, simd_width]:
-    """Load a simd vector. The the vector may exceed the data's end, i.e.,
+    """Load a simd vector. The vector may exceed the data's end, i.e.,
     offset + simd_width > end. In this case, if user specifies partial load, we
     will load partial values of size (end - offset), and fill the rest lanes
     with 0.
@@ -953,7 +953,7 @@ fn _simd_store_maybe_partial[
     vec: SIMD[dt, simd_width],
     partial_store_size: OptionalReg[Int] = None,
 ):
-    """Store a simd vector. The the vector may exceed the data's end, i.e.,
+    """Store a simd vector. The vector may exceed the data's end, i.e.,
     offset + simd_width > end. In this case, if user specifies partial_store, we
     will store `partial_store_size` lanes of input vector.
     """

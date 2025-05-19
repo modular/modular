@@ -128,10 +128,11 @@ fn roi_align_nhwc[
     inputs of NHWC format. The output shape is
     [M, output_height, output_width, C].
 
-    Paramerers:
+    Parameters:
         type: Type of the input tensor.
-        input_shape: Shape of the input tensor.
-        roi_shape: Shape of regions of interests (ROI).
+        output_layout: The output layout.
+        input_layout: The input layout.
+        roi_layout: The layout of the regions of interests (ROI).
         aligned: If not true offset the ROIs by 0.5.
         mode: The pooling mode "AVG" for average and "MAX" for max pooling.
     Args:

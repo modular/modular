@@ -106,7 +106,7 @@ fn test[
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
-    # Q, K, V are randomly initalized.
+    # Q, K, V are randomly initialized.
     if use_index_input:
         debug_assert(batch_size == 1)
         for i in range(seq_len):
@@ -414,7 +414,7 @@ fn test_prefill[
     var cache_ptr = UnsafePointer[Scalar[qkv_type]].alloc(cache_size)
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
-    # Q, K, V, cache are randomly initalized.
+    # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
     randn[qkv_type](v_ptr, v_size)
@@ -755,7 +755,7 @@ fn test_cascade_prefill[
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var cache_ptr = UnsafePointer[Scalar[qkv_type]].alloc(cache_size)
 
-    # Q, K, V, cache are randomly initalized.
+    # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
     randn[qkv_type](v_ptr, v_size)

@@ -498,7 +498,7 @@ fn get_partitioned_matmul_mojo_shape[
 
     max_num_packs_m = min(max_num_packs_m, num_tasks)
     max_num_packs_n = min(max_num_packs_n, num_tasks)
-    # Loop over all possible partitions and find the the partition that balances the work best.
+    # Loop over all possible partitions and find the partition that balances the work best.
     for j in range(max_num_packs_m, 0, -1):
         var workj = kernel_rows * ceildiv(num_packs_m, j) if j != 1 else m
         for i in range(min(num_tasks // j, max_num_packs_n), 0, -1):

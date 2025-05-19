@@ -116,7 +116,7 @@ struct Optional[T: Copyable & Movable](
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
-    #   only the initilaizer from a `NoneType`.
+    #   only the initializer from a `NoneType`.
     @doc_private
     @implicit
     fn __init__(out self, value: NoneType._mlir_type):
@@ -479,7 +479,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable):
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
-    #   only the initilaizer from a `NoneType`.
+    #   only the initializer from a `NoneType`.
     @doc_private
     @always_inline("builtin")
     @implicit

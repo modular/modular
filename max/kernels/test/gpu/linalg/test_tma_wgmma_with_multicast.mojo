@@ -278,7 +278,7 @@ fn multicast_tma_wgmma_kernel[
             c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
 
             # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
-            # elementwise. This pattern repeates to fill the warp tile.
+            # elementwise. This pattern repeats to fill the warp tile.
             copy_local_to_dram[Layout.row_major(8, 4)](
                 warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
             )

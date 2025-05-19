@@ -41,7 +41,7 @@ fn mlirEnableGlobalDebug(enable: Bool) -> None:
 
 
 fn mlirIsGlobalDebugEnabled() -> Bool:
-    """Retuns `true` if the global debugging flag is set, false otherwise."""
+    """Returns `true` if the global debugging flag is set, false otherwise."""
     return MLIR_func["mlirIsGlobalDebugEnabled", Bool]()
 
 
