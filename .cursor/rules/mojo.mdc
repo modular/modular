@@ -3,7 +3,7 @@ description: Enforces Mojo coding standards, performance optimizations, and best
 globs: **/*.mojo
 ---
 - # Mojo Best Practices Guide
-  This document outlines best practices for Mojo development, focusing on code organization, performance optimization, and common pitfalls.  It is based on NVIDIA's Mojo Best Practices Guide and expands on it with more detailed recommendations.
+  This document outlines best practices for Mojo development, focusing on code organization, performance optimization, and common pitfalls.
 
 
 - Adhere to Mojos's coding standards to ensure code consistency, readability, and maintainability. Using
