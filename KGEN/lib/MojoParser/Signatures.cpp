@@ -1358,7 +1358,8 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     arg.kgenConvention = ArgConvention::ReadReg;
   } else if (arg.variadicKind == VariadicKind::KwVarArg) {
     // We build OwnedKwargsDict[ValType].
-    ASTType dictType = shared.getOwnedKwargsDictType(arg.loc);
+    ASTType dictType =
+        shared.getStandardCollectionType(arg.loc, "OwnedKwargsDict");
 
     auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
     // We know these are all UnboundAttrs created by

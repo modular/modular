@@ -1151,21 +1151,11 @@ ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
   return lookupNamedTypeDecl("RaisingCoroutine", coroutineModule, loc);
 }
 
-ASTType SharedState::getOwnedKwargsDictType(llvm::SMLoc loc) {
+ASTType SharedState::getStandardCollectionType(llvm::SMLoc loc,
+                                               StringRef name) {
   ASTDecl &collectionsModule =
       importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("OwnedKwargsDict", collectionsModule, loc);
-}
-
-ASTType SharedState::getListType(llvm::SMLoc loc) {
-  ASTDecl &collectionsModule =
-      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("List", collectionsModule, loc);
-}
-ASTType SharedState::getDictType(llvm::SMLoc loc) {
-  ASTDecl &collectionsModule =
-      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("Dict", collectionsModule, loc);
+  return lookupNamedType(name, collectionsModule, loc);
 }
 
 ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {

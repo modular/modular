@@ -377,9 +377,11 @@ struct InitializerUValue::ImplWrapper
 };
 
 InitializerUValue::InitializerUValue(const InitializerUValue &existing)
-    : syntax(existing.syntax), storage(existing.storage.copy()) {}
-InitializerUValue::InitializerUValue(Syntax syntax, RCRef<ImplWrapper> storage)
-    : syntax(syntax), storage(std::move(storage)) {}
+    : syntax(existing.syntax), expr(existing.expr),
+      storage(existing.storage.copy()) {}
+InitializerUValue::InitializerUValue(Syntax syntax, const ExprNode *expr,
+                                     RCRef<ImplWrapper> storage)
+    : syntax(syntax), expr(expr), storage(std::move(storage)) {}
 InitializerUValue::~InitializerUValue() = default;
 
 InitializerUValue &
@@ -388,42 +390,65 @@ InitializerUValue::operator=(const InitializerUValue &existing) {
   return *this;
 }
 
-InitializerUValue InitializerUValue::create(Syntax syntax,
+InitializerUValue InitializerUValue::create(Syntax syntax, const ExprNode *expr,
                                             CallOperands &&operands) {
-  return InitializerUValue(syntax,
+  return InitializerUValue(syntax, expr,
                            takeRCRef(new ImplWrapper{std::move(operands)}));
 }
 
 const CallOperands &InitializerUValue::get() const { return storage->operands; }
 
+static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
+                          const ExprNode *expr, ExprEmitter &emitter) {
+  TupleNode emptyTuple(expr->getLoc(), {});
+  if (auto tupleValue =
+          emitter.emitExprRValue(&emptyTuple, EC_CollectionLiteral))
+    operands.add(StringAttr::get(emitter.getContext(), kwargName),
+                 {tupleValue, expr});
+};
+
+/// Given an inferred type for this initializer list, return the operands that
+/// we should use to try to construct it.  This returns failure if invalid.
+CallOperands
+InitializerUValue::getOperandsForInferredType(ASTType type,
+                                              ExprEmitter &emitter) const {
+  CallOperands operands(get());
+  switch (syntax) {
+  case Syntax::kSlice:
+    break;
+  case Syntax::kListLiteral:
+    addEmptyTuple(operands, "__list_literal__", expr, emitter);
+    break;
+  case Syntax::kDictLiteral:
+    addEmptyTuple(operands, "__dict_literal__", expr, emitter);
+    break;
+  case Syntax::kSetInitLiteral:
+    // FIXME: Disambiguate set literals from initializer lists.
+    break;
+  }
+  return operands;
+};
+
 /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
-                                       const ExprNode *expr, ValueDest &dest) {
+CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
+
   // If we have the inferred contextual type, we can emit the constructor call.
   if (ASTType expectedType = dest.getExpectedTypeIfSpecified()) {
-    // FIXME: Disambiguate set literals from initializer lists.
-    return emitter.emitConstructorCall(expectedType, CallOperands(get()), expr,
+    CallOperands operands = getOperandsForInferredType(expectedType, emitter);
+    return emitter.emitConstructorCall(expectedType, std::move(operands), expr,
                                        CallSyntax::kTypeCall, dest);
   }
 
-  // Otherwise, handle defaulting.
-  switch (syntax) {
-  case Syntax::kSlice:
-    emitter.emitError(expr->getLoc(),
-                      "cannot emit slice expression without a contextual type");
-    return {};
-  case Syntax::kListLiteral: {
-    if (get().size() == 1) { // Empty: Just the __list_literal__ kwarg.
-      emitter.emitError(expr->getLoc(),
-                        "cannot emit an empty list without a contextual type");
-      return {};
-    }
+  // For a list or set literal, we need to unify the elements into a common
+  // element type.
+  auto unifyOperands = [&](ArrayRef<OperandValue> operands) -> CallOperands {
+    assert(!operands.empty() && "empty operands cannot be unified");
 
     // Emit all the values as CValues without a contextual type.
     SmallVector<CValue> elements;
-    for (const auto &operand : ArrayRef(get().values).drop_back()) {
-      auto value = emitter.emitCValue(operand, EC_ListLiteral);
+    for (const auto &operand : operands) {
+      auto value = emitter.emitCValue(operand, EC_CollectionLiteral);
       if (!value)
         return {};
       elements.push_back(value);
@@ -444,7 +469,7 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
     // elements. Form the constructor's operand list with a consistent element
     // type which will be used for the constructor call, allowing it to infer
     // the element type.
-    CallOperands newOperands;
+    CallOperands result;
     for (auto [i, elt] : llvm::enumerate(elements)) {
       auto *expr = get()[i].expr;
 
@@ -453,32 +478,77 @@ CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter,
                                                 lhsExpr, elements[i],
                                                 get()[i].expr, {})))
         return {};
-      newOperands.add({elt, expr});
+      result.add({elt, expr});
     }
-    // Add the __list_literal__ kwarg.
-    assert(get().values.back().keyword && "missing __list_literal__ kwarg");
-    newOperands.add(get().values.back().keyword, get().values.back());
+    return result;
+  };
 
-    auto listType = emitter.shared.getListType(expr->getLoc());
+  // Otherwise, handle defaulting.
+  switch (syntax) {
+  case Syntax::kSlice:
+    emitter.emitError(expr->getLoc(),
+                      "cannot emit slice expression without a contextual type");
+    return {};
+  case Syntax::kListLiteral: {
+    if (get().empty()) {
+      emitter.emitError(expr->getLoc(),
+                        "cannot emit an empty list without a contextual type");
+      return {};
+    }
+
+    auto operands = unifyOperands(get().values);
+    if (operands.values.empty())
+      return {};
+
+    // Add the __list_literal__ kwarg.
+    addEmptyTuple(operands, "__list_literal__", expr, emitter);
+    auto listType =
+        emitter.shared.getStandardCollectionType(expr->getLoc(), "List");
     if (!listType)
       return {};
-    return emitter.emitConstructorCall(listType, std::move(newOperands), expr,
+    return emitter.emitConstructorCall(listType, std::move(operands), expr,
                                        CallSyntax::kTypeCall, dest);
   }
   case Syntax::kDictLiteral: {
-    // Let the nested list literals try to infer their own common element types
-    // recursively.  We just default to Dict.
-    auto dictType = emitter.shared.getDictType(expr->getLoc());
+    // Let the nested list literals try to infer their own common element
+    // types recursively.  We just default to Dict.
+    auto dictType =
+        emitter.shared.getStandardCollectionType(expr->getLoc(), "Dict");
     if (!dictType)
       return {};
-    return emitter.emitConstructorCall(dictType, CallOperands(get()), expr,
+    CallOperands operands(get());
+    addEmptyTuple(operands, "__dict_literal__", expr, emitter);
+    return emitter.emitConstructorCall(dictType, std::move(operands), expr,
                                        CallSyntax::kTypeCall, dest);
   }
   case Syntax::kSetInitLiteral: {
-    // FIXME: Disambiguate set literals from initializer lists.
-    emitter.emitError(expr->getLoc(),
-                      "cannot emit initializer list without a contextual type");
-    return {};
+    // If there are values with no keywords, then this can be emitted as a
+    // set, inferring the element type from the values.  If there are
+    // keywords, or if it is empty, then this is an error.
+    bool hasKWArg = llvm::any_of(get().values, [](const auto &operand) {
+      return operand.keyword != StringAttr();
+    });
+    if (hasKWArg || get().values.empty()) {
+      emitter.emitError(
+          expr->getLoc(),
+          "cannot emit initializer list without a contextual type");
+      return {};
+    }
+
+    // Otherwise, all values, just pass them into Set constructor.
+    auto operands = unifyOperands(get().values);
+    if (operands.values.empty())
+      return {};
+
+    // Add the __set_literal__ kwarg.
+    addEmptyTuple(operands, "__set_literal__", expr, emitter);
+
+    auto setType =
+        emitter.shared.getStandardCollectionType(expr->getLoc(), "Set");
+    if (!setType)
+      return {};
+    return emitter.emitConstructorCall(setType, std::move(operands), expr,
+                                       CallSyntax::kTypeCall, dest);
   }
   }
   return {};

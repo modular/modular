@@ -315,18 +315,26 @@ public:
     kSetInitLiteral, // {a=42, 17}
   } syntax;
 
+  const ExprNode *const expr;
+
   const CallOperands &get() const;
 
-  static InitializerUValue create(Syntax syntax, CallOperands &&operands);
+  static InitializerUValue create(Syntax syntax, const ExprNode *expr,
+                                  CallOperands &&operands);
+
+  /// Given an inferred type for this initializer list, return the operands that
+  /// we should use to try to construct it.  This returns failure if invalid.
+  CallOperands getOperandsForInferredType(ASTType type,
+                                          ExprEmitter &emitter) const;
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
-  CValue emitAsCValue(ExprEmitter &emitter, const ExprNode *expr,
-                      ValueDest &dest);
+  CValue emitAsCValue(ExprEmitter &emitter, ValueDest &dest);
 
 private:
   struct ImplWrapper;
-  InitializerUValue(Syntax syntax, RCRef<ImplWrapper> storage);
+  InitializerUValue(Syntax syntax, const ExprNode *expr,
+                    RCRef<ImplWrapper> storage);
   RCRef<ImplWrapper> storage;
 };
 raw_ostream &operator<<(raw_ostream &os, InitializerUValue value);

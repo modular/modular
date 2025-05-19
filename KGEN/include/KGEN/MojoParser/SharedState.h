@@ -434,9 +434,7 @@ public:
   }
   ASTDecl *getBuiltinCoroutineType(llvm::SMLoc loc);
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
-  ASTType getOwnedKwargsDictType(llvm::SMLoc loc);
-  ASTType getListType(llvm::SMLoc loc);
-  ASTType getDictType(llvm::SMLoc loc);
+  ASTType getStandardCollectionType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 

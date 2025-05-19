@@ -101,12 +101,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in MLIR magic";
   case EC_TopLevelStmt:
     return " in expression statement";
-  case EC_ListLiteral: // [x, y]
-    return " in list literal";
-  case EC_DictLiteral: // {x:y, q:r}
-    return " in dictionary literal";
-  case EC_SetInitLiteral: // {x, y, z}
-    return " in initializer list or set literal";
+  case EC_CollectionLiteral: // [x, y], {x:y, q:r}
+    return " in collection literal";
   case EC_TupleElement: // (x, y)
     return " in tuple element";
   case EC_SubscriptBase: // x[y]
@@ -589,7 +585,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   }
 
   if (auto initValue = value.ir.getIfInitializer())
-    return initValue->emitAsCValue(*this, value.expr, dest);
+    return initValue->emitAsCValue(*this, dest);
 
   llvm_unreachable("unknown UValue in emitCValue");
 }

@@ -127,13 +127,11 @@ struct MySet[T: AnyType]:
 
 # CHECK-LABEL: lit.fn @"test_set_literal
 fn test_set_literal():
-    # TODO
-    # HECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
-    # HECK: [[VARIADIC:%.*]] = pop.variadic.create
-    # HECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # HECK: lit.call {{.*}}@Set::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
-    #var a = {1, 2, 3}
-    pass
+    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
+    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
+    # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
+    var a = {1, 2, 3}
 
 
 # ===----------------------------------------------------------------------=== #
