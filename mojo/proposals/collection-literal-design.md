@@ -1,7 +1,7 @@
 # Collection Literal Design
 
 Date: May 18, 2025
-Status: Partially Implemented
+Status: Implemented
 
 This doc describes the design and behavior of collection literals in Mojo. It is
 intended to explain how types can work with collection literals and how corner
