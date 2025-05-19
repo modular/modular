@@ -65,17 +65,6 @@ struct Set[T: KeyElement](
             self.add(t[])
 
     @implicit
-    fn __init__(out self, elements: Self):
-        """Explicitly copy another Set instance.
-
-        Args:
-            elements: An existing set to copy.
-        """
-        self = Self()
-        for e in elements:
-            self.add(e[])
-
-    @implicit
     fn __init__(out self, elements: List[T, *_]):
         """Construct a set from a List of elements.
 
@@ -416,7 +405,7 @@ struct Set[T: KeyElement](
             A new set containing any elements which appear in either
             this set or the `other` set.
         """
-        var result = Set(self)
+        var result = self
         for o in other:
             result.add(o[])
 

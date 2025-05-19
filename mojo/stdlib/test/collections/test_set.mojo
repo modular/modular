@@ -24,6 +24,7 @@ fn assert_equal[T: EqualityComparable](lhs: T, rhs: T) raises:
 
 
 def test_set_construction():
+    # Constructors.
     _ = Set[Int]()
     _ = Set[String]()
     _ = Set[Int](1, 2, 3)
@@ -31,20 +32,20 @@ def test_set_construction():
 
     # Literals.
     var s1 = {1, 2, 3}
-    assert_equal(s1, Set[Int](1, 2, 3))
+    assert_equal(s1, {1, 2, 3})
 
     var s2 = {String("1"), String("2")}
-    assert_equal(s2, Set[String]("1", "2"))
+    assert_equal(s2, {String("1"), String("2")})
 
 
 def test_set_move():
-    var s1 = Set[Int](1, 2, 3)
+    var s1 = {1, 2, 3}
     var s2 = s1^
-    assert_equal(s2, Set[Int](1, 2, 3))
+    assert_equal(s2, {1, 2, 3})
 
 
 def test_set_copy():
-    var s1 = Set[Int](1, 2, 3)
+    var s1 = {1, 2, 3}
     var s2 = s1
     assert_equal(s1, s2)
 
@@ -79,12 +80,12 @@ def test_equal():
 
     assert_true(s1 == s1)
     assert_true(s2 == s2)
-    assert_true(s1 == Set[Int]())
-    assert_true(s2 == Set[Int](3, 2, 1))
+    assert_true(s1 == {})
+    assert_true(s2 == {3, 2, 1})
     assert_true(s1 != s2)
     assert_true(s2 != s1)
-    assert_true(s2 != Set[Int](1, 2, 2))
-    assert_true(s2 != Set[Int](1, 2, 4))
+    assert_true(s2 != {1, 2, 2})
+    assert_true(s2 != {1, 2, 4})
 
 
 def test_bool():
@@ -95,118 +96,116 @@ def test_bool():
 
 
 def test_intersection():
-    assert_equal(Set[Int]() & Set[Int](), Set[Int]())
-    assert_equal(Set[Int]() & Set[Int](1, 2, 3), Set[Int]())
-    assert_equal(Set[Int](1, 2, 3) & Set[Int](1, 2, 3), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3) & Set[Int](), Set[Int]())
-    assert_equal(Set[Int](1, 2, 3) & Set[Int](3, 4), Set[Int](3))
+    assert_equal(Set[Int]() & {}, {})
+    assert_equal(Set[Int]() & {1, 2, 3}, {})
+    assert_equal({1, 2, 3} & {1, 2, 3}, {1, 2, 3})
+    assert_equal({1, 2, 3} & {}, {})
+    assert_equal({1, 2, 3} & {3, 4}, {3})
 
-    assert_equal(Set[Int]().intersection(Set[Int]()), Set[Int]())
-    assert_equal(Set[Int]().intersection(Set[Int](1, 2, 3)), Set[Int]())
-    assert_equal(
-        Set[Int](1, 2, 3).intersection(Set[Int](1, 2, 3)), Set[Int](1, 2, 3)
-    )
-    assert_equal(Set[Int](1, 2, 3).intersection(Set[Int]()), Set[Int]())
-    assert_equal(Set[Int](1, 2, 3).intersection(Set[Int](3, 4)), Set[Int](3))
+    assert_equal(Set[Int]().intersection({}), {})
+    assert_equal(Set[Int]().intersection({1, 2, 3}), {})
+    assert_equal({1, 2, 3}.intersection({1, 2, 3}), {1, 2, 3})
+    assert_equal({1, 2, 3}.intersection({}), {})
+    assert_equal({1, 2, 3}.intersection({3, 4}), {3})
 
     var x = Set[Int]()
-    x &= Set[Int](1, 2, 3)
-    assert_equal(x, Set[Int]())
+    x &= {1, 2, 3}
+    assert_equal(x, {})
 
     x = Set[Int]()
-    x &= Set[Int]()
-    assert_equal(x, Set[Int]())
-
-    x = Set[Int](1, 2, 3)
-    x &= Set[Int]()
-    assert_equal(x, Set[Int]())
+    x &= {}
+    assert_equal(x, {})
 
     x = {1, 2, 3}
-    x &= Set[Int](1, 2, 3)
-    assert_equal(x, Set[Int](1, 2, 3))
+    x &= {}
+    assert_equal(x, {})
 
-    x = Set[Int](1, 2)
-    x &= Set[Int](2, 3)
-    assert_equal(x, Set[Int](2))
+    x = {1, 2, 3}
+    x &= {1, 2, 3}
+    assert_equal(x, {1, 2, 3})
+
+    x = {1, 2}
+    x &= {2, 3}
+    assert_equal(x, {2})
 
 
 def test_union():
-    assert_equal(Set[Int]() | Set[Int](), Set[Int]())
-    assert_equal(Set[Int]() | Set[Int](1, 2, 3), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3) | Set[Int](1, 2, 3), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3) | Set[Int](), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3) | Set[Int](3, 4), Set[Int](1, 2, 3, 4))
+    assert_equal(Set[Int]() | {}, {})
+    assert_equal(Set[Int]() | {1, 2, 3}, {1, 2, 3})
+    assert_equal({1, 2, 3} | {1, 2, 3}, {1, 2, 3})
+    assert_equal({1, 2, 3} | {}, {1, 2, 3})
+    assert_equal({1, 2, 3} | {3, 4}, {1, 2, 3, 4})
 
-    assert_equal(Set[Int]().union(Set[Int]()), Set[Int]())
-    assert_equal(Set[Int]().union(Set[Int](1, 2, 3)), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3).union(Set[Int](1, 2, 3)), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3).union(Set[Int]()), Set[Int](1, 2, 3))
-    assert_equal(Set[Int](1, 2, 3).union(Set[Int](3, 4)), Set[Int](1, 2, 3, 4))
+    assert_equal(Set[Int]().union({}), {})
+    assert_equal(Set[Int]().union({1, 2, 3}), {1, 2, 3})
+    assert_equal({1, 2, 3}.union({1, 2, 3}), {1, 2, 3})
+    assert_equal({1, 2, 3}.union({}), {1, 2, 3})
+    assert_equal({1, 2, 3}.union({3, 4}), {1, 2, 3, 4})
 
     var x = Set[Int]()
-    x |= Set[Int](1, 2, 3)
-    assert_equal(x, Set[Int](1, 2, 3))
+    x |= {1, 2, 3}
+    assert_equal(x, {1, 2, 3})
 
     x = Set[Int]()
-    x |= Set[Int]()
-    assert_equal(x, Set[Int]())
+    x |= {}
+    assert_equal(x, {})
 
-    x = Set[Int](1, 2, 3)
-    x |= Set[Int]()
-    assert_equal(x, Set[Int](1, 2, 3))
+    x = {1, 2, 3}
+    x |= {}
+    assert_equal(x, {1, 2, 3})
 
-    x = Set[Int](1, 2, 3)
-    x |= Set[Int](1, 2, 3)
-    assert_equal(x, Set[Int](1, 2, 3))
+    x = {1, 2, 3}
+    x |= {1, 2, 3}
+    assert_equal(x, {1, 2, 3})
 
-    x = Set[Int](1, 2)
-    x |= Set[Int](2, 3)
-    assert_equal(x, Set[Int](1, 2, 3))
+    x = {1, 2}
+    x |= {2, 3}
+    assert_equal(x, {1, 2, 3})
 
 
 def test_subtract():
     var s1 = Set[Int]()
-    var s2 = Set[Int](1, 2, 3)
+    var s2 = {1, 2, 3}
 
     assert_equal(s1 - s1, s1)
     assert_equal(s1 - s2, s1)
     assert_equal(s2 - s2, s1)
     assert_equal(s2 - s1, s2)
-    assert_equal(s2 - Set[Int](3, 4), Set[Int](1, 2))
+    assert_equal(s2 - {3, 4}, {1, 2})
 
 
 def test_difference_update():
     var x = Set[Int]()
-    x.difference_update(Set[Int]())
-    assert_equal(x, Set[Int]())
+    x.difference_update({})
+    assert_equal(x, {})
 
     x = {1, 2, 3}
-    x.difference_update(Set[Int](1, 2, 3))
-    assert_equal(x, Set[Int]())
+    x.difference_update({1, 2, 3})
+    assert_equal(x, {})
 
     x = {1, 2, 3}
-    x.difference_update(Set[Int]())
-    assert_equal(x, Set[Int](1, 2, 3))
+    x.difference_update({})
+    assert_equal(x, {1, 2, 3})
 
     x = {1, 2, 3}
-    x.difference_update(Set[Int](3, 4))
-    assert_equal(x, Set[Int](1, 2))
+    x.difference_update({3, 4})
+    assert_equal(x, {1, 2})
 
     x = Set[Int]()
-    x -= Set[Int]()
-    assert_equal(x, Set[Int]())
+    x -= {}
+    assert_equal(x, {})
 
     x = {1, 2, 3}
-    x -= Set[Int](1, 2, 3)
-    assert_equal(x, Set[Int]())
+    x -= {1, 2, 3}
+    assert_equal(x, {})
 
     x = {1, 2, 3}
-    x -= Set[Int]()
-    assert_equal(x, Set[Int](1, 2, 3))
+    x -= {}
+    assert_equal(x, {1, 2, 3})
 
     x = {1, 2, 3}
-    x -= Set[Int](3, 4)
-    assert_equal(x, Set[Int](1, 2))
+    x -= {3, 4}
+    assert_equal(x, {1, 2})
 
 
 def test_iter():
@@ -226,29 +225,29 @@ def test_iter():
 def test_add():
     var s = Set[Int]()
     s.add(1)
-    assert_equal(s, Set[Int](1))
+    assert_equal(s, {1})
 
     s.add(2)
-    assert_equal(s, Set[Int](1, 2))
+    assert_equal(s, {1, 2})
 
     s.add(3)
-    assert_equal(s, Set[Int](1, 2, 3))
+    assert_equal(s, {1, 2, 3})
 
     # 1 is already in the set
     s.add(1)
-    assert_equal(s, Set[Int](1, 2, 3))
+    assert_equal(s, {1, 2, 3})
 
 
 def test_remove():
-    var s = Set[Int](1, 2, 3)
+    var s = {1, 2, 3}
     s.remove(1)
-    assert_equal(s, Set[Int](2, 3))
+    assert_equal(s, {2, 3})
 
     s.remove(2)
-    assert_equal(s, Set[Int](3))
+    assert_equal(s, {3})
 
     s.remove(3)
-    assert_equal(s, Set[Int]())
+    assert_equal(s, {})
 
     with assert_raises():
         # 1 not in the set, should raise
@@ -256,133 +255,119 @@ def test_remove():
 
 
 def test_pop_insertion_order():
-    var s = Set[Int](1, 2, 3)
+    var s = {1, 2, 3}
     assert_equal(s.pop(), 1)
-    assert_equal(s, Set[Int](2, 3))
+    assert_equal(s, {2, 3})
 
     s.add(4)
 
     assert_equal(s.pop(), 2)
-    assert_equal(s, Set[Int](3, 4))
+    assert_equal(s, {3, 4})
 
     assert_equal(s.pop(), 3)
-    assert_equal(s, Set[Int](4))
+    assert_equal(s, {4})
 
     assert_equal(s.pop(), 4)
-    assert_equal(s, Set[Int]())
+    assert_equal(s, {})
 
     with assert_raises():
         _ = s.pop()  # pop from empty set raises
 
 
 def test_issubset():
-    assert_true(Set[Int]().issubset(Set[Int](1, 2, 3)))
-    assert_true(Set[Int]() <= Set[Int](1, 2, 3))
+    assert_true(Set[Int]().issubset({1, 2, 3}))
+    assert_true(Set[Int]() <= {1, 2, 3})
 
-    assert_true(Set[Int](1, 2, 3).issubset(Set[Int](1, 2, 3)))
-    assert_true(Set[Int](1, 2, 3) <= Set[Int](1, 2, 3))
+    assert_true({1, 2, 3}.issubset({1, 2, 3}))
+    assert_true({1, 2, 3} <= {1, 2, 3})
 
-    assert_true(Set[Int](2, 3).issubset(Set[Int](1, 2, 3, 4)))
-    assert_true(Set[Int](2, 3) <= Set[Int](1, 2, 3, 4))
+    assert_true({2, 3}.issubset({1, 2, 3, 4}))
+    assert_true({2, 3} <= {1, 2, 3, 4})
 
-    assert_false(Set[Int](1, 2, 3, 4).issubset(Set[Int](2, 3)))
-    assert_false(Set[Int](1, 2, 3, 4) <= Set[Int](2, 3))
+    assert_false({1, 2, 3, 4}.issubset({2, 3}))
+    assert_false({1, 2, 3, 4} <= {2, 3})
 
-    assert_false(Set[Int](1, 2, 3, 4, 5).issubset(Set[Int](2, 3)))
-    assert_false(Set[Int](1, 2, 3, 4, 5) <= Set[Int](2, 3))
+    assert_false({1, 2, 3, 4, 5}.issubset({2, 3}))
+    assert_false({1, 2, 3, 4, 5} <= {2, 3})
 
-    assert_true(Set[Int]().issubset(Set[Int]()))
-    assert_true(Set[Int]() <= Set[Int]())
+    assert_true(Set[Int]().issubset({}))
+    assert_true(Set[Int]() <= {})
 
-    assert_false(Set[Int](1, 2, 3).issubset(Set[Int](4, 5, 6)))
-    assert_false(Set[Int](1, 2, 3) <= Set[Int](4, 5, 6))
+    assert_false({1, 2, 3}.issubset({4, 5, 6}))
+    assert_false({1, 2, 3} <= {4, 5, 6})
 
 
 def test_disjoint():
-    assert_true(Set[Int]().isdisjoint(Set[Int]()))
-    assert_false(Set[Int](1, 2, 3).isdisjoint(Set[Int](1, 2, 3)))
-    assert_true(Set[Int](1, 2, 3).isdisjoint(Set[Int](4, 5, 6)))
-    assert_false(Set[Int](1, 2, 3).isdisjoint(Set[Int](3, 4, 5)))
-    assert_true(Set[Int]().isdisjoint(Set[Int](1, 2, 3)))
-    assert_true(Set[Int](1, 2, 3).isdisjoint(Set[Int]()))
-    assert_false(Set[Int](1, 2, 3).isdisjoint(Set[Int](3)))
-    assert_true(Set[Int](1, 2, 3).isdisjoint(Set[Int](4)))
+    assert_true(Set[Int]().isdisjoint({}))
+    assert_false({1, 2, 3}.isdisjoint({1, 2, 3}))
+    assert_true({1, 2, 3}.isdisjoint({4, 5, 6}))
+    assert_false({1, 2, 3}.isdisjoint({3, 4, 5}))
+    assert_true(Set[Int]().isdisjoint({1, 2, 3}))
+    assert_true({1, 2, 3}.isdisjoint({}))
+    assert_false({1, 2, 3}.isdisjoint({3}))
+    assert_true({1, 2, 3}.isdisjoint({4}))
 
 
 def test_issuperset():
-    assert_true(Set[Int](1, 2, 3).issuperset(Set[Int]()))
-    assert_true(Set[Int](1, 2, 3) >= Set[Int]())
+    assert_true({1, 2, 3}.issuperset({}))
+    assert_true({1, 2, 3} >= {})
 
-    assert_true(Set[Int](1, 2, 3).issuperset(Set[Int](1, 2, 3)))
-    assert_true(Set[Int](1, 2, 3) >= Set[Int](1, 2, 3))
+    assert_true({1, 2, 3}.issuperset({1, 2, 3}))
+    assert_true({1, 2, 3} >= {1, 2, 3})
 
-    assert_true(Set[Int](1, 2, 3, 4).issuperset(Set[Int](2, 3)))
-    assert_true(Set[Int](1, 2, 3, 4) >= Set[Int](2, 3))
+    assert_true({1, 2, 3, 4}.issuperset({2, 3}))
+    assert_true({1, 2, 3, 4} >= {2, 3})
 
-    assert_false(Set[Int](2, 3).issuperset(Set[Int](1, 2, 3, 4)))
-    assert_false(Set[Int](2, 3) >= Set[Int](1, 2, 3, 4))
+    assert_false({2, 3}.issuperset({1, 2, 3, 4}))
+    assert_false({2, 3} >= {1, 2, 3, 4})
 
-    assert_false(Set[Int](1, 2, 3).issuperset(Set[Int](4, 5, 6)))
-    assert_false(Set[Int](1, 2, 3) >= Set[Int](4, 5, 6))
+    assert_false({1, 2, 3}.issuperset({4, 5, 6}))
+    assert_false({1, 2, 3} >= {4, 5, 6})
 
-    assert_false(Set[Int]().issuperset(Set[Int](1, 2, 3)))
-    assert_false(Set[Int]() >= Set[Int](1, 2, 3))
+    assert_false(Set[Int]().issuperset({1, 2, 3}))
+    assert_false(Set[Int]() >= {1, 2, 3})
 
-    assert_false(Set[Int](1, 2, 3).issuperset(Set[Int](1, 2, 3, 4)))
-    assert_false(Set[Int](1, 2, 3) >= Set[Int](1, 2, 3, 4))
+    assert_false({1, 2, 3}.issuperset({1, 2, 3, 4}))
+    assert_false({1, 2, 3} >= {1, 2, 3, 4})
 
-    assert_true(Set[Int]().issuperset(Set[Int]()))
-    assert_true(Set[Int]() >= Set[Int]())
+    assert_true(Set[Int]().issuperset({}))
+    assert_true(Set[Int]() >= {})
 
 
 def test_greaterthan():
-    assert_true(Set[Int](1, 2, 3, 4) > Set[Int](2, 3))
-    assert_false(Set[Int](2, 3) > Set[Int](1, 2, 3, 4))
-    assert_false(Set[Int](1, 2, 3) > Set[Int](1, 2, 3))
-    assert_false(Set[Int]() > Set[Int]())
-    assert_true(Set[Int](1, 2, 3) > Set[Int]())
+    assert_true({1, 2, 3, 4} > {2, 3})
+    assert_false({2, 3} > {1, 2, 3, 4})
+    assert_false({1, 2, 3} > {1, 2, 3})
+    assert_false(Set[Int]() > {})
+    assert_true({1, 2, 3} > {})
 
 
 def test_lessthan():
-    assert_true(Set[Int](2, 3) < Set[Int](1, 2, 3, 4))
-    assert_false(Set[Int](1, 2, 3, 4) < Set[Int](2, 3))
-    assert_false(Set[Int](1, 2, 3) < Set[Int](1, 2, 3))
-    assert_false(Set[Int]() < Set[Int]())
-    assert_true(Set[Int]() < Set[Int](1, 2, 3))
+    assert_true({2, 3} < {1, 2, 3, 4})
+    assert_false({1, 2, 3, 4} < {2, 3})
+    assert_false({1, 2, 3} < {1, 2, 3})
+    assert_false(Set[Int]() < {})
+    assert_true(Set[Int]() < {1, 2, 3})
 
 
 def test_symmetric_difference():
-    assert_true(
-        Set[Int](1, 4)
-        == Set[Int](1, 2, 3).symmetric_difference(Set[Int](2, 3, 4))
-    )
-    assert_true(Set[Int](1, 4) == Set[Int](1, 2, 3) ^ Set[Int](2, 3, 4))
+    assert_true({1, 4} == {1, 2, 3}.symmetric_difference({2, 3, 4}))
+    assert_true({1, 4} == {1, 2, 3} ^ {2, 3, 4})
 
-    assert_true(
-        Set[Int](1, 2, 3, 4, 5, 6)
-        == Set[Int](1, 2, 3).symmetric_difference(Set[Int](4, 5, 6))
-    )
-    assert_true(
-        Set[Int](1, 2, 3, 4, 5, 6) == Set[Int](1, 2, 3) ^ Set[Int](4, 5, 6)
-    )
+    assert_true({1, 2, 3, 4, 5, 6} == {1, 2, 3}.symmetric_difference({4, 5, 6}))
+    assert_true({1, 2, 3, 4, 5, 6} == {1, 2, 3} ^ {4, 5, 6})
 
-    assert_true(
-        Set[Int](1, 2, 3) == Set[Int](1, 2, 3).symmetric_difference(Set[Int]())
-    )
-    assert_true(Set[Int](1, 2, 3) == Set[Int](1, 2, 3) ^ Set[Int]())
+    assert_true({1, 2, 3} == {1, 2, 3}.symmetric_difference({}))
+    assert_true({1, 2, 3} == {1, 2, 3} ^ {})
 
-    assert_true(
-        Set[Int](1, 2, 3) == Set[Int]().symmetric_difference(Set[Int](1, 2, 3))
-    )
-    assert_true(Set[Int](1, 2, 3) == Set[Int]() ^ Set[Int](1, 2, 3))
+    assert_true({1, 2, 3} == Set[Int]() ^ {1, 2, 3})
+    assert_true({1, 2, 3} == Set[Int]() ^ {1, 2, 3})
 
-    assert_true(Set[Int]() == Set[Int]().symmetric_difference(Set[Int]()))
-    assert_true(Set[Int]() == Set[Int]() ^ Set[Int]())
+    assert_true(Set[Int]() == Set[Int]().symmetric_difference({}))
+    assert_true(Set[Int]() == Set[Int]() ^ {})
 
-    assert_true(
-        Set[Int]() == Set[Int](1, 2, 3).symmetric_difference(Set[Int](1, 2, 3))
-    )
-    assert_true(Set[Int]() == Set[Int](1, 2, 3) ^ Set[Int](1, 2, 3))
+    assert_true(Set[Int]() == {1, 2, 3}.symmetric_difference({1, 2, 3}))
+    assert_true(Set[Int]() == {1, 2, 3} ^ {1, 2, 3})
 
 
 def test_symmetric_difference_update():
@@ -390,92 +375,92 @@ def test_symmetric_difference_update():
     set1 = {1, 2, 3}
     set2 = {2, 3, 4}
     set1.symmetric_difference_update(set2)
-    assert_true(Set[Int](1, 4) == set1)
+    assert_true({1, 4} == set1)
 
     set1 = {1, 2, 3}
     set2 = {2, 3, 4}
     set1 ^= set2
-    assert_true(Set[Int](1, 4) == set1)
+    assert_true({1, 4} == set1)
 
     # Test case 2
     set3 = {1, 2, 3}
     set4 = {4, 5, 6}
     set3.symmetric_difference_update(set4)
-    assert_true(Set[Int](1, 2, 3, 4, 5, 6) == set3)
+    assert_true({1, 2, 3, 4, 5, 6} == set3)
 
     set3 = {1, 2, 3}
     set4 = {4, 5, 6}
     set3 ^= set4
-    assert_true(Set[Int](1, 2, 3, 4, 5, 6) == set3)
+    assert_true({1, 2, 3, 4, 5, 6} == set3)
 
     # Test case 3
     set5 = {1, 2, 3}
     set6 = Set[Int]()
     set5.symmetric_difference_update(set6)
-    assert_true(Set[Int](1, 2, 3) == set5)
+    assert_true({1, 2, 3} == set5)
 
     set5 = {1, 2, 3}
     set6 = Set[Int]()
     set5 ^= set6
-    assert_true(Set[Int](1, 2, 3) == set5)
+    assert_true({1, 2, 3} == set5)
 
     # Test case 4
     set7 = Set[Int]()
-    set8 = Set[Int](1, 2, 3)
+    set8 = {1, 2, 3}
     set7.symmetric_difference_update(set8)
-    assert_true(Set[Int](1, 2, 3) == set7)
+    assert_true({1, 2, 3} == set7)
 
     set7 = Set[Int]()
     set8 = {1, 2, 3}
     set7 ^= set8
-    assert_true(Set[Int](1, 2, 3) == set7)
+    assert_true({1, 2, 3} == set7)
 
     # Test case 5
     set9 = Set[Int]()
     set10 = Set[Int]()
     set9.symmetric_difference_update(set10)
-    assert_true(Set[Int]() == set9)
+    assert_true(set9 == {})
 
     set9 = Set[Int]()
     set10 = Set[Int]()
     set9 ^= set10
-    assert_true(Set[Int]() == set9)
+    assert_true(set9 == {})
 
     # Test case 6
     set11 = {1, 2, 3}
     set12 = {1, 2, 3}
     set11.symmetric_difference_update(set12)
-    assert_true(Set[Int]() == set11)
+    assert_true(set11 == {})
 
     set11 = {1, 2, 3}
     set12 = {1, 2, 3}
     set11 ^= set12
-    assert_true(Set[Int]() == set11)
+    assert_true(set11 == {})
 
 
 def test_discard():
     set1 = {1, 2, 3}
     set1.discard(2)
-    assert_true(set1 == Set[Int](1, 3))
+    assert_true(set1 == {1, 3})
 
     set2 = {1, 2, 3}
     set2.discard(4)
-    assert_true(set2 == Set[Int](1, 2, 3))
+    assert_true(set2 == {1, 2, 3})
 
     set3 = Set[Int]()
     set3.discard(1)
-    assert_true(set3 == Set[Int]())
+    assert_true(set3 == {})
 
     set4 = {1, 2, 3, 4, 5}
     set4.discard(2)
     set4.discard(4)
-    assert_true(set4 == Set[Int](1, 3, 5))
+    assert_true(set4 == {1, 3, 5})
 
     set5 = {1, 2, 3}
     set5.discard(1)
     set5.discard(2)
     set5.discard(3)
-    assert_true(set5 == Set[Int]())
+    assert_true(set5 == {})
 
 
 def test_clear():
@@ -484,36 +469,36 @@ def test_clear():
     set0.clear()
     assert_equal(0, len(set0))
 
-    set1 = Set[Int](1, 2, 3)
+    set1 = {1, 2, 3}
     set1.clear()
-    assert_true(set1 == Set[Int]())
+    assert_true(set1 == {})
 
     set2 = Set[Int]()
     set2.clear()
-    assert_true(set2 == Set[Int]())
+    assert_true(set2 == {})
 
-    set3 = Set[Int](1, 2, 3)
+    set3 = {1, 2, 3}
     set3.clear()
     set3.add(4)
     set3.add(5)
-    assert_true(set3 == Set[Int](4, 5))
+    assert_true(set3 == {4, 5})
 
-    set4 = Set[Int](1, 2, 3)
+    set4 = {1, 2, 3}
     set4.clear()
     set4.clear()
     set4.clear()
-    assert_true(set4 == Set[Int]())
+    assert_true(set4 == {})
 
-    set5 = Set[Int](1, 2, 3)
+    set5 = {1, 2, 3}
     set5.clear()
     assert_true(len(set5) == 0)
 
 
 def test_set_str():
-    var a = Set[Int](1, 2, 3)
+    var a = {1, 2, 3}
     AE(a.__str__(), "{1, 2, 3}")
     AE(a.__repr__(), "{1, 2, 3}")
-    var b = Set[String]("a", "b")
+    var b = {String("a"), String("b")}
     AE(b.__str__(), "{'a', 'b'}")
     AE(Set[Int]().__str__(), "{}")
 
