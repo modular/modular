@@ -17,10 +17,8 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
     EchoTokenGeneratorContext,
 )
-from max.serve.pipelines.llm import (
-    TokenGeneratorPipelineConfig,
-    batch_config_from_pipeline_config,
-)
+from max.serve.pipelines.llm import batch_config_from_pipeline_config
+from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.telemetry.common import configure_metrics
 
 
@@ -41,7 +39,7 @@ def echo_factory():
 
 @pytest.fixture()
 def echo_app():
-    pipeline_config = TokenGeneratorPipelineConfig.no_cache(batch_size=1)
+    pipeline_config = TokenGeneratorSchedulerConfig.no_cache(batch_size=1)
     tokenizer = EchoPipelineTokenizer()
 
     serving_settings = ServingTokenGeneratorSettings(
