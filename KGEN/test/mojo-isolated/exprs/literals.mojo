@@ -62,23 +62,26 @@ fn inspect(list: List[_]):
 
 # CHECK-LABEL: lit.fn @"test_list_literal
 fn test_list_literal():
-    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
+    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
     var a = [1, 2, 3]
 
-    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
-    # CHECK-NEXT: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
     # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[TMP1]], [[TMP2]], [[TMP3]]]
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
+    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
     var b : IntList = [1, 2, 3]
 
-    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
     # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!Int> = <[]>
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
+    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
     var c : IntList = []
@@ -129,15 +132,22 @@ fn param_infer_equal[T: AnyType](a: T, b: T): pass
 
 # CHECK-LABEL: lit.fn @"test_set_literal
 fn test_set_literal():
-    # CHECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
+    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
     var a = {1, 2, 3}
 
+    # MOCO-1974 - Param inference isn't substituting full type
     param_infer_equal(a, {})
 
-
+    # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
+    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
+    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut 
+    # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %b)
+    var b : MySet[Int] = {1, 2}
 
 # ===----------------------------------------------------------------------=== #
 # Initializer Lists
@@ -162,3 +172,31 @@ fn test_initializer_list():
     # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{42}> 
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[INT]], %c)
     var c : InitType[String] = {"foo", 42}
+
+# ===----------------------------------------------------------------------=== #
+# Ambiguity for e.g. PythonObject
+# ===----------------------------------------------------------------------=== #
+
+# This can be formed with any collection and has its own initializer list too.
+struct AnyCollection:
+    fn __init__(out self):
+        pass
+    fn __init__(out self, value: AnyType):
+        pass
+    fn __init__(out self, owned *values: Int, __list_literal__: ()):
+        pass
+    fn __init__(out self, owned *values: Int, __set_literal__: ()):
+        pass
+    fn __init__(out self, keys: IntList, values: IntList, __dict_literal__: ()):
+        pass
+
+# CHECK-LABEL: lit.fn @"test_any_collection
+fn test_any_collection():
+    # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %a){{.*}}__dict_literal__
+    var a : AnyCollection = {}
+    # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %b){{.*}}__set_literal__
+    var b : AnyCollection = {1}
+    # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %c){{.*}}__set_literal__
+    var c : AnyCollection = {1, 2}
+    # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %d){{.*}}__dict_literal__
+    var d : AnyCollection = {1: 2}
