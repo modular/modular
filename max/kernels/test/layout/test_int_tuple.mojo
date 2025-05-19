@@ -107,6 +107,7 @@ def test_tuple_basic_ops():
     alias p0 = product(2)
     alias p1 = product(IntTuple(3, 2))
     alias p2 = product(IntTuple(IntTuple(2, 3), 4))
+    alias p3 = product([[2, 3], 4])
     assert_equal(String(p0), "2")
     assert_equal(String(p1), "6")
     assert_equal(String(p2), "24")

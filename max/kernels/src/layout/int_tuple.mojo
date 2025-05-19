@@ -521,7 +521,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *elements: IntTuple):
+    fn __init__(out self, *elements: IntTuple, __list_literal__: () = ()):
         """Initialize an `IntTuple` with nested IntTuples.
 
         Creates a hierarchical `IntTuple` containing the provided `IntTuple` elements,
@@ -529,6 +529,8 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         Args:
             elements: Variable number of `IntTuple` values to store in the tuple.
+            __list_literal__: Specifies that this constructor can be used for
+              list literals.
         """
         var size = Self.elements_size(elements)
         self._store = IntArray(size + 1)
