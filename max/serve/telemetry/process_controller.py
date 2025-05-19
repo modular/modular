@@ -37,7 +37,7 @@ from uvicorn import Config, Server
 logger = logging.getLogger(__name__)
 
 
-# Unused class so taht SHUTDOWNS is not empty
+# Unused class so that SHUTDOWNS is not empty
 class _Shutdown(Exception):
     pass
 
