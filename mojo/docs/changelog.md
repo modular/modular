@@ -85,6 +85,14 @@ what we publish.
 - A new `json` module was added the provides a way to deserialize JSON objects
   into Mojo.
 
+- Fixed GPU `sum` and `prefix_sum` implementations in `gpu.warp` and `gpu.block`
+  modules. Previously, the implementations have been incorrect and would either
+  return wrong results or hang the kernel (due to the deadlock). [PR
+  4508](https://github.com/modular/modular/pull/4508) and [PR
+  4553](https://github.com/modular/modular/pull/4553) by [Kirill
+  Bobyrev](https://github.com/kirillbobyrev) mitigate the found issues and add
+  tests to ensure correctness going forward.
+
 Changes to Python-Mojo interoperability:
 
 - Python lists are now constructible with list literal syntax, e.g.:

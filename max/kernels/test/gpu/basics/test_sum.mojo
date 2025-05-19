@@ -11,10 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-
-from gpu import block, global_idx, warp
-from gpu.host import DeviceContext
+from gpu import warp, block, global_idx
 from memory import UnsafePointer, memset
 from gpu.host import DeviceContext
 from gpu.globals import WARP_SIZE
@@ -24,9 +21,8 @@ from testing import assert_equal
 alias type = DType.uint64
 
 
-fn warp_prefix_sum_kernel[
+fn warp_sum_kernel[
     type: DType,
-    exclusive: Bool,
 ](
     output: UnsafePointer[Scalar[type]],
     input: UnsafePointer[Scalar[type]],
@@ -35,10 +31,10 @@ fn warp_prefix_sum_kernel[
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
+    output[tid] = warp.sum(input[tid])
 
 
-def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
+def test_warp_sum(ctx: DeviceContext):
     alias size = WARP_SIZE
     alias BLOCK_SIZE = WARP_SIZE
 
@@ -57,9 +53,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[
-        warp_prefix_sum_kernel[type=type, exclusive=exclusive]
-    ](
+    ctx.enqueue_function[warp_sum_kernel[type=type]](
         out_device.unsafe_ptr(),
         in_device.unsafe_ptr(),
         size,
@@ -72,13 +66,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(size):
-        var expected: Scalar[type]
-
-        @parameter
-        if exclusive:
-            expected = i * (i - 1) // 2
-        else:
-            expected = i * (i + 1) // 2
+        var expected: Scalar[type] = size * (size - 1) // 2
 
         assert_equal(
             out_host[i],
@@ -93,10 +81,9 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     out_host.free()
 
 
-fn block_prefix_sum_kernel[
+fn block_sum_kernel[
     type: DType,
     block_size: Int,
-    exclusive: Bool,
 ](
     output: UnsafePointer[Scalar[type]],
     input: UnsafePointer[Scalar[type]],
@@ -105,15 +92,13 @@ fn block_prefix_sum_kernel[
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = block.prefix_sum[exclusive=exclusive, block_size=block_size](
-        input[tid]
-    )
+    output[tid] = block.sum[block_size=block_size, broadcast=True](input[tid])
 
 
-def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
-    # Initialize a block with several warps. The prefix sum for each warp is
-    # tested above.
-    alias BLOCK_SIZE = WARP_SIZE * 13
+def test_block_sum(ctx: DeviceContext):
+    # Initialize a block with several warps. The sum for each warp is tested
+    # above.
+    alias BLOCK_SIZE = WARP_SIZE * 2
     alias size = BLOCK_SIZE
 
     # Allocate and initialize host memory
@@ -131,11 +116,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[
-        block_prefix_sum_kernel[
-            type=type, block_size=BLOCK_SIZE, exclusive=exclusive
-        ]
-    ](
+    ctx.enqueue_function[block_sum_kernel[type=type, block_size=BLOCK_SIZE]](
         out_device.unsafe_ptr(),
         in_device.unsafe_ptr(),
         size,
@@ -148,13 +129,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(size):
-        var expected: Scalar[type]
-
-        @parameter
-        if exclusive:
-            expected = i * (i - 1) // 2
-        else:
-            expected = i * (i + 1) // 2
+        var expected: Scalar[type] = size * (size - 1) // 2
 
         assert_equal(
             out_host[i],
@@ -171,8 +146,6 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
-        test_warp_prefix_sum[exclusive=True](ctx)
-        test_warp_prefix_sum[exclusive=False](ctx)
+        test_warp_sum(ctx)
 
-        test_block_prefix_sum[exclusive=True](ctx)
-        test_block_prefix_sum[exclusive=False](ctx)
+        test_block_sum(ctx)
