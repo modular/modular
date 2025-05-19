@@ -162,6 +162,33 @@ While this is a minor convenience in this case, it can be more significant when
 working with more complex types that have lots of parameters that would
 otherwise require complicated uses of `__type_of(x)`.
 
-## Ambiguity resolution
+## Ambiguity resolution between Set Literals and Initializer Lists
 
-TODO: Talk about `{}` and set vs init list ambiguity resolution.
+The above approach has an ambiguity: does `{a, b}` create a set of two elements
+with `T.__init__(a, b, __set_literal__=())` or does it invoke an initializer
+with just `T.__init__(a, b)`?
+
+The approach used by the Mojo compiler is as follows based on whether it has
+a contextually inferred type or not.  If not, the compiler assumes that the
+literal must be a Set literal.  It:
+
+1) requires at least one element, rejecting `var x = {}` because it cannot infer
+   the element type of `Set`.
+2) rejects attempts to use keyword arguments, e.g. `var x = {1, kwarg=2}` is
+   known to not be a set, but we cannot know what type to create.
+3) It unifies the elements provided (using `__merge_with__` and implicit
+   conversions using the same algorithm as list literals), and then creates an
+   instance of the `Set` type.
+
+If there is a known contextual type, the compiler uses the following approach:
+
+1) If the initializer list is empty, and if the type allows construction from a
+   dictionary literal, that constructor is used.  This ensures that `{}` turns
+   into a dict with `PythonObject`.
+2) If the type supports the set literal initializer, and if no keyword arguments
+   are used, the element types are unified and the set literal constructor is
+   used.  Note that this disables initializer-list syntax for set-like types,
+   but you can work around this by calling the initializer explicitly, or
+   providing a keyword argument.
+3) Otherwise, the elements are passed in to the `T.__init__` method as an
+   initializer list.

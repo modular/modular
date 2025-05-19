@@ -25,7 +25,7 @@ struct Set[T: KeyElement](
     ```mojo
     from collections import Set
 
-    var set = Set[Int](1, 2, 3)
+    var set = { 1, 2, 3 }
     print(len(set))  # 3
     set.add(4)
 
@@ -51,12 +51,15 @@ struct Set[T: KeyElement](
     # ===-------------------------------------------------------------------===#
 
     @implicit
-    fn __init__(out self, *ts: T):
+    fn __init__(out self, *ts: T, __set_literal__: () = ()):
         """Construct a set from initial elements.
 
         Args:
             ts: Variadic of elements to add to the set.
+            __set_literal__: Tell Mojo to use this method for set literals.
         """
+        # TODO: Reserve space in this set. Also, take the elements as 'owned'
+        # and transfer them into the set to eliminate copyability.
         self._data = Dict[T, NoneType]()
         for t in ts:
             self.add(t[])

@@ -67,8 +67,8 @@ what we publish.
   standard library `List[Elt]` type.  The `ListLiteral` type has been removed
   from the standard library.
 
-- Dictionary literals now work and default to creating instances of the `Dict`
-  type.
+- Dictionary and set literals now work and default to creating instances of the
+  `Dict` and `Set` types in the collections library.
 
 ### Standard library changes
 
