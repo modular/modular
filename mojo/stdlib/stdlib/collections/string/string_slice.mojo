@@ -1722,6 +1722,48 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).endswith(suffix)
 
+    fn removeprefix(self, prefix: StringSlice, /) -> Self:
+        """Returns a new string with the prefix removed if it was present.
+
+        Args:
+            prefix: The prefix to remove from the string.
+
+        Returns:
+            `string[len(prefix):]` if the string starts with the prefix string,
+            or a copy of the original string otherwise.
+
+        Examples:
+
+        ```mojo
+        print(StringSlice('TestHook').removeprefix('Test')) # 'Hook'
+        print(StringSlice('BaseTestCase').removeprefix('Test')) # 'BaseTestCase'
+        ```
+        """
+        if self.startswith(prefix):
+            return self[len(prefix) :]
+        return self
+
+    fn removesuffix(self, suffix: StringSlice, /) -> Self:
+        """Returns a new string with the suffix removed if it was present.
+
+        Args:
+            suffix: The suffix to remove from the string.
+
+        Returns:
+            `string[:-len(suffix)]` if the string ends with the suffix string,
+            or a copy of the original string otherwise.
+
+        Examples:
+
+        ```mojo
+        print(StringSlice('TestHook').removesuffix('Hook')) # 'Test'
+        print(StringSlice('BaseTestCase').removesuffix('Test')) # 'BaseTestCase'
+        ```
+        """
+        if suffix and self.endswith(suffix):
+            return self[: -len(suffix)]
+        return self
+
     fn _from_start(self, start: Int) -> Self:
         """Gets the `StringSlice` pointing to the substring after the specified
         slice start position in bytes. If start is negative, it is interpreted
