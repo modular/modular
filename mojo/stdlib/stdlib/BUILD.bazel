@@ -29,7 +29,6 @@ LIBS = [
     "complex",
     "gpu",
     "hashlib",
-    "json",
     "logger",
     "math",
     "memory",

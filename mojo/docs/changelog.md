@@ -85,9 +85,6 @@ what we publish.
   fixed `bitset` that simplifies working with a set of bits and perform bit
   operations.
 
-- A new `json` module was added the provides a way to deserialize JSON objects
-  into Mojo.
-
 - Fixed GPU `sum` and `prefix_sum` implementations in `gpu.warp` and `gpu.block`
   modules. Previously, the implementations have been incorrect and would either
   return wrong results or hang the kernel (due to the deadlock). [PR
