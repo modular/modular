@@ -130,7 +130,7 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
         )
     except Exception as exc:
         raise CLIException(
-            f"Unable to run command {list2cmdline(cmd)}"
+            cmd=cmd, err=f"Unable to run command {list2cmdline(cmd)}"
         ) from exc
 
 
@@ -150,7 +150,7 @@ class ParamSpace:
             self.value = [eval(x) for x in self.value]
         except:
             pass
-        self.value_set = sorted(set(flatten(self.value)))
+        self.value_set = set(sorted(set(flatten(self.value))))
         self.value = None
         self.length = len(self.value_set)
 
@@ -242,8 +242,7 @@ class SpecInstance:
             if not param.name.startswith("$"):
                 defines.append(param.define())
 
-        defines = [item for sublist in defines for item in sublist]
-        return defines
+        return [item for sublist in defines for item in sublist]
 
     @functools.cached_property
     def _get_vars(self) -> list[str]:
@@ -252,8 +251,7 @@ class SpecInstance:
             if param.name.startswith("$"):
                 vars.append(param.define())
 
-        vars = [item for sublist in vars for item in sublist]
-        return vars
+        return [item for sublist in vars for item in sublist]
 
     def build(
         self,
@@ -309,7 +307,7 @@ class SpecInstance:
         if exec_prefix:
             logging.debug(f"exec-prefix: {exec_prefix}")
             cmd.extend(exec_prefix)
-        cmd.extend([binary_path, *vars, "-o", str(output_file)])
+        cmd.extend([str(binary_path), *vars, "-o", str(output_file)])
         if exec_suffix:
             cmd.extend(exec_suffix)
             logging.debug(f"exec-suffix: {exec_suffix}")
@@ -441,7 +439,7 @@ class Spec:
         Returns:
             Spec: Dictionary of with extra param names as keys and param values.
         """
-        d = {}
+        d: dict[str, list] = {}
         IFS = ":"
         for p in param_list:
             name = ""
@@ -584,7 +582,7 @@ class Spec:
 
         Return the total size of mesh.
         """
-        self.mesh = GridSearchStrategy(self.name, self.file, self.params)
+        self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
         return len(self.mesh)
 
     def join(self, other: Spec):
@@ -597,7 +595,7 @@ class Spec:
         self.mesh.extend(other.mesh)
 
     def filter(self, filter_list: list[str]):
-        filters = {}
+        filters: dict[str, list] = {}
         for f in filter_list:
             if "=" in f:
                 name, val = f.split("=")
@@ -625,7 +623,7 @@ class Spec:
             if idx == num_filters:
                 filtered_insts.append(self.mesh[i])
 
-        self.mesh.instances = filtered_insts[:]
+        self.mesh = filtered_insts[:]
         self.mesh_idx = 0
 
     def __iter__(self):
@@ -757,12 +755,13 @@ class Scheduler:
         """
         output_dir_list = [b.output_dir for b in self.build_items]
         res = self.cpu_pool.imap(self.kbench_mkdir, output_dir_list)
-        [logging.debug(f"mkdir [{r}]") for r in res]
+        for r in res:
+            logging.debug(f"mkdir [{r}]")
         logging.debug("Created directories for all instances in spec." + LINE)
 
     def schedule_unique_build_items(self) -> list[dict]:
-        unique_build_items = {}
-        unique_build_paths = {}
+        unique_build_items: dict[str, int] = {}
+        unique_build_paths: dict[str, str] = {}
         for b in self.build_items:
             i = b.idx
             s = b.spec_instance
@@ -787,8 +786,7 @@ class Scheduler:
                     # Already in the unique_build_items list
                     idx = unique_build_items[bin_name]
                     debug_msg += [f"Currently in schedule (ref_idx=[{idx}])"]
-            debug_msg = "\n".join(debug_msg)
-            logging.debug(debug_msg + LINE)
+            logging.debug("\n".join(debug_msg) + LINE)
         return [unique_build_items, unique_build_paths]
 
     @staticmethod
@@ -811,11 +809,11 @@ class Scheduler:
         Build all unique items scheduled by the scheduler.
         """
 
-        unique_build_items, unique_build_paths = (
+        unique_build_items_dict, unique_build_paths = (
             self.schedule_unique_build_items()
         )
         unique_build_items = [
-            self.build_items[i] for i in list(unique_build_items.values())
+            self.build_items[i] for i in list(unique_build_items_dict.values())
         ]
 
         logging.info(
@@ -916,17 +914,17 @@ class Scheduler:
 
 def run(
     yaml_path_list,
+    obj_cache: KbenchCache,
+    shape: SpecInstance,
     output_path=None,
     mode=KBENCH_MODE.RUN,
     param_list=None,
-    shape: SpecInstance | None = None,
     filter_list=None,
     build_opts: list[str] = [],
     profile: str = "",
     exec_prefix: list[str] = [],
     exec_suffix: list[str] = [],
     dryrun: bool = False,
-    obj_cache: KbenchCache | None = None,
     verbose=False,
     output_dir=None,
     num_cpu=1,
@@ -951,7 +949,8 @@ def run(
         spec.filter(filter_list)
 
     if verbose:
-        [logging.debug(f"[{i}]{s}") for i, s in enumerate(spec)]
+        for i, s in enumerate(spec):
+            logging.debug(f"[{i}]{s}")
         logging.debug(LINE)
 
     # Generate a tmp path for intermediate results.
@@ -1011,7 +1010,7 @@ def run(
 
     t_elapsed_total = time() - t_start_total
     output_lines = []
-    output_dict = {}
+    output_dict: dict[str, Any] = {}
     ########################################################
     # Elapsed time per spec
     build_df = pd.DataFrame(
@@ -1023,7 +1022,9 @@ def run(
     build_elapsed_time_list = [
         b.build_elapsed_time for b in scheduler.build_items
     ]
-    build_df.insert(len(build_df.columns), "met (ms)", build_elapsed_time_list)
+    build_df.insert(
+        len(build_df.columns), "met (ms)", pd.Series(build_elapsed_time_list)
+    )
     build_df.insert(len(build_df.columns), "iters", 1)
     build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
 
@@ -1038,7 +1039,7 @@ def run(
     ########################################################
     # Retrieve, sort, and pick top choices
     valid_specs = []
-    invalid_specs = []
+    invalid_specs: list[list] = []
     for b in scheduler.build_items:
         i = b.idx
         try:
@@ -1343,7 +1344,7 @@ help_str = (
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files: click.UNPROCESSED,
+    files,
     filter,
     output_path,
     output_dir,
@@ -1422,17 +1423,17 @@ def cli(
     for i, shape in enumerate(shape_list):
         run(
             yaml_path_list=files,
+            obj_cache=obj_cache,
+            shape=shape,
             output_path=shape_path_list[i],
             mode=mode,
             param_list=param,
-            shape=shape,
             filter_list=filter,
             build_opts=build_opts,
             profile=profile,
             exec_prefix=exec_prefix,
             exec_suffix=exec_suffix,
             dryrun=dryrun,
-            obj_cache=obj_cache,
             verbose=verbose,
             output_dir=output_dir,
             num_cpu=num_cpu,

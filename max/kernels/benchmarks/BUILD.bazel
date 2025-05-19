@@ -1,12 +1,10 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load(
     "//bazel:api.bzl",
-    "modular_py_library",
-    "modular_py_test",
     "mojo_binary",
     "mojo_test",
+    "pkg_filegroup",
     "pkg_files",
-    "requirement",
     "strip_prefix",
 )
 
@@ -104,12 +102,11 @@ _CPU_TESTS = glob(
 ]
 
 pkg_files(
-    name = "kernel_benchmark_files",
+    name = "kernel_benchmark_input_files",
     srcs = glob(
         [
             "**/*.mojo",
             "**/*.yaml",
-            "autotune/**",
         ],
         exclude = [
             "demos/**",
@@ -122,31 +119,11 @@ pkg_files(
     visibility = ["//visibility:public"],
 )
 
-modular_py_library(
-    name = "autotune",
+pkg_filegroup(
+    name = "kernel_benchmark_files",
     srcs = [
-        "autotune/kplot.py",
-        "autotune/kprofile.py",
+        ":kernel_benchmark_input_files",
+        "//open-source/max/max/kernels/benchmarks/autotune:autotune_files",
     ],
-    imports = ["autotune"],
     visibility = ["//visibility:public"],
-    deps = [
-        # Deps required for kbench/kplot/kprofile
-        requirement("numpy"),
-        requirement("click"),
-        requirement("pandas"),
-        requirement("rich"),
-        requirement("plotly"),
-        requirement("kaleido"),
-        requirement("pyyaml"),
-        "//GenericML/tools/model:lib",
-    ],
-)
-
-modular_py_test(
-    name = "autotune_tests",
-    srcs = glob(["autotune/tests/*.py"]),
-    deps = [
-        ":autotune",
-    ],
 )

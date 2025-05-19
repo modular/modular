@@ -1,0 +1,48 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "pkg_files",
+    "requirement",
+)
+
+modular_py_library(
+    name = "autotune",
+    srcs = [
+        "kbench.py",
+        "kplot.py",
+        "kprofile.py",
+    ],
+    imports = ["autotune"],
+    visibility = ["//visibility:public"],
+    deps = [
+        # Deps required for kbench/kplot/kprofile
+        requirement("numpy"),
+        requirement("click"),
+        requirement("pandas"),
+        requirement("rich"),
+        requirement("plotly"),
+        requirement("kaleido"),
+        requirement("pyyaml"),
+        "//GenericML/tools/model:lib",
+    ],
+)
+
+modular_py_test(
+    name = "autotune_tests",
+    srcs = glob(["tests/*.py"]),
+    deps = [
+        ":autotune",
+    ],
+)
+
+pkg_files(
+    name = "autotune_files",
+    srcs = [
+        "kbench.py",
+        "kplot.py",
+        "kprofile.py",
+    ],
+    prefix = "kernel-benchmark/autotune",
+    visibility = ["//visibility:public"],
+)
