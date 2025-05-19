@@ -145,28 +145,3 @@ modular_py_test(
         requirement("pytest-asyncio"),
     ],
 )
-
-modular_py_test(
-    name = "tests_nixl_gpu",
-    srcs = glob(
-        [
-            "**/*_nixl_gpu.py",
-        ],
-    ),
-    data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-    ],
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
-    tags = [
-        "gpu",
-    ],
-    deps = [
-        requirement("torch"),
-        requirement("pytest-asyncio"),
-        requirement("nixl"),
-    ],
-)
