@@ -65,9 +65,7 @@ enum ExprContext {
   EC_ReturnValue,          // return x;
   EC_MLIRMagic,            // __mlir_type[x] / __mlir_attr[x]
   EC_TopLevelStmt,         // x
-  EC_ListLiteral,          // [x, y]
-  EC_DictLiteral,          // {x:y, q:r}
-  EC_SetInitLiteral,       // {x, y, z}
+  EC_CollectionLiteral,    // [x, y], {x:y, q:r}, {x, y, z}
   EC_TupleElement,         // (x, y)
   EC_SubscriptBase,        // x[y]
   EC_Subscript,            // y[x]

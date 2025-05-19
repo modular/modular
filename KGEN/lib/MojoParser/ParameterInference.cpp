@@ -1022,9 +1022,14 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
+    ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
+    auto inferredType =
+        getPartiallySpecializedType().getWithoutParameters(shared);
+    CallOperands operands =
+        initValue->getOperandsForInferredType(inferredType, emitter);
+
     FailureOr<PValue> initFn = OverloadSet::canConstructType(
-        getPartiallySpecializedType().getWithoutParameters(shared),
-        CallOperands(initValue->get()), operand.expr, declScope,
+        inferredType, std::move(operands), operand.expr, declScope,
         /*isImplicitConversion=*/false);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous

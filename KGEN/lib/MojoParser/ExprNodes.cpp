@@ -2160,9 +2160,9 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!operands.values.back().ir)
     return {};
 
-  return emitter.emitResult(
-      InitializerUValue::create(InitializerUValue::kSlice, std::move(operands)),
-      this, dest);
+  auto result = InitializerUValue::create(InitializerUValue::kSlice, this,
+                                          std::move(operands));
+  return emitter.emitResult(result, this, dest);
 }
 
 AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2317,18 +2317,12 @@ static AnyValue emitListLiteral(const ExprNode *expr,
                                 ExprEmitter &emitter) {
   CallOperands operands;
   for (ExprNode *expr : elements) {
-    auto value = emitter.emitExpr(expr, EC_ListLiteral);
+    auto value = emitter.emitExpr(expr, EC_CollectionLiteral);
     if (!value)
       return {};
     operands.add({value, expr});
   }
-  TupleNode emptyTuple(expr->getLoc(), {});
-  auto tupleValue = emitter.emitExprRValue(&emptyTuple, EC_ListLiteral);
-  if (!tupleValue)
-    return {};
-  operands.add(StringAttr::get(emitter.getContext(), "__list_literal__"),
-               {tupleValue, expr});
-  return InitializerUValue::create(InitializerUValue::kListLiteral,
+  return InitializerUValue::create(InitializerUValue::kListLiteral, expr,
                                    std::move(operands));
 }
 
@@ -2364,16 +2358,10 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   CallOperands operands;
   operands.add({keysListValue, this});
   operands.add({valuesListValue, this});
-  TupleNode emptyTuple(getLoc(), {});
-  auto tupleValue = emitter.emitExprRValue(&emptyTuple, EC_DictLiteral);
-  if (!tupleValue)
-    return {};
-  operands.add(StringAttr::get(emitter.getContext(), "__dict_literal__"),
-               {tupleValue, this});
-  return emitter.emitResult(
-      InitializerUValue::create(InitializerUValue::kDictLiteral,
-                                std::move(operands)),
-      this, dest);
+
+  auto result = InitializerUValue::create(InitializerUValue::kDictLiteral, this,
+                                          std::move(operands));
+  return emitter.emitResult(result, this, dest);
 }
 
 AnyValue SetInitLiteralNode::emitIR(ValueDest &dest,
@@ -2391,14 +2379,14 @@ AnyValue SetInitLiteralNode::emitIR(ValueDest &dest,
                         "expected identifier in initializer list");
       return {};
     }
-    auto value = emitter.emitExpr(valueExpr, EC_SetInitLiteral);
+    auto value = emitter.emitExpr(valueExpr, EC_CollectionLiteral);
     if (!value)
       return {};
     operands.add(keyName, {value, valueExpr});
   }
 
   auto result = InitializerUValue::create(InitializerUValue::kSetInitLiteral,
-                                          std::move(operands));
+                                          this, std::move(operands));
   return emitter.emitResult(result, this, dest);
 }
 

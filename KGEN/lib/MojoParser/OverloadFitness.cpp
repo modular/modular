@@ -569,12 +569,16 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // type.
     if (!argVal) {
       if (auto initValue = operand.ir.getIfInitializer()) {
+        ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
+        CallOperands operands =
+            initValue->getOperandsForInferredType(expectedType, emitter);
+
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedType, CallOperands(initValue->get()), operand.expr,
-            declScope, /*isImplicitConversion=*/false);
-        // If there were declaration errors, assume construction is possible to
-        // avoid spurious errors.
+            expectedType, std::move(operands), operand.expr, declScope,
+            /*isImplicitConversion=*/false);
+        // If there were declaration errors, assume construction is possible
+        // to avoid spurious errors.
         bool valid = (bool)failed(initFn) || initFn.value();
         // If so, all is good, if not, we fail.
         return {valid ? kValidType : kWrongType, expectedType};
