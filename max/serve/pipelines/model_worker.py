@@ -21,25 +21,16 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 import uvloop
 import zmq
-from max.pipelines.core import (
-    EmbeddingsGenerator,
-    PipelinesFactory,
-    TokenGenerator,
-)
+from max.pipelines.core import PipelinesFactory
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.pipelines.scheduler import (
-    EmbeddingsScheduler,
-    EmbeddingsSchedulerConfig,
-)
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import TokenGeneratorSchedulerConfig, load_scheduler
-from max.serve.scheduler.base import Scheduler
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
@@ -134,7 +125,7 @@ class ModelWorker:
         zmq_ctx = zmq.Context(io_threads=2)
 
         # Retrieve Scheduler.
-        scheduler = ModelWorker.retrieve_scheduler(
+        scheduler = load_scheduler(
             pc,
             pipeline,
             zmq_ctx,
@@ -151,79 +142,6 @@ class ModelWorker:
         # Close the process.
         pc.set_completed()
         logger.debug("Stopped model worker!")
-
-    @staticmethod
-    def _retrieve_embeddings_scheduler(
-        pc: ProcessControl,
-        pipeline: EmbeddingsGenerator,
-        zmq_ctx: zmq.Context,
-        settings: Settings,
-        pipeline_config: TokenGeneratorSchedulerConfig,
-    ) -> Scheduler:
-        config = pipeline_config
-        max_batch_size = config.token_generation.size
-
-        scheduler_config = EmbeddingsSchedulerConfig(
-            max_batch_size=max_batch_size,
-        )
-        return EmbeddingsScheduler(
-            process_control=pc,
-            scheduler_config=scheduler_config,
-            pipeline=pipeline,
-            request_zmq_endpoint=settings.request_zmq_endpoint,
-            response_zmq_endpoint=settings.response_zmq_endpoint,
-            cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-            zmq_ctx=zmq_ctx,
-        )
-
-    @staticmethod
-    @traced
-    def retrieve_scheduler(
-        pc: ProcessControl,
-        pipeline: Union[TokenGenerator, EmbeddingsGenerator],
-        zmq_ctx: zmq.Context,
-        settings: Settings,
-        pipeline_config: TokenGeneratorSchedulerConfig,
-    ) -> Scheduler:
-        """Retrieves the appropriate scheduler based on the pipeline type.
-
-        Args:
-            pc: Process control for managing worker lifecycle
-            pipeline: The pipeline instance to create a scheduler for
-            zmq_ctx: ZeroMQ context for communication
-            settings: Global server settings
-            pipeline_config: Configuration for the token generation pipeline
-
-        Returns:
-            A scheduler instance configured for the given pipeline type
-
-        """
-        # TODO(E2EOPT-235): Simplify embeddings scheduler creation upstream
-        if isinstance(pipeline, TokenGenerator):
-            return load_scheduler(
-                zmq_ctx=zmq_ctx,
-                settings=settings,
-                pipeline=pipeline,
-                pipeline_role=pipeline_config.pipeline_role,
-                pc=pc,
-                max_batch_size_tg=pipeline_config.max_batch_size_tg,
-                max_forward_steps_tg=pipeline_config.max_forward_steps_tg,
-                target_tokens_per_batch_tg=pipeline_config.target_tokens_per_batch_tg,
-                max_batch_size_ce=pipeline_config.max_batch_size_ce,
-                max_forward_steps_ce=pipeline_config.max_forward_steps_ce,
-                target_tokens_per_batch_ce=pipeline_config.target_tokens_per_batch_ce,
-                batch_timeout=pipeline_config.batch_timeout,
-                enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-                enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-            )
-        elif isinstance(pipeline, EmbeddingsGenerator):
-            return ModelWorker._retrieve_embeddings_scheduler(
-                pc,
-                pipeline,
-                zmq_ctx,
-                settings,
-                pipeline_config,
-            )
 
     @staticmethod
     @traced

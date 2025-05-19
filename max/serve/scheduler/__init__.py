@@ -10,20 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-from typing import Optional
+from __future__ import annotations
 
 import zmq
-from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TokenGenerator
+from max.pipelines.core import EmbeddingsGenerator, TokenGenerator
 from max.pipelines.lib import PipelineRole
-from max.pipelines.lib.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 
 from .base import Scheduler
 from .config import TokenGeneratorSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
+from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 from .zmq_queue import ZmqPullSocket, ZmqPushSocket
@@ -34,62 +32,68 @@ __all__ = [
     "ZmqPullSocket",
     "load_scheduler",
     "TokenGeneratorSchedulerConfig",
+    "EmbeddingsScheduler",
+    "EmbeddingsSchedulerConfig",
 ]
 
 
 def load_scheduler(
+    pc: ProcessControl,
+    pipeline: TokenGenerator | EmbeddingsGenerator,
     zmq_ctx: zmq.Context,
     settings: Settings,
-    pipeline: TokenGenerator,
-    pipeline_role: PipelineRole,
-    pc: ProcessControl,
-    max_batch_size_tg: int,
-    max_forward_steps_tg: int,
-    target_tokens_per_batch_tg: Optional[int],
-    max_batch_size_ce: int,
-    max_forward_steps_ce: int,
-    target_tokens_per_batch_ce: Optional[int],
-    batch_timeout: Optional[float],
-    enable_chunked_prefill: bool = True,
-    enable_in_flight_batching: bool = False,
+    config: TokenGeneratorSchedulerConfig,
 ) -> Scheduler:
-    if pipeline_role == PipelineRole.PrefillAndDecode:
+    if isinstance(pipeline, EmbeddingsGenerator):
+        embeddings_scheduler_config = EmbeddingsSchedulerConfig(
+            max_batch_size=config.token_generation.size,
+        )
+        return EmbeddingsScheduler(
+            process_control=pc,
+            scheduler_config=embeddings_scheduler_config,
+            pipeline=pipeline,
+            request_zmq_endpoint=settings.request_zmq_endpoint,
+            response_zmq_endpoint=settings.response_zmq_endpoint,
+            cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+            zmq_ctx=zmq_ctx,
+        )
+    elif config.pipeline_role == PipelineRole.PrefillAndDecode:
         return load_text_generation_scheduler(
             zmq_ctx,
             settings,
             pipeline,
             pc,
-            max_batch_size_tg,
-            max_forward_steps_tg,
-            target_tokens_per_batch_tg,
-            max_batch_size_ce,
-            max_forward_steps_ce,
-            target_tokens_per_batch_ce,
-            batch_timeout,
-            enable_chunked_prefill,
-            enable_in_flight_batching,
+            max_batch_size_tg=config.max_batch_size_tg,
+            max_forward_steps_tg=config.max_forward_steps_tg,
+            target_tokens_per_batch_tg=config.target_tokens_per_batch_tg,
+            max_batch_size_ce=config.max_batch_size_ce,
+            max_forward_steps_ce=config.max_forward_steps_ce,
+            target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
+            batch_timeout=config.batch_timeout,
+            enable_chunked_prefill=config.enable_chunked_prefill,
+            enable_in_flight_batching=config.enable_in_flight_batching,
         )
-    elif pipeline_role == PipelineRole.DecodeOnly:
+    elif config.pipeline_role == PipelineRole.DecodeOnly:
         return load_decode_scheduler(
             zmq_ctx,
             settings,
             pipeline,
             pc,
-            max_batch_size_tg,
-            max_forward_steps_tg,
+            max_batch_size_tg=config.max_batch_size_tg,
+            max_forward_steps_tg=config.max_forward_steps_tg,
         )
-    elif pipeline_role == PipelineRole.PrefillOnly:
+    elif config.pipeline_role == PipelineRole.PrefillOnly:
         return load_prefill_scheduler(
             zmq_ctx,
             settings,
             pipeline,
             pc=pc,
-            max_batch_size_ce=max_batch_size_ce,
-            target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-            batch_timeout=batch_timeout,
-            enable_chunked_prefill=enable_chunked_prefill,
+            max_batch_size_ce=config.max_batch_size_ce,
+            target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
+            batch_timeout=config.batch_timeout,
+            enable_chunked_prefill=config.enable_chunked_prefill,
         )
     else:
         raise ValueError(
-            f"no scheduler support for pipeline_role ({pipeline_role})."
+            f"no scheduler support for pipeline_role ({config.pipeline_role})."
         )
