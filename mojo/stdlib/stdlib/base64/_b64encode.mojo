@@ -25,21 +25,13 @@ https://arxiv.org/abs/1704.00605
 """
 
 from collections import InlineArray
+from memory import Span, UnsafePointer, bitcast, memcpy
 from math.math import _compile_time_iota
 from sys import llvm_intrinsic
-
-from memory import Span, UnsafePointer, bitcast, memcpy
 
 from utils import IndexList
 
 alias Bytes = SIMD[DType.uint8, _]
-
-
-fn _base64_simd_mask[
-    simd_width: Int
-](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
-    alias mask = _compile_time_iota[DType.uint8, simd_width]()
-    return mask < UInt8(nb_value_to_load)
 
 
 # |                |---- byte 2 ----|---- byte 1 ----|---- byte 0 ----|
@@ -117,85 +109,25 @@ fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
     return abcd + OFFSETS._dynamic_shuffle(offset_indices)
 
 
-fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
-    simd_width: Int
-]() -> SIMD[DType.uint8, simd_width]:
-    """This is a lookup table to know how many bytes we need to store in the output buffer
-    for a given number of bytes to encode in base64. Including the '=' sign.
-
-    This table lookup is smaller than the simd size, because we only use it for the last chunk.
-    This should be called at compile time, otherwise it's quite slow.
-    """
-    var result = SIMD[DType.uint8, simd_width](0)
-    for i in range(1, simd_width):
-        # We have "i" bytes to encode in base64, how many bytes do
-        # we need to store in the output buffer? Including the '=' sign.
-
-        # math.ceil cannot be called at compile time, this is a workaround
-        var group_of_3_bytes = i // 3
-        if i % 3 != 0:
-            group_of_3_bytes += 1
-
-        result[i] = group_of_3_bytes * 4
-    return result
-
-
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
-    alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
-        max_size
-    ]()
+    alias table = _ceildiv_u8(
+        _compile_time_iota[DType.uint8, max_size](), 3
+    ) * 4
     return Int(table[nb_of_elements_to_load])
-
-
-fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
-    simd_width: Int
-]() -> SIMD[DType.uint8, simd_width]:
-    """This is a lookup table to know how many bytes we need to store in the output buffer
-    for a given number of bytes to encode in base64. This is **not** including the '=' sign.
-
-    This table lookup is smaller than the simd size, because we only use it for the last chunk.
-    This should be called at compile time, otherwise it's quite slow.
-    """
-    var result = SIMD[DType.uint8, simd_width]()
-    for i in range(simd_width):
-        # We have "i" bytes to encode in base64, how many bytes do
-        # we need to store in the output buffer? NOT including the '=' sign.
-        # We count the number of groups of 6 bits and we add 1 byte if there is an incomplete group.
-        var number_of_bits = i * 8
-        var complete_groups_of_6_bits = number_of_bits // 6
-        var incomplete_groups_of_6_bits: Int
-        if i * 8 % 6 == 0:
-            incomplete_groups_of_6_bits = 0
-        else:
-            incomplete_groups_of_6_bits = 1
-
-        result[i] = complete_groups_of_6_bits + incomplete_groups_of_6_bits
-    return result
 
 
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
-    alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
-        max_size
-    ]()
+    alias table = _ceildiv_u8(
+        _compile_time_iota[DType.uint8, max_size]() * 8, 6
+    )
     return Int(table[nb_of_elements_to_load])
 
 
-fn load_incomplete_simd[
-    simd_width: Int
-](
-    pointer: UnsafePointer[UInt8, mut=False, origin=_],
-    nb_of_elements_to_load: Int,
-) -> SIMD[DType.uint8, simd_width]:
-    var result = SIMD[DType.uint8, simd_width](0)
-    var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
-    memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
-    return result
-
-
+# TODO: Use Span instead of List as input when Span is easier to use
 @no_inline
 fn b64encode_with_buffers(
     input_bytes: Span[Byte, _],
@@ -226,9 +158,9 @@ fn b64encode_with_buffers(
         )
 
         # We don't want to read past the input buffer
-        var input_vector = load_incomplete_simd[simd_width](
+        var input_vector = load_simd[simd_width](
             start_of_input_chunk,
-            nb_of_elements_to_load=nb_of_elements_to_load,
+            nb_of_elements_to_load,
         )
 
         result_vector = _to_b64_ascii(input_vector)
@@ -239,7 +171,9 @@ fn b64encode_with_buffers(
         ](
             nb_of_elements_to_load
         )
-        var equal_mask = _base64_simd_mask[simd_width](non_equal_chars_number)
+        var equal_mask = _compile_time_iota[
+            DType.uint8, simd_width
+        ]() < non_equal_chars_number
 
         var result_vector_with_equals = equal_mask.select(
             result_vector, equal_vector
@@ -250,11 +184,20 @@ fn b64encode_with_buffers(
         ](
             nb_of_elements_to_load
         )
-        result.extend(result_vector_with_equals, count=nb_of_elements_to_store)
+        store_simd(
+            result.unsafe_ptr() + len(result),
+            result_vector_with_equals,
+            nb_of_elements_to_store,
+        )
+        result._len += nb_of_elements_to_store
         input_index += input_simd_width
 
 
 # Utility functions
+
+
+fn _ceildiv_u8(a: Bytes, b: __type_of(a)) -> __type_of(a):
+    return (a + b - 1) / b
 
 
 fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
@@ -280,3 +223,17 @@ fn _sub_with_saturation[
 ]:
     # generates a single `vpsubusb` on x86 with AVX
     return llvm_intrinsic["llvm.usub.sat", __type_of(a)](a, b)
+
+
+fn load_simd[
+    width: Int
+](pointer: UnsafePointer[Byte], len: Int) -> Bytes[width]:
+    var result = Bytes[width]()
+    var buffer_ptr = UnsafePointer(to=result).bitcast[Byte]()
+    memcpy(dest=buffer_ptr, src=pointer, count=len)
+    return result
+
+
+fn store_simd(ptr: UnsafePointer[Byte], owned v: Bytes, len: Int):
+    var buffer_ptr = UnsafePointer(to=v).bitcast[Byte]()
+    memcpy(dest=ptr, src=buffer_ptr, count=len)
