@@ -400,10 +400,14 @@ const CallOperands &InitializerUValue::get() const { return storage->operands; }
 
 static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
                           const ExprNode *expr, ExprEmitter &emitter) {
+  // Emit the tuple in a parameter context so we don't eagerly generated IR into
+  // the body of any current function.
+  auto paramEmitter = emitter.getParamEmitter(EC_CollectionLiteral);
+
   TupleNode emptyTuple(expr->getLoc(), {});
   if (auto tupleValue =
-          emitter.emitExprRValue(&emptyTuple, EC_CollectionLiteral))
-    operands.add(StringAttr::get(emitter.getContext(), kwargName),
+          paramEmitter.emitExprRValue(&emptyTuple, EC_CollectionLiteral))
+    operands.add(StringAttr::get(paramEmitter.getContext(), kwargName),
                  {tupleValue, expr});
 };
 
@@ -423,7 +427,51 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
     addEmptyTuple(operands, "__dict_literal__", expr, emitter);
     break;
   case Syntax::kSetInitLiteral:
-    // FIXME: Disambiguate set literals from initializer lists.
+    // Given we have an inferred type, we can interrogate it a bit.  If there
+    // are any keyword arguments, then we leave this as an initializer list.
+    if (llvm::any_of(operands.values, [](const auto &operand) {
+          return operand.keyword != StringAttr();
+        }))
+      break;
+
+    // Otherwise if this is an empty initializer list, check to see if the type
+    // conforms to the dict protocol.  If so, we emit this as a dict literal so
+    // {} turns into a dict with PythonObject.
+
+    // Convert MySet[*(0, 0)] to MySet[?] so we can infer the parameter(s).
+    type = type.getWithUnknownParametersReplaced(emitter.shared);
+    if (operands.values.empty()) {
+      auto getEmptyList = [&]() -> AnyValue {
+        return InitializerUValue::create(InitializerUValue::kListLiteral, expr,
+                                         CallOperands());
+      };
+
+      // Call __init__(keys=[], values=[], __dict_literal__=())
+      CallOperands dictOperands;
+      dictOperands.add({getEmptyList(), expr});
+      dictOperands.add({getEmptyList(), expr});
+      addEmptyTuple(dictOperands, "__dict_literal__", expr, emitter);
+      CallOperands dictCopy(dictOperands);
+      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+          type, std::move(dictOperands), expr, emitter.declScope,
+          /*isImplicitConversion=*/false);
+      if (succeeded(pValue) && pValue.value())
+        return dictCopy;
+    }
+
+    // Otherwise, check to see if we can emit this as a set literal. It will
+    // take precedent over initializer list emission, because (e.g.)
+    // PythonObject's set literal ctor takes a required keyword argument.
+    CallOperands setOperands;
+    addEmptyTuple(setOperands, "__set_literal__", expr, emitter);
+    FailureOr<PValue> pValue = OverloadSet::canConstructType(
+        type, std::move(setOperands), expr, emitter.declScope,
+        /*isImplicitConversion=*/false);
+    if (succeeded(pValue) && pValue.value()) {
+      addEmptyTuple(operands, "__set_literal__", expr, emitter);
+      break;
+    }
+    // Otherwise, leave it alone as an initializer list.
     break;
   }
   return operands;

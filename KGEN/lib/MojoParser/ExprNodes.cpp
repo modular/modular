@@ -2358,7 +2358,6 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   CallOperands operands;
   operands.add({keysListValue, this});
   operands.add({valuesListValue, this});
-
   auto result = InitializerUValue::create(InitializerUValue::kDictLiteral, this,
                                           std::move(operands));
   return emitter.emitResult(result, this, dest);
