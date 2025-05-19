@@ -67,6 +67,7 @@ enum ExprContext {
   EC_TopLevelStmt,         // x
   EC_ListLiteral,          // [x, y]
   EC_DictLiteral,          // {x:y, q:r}
+  EC_SetInitLiteral,       // {x, y, z}
   EC_TupleElement,         // (x, y)
   EC_SubscriptBase,        // x[y]
   EC_Subscript,            // y[x]

@@ -52,8 +52,9 @@ public:
     kAttributeRef,   // x.y
     kParen,          // (x+y)
     kTuple,          // (), (x,), (x, y), etc
-    kList,           // [x, y]
-    kDictionary,     // {a: 1, b: 2, **dictUnpack}
+    kListLiteral,    // [x, y]
+    kDictLiteral,    // {a: 1, b: 2, **dictUnpack}
+    kSetInitLiteral, // {x, y} and {z=4, "foo"}
     kCall,           // thing(a, b)
     kSubscript,      // thing[a, b:c]
     kSubscriptArrow, // thing[x, y -> a, b]

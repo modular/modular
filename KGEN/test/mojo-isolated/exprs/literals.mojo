@@ -115,3 +115,47 @@ fn test_dict_literal(aBool: Bool):
     # CHECK: [[VALUES_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
     # CHECK: lit.call {{.*}}@IntDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %c) :
     var c : IntDict = {1: 7, 2: 8} 
+
+
+# ===----------------------------------------------------------------------=== #
+# Set Literals
+# ===----------------------------------------------------------------------=== #
+
+struct MySet[T: AnyType]:
+    fn __init__(out self, owned *values: T, __set_literal__: ()):
+        pass
+
+# CHECK-LABEL: lit.fn @"test_set_literal
+fn test_set_literal():
+    # TODO
+    # HECK: lit.call {{.*}}Tuple::@"__init__{{.*}}([[EMPTY_TUPLE:%.*]]) :
+    # HECK: [[VARIADIC:%.*]] = pop.variadic.create
+    # HECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
+    # HECK: lit.call {{.*}}@Set::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
+    #var a = {1, 2, 3}
+    pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Initializer Lists
+# ===----------------------------------------------------------------------=== #
+
+struct InitType[T: AnyType]:
+    fn __init__(out self, value: T):
+        pass
+    fn __init__(out self, value: T, value2: Int):
+        pass
+
+# CHECK-LABEL: lit.fn @"test_initializer_list
+fn test_initializer_list():
+    # CHECK: [[TMP:%.*]] = lit.ref.immut
+    # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], %a)
+    var a : InitType[Int] = {1}
+    # CHECK: [[TMP:%.*]] = lit.ref.immut
+    # CHECK: [[TWO:%.*]] = kgen.param.constant: !Int = <{2}> 
+    # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[TWO]], %b)
+    var b : InitType[Int] = {1, 2}
+    # CHECK: [[TMP:%.*]] = lit.ref.immut
+    # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{42}> 
+    # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[INT]], %c)
+    var c : InitType[String] = {"foo", 42}

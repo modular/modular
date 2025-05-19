@@ -2312,40 +2312,39 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitExpr(subExpr, dest);
 }
 
-AnyValue ListLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+static AnyValue emitListLiteral(const ExprNode *expr,
+                                ArrayRef<ExprNode *> elements,
+                                ExprEmitter &emitter) {
   CallOperands operands;
-  for (ExprNode *expr : exprs) {
+  for (ExprNode *expr : elements) {
     auto value = emitter.emitExpr(expr, EC_ListLiteral);
     if (!value)
       return {};
-    operands.add({value, this});
+    operands.add({value, expr});
   }
-  TupleNode emptyTuple(getLoc(), {});
+  TupleNode emptyTuple(expr->getLoc(), {});
   auto tupleValue = emitter.emitExprRValue(&emptyTuple, EC_ListLiteral);
   if (!tupleValue)
     return {};
   operands.add(StringAttr::get(emitter.getContext(), "__list_literal__"),
-               {tupleValue, this});
-  return emitter.emitResult(
-      InitializerUValue::create(InitializerUValue::kListLiteral,
-                                std::move(operands)),
-      this, dest);
+               {tupleValue, expr});
+  return InitializerUValue::create(InitializerUValue::kListLiteral,
+                                   std::move(operands));
+}
+
+AnyValue ListLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  return emitter.emitResult(emitListLiteral(this, exprs, emitter), this, dest);
 }
 
 AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  if (values.empty()) {
-    // Reject things that will be initializer lists.
-    emitter.emitError(getLoc(), "empty dictionary literals are going to behave "
-                                "differently in the future");
-    return {};
-  }
+  assert(!values.empty() && "empty syntax doesn't turn into dict literal");
 
   // We emit dictionary literal syntax like `{a:b, c:d}` as an initializer list
   // with a key and value list: {[a, c], [b, d], __dict_literal__: ()}. This
   // allows the rest of the compiler to infer the type of the dictionary literal
   // and infer the key/element types from the list literals recursively.
-  CallOperands keysListOperands;
-  CallOperands valuesListOperands;
+  SmallVector<ExprNode *> keyElts;
+  SmallVector<ExprNode *> valueElts;
   for (auto [keyExpr, valueExpr] : values) {
     if (!keyExpr) {
       emitter.emitError(
@@ -2354,38 +2353,19 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           << valueExpr->getRange();
       return {};
     }
-    auto keyValue = emitter.emitExpr(keyExpr, EC_DictLiteral);
-    if (!keyValue)
-      return {};
-    auto valueValue = emitter.emitExpr(valueExpr, EC_DictLiteral);
-    if (!valueValue)
-      return {};
-    keysListOperands.add({keyValue, keyExpr});
-    valuesListOperands.add({valueValue, valueExpr});
+    keyElts.push_back(keyExpr);
+    valueElts.push_back(valueExpr);
   }
-  TupleNode emptyTuple(getLoc(), {});
-  auto tupleValue = emitter.emitExprRValue(&emptyTuple, EC_DictLiteral);
-  if (!tupleValue)
-    return {};
-  keysListOperands.add(
-      StringAttr::get(emitter.getContext(), "__list_literal__"),
-      {tupleValue, this});
-  tupleValue = emitter.emitExprRValue(&emptyTuple, EC_DictLiteral);
-  if (!tupleValue)
-    return {};
-  valuesListOperands.add(
-      StringAttr::get(emitter.getContext(), "__list_literal__"),
-      {tupleValue, this});
-  auto keysListValue = InitializerUValue::create(
-      InitializerUValue::kListLiteral, std::move(keysListOperands));
-  auto valuesListValue = InitializerUValue::create(
-      InitializerUValue::kListLiteral, std::move(valuesListOperands));
+
+  auto keysListValue = emitListLiteral(this, keyElts, emitter);
+  auto valuesListValue = emitListLiteral(this, valueElts, emitter);
 
   // Form the initializer list for the dictionary literal.
   CallOperands operands;
   operands.add({keysListValue, this});
   operands.add({valuesListValue, this});
-  tupleValue = emitter.emitExprRValue(&emptyTuple, EC_DictLiteral);
+  TupleNode emptyTuple(getLoc(), {});
+  auto tupleValue = emitter.emitExprRValue(&emptyTuple, EC_DictLiteral);
   if (!tupleValue)
     return {};
   operands.add(StringAttr::get(emitter.getContext(), "__dict_literal__"),
@@ -2394,6 +2374,32 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       InitializerUValue::create(InitializerUValue::kDictLiteral,
                                 std::move(operands)),
       this, dest);
+}
+
+AnyValue SetInitLiteralNode::emitIR(ValueDest &dest,
+                                    ExprEmitter &emitter) const {
+  // We emit this as a simple initializer list directly, but resolution of the
+  // UValue detects when this should be a set initializer and handles that.
+  CallOperands operands;
+  for (auto [keyExpr, valueExpr] : values) {
+    StringAttr keyName;
+    // The key needs to be an identifier, which gets parsed as a DeclRefNode.
+    if (auto dre = dyn_cast_or_null<DeclRefNode>(keyExpr)) {
+      keyName = StringAttr::get(emitter.getContext(), dre->spelling);
+    } else if (keyExpr) {
+      emitter.emitError(keyExpr->getLoc(),
+                        "expected identifier in initializer list");
+      return {};
+    }
+    auto value = emitter.emitExpr(valueExpr, EC_SetInitLiteral);
+    if (!value)
+      return {};
+    operands.add(keyName, {value, valueExpr});
+  }
+
+  auto result = InitializerUValue::create(InitializerUValue::kSetInitLiteral,
+                                          std::move(operands));
+  return emitter.emitResult(result, this, dest);
 }
 
 /// Given an operator, return the SpecialFunctionInfo that implements it.

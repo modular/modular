@@ -427,7 +427,7 @@ fn list_literals():
 
 
 fn dict_expression(a: Int):
-  # expected-error @+1 {{empty dictionary literals are going to behave differently in the future}}
+  # expected-error @+1 {{cannot emit initializer list without a contextual type}}
   _ = {}
   _ = {a: 4}
   # expected-error @+1 {{TODO: unpack emission in dict literal not supported yet}}

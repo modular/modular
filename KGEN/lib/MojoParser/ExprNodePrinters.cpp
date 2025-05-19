@@ -49,10 +49,12 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Paren";
   case ExprNode::kTuple:
     return "Tuple";
-  case ExprNode::kList:
-    return "List";
-  case ExprNode::kDictionary:
-    return "Dictionary";
+  case ExprNode::kListLiteral:
+    return "ListLiteral";
+  case ExprNode::kDictLiteral:
+    return "DictLiteral";
+  case ExprNode::kSetInitLiteral:
+    return "SetInitLiteral";
   case ExprNode::kCall:
     return "Call";
   case ExprNode::kSubscript:
@@ -341,6 +343,22 @@ void DictLiteralNode::print(raw_indented_ostream &os) const {
     os << "{\n";
     os.indent() << "name: ";
     name->print(os);
+    os << "value: ";
+    expr->print(os);
+    os.unindent() << "}\n";
+  }
+  os.unindent() << "]\n";
+  os.unindent() << "}\n";
+}
+
+void SetInitLiteralNode::print(raw_indented_ostream &os) const {
+  os << "SetInit {\n";
+  os.indent() << "values: [\n";
+  for (auto [name, expr] : values) {
+    os << "{\n";
+    os.indent();
+    if (name)
+      os << "name: " << name << " ";
     os << "value: ";
     expr->print(os);
     os.unindent() << "}\n";

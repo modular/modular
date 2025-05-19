@@ -302,6 +302,9 @@ static void printUValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
     case InitializerUValue::kDictLiteral:
       diag << "dictionary literal";
       break;
+    case InitializerUValue::kSetInitLiteral:
+      diag << "initializer list or set literal";
+      break;
     }
   } else
     diag << "unknown overload";

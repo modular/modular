@@ -521,7 +521,12 @@ struct Slice:
 
 
 struct List[T: AnyType]:
-    fn __init__(out self, *list_elements: T, __list_literal__: ()):
+    fn __init__(out self, *elements: T, __list_literal__: ()):
+        pass
+
+
+struct Set[T: AnyType]:
+    fn __init__(out self, *elements: T, __set_literal__: ()):
         pass
 
 

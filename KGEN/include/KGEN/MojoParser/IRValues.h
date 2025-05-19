@@ -309,9 +309,10 @@ public:
   ~InitializerUValue();
 
   const enum Syntax {
-    kSlice,       // Operands of 'a[1:2:3]'
-    kListLiteral, // [a, b, c]
-    kDictLiteral, // {a:b, c:d}
+    kSlice,          // Operands of 'a[1:2:3]'
+    kListLiteral,    // [a, b, c]
+    kDictLiteral,    // {a:b, c:d}
+    kSetInitLiteral, // {a=42, 17}
   } syntax;
 
   const CallOperands &get() const;
