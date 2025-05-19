@@ -15,6 +15,8 @@ lit_tests(
         "collections/data/UN_charter_RU.txt",
         "collections/data/UN_charter_zh-CN.html",
         "collections/data/UN_charter_zh-CN.txt",
+        "collections/string/data/canada.txt",
+        "collections/string/data/mesh.txt",
     ],
     env = {
         "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
