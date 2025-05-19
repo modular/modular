@@ -13,9 +13,9 @@
 
 from sys.info import sizeof
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout
 from memory import UnsafePointer, memcpy
+from memory.unsafe_pointer import _default_alignment
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -23,13 +23,10 @@ from memory import UnsafePointer, memcpy
 
 
 fn _get_rightmost_broadcast_axis[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    input: LayoutTensor[type, **_],
+    output: LayoutTensor[mut=True, type, **_],
 ) -> Int:
     """
     Return the rightmost position (largest axis) at which the dimensions of
@@ -37,13 +34,13 @@ fn _get_rightmost_broadcast_axis[
     shapes are equal).
 
     Args:
-        output: the output buffer
         input: the input buffer
+        output: the output buffer
     """
     # TODO: consider manually unrolling this loop
-    for axis in reversed(range(rank)):
-        var in_dim = input.dim(axis)
-        var out_dim = output.dim(axis)
+    for axis in reversed(range(input.rank)):
+        var in_dim = input.runtime_layout.dim(axis)
+        var out_dim = output.runtime_layout.dim(axis)
         if in_dim != out_dim:
             return axis
     return -1
@@ -55,13 +52,12 @@ fn _get_rightmost_broadcast_axis[
 
 
 fn broadcast[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -74,17 +70,17 @@ fn broadcast[
     """
     # short-circuit if any dimension of the output is 0, this way we don't need
     # to worry about such cases in the kernel implementation.
-    if output.num_elements() == 0:
+    if output.size() == 0:
         return
 
-    var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[
-        rank, output_shape, input_shape, type
-    ](output, input)
+    var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[type](
+        input, output
+    )
 
     var input_output_have_same_shape = rightmost_broadcast_axis == -1
     if input_output_have_same_shape:
-        var src_ptr = input.data
-        var dst_ptr = output.data
+        var src_ptr = input.ptr
+        var dst_ptr = output.ptr
         memcpy(dst_ptr, src_ptr, input.size())
         return
 
@@ -92,7 +88,7 @@ fn broadcast[
     # imaginary axis before 0
     var init_input_prev_axis_stride = input.size()
     var init_output_prev_axis_stride = output.size()
-    broadcast_impl[rank, output_shape, input_shape, type](
+    broadcast_impl[type](
         init_axis,
         output,
         input,
@@ -105,14 +101,13 @@ fn broadcast[
 
 
 fn broadcast_impl[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
     type: DType,
 ](
     axis: Int,
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `constrained` to keep in bound
     input_prev_axis_stride: Int,
@@ -136,26 +131,30 @@ fn broadcast_impl[
         output_offset: The offset at which we start copying data to.
         rightmost_broadcast_axis: The largest axis at which we need to duplicate `input` data.
     """
-    if axis >= rank:
+    if axis >= input.rank:
         return
-    var input_axis_stride = input_prev_axis_stride // input.dim(axis)
+    var input_axis_stride = input_prev_axis_stride // input.runtime_layout.dim(
+        axis
+    )
 
     if axis == rightmost_broadcast_axis:
         var elems_to_copy = input_axis_stride
         _tile_1d(
-            output.data.offset(output_offset),
-            input.data.offset(input_offset),
+            output.ptr.offset(output_offset),
+            input.ptr.offset(input_offset),
             input_axis_stride,  # elems_to_copy
-            output.dim(axis),
+            output.runtime_layout.dim(axis),
         )
         return
 
-    var output_axis_stride = output_prev_axis_stride // output.dim(axis)
+    var output_axis_stride = output_prev_axis_stride // output.runtime_layout.dim(
+        axis
+    )
 
     var next_input_offset = input_offset
     var next_output_offset = output_offset
-    for _ in range(input.dim(axis)):
-        broadcast_impl[rank, output_shape, input_shape, type](
+    for _ in range(input.runtime_layout.dim(axis)):
+        broadcast_impl[type](
             axis + 1,
             output,
             input,
@@ -172,23 +171,30 @@ fn broadcast_impl[
     #     [[0, 0, 0], [0, 0, 0]]
     # --> [[1, 1, 1], [0, 0, 0]]   after recursive call to next axis
     # --> [[1, 1, 1], [1, 1, 1]]   after duplicating data in output
-    if input.dim(axis) != output.dim(axis):
-        var output_tile_start = output.data.offset(output_offset)
+    if input.runtime_layout.dim(axis) != output.runtime_layout.dim(axis):
+        var output_tile_start = output.ptr.offset(output_offset)
         _tile_1d(
             output_tile_start.offset(
                 output_axis_stride
             ),  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
-            output.dim(axis) - 1,  # 1st tile is already there
+            output.runtime_layout.dim(axis) - 1,  # 1st tile is already there
         )
 
 
 fn _tile_1d[
-    type: DType
+    type: DType,
 ](
-    init_dst_ptr: UnsafePointer[Scalar[type]],
-    src_ptr: UnsafePointer[Scalar[type]],
+    init_dst_ptr: UnsafePointer[
+        Scalar[type],
+        address_space = AddressSpace.GENERIC,
+        mut=True, **_,
+    ],
+    src_ptr: UnsafePointer[
+        Scalar[type],
+        address_space = AddressSpace.GENERIC, **_,
+    ],
     tile_num_elems: Int,
     n: Int,
 ):

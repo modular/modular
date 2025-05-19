@@ -1869,6 +1869,47 @@ struct LayoutTensor[
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
 
+    fn __setitem__(
+        self,
+        d0: Int,
+        d1: Int,
+        d2: Int,
+        d3: Int,
+        d4: Int,
+        val: Self.element_type,
+    ):
+        """Sets a single element in a rank-5 tensor at the specified indices.
+
+        This method provides array-like element assignment for rank-5 tensors.
+
+        Args:
+            d0: The index along the first dimension.
+            d1: The index along the second dimension.
+            d2: The index along the third dimension.
+            d3: The index along the fourth dimension.
+            d4: The index along the fifth dimension.
+            val: The value to write to the tensor at the specified position.
+
+        Performance:
+
+        - Direct memory access with minimal overhead.
+        - Memory access pattern follows the tensor's stride configuration.
+
+        Notes:
+
+        - No bounds checking is performed. Accessing out-of-bounds indices
+            will result in undefined behavior.
+        """
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](d0, d1, d2, d3, d4)
+        )
+
+        Element[index_type=linear_idx_type](
+            val, self.runtime_element_layout
+        ).store(self.ptr.offset(offset))
+
     @always_inline("nodebug")
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         """Load a SIMD vector from the tensor at the specified 2D coordinates.

@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout
 from nn.broadcast import broadcast
 
 from utils.index import IndexList
@@ -23,21 +22,21 @@ fn test_broadcast_empty_shape():
     print("== test_broadcast_empty_shape")
 
     # parameters
-    alias input_shape = DimList(1)
-    alias output_shape = DimList(0)
+    alias input_layout = Layout.row_major(1)
+    alias output_layout = Layout.row_major(0)
 
-    # Create a 1D tensor of shape (1), of the form [1]
-    var input_stack = InlineArray[
-        Scalar[DType.index], Int(input_shape.product())
-    ](uninitialized=True)
-    var input = NDBuffer[DType.index, 1, _, input_shape](input_stack)
+    # Create a 1D tensor of layout (1), of the form [1]
+    var input_stack = InlineArray[Scalar[DType.index], input_layout.size()](
+        uninitialized=True
+    )
+    var input = LayoutTensor[DType.index, input_layout](input_stack)
     input[0] = 1
 
     # Create a 1D tensor of shape (0)
-    var output_stack = InlineArray[
-        Scalar[DType.index], Int(output_shape.product())
-    ](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, _, output_shape](output_stack)
+    # Note: output_layout.size() is 0, but we need to allocate a buffer for the
+    # output tensor.
+    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
+    var output = LayoutTensor[DType.index, output_layout](output_stack)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -54,24 +53,23 @@ fn test_broadcast_same_shape():
     print("== test_broadcast_same_shape")
 
     # parameters
-    alias input_shape = DimList(1, 2, 1)
-    alias output_shape = DimList(1, 2, 1)
+    alias input_layout = Layout.row_major(1, 2, 1)
+    alias output_layout = Layout.row_major(1, 2, 1)
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
     var input_stack = InlineArray[
-        Scalar[DType.index], Int(input_shape.product())
+        Scalar[DType.index], Int(input_layout.size())
     ](uninitialized=True)
-    var input = NDBuffer[DType.index, 3, _, input_shape](input_stack)
-    input[IndexList[3](0, 0, 0)] = 1
-    input[IndexList[3](0, 1, 0)] = 2
+    var input = LayoutTensor[DType.index, input_layout](input_stack)
+    input[0, 0, 0] = 1
+    input[0, 1, 0] = 2
 
     # Create a 3D tensor of shape (1, 2, 1)
     var output_stack = InlineArray[
-        Scalar[DType.index], Int(output_shape.product())
+        Scalar[DType.index], Int(output_layout.size())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, _, output_shape](output_stack)
-    output.fill(0)
+    var output = LayoutTensor[DType.index, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -93,25 +91,24 @@ fn test_broadcast_single_axis():
     print("== test_broadcast_single_axis")
 
     # parameters
-    alias input_shape = DimList(1, 2)
-    alias output_shape = DimList(3, 2)
+    alias input_layout = Layout.row_major(1, 2)
+    alias output_layout = Layout.row_major(3, 2)
 
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
     var input_stack = InlineArray[
-        Scalar[DType.index], Int(input_shape.product())
+        Scalar[DType.index], Int(input_layout.size())
     ](uninitialized=True)
-    var input = NDBuffer[DType.index, 2, _, input_shape](input_stack)
+    var input = LayoutTensor[DType.index, input_layout](input_stack)
 
-    input[IndexList[2](0, 0)] = 1
-    input[IndexList[2](0, 1)] = 2
+    input[0, 0] = 1
+    input[0, 1] = 2
 
     # Create a 2D tensor of shape (3, 2)
     var output_stack = InlineArray[
-        Scalar[DType.index], Int(output_shape.product())
+        Scalar[DType.index], Int(output_layout.size())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 2, _, output_shape](output_stack)
-    output.fill(0)
+    var output = LayoutTensor[DType.index, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -141,25 +138,24 @@ fn test_broadcast_multi_axes():
     print("== test_broadcast_multi_axes")
 
     # parameters
-    alias input_shape = DimList(1, 2, 1)
-    alias output_shape = DimList(2, 2, 3)
+    alias input_layout = Layout.row_major(1, 2, 1)
+    alias output_layout = Layout.row_major(2, 2, 3)
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
     var input_stack = InlineArray[
-        Scalar[DType.index], Int(input_shape.product())
+        Scalar[DType.index], Int(input_layout.size())
     ](uninitialized=True)
-    var input = NDBuffer[DType.index, 3, _, input_shape](input_stack)
+    var input = LayoutTensor[DType.index, input_layout](input_stack)
 
-    input[IndexList[3](0, 0, 0)] = 1
-    input[IndexList[3](0, 1, 0)] = 2
+    input[0, 0, 0] = 1
+    input[0, 1, 0] = 2
 
     # Create a 3D tensor of shape (2, 2, 3)
     var output_stack = InlineArray[
-        Scalar[DType.index], Int(output_shape.product())
+        Scalar[DType.index], Int(output_layout.size())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, _, output_shape](output_stack)
-    output.fill(0)
+    var output = LayoutTensor[DType.index, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -199,31 +195,30 @@ fn test_broadcast_multi_axes():
 
 fn test_broadcast_multi_axes_nested():
     # parameters
-    alias input_shape = DimList(2, 1, 2, 1, 2)
-    alias output_shape = DimList(2, 2, 2, 2, 2)
+    alias input_layout = Layout.row_major(2, 1, 2, 1, 2)
+    alias output_layout = Layout.row_major(2, 2, 2, 2, 2)
 
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]
     var input_stack = InlineArray[
-        Scalar[DType.index], Int(input_shape.product())
+        Scalar[DType.index], Int(input_layout.size())
     ](uninitialized=True)
-    var input = NDBuffer[DType.index, 5, _, input_shape](input_stack)
+    var input = LayoutTensor[DType.index, input_layout](input_stack)
 
-    input[IndexList[5](0, 0, 0, 0, 0)] = 1
-    input[IndexList[5](0, 0, 0, 0, 1)] = 2
-    input[IndexList[5](0, 0, 1, 0, 0)] = 3
-    input[IndexList[5](0, 0, 1, 0, 1)] = 4
-    input[IndexList[5](1, 0, 0, 0, 0)] = 5
-    input[IndexList[5](1, 0, 0, 0, 1)] = 6
-    input[IndexList[5](1, 0, 1, 0, 0)] = 7
-    input[IndexList[5](1, 0, 1, 0, 1)] = 8
+    input[0, 0, 0, 0, 0] = 1
+    input[0, 0, 0, 0, 1] = 2
+    input[0, 0, 1, 0, 0] = 3
+    input[0, 0, 1, 0, 1] = 4
+    input[1, 0, 0, 0, 0] = 5
+    input[1, 0, 0, 0, 1] = 6
+    input[1, 0, 1, 0, 0] = 7
+    input[1, 0, 1, 0, 1] = 8
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
     var output_stack = InlineArray[
-        Scalar[DType.index], Int(output_shape.product())
+        Scalar[DType.index], Int(output_layout.size())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 5, _, output_shape](output_stack)
-    output.fill(0)
+    var output = LayoutTensor[DType.index, output_layout](output_stack).fill(0)
 
     broadcast(output, input)
 
