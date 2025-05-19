@@ -122,7 +122,7 @@ These two fields allow us to point to arbitrary-sized strings.
 
 The third field is a bit trickier - it holds the capacity of the string as well
 as the three flags described above.  To make sure we can hold an arbitrary
-capacity string, the `String` type does a trick: it guarantees the the actual
+capacity string, the `String` type does a trick: it guarantees the actual
 capacity will be a multiple of 8, which allows it to shift the capacity down by
 three bits, making room for the flags.
 
@@ -157,7 +157,7 @@ non-obvious.
 
 ### References to constant strings
 
-As mentioned in the "indirect" representation section, the pointer of an an
+As mentioned in the "indirect" representation section, the pointer of an
 indirect string may refer to static constant data when the
 `FLAG_IS_STATIC_CONSTANT` bit is set.  This optimization is important because
 string literals are very common, and we don't want users to have to worry about

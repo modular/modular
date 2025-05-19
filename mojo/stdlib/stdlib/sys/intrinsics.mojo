@@ -900,7 +900,7 @@ fn lane_id() -> UInt:
     """Returns the lane ID of the current thread.
 
     Returns:
-        The lane ID of the the current thread.
+        The lane ID of the current thread.
     """
     constrained[is_gpu(), "This function only applies to GPUs."]()
 

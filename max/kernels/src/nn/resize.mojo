@@ -298,7 +298,7 @@ fn _resize[
     var tmp_buffer1 = UnsafePointer[Scalar[type]]()
     var tmp_buffer2 = UnsafePointer[Scalar[type]]()
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
-    # of 1d interpolation pass accross one of the dimensions
+    # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
         out_ptr = output.data
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer

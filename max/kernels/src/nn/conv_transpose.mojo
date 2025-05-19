@@ -499,10 +499,10 @@ struct ConvTransposedPacked[
             var n = ng // self.conv_shape.num_groups
             var g = ng % self.conv_shape.num_groups
 
-            # Initailize the output buffer for current batch and group.
+            # Initialize the output buffer for current batch and group.
             self._zero_output(n, g)
 
-            # ConvTrasnposed computation
+            # ConvTransposed computation
             self._c_tile_loop(n, g, self.cf_tile_size[0])
 
             # Epilogue. Avoid putting it after register tiling for now because

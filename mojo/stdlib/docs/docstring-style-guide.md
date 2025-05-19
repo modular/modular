@@ -60,7 +60,7 @@ style guide.
 
 - Follow the first sentence with a blank line.
 
-- If you’re unsure how to phrase a description, just answer the the question,
+- If you’re unsure how to phrase a description, just answer the question,
   “What does this function do?” Your answer should complete the sentence, “This
   function ____” (but without saying “this function”).
 

@@ -123,7 +123,7 @@ fn test_attention[
         output_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
 
-    # Q, K, V are randomly initalized.
+    # Q, K, V are randomly initialized.
     rand[qkv_type](q_ptr, q_size, min=-1.0, max=1.0)
     rand[qkv_type](k_ptr, k_size, min=-1.0, max=1.0)
     rand[qkv_type](v_ptr, v_size, min=-1.0, max=1.0)

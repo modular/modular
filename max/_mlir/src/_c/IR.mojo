@@ -890,7 +890,7 @@ fn mlirOperationGetRegion(op: MlirOperation, pos: Int) -> MlirRegion:
 
 
 fn mlirOperationGetNextInBlock(op: MlirOperation) -> MlirOperation:
-    """Returns an operation immediately following the given operation it its
+    """Returns an operation immediately following the given operation in its
     enclosing block."""
     return MLIR_func["mlirOperationGetNextInBlock", MlirOperation](op)
 

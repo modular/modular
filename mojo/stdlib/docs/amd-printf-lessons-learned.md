@@ -63,7 +63,7 @@ the compilation to device code (SASS). At this step the calls
 to print are linked against their runtime NVidia device libraries.
 For HIP (AMD), we actually need to produce the final device binary
 in the first step, which requires having actual implementations
-for all the the device runtime functions like print.
+for all the device runtime functions like print.
 Keen observers will notice that the wrapper functions in the AMD code
 are written in OpenCL.
 That means, if we wanted to use the AMD `device-libs`,

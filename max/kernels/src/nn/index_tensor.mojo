@@ -208,7 +208,7 @@ fn index_tensor[
 
 
 # Note: this is an extremely specialized version of the kernel that only handles
-# the [:, :, x, y] case where x and y are are 1D tensors.
+# the [:, :, x, y] case where x and y are 1D tensors.
 # Batch dims refer to the number of sliced dimensions at the beginning
 fn _index_tensor_1d[
     type: DType,

@@ -139,7 +139,7 @@ fn gather_reduce[
     reduce_init: Scalar[type],
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
-    reduces the output accross axis 1 to produce output[i, k].
+    reduces the output across axis 1 to produce output[i, k].
 
     The motivating use-case for this is multi-hot embeddings in recommender models.
     This provides similar functionality to Torch's EmbeddingBag layer. In that
@@ -577,7 +577,7 @@ fn gather_elementwise_fn_wrapper[
             else:
                 data_indices[i] = idx[i]
 
-        # Load the the data.
+        # Load the data.
         @parameter
         if prefetch_fn:
             alias func = prefetch_fn.value()

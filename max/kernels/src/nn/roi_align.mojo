@@ -128,7 +128,7 @@ fn roi_align_nhwc[
     inputs of NHWC format. The output shape is
     [M, output_height, output_width, C].
 
-    Paramerers:
+    Parameters:
         type: Type of the input tensor.
         input_shape: Shape of the input tensor.
         roi_shape: Shape of regions of interests (ROI).

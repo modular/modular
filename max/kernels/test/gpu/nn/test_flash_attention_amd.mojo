@@ -106,7 +106,7 @@ fn test[
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
-    # Q, K, V are randomly initalized.
+    # Q, K, V are randomly initialized.
     if use_index_input:
         debug_assert(batch_size == 1)
         for i in range(seq_len):

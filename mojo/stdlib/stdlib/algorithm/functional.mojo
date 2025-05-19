@@ -144,7 +144,7 @@ fn vectorize[
 
     In the generated assembly the function calls will be repeated, resulting in
     fewer arithmetic, comparison, and conditional jump operations. The assembly
-    would look like this in psuedocode:
+    would look like this in pseudocode:
 
     ```
     closure[4](0)
@@ -256,7 +256,7 @@ fn vectorize[
 
     In the generated assembly the function calls will be repeated, resulting in
     fewer arithmetic, comparison, and conditional jump operations. The assembly
-    would look like this in psuedocode:
+    would look like this in pseudocode:
 
     ```
     closure[4](0)
