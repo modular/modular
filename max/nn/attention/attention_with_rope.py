@@ -570,7 +570,6 @@ class AttentionWithRope(Module):
             )
         else:
             # Call into fused qkv ragged matmul.
-            assert isinstance(kv_collection, PagedKVCacheCollection)
             xq = fused_qkv_ragged_matmul(
                 self.kv_params,
                 input=x,
