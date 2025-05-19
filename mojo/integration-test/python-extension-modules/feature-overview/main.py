@@ -74,22 +74,40 @@ class TestMojoPythonInterop(unittest.TestCase):
         self.assertEqual(person.name(), "John Doe")
 
         # Test that an error is raised if passing any arguments to the initalizer
+        with self.assertRaises(ValueError) as cm:
+            person = feature_overview.Person("John")
 
-        # FIXME: tp_dealloc_wrapper runs the destructor even if the constructor
-        #    raises an error, destroying an object that was never created.
-        #
-        # with self.assertRaises(ValueError) as cm:
-        #    person = feature_overview.Person("John")
+        self.assertEqual(
+            cm.exception.args,
+            (
+                (
+                    "unexpected arguments passed to default initializer"
+                    " function of wrapped Mojo type"
+                ),
+            ),
+        )
 
-        # self.assertEqual(
-        #    cm.exception.args,
-        #     (
-        #        (
-        #            "unexpected arguments passed to default initializer"
-        #            " function of wrapped Mojo type"
-        #        ),
-        #    ),
-        # )
+    def test_failed_mojo_object_creation_does_not_del(self):
+        """Test that if a Mojo object was not fully initialized due to an
+        exception raised during construction, Python will not call its
+        __del__ method."""
+
+        # Test that an error is raised if passing any arguments to the initalizer
+        with self.assertRaises(ValueError) as cm:
+            result = feature_overview.FailToInitialize("illegal argument")
+
+        self.assertEqual(
+            cm.exception.args,
+            (
+                (
+                    "unexpected arguments passed to default initializer"
+                    " function of wrapped Mojo type"
+                ),
+            ),
+        )
+
+        # If we reach this point, we know `FailToInitialize.__del__()` was not
+        # called, because it aborts.
 
     def test_case_create_mojo_object_in_mojo(self):
         # Returns a new Mojo 'String' object, not derived from

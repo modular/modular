@@ -51,6 +51,7 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         _ = b.add_type[Int]("Int")
         _ = b.add_type[String]("String")
+        _ = b.add_type[FailToInitialize]("FailToInitialize")
         return b.finalize()
     except e:
         return abort[PythonObject]("failed to create Python module: ", e)
@@ -165,6 +166,22 @@ struct Person(Defaultable, Representable, Copyable, Movable):
         self0[].name = String(new_name)
 
         return PythonObject(None)
+
+
+# ===----------------------------------------------------------------------=== #
+# Test: Object Creation Behavior
+# ===----------------------------------------------------------------------=== #
+
+
+struct FailToInitialize(Defaultable, Representable):
+    fn __init__(out self):
+        pass
+
+    fn __del__(owned self):
+        abort("FailToInitialize should never be deinitialized.")
+
+    fn __repr__(self) -> String:
+        return "FailToInitialize()"
 
 
 # ===----------------------------------------------------------------------=== #
