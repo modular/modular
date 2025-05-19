@@ -389,27 +389,28 @@ By making a contribution to this project, I certify that:
 
 1. Pull Request (PR) Review Timeline
 
-- Initial Review:
-  - Maintainers will provide an initial review or feedback within 3 weeks of
-    the PR submission.  At times, it may be significantly quicker, but it
-    depends on a variety of factors.
-- Subsequent Reviews:
-  - Once a contributor addresses feedback, maintainers will review updates as
-    soon as they can, typically within 5 business days.
+   Initial Review:
+    - Maintainers will provide an initial review or feedback within 3 weeks of
+      the PR submission.  At times, it may be significantly quicker, but it
+      depends on a variety of factors.
+
+   Subsequent Reviews:
+    - Once a contributor addresses feedback, maintainers will review updates as
+      soon as they can, typically within 5 business days.
 
 1. Issue Triage Timeline
 
-- New Issues:
-  - Maintainers will label and acknowledge new issues within 10 days of the
-    issue submission.
+   New Issues:
+   - Maintainers will label and acknowledge new issues within 10 days of the
+      issue submission.
 
 1. Proposals
 
-- Proposals take more time for the team to review, discuss, and make sure this
-  is in line with the overall strategy and vision for the standard library.
-  These will get discussed in the team's weekly design meetings internally and
-  feedback will be communicated back on the relevant proposal.  As a team, we'll
-  ensure these get reviewed and discussed within 6 weeks of submission.
+   - Proposals take more time for the team to review, discuss, and make sure this
+    is in line with the overall strategy and vision for the standard library.
+    These will get discussed in the team's weekly design meetings internally and
+    feedback will be communicated back on the relevant proposal.  As a team, we'll
+    ensure these get reviewed and discussed within 6 weeks of submission.
 
 #### Exceptions
 
