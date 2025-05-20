@@ -106,9 +106,8 @@ class CustomOpLibrary:
             self._kernel_library = kernel_library
         else:
             self._context = mlir.Context()
-            self._kernel_library = KernelLibrary(
-                self._context, [kernel_library]
-            )
+            self._kernel_library = KernelLibrary(self._context)
+            self._kernel_library.load_paths(self._context, [kernel_library])
 
         self._session = InferenceSession(devices=devices)
         self._ops = {}
