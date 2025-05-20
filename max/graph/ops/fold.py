@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from ..type import DeviceKind, Shape, StaticDim
+from ..type import DeviceKind, DimLike, Shape, StaticDim
 from ..value import TensorType, TensorValue, TensorValueLike
 from .custom import custom
 from .shape_to_tensor import shape_to_tensor
@@ -15,8 +15,8 @@ from .shape_to_tensor import shape_to_tensor
 
 def fold(
     input: TensorValueLike,
-    output_size: tuple[int, int],
-    kernel_size: tuple[int, int],
+    output_size: tuple[DimLike, DimLike],
+    kernel_size: tuple[DimLike, DimLike],
     stride: int | tuple[int, int] = 1,
     dilation: int | tuple[int, int] = 1,
     padding: int | tuple[int, int] = 0,
@@ -62,35 +62,46 @@ def fold(
     if not isinstance(padding, tuple):
         padding = (padding, padding)
 
-    channels = input.shape[1] // (kernel_size[0] * kernel_size[1])
-    output_shape = Shape(
-        [input.shape[0], channels, output_size[0], output_size[1]]
-    )
-
-    # Run early shape checks if the shapes are statically known.
-    if (
-        isinstance(input.shape[1], StaticDim)
-        and int(input.shape[1]) % (kernel_size[0] * kernel_size[1]) != 0
-    ):
-        raise ValueError(
-            f"Dim 1 of the input tensor ({input.shape[1]}) must be a multiple "
-            "of the product of the total kernel size"
-            f" ({kernel_size[0]} * {kernel_size[1]})."
+    if isinstance(kernel_size[0], int) and isinstance(kernel_size[1], int):
+        channels = input.shape[1] // (kernel_size[0] * kernel_size[1])
+        output_shape = Shape(
+            [input.shape[0], channels, output_size[0], output_size[1]]
+        )
+    else:
+        output_shape = Shape(
+            [input.shape[0], "channels", output_size[0], output_size[1]]
         )
 
-    if isinstance(input.shape[2], StaticDim):
-        L = 1
-        for n, (o, k) in enumerate(zip(output_size, kernel_size)):
-            L_d = int(
-                (o + 2 * padding[n] - dilation[n] * (k - 1) - 1) // stride[n]
-                + 1
-            )
-            L *= L_d
-        if int(input.shape[2]) != L:
+    # Run early shape checks if the shapes are statically known.
+    if isinstance(kernel_size[0], int) and isinstance(kernel_size[1], int):
+        if (
+            isinstance(input.shape[1], StaticDim)
+            and int(input.shape[1]) % (kernel_size[0] * kernel_size[1]) != 0
+        ):
             raise ValueError(
-                f"Last dimension of input tensor ({input.shape[2]}) must match "
-                f"the calculated number of blocks ({L})."
+                f"Dim 1 of the input tensor ({input.shape[1]}) must be a multiple "
+                "of the product of the total kernel size"
+                f" ({kernel_size[0]} * {kernel_size[1]})."
             )
+
+        if (
+            isinstance(input.shape[2], StaticDim)
+            and isinstance(output_size[0], int)
+            and isinstance(output_size[1], int)
+        ):
+            L = 1
+            for n, (o, k) in enumerate(zip(output_size, kernel_size)):
+                L_d = int(
+                    (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)
+                    // stride[n]
+                    + 1
+                )
+                L *= L_d
+            if int(input.shape[2]) != L:
+                raise ValueError(
+                    f"Last dimension of input tensor ({input.shape[2]}) must match "
+                    f"the calculated number of blocks ({L})."
+                )
 
     return custom(
         "fold",
