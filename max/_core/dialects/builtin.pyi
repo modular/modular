@@ -941,8 +941,8 @@ class MemRefLayoutAttrInterface(Protocol):
 
     Note: the MemRef type's layout is assumed to represent simple strided buffer
     layout. For more complicated case, like sparse storage buffers,
-    it is preferable to use separate type with more specic layout, rather then
-    introducing extra complexity to the builtin MemRef type.
+    it is preferable to use a separate type with a more specific layout, rather
+    than introducing extra complexity to the builtin MemRef type.
     """
 
     @property
@@ -951,6 +951,9 @@ class MemRefLayoutAttrInterface(Protocol):
     def identity(self) -> bool: ...
     def verify_layout(
         self, arg0: Sequence[int], arg1: DiagnosticHandler, /
+    ) -> bool: ...
+    def get_strides_and_offset(
+        self, arg0: Sequence[int], arg1: Sequence[int], arg2: int, /
     ) -> bool: ...
 
 class MemRefType(max._core.Type):
