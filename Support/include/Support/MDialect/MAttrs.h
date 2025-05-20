@@ -372,6 +372,13 @@ ErrorOr<DeviceRef> toRuntimeDeviceRef(DeviceRefAttr deviceRefAttr);
 DeviceRefAttr fromRuntimeDeviceRef(MLIRContext *ctx,
                                    const DeviceRef &runtimeDeviceRef);
 
+/// Returns the default CPU device.
+///
+/// Forward declared so can be used in MOOps.td, see MODevices.h for rest of
+/// helpers and MODevices.cpp for implementation.
+DeviceRefAttr getHostDevice(MLIRContext *ctx);
+DeviceRefAttr getHostDevice(Operation *op);
+
 //===----------------------------------------------------------------------===//
 // DeviceSpecAttr
 //===----------------------------------------------------------------------===//
