@@ -227,6 +227,7 @@ def test_apply_penalties_to_logits(session: InferenceSession):
     VOCAB_SIZE = 1024
     FREQ_PENALTY_SCALAR = 0.5
     PRESENCE_PENALTY_SCALAR = 1.2
+    REPETITION_PENALTY_SCALAR = 1.1
 
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
@@ -300,6 +301,11 @@ def test_apply_penalties_to_logits(session: InferenceSession):
                     DType.float32,
                     device=DeviceRef.CPU(),
                 ),
+                ops.constant(
+                    REPETITION_PENALTY_SCALAR,
+                    DType.float32,
+                    device=DeviceRef.CPU(),
+                ),
             ],
             device=device_ref,
         )
@@ -321,6 +327,10 @@ def test_apply_penalties_to_logits(session: InferenceSession):
     for i in range(BATCH_SIZE):
         unique_tokens, counts = np.unique(prompt_tokens[i], return_counts=True)
         for token, count in zip(unique_tokens, counts):
+            if ref_result[i][token] > 0:
+                ref_result[i][token] /= REPETITION_PENALTY_SCALAR
+            else:
+                ref_result[i][token] *= REPETITION_PENALTY_SCALAR
             ref_result[i][token] -= FREQ_PENALTY_SCALAR * count
             ref_result[i][token] -= PRESENCE_PENALTY_SCALAR
 
