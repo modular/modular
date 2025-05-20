@@ -3593,14 +3593,12 @@ fn _floor(x: SIMD) -> __type_of(x):
     alias bitwidth = bitwidthof[x.dtype]()
     alias exponent_width = FPUtils[x.dtype].exponent_width()
     alias mantissa_width = FPUtils[x.dtype].mantissa_width()
-    # FIXME: GH issue #3613
-    # alias mask = FPUtils[x.type].exponent_mask()
-    alias mask = (1 << exponent_width) - 1
+    alias mask = FPUtils[x.dtype].exponent_mask()
     alias bias = FPUtils[x.dtype].exponent_bias()
     alias shift_factor = bitwidth - exponent_width - 1
 
-    bits = x.to_bits()
-    var e = ((bits >> mantissa_width) & mask) - bias
+    var bits = x.to_bits()
+    var e = ((bits & mask) >> mantissa_width) - bias
     bits = (e < shift_factor).select(
         bits & ~((1 << (shift_factor - e)) - 1),
         bits,
