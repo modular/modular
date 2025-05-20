@@ -101,12 +101,15 @@ class CustomOpLibrary:
         """
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
-        self._context = Context()
-        self._kernel_library = (
-            kernel_library
-            if isinstance(kernel_library, KernelLibrary)
-            else KernelLibrary(self._context, [kernel_library])
-        )
+        if isinstance(kernel_library, KernelLibrary):
+            self._context = kernel_library._context
+            self._kernel_library = kernel_library
+        else:
+            self._context = mlir.Context()
+            self._kernel_library = KernelLibrary(
+                self._context, [kernel_library]
+            )
+
         self._session = InferenceSession(devices=devices)
         self._ops = {}
 
@@ -181,6 +184,7 @@ def to_torch_tensors(tensor: Sequence[Tensor]) -> TorchTensors:
 
 
 def custom_op_graph(
+    context: mlir.Context,
     op: CustomOp,
     input_types: Iterable[TensorType],
     result_types: Iterable[TensorType],
@@ -206,7 +210,7 @@ def custom_op_graph(
     with Graph(
         op.name,
         input_types=graph_types,
-        context=op.context,
+        context=context,
         kernel_library=op.kernel_library,
     ) as graph:
         results = ops.custom(
@@ -314,7 +318,7 @@ def compile_custom_op(op: CustomOp):
             sig = model_signature(
                 args[num_dps_outputs:], args[:num_dps_outputs]
             )
-            graph = custom_op_graph(op, *sig)
+            graph = custom_op_graph(mlir.Context(), op, *sig)
             model = op.library._session.load(graph)
             model_cache[key] = model
 
