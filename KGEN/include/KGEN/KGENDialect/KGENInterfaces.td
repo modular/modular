@@ -54,7 +54,7 @@ def DeclInterface : OpInterface<"DeclInterface"> {
       The region number is passed in because one region may be isolated from
       above while another may not be.
     }], "void", "notifyKnownIsolatedFromAbove", (ins "unsigned":$regionNumber),
-      [{}], [{ }]>,
+      [{}], [{ return; }]>,
 
     InterfaceMethod<[{
       Get the input parameters to this parameter scope. These parameters are

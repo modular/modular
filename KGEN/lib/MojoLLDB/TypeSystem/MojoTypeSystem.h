@@ -163,6 +163,29 @@ public:
     return 0;
   }
 
+  llvm::Expected<lldb_private::CompilerType> GetDereferencedType(
+      lldb::opaque_compiler_type_t type,
+      lldb_private::ExecutionContext *exe_ctx, std::string &deref_name,
+      uint32_t &deref_byte_size, int32_t &deref_byte_offset,
+      lldb_private::ValueObject *valobj, uint64_t &language_flags) override {
+
+    bool isTypeValid = IsPointerOrReferenceType(type, nullptr) ||
+                       IsArrayType(type, nullptr, nullptr, nullptr);
+
+    if (!isTypeValid)
+      return llvm::createStringError("not a pointer, reference or array type");
+
+    uint32_t childBitfieldBitSize = 0;
+    uint32_t childBitfieldBitOffset = 0;
+    bool childIsBaseClass = false;
+    bool childIsDerefOfParent = false;
+
+    return GetChildCompilerTypeAtIndex(
+        type, exe_ctx, 0, false, true, false, deref_name, deref_byte_size,
+        deref_byte_offset, childBitfieldBitSize, childBitfieldBitOffset,
+        childIsBaseClass, childIsDerefOfParent, valobj, language_flags);
+  }
+
   const llvm::fltSemantics &GetFloatTypeSemantics(size_t byteSize) override {
     // It seems that we should return more specific types only if the target's
     // float standard differs from the host. We don't worry about that for now.
