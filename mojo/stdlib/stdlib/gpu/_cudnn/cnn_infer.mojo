@@ -1331,7 +1331,7 @@ fn cudnnGetConvolutionNdForwardOutputDim(
     input_tensor_desc: UnsafePointer[cudnnTensorStruct],
     filter_desc: UnsafePointer[cudnnFilterStruct],
     nb_dims: Int16,
-    tensor_ouput_dim_a: UnsafePointer[NoneType],
+    tensor_output_dim_a: UnsafePointer[NoneType],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdForwardOutputDim",
@@ -1342,7 +1342,7 @@ fn cudnnGetConvolutionNdForwardOutputDim(
             Int16,
             UnsafePointer[NoneType],
         ) -> cudnnStatus_t,
-    ]()(conv_desc, input_tensor_desc, filter_desc, nb_dims, tensor_ouput_dim_a)
+    ]()(conv_desc, input_tensor_desc, filter_desc, nb_dims, tensor_output_dim_a)
 
 
 fn cudnnGetConvolutionForwardAlgorithmMaxCount(

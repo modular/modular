@@ -6809,7 +6809,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
         # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
-        # zero point that need to be substracted from the quantized weights.
+        # zero point that need to be subtracted from the quantized weights.
         alias has_zp = True if has_zp_int == 1 else False
 
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
@@ -6937,7 +6937,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
     ) raises:
         # In the group-wise quantization scheme, every `group_size` quantized weights
         # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
-        # zero point that need to be substracted from the quantized weights.
+        # zero point that need to be subtracted from the quantized weights.
         alias has_zp = True if has_zp_int == 1 else False
 
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[

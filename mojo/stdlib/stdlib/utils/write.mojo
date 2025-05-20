@@ -508,7 +508,7 @@ struct WritableVariadicPack[
     var value: Pointer[
         VariadicPack[is_owned, pack_origin, Writable, *Ts], origin
     ]
-    """Reference to a `VariadicPack` that comforms to `Writable`."""
+    """Reference to a `VariadicPack` that conforms to `Writable`."""
 
     fn __init__(
         out self,

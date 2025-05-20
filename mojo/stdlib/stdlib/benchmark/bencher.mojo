@@ -1162,7 +1162,7 @@ struct Bencher:
     """ Number of iterations to run the target function."""
 
     var elapsed: Int
-    """ The total time elpased when running the target function."""
+    """ The total time elapsed when running the target function."""
 
     @implicit
     fn __init__(out self, num_iters: Int):

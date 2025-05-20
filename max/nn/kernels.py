@@ -342,7 +342,7 @@ def fused_qkv_ragged_matmul_quantized(
 
     # In the group-wise quantization scheme, every `group_size` quantized weights
     # share the same scale. If `has_zp` is `True`, there is also a group-wise zero
-    # point that need to be substracted from the quantized weights.
+    # point that need to be subtracted from the quantized weights.
     # Since the new extensibility API doesn't currently support `bool` type parameters,
     # we pass `has_zp` as an interger (`has_zp_int`).
     # For GPTQ, `has_zp_int` will always be 0.

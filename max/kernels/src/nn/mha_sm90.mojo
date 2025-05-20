@@ -97,7 +97,7 @@ from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 
-# The motivationn here is to be able to pass `StaticInt[1]()`
+# The motivation here is to be able to pass `StaticInt[1]()`
 # to indicate `decoding=True`, and have this not generate any code
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
