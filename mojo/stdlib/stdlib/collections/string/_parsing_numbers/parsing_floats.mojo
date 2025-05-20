@@ -154,9 +154,11 @@ fn _get_w_and_q_from_float_string(
     significand_as_integer = to_integer(significand)
     return (significand_as_integer, Int64(exponent_as_integer))
 
+
 @always_inline
 fn strip_unused_characters(x: StringSlice[mut=False]) -> __type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
+
 
 @always_inline
 fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
@@ -171,12 +173,14 @@ fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
 fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
     return w <= 2**53 and (Int64(-22) <= q <= Int64(22))
 
+
 @no_inline
 fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
         return Float64(w) * POWERS_OF_10[q]
     else:
         return Float64(w) / POWERS_OF_10[-q]
+
 
 @no_inline
 fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
@@ -185,6 +189,7 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # That should speed things up.
     result = UInt128(x) * UInt128(y)
     return UInt128Decomposed(result)
+
 
 @no_inline
 fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
@@ -204,6 +209,7 @@ fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
 
 fn create_subnormal_float64(m: UInt64) -> Float64:
     return create_float64(m, -1023)
+
 
 @no_inline
 fn create_float64(m: UInt64, p: Int64) -> Float64:
@@ -308,9 +314,12 @@ fn _atof(x: StringSlice) raises -> Float64:
     if x == "" or x == ".":
         raise Error("String is not convertible to float: " + repr(x))
     if not x.is_ascii():
-        raise Error("String is not convertible to float because it's not acii: " + repr(x))
+        raise Error(
+            "String is not convertible to float because it's not acii: "
+            + repr(x)
+        )
     stripped = strip_unused_characters(x)
-    #stripped = StringSlice(x)
+    # stripped = StringSlice(x)
     sign_and_stripped = get_sign(stripped)
     sign = sign_and_stripped[0]
     stripped = sign_and_stripped[1]

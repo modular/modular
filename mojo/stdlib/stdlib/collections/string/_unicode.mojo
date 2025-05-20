@@ -212,8 +212,6 @@ fn _to_lowercase_ascii(s: StringSlice) -> String:
             result_ptr[i] = char
     return result^
 
-    
-
 
 fn to_uppercase(s: StringSlice) -> String:
     """Returns a new string with all characters converted to uppercase.

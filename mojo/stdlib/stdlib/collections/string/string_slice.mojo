@@ -2148,7 +2148,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         @parameter
         fn closure[width: Int](i: Int):
-            result = result and (ptr_to_self.load[width=width](i) < 128).reduce_and()
+            result = (
+                result and (ptr_to_self.load[width=width](i) < 128).reduce_and()
+            )
 
         vectorize[closure, simdwidthof[DType.uint8]()](self.byte_length())
 
