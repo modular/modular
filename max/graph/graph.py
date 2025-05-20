@@ -37,6 +37,7 @@ CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
 
 class KernelLibrary:
+    _context: mlir.Context
     _analysis: _graph.Analysis
 
     def __init__(self, context: mlir.Context, paths: list[Path] = []):
@@ -45,6 +46,7 @@ class KernelLibrary:
         mock_session = InferenceSession()
         mock_session._impl.register_runtime_context(context)
 
+        self._context = context
         self._analysis = _graph.Analysis(context, paths)
 
     def library_paths(self) -> list[Path]:
