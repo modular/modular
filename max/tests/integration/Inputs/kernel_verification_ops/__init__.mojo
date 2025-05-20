@@ -179,3 +179,56 @@ struct MutableInputTensorKernel:
     @staticmethod
     fn execute(in_place_tensor: MutableInputTensor) raises:
         in_place_tensor._ptr.store(0, 0)
+
+
+@compiler.register("op_with_int_parameter")
+struct OpWithIntParameter[IntParameter: Int]:
+    @staticmethod
+    fn execute(
+        out: OutputTensor,
+        x: InputTensor[type = out.type, rank = out.rank],
+    ):
+        out[0] = x[0] + IntParameter
+
+
+@compiler.register("op_with_dtype_parameter")
+struct OpWithDTypeParameter[DTypeParameter: DType]:
+    @staticmethod
+    fn execute(
+        out: OutputTensor,
+        x: InputTensor[type = out.type, rank = out.rank],
+    ):
+        out[0] = x[0]
+
+
+@compiler.register("op_with_string_parameter")
+struct OpWithStringParameter[StringParameter: String]:
+    @staticmethod
+    fn execute(
+        out: OutputTensor,
+        x: InputTensor[type = out.type, rank = out.rank],
+    ):
+        out[0] = x[0]
+        print(StringParameter)
+
+
+@compiler.register("op_with_string_slice_parameter")
+struct OpWithStringSliceParameter[StringParameter: StringSlice]:
+    @staticmethod
+    fn execute(
+        out: OutputTensor,
+        x: InputTensor[type = out.type, rank = out.rank],
+    ):
+        out[0] = x[0]
+        print(StringParameter)
+
+
+@compiler.register("op_with_static_string_parameter")
+struct OpWithStaticStringParameter[StringParameter: StaticString]:
+    @staticmethod
+    fn execute(
+        out: OutputTensor,
+        x: InputTensor[type = out.type, rank = out.rank],
+    ):
+        out[0] = x[0]
+        print(StringParameter)
