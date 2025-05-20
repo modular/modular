@@ -849,13 +849,13 @@ class TensorValue(Value):
 
 
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
-StrongTensorValueLike = Union[mlir.Value, BufferValue, TensorValue, Shape, Dim]
+StrongTensorValueLike = Union[mlir.Value, TensorValue, Shape, Dim]
 TensorValueLike = Union[StrongTensorValueLike, Numeric]
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
-_strong_tensor_value_like = (mlir.Value, BufferValue, TensorValue, Shape, Dim)
+_strong_tensor_value_like = (mlir.Value, TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
 
 

@@ -10,7 +10,8 @@ from conftest import tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.graph import BufferType, DeviceRef, Graph, Shape, TensorType, ops
+from max.graph.value import TensorValue, _strong_tensor_value_like
 
 
 @given(input_type=...)
@@ -23,6 +24,14 @@ def test_tensor_value__T(input_type: TensorType):
         assert out.shape == expected
 
         graph.output(out)
+
+
+@given(input_type=...)
+def test_buffer__not_tensorvalue(input_type: BufferType):
+    assert not isinstance(input_type, _strong_tensor_value_like)
+    with Graph("buffer", input_types=[input_type]) as graph:
+        with pytest.raises(TypeError):
+            TensorValue(input_type)  # type: ignore
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
