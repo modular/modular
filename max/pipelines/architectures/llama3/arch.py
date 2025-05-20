@@ -41,18 +41,9 @@ llama_arch = SupportedArchitecture(
         SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
         SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
         SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.float8_e4m3fn: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

@@ -34,14 +34,8 @@ granite_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=GraniteModel,
     tokenizer=TextTokenizer,

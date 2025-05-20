@@ -83,7 +83,7 @@ maxServe:
   huggingfaceRepoId: modularai/Llama-3.1-8B-Instruct-GGUF
   maxLength: "2048"
   maxBatchSize: "250"
-  cacheStrategy: "continuous"
+  cacheStrategy: "paged"
   maxNumSteps: "10"
 
 imagePullSecrets: []
@@ -153,7 +153,7 @@ inferenceServer:
   # - "--model-path=modularai/Llama-3.1-8B-Instruct-GGUF",
   # - "--max-length=2048",
   # - "--max-batch-size=250",
-  # - "--cache-strategy=continuous",
+  # - "--cache-strategy=paged",
   # - "--max-num-steps=10",
 
   env: {}

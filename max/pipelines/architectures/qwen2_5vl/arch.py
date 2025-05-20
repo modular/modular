@@ -32,14 +32,8 @@ qwen2_5_vl_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Qwen2_5VLModel,
     tokenizer=TextAndVisionTokenizer,

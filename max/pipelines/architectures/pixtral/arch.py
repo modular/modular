@@ -28,10 +28,7 @@ pixtral_arch = SupportedArchitecture(
     example_repo_ids=["mistral-community/pixtral-12b"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,
