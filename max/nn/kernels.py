@@ -1939,6 +1939,13 @@ def dynamic_scaled_matmul(
         msg = "only channel-wise scaling is supported for b"
         raise ValueError(msg)
 
+    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
+        msg = (
+            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
+            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
+        )
+        raise TypeError(msg)
+
     result = ops.custom(
         "mo.matmul_dynamic_scaled_fp8",
         values=[a, b, a_scales, b_scales],
@@ -1949,6 +1956,7 @@ def dynamic_scaled_matmul(
                 device=a.device,
             )
         ],
+        device=a.device,
     )[0].tensor
 
     return result
