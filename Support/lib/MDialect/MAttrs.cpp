@@ -1220,6 +1220,14 @@ DeviceRefAttr DeviceRefAttr::getDefault(MLIRContext *ctx) {
   return DeviceRefAttr::get(ctx, kCPULabel, 0);
 }
 
+DeviceRefAttr M::getHostDevice(MLIRContext *ctx) {
+  return DeviceRefAttr::getDefault(ctx);
+}
+
+DeviceRefAttr M::getHostDevice(Operation *op) {
+  return getHostDevice(op->getContext());
+}
+
 //===----------------------------------------------------------------------===//
 // DeviceSpecAttr
 //===----------------------------------------------------------------------===//
