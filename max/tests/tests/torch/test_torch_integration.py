@@ -104,3 +104,46 @@ def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
         rtol=1e-4,
         atol=1e-4,
     )
+
+
+@pytest.mark.parametrize("backend", ["eager", "inductor"])
+def test_parameters(op_library: CustomOpLibrary, backend: str):
+    parameter_increment_42 = op_library.parameter_increment[{"increment": 42}]
+
+    @torch.compile(backend=backend)
+    def increment_42(input):
+        result = torch.empty_like(input)
+        parameter_increment_42(result, input)
+        return result
+
+    A = torch.rand(64, 64, dtype=torch.float32)
+    C = increment_42(A)
+
+    # For some reason we differ by 1 in a small number of locations.
+    np.testing.assert_allclose(
+        C,
+        A + 42,
+        equal_nan=True,
+        rtol=1e-4,
+        atol=1e-4,
+    )
+
+    parameter_increment_17 = op_library.parameter_increment[{"increment": 17}]
+
+    @torch.compile(backend=backend)
+    def increment_17(input):
+        result = torch.empty_like(input)
+        parameter_increment_17(result, input)
+        return result
+
+    A = torch.rand(64, 64, dtype=torch.float32)
+    C = increment_17(A)
+
+    # For some reason we differ by 1 in a small number of locations.
+    np.testing.assert_allclose(
+        C,
+        A + 17,
+        equal_nan=True,
+        rtol=1e-4,
+        atol=1e-4,
+    )

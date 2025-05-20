@@ -86,3 +86,23 @@ struct MyAdd:
             return a + b
 
         foreach[doit, target=target](C)
+
+
+@register("parameter_increment")
+struct ParameterIncrement:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int, increment: Int, target: StaticString
+    ](
+        B: OutputTensor[type=type, rank=rank],
+        A: InputTensor[type=type, rank=rank],
+    ) raises:
+        @parameter
+        @always_inline
+        fn doit[
+            simd_width: Int
+        ](idx: IndexList[B.rank]) -> SIMD[B.type, simd_width]:
+            var a = A.load[simd_width](idx)
+            return a + __type_of(a)(increment)
+
+        foreach[doit, target=target](B)
