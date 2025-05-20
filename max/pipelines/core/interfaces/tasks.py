@@ -19,3 +19,4 @@ from enum import Enum
 class PipelineTask(str, Enum):
     TEXT_GENERATION = "text_generation"
     EMBEDDINGS_GENERATION = "embeddings_generation"
+    AUDIO_GENERATION = "audio_generation"

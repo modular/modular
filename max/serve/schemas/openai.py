@@ -5163,3 +5163,14 @@ class AssistantStreamEvent(
         ...,
         description='Represents an event emitted when streaming a Run.\n\nEach event in a server-sent events stream has an `event` and `data` property:\n\n```\nevent: thread.created\ndata: {"id": "thread_123", "object": "thread", ...}\n```\n\nWe emit events whenever a new object is created, transitions to a new state, or is being\nstreamed in parts (deltas). For example, we emit `thread.run.created` when a new run\nis created, `thread.run.completed` when a run completes, and so on. When an Assistant chooses\nto create a message during a run, we emit a `thread.message.created event`, a\n`thread.message.in_progress` event, many `thread.message.delta` events, and finally a\n`thread.message.completed` event.\n\nWe may add additional events over time, so we recommend handling unknown events gracefully\nin your code. See the [Assistants API quickstart](/docs/assistants/overview) to learn how to\nintegrate the Assistants API with streaming.\n',
     )
+
+
+
+class CreateAudioGenerationRequest(BaseModel):
+    model: str = Field(..., description='The model to use for the audio generation.')
+    input: str = Field(..., description='The input to the audio generation.')
+    index: int = Field(..., description='The index of the audio generation.')
+    voice: str = Field(..., description='The voice to use for the audio generation.')
+    instructions: str = Field(..., description='The instructions for the audio generation.')
+    response_format: Literal['wav', 'mp3', 'pcm'] = Field(..., description='The response format for the audio generation.')
+    speed: float = Field(..., description='The speed of the audio generation.')

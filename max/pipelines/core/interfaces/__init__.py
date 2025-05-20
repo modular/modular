@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .audio_generation import (
+    AudioGenerationRequest,
+    AudioGenerator,
+    AudioGeneratorContext,
+    PipelineAudioTokenizer,
+)
 from .embeddings_generation import EmbeddingsGenerator
 from .response import (
     EmbeddingsResponse,
@@ -32,19 +38,23 @@ from .text_generation import (
 )
 
 __all__ = [
+    "AudioGenerationRequest",
+    "AudioGenerator",
+    "AudioGeneratorContext",
     "EmbeddingsGenerator",
-    "LogProbabilities",
-    "TextResponse",
     "EmbeddingsResponse",
+    "LogProbabilities",
+    "PipelineAudioTokenizer",
+    "PipelineTask",
+    "PipelineTokenizer",
     "TextGenerationResponse",
     "TextGenerationStatus",
-    "PipelineTask",
+    "TextResponse",
+    "TokenGenerator",
+    "TokenGeneratorContext",
+    "TokenGeneratorRequest",
     "TokenGeneratorRequestFunction",
+    "TokenGeneratorRequestMessage",
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequest",
-    "TokenGeneratorContext",
-    "TokenGenerator",
-    "PipelineTokenizer",
 ]
