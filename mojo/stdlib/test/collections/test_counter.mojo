@@ -333,7 +333,7 @@ def test_add():
     assert_equal(c2["c"], 4)
 
 
-def test_substract():
+def test_subtract():
     var c1 = Counter[String]()
     c1["a"] = 4
     c1["b"] = 2
@@ -483,6 +483,6 @@ def main():
     test_or()
     test_pop()
     test_popitem()
-    test_substract()
+    test_subtract()
     test_total()
     test_update()
