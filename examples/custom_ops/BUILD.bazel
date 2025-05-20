@@ -59,6 +59,7 @@ custom_op_example_py_binary(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     extra_deps = [
+        "//SDK/lib/API/python/max/torch",
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),

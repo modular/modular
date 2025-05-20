@@ -114,32 +114,29 @@ struct FusedAttention:
             print("Running on GPU")
             fused_attention_gpu[BN, BD](dev_ctx, Q, K, V, O)
 
-    @staticmethod
-    fn _fallback_impl(
-        torch: PythonObject,
-        query: PythonObject,
-        key: PythonObject,
-        value: PythonObject,
-    ) -> PythonObject:
-        var cpython = Python().cpython()
-        var state = cpython.PyGILState_Ensure()
-        try:
-            cpython.check_init_error()
-            return query
-        except e:
-            abort(e)
-        finally:
-            cpython.PyGILState_Release(state)
-        return None
 
+# CustomOpLibrary does not support names with '::' in them currently. Create
+# a simple alias so the whisper example works.
+@register("fused_attention_custom")
+struct FusedAttentionAlias:
     @staticmethod
-    fn pytorch_fallback(
-        torch: PythonObject,
-        query: PythonObject,
-        key: PythonObject,
-        value: PythonObject,
-    ) -> PythonObject:
-        return FusedAttention._fallback_impl(torch, query, key, value)
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        //,  # Forces the previous two params to be inferred from the args
+        BN: Int,  # Dimension of blocks to split Q into
+        BD: Int,  # Dimension of blocks to split K, V into
+        target: StaticString,  # "cpu" or "gpu"
+    ](
+        output: OutputTensor[type=dtype, rank=rank],
+        query: InputTensor[type=dtype, rank=rank],
+        key: InputTensor[type=dtype, rank=rank],
+        value: InputTensor[type=dtype, rank=rank],
+        ctx: DeviceContextPtr,
+    ) raises:
+        FusedAttention.execute[BN=BN, BD=BD, target=target](
+            output, query, key, value, ctx
+        )
 
 
 @always_inline

@@ -11,20 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# run with: `br //PyTorch:repl -- $(realpath whisper.py)`
-
-import os
-import sys
-import sysconfig
 from pathlib import Path
 from typing import Optional
 
-import max.torch_legacy as mtorch  # type: ignore
 import torch
 import transformers
 from datasets import load_dataset
-from max import engine
-from max.driver import Accelerator
+from max.torch import CustomOpLibrary
 from torch import nn
 from transformers import (
     CompileConfig,
@@ -37,13 +30,22 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperEncoderLayer,
 )
 
-# Setup python for nested mojo runs
-os.environ["MOJO_PYTHON"] = sys.executable
-os.environ["MOJO_PYTHON_LIBRARY"] = (
-    Path(sys.executable).resolve().parent.parent
-    / "lib"
-    / sysconfig.get_config_var("INSTSONAME")
-).as_posix()
+mojo_kernels = Path(__file__).parent / "kernels"
+op_library = CustomOpLibrary(mojo_kernels)
+fused_attention_custom = op_library.fused_attention_custom[
+    {
+        "BN": 16,
+        "BD": 8,
+    }
+]
+
+
+def fused_attention(
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+) -> torch.Tensor:
+    result = torch.empty_like(query)
+    fused_attention_custom(result, query, key, value)
+    return result
 
 
 class ModularWhisperAttention(nn.Module):
@@ -119,14 +121,10 @@ class ModularWhisperAttention(nn.Module):
         results = []
         for head_idx in range(self.num_heads):
             results.append(
-                torch.ops.modular_ops.fused_attention_custom(
+                fused_attention(
                     Q[head_idx, :, :],
                     K[head_idx, :, :],
                     V[head_idx, :, :],
-                    mojo_parameters={
-                        "BN": 16,
-                        "BD": 8,
-                    },
                 )
             )
         O = torch.stack(results, dim=0)
@@ -210,19 +208,9 @@ def main():
         print("This example is only available for GPUs at the moment.")
         return
 
-    # Get the path to our Mojo custom ops
-    mojo_kernels = Path(__file__).parent / "kernels"
-
-    inference_session = engine.InferenceSession(
-        devices=[Accelerator()],
-        custom_extensions=[mojo_kernels],
-    )
-    with torch.no_grad():
-        mtorch.register_custom_ops(inference_session)
-
     device = torch.device("cuda:0")
 
-    model = get_model(device, "eager")
+    model = get_model(device, "inductor")
 
     # Select an audio file and read it:
     ds = load_dataset(
