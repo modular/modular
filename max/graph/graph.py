@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from max import mlir
+from max._core import Attribute as _Attribute
 from max._core import Type as _Type
 from max._core import graph as _graph
 
@@ -29,8 +30,8 @@ from max.support.paths import (
     is_mojo_source_package_path,
 )
 
-from .type import BufferType, DeviceRef, Dim, SymbolicDim, TensorType, Type
-from .value import TensorValue, Value, _ChainValue
+from .type import BufferType, DeviceRef, SymbolicDim, TensorType, Type
+from .value import BufferValue, TensorValue, Value, _ChainValue
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -410,6 +411,8 @@ class Graph:
                 return arg._mlir_value
             if isinstance(arg, list):
                 return [unwrap(elem) for elem in arg]
+            elif isinstance(arg, _Attribute):
+                return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
             elif isinstance(arg, _Type):
                 return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
             else:
@@ -484,23 +487,16 @@ class Graph:
         # Add symbolic dims of tensor results to the list of graph params and
         # declared output params of the op
         # Use a dict as an ordered set for new param decls. Maps keys to None.
-        new_params: dict[str, None] = dict()
-        for result in results:
-            t = result._mlir_value.type
-            if not _graph.type_is_tensor(t):
-                continue
-
-            rank = _graph.tensor_type_get_rank(t)
-            for i in range(rank):
-                try:
-                    dim = Dim.from_mlir(_graph.tensor_type_get_dim(t, i))
-                    if isinstance(dim, SymbolicDim):
-                        new_params[dim.name] = None
-                except:
-                    continue
+        new_params = {
+            dim.name: None
+            for result in results
+            if isinstance(result, (BufferValue, TensorValue))
+            for dim in result.shape
+            if isinstance(dim, SymbolicDim)
+        }
 
         # Track any newly declared parameters.
-        new_params = dict.fromkeys(new_params.keys() - self._params.keys())
+        new_params = dict.fromkeys(new_params - self._params.keys())
         self._params.update(new_params)
         if new_params:
             # Add the output params to the op we just created.
@@ -604,6 +600,14 @@ class Graph:
                 " impossible." + f"\n{e}"
             ) from None
 
+    @property
+    def output_types(self) -> list[Type]:
+        """View of the types of the graph output terminator."""
+        terminator = self._body.operations[-1]
+        if not isinstance(terminator, mo.OutputOp):
+            raise TypeError("Graph not yet terminated by a call to output")
+        return [Value(v).type for v in terminator.operands]  # type: ignore
+
     def _load_mlir(self, path: Path):
         self._unique_symbolic_dim_counter = 0
         self._context_state = []
@@ -698,7 +702,9 @@ class Graph:
         # mo.constant.external to the default device, which could differ from
         # the passed device (for example default is GPU, passed weights on CPU).
         const_external_op = weight_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = (initial_device).to_mlir()
+        const_external_op.attributes["device"] = mlir.Attribute._CAPICreate(
+            initial_device.to_mlir()._CAPIPtr  # type: ignore
+        )
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
         if initial_device != weight.device:
             weight_tensor = weight_tensor.to(weight.device)

@@ -11,22 +11,34 @@ import functools
 import math
 import re
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import Enum, IntEnum
-from typing import Any, Union
+from enum import Enum
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    TypeVar,
+    Union,
+)
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
     from typing_extensions import TypeGuard
 
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    Self = TypeVar("Self")
+
 import numpy as np
-from max import mlir
-from max._core import graph as _graph
-from max._core.dialects import mo
+from max._core import Type as _Type
+from max._core.dialects import builtin, kgen, m, mo, mosh
 from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
+
+MlirType = TypeVar("MlirType", bound=_Type)
 
 
 class Dim:
@@ -87,7 +99,7 @@ class Dim:
             return super().__new__(StaticDim)
         elif isinstance(value, str):
             return super().__new__(SymbolicDim)
-        elif isinstance(value, mlir.Attribute):
+        elif isinstance(value, kgen.ParamOperatorAttr):
             return super().__new__(AlgebraicDim)
 
         msg = f"Unsupported dimension type {value} ({type(value)})"
@@ -112,8 +124,10 @@ class Dim:
         raise TypeError(msg)
 
     def __int__(self) -> int:
-        """Converts this dim to an int by casting to StaticDim."""
-        return int(StaticDim(self))
+        """Conversion to an int only supported for static dims."""
+        raise TypeError(
+            f"int({self!r}): Int conversions only supported for static dims"
+        )
 
     def __eq__(self, other: Any) -> bool:
         """Checks whether two dimensions are equal.
@@ -144,60 +158,38 @@ class Dim:
         """
         return not self == other
 
-    @staticmethod
-    def _algebraic_op(op: AlgebraicDim._Opcode, lhs: Dim, rhs: Dim) -> Dim:
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return Dim.from_mlir(
-            _graph.algebraic_dim(
-                mlir.Context.current,
-                op,
-                lhs.to_mlir(),
-                rhs.to_mlir(),
-            )
-        )
-
     def __add__(self, rhs: DimLike) -> Dim:
-        rhs = Dim(rhs)
-        return Dim._algebraic_op(AlgebraicDim._Opcode.Add, self, rhs)
+        return AlgebraicDim.apply(kgen.POC.add, self, rhs)
 
     # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
     def __radd__(self, lhs: DimLike) -> Dim:  # type: ignore
-        lhs = Dim(lhs)
-        return lhs + self
+        return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:
-        rhs = Dim(rhs)
-        return Dim._algebraic_op(AlgebraicDim._Opcode.MulNuw, self, rhs)
+        return AlgebraicDim.apply(kgen.POC.mul_nuw, self, rhs)
 
     # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
     def __rmul__(self, lhs: DimLike) -> Dim:  # type: ignore
-        lhs = Dim(lhs)
-        return lhs * self
+        return Dim(lhs) * self
 
     def __neg__(self) -> Dim:
         return -1 * self
 
     def __sub__(self, rhs: DimLike) -> Dim:
-        rhs = Dim(rhs)
-        return self + -rhs
+        return self + -Dim(rhs)
 
     def __rsub__(self, lhs: DimLike) -> Dim:
-        lhs = Dim(lhs)
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
         if isinstance(rhs, (int, StaticDim)) and int(rhs) == 0:
             raise ZeroDivisionError
-
-        rhs = Dim(rhs)
-        return Dim._algebraic_op(AlgebraicDim._Opcode.Div, self, rhs)
+        return AlgebraicDim.apply(kgen.POC.div, self, rhs)
 
     def __rfloordiv__(self, lhs: DimLike) -> Dim:
-        lhs = Dim(lhs)
         return lhs // self
 
-    def to_mlir(self) -> mlir.Attribute:
+    def to_mlir(self) -> builtin.TypedAttr:
         """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
@@ -208,7 +200,7 @@ class Dim:
         raise NotImplementedError
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+    def from_mlir(attr: builtin.TypedAttr) -> Dim:
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
@@ -217,12 +209,12 @@ class Dim:
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
         """
-        if _graph.is_static_dim(dim_attr):
-            return StaticDim.from_mlir(dim_attr)
-        elif _graph.is_symbolic_dim(dim_attr):
-            return SymbolicDim.from_mlir(dim_attr)
-        elif _graph.is_algebraic_dim(dim_attr):
-            return AlgebraicDim.from_mlir(dim_attr)
+        if isinstance(attr, builtin.IntegerAttr):
+            return StaticDim.from_mlir(attr)
+        elif isinstance(attr, kgen.ParamDeclRefAttr):
+            return SymbolicDim.from_mlir(attr)
+        elif isinstance(attr, kgen.ParamOperatorAttr):
+            return AlgebraicDim.from_mlir(attr)
         else:
             raise ValueError("graph api does not support unknown dimensions")
 
@@ -273,7 +265,7 @@ class SymbolicDim(Dim):
         return self.name
 
     def __repr__(self):
-        return f"Dim({repr(self.name)})"
+        return f"Dim({self.name!r})"
 
     def __eq__(self, other: Any) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
@@ -292,7 +284,7 @@ class SymbolicDim(Dim):
             isinstance(other, SymbolicDim) and self.name == other.name
         )
 
-    def to_mlir(self) -> mlir.Attribute:
+    def to_mlir(self) -> kgen.ParamDeclRefAttr:
         """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
@@ -300,12 +292,11 @@ class SymbolicDim(Dim):
         Returns:
             An ``mlir.Attribute`` in the context representing the dimension.
         """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return _graph.symbolic_dim(mlir.Context.current, self.name)
+        si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+        return kgen.ParamDeclRefAttr(self.name, si64)
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+    def from_mlir(attr: builtin.TypedAttr) -> Dim:
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
@@ -314,7 +305,9 @@ class SymbolicDim(Dim):
         Returns:
             Dim: The dimension represented by the MLIR Attr value.
         """
-        return SymbolicDim(_graph.symbolic_dim_name(dim_attr))
+        if not isinstance(attr, kgen.ParamDeclRefAttr):
+            raise TypeError(f"Attr is not a symbolic dim: {attr}")
+        return SymbolicDim(attr.name.value)
 
 
 @dataclass(frozen=True)
@@ -336,75 +329,59 @@ class AlgebraicDim(Dim):
         -Dim("x") - 4 == -(Dim("x") + 4)  # Returns True
     """
 
-    attr: mlir.Attribute
+    attr: kgen.ParamOperatorAttr
 
-    class _Opcode(IntEnum):
-        # This is only the part of KGEN::POC that seems relevant to python.
-        # On top of that, this is starting extra slim to keep things simple.
-        # We can expand at any time if needed.
-        Add = 0
-        # Mul = 1 : We probably never want Mul, instead we want MulNuw which blocks overflow.
-        MulNuw = 2
-        # And = 3
-        # Or = 4
-        # Xor = 5
-        # Max = 6
-        # Min = 7
-        # Shl = 8
-        # Shr = 9
-        Div = 10
-        # Mod = 11
-
-    def __init__(self, attr: mlir.Attribute | AlgebraicDim):
-        if isinstance(attr, mlir.Attribute) and not _graph.is_algebraic_dim(
-            attr
-        ):
-            raise TypeError(
-                f"Cannot create AlgebraicDim from mlir attribute: {attr}"
-            )
-
-        # Can't assign directly to frozen dataclasses.
+    def __init__(self, attr: kgen.ParamOperatorAttr | AlgebraicDim):
         super().__setattr__(
             "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
         )
 
-    def __str__(self):
-        return self.to_str(False)
-
-    def __repr__(self):
-        return self.to_str(True)
-
-    def to_str(self, use_repr: bool):
-        opcode = _graph.algebraic_dim_opcode(self.attr)
-        operands = _graph.algebraic_dim_operands(self.attr)
-        operand_dims = (Dim.from_mlir(operand) for operand in operands)
-
-        # Make sure to wrap nested expression.
-        def str_fn(x) -> str:
-            if use_repr:
-                return repr(x)
-            else:
-                return str(x)
-
-        operand_reprs = (
-            f"({str_fn(dim)})" if isinstance(dim, AlgebraicDim) else str_fn(dim)
-            for dim in operand_dims
+    @classmethod
+    def apply(cls, op: kgen.POC, *operands: DimLike):
+        # kgen.ParamOperatorAttr eagerly folds on construction!
+        #  - this can return static or symbolic dims
+        #  - let Dim decide what type to returtn
+        attr = kgen.ParamOperatorAttr(
+            op, [Dim(operand).to_mlir() for operand in operands]
         )
+        return Dim.from_mlir(attr)
+
+    def __format__(self, format_spec: str):
+        formatters: Mapping[str, Callable[[Any], str]] = {
+            "str": str,
+            "repr": repr,
+        }
+        formatter = formatters[format_spec or "str"]
+
+        def format(dim: Dim):
+            formatted = formatter(dim)
+            return (
+                f"({formatted})" if isinstance(dim, AlgebraicDim) else formatted
+            )
 
         # For the opcodes we support in the graph api, print with python math.
-        if opcode == AlgebraicDim._Opcode.Add:
-            return " + ".join(operand_reprs)
-        elif opcode == AlgebraicDim._Opcode.MulNuw:
-            return " * ".join(operand_reprs)
-        elif opcode == AlgebraicDim._Opcode.Div:
-            return " // ".join(operand_reprs)
-        else:
-            return str_fn(self.attr)
+        opcodes = {
+            kgen.POC.add: "+",
+            kgen.POC.mul_nuw: "*",
+            kgen.POC.div: "//",
+        }
+        opcode = self.attr.opcode
+        dims = [Dim.from_mlir(operand) for operand in self.attr.operands]
+        if opcode in opcodes:
+            # Wrap algebraic sub-expressions in parens
+            return f" {opcodes[opcode]} ".join(map(format, dims))
+        return formatter(self.attr)
+
+    def __str__(self):
+        return f"{self:str}"
+
+    def __repr__(self):
+        return f"{self:repr}"
 
     def __eq__(self, other: Any) -> bool:
         return isinstance(other, AlgebraicDim) and self.attr == other.attr
 
-    def to_mlir(self) -> mlir.Attribute:
+    def to_mlir(self) -> kgen.ParamOperatorAttr:
         """Creates an mlir.Attribute representing this dimension.
         This is used internally when constructing tensor MLIR types.
 
@@ -414,8 +391,10 @@ class AlgebraicDim(Dim):
         return self.attr
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
-        return AlgebraicDim(dim_attr)
+    def from_mlir(attr: builtin.TypedAttr) -> Dim:
+        if not isinstance(attr, kgen.ParamOperatorAttr):
+            raise TypeError(f"Attribute is not an algebraic dimension: {attr}")
+        return AlgebraicDim(attr)
 
 
 @functools.total_ordering
@@ -439,11 +418,7 @@ class StaticDim(Dim):
     dim: int
     """The size of the static dimension."""
 
-    def __init__(self, dim: int | Dim):
-        if not isinstance(dim, (StaticDim, int)):
-            msg = "expected statically known dim"
-            raise TypeError(msg)
-
+    def __init__(self, dim: int | StaticDim):
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("dim", int(dim))
         if not -(2**63) <= self.dim < 2**63:
@@ -477,7 +452,7 @@ class StaticDim(Dim):
     def __hash__(self):
         return hash(self.dim)
 
-    def to_mlir(self) -> mlir.Attribute:
+    def to_mlir(self) -> builtin.IntegerAttr:
         """Creates an ``mlir.Attribute`` representing this dimension.
 
         This is used internally when constructing tensor MLIR types.
@@ -485,12 +460,11 @@ class StaticDim(Dim):
         Returns:
             An ``mlir.Attribute`` in the context representing the dimension.
         """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return _graph.static_dim(mlir.Context.current, self.dim)
+        si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+        return builtin.IntegerAttr(si64, self.dim)
 
     @staticmethod
-    def from_mlir(dim_attr: mlir.Attribute) -> Dim:
+    def from_mlir(attr: builtin.TypedAttr) -> Dim:
         """Constructs a dimension from an ``mlir.Attribute``.
 
         Args:
@@ -499,7 +473,9 @@ class StaticDim(Dim):
         Returns:
             The dimension represented by the MLIR Attr value.
         """
-        return StaticDim(_graph.static_dim_value(dim_attr))
+        if not isinstance(attr, builtin.IntegerAttr):
+            raise TypeError(f"Attribute is not a static dimension: {attr}")
+        return StaticDim(attr.value)
 
 
 def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
@@ -514,10 +490,17 @@ class Shape(list[Dim]):
     def rank(self):
         return len(self)
 
-    def to_mlir(self) -> mlir.Attribute:
-        return _graph.shape_attr(
-            mlir.Context.current, [dim.to_mlir() for dim in self]
-        )
+    def to_mlir(self) -> mosh.ShapeAttr:
+        shape_type = mosh.ShapeType()
+        return mosh.ShapeAttr([dim.to_mlir() for dim in self], shape_type)
+
+    @classmethod
+    def from_mlir(cls, attr: builtin.TypedAttr) -> Shape:
+        if not isinstance(attr, mosh.ShapeAttr):
+            raise TypeError(
+                f"Shape.from_mlir only supported for mosh.ShapeAttr, got {attr}"
+            )
+        return cls([Dim.from_mlir(dim) for dim in attr.values])
 
     @property
     def static_dims(self) -> list[int]:
@@ -598,11 +581,9 @@ class DeviceRef:
             return False
         return self.device_type is other.device_type and self.id == other.id
 
-    def to_mlir(self) -> mlir.Attribute:
+    def to_mlir(self) -> m.DeviceRefAttr:
         """Returns a mlir attribute representing device."""
-        return _graph.device_attr(
-            mlir.Context.current, str(self.device_type), self.id
-        )
+        return m.DeviceRefAttr(str(self.device_type), self.id)
 
     def to_device(self) -> Device:
         """Convert device reference to a concrete driver Device."""
@@ -614,12 +595,9 @@ class DeviceRef:
             raise ValueError(f"Unsupported device type: {self.device_type}")
 
     @staticmethod
-    def from_mlir(device_attr: mlir.Attribute) -> DeviceRef:
+    def from_mlir(attr: m.DeviceRefAttr) -> DeviceRef:
         """Returns a device from mlir attribute"""
-        return DeviceRef(
-            device_type=DeviceKind(_graph.device_attr_get_label(device_attr)),
-            id=_graph.device_attr_get_id(device_attr),
-        )
+        return DeviceRef(device_type=DeviceKind(attr.label), id=attr.id)
 
     @staticmethod
     def from_device(device: Device) -> DeviceRef:
@@ -632,7 +610,7 @@ DimLike = Union[int, str, Dim, np.integer]
 ShapeLike = Iterable[DimLike]
 
 
-class Type:
+class Type(Generic[MlirType]):
     """Represents any possible type for Graph values.
 
     Every Value in the Graph has a Type, and that type is represented by an Type.
@@ -653,7 +631,7 @@ class Type:
             print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [2, 3]
     """
 
-    def to_mlir(self) -> mlir.Type:
+    def to_mlir(self) -> MlirType:
         """Converts to an ``mlir.Type`` instance.
 
         Returns:
@@ -662,7 +640,7 @@ class Type:
         raise NotImplementedError
 
     @staticmethod
-    def from_mlir(t: mlir.Type) -> Type:
+    def from_mlir(t: MlirType) -> Type:
         """Constructs a type from an MLIR type.
 
         Args:
@@ -680,7 +658,99 @@ class Type:
 
 
 @dataclass
-class TensorType(Type):
+class _TensorTypeBase(Type[MlirType]):
+    dtype: DType
+    """The element type of the tensor value."""
+    shape: Shape
+    """The dimensions of the tensor value."""
+    device: DeviceRef
+    """The device of the tensor value."""
+
+    def __init__(
+        self, dtype: DType, shape: ShapeLike, device: DeviceRef
+    ) -> None:
+        """Constructs a tensor type.
+
+        Args:
+            dtype: The element type of the tensor data.
+            dims: The shape dimensions of the tensor. The number of dims
+                  is the rank of the tensor.
+        """
+        self.dtype = dtype
+        self.shape = Shape(shape)
+        self.device = device
+
+        if any(dim < 0 for dim in self.shape.static_dims):
+            raise TypeError(
+                f"Static tensor dimensions must be non-negative; got {shape=}"
+            )
+
+    # ===------------------------------------------------------------------=== #
+    # Basic accessors
+    # ===------------------------------------------------------------------=== #
+
+    @property
+    def rank(self) -> int:
+        """Gets the rank of the tensor type.
+
+        Returns:
+            The tensor's static rank.
+        """
+        return len(self.shape)
+
+    def __eq__(self, other: Any) -> bool:
+        """Checks whether the two tensors have the same rank, type, and shape.
+
+        Args:
+            other: The other tensor to check equality against.
+
+        Returns:
+            True if the tensors have identical element type and shape,
+            false otherwise.
+        """
+        return (
+            isinstance(other, type(self))
+            and (self.dtype == other.dtype)
+            and (self.shape == other.shape)
+        )
+
+    # ===------------------------------------------------------------------=== #
+    # Utilities
+    # ===------------------------------------------------------------------=== #
+
+    def num_elements(self) -> int:
+        """Counts the total number of elements in the tensor type.
+
+        For a static tensor, returns the product of all static dimensions.
+        This is the number of elements the tensor will hold **during execution**,
+        :obj:`TensorType` doesn't actually hold any element values at all.
+
+        For any non-static tensor, in other words a tensor having any symbolic
+        dimensions, the return value will be meaningless.
+
+        Returns:
+            The number of elements the tensor contains.
+        """
+        if not _is_static_shape(self.shape):
+            raise RuntimeError(
+                "can't find num elements since tensor has symbolic dims"
+            )
+
+        return math.prod(dim.dim for dim in self.shape)
+
+    def cast(self, dtype: DType):
+        """Constructs a new tensor type of the same shape with the new `dtype`.
+
+        Args:
+            dtype: The new element type for the tensor.
+
+        Returns:
+            A new tensor type with the same shape, device, and the new element type.
+        """
+        return type(self)(dtype, self.shape, self.device)
+
+
+class TensorType(_TensorTypeBase[mo.TensorType]):
     """A symbolic :obj:`TensorType`.
 
     This is not an eager tensor type! This contains no actual data, but
@@ -712,51 +782,8 @@ class TensorType(Type):
     device the tensor is associated with.
     """
 
-    dtype: DType
-    """The element type of the tensor value."""
-    shape: Shape
-    """The dimensions of the tensor value."""
-    device: DeviceRef
-    """The device of the tensor value."""
-
-    def __init__(
-        self, dtype: DType, shape: ShapeLike, device: DeviceRef
-    ) -> None:
-        """Constructs a tensor type.
-
-        Args:
-            dtype: The element type of the tensor data.
-            dims: The shape dimensions of the tensor. The number of dims
-                  is the rank of the tensor.
-            device: The device the tensor data lives on.
-        """
-        self.dtype = dtype
-        self.shape = Shape(shape)
-        self.device = device
-
-        if any(dim < 0 for dim in self.shape.static_dims):
-            raise TypeError(
-                f"Static tensor dimensions must be non-negative; got {shape=}"
-            )
-
-    def to_mlir(self) -> mlir.Type:
-        """Converts to an ``mlir.Type`` instance.
-
-        Returns:
-            An ``mlir.Type`` in the specified Context.
-        """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-
-        return _graph.tensor_type_with_device(
-            mlir.Context.current,
-            _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-            [dim.to_mlir() for dim in self.shape],
-            self.device.to_mlir(),
-        )
-
-    @staticmethod
-    def from_mlir(t: mlir.Type) -> TensorType:
+    @classmethod
+    def from_mlir(cls, type: mo.TensorType) -> TensorType:
         """Constructs a tensor type from an MLIR type.
 
         Args:
@@ -765,160 +792,32 @@ class TensorType(Type):
         Returns:
             The tensor type represented by the MLIR Type value.
         """
-        if not _graph.type_is_tensor(t):
-            raise TypeError(f"Expected TensorType, got: {t}")
+        device_ref = DeviceRef.from_mlir(type.device_ref)
+        return cls(type.dtype, Shape.from_mlir(type.shape_attr), device_ref)
 
-        dtype = _graph.tensor_type_get_dtype(t)
-        rank = _graph.tensor_type_get_rank(t)
-        shape = [
-            Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
-        ]
-        mlir_device = _graph.tensor_type_get_device(t)
-        device = DeviceRef.from_mlir(mlir_device) if mlir_device else None
-        return TensorType(DType(dtype), shape, device or DeviceRef.CPU())
-
-    # ===------------------------------------------------------------------=== #
-    # Basic accessors
-    # ===------------------------------------------------------------------=== #
-
-    @property
-    def rank(self) -> int:
-        """Gets the rank of the tensor type.
-
-        Returns:
-            The tensor's static rank.
-        """
-        return len(self.shape)
-
-    def dim(self, pos: int) -> Dim:
-        """Gets the ``pos``'th dimension of the tensor type.
-
-        Supports negative-indexing, ie. ``t.dim(-1)`` will give the last
-        dimension.
-
-        Args:
-            pos: The dimension index to retrieve.
-
-        Returns:
-            The dimension value at dimension ``pos``.
-
-        Raises:
-            RuntimeError: If the dimension is out-of-bounds.
-        """
-        return self.shape[pos + (self.rank if pos < 0 else 0)]
-
-    def __eq__(self, other: Any) -> bool:
-        """Checks whether the two tensors have the same rank, type, and shape.
-
-        Args:
-            other: The other tensor to check equality against.
-
-        Returns:
-            True if the tensors have identical element type and shape,
-            false otherwise.
-        """
-        return (
-            isinstance(other, TensorType)
-            and (self.dtype == other.dtype)
-            and (self.rank == other.rank)
-            and all(d == d_other for d, d_other in zip(self.shape, other.shape))
-        )
-
-    # ===------------------------------------------------------------------=== #
-    # Utilities
-    # ===------------------------------------------------------------------=== #
-
-    def as_buffer(self) -> BufferType:
-        """Returns the analogous buffer type."""
-        return BufferType(self.dtype, self.shape, self.device)
-
-    def num_elements(self) -> int:
-        """Counts the total number of elements in the tensor type.
-
-        For a static tensor, returns the product of all static dimensions.
-        This is the number of elements the tensor will hold **during execution**,
-        :obj:`TensorType` doesn't actually hold any element values at all.
-
-        For any non-static tensor, in other words a tensor having any symbolic
-        dimensions, the return value will be meaningless.
-
-        Returns:
-            The number of elements the tensor contains.
-        """
-        if not _is_static_shape(self.shape):
-            raise RuntimeError(
-                "can't find num elements since tensor has symbolic dims"
-            )
-
-        return math.prod(dim.dim for dim in self.shape)
-
-    def cast(self, dtype: DType) -> TensorType:
-        """Constructs a new tensor type of the same shape with the new `dtype`.
-
-        Args:
-            dtype: The new element type for the tensor.
-
-        Returns:
-            A new tensor type with the same shape, device, and the new element type.
-        """
-        return TensorType(dtype, self.shape, self.device)
-
-
-@dataclass
-class BufferType(Type):
-    """A symbolic buffer type.
-
-    This is a reference to a tensor that can be mutated in place.
-    """
-
-    dtype: DType
-    """The element type of the buffer value."""
-    shape: Shape
-    """The dimensions of the buffer value."""
-    device: DeviceRef
-    """The device of the tensor value."""
-
-    def __init__(
-        self,
-        dtype: DType,
-        shape: ShapeLike,
-        device: DeviceRef,
-    ) -> None:
-        """Constructs a buffer type.
-
-        Args:
-            dtype: The element type of the buffer data.
-            dims: The shape dimensions of the buffer. The number of dims
-                  is the rank of the buffer.
-        """
-        self.dtype = dtype
-        self.shape = Shape(shape)
-        self.device = device
-
-    def to_mlir(self) -> mlir.Type:
+    def to_mlir(self) -> mo.TensorType:
         """Converts to an ``mlir.Type`` instance.
 
         Returns:
             An ``mlir.Type`` in the specified Context.
         """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        if self.device:
-            return _graph.buffer_type_with_device(
-                mlir.Context.current,
-                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-                [dim.to_mlir() for dim in self.shape],
-                self.device.to_mlir(),
-            )
-        else:
-            return _graph.buffer_type(
-                mlir.Context.current,
-                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-                [dim.to_mlir() for dim in self.shape],
-            )
+        return mo.TensorType(
+            self.shape.to_mlir(), self.dtype, self.device.to_mlir()
+        )
 
-    @staticmethod
-    def from_mlir(t: mlir.Type) -> BufferType:
+    def as_buffer(self) -> BufferType:
+        """Returns the analogous buffer type."""
+        return BufferType(self.dtype, self.shape, self.device)
+
+
+class BufferType(_TensorTypeBase[mo.BufferType]):
+    """A symbolic buffer type.
+
+    This is a reference to a tensor that can be mutated in place.
+    """
+
+    @classmethod
+    def from_mlir(cls, type: mo.BufferType) -> BufferType:
         """Constructs a buffer type from an MLIR type.
 
         Args:
@@ -927,124 +826,43 @@ class BufferType(Type):
         Returns:
             The buffer type represented by the MLIR Type value.
         """
-        if not _graph.type_is_buffer(t):
-            raise TypeError(f"Expected BufferType, got: {t}")
+        device_ref = DeviceRef.from_mlir(type.device_ref)
+        return cls(type.dtype, Shape.from_mlir(type.shape_attr), device_ref)
 
-        dtype = _graph.buffer_type_get_dtype(t)
-        rank = _graph.buffer_type_get_rank(t)
-        shape = [
-            Dim.from_mlir(_graph.buffer_type_get_dim(t, i)) for i in range(rank)
-        ]
-        mlir_device = _graph.buffer_type_get_device(t)
-        device = DeviceRef.from_mlir(mlir_device) if mlir_device else None
-        return BufferType(DType(dtype), shape, device or DeviceRef.CPU())
-
-    # ===------------------------------------------------------------------=== #
-    # Basic accessors
-    # ===------------------------------------------------------------------=== #
-
-    @property
-    def rank(self) -> int:
-        """Gets the rank of the buffer type.
-
-        Returns:
-            The buffer's static rank.
-        """
-        return len(self.shape)
-
-    def dim(self, pos: int) -> Dim:
-        """Gets the pos'th dimension of the buffer type.
-
-        Supports negative-indexing, ie. ``t.dim(-1)`` will give the last
-        dimension.
-
-        Args:
-            pos: The dimension index to retrieve.
-
-        Returns:
-            The dimension value at dimension ``pos``.
-
-        Raises:
-            If the dimension is out-of-bounds.
-        """
-        return self.shape[pos + (self.rank if pos < 0 else 0)]
-
-    def __eq__(self, other: Any) -> bool:
-        """Checks whether the two buffers have the same rank, type, and shape.
-
-        Args:
-            other: The other buffer to check equality against.
-
-        Returns:
-            True if the buffers have identical element type and shape,
-            false otherwise.
-        """
-        return (
-            isinstance(other, BufferType)
-            and (self.dtype == other.dtype)
-            and (self.rank == other.rank)
-            and all(d == d_other for d, d_other in zip(self.shape, other.shape))
-        )
-
-    # ===------------------------------------------------------------------=== #
-    # Utilities
-    # ===------------------------------------------------------------------=== #
-
-    def as_tensor(self) -> TensorType:
-        """Returns the analogous tensor type."""
-        return TensorType(self.dtype, self.shape, self.device)
-
-    def num_elements(self) -> int:
-        """Counts the total number of elements in the buffer type.
-
-        For a static buffer, returns the product of all static dimensions.
-        This is the number of elements the buffer will hold **during execution**,
-        BufferType doesn't actually hold any element values at all.
-
-        For any non-static buffer, in other words a buffer having any symbolic
-        dimensions, the return value will be meaningless.
-
-        Returns:
-            The number of elements the buffer contains.
-        """
-        if not _is_static_shape(self.shape):
-            raise RuntimeError(
-                "can't find num elements since buffer has symbolic dims"
-            )
-
-        return math.prod(dim.dim for dim in self.shape)
-
-    def cast(self, dtype: DType) -> BufferType:
-        """Constructs a new buffer type of the same shape with the new dtype.
-
-        Args:
-            dtype: The new element type for the buffer.
-
-        Returns:
-            A new buffer type with the same shape, and the new element type.
-        """
-        return BufferType(dtype, self.shape, self.device)
-
-
-@dataclass(frozen=True)
-class _OpaqueType(Type):
-    """A type representing an opaque type."""
-
-    name: str
-    """Identifier for the opaque type."""
-
-    def to_mlir(self) -> mlir.Type:
+    def to_mlir(self) -> mo.BufferType:
         """Converts to an ``mlir.Type`` instance.
 
         Returns:
             An ``mlir.Type`` in the specified Context.
         """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return _graph.opaque_type(mlir.Context.current, self.name)
+        return mo.BufferType(
+            self.shape.to_mlir(), self.dtype, self.device.to_mlir()
+        )
+
+    def as_tensor(self) -> TensorType:
+        """Returns the analogous tensor type."""
+        return TensorType(self.dtype, self.shape, self.device)
+
+
+@dataclass(frozen=True)
+class _OpaqueType(Type[mo.OpaqueType]):
+    """A type representing an opaque type."""
+
+    name: str
+    """Identifier for the opaque type."""
+
+    def to_mlir(self) -> mo.OpaqueType:
+        """Converts to an ``mlir.Type`` instance.
+
+        Returns:
+            An ``mlir.Type`` in the specified Context.
+        """
+        return mo.OpaqueType(
+            builtin.StringAttr(self.name), metadata=builtin.DictionaryAttr([])
+        )
 
     @staticmethod
-    def from_mlir(t: mlir.Type) -> _OpaqueType:
+    def from_mlir(t: mo.OpaqueType) -> _OpaqueType:
         """Constructs an opaque type from an MLIR type.
 
         Args:
@@ -1053,11 +871,11 @@ class _OpaqueType(Type):
         Returns:
             The opaque type represented by the MLIR Type value.
         """
-        return _OpaqueType(_graph.opaque_type_name(t))
+        return _OpaqueType(t.symbol.value)
 
 
 @dataclass
-class _ChainType(Type):
+class _ChainType(Type[mo.ChainType]):
     """A chain type.
 
     Used in order to sequence operations that have side-effects.
@@ -1065,16 +883,16 @@ class _ChainType(Type):
     As a user you should never need to directly interact with this type.
     """
 
-    def to_mlir(self) -> mlir.Type:
+    def to_mlir(self) -> mo.ChainType:
         """Converts to an mlir.Type instance.
 
         Returns:
             An mlir.Type in the specified Context.
         """
-        return mo.ChainType()  # type: ignore
+        return mo.ChainType()
 
     @staticmethod
-    def from_mlir(t: mlir.Type) -> _ChainType:
+    def from_mlir(t: mo.ChainType) -> _ChainType:
         """Constructs an opaque type from an MLIR type.
 
         Args:

@@ -87,7 +87,9 @@ def custom(
             )
 
     if device is not None:
-        custom_op.attributes["device"] = device.to_mlir()
+        custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
+            device.to_mlir()._CAPIPtr  # type: ignore
+        )
 
     # Call the verifier, will throw if the call is invalid.
     graph._kernel_library.verify_custom_op(custom_op)
@@ -151,7 +153,9 @@ def inplace_custom(
             )
 
     if device is not None:
-        custom_op.attributes["device"] = device.to_mlir()
+        custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
+            device.to_mlir()._CAPIPtr  # type: ignore
+        )
 
     # Call the verifier, will throw if the call is invalid.
     graph._kernel_library.verify_custom_op(custom_op)
