@@ -1,8 +1,8 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["*.py"]),
+    srcs = glob(["*_gpu.py"]),
     data = [
         "//AsyncRT:plugin_ucx",
     ],
@@ -11,7 +11,16 @@ modular_py_test(
         # outside of Bazel.
         "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
     },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    tags = [
+        "gpu",
+    ],
     deps = [
         "//SDK/lib/API/python/max:_core",
+        "//SDK/lib/API/python/max/driver",
+        requirement("numpy"),
     ],
 )
