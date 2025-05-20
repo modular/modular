@@ -95,9 +95,10 @@ what we publish.
 
 Changes to Python-Mojo interoperability:
 
-- Python lists are now constructible with list literal syntax, e.g.:
+- Python objects are now constructible with list/set/dict literal syntax, e.g.:
   `var list: PythonObject = [1, "foo", 2.0]` will produce a Python list
-  containing other Python objects.
+  containing other Python objects and `var d: PythonObject = {}` will construct
+  an empty dictionary.
 
 - `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
   have been removed in favor of `CPython.{unsafe_get_error, get_error}`.

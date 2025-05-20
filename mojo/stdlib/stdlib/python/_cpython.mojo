@@ -1068,6 +1068,43 @@ struct CPython(Copyable, Movable):
         self.lib.call["PyEval_RestoreThread"](state)
 
     # ===-------------------------------------------------------------------===#
+    # Python Set operations
+    # ===-------------------------------------------------------------------===#
+
+    fn PySet_New(self) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/set.html#c.PySet_New).
+        """
+
+        var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
+
+        self.log(
+            r._get_ptr_as_int(),
+            " NEWREF PySet_New, refcnt:",
+            self._Py_REFCNT(r),
+        )
+
+        self._inc_total_rc()
+        return r
+
+    # int PySet_Add(PyObject *set, PyObject *key)
+    fn PySet_Add(self, set: PyObjectPtr, element: PyObjectPtr) -> c_int:
+        """[Reference](
+        https://docs.python.org/3/c-api/set.html#c.PySet_Add).
+        """
+
+        # FIXME: This raises if the object is not hashable.
+        var r = self.lib.call["PySet_Add", c_int](set, element)
+
+        self.log(
+            set._get_ptr_as_int(),
+            " PySet_Add, element: ",
+            element._get_ptr_as_int(),
+        )
+
+        return r
+
+    # ===-------------------------------------------------------------------===#
     # Python Dict operations
     # ===-------------------------------------------------------------------===#
 

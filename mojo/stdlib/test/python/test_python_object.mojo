@@ -401,6 +401,9 @@ fn test_dict() raises:
     var dd = Python.dict(food=123, fries="yes")
     assert_equal(String(dd), "{'food': 123, 'fries': 'yes'}")
 
+    var dd2: PythonObject = {"food": 123, "fries": "yes"}
+    assert_equal(String(dd2), "{'food': 123, 'fries': 'yes'}")
+
     dd["food"] = "salad"
     dd[42] = Python.list(4, 2)
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
@@ -413,6 +416,21 @@ fn test_dict() raises:
     # Also test that Python.dict() creates the right object.
     var empty = Python.dict()
     assert_equal(String(empty), "{}")
+
+    var empty2: PythonObject = {}
+    assert_equal(String(empty2), "{}")
+
+
+fn test_set() raises:
+    # Test Python set literals.
+    var dd: PythonObject = {123, "yes"}
+    var dd2 = Python.evaluate("{123, 'yes'}")
+    # Be care about instability of set ordering across platforms.
+    assert_equal(String(dd), String(dd2))
+
+    assert_true(123 in dd)
+    assert_true("yes" in dd)
+    assert_false(42 in dd)
 
 
 fn test_none() raises:
@@ -623,6 +641,7 @@ def main():
     test_iter()
     test_setitem()
     test_dict()
+    test_set()
     test_none()
     test_nested_object()
     test_getitem_raises()
