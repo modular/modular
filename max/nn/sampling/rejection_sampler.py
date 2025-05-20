@@ -38,10 +38,7 @@ class RejectionSampler(nn.Module):
         broadcasted_range = ops.broadcast_to(
             ops.range(
                 0,
-                ops.cast(
-                    draft_tokens.shape[1],
-                    dtype=DType.int64,
-                ),
+                ops.shape_to_tensor([draft_tokens.shape[1]]).reshape(()),
                 1,
                 out_dim=Dim("num_steps"),
                 device=self.device,
@@ -101,7 +98,9 @@ class RejectionSampler(nn.Module):
         first_rejected_token = ops.argmax(
             ops.broadcast_to(
                 ops.range(
-                    ops.cast(rejected_tokens.shape[1], DType.int32),
+                    ops.shape_to_tensor([rejected_tokens.shape[1]])
+                    .reshape(())
+                    .cast(DType.int32),
                     ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU()),
                     ops.constant(-1, dtype=DType.int32, device=DeviceRef.CPU()),
                     out_dim="total_num_steps",

@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import TensorValueLike, ops
+from max.graph import TensorValue, TensorValueLike, ops
 from max.nn import Conv2DV1
 from max.nn.layer import Layer
 from max.nn.norm import RMSNormV1
@@ -51,7 +51,7 @@ class VisionEncoder(Layer):
         # Images go through a convolution independently to get patched.
         # Returns a list of [batch_size, hidden_size, height/patch_size, width/patch_size] tensors
         patch_embeds_list = [
-            self.patch_conv(ops.unsqueeze(ops.cast(img, self.dtype), 0))
+            self.patch_conv(ops.unsqueeze(TensorValue(img).cast(self.dtype), 0))
             for img in imgs
         ]
 

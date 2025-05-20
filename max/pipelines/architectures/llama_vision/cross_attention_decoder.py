@@ -104,7 +104,7 @@ class CrossSdpaAttention(Layer):
         rms_norm_key_cache(
             self.vision_kv_params,
             kv_collection,
-            gamma=ops.cast(self.k_norm.weight, hidden_states.dtype),
+            gamma=TensorValue(self.k_norm.weight).cast(hidden_states.dtype),
             epsilon=self.k_norm.eps,
             layer_idx=layer_idx,
             # Use the total sequence length of the cross attention states.

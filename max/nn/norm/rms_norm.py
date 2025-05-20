@@ -45,8 +45,8 @@ class RMSNormV1(Layer):
             "rms_norm",
             [
                 x,
-                ops.cast(self.weight, x.dtype),
-                ops.cast(self.eps, x.dtype),
+                TensorValue(self.weight).cast(x.dtype),
+                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
                 ops.constant(
                     self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
                 ),
@@ -85,7 +85,7 @@ class RMSNorm(Module):
         self.multiply_before_cast = multiply_before_cast
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        weight: TensorValue = ops.cast(self.weight, x.dtype)
+        weight: TensorValue = self.weight.cast(x.dtype)
         if x.device:
             weight = weight.to(x.device)
 
