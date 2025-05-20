@@ -387,8 +387,8 @@ struct Python:
             var result = cpython.PyDict_SetItem(
                 dict_obj_ptr, key_ptr, val_obj.py_object
             )
-            if result != 0:
-                raise Error("internal error: PyDict_SetItem failed")
+            if result == -1:
+                raise cpython.get_error()
 
         return dict_obj_ptr
 
@@ -450,8 +450,8 @@ struct Python:
             var result = cpython.PyDict_SetItem(
                 dict_obj_ptr, key_obj.py_object, val_obj.py_object
             )
-            if result != 0:
-                raise Error("internal error: PyDict_SetItem failed")
+            if result == -1:
+                raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=dict_obj_ptr)
 

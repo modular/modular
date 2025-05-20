@@ -519,15 +519,15 @@ struct PythonObject(
         var cpython = Python().cpython()
         var obj_ptr = cpython.PySet_New()
         if obj_ptr.is_null():
-            raise Error("internal error: PySet_New failed")
+            raise cpython.get_error()
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
             cpython.Py_IncRef(obj.py_object)
             var result = cpython.PySet_Add(obj_ptr, obj.py_object)
-            if result != 0:
-                raise Error("internal error: PySet_Add failed")
+            if result == -1:
+                raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=obj_ptr)
 

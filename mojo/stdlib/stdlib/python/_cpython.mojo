@@ -1093,15 +1093,12 @@ struct CPython(Copyable, Movable):
         https://docs.python.org/3/c-api/set.html#c.PySet_Add).
         """
 
-        # FIXME: This raises if the object is not hashable.
         var r = self.lib.call["PySet_Add", c_int](set, element)
-
         self.log(
             set._get_ptr_as_int(),
             " PySet_Add, element: ",
             element._get_ptr_as_int(),
         )
-
         return r
 
     # ===-------------------------------------------------------------------===#
