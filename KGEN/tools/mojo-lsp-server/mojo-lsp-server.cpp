@@ -29,6 +29,8 @@ int main(int argc, char **argv) {
       "and include the crash backtrace along with all the relevant source "
       "codes with the contents they had at crash time.\n");
 
+  llvm::cl::OptionCategory category{"Mojo language server options"};
+
   llvm::cl::opt<JSONStreamStyle> inputStyle{
       "input-style",
       llvm::cl::desc("Input JSON stream encoding"),
@@ -39,6 +41,7 @@ int main(int argc, char **argv) {
                                   "with // comment support")),
       llvm::cl::init(JSONStreamStyle::Standard),
       llvm::cl::Hidden,
+      llvm::cl::cat(category),
   };
   llvm::cl::opt<bool> mojoTest{
       "mojo-test",
@@ -49,6 +52,7 @@ int main(int argc, char **argv) {
           "that all the requests are resolved once the shutdown packet is "
           "received, to avoid early invalidations."),
       llvm::cl::init(false),
+      llvm::cl::cat(category),
   };
   llvm::cl::opt<Logger::Level> logLevel{
       "log",
@@ -62,22 +66,29 @@ int main(int argc, char **argv) {
       // to get more additional information for troubleshooting. When we become
       // more confident of the LSP, we can switch this back to Info.
       llvm::cl::init(Logger::Level::Debug),
+      llvm::cl::cat(category),
   };
   llvm::cl::opt<bool> prettyPrint{
       "pretty",
       llvm::cl::desc("Pretty-print JSON output"),
       llvm::cl::init(false),
+      llvm::cl::cat(category),
   };
   llvm::cl::opt<bool> attach{
       "attach-debugger-on-startup",
       llvm::cl::desc("Launch the server and start a debug session attached to "
                      "it on VS Code"),
       llvm::cl::init(false),
+      llvm::cl::cat(category),
   };
   llvm::cl::list<std::string> includeDirs{
-      "I", llvm::cl::desc("Append directory to the search path list used to "
-                          "resolve imported modules in a document")};
+      "I",
+      llvm::cl::desc("Append directory to the search path list used to "
+                     "resolve imported modules in a document"),
+      llvm::cl::cat(category),
+  };
 
+  llvm::cl::HideUnrelatedOptions(category);
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
 
   if (isatty(STDOUT_FILENO)) {
