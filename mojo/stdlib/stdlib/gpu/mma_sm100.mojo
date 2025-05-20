@@ -997,7 +997,7 @@ fn mma[
 @always_inline
 fn mma_arrive[
     cta_group: Int = 1,
-](mbar_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED, *_, **_],):
+](mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -1008,19 +1008,52 @@ fn mma_arrive[
     """
 
     constrained[
-        cta_group == 1 or cta_group == 2,
+        cta_group in (1, 2),
         String("Unsupported cta group: ", cta_group),
     ]()
 
     alias type = mbar_ptr.type
     constrained[sizeof[type]() == 8, "mbar_ptr must be 8 bytes"]()
 
-    alias cta_str = "cta_group::" + String(cta_group)
-
     inlined_assembly[
-        "tcgen05.commit."
-        + cta_str
+        "tcgen05.commit.cta_group::"
+        + String(cta_group)
         + ".mbarrier::arrive::one.shared::cluster.b64 [$0];",
         NoneType,
         constraints="r",
     ](Int32(Int(mbar_ptr)))
+
+
+@always_inline
+fn mma_arrive_multicast[
+    cta_group: Int = 1,
+](
+    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, *_, **_],
+    cta_mask: UInt16,
+):
+    """Arrive at the mbar pointer for the MMA instruction for multiple ctas.
+
+    Parameters:
+        cta_group: Number of ctas used by MMA.
+
+    Args:
+        mbar_ptr: Pointer to the mbar.
+        cta_mask: Mask of ctas to signal.
+    """
+
+    constrained[
+        cta_group in (1, 2),
+        String("Unsupported cta group: ", cta_group),
+    ]()
+
+    alias type = mbar_ptr.type
+    constrained[sizeof[type]() == 8, "mbar_ptr must be 8 bytes"]()
+
+    inlined_assembly[
+        "tcgen05.commit.cta_group::"
+        + String(cta_group)
+        + ".mbarrier::arrive::one.shared::cluster.multicast::cluster.b64"
+        " [$0], $1;",
+        NoneType,
+        constraints="r,h",
+    ](Int32(Int(mbar_ptr)), cta_mask)
