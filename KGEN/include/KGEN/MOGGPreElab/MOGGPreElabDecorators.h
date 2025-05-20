@@ -261,8 +261,17 @@ constexpr StringLiteral
     MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_LIST_TYPE_NAME =
         "stdlib::DeviceContextPtrList";
 
+// These type names can be confusing. Inside the Graph Compiler code, the
+// types show up like this:
+// - StaticString -> stdlib::StringSlice
+// - String -> stdlib::String
+// - StringSlice -> stdlib::Origin
 constexpr StringLiteral MOJO_INTERNAL_STATIC_STRING_TYPE_NAME =
     "stdlib::StringSlice";
+
+constexpr StringLiteral MOJO_STRING_TYPE_NAME = "stdlib::String";
+
+constexpr StringLiteral MOJO_INTERNAL_STRING_SLICE_TYPE_NAME = "stdlib::Origin";
 
 //===----------------------------------------------------------------------===//
 // Parameter Inference
