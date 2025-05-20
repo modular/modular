@@ -138,11 +138,10 @@ fn broadcast_impl[
     )
 
     if axis == rightmost_broadcast_axis:
-        var elems_to_copy = input_axis_stride
         _tile_1d(
             output.ptr.offset(output_offset),
             input.ptr.offset(input_offset),
-            input_axis_stride,  # elems_to_copy
+            input_axis_stride,
             output.runtime_layout.dim(axis),
         )
         return
@@ -202,6 +201,6 @@ fn _tile_1d[
     Repeat data from `src_ptr[:tile_num_elems]` in `init_dst_ptr` for `n` times
     """
     var dst_ptr = init_dst_ptr
-    for i in range(n):
+    for _ in range(n):
         memcpy(dst_ptr, src_ptr, tile_num_elems)
         dst_ptr = dst_ptr.offset(tile_num_elems)
