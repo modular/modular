@@ -188,7 +188,8 @@ struct OpWithIntParameter[IntParameter: Int]:
         out: OutputTensor,
         x: InputTensor[type = out.type, rank = out.rank],
     ):
-        out[0] = x[0] + IntParameter
+        out[0] = x[0]
+        print(IntParameter)
 
 
 @compiler.register("op_with_dtype_parameter")
@@ -199,6 +200,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
         x: InputTensor[type = out.type, rank = out.rank],
     ):
         out[0] = x[0]
+        print(DTypeParameter)
 
 
 @compiler.register("op_with_string_parameter")
