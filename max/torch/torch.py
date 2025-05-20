@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from max import mlir
 from max.driver import Accelerator, Tensor, accelerator_count
-from max.dtype import torch_to_max_type
+from max.dtype import DType, torch_to_max_type
 from max.engine import Model
 from max.engine.api import InferenceSession
 from max.graph import (
@@ -91,7 +90,7 @@ class CustomOpLibrary:
     _context: Context
     _kernel_library: KernelLibrary
     _session: InferenceSession
-    _ops: dict[str, CustomOpDef]
+    _ops: dict[str, CustomOp]
 
     def __init__(self, kernel_library: Path | KernelLibrary):
         """
@@ -112,15 +111,14 @@ class CustomOpLibrary:
         self._session = InferenceSession(devices=devices)
         self._ops = {}
 
-    def __getattr__(self, attr: str) -> CustomOpDef:
+    def __getattr__(self, attr: str) -> CustomOp:
         compiled = self._ops
         if not (result := compiled.get(attr)):
 
             @torch.compiler.disable
             def update_cache():
                 nonlocal result
-                new_op = CustomOp(self, attr)
-                result = compile_custom_op(new_op)
+                result = CustomOp(self, attr)
                 compiled[attr] = result
 
             update_cache()
@@ -129,10 +127,44 @@ class CustomOpLibrary:
         return result
 
 
-@dataclass
+ParametersDict = dict[str, Union[bool, int, str, DType]]
+ParameterKey = tuple[str, Union[bool, int, str, DType]]
+
+
 class CustomOp:
     library: CustomOpLibrary
     name: str
+    parameters: Optional[ParametersDict]
+
+    _custom_op_def: CustomOpDef
+    _parameter_specializations: dict[tuple[ParameterKey, ...], CustomOp]
+
+    def __init__(
+        self,
+        library: CustomOpLibrary,
+        name: str,
+        parameters: Optional[ParametersDict] = None,
+    ):
+        self.library = library
+        self.name = name
+        self.parameters = parameters
+        self._parameter_specializations = {}
+        self._custom_op_def = compile_custom_op(self)
+
+    def __getitem__(self, parameters: ParametersDict) -> CustomOp:
+        assert self.parameters is None, (
+            "Only one set of parameters may be specified"
+        )
+        normalized = tuple(sorted(parameters.items()))
+
+        if not (result := self._parameter_specializations.get(normalized)):
+            result = CustomOp(self.library, self.name, parameters)
+            self._parameter_specializations[normalized] = result
+
+        return result
+
+    def __call__(self, *args, **kwargs):
+        return self._custom_op_def(*args, **kwargs)
 
     @property
     def context(self) -> mlir.Context:
@@ -195,6 +227,7 @@ def custom_op_graph(
     op: CustomOp,
     input_types: Iterable[TensorType],
     result_types: Iterable[TensorType],
+    parameters: ParametersDict,
 ) -> Graph:
     """Construct the Graph API graph representing a call to a Mojo CustomOp.
 
@@ -224,6 +257,7 @@ def custom_op_graph(
             op.name,
             list(graph.inputs[len(output_types) :]),
             out_types=list(result_types),
+            parameters=parameters,
         )
         for input, result in zip(graph.inputs, results):
             input.buffer[...] = result.tensor
@@ -307,7 +341,7 @@ def model_key(
     return input_types
 
 
-def compile_custom_op(op: CustomOp):
+def compile_custom_op(op: CustomOp) -> CustomOpDef:
     # This will hold the compiled model once the registered fake tensor function
     # is invoked for the first time.
     model_cache: dict[CompiledModelKey, Model] = {}
@@ -317,6 +351,8 @@ def compile_custom_op(op: CustomOp):
     num_dps_outputs = num_outputs(op.kernel)
     mutated_args = list(signature.parameters.keys())[:num_dps_outputs]
 
+    parameters = op.parameters or {}
+
     # Compile the model if it has not been compiled already.
     def compile_model(*args: torch.Tensor) -> Model:
         key = model_key(op.context, args)
@@ -325,7 +361,9 @@ def compile_custom_op(op: CustomOp):
             sig = model_signature(
                 args[num_dps_outputs:], args[:num_dps_outputs]
             )
-            graph = custom_op_graph(mlir.Context(), op, *sig)
+            graph = custom_op_graph(
+                mlir.Context(), op, sig[0], sig[1], parameters
+            )
             model = op.library._session.load(graph)
             model_cache[key] = model
 
