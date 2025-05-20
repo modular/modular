@@ -20,11 +20,11 @@ def transpose(x: TensorValueLike, dim_1: int, dim_2: int) -> TensorValue:
     For more information, see :obj:`~max.graph.TensorValue.transpose()`.
 
     Args:
-        input: The input symbolic tensor to transpose.
-        x: One of the two dimensions to transpose. If negative, this indexes
+        x: The input symbolic tensor to transpose.
+        dim_1: One of the two dimensions to transpose. If negative, this indexes
            from the end of the tensor. For example,
            :code:`transpose(v, -1, -2)` transposes the last two dimensions.
-        y: The other dimension to transpose. May also be negative to index from
+        dim_2: The other dimension to transpose. May also be negative to index from
            the end of the tensor.
 
     Returns:
