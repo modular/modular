@@ -104,7 +104,7 @@ def test_my_add_invalid_inputs_count(
                 out_types=[tensor_type],
             )
         assert (
-            "Could not provide all input arguments to custom op 'my_add': missing operands starting from argument named 'y'"
+            "Could not provide all input arguments to op 'my_add': missing operands starting from argument named 'y'"
             in str(err.value)
         )
 
@@ -128,7 +128,7 @@ def test_my_add_invalid_outputs_count(
                 out_types=[tensor_type, tensor_type],
             )
         assert (
-            "Custom op 'my_add' has too many results: results starting at position 1 have no equivalent output argument or function result in kernel"
+            "Op 'my_add' has too many results: results starting at position 1 have no equivalent output argument or function result in kernel"
             in str(err.value)
         )
 
@@ -198,7 +198,7 @@ def test_op_multiple_outputs_invalid_outputs_count(
                 out_types=[tensor_type],
             )
         assert (
-            "Could not provide all output arguments to custom op 'op_with_multiple_outputs': missing operands starting from argument named 'out1'"
+            "Could not provide all output arguments to op 'op_with_multiple_outputs': missing operands starting from argument named 'out1'"
             in str(err.value)
         )
 
@@ -222,7 +222,7 @@ def test_op_without_outputs_invalid_outputs_count(
                 out_types=[tensor_type],
             )
         assert (
-            "Custom op 'op_without_outputs' has too many results: results starting at position 0 have no equivalent output argument or function result in kernel"
+            "Op 'op_without_outputs' has too many results: results starting at position 0 have no equivalent output argument or function result in kernel"
             in str(err.value)
         )
 
@@ -314,7 +314,7 @@ def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
                 out_types=[tensor_type],
             )
         assert (
-            "Could not provide all input arguments to custom op 'variadic_add': missing operands starting from argument named 'input'"
+            "Could not provide all input arguments to op 'variadic_add': missing operands starting from argument named 'input'"
             in str(err.value)
         )
 
