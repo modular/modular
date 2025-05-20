@@ -296,11 +296,14 @@ class PipelineConfig(MAXConfig):
         if (
             self.sampling_config.frequency_penalty != 0
             or self.sampling_config.presence_penalty != 0
+            or self.sampling_config.repetition_penalty != 1
         ):
             if self.draft_model_config:
                 raise ValueError(
-                    "frequency_penalty and presence_penalty are not currently supported with speculative decoding."
+                    "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
                 )
+            if self.sampling_config.repetition_penalty <= 0:
+                raise ValueError("repetition_penalty must be greater than 0.")
             self.sampling_config.do_penalties = True
 
         # Run Baseline Validation

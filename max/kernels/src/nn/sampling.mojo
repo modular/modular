@@ -29,6 +29,7 @@ fn apply_penalties_to_logits[
     frequency_offsets: LayoutTensor[DType.uint32, **_],
     frequency_penalty: Scalar[penalty_type],
     presence_penalty: Scalar[penalty_type],
+    repetition_penalty: Scalar[penalty_type],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -56,6 +57,11 @@ fn apply_penalties_to_logits[
             ).cast[logit_type]()
 
             var logit = logits[batch_id, token]
+
+            if logit > 0:
+                logit = logit / repetition_penalty.cast[logit_type]()
+            else:
+                logit = logit * repetition_penalty.cast[logit_type]()
 
             logit -= (
                 frequency_penalty.cast[logit_type]() * count

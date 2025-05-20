@@ -8508,6 +8508,7 @@ struct Struct_sampler_apply_penalties:
         frequency_offsets: InputTensor[type = DType.uint32, rank=1],
         frequency_penalty: Scalar[penalty_type],
         presence_penalty: Scalar[penalty_type],
+        repetition_penalty: Scalar[penalty_type],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
@@ -8519,6 +8520,7 @@ struct Struct_sampler_apply_penalties:
                 frequency_offsets.to_layout_tensor(),
                 frequency_penalty,
                 presence_penalty,
+                repetition_penalty,
                 ctx,
             )
 

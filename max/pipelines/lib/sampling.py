@@ -132,6 +132,11 @@ def token_sampler(
                         DType.float32,
                         device=DeviceRef.CPU(),
                     ),
+                    ops.constant(
+                        sampling_config.repetition_penalty,
+                        DType.float32,
+                        device=DeviceRef.CPU(),
+                    ),
                 ],
                 device=device,
             )
