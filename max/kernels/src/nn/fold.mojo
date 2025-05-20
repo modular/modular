@@ -130,3 +130,22 @@ fn fold[
 
     output.zero()
     vectorize[_fold_over_batch_cpu, simdwidthof[dtype]()](N)
+
+
+fn fold_shape[
+    dtype: DType, input_dim: DimList
+](
+    input: NDBuffer[dtype, 3, MutableAnyOrigin, input_dim],
+    output_size: IndexList[2],
+    kernel_size: IndexList[2],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+) raises -> IndexList[4]:
+    """Returns the shape of the output tensor of the fold operation."""
+    var output_shape = IndexList[4]()
+    output_shape[0] = input.dim[0]()
+    output_shape[1] = input.dim[1]() // (kernel_size[0] * kernel_size[1])
+    output_shape[2] = output_size[0]
+    output_shape[3] = output_size[1]
+    return output_shape
