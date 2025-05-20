@@ -521,9 +521,7 @@ struct Codepoint(
 
         @parameter
         if optimize_ascii:
-            # FIXME(#933): can't run LLVM intrinsic at compile time
-            # if likely(num_bytes == 1):
-            if num_bytes == 1:
+            if likely(num_bytes == 1):
                 ptr[0] = UInt8(c)
                 return 1
             var shift = 6 * (num_bytes - 1)
