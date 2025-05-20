@@ -118,7 +118,11 @@ llvm::Expected<size_t> MojoListSyntheticFrontEnd::GetIndexOfChildWithName(
   if (!nameStr)
     return llvm::createStringError("Invalid name");
 
-  size_t idx = ExtractIndexFromString(nameStr);
+  std::optional<size_t> index = ExtractIndexFromString(nameStr);
+  if (!index)
+    return llvm::createStringError("Invalid index format");
+
+  size_t idx = *index;
   if (idx >= size)
     return llvm::createStringError("Index out of bounds");
 

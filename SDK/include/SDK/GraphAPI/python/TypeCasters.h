@@ -24,6 +24,7 @@
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/string_view.h"
 #include "nanobind/stl/unique_ptr.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 #include <type_traits>
 #include <utility>
@@ -322,6 +323,39 @@ struct type_caster<::llvm::APFloat> {
   static handle from_cpp(::llvm::APFloat f, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
     return Caster::from_cpp(f.convertToDouble(), policy, cleanup);
+  }
+};
+
+template <typename Entry>
+struct type_caster<::llvm::SmallVector<Entry>>
+    : list_caster<::llvm::SmallVector<Entry>, Entry> {};
+
+// Type caster to convert from list <-> SmallVectorImpl
+template <typename Entry>
+struct type_caster<::llvm::SmallVectorImpl<Entry>> {
+  using Underlying = ::llvm::SmallVector<Entry>;
+  using Value = ::llvm::SmallVectorImpl<Entry>;
+
+  template <typename T_>
+  using Cast = movable_cast_t<T_>;
+
+  static constexpr auto Name = make_caster<Underlying>::Name;
+
+  using Caster = make_caster<Underlying>;
+  Caster caster;
+
+  explicit operator Value *() { return &caster.value; }
+  explicit operator Value &() { return (Value &)caster.value; }
+  explicit operator Value &&() { return (Value &&)caster.value; }
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    return !caster.from_python(src, flags, cleanup);
+  }
+
+  static handle from_cpp(Underlying &&underlying, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return make_caster<Underlying>::from_cpp(Underlying(std::move(underlying)),
+                                             policy, cleanup);
   }
 };
 

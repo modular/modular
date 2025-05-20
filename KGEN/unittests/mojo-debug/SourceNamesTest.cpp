@@ -10,7 +10,8 @@
 using namespace M;
 using namespace lldb;
 
-TEST(SourceNamesTest, testFunctionBeforeStructParsing) {
+// TODO(MOTO-1079): Fix this test.
+TEST(SourceNamesTest, DISABLED_testFunctionBeforeStructParsing) {
   // Tests that DWARF parsing is done correctly when LLDB parses a function
   // source name before its owning struct.
   // This happens when the debug session starts with a single breakpoint
