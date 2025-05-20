@@ -135,11 +135,11 @@ class DistributedLlama3(DistributedTransformer):
             config.vocab_size,
             embedding_output_dtype,
             devices=config.devices,
+            tied_weight=(
+                embedding_layer.weight if config.tie_word_embeddings else None
+            ),
             quantization_encoding=embedding_output_quantization,
         )
-
-        if config.tie_word_embeddings:
-            output.set_shared_weight("weight", embedding_layer.weight)
 
         kv_collection_cls: (
             type[FetchContinuousBatchingKVCacheCollection]
