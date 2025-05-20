@@ -38,7 +38,7 @@ def test_ldg_kernel():
     var llvm = test_ldg_kernel["llvm"]()
     assert_true("!invariant.load !1" in llvm)
     var asm = test_ldg_kernel["asm"]()
-    assert_true("ld.global.nc.u8" in asm)
+    assert_true("ld.global.nc.b8" in asm)
 
 
 def test_layout_kernel[emission_kind: StaticString]() -> String:
@@ -53,7 +53,7 @@ def test_layout_kernel():
     var llvm = test_layout_kernel["llvm"]()
     assert_true("!invariant.load !1" in llvm)
     var asm = test_layout_kernel["asm"]()
-    assert_true("ld.global.nc.u8" in asm)
+    assert_true("ld.global.nc.b8" in asm)
 
 
 def main():

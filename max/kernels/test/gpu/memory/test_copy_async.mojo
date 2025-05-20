@@ -62,7 +62,7 @@ fn test_mbarrier_init(
 
 
 fn _verify_mbarrier_init(asm: StringSlice) raises -> None:
-    assert_true("ld.param.u32" in asm)
+    assert_true("ld.param.b32" in asm)
     assert_true("mov.b32" in asm)
     assert_true("mbarrier.init.shared.b64" in asm)
 

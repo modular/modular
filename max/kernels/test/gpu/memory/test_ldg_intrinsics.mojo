@@ -49,12 +49,12 @@ fn register_intrinsics(
 
 @always_inline
 fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
-    assert_true("ld.global.nc.u8" in asm)
-    assert_true("ld.global.nc.u16" in asm)
-    assert_true("ld.global.nc.u32" in asm)
-    assert_true("ld.global.nc.u64" in asm)
-    assert_true("ld.global.nc.f32" in asm)
-    assert_true("ld.global.nc.f64" in asm)
+    assert_true("ld.global.nc.b8" in asm)
+    assert_true("ld.global.nc.b16" in asm)
+    assert_true("ld.global.nc.b32" in asm)
+    assert_true("ld.global.nc.b64" in asm)
+    assert_true("ld.global.nc.b32" in asm)
+    assert_true("ld.global.nc.b64" in asm)
 
 
 def test_register_intrinsics_sm80():

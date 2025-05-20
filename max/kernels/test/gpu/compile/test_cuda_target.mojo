@@ -348,8 +348,8 @@ fn gemm(
 def _verify_gemm(asm: StringSlice):
     assert_true("gemm" in asm)
     assert_true(".shared .align 4 .b8" in asm)
-    assert_true("st.shared.f32" in asm)
-    assert_true("ld.shared.f32" in asm)
+    assert_true("st.shared.b32" in asm)
+    assert_true("ld.shared.b32" in asm)
 
 
 def test_gemm_sm80():
