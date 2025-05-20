@@ -116,9 +116,17 @@ class CustomOpLibrary:
     def __getattr__(self, attr: str) -> CustomOpDef:
         compiled = self._ops
         if not (result := compiled.get(attr)):
-            new_op = CustomOp(self, attr)
-            result = compile_custom_op(new_op)
-            compiled[attr] = result
+
+            @torch.compiler.disable
+            def update_cache():
+                nonlocal result
+                new_op = CustomOp(self, attr)
+                result = compile_custom_op(new_op)
+                compiled[attr] = result
+
+            update_cache()
+
+        assert result is not None
         return result
 
 
