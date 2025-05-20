@@ -26,12 +26,10 @@ def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str):
-    grayscale_kernel = op_library.grayscale
-
     @torch.compile(backend=backend)
     def grayscale(pic):
         result = pic.new_empty(pic.shape[:-1])
-        grayscale_kernel(result, pic)
+        op_library.grayscale(result, pic)
         return result
 
     img = (torch.rand(64, 64, 3) * 255).to(torch.uint8)
@@ -51,7 +49,7 @@ def test_grayscale(op_library: CustomOpLibrary, backend: str):
 def test_binary_add(op_library: CustomOpLibrary, backend: str):
     myadd_kernel = op_library.myadd
 
-    @torch.compile(backend=backend)
+    @torch.compile(backend=backend, fullgraph=True)
     def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
         C = torch.zeros(A.shape)
         myadd_kernel(C, A, B)
@@ -75,7 +73,7 @@ def test_binary_add(op_library: CustomOpLibrary, backend: str):
 def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
     myadd_kernel = op_library.myadd
 
-    @torch.compile(backend=backend)
+    @torch.compile(backend=backend, fullgraph=True)
     def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
         C = torch.zeros(A.shape)
         myadd_kernel(C, A, B)
