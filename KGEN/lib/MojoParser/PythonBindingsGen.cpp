@@ -345,7 +345,6 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   //
   //        var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
   //            "incr_int",
-  //            "Int",
   //            py_args,
   //            0
   //        )
@@ -424,7 +423,6 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   //     var arg_<N>: UnsafePointer[<N arg type>] =
   //         check_and_get_arg[<N arg type>](
   //             "<func name>",
-  //             "<arg type name>",
   //             py_args,
   //             <N>
   //         )
@@ -447,15 +445,13 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
     SubscriptNode subscript(&nameDRE, moduleLoc, argTypeOp, moduleLoc);
 
     SyntheticNode callOp0(moduleLoc, originalFuncNameStrAttr);
-    SyntheticNode callOp1(moduleLoc, getTypeName(shared, rvType));
-    SyntheticNode callOp2(moduleLoc, pyArgsTuple);
-    SyntheticNode callOp3(moduleLoc,
+    SyntheticNode callOp1(moduleLoc, pyArgsTuple);
+    SyntheticNode callOp2(moduleLoc,
                           IntegerAttr::get(IndexType::get(ctx), argIndex));
     Operand callOps[] = {
         Operand(&callOp0, moduleLoc, Operand::kPositional),
         Operand(&callOp1, moduleLoc, Operand::kPositional),
         Operand(&callOp2, moduleLoc, Operand::kPositional),
-        Operand(&callOp3, moduleLoc, Operand::kPositional),
     };
     CallNode call(&subscript, moduleLoc, callOps, moduleLoc);
 
