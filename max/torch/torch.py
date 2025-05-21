@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Optional, Union
 
 from max import mlir
-from max._core import Type as _Type
 from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType, torch_to_max_type
 from max.engine import Model
@@ -23,7 +22,6 @@ from max.graph import (
     KernelLibrary,
     Shape,
     TensorType,
-    Type,
     ops,
 )
 from max.mlir import Context
@@ -247,7 +245,7 @@ def custom_op_graph(
     """
 
     output_types = [t.as_buffer() for t in result_types]
-    graph_types: list[Type] = [*output_types, *input_types]
+    graph_types = [*output_types, *input_types]
 
     with Graph(
         op.name,
@@ -318,7 +316,7 @@ def op_signature(op: mlir.Operation) -> inspect.Signature:
 
 TorchTensors = Union[torch.Tensor, Sequence[torch.Tensor]]
 
-CompiledModelKey = tuple[_Type, ...]
+CompiledModelKey = tuple[mlir.Type, ...]
 ModelSignature = tuple[tuple[TensorType, ...], tuple[TensorType, ...]]
 
 
@@ -333,8 +331,14 @@ def model_signature(
     return (input_types, result_types)
 
 
-def model_key(args: Iterable[torch.Tensor]) -> CompiledModelKey:
-    return tuple(torch_tensor_to_type(arg).to_mlir() for arg in args)
+def model_key(
+    context: mlir.Context,
+    args: Iterable[torch.Tensor],
+) -> tuple[mlir.Type, ...]:
+    sig_args = tuple(torch_tensor_to_type(arg) for arg in args)
+    with context:
+        input_types = tuple(arg.to_mlir() for arg in sig_args)
+    return input_types
 
 
 def compile_custom_op(op: CustomOp) -> CustomOpDef:
@@ -351,7 +355,7 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
 
     # Compile the model if it has not been compiled already.
     def compile_model(*args: torch.Tensor) -> Model:
-        key = model_key(args)
+        key = model_key(op.context, args)
 
         if not (model := model_cache.get(key)):
             sig = model_signature(
