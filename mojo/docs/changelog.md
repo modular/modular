@@ -136,6 +136,11 @@ Changes to Python-Mojo interoperability:
   by Mojo types that can be constructed by converting from a `PythonObject`.
   This is the reverse operation of the `PythonConvertible` trait.
 
+- Added `UnsafePointer` initializer for downcasting from a `PythonObject`.
+
+  This is used to get a pointer to the underlying Mojo value that was stored
+  into a Python object.
+
 - `os.abort(messages)` no longer supports generic variadic number of `Writable`
   messages.  While this API was high-level and convenient, it generates a lot of
   IR for simple and common cases, such as when we have a single `StringLiteral`
