@@ -16,8 +16,8 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import Conv1D, Conv3D
 
-ACCURACY_RTOL = 2e-4
-ACCURACY_ATOL = 1e-5
+ACCURACY_RTOL = 1e-5
+ACCURACY_ATOL = 1e-8
 
 
 def conv3d_impl(session: InferenceSession) -> None:

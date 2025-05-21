@@ -20,6 +20,7 @@ modular_py_library(
         ":graph_utils",
         ":mocks",
         ":ndarray_from_tensor_type",
+        ":numerics",
         ":numpy_encoder",
         ":path",
         ":pipeline_cli_utils",
@@ -155,6 +156,16 @@ modular_py_library(
         requirement("pillow"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "numerics",
+    srcs = ["numerics.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("torch"),
     ],
 )
 
