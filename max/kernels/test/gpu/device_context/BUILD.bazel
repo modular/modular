@@ -33,6 +33,7 @@ mojo_filecheck_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"] + select({
         "//:h100_gpu": ["@platforms//:incompatible"],
+        "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

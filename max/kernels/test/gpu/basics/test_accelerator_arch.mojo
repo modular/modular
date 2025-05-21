@@ -26,6 +26,7 @@ def main():
         or accelerator_arch == "nvidia:89"
         or accelerator_arch == "nvidia:90"
         or accelerator_arch == "nvidia:90a"
+        or accelerator_arch == "nvidia:100"
         or accelerator_arch == "amdgpu:94",
         "Expected specific accelerator_archs, got: " + accelerator_arch,
     )
