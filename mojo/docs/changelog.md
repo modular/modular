@@ -132,6 +132,10 @@ Changes to Python-Mojo interoperability:
   Similarly, a new `def_method` API is added to `PythonTypeBuilder` to allow
   declaring Python bindings for methods that take and return `PythonObject`s.
 
+- The `ConvertibleFromPython` trait is now public. This trait is implemented
+  by Mojo types that can be constructed by converting from a `PythonObject`.
+  This is the reverse operation of the `PythonConvertible` trait.
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
