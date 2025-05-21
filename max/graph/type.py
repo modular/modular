@@ -232,7 +232,7 @@ class SymbolicDim(Dim):
 
     In tensor type notation:
 
-    .. code-block:: python
+    .. code-block::
 
         !mo.tensor<[batch, x, 10], si32]>
 
