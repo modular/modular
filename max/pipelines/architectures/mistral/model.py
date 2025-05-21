@@ -23,7 +23,12 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+)
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -445,11 +450,7 @@ class MistralModel(PipelineModel[TextContext]):
         nn_model: Module
         if len(self.devices) > 1:
             nn_model = DistributedMistral(model_config)
-            nn_model.load_state_dict(
-                state_dict,
-                weight_alignment=1,
-                strict=False,  # We do not load the vision tower weights
-            )
+            nn_model.load_state_dict(state_dict, weight_alignment=1)
             self.state_dict = nn_model.state_dict()
 
             with Graph(

@@ -166,7 +166,6 @@ class Module(Layer, ABC):
         *,
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
-        strict: bool = True,
     ) -> None:
         """Sets the values of all weights in this model.
 
@@ -178,15 +177,10 @@ class Module(Layer, ABC):
             weight_alignment: If specified, overrides the alignment for each
                 weight in the `Module`. If left as `None`, each value in
                 state_dict must be aligned by the default dtype alignment.
-            strict: If True, raises an error if any keys in `state_dict` were
-                not used by the `Module`.
 
         Raises:
-            ValueError: If any weight in the model is not present in the state dict.
-            ValueError: If `strict` is True and `state_dict` contains keys
-                not used by the `Module`.
+            Error if any weight in the model is not present in the state dict.
         """
-        loaded_keys = set()
         for name, layer in recursive_named_layers(self):
             weight_prefix = f"{name}." if name else ""
             for weight_name, weight in layer.layer_weights.items():
@@ -196,7 +190,6 @@ class Module(Layer, ABC):
                     continue
                 full_weight_name = f"{weight_prefix}{weight_name}"
                 if (data := state_dict.get(full_weight_name)) is not None:
-                    loaded_keys.add(full_weight_name)
                     if isinstance(data, WeightData):
                         data = _array_from_weight_loader(
                             weight,
@@ -222,18 +215,6 @@ class Module(Layer, ABC):
                     ):
                         msg += f" Did you mean '{possible_match[0]}'?"
                     raise ValueError(msg)
-
-        if strict:
-            unused_keys = state_dict.keys() - loaded_keys
-            if len(unused_keys) > 0:
-                unused_keys_str = ", ".join(sorted(unused_keys))
-                msg = (
-                    f"load_state_dict() received an unexpected key(s) in state_dict. "
-                    f"If you want to load a model with a state_dict that may "
-                    f"contain unused keys, set strict=False. "
-                    f"The unused keys are:\n {unused_keys_str}"
-                )
-                raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True
