@@ -15,36 +15,65 @@ from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 
 
-def transpose(x: TensorValueLike, dim_1: int, dim_2: int) -> TensorValue:
-    """Transposes two dimensions of a symbolic tensor.
+def _axis_out_of_range_error(
+    axis_name: str, axis: int, lower_bound: int, upper_bound: int
+) -> str:
+    return f"Axis {axis_name} out of range (expected to be in range of [{lower_bound}, {upper_bound}], but got {axis})"
+
+
+def _axis_bounds(rank: int) -> tuple[int, int]:
+    if rank == 0:
+        return -1, 0
+    return -rank, rank - 1
+
+
+def _check_axis_in_bounds(axis: int, axis_name: str, rank: int) -> None:
+    lower_bound, upper_bound = _axis_bounds(rank)
+    if axis < lower_bound or axis > upper_bound:
+        raise IndexError(
+            _axis_out_of_range_error(axis_name, axis, lower_bound, upper_bound)
+        )
+
+
+def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
+    """Transposes two axes of a symbolic tensor.
     For more information, see :obj:`~max.graph.TensorValue.transpose()`.
 
     Args:
         x: The input symbolic tensor to transpose.
-        dim_1: One of the two dimensions to transpose. If negative, this indexes
+        axis_1: One of the two axes to transpose. If negative, this indexes
            from the end of the tensor. For example,
-           :code:`transpose(v, -1, -2)` transposes the last two dimensions.
-        dim_2: The other dimension to transpose. May also be negative to index from
+           :code:`transpose(v, -1, -2)` transposes the last two axes.
+        axis_2: The other axis to transpose. May also be negative to index from
            the end of the tensor.
 
     Returns:
-        A new symbolic tensor with the two specified dimensions transposed.
+        A new symbolic tensor with the two specified axes transposed.
         It has the same elements and dtype, but the order of the elements
         is different according to the transposition.
     """
     v = TensorValue(x)
 
     rank = len(v.shape)
-    if dim_1 < 0:
-        dim_1 += rank
-    if dim_2 < 0:
-        dim_2 += rank
+
+    _check_axis_in_bounds(axis_1, "axis_1", rank)
+    _check_axis_in_bounds(axis_2, "axis_2", rank)
+
+    if axis_1 < 0:
+        axis_1 += rank
+    if axis_2 < 0:
+        axis_2 += rank
 
     new_shape = v.shape
     indices = np.array(range(len(new_shape)))
 
-    new_shape[dim_1], new_shape[dim_2] = new_shape[dim_2], new_shape[dim_1]
-    indices[dim_1], indices[dim_2] = dim_2, dim_1
+    # Only change the shape for non-zero rank tensors.
+    if rank > 0:
+        new_shape[axis_1], new_shape[axis_2] = (
+            new_shape[axis_2],
+            new_shape[axis_1],
+        )
+        indices[axis_1], indices[axis_2] = axis_2, axis_1
 
     return Graph.current._add_op(
         rmo.mo_transpose,
