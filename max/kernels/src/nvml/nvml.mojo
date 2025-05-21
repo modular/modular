@@ -176,7 +176,7 @@ struct Result(Stringable, EqualityComparable):
     """No data"""
 
     alias VGPU_ECC_NOT_SUPPORTED = Self(22)
-    """The requested vgpu operation is not available on target device, becasue
+    """The requested vgpu operation is not available on target device, because
     ECC is enabled"""
 
     alias INSUFFICIENT_RESOURCES = Self(23)

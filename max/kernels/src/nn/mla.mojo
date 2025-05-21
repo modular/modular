@@ -2602,7 +2602,7 @@ fn mla_prefill_plan_kernel[
 
 
 # ===-----------------------------------------------------------------------===#
-# Helper fucntion that copies K cache to a contiguous buffer
+# Helper function that copies K cache to a contiguous buffer
 # ===-----------------------------------------------------------------------===#
 
 

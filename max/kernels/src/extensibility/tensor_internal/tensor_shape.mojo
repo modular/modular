@@ -761,7 +761,7 @@ struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
         # Decide which representation we can use and initialize the elements.
         # The most common case should fit into 4 dimensions.
         if rank <= 4:
-            var ok = True  # Checks if we did not loose precision.
+            var ok = True  # Checks if we did not lose precision.
             var rep = _Rep32()
             rep.rank = rank
             for i in range(rank):
@@ -776,7 +776,7 @@ struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
         # Otherwise we fall through to try the next representation.
         # Virtually everything else will fit into 6 dimensions.
         if rank <= 6:
-            var ok = True  # Checks if we did not loose precision.
+            var ok = True  # Checks if we did not lose precision.
             var rep = _Rep16()
             rep.rank = rank
             for i in range(rank):
@@ -810,7 +810,7 @@ struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
         # Decide which representation we can use and initialize the elements.
         # The most common case should fit into 4 dimensions.
         if rank <= 4:
-            var ok = True  # Checks if we did not loose precision.
+            var ok = True  # Checks if we did not lose precision.
             var rep = _Rep32()
             rep.rank = rank
             for i in range(rank):
@@ -825,7 +825,7 @@ struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
         # Otherwise we fall through to try the next representation.
         # Virtually everything else will fit into 6 dimensions.
         if rank <= 6:
-            var ok = True  # Checks if we did not loose precision.
+            var ok = True  # Checks if we did not lose precision.
             var rep = _Rep16()
             rep.rank = rank
             for i in range(rank):
@@ -862,7 +862,7 @@ struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
         # The most common case should fit into 4 dimensions.
         @parameter
         if rank <= 4:
-            var ok = True  # Checks if we did not loose precision.
+            var ok = True  # Checks if we did not lose precision.
             var rep = _Rep32()
             rep.rank = rank
             for i in range(rank):
@@ -878,7 +878,7 @@ struct TensorShape(Stringable, Writable, Copyable, Movable, EqualityComparable):
         # Virtually everything else will fit into 6 dimensions.
         @parameter
         if rank <= 6:
-            var ok = True  # Checks if we did not loose precision.
+            var ok = True  # Checks if we did not lose precision.
             var rep = _Rep16()
             rep.rank = rank
             for i in range(rank):

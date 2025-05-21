@@ -112,7 +112,7 @@ def serve_pipeline(
         tokenizer=tokenizer,
     )
 
-    # Intialize and serve webserver.
+    # Initialize and serve webserver.
     app = fastapi_app(
         settings,
         pipeline_settings,
