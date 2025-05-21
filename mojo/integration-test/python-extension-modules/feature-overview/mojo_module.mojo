@@ -41,18 +41,18 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
         b.def_py_function[case_return_arg_tuple]("case_return_arg_tuple")
-        b.def_py_function[case_raise_empty_error]("case_raise_empty_error")
-        b.def_py_function[case_raise_string_error]("case_raise_string_error")
-        b.def_py_function[case_mojo_raise]("case_mojo_raise")
-        b.def_py_function[case_mojo_mutate]("case_mojo_mutate")
+        b.def_function[case_raise_empty_error]("case_raise_empty_error")
+        b.def_function[case_raise_string_error]("case_raise_string_error")
+        b.def_function[case_mojo_raise]("case_mojo_raise")
+        b.def_function[case_mojo_mutate]("case_mojo_mutate")
         b.def_py_function[incr_int__wrapper]("incr_int")
         b.def_py_function[add_to_int__wrapper]("add_to_int")
-        b.def_py_function[create_string__wrapper]("create_string")
+        b.def_function[create_string__wrapper]("create_string")
 
         _ = (
             b.add_type[Person]("Person")
-            .def_py_method[Person.obj_name]("name")
-            .def_py_method[Person.change_name]("change_name")
+            .def_method[Person.obj_name]("name")
+            .def_method[Person.change_name]("change_name")
         )
         _ = b.add_type[Int]("Int")
         _ = b.add_type[String]("String")
@@ -69,7 +69,6 @@ fn PyInit_mojo_module() -> PythonObject:
 # ===----------------------------------------------------------------------=== #
 
 
-@export
 fn case_return_arg_tuple(
     py_self: PythonObject,
     args: TypedPythonObject["Tuple"],
@@ -77,11 +76,7 @@ fn case_return_arg_tuple(
     return args
 
 
-@export
-fn case_raise_empty_error(
-    py_self: PythonObject,
-    args: TypedPythonObject["Tuple"],
-) -> PythonObject:
+fn case_raise_empty_error() -> PythonObject:
     var cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
@@ -91,11 +86,7 @@ fn case_raise_empty_error(
     return PythonObject(from_owned_ptr=PyObjectPtr())
 
 
-@export
-fn case_raise_string_error(
-    py_self: PythonObject,
-    args: TypedPythonObject["Tuple"],
-) -> PythonObject:
+fn case_raise_string_error() -> PythonObject:
     var cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
@@ -105,22 +96,14 @@ fn case_raise_string_error(
     return PythonObject(from_owned_ptr=PyObjectPtr())
 
 
-@export
-fn case_mojo_raise(
-    py_self: PythonObject,
-    args: TypedPythonObject["Tuple"],
-) raises -> PythonObject:
+fn case_mojo_raise() raises -> PythonObject:
     raise "Mojo error"
 
 
-@export
-fn case_mojo_mutate(
-    py_self: PythonObject,
-    mut args: TypedPythonObject["Tuple"],
-) raises -> PythonObject:
+fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
     # this would work even if args was `read`, but we want just to test that
     # the binding API accepts a function that mutates the argument.
-    args[0][0] += 1
+    list[0] += 1
 
     return PythonObject(None)
 
@@ -151,22 +134,19 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
         )
 
     @staticmethod
-    fn obj_name(
-        self_: PythonObject, args: TypedPythonObject["Tuple"]
-    ) -> PythonObject:
+    fn obj_name(self_: PythonObject) -> PythonObject:
         var self0 = UnsafePointer[Self, **_](unchecked_downcast=self_)
 
         return PythonObject(self0[].name)
 
     @staticmethod
     fn change_name(
-        self_: PythonObject, args: TypedPythonObject["Tuple"]
+        self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
         var self0 = UnsafePointer[Self, **_](
             unchecked_downcast=self_
         ).origin_cast[mut=True]()
 
-        var new_name = args[0]
         if len(new_name) > len(self0[].name.codepoints()):
             raise "cannot make name longer than current name"
 
@@ -262,12 +242,7 @@ fn create_string() raises -> String:
     return "Hello"
 
 
-fn create_string__wrapper(
-    py_self: PythonObject,
-    py_args: TypedPythonObject["Tuple"],
-) raises -> PythonObject:
-    check_arguments_arity(0, py_args, "create_int".value)
-
+fn create_string__wrapper() raises -> PythonObject:
     var cpython = Python().cpython()
 
     var result = create_string()

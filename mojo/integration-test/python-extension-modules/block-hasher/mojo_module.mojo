@@ -25,7 +25,7 @@ fn PyInit_mojo_module() -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
-        b.def_py_function[mojo_block_hasher](
+        b.def_function[mojo_block_hasher](
             "mojo_block_hasher",
             docstring=(
                 "Computes block hashes for a numpy array containing tokens"
@@ -107,15 +107,16 @@ fn _mojo_block_hasher[
 
 @export
 fn mojo_block_hasher(
-    py_self: PythonObject, py_args: TypedPythonObject["Tuple"]
+    py_array_object: PythonObject,
+    block_size_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32]](
-        unchecked_downcast=py_args[0]
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], **_](
+        unchecked_downcast=py_array_object
     )
 
     # Parse block size
-    var block_size = Int(py_args[1])
+    var block_size = Int(block_size_obj)
 
     # Perfoming hashing
     var results = _mojo_block_hasher(py_array_object_ptr, block_size)

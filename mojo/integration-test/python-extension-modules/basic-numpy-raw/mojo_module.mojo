@@ -26,7 +26,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
     try:
         var b = PythonModuleBuilder("mojo_module")
-        b.def_py_function[mojo_incr_np_array](
+        b.def_function[mojo_incr_np_array](
             "mojo_incr_np_array",
             docstring="Increment the contents of a numpy array by one",
         )
@@ -59,15 +59,13 @@ struct PyArrayObject[dtype: DType](Copyable, Movable):
 
 
 @export
-fn mojo_incr_np_array(
-    py_self: PythonObject, py_args: TypedPythonObject["Tuple"]
-) raises -> PythonObject:
+fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
     alias dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")
 
     var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], **_](
-        unchecked_downcast=py_args[0]
+        unchecked_downcast=py_array_object
     )
 
     var nd = py_array_object_ptr[].nd
