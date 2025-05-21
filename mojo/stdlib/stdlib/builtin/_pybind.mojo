@@ -21,10 +21,10 @@ from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
     PythonModuleBuilder,
+    PythonTypeBuilder,
     _get_type_name,
     check_argument_type,
     check_arguments_arity,
-    python_type_object,
 )
 from python._cpython import (
     CPython,
@@ -66,7 +66,8 @@ fn gen_pytype_wrapper[
     # TODO(MOCO-1302): Add support for generating member field as computed properties.
     # TODO(MOCO-1307): Add support for constructor generation.
 
-    var type_obj = python_type_object[T](name)
+    var type_builder = PythonTypeBuilder.bind[T](name)
+    var type_obj = type_builder.finalize()
 
     # FIXME(MSTDL-957): We should have APIs that explicitly take a `CPython`
     # instance so that callers can pass it around instead of performing a lookup
