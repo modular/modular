@@ -23,7 +23,9 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         b = PythonModuleBuilder("mojo_module")
     except e:
-        return abort[PythonObject]("failed to create Python module: ", e)
+        return abort[PythonObject](
+            String("failed to create Python module: ", e)
+        )
 
     # def_function with return, raising
     b.def_function[takes_zero_raises_returns]("takes_zero_raises_returns")
@@ -52,7 +54,9 @@ fn PyInit_mojo_module() -> PythonObject:
     try:
         return b.finalize()
     except e:
-        return abort[PythonObject]("failed to finalize Python module: ", e)
+        return abort[PythonObject](
+            String("failed to finalize Python module: ", e)
+        )
 
 
 @export
@@ -94,7 +98,7 @@ fn takes_zero_returns() -> PythonObject:
     try:
         return takes_zero_raises_returns()
     except e:
-        return abort[PythonObject]("Unexpected Python error: ", e)
+        return abort[PythonObject](String("Unexpected Python error: ", e))
 
 
 @export
@@ -102,7 +106,7 @@ fn takes_one_returns(a: PythonObject) -> PythonObject:
     try:
         return takes_one_raises_returns(a)
     except e:
-        return abort[PythonObject]("Unexpected Python error: ", e)
+        return abort[PythonObject](String("Unexpected Python error: ", e))
 
 
 @export
@@ -110,7 +114,7 @@ fn takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
     try:
         return takes_two_raises_returns(a, b)
     except e:
-        return abort[PythonObject]("Unexpected Python error: ", e)
+        return abort[PythonObject](String("Unexpected Python error: ", e))
 
 
 @export
@@ -120,7 +124,7 @@ fn takes_three_returns(
     try:
         return takes_three_raises_returns(a, b, c)
     except e:
-        return abort[PythonObject]("Unexpected Python error: ", e)
+        return abort[PythonObject](String("Unexpected Python error: ", e))
 
 
 @export
@@ -163,7 +167,7 @@ fn takes_zero():
     try:
         takes_zero_raises()
     except e:
-        abort("Unexpected Python error: ", e)
+        abort(String("Unexpected Python error: ", e))
 
 
 @export
@@ -171,7 +175,7 @@ fn takes_one(list_obj: PythonObject):
     try:
         takes_one_raises(list_obj)
     except e:
-        abort("Unexpected Python error: ", e)
+        abort(String("Unexpected Python error: ", e))
 
 
 @export
@@ -179,7 +183,7 @@ fn takes_two(list_obj: PythonObject, obj: PythonObject):
     try:
         takes_two_raises(list_obj, obj)
     except e:
-        abort("Unexpected Python error: ", e)
+        abort(String("Unexpected Python error: ", e))
 
 
 @export
@@ -187,4 +191,4 @@ fn takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
     try:
         takes_three_raises(list_obj, obj, obj2)
     except e:
-        abort("Unexpected Python error: ", e)
+        abort(String("Unexpected Python error: ", e))

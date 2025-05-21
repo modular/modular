@@ -44,7 +44,9 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        return abort[PythonObject]("failed to create Python module: ", e)
+        return abort[PythonObject](
+            String("failed to create Python module: ", e)
+        )
 
 
 @fieldwise_init
@@ -109,7 +111,7 @@ struct Person(Defaultable, Representable, Copyable, Movable):
         try:
             return PythonObject(Int(this_year) - self_ptr[].age)
         except e:
-            return abort[PythonObject]("failed to get birth year: ", e)
+            return abort[PythonObject](String("failed to get birth year: ", e))
 
     @staticmethod
     fn _with_first_last_name(
@@ -119,7 +121,7 @@ struct Person(Defaultable, Representable, Copyable, Movable):
         try:
             self_ptr[].name = String(first_name) + " " + String(last_name)
         except e:
-            return abort[PythonObject]("failed to set name: ", e)
+            return abort[PythonObject](String("failed to set name: ", e))
         return py_self
 
     @staticmethod
@@ -158,7 +160,7 @@ struct Person(Defaultable, Representable, Copyable, Movable):
         try:
             Self._get_self_ptr(py_self)[].name = String(name)
         except e:
-            abort("failed to set name: ", e)
+            abort(String("failed to set name: ", e))
 
     @staticmethod
     fn _set_age_from_dates(
@@ -168,4 +170,4 @@ struct Person(Defaultable, Representable, Copyable, Movable):
         try:
             self_ptr[].age = Int(this_year) - Int(birth_year)
         except e:
-            abort("failed to set age: ", e)
+            abort(String("failed to set age: ", e))
