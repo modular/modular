@@ -65,7 +65,7 @@ def settings_config(request):
     return getattr(request, "param", {"MAX_SERVE_USE_HEARTBEAT": True})
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def app(pipeline_config, settings_config):
     """The FastAPI app used to serve the model."""
 
