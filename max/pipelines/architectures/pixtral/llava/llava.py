@@ -83,7 +83,10 @@ class LlavaConditionalGeneration(Layer):
             inputs_embeds.shape,
         )
         inputs_embeds = ops.masked_scatter(
-            inputs_embeds, special_image_mask, image_embeds
+            inputs_embeds,
+            special_image_mask,
+            image_embeds,
+            out_dim="unmasked_inputs",
         )
 
         logits = self.language_model(inputs_embeds, kv_cache_inputs, **kwargs)
@@ -171,7 +174,10 @@ class LlavaConditionalGenerationTextOnly(Layer):
             inputs_embeds.shape,
         )
         inputs_embeds = ops.masked_scatter(
-            inputs_embeds, special_image_mask, image_embeds
+            inputs_embeds,
+            special_image_mask,
+            image_embeds,
+            out_dim="unmasked_inputs",
         )
         logits = self.language_model(inputs_embeds, kv_cache_inputs, **kwargs)
 
