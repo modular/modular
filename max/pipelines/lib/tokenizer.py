@@ -21,7 +21,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
 import numpy as np
 import torch
@@ -204,13 +204,17 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         self,
         messages: list[TokenGeneratorRequestMessage],
         tools: Optional[list[TokenGeneratorRequestTool]],
+        chat_template_options: Optional[dict[str, Any]] = None,
     ) -> str:
+        chat_template_options = chat_template_options or {
+            "add_generation_prompt": True
+        }
         try:
             templated_message = self.delegate.apply_chat_template(
                 messages,
                 tokenize=False,
-                add_generation_prompt=True,
                 tools=tools,
+                **chat_template_options,
             )
             return cast(str, templated_message)
         except Exception:
@@ -288,7 +292,9 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             else:
                 prompt = [int(t) for t in request.prompt]
         elif request.messages is not None:
-            prompt = self.apply_chat_template(request.messages, request.tools)
+            prompt = self.apply_chat_template(
+                request.messages, request.tools, request.chat_template_options
+            )
             # Chat templating already adds special tokens, therefore we step around this here.
             add_special_tokens = False
         else:

@@ -170,6 +170,10 @@ class TokenGeneratorRequest:
     If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
     stop string is hit.
     """
+    chat_template_options: Optional[dict[str, Any]] = None
+    """
+    Optional dictionary of options to pass when applying the chat template.
+    """
 
     def __str__(self) -> str:
         txt = f"Id: {self.id}"
