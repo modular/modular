@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable
-from typing import Any, Union
+from typing import Any, Protocol, TypeVar, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -17,6 +17,7 @@ else:
 
 import numpy as np
 from max import mlir
+from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core import graph as _graph
 from max._core.dialects import mo
@@ -36,8 +37,16 @@ from .type import (
     _OpaqueType,
 )
 
+MlirType = TypeVar("MlirType", bound=_Type)
+T = TypeVar("T", bound=Type)
 
-class Value:
+
+class Typed(Protocol[MlirType]):
+    @property
+    def type(self) -> Type[MlirType]: ...
+
+
+class Value(Typed[MlirType]):
     """Represents a symbolic value within a `Graph`.
 
     A `Value` can represent the output of a node, the arguments of a
@@ -119,7 +128,11 @@ class Value:
             )
 
     def __repr__(self):
-        return str(self._mlir_value.type)
+        return str(self._new_mlir_value.type)
+
+    @property
+    def _new_mlir_value(self) -> _Value[MlirType]:
+        return _Value(self._mlir_value)
 
     @property
     def buffer(self) -> BufferValue:
@@ -163,11 +176,10 @@ class Value:
         raise NotImplementedError
 
 
-class _ChainValue(Value):
+class _ChainValue(Value[mo.ChainType]):
     def __init__(self, value: Value | mlir.Value):
-        if isinstance(value, mlir.Value) and isinstance(
-            _Value(value).type, mo.ChainType
-        ):
+        if isinstance(value, mlir.Value):
+            assert isinstance(_Type(value.type), mo.ChainType)
             self._mlir_value = value
         elif isinstance(value, _ChainValue):
             self._mlir_value = value._mlir_value
@@ -180,7 +192,7 @@ class _ChainValue(Value):
     @property
     def type(self) -> _ChainType:
         """Returns the type of the :obj:`_ChainValue` as a :obj:`_ChainType`."""
-        return _ChainType.from_mlir(self._mlir_value.type)
+        return _ChainType.from_mlir(self._new_mlir_value.type)
 
 
 class _OpaqueValue(Value):
@@ -200,7 +212,7 @@ class _OpaqueValue(Value):
     @property
     def type(self) -> _OpaqueType:
         """Returns the type of the :obj:`_OpaqueValue` as a :obj:`_OpaqueType`."""
-        return _OpaqueType.from_mlir(self._mlir_value.type)
+        return _OpaqueType.from_mlir(self._new_mlir_value.type)
 
 
 class BufferValue(Value):
@@ -220,7 +232,7 @@ class BufferValue(Value):
     @property
     def type(self) -> BufferType:
         """Returns the type of the :obj:`BufferValue` as a :obj:`BufferType`."""
-        return BufferType.from_mlir(self._mlir_value.type)
+        return BufferType.from_mlir(self._new_mlir_value.type)
 
     @property
     def shape(self) -> Shape:
@@ -240,7 +252,7 @@ class BufferValue(Value):
     @property
     def dtype(self) -> DType:
         """Returns the tensor data type."""
-        t = self._mlir_value.type
+        t = self._new_mlir_value.type
         if not _graph.type_is_buffer(t):
             raise TypeError(f"Expected BufferType, got: {t}")
 
@@ -249,7 +261,7 @@ class BufferValue(Value):
     @property
     def rank(self) -> int:
         """Returns the rank (number of dims) of the buffer."""
-        t = self._mlir_value.type
+        t = self._new_mlir_value.type
         if not _graph.type_is_buffer(t):
             msg = f"Expected BufferType, got: {t}"
             raise TypeError(msg)
@@ -385,7 +397,7 @@ class TensorValue(Value):
     @property
     def type(self) -> TensorType:
         """Returns the type of the :obj:`TensorValue` as a :obj:`TensorType`."""
-        return TensorType.from_mlir(self._mlir_value.type)
+        return TensorType.from_mlir(self._new_mlir_value.type)
 
     @property
     def shape(self) -> Shape:
@@ -443,7 +455,7 @@ class TensorValue(Value):
                 # Access tensor data type
                 print(f"Data type: {tensor.dtype}")  # Output: DType.float32
         """
-        t = self._mlir_value.type
+        t = self._new_mlir_value.type
         if not _graph.type_is_tensor(t):
             raise TypeError(f"Expected TensorType, got: {t}")
 
@@ -472,7 +484,7 @@ class TensorValue(Value):
                 # Access tensor rank (number of dimensions)
                 print(f"Rank: {tensor.rank}")  # Output: 2
         """
-        t = self._mlir_value.type
+        t = self._new_mlir_value.type
         if not _graph.type_is_tensor(t):
             raise TypeError(f"Expected TensorType, got: {t}")
 

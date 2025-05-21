@@ -6,32 +6,29 @@
 """Tests for max.graph linear algebra operations."""
 
 import sys
-from collections.abc import Iterable
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import pytest
-from conftest import graph_result_type
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph.type import Shape, ShapeLike
 
 if sys.version_info[:2] >= (3, 10):
-    from typing import TypeAlias
+    pass
 else:
-    from typing_extensions import TypeAlias
-
-Shape: TypeAlias = Iterable[Union[str, int]]
+    pass
 
 
 def matmul_graph(
     name: str,
-    shapes: tuple[Shape, Shape],
+    shapes: tuple[ShapeLike, ShapeLike],
     dtype: DType = DType.float32,
 ) -> Graph:
     """Creates a graph op containing a matmul."""
 
-    def tensor_type(dims: Shape) -> TensorType:
-        return TensorType(dtype, list(dims), device=DeviceRef.CPU())
+    def tensor_type(dims: ShapeLike) -> TensorType:
+        return TensorType(dtype, Shape(dims), device=DeviceRef.CPU())
 
     return Graph(
         name,
@@ -42,18 +39,16 @@ def matmul_graph(
 
 def assert_matmul_properties(
     graph: Graph,
-    expected_output_shape: Iterable[Union[str, int]],
+    expected_output_shape: ShapeLike,
     dtype: Optional[DType] = None,
 ):
     """Asserts that the graph contains a matmul, has the expected shape and
     dtype.
     """
     assert "rmo.matmul" in str(graph._mlir_op)
-    assert f"[{', '.join([str(s) for s in expected_output_shape])}]" in str(
-        graph_result_type(graph)
-    )
-    if dtype:
-        assert dtype._mlir in str(graph._mlir_op)
+    (result_type,) = graph.output_types
+    assert Shape(expected_output_shape) == result_type.shape
+    assert dtype in (None, result_type.dtype)
 
 
 # TODO(MSDK-1234): add f8e5m2 and f8e4m3fn to test date types
