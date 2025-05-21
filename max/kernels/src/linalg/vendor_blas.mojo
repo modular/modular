@@ -148,7 +148,7 @@ fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
         return backend
     elif has_amd_gpu_accelerator():
         return Backend.ROCBLAS
-    elif type.is_float8() or DEFAULT_GPU > H100:
+    elif type.is_float8() or (DEFAULT_GPU > H100 and type.is_half_float()):
         return Backend.CUBLASLT
     return Backend.CUBLAS
 

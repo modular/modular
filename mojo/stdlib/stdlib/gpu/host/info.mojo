@@ -600,7 +600,7 @@ alias B100 = Info(
     warps_per_multiprocessor=64,
     threads_per_multiprocessor=1536,
     thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=58 * _KB,
+    shared_memory_per_multiprocessor=256 * _KB,
     register_file_size=65536,
     register_allocation_unit_size=256,
     allocation_granularity="warp",
@@ -805,7 +805,7 @@ alias MI300X = Info(
 
 @fieldwise_init
 @register_passable
-struct Info(Writable):
+struct Info(Stringable, Writable):
     """
     Comprehensive information about a GPU architecture.
 

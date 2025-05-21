@@ -766,7 +766,13 @@ fn multistage_dual_gemm[
     alias smem_usage = config.shared_mem_usage()
     constrained[
         smem_usage <= ctx.device_info.shared_memory_per_multiprocessor,
-        "using too much shared memory",
+        String(
+            "using ",
+            smem_usage,
+            "B shared memory but max is ",
+            ctx.device_info.shared_memory_per_multiprocessor,
+            "B",
+        ),
     ]()
     alias gemm_kernel_type = multistage_dual_gemm_kernel[
         c_type,

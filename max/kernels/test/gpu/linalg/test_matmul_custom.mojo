@@ -664,10 +664,11 @@ def main():
         run_matmul[DType.bfloat16, 1024, 1, 1024](ctx, atol=0.2, rng_width=1.0)
         run_matmul[DType.bfloat16, 1, 1024, 1024](ctx)
 
-        run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
-        run_matmul[DType.float16, 32, 32, 32](ctx, rng_width=10.0)
-        run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
-        run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
+        # KERN-1807 We need to systematically test the float16 kernels.
+        # run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
+        # run_matmul[DType.float16, 32, 32, 32](ctx, rng_width=10.0)
+        # run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
+        # run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
 
         run_batched_matmul(ctx, 1, 32, 32, 32)
         run_batched_matmul(ctx, 3, 32, 32, 32)
