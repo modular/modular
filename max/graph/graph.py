@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import inspect
 import traceback
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ from .value import TensorValue, Value, _ChainValue
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
+_KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
 
 
 class KernelLibrary:
@@ -165,7 +167,6 @@ class Graph:
     most once. The goal of this design choice is to prevent data races.
     """
 
-    _input_types: list[Type]
     # Use a dict rather than a set to keep params ordered.
     # This is to make IR generation deterministic for model IR cache hits.
     # Note that insertion order in built-in dict has been guaranteed since
@@ -173,11 +174,9 @@ class Graph:
     _params: dict[str, None]
     _mlir_op: mlir.Operation | mlir.OpView
     _graph_body: mlir.Block
-    _context: mlir.Context
     _module: mlir.Module
     _unique_symbolic_dim_counter: int
     _context_state: list
-    inputs: tuple[Value, ...]
     _weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
     _current_chain: _ChainValue
@@ -185,8 +184,6 @@ class Graph:
     _should_verify_ops: bool
 
     _kernel_library: KernelLibrary
-
-    _kernel_library_paths_attr_name = "_kernel_library_paths"
 
     _subgraphs: dict[str, Graph] = {}
 
@@ -213,7 +210,6 @@ class Graph:
             self._load_mlir(path)
             return
 
-        self._input_types = list(input_types)
         self._params = dict.fromkeys(
             dim.name
             for t in input_types
@@ -223,10 +219,10 @@ class Graph:
         )
         self._unique_symbolic_dim_counter = 0
         self._context_state = []
-        self._context = context or mlir.Context()
+        context = context or mlir.Context()
         self._should_verify_ops = True
 
-        with self._context, self._location() as loc:
+        with context, self._location() as loc:
             # Create the top level module op.
             self._module = module or mlir.Module.create()
 
@@ -243,15 +239,11 @@ class Graph:
                 self._current_block = self._mlir_op.regions[0].blocks[0]
                 self._graph_body = self._current_block
         param_decl = _graph.dim_param_decl_array_attr(
-            self._context,
-            [
-                _graph.dim_param_decl_attr(self._context, p)
-                for p in self._params
-            ],
+            context,
+            [_graph.dim_param_decl_attr(context, p) for p in self._params],
         )
         self._mlir_op.attributes["inputParams"] = param_decl
 
-        self.inputs = tuple(Value(arg) for arg in self._body.arguments)  # type: ignore
         self._weights = {}
 
         initial_chain = self._add_op(mo.chain_create, [])[0]
@@ -259,7 +251,7 @@ class Graph:
         self._current_chain = initial_chain
 
         # Initialize the kernel library and load custom extensions paths.
-        self._kernel_library = kernel_library or KernelLibrary(self._context)
+        self._kernel_library = kernel_library or KernelLibrary(context)
         self._import_kernels(custom_extensions)
 
         self._subgraphs = {}
@@ -280,6 +272,15 @@ class Graph:
                     else result
                 )
                 self.output(*outputs)
+
+    @functools.cached_property
+    def inputs(self) -> Sequence[Value]:
+        """The input values of the graph."""
+        return tuple(Value(arg) for arg in self._body.arguments)  # type: ignore
+
+    @property
+    def _context(self) -> mlir.Context:
+        return self._mlir_op.context
 
     def add_subgraph(
         self,
@@ -572,7 +573,7 @@ class Graph:
         output_types = [value.type for value in mlir_values]
         # Need to set some more stuff.
         function_type = mlir.FunctionType.get(
-            [t.to_mlir() for t in self._input_types],
+            [input.type.to_mlir() for input in self.inputs],
             output_types,
         )
         signature = mlir.Type.parse(f"!kgen.generator<{function_type}>")
@@ -611,24 +612,20 @@ class Graph:
             registry = mlir.DialectRegistry()
             _graph.load_modular_dialects(registry)
 
-            self._context = mlir.Context()
-            self._context.append_dialect_registry(registry)
-            self._context.load_all_available_dialects()
-
-            with self._context, self._location() as loc:
+            with mlir.Context() as ctx, self._location() as loc:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
-                    self._module = self._module.parse(f.read(), self._context)
+                    self._module = self._module.parse(f.read(), ctx)
                     # Set the mo.graph op, which is the first operation in the
                     # module body block.
                     self._mlir_op = self._module.body.operations[0]
 
         # Initialize the Kernel Library
         kernels_paths = []
-        if Graph._kernel_library_paths_attr_name in self._mlir_op.attributes:
+        if _KERNEL_LIBRARY_PATHS_ATTR_NAME in self._mlir_op.attributes:
             paths_attr = self._mlir_op.attributes[
-                Graph._kernel_library_paths_attr_name
+                _KERNEL_LIBRARY_PATHS_ATTR_NAME
             ]
             if isinstance(paths_attr, mlir.ArrayAttr):
                 kernels_paths = [Path(str(x)) for x in paths_attr]
@@ -749,7 +746,7 @@ class Graph:
             self._kernel_library.load_paths(self._context, paths)
 
             # Update the graph attribute for the library paths.
-            self._mlir_op.attributes[Graph._kernel_library_paths_attr_name] = (
+            self._mlir_op.attributes[_KERNEL_LIBRARY_PATHS_ATTR_NAME] = (
                 mlir.ArrayAttr.get(
                     [
                         mlir.StringAttr.get(str(path), self._context)
