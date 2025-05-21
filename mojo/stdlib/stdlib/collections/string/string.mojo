@@ -162,6 +162,8 @@ struct _StringCapacityField:
         if static_const_length < Self.NUM_SSO_BYTES and not is_compile_time():
             self._storage = Self.FLAG_IS_INLINE
         else:
+            # We set the capacity to 0 to always force reallocation if we
+            # want the capacity to change.
             self._storage = 0
 
     @always_inline("nodebug")
