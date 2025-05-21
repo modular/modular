@@ -169,6 +169,8 @@ alias PyFunctionRaising = fn (
 
 @register_passable
 struct TypedPythonObject[type_hint: StaticString](
+    Movable,
+    Copyable,
     PythonConvertible,
     SizedRaising,
 ):

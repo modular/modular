@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin.identifiable import TypeIdentifiable
 from collections import Optional
 from sys import alignof, sizeof
 
@@ -64,7 +65,7 @@ fn fail_initialization(owned err: Error) -> PythonObject:
 
 
 fn gen_pytype_wrapper[
-    T: Defaultable & Representable,
+    T: Defaultable & Representable & TypeIdentifiable,
     name: StaticString,
 ](module: PythonObject) raises:
     # TODO(MOCO-1301): Add support for member method generation.
@@ -91,14 +92,13 @@ fn add_wrapper_to_module[
 
 
 fn check_and_get_arg[
-    T: AnyType
+    T: TypeIdentifiable
 ](
     func_name: StaticString,
-    type_name_id: StaticString,
     py_args: TypedPythonObject["Tuple"],
     index: Int,
 ) raises -> UnsafePointer[T]:
-    return check_argument_type[T](func_name, type_name_id, py_args[index])
+    return check_argument_type[T](func_name, py_args[index])
 
 
 # NOTE:
@@ -108,10 +108,9 @@ fn check_and_get_arg[
 #   function.
 @always_inline
 fn check_and_get_or_convert_arg[
-    T: ConvertibleFromPython
+    T: ConvertibleFromPython & TypeIdentifiable
 ](
     func_name: StaticString,
-    type_name_id: StaticString,
     py_args: TypedPythonObject["Tuple"],
     index: Int,
 ) raises -> UnsafePointer[T]:
@@ -119,12 +118,11 @@ fn check_and_get_or_convert_arg[
     var converted_arg_ptr: UnsafePointer[T] = stack_allocation[1, T]()
 
     try:
-        return check_and_get_arg[T](func_name, type_name_id, py_args, index)
+        return check_and_get_arg[T](func_name, py_args, index)
     except e:
         converted_arg_ptr.init_pointee_move(
             _try_convert_arg[T](
                 func_name,
-                type_name_id,
                 py_args,
                 index,
             )
@@ -135,10 +133,9 @@ fn check_and_get_or_convert_arg[
 
 
 fn _try_convert_arg[
-    T: ConvertibleFromPython
+    T: ConvertibleFromPython & TypeIdentifiable
 ](
     func_name: StringSlice,
-    type_name_id: StringSlice,
     py_args: TypedPythonObject["Tuple"],
     argidx: Int,
     out result: T,
@@ -155,7 +152,7 @@ fn _try_convert_arg[
                 ),
                 func_name,
                 argidx,
-                type_name_id,
+                T.TYPE_ID,
                 _get_type_name(py_args[argidx]),
                 convert_err,
             )
