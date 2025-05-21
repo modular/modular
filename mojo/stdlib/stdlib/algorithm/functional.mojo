@@ -364,7 +364,7 @@ fn sync_parallelize[
                 try:
                     func(i)
                 except e:
-                    abort(e)
+                    abort(String(e))
 
     if num_work_items == 1:
         # Just run inline.

@@ -434,7 +434,7 @@ fn bench[
                 var result = func[rank, 0, size]()
                 keep(result)
         except e:
-            abort(e)
+            abort(String(e))
 
     @parameter
     fn runner_recursive():
@@ -443,7 +443,7 @@ fn bench[
                 var result = func[rank, 1, size]()
                 keep(result)
         except e:
-            abort(e)
+            abort(String(e))
 
     var ms_iter = benchmark.run[runner_iter](1, 10)
     var ms_recursive = benchmark.run[runner_recursive](1, 10)

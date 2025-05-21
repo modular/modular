@@ -412,7 +412,7 @@ struct FileHandle(Writer):
         )
 
         if err_msg:
-            abort(err_msg^.consume_as_error())
+            abort(String(err_msg^.consume_as_error()))
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.

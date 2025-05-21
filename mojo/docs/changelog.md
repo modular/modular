@@ -136,6 +136,13 @@ Changes to Python-Mojo interoperability:
   by Mojo types that can be constructed by converting from a `PythonObject`.
   This is the reverse operation of the `PythonConvertible` trait.
 
+- `os.abort(messages)` no longer supports generic variadic number of `Writable`
+  messages.  While this API was high-level and convenient, it generates a lot of
+  IR for simple and common cases, such as when we have a single `StringLiteral`
+  message.  We now no longer need to generate a bunch of bloated IR, and
+  instead, callers must create the `String` on their side before calling
+  `os.abort(message)`.
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.

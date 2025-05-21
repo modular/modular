@@ -146,7 +146,7 @@ fn naive_dual_gemm[
         elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
         ctx.synchronize()
     except e:
-        abort(e)
+        abort(String(e))
 
 
 fn runtime_row_major[

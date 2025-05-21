@@ -1314,7 +1314,7 @@ struct DeviceBuffer[type: DType](
                     )
                 writer.write(")")
         except e:
-            abort("failed to write DeviceBuffer:", e)
+            abort(String("failed to write DeviceBuffer:", e))
 
     fn __str__(self) -> String:
         """Returns a string representation of the `DeviceBuffer`.

@@ -255,7 +255,7 @@ struct Format(Writable, Stringable, Copyable, Movable):
                 ", ",
                 Format.table,
             )
-            abort("Invalid format option: ", value, valid_formats)
+            abort(String("Invalid format option: ", value, valid_formats))
 
     fn __str__(self) -> String:
         """Returns the string representation of the format.
@@ -802,7 +802,7 @@ struct Bench(Writable, Stringable):
             try:
                 bench_fn(b)
             except e:
-                abort(e)
+                abort(String(e))
 
         self.bench_function[abort_on_err](bench_id, measures)
 
@@ -968,7 +968,7 @@ struct Bench(Writable, Stringable):
                 try:
                     total_width += metrics[metric[]].max_width + 3
                 except e:
-                    abort(e)
+                    abort(String(e))
             if self.config.verbose_timing:
                 for timing_width in timing_widths:
                     total_width += timing_width[] + 3
@@ -1009,7 +1009,7 @@ struct Bench(Writable, Stringable):
             try:
                 writer.write(self.pad(metrics[name].max_width, name))
             except e:
-                abort(e)
+                abort(String(e))
 
         # Write the timeing labels
         if self.config.verbose_timing:
@@ -1059,7 +1059,7 @@ struct Bench(Writable, Stringable):
                             sep, rate, self.pad(max_width, String(rate))
                         )
                 except e:
-                    abort(e)
+                    abort(String(e))
 
             if self.config.verbose_timing:
                 var min = result.min(unit=Unit.ms)
@@ -1111,7 +1111,7 @@ struct Bench(Writable, Stringable):
                     try:
                         metrics[name].rates[i] = rate
                     except e:
-                        abort(e)
+                        abort(String(e))
                 else:
                     try:
                         metrics[name].max_width = max(
@@ -1119,7 +1119,7 @@ struct Bench(Writable, Stringable):
                         )
                         metrics[name].rates[i] = rate
                     except e:
-                        abort(e)
+                        abort(String(e))
         return metrics
 
     fn _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
@@ -1231,7 +1231,7 @@ struct Bencher:
         try:
             self.elapsed = ctx.execution_time[kernel_launch_fn](self.num_iters)
         except e:
-            abort(e)
+            abort(String(e))
 
     fn iter_custom[
         kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
@@ -1249,7 +1249,7 @@ struct Bencher:
                 self.num_iters
             )
         except e:
-            abort(e)
+            abort(String(e))
 
     fn iter_custom_multicontext[
         kernel_launch_fn: fn () raises capturing [_] -> None
@@ -1271,7 +1271,7 @@ struct Bencher:
                     ctxs[i].execution_time[kernel_launch_fn](self.num_iters),
                 )
         except e:
-            abort(e)
+            abort(String(e))
 
     fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
@@ -1298,4 +1298,4 @@ struct Bencher:
         try:
             self.elapsed = iter_fn(self.num_iters)
         except e:
-            abort(e)
+            abort(String(e))

@@ -621,7 +621,7 @@ fn multistage_b2b_gemm[
             ),
         )
     except e:
-        abort(e)
+        abort(String(e))
 
 
 fn matmul_naive(
