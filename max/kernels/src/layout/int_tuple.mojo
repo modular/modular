@@ -2046,7 +2046,7 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     @parameter
     if INT_TUPLE_VALIDATION:
         if len(a) != len(b):
-            abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+            abort(String("Tuple sizes don't match: ", len(a), " != ", len(b)))
     if is_int(a):
         if UNKNOWN_VALUE in (Int(a), Int(b)):
             return UNKNOWN_VALUE
@@ -2074,7 +2074,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     @parameter
     if INT_TUPLE_VALIDATION:
         if len(a) != len(b):
-            abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+            abort(String("Tuple sizes don't match: ", len(a), " != ", len(b)))
     if is_int(a):
         return Int(a) * Int(b)
     var r: Int = 0
@@ -2419,7 +2419,11 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             @parameter
             if INT_TUPLE_VALIDATION:
                 if len(a) != len(b):
-                    abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+                    abort(
+                        String(
+                            "Tuple sizes don't match: ", len(a), " != ", len(b)
+                        )
+                    )
             return apply_zip[shape_div](a, b)
         else:  # tuple "int"
             var vb = Int(b)
@@ -2441,7 +2445,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             @parameter
             if INT_TUPLE_VALIDATION:
                 if not (va % vb == 0 or vb % va == 0):
-                    abort("Incompatible shape values: ", va, " ", vb)
+                    abort(String("Incompatible shape values: ", va, " ", vb))
 
             return va // vb if va % vb == 0 else signum(va * vb)
 

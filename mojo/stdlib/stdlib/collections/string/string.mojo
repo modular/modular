@@ -98,8 +98,7 @@ from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcpy, memset
-from python import PythonConvertible, PythonObject
-from python._bindings import ConvertibleFromPython
+from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import write_buffered

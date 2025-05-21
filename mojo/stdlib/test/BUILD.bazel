@@ -147,7 +147,6 @@ _EXPECT_CRASH = [
     "collections/test_list_getitem_invalid_index.mojo",
     "logger/test_logger_critical.mojo",
     "os/test_trap.mojo",
-    "os/test_trap_stringable.mojo",
 ]
 
 _FILECHECK_TESTS = [
@@ -186,7 +185,6 @@ _FILECHECK_TESTS = [
     "logger/test_logger_critical.mojo",
     "logger/test_logger_with_env.mojo",
     "os/test_trap.mojo",
-    "os/test_trap_stringable.mojo",
     "runtime/test_asyncrt.mojo",
     "runtime/test_locks.mojo",
 ]

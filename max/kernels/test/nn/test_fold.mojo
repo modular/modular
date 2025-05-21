@@ -55,6 +55,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.fold import fold
+from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import Index, IndexList
 
@@ -105,6 +106,7 @@ fn test[
         dilation=dilation,
         padding=padding,
         stride=stride,
+        ctx=DeviceContextPtr(),
     )
 
     # Check results, return on the first failed comparison.

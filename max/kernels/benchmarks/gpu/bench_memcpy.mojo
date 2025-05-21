@@ -251,7 +251,7 @@ fn bench_p2p(
             except e:
                 print("Verification failed at index", i)
                 print("Expected:", i, "Got:", host_ptr[i])
-                abort(e)
+                abort(String(e))
 
     # Parallelize verification using sync_parallelize
     var shape = IndexList[1](

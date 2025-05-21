@@ -16,9 +16,14 @@ from sys import alignof, sizeof
 
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
-from python import Python, PythonModule, PythonObject, TypedPythonObject
-from python._bindings import (  # Imported for use by the compiler
+from python import (
+    Python,
+    PythonModule,
+    PythonObject,
+    TypedPythonObject,
     ConvertibleFromPython,
+)
+from python._bindings import (  # Imported for use by the compiler
     PyMojoObject,
     PythonModuleBuilder,
     PythonTypeBuilder,

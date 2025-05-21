@@ -47,6 +47,24 @@ trait PythonConvertible:
         ...
 
 
+trait ConvertibleFromPython(Copyable, Movable):
+    """Denotes a type that can attempt construction from a read-only Python
+    object.
+    """
+
+    fn __init__(out self, obj: PythonObject) raises:
+        """Attempt to construct an instance of this object from a read-only
+        Python value.
+
+        Args:
+            obj: The Python object to convert from.
+
+        Raises:
+            If conversion was not successful.
+        """
+        ...
+
+
 struct _PyIter(Sized):
     """A Python iterator."""
 

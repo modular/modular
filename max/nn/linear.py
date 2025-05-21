@@ -108,11 +108,27 @@ class Float8Config:
     weight_scale: Float8WeightScaleSpec
     """Specification for weight scaling."""
 
-    attn_qkv_in_float8: bool
-    """Whether attention QKV projections are in float8."""
+    mlp_in_float8: set[int]
+    """Set of layer indices with MLPs in float8.
+
+    MLPs are considered to be either "all quantized" or all not quantized per
+    layer.
+    So either all of gate proj, down proj, and up proj are float8, or all bfloat16.
+    """
+
+    attn_qkv_in_float8: set[int]
+    """Set of layer indices with attention QKV projections in float8.
+
+    QKV projections are considered to be either "all quantized" or all not
+    quantized per layer.
+    So either all of {q,k,v,o}_proj are float8, or all bfloat16.
+    """
 
     embedding_output_dtype: DType | None = None
     """The data type of the output from the embedding layer."""
+
+    quant_method: str | None = None
+    """The quantization method used (e.g., "fbgemm_fp8")."""
 
     @property
     def is_static(self) -> bool:
@@ -225,7 +241,7 @@ class Linear(Module):
                 )
 
         if float8_config:
-            if float8_config.input_scale.origin == Float8ScaleOrigin.STATIC:
+            if float8_config.is_static:
                 self.input_scale = Weight(
                     name=f"{name}.input_scale" if name else "input_scale",
                     dtype=float8_config.input_scale.dtype,
@@ -234,10 +250,10 @@ class Linear(Module):
                     quantization_encoding=quantization_encoding,
                 )
 
-            if float8_config.input_scale.granularity not in [
+            if float8_config.input_scale.granularity not in (
                 Float8ScaleGranularity.TENSOR,
                 Float8ScaleGranularity.COLWISE,
-            ]:
+            ):
                 raise ValueError(
                     f"unsupported input scale granularity {float8_config.input_scale.granularity}. "
                     "Only tensor and col-wise are supported, currently"
@@ -307,7 +323,9 @@ class Linear(Module):
                     x, weight, input_scale, weight_scale
                 )
             else:
-                x, x_scales = quantize_dynamic_scaled_float8(x)
+                x, x_scales = quantize_dynamic_scaled_float8(
+                    x, scales_type=weight_scale.dtype
+                )
 
                 if self.device:
                     weight_scale = weight_scale.to(self.device)
@@ -979,11 +997,7 @@ class DistributedMLP(MLP):
     This class has the same state keys as the non-distributed MLP Layer.
     """
 
-    def __init__(
-        self,
-        *args,
-        **kwargs,
-    ) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if kwargs.get("has_bias"):
             raise ValueError(
@@ -992,17 +1006,29 @@ class DistributedMLP(MLP):
 
         self.num_devices = len(self.devices)
 
-        def col_sharding_strategy(weight: Weight, i) -> TensorValue:
+        def col_sharding_strategy(weight: Weight, i: int) -> TensorValue:
             col_size = int(weight.shape[1]) // self.num_devices
             return weight[:, i * col_size : (i + 1) * col_size]
 
-        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
+        def row_sharding_strategy(weight: Weight, i: int) -> TensorValue:
             row_size = int(weight.shape[0]) // self.num_devices
             return weight[i * row_size : (i + 1) * row_size, :]
 
         self.gate_proj.weight.set_sharding_strategy(row_sharding_strategy)
+        if self.gate_proj.weight_scale:
+            self.gate_proj.weight_scale.set_sharding_strategy(
+                row_sharding_strategy
+            )
+
         self.down_proj.weight.set_sharding_strategy(col_sharding_strategy)
+        if self.down_proj.weight_scale:
+            self.down_proj.weight_scale.set_sharding_strategy(lambda w, i: w)
+
         self.up_proj.weight.set_sharding_strategy(row_sharding_strategy)
+        if self.up_proj.weight_scale:
+            self.up_proj.weight_scale.set_sharding_strategy(
+                row_sharding_strategy
+            )
 
         # Create normal MLP layers for each device. These layers and weights are
         # not recorded by the nn.Module and do not appear in the state dict.
@@ -1018,6 +1044,28 @@ class DistributedMLP(MLP):
 
             layer.up_proj.device = device
             layer.up_proj.weight = self.up_proj.weight.shard(n, device)
+
+            if self.float8_config:
+                if self.gate_proj.weight_scale and (
+                    len(self.gate_proj.weight_scale.shape) == 2
+                ):
+                    layer.gate_proj.weight_scale = (
+                        self.gate_proj.weight_scale.shard(n, device)
+                    )
+
+                if self.down_proj.weight_scale and (
+                    len(self.down_proj.weight_scale.shape) == 2
+                ):
+                    layer.down_proj.weight_scale = (
+                        self.down_proj.weight_scale.shard(n, device)
+                    )
+
+                if self.up_proj.weight_scale and (
+                    len(self.up_proj.weight_scale.shape) == 2
+                ):
+                    layer.up_proj.weight_scale = (
+                        self.up_proj.weight_scale.shard(n, device)
+                    )
 
             self.list_of_mlps.append(layer)
 

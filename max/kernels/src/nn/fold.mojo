@@ -14,9 +14,10 @@
 
 from sys.info import simdwidthof
 
-from algorithm import vectorize
+from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
+from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import Index, IndexList
 
@@ -34,6 +35,7 @@ fn fold[
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
+    ctx: DeviceContextPtr,
 ) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
@@ -45,9 +47,8 @@ fn fold[
         stride: Stride of the sliding blocks.
         dilation: Dilation of the sliding blocks.
         padding: 0-paddings to be added on both sides of the inputs.
+        ctx: DeviceContextPtr.
     """
-
-    constrained[target == "cpu", "Fold must be executed on CPU."]()
 
     if padding[0] < 0 or padding[1] < 0:
         raise Error("Padding must be non-negative.")
@@ -106,30 +107,63 @@ fn fold[
     var stride_w = stride[1]
     var stride_h = stride[0]
 
+    @always_inline
     @parameter
-    fn _fold_over_batch_cpu[simd_width: Int](batch: Int):
-        var batch_input_offset = batch * channels_col * expected_blocks
-        var batch_output_offset = batch * C * H * W
-        var output_ptr = output.data + batch_output_offset
-        var input_ptr = input.data + batch_input_offset
-        for c in range(channels_col):
-            var w_offset = c % kernel_w
-            var h_offset = (c // kernel_w) % kernel_h
-            var c_out = c // kernel_h // kernel_w
+    @__copy_capture(
+        kernel_w,
+        kernel_h,
+        padding_w,
+        padding_h,
+        dilation_w,
+        dilation_h,
+        stride_w,
+        stride_h,
+        height_col,
+        width_col,
+    )
+    fn fold_fn[width: Int, rank_: Int](idx_arg: IndexList[rank_]):
+        constrained[rank_ == 4, "fold_fn: rank must be 4"]()
+        var idx = rebind[IndexList[4]](idx_arg)
 
-            for h in range(height_col):
-                h_out = h * stride_h - padding_h + h_offset * dilation_h
-                for w in range(width_col):
-                    w_out = w * stride_w - padding_w + w_offset * dilation_w
+        var batch = idx[0]
+        var channel = idx[1]
+        var h_out = idx[2]
+        var w_out = idx[3]
 
-                    if h_out >= 0 and h_out < H and w_out >= 0 and w_out < W:
-                        var input_idx = (c * height_col + h) * width_col + w
-                        var output_idx = (c_out * H + h_out) * W + w_out
-                        before = output_ptr[output_idx]
-                        output_ptr[output_idx] += input_ptr[input_idx]
+        var output_val = Scalar[dtype](0)
 
-    output.zero()
-    vectorize[_fold_over_batch_cpu, simdwidthof[dtype]()](N)
+        for kernel_ind in range(kernel_h * kernel_w):
+            h_offset, w_offset = divmod(kernel_ind, kernel_w)
+
+            # For a given output position (h_out, w_out), assuming its relative
+            # position in a patch is (h_offset, w_offset), then the position of
+            # the patch is (h, w)
+            var h_pos = h_out - h_offset * dilation_h + padding_h
+            var w_pos = w_out - w_offset * dilation_w + padding_w
+            h, h_invalid = divmod(h_pos, stride_h)
+            w, w_invalid = divmod(w_pos, stride_w)
+
+            if not (h_invalid or w_invalid):
+                if (0 <= h < height_col) and (0 <= w < width_col):
+                    # Calculate channel offset and patch offset
+                    var channel_offset = channel * kernel_h * kernel_w
+                    var kernel_offset = h_offset * kernel_w + w_offset
+                    var patch_offset = h * width_col + w
+
+                    # Load and accumulate
+                    output_val += input[
+                        batch, channel_offset + kernel_offset, patch_offset
+                    ]
+
+        output.store(idx, output_val)
+
+    var dispatch_shape = IndexList[4](N, C, H, W)
+    elementwise[
+        func=fold_fn,
+        simd_width=1,
+        target=target,
+        _trace_description="fold_fn",
+    ](dispatch_shape, ctx)
 
 
 fn fold_shape[

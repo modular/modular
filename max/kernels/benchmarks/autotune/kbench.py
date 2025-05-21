@@ -25,7 +25,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import product
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from time import time
 from typing import Any
@@ -658,6 +658,15 @@ def _get_tmp_path(file_path):
     return Path(tf)
 
 
+def _get_core_count():
+    try:
+        # The 'os.sched_getaffinity' method is only available on some Unix platforms
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        # To cover other platforms, including mac
+        return cpu_count()
+
+
 @dataclass
 class BuildItem:
     """
@@ -970,9 +979,9 @@ def run(
         expand=True,
     )
 
-    # Set num_cpu to the maximum number of available CPUs
+    # Set num_cpu to the half of maximum number of available CPUs
     if num_cpu == -1:
-        num_cpu = len(os.sched_getaffinity(0))
+        num_cpu = max(_get_core_count() // 2, 1)
 
     logging.info(f"num cpu's: {num_cpu}")
     # Kbench Singleton Scheduler
@@ -1299,8 +1308,8 @@ help_str = (
 )
 @click.option(
     "--num-cpu",
-    default=1,
-    help="Set the total number of cpu cores for building. Set to -1 for max number of cores (default=1).",
+    default=-1,
+    help="Set the total number of cpu cores for building. Set to -1 for max number of cores (default=-1).",
 )
 @click.option(
     "--dryrun",

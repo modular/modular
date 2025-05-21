@@ -404,8 +404,7 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
             var err = dlerror()
             if err:
                 abort(
-                    "dlsym failed: ",
-                    String(unsafe_from_utf8_ptr=err),
+                    String("dlsym failed: ", String(unsafe_from_utf8_ptr=err))
                 )
 
         return res
@@ -548,7 +547,7 @@ fn _find_dylib[name: StaticString = ""](paths: List[Path]) -> _OwnedDLHandle:
     try:
         return _try_find_dylib[name](paths)
     except e:
-        return abort[_OwnedDLHandle](e)
+        return abort[_OwnedDLHandle](String(e))
 
 
 fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
