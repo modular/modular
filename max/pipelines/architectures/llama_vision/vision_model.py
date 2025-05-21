@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import (
     DeviceRef,
     Dim,
+    StaticDim,
     TensorValue,
     TensorValueLike,
     ops,
@@ -307,7 +308,7 @@ class VisionModel(Layer):
         hidden_state = self.layernorm_pre(hidden_state)
 
         # Compute the number of tokens to pad
-        curr_num_patches = int(hidden_state.shape[-2])
+        curr_num_patches = StaticDim(hidden_state.shape[-2]).dim
         num_padding_patches = (8 - (curr_num_patches % 8)) % 8
         # Compute padding tuple for pad function
         padding = (
@@ -334,7 +335,7 @@ class VisionModel(Layer):
         attention_mask = self._prepare_aspect_ratio_attention_mask(
             aspect_ratio_mask=attention_mask,
             num_patches=self.num_patches,
-            target_length=int(hidden_state.shape[2]),
+            target_length=StaticDim(hidden_state.shape[2]).dim,
             dtype=self.dtype,
         )
 
