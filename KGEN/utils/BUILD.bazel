@@ -3,7 +3,7 @@ load("//bazel:api.bzl", "modular_py_binary", "requirement")
 modular_py_binary(
     name = "mojodoc_json_to_markdown",
     srcs = ["mojodoc_json_to_markdown.py"],
-    data = glob(["mojodoc-templates/*.md"]),
+    data = glob(["mojodoc-templates/**"]),
     visibility = ["//visibility:public"],
     deps = [
         requirement("jinja2"),
