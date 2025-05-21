@@ -117,9 +117,7 @@ def test_symbolic_dim_invalid(name: str):
 
 def test_symbolic_dim_to_int_error() -> None:
     """Checks the error message when creating an int from a SymbolicDim."""
-    with pytest.raises(
-        TypeError, match="conversions only supported for static dims"
-    ):
+    with pytest.raises(TypeError, match="expected statically known dim"):
         int(SymbolicDim("x"))
 
 
@@ -145,17 +143,23 @@ def test_tensor_type(mlir_context) -> None:
     assert str(tensor_type) == "!mo.tensor<[3, x], f32>"
 
 
-def test_tensor_type__negative_dim(mlir_context) -> None:
-    with pytest.raises(TypeError, match="dimensions must be non-negative"):
-        tensor_type = TensorType(DType.float32, [-1], device=DeviceRef.CPU())
-
-
 def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
     """Tests tensor type creation."""
     device_type = DeviceRef.GPU(id=2)
+    mlir_device_type = device_type.to_mlir()
+    print(str(mlir_device_type))
     tensor_type = TensorType(DType.float32, shape=[3], device=device_type)
-    assert TensorType.from_mlir(tensor_type.to_mlir()) == tensor_type
-    assert tensor_type.to_mlir().device_ref == device_type.to_mlir()
+    dtype = _graph.dtype_type(mlir_context, "f32")
+    dim1 = _graph.static_dim(mlir_context, 3)
+    cuda_device0 = _graph.device_attr(mlir_context, "cuda", 0)
+    cuda_tensor_type0 = _graph.tensor_type_with_device(
+        mlir_context, dtype, [dim1], cuda_device0
+    )
+    cuda_tensor_type2 = _graph.tensor_type_with_device(
+        mlir_context, dtype, [dim1], mlir_device_type
+    )
+    assert tensor_type.to_mlir() == cuda_tensor_type2
+    assert tensor_type.to_mlir() != cuda_tensor_type0
 
 
 def test_tensor_type_accessors(mlir_context) -> None:

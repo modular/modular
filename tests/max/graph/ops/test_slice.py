@@ -362,7 +362,9 @@ def test_slice_none_dims(
         input_types=[tensor_type],
     )
 
-    (result_type,) = graph.output_types
+    ops = graph._mlir_op.regions[0].blocks[0].operations
+    output_op = ops[len(ops) - 1]
+    result_type = TensorType.from_mlir(output_op.operands[0].type)
     # Check that the output rank is correctly expanded by the None indices.
     assert result_type.rank == expected_length
 
@@ -478,29 +480,36 @@ def test_slice_int_dims(
         forward=operator.itemgetter(indices),
         input_types=[tensor_type],
     )
-    (result_type,) = graph.output_types
 
+    ops = graph._mlir_op.regions[0].blocks[0].operations
+    output_op = ops[len(ops) - 1]
+    result_type = TensorType.from_mlir(output_op.operands[0].type)
     # Check that the output rank is correctly expanded by the None indices.
     assert result_type.rank == len(expected_shape)
     assert all(
         dim == expected_dim
-        for dim, expected_dim in zip(result_type.shape, expected_shape)
+        for i, (dim, expected_dim) in enumerate(
+            zip(result_type.shape, expected_shape)
+        )
         if isinstance(expected_dim, int)
     )
 
 
 def test_slice_invalid_start_stop(graph_builder) -> None:
     """Checks that slicing with invalid start/stop/step raises an error."""
-    input_type = TensorType(
-        DType.float32, shape=["dim0"], device=DeviceRef.CPU()
-    )
-    with graph_builder(input_types=[input_type]) as graph:
-        x = graph.inputs[0]
-        with pytest.raises(
-            ValueError,
-            match=(
-                "start and stop should be increasing for positive step and "
-                "decreasing for negative step, but got start 2, stop 1 for step 1"
-            ),
-        ):
-            x[2:1]
+    with pytest.raises(
+        ValueError,
+        match=(
+            "start and stop should be increasing for positive step and "
+            "decreasing for negative step, but got start 2, stop 1 for step 1"
+        ),
+    ):
+        Graph(
+            "slice_invalid",
+            forward=operator.itemgetter((slice(2, 1),)),
+            input_types=[
+                TensorType(
+                    DType.float32, shape=["dim0"], device=DeviceRef.CPU()
+                )
+            ],
+        )

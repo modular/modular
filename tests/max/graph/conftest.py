@@ -308,6 +308,15 @@ def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim | None]:
     )
 
 
+def graph_result_type(graph: Graph) -> mlir.Type:
+    """Returns the graph's result type."""
+    # Get the all the mo.graph body's operations (no nested operations).
+    graph_block_ops = graph._mlir_op.regions[0].blocks[0].operations
+    # Get the type of the terminator mo.output.
+    # This is the output of the graph.
+    return graph_block_ops[len(graph_block_ops) - 1].operation.operands[0].type
+
+
 @pytest.fixture
 def modular_path() -> Path:
     """Returns the path to the Modular .derived directory."""

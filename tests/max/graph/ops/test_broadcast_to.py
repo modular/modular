@@ -11,6 +11,7 @@ import pytest
 from conftest import (
     broadcast_shapes,
     broadcastable_static_positive_shapes,
+    graph_result_type,
     shapes,
     valid_broadcast_rank,
 )
@@ -69,8 +70,9 @@ def test_broadcast_to_tensor_value(
         ],
     )
     assert "rmo.mo.broadcast_to" in str(graph)
-    expected_type = TensorType(DType.bfloat16, out_dims, device=DeviceRef.CPU())
-    assert graph.output_types == [expected_type]
+    assert TensorType.from_mlir(graph_result_type(graph)) == TensorType(
+        DType.bfloat16, out_dims, device=DeviceRef.CPU()
+    )
 
 
 def test_broadcast_to__error_message():

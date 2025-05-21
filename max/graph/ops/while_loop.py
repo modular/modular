@@ -152,10 +152,10 @@ def while_loop(
 
         def chain_aware_wrapper():
             # Separate loop variables from the execution chain
-            loop_vars: list[Value]
-            execution_chain: Value
             *loop_vars, execution_chain = (
-                Value(mlir.Value(arg)) for arg in block_args
+                # arg is a mlir.BlockArgument, which isn't handled by the Value constructor
+                Value(mlir.Value(arg))
+                for arg in block_args
             )
 
             # Update the graph's chain state before running user code

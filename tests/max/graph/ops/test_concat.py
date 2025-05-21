@@ -184,7 +184,7 @@ def test_concat__symbolic__algebraic_result(
         assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))
 
 
-def test_concat_different_devices(graph_builder):
+def test_oncat_different_devices(graph_builder):
     input_types = [
         TensorType(DType.float32, [12], DeviceRef.CPU(0)),
         TensorType(DType.float32, [13], DeviceRef.CPU(0)),
