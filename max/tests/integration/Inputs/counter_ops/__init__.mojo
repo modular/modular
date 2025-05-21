@@ -92,7 +92,7 @@ struct BumpPythonCounter:
             new_counter.bump()
             return new_counter
         except e:
-            abort(e)
+            abort(String(e))
         finally:
             cpython.PyGILState_Release(state)
 
