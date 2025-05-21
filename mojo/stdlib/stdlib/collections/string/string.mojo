@@ -1197,7 +1197,7 @@ struct String(
         # Add a nul terminator.
         # Reallocate the out-of-line static strings to ensure mutability.
         if not self._capacity_or_data.has_nul_terminator() or (
-            self._capacity_or_data.is_static_constant()
+            self._is_static_constant()
         ):
             var len = self.byte_length()
             self.reserve(len + 1)  # This will reallocate if constant.
@@ -1799,13 +1799,23 @@ struct String(
     fn _make_unique_mutable(mut self):
         # If already mutable and uniquely owned, we're done.
         if (
-            not self._capacity_or_data.is_static_constant()
+            not self._is_static_constant()
             and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
         ):
             return
 
         # Otherwise, copy to a new buffer to ensure mutability.
         self._realloc_mutable(self.byte_length())
+
+    fn _is_static_constant(self) -> Bool:
+        """Checks if the string is a static constant.
+
+        Returns:
+            True if the string is a static constant, False otherwise.
+        """
+        return Bool(self._ptr_or_data) and (
+            self._capacity_or_data.get_capacity() == 0
+        )
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string.
@@ -1840,7 +1850,7 @@ struct String(
 
     @always_inline("nodebug")
     fn _has_mutable_buffer(self) -> Bool:
-        return (not self._capacity_or_data.is_static_constant()) & (
+        return (not self._is_static_constant()) & (
             not self._capacity_or_data.is_inline()
         )
 
