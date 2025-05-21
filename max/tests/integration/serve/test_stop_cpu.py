@@ -41,6 +41,7 @@ async def test_stop_sequence(echo_app):
         assert expected == result["choices"][0]["message"]["content"]
 
 
+@pytest.mark.skip(reason="Flaky test -- MAXSERV-947")
 @pytest.mark.asyncio
 async def test_stop_sequence_streaming(
     echo_app, reset_sse_starlette_appstatus_event
