@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .format import WeightsFormat, weights_format
 from .load_gguf import GGUFWeights
+from .load_pytorch import PytorchWeights
 from .load_safetensors import SafetensorWeights
 from .weights import Weights
 
@@ -50,6 +51,8 @@ def load_weights(paths: list[Path]) -> Weights:
         return GGUFWeights(paths[0])
     elif _weights_format == WeightsFormat.safetensors:
         return SafetensorWeights(paths)
+    elif _weights_format == WeightsFormat.pytorch:
+        return PytorchWeights(paths[0])
     else:
         raise ValueError(
             f"loading weights format '{_weights_format}' not supported."
