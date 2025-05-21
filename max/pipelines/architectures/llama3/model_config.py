@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable, Literal, Optional
 
@@ -43,25 +44,81 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
-def _parse_float8_config_from_compressed_tensors(
+def _quantized_layers_and_embedding_dtype(
     huggingface_config: AutoConfig,
-    state_dict: dict[str, WeightData],
+    ignored_modules: set[str],
+    state_dict: Mapping[str, WeightData],
+) -> tuple[set[int], set[int], DType | None]:
+    """Helper to determine quantized MLP/Attention layers and embedding output dtype."""
+    num_hidden_layers = huggingface_config.num_hidden_layers
+    mlp_in_float8: set[int] = set()
+    attn_qkv_in_float8: set[int] = set()
+
+    for i in range(num_hidden_layers):
+        # Check MLP components (gate_proj, up_proj, down_proj).
+        not_converted_mlp_modules = [
+            f"model.layers.{i}.mlp.{proj}" in ignored_modules
+            for proj in ["gate_proj", "up_proj", "down_proj"]
+        ]
+        is_mlp_not_converted = any(not_converted_mlp_modules)
+        if not is_mlp_not_converted:
+            mlp_in_float8.add(i)
+        elif not all(not_converted_mlp_modules):
+            raise ValueError(
+                "float8 quantization currently assumes uniform quantization for MLPs"
+            )
+
+        # Check Attention QKV components (q_proj, k_proj, v_proj, o_proj)
+        not_converted_attn_qkv_modules = [
+            f"model.layers.{i}.self_attn.{proj}" in ignored_modules
+            for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]
+        ]
+        is_attn_qkv_not_converted = any(not_converted_attn_qkv_modules)
+        if not is_attn_qkv_not_converted:
+            attn_qkv_in_float8.add(i)
+        elif not all(not_converted_attn_qkv_modules):
+            raise ValueError(
+                "float8 quantization currently assumes uniform quantization for attention QKV and output projections"
+            )
+
+    # Determine embedding_output_dtype
+    # If `lm_head` is in ignored_modules, its output is its original dtype.
+    # Otherwise, `lm_head` is quantized and its output is float8.
+    embedding_output_dtype: DType | None
+    if "lm_head" in ignored_modules:
+        if "lm_head.weight" in state_dict:
+            embedding_output_dtype = state_dict["lm_head.weight"].dtype
+        elif "model.embed_tokens.weight" in state_dict:
+            # Handle tied embeddings.
+            embedding_output_dtype = state_dict[
+                "model.embed_tokens.weight"
+            ].dtype
+        else:
+            raise ValueError("cannot determine original type from checkpoint")
+    else:
+        # `lm_head` is quantized to float8.
+        embedding_output_dtype = DType.float8_e4m3fn
+
+    return mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype
+
+
+def _parse_compressed_tensors_float8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
     dtype: DType,
-) -> Float8Config | None:
-    """Parses Float8Config from HuggingFace config using 'compressed-tensors' format."""
-    if dtype != DType.float8_e4m3fn:
-        return None
+) -> Float8Config:
+    """Parses a Float8Config in the compressed-tensors format."""
+
+    # This function specifically handles "compressed-tensors" style.
+    # It assumes hf_quant_config and its structure are present.
 
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if (
-        not hf_quant_config
-        # NOTE: only support the compressed-tensors format currently.
-        or hf_quant_config.get("quant_method") != "compressed-tensors"
-    ):
-        raise ValueError(
-            "FP8 dtype specified, but a compatible 'quantization_config' "
-            "with quant_method='compressed-tensors' was not found in the Hugging Face config."
-        )
+    # Verification should done by the caller.
+    assert hf_quant_config and (
+        hf_quant_config.get("quant_method") == "compressed-tensors"
+        # compressed-tensors might have a missing quant_method if it's the default.
+        or not hf_quant_config.get("quant_method")
+    )
 
     # Extract group config.
     # Assume only one group 'group_0' matters for now.
@@ -94,7 +151,7 @@ def _parse_float8_config_from_compressed_tensors(
         origin=input_origin,
         # Set reasonable defaults if the static input scale isn't present.
         dtype=state_dict[input_scale_name].dtype if has_input_scale else dtype,
-        # Ignore activation_scale_ub, which is not present in compressed-tensors.
+        activation_scale_ub=None,
     )
 
     # Parse weight spec.
@@ -122,21 +179,144 @@ def _parse_float8_config_from_compressed_tensors(
         granularity=weight_granularity, dtype=weight_scale.dtype
     )
 
-    # Determine whether QKV proj is in float8.
-    attn_qkv_in_float8 = (
-        state_dict["layers.0.self_attn.k_proj.weight"].dtype
-        == DType.float8_e4m3fn
+    # Determine which layers have MLP and QKV in float8.
+    # Modules listed in `ignore` are not converted to float8.
+    ignore_modules = set(hf_quant_config.get("ignore", []))
+    mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype = (
+        _quantized_layers_and_embedding_dtype(
+            huggingface_config, ignore_modules, state_dict
+        )
     )
 
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
+        mlp_in_float8=mlp_in_float8,
         attn_qkv_in_float8=attn_qkv_in_float8,
-        embedding_output_dtype=(
-            state_dict["lm_head.weight"].dtype
-            if "lm_head.weight" in state_dict
-            else None
-        ),
+        embedding_output_dtype=embedding_output_dtype,
+        quant_method="compressed-tensors",
+    )
+
+
+def _weight_scale_dtype(state_dict: Mapping[str, WeightData]) -> DType:
+    """Determines the weight scale dtype from the state dict.
+
+    Verifies the expected weight scale quantization along the way:
+    - row-wise,
+    - uniform weight scale dtype.
+    """
+    weight_scale_dtype: DType | None = None
+    for weight_name, weight in state_dict.items():
+        if "weight_scale" not in weight_name:
+            continue
+
+        if (
+            (len(weight.shape) != 2)
+            or (weight.shape[1] != 1)
+            or (weight_scale_dtype and (weight.dtype != weight_scale_dtype))
+        ):
+            raise ValueError(
+                "only row-wise weight quantization with uniform weight scale "
+                "dtype is supported for FBGEMM FP8"
+            )
+
+        weight_scale_dtype = weight.dtype
+    if not weight_scale_dtype:
+        raise ValueError(
+            "could not find weight scale dtype for FBGEMM FP8 quantized weights"
+        )
+
+    return weight_scale_dtype
+
+
+def _parse_fbgemm_float8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> Float8Config:
+    """Parses a Float8Config in the FBGEMM FP8 format."""
+    if dtype != DType.float8_e4m3fn:
+        raise TypeError(
+            "`_parse_fbgemm_float8_config` only supports float8 dtype"
+        )
+
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    assert (
+        hf_quant_config and hf_quant_config.get("quant_method") == "fbgemm_fp8"
+    )
+
+    quant_method = hf_quant_config.get("quant_method")
+    # Get the original Hugging Face module names.
+    modules_to_not_convert_hf = set(
+        hf_quant_config.get("modules_to_not_convert", [])
+    )
+    activation_scale_ub = hf_quant_config.get("activation_scale_ub")
+
+    # For fbgemm_fp8, assume input is dynamic and column-wise.
+    input_spec = Float8InputScaleSpec(
+        granularity=Float8ScaleGranularity.COLWISE,
+        origin=Float8ScaleOrigin.DYNAMIC,
+        dtype=dtype,
+        activation_scale_ub=activation_scale_ub,
+    )
+
+    # For fbgemm_fp8, weight is static, row-wise.
+    weight_spec = Float8WeightScaleSpec(
+        granularity=Float8ScaleGranularity.ROWWISE,
+        dtype=_weight_scale_dtype(state_dict),
+    )
+
+    # Determine which layers have MLP and QKV in float8.
+    # Modules listed in `modules_to_not_convert` are not converted to float8.
+    mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype = (
+        _quantized_layers_and_embedding_dtype(
+            huggingface_config, modules_to_not_convert_hf, state_dict
+        )
+    )
+
+    return Float8Config(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_in_float8=mlp_in_float8,
+        attn_qkv_in_float8=attn_qkv_in_float8,
+        embedding_output_dtype=embedding_output_dtype,
+        quant_method=quant_method,
+    )
+
+
+def _parse_float8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> Float8Config | None:
+    """Parses Float8Config from HuggingFace config by dispatching to
+    format-specific parsers.
+    """
+    if dtype != DType.float8_e4m3fn:
+        return None
+
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if not hf_quant_config:
+        raise ValueError(
+            "expected a `quantization_config` field in Hugging Face config when "
+            "the dtype is float8"
+        )
+
+    quant_method = hf_quant_config.get("quant_method")
+
+    if quant_method == "compressed-tensors":
+        return _parse_compressed_tensors_float8_config(
+            huggingface_config, state_dict, dtype
+        )
+    elif quant_method == "fbgemm_fp8":
+        return _parse_fbgemm_float8_config(
+            huggingface_config, state_dict, dtype
+        )
+
+    raise ValueError(
+        f"FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
+        f"was found. Quant method: '{quant_method}'. "
+        "Supported methods are 'compressed-tensors' and 'fbgemm_fp8'."
     )
 
 
@@ -297,9 +477,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             for spec in pipeline_config.model_config.device_specs
         ]
 
-        # Parse the float8 config from compressed-tensors, which is currently
-        # the only supported format.
-        float8_config = _parse_float8_config_from_compressed_tensors(
+        # Parse the float8 config from compressed-tensors or FBGEMM.
+        float8_config = _parse_float8_config(
             huggingface_config, state_dict, dtype
         )
 

@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from hashlib import md5
 from typing import cast
 
@@ -206,7 +205,6 @@ class DistributedTransformerBlock(Module):
         return hs
 
 
-@dataclass
 class DistributedTransformer(Module):
     """Transformer model consisting for TransformerBlock layers."""
 

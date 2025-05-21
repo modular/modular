@@ -55,11 +55,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import (
-    Float8Config,
-    Float8ScaleGranularity,
-    Linear,
-)
+from ..linear import Float8Config, Float8ScaleGranularity, Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
@@ -190,7 +186,7 @@ class AttentionWithRope(Module):
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
-            dtype: DType of the
+            dtype: DType of the QKV and output projection weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
                 `DistributedAttentionWithRope` to use all devices during
@@ -454,6 +450,7 @@ class AttentionWithRope(Module):
             assert isinstance(kv_collection, PagedKVCacheCollection)
 
             x_scales: TensorValue
+            weight_scale = self.qkv_weight_scale
             if self.float8_config.is_static:
                 assert self.qkv_input_scale is not None
                 x = quantize_static_scaled_float8(
@@ -461,7 +458,9 @@ class AttentionWithRope(Module):
                 )
                 x_scales = self.qkv_input_scale
             else:
-                x, x_scales = quantize_dynamic_scaled_float8(x)
+                x, x_scales = quantize_dynamic_scaled_float8(
+                    x, scales_type=weight_scale.dtype
+                )
 
             xq = fused_qkv_ragged_matmul_scaled_float8(
                 self.kv_params,
@@ -473,7 +472,7 @@ class AttentionWithRope(Module):
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
                 input_scale=x_scales,
-                weight_scale=self.qkv_weight_scale,
+                weight_scale=weight_scale,
             )
         else:
             # Call into fused qkv ragged matmul.

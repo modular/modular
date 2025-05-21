@@ -78,43 +78,68 @@ class DistributedLlama3(DistributedTransformer):
             devices=config.devices,
         )
 
-        linear_cls = functools.partial(
-            Linear, float8_config=config.float8_config
-        )
+        fp8_cfg = config.float8_config
+        linear_cls = functools.partial(Linear, float8_config=fp8_cfg)
 
-        layers = [
-            DistributedTransformerBlock(
-                attention=DistributedAttentionWithRope(
-                    stacked_qkv=config.stacked_qkv,
-                    scale=config.attention_multiplier,
-                    clip_qkv=config.clip_qkv,
-                    num_attention_heads=config.num_attention_heads,
-                    num_key_value_heads=config.num_key_value_heads,
-                    hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
-                    dtype=config.dtype,
-                    rope=rope,
-                    linear_cls=linear_cls,
-                    devices=config.devices,
-                    float8_config=config.float8_config,
-                ),
-                mlp=DistributedMLP(
-                    config.dtype,
-                    config.model_quantization_encoding,
-                    config.hidden_size,
-                    config.intermediate_size,
-                    config.devices,
-                    linear_cls,
-                ),
-                attention_norm=create_distributed_norm(),
-                mlp_norm=create_distributed_norm(),
-                devices=config.devices,
-                use_subgraph=config.use_subgraphs,
-                # TODO: Support residual_multiplier
-                # residual_multiplier=config.residual_multiplier,
+        layers = []
+        for layer_idx in range(config.num_hidden_layers):
+            # Deal with the float8 case where individual layers are ignored
+            # specially: assume bfloat16 dtype for "ignored" layers in fp8
+            # quantized models.
+            attn_qkv_dtype = (
+                DType.bfloat16
+                if fp8_cfg and layer_idx not in fp8_cfg.attn_qkv_in_float8
+                else config.dtype
             )
-            for _ in range(config.num_hidden_layers)
-        ]
+            mlp_dtype = (
+                DType.bfloat16
+                if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
+                else config.dtype
+            )
+            layers.append(
+                DistributedTransformerBlock(
+                    attention=DistributedAttentionWithRope(
+                        stacked_qkv=config.stacked_qkv,
+                        scale=config.attention_multiplier,
+                        clip_qkv=config.clip_qkv,
+                        num_attention_heads=config.num_attention_heads,
+                        num_key_value_heads=config.num_key_value_heads,
+                        hidden_size=config.hidden_size,
+                        kv_params=config.kv_params,
+                        dtype=attn_qkv_dtype,
+                        rope=rope,
+                        linear_cls=linear_cls,
+                        devices=config.devices,
+                        # Only pass the float8 config if this attention layer is quantized.
+                        float8_config=(
+                            fp8_cfg
+                            if fp8_cfg
+                            and (layer_idx in fp8_cfg.attn_qkv_in_float8)
+                            else None
+                        ),
+                    ),
+                    mlp=DistributedMLP(
+                        mlp_dtype,
+                        config.model_quantization_encoding,
+                        config.hidden_size,
+                        config.intermediate_size,
+                        config.devices,
+                        linear_cls,
+                        # Only pass the float8 config if this MLP layer is quantized.
+                        float8_config=(
+                            fp8_cfg
+                            if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
+                            else None
+                        ),
+                    ),
+                    attention_norm=create_distributed_norm(),
+                    mlp_norm=create_distributed_norm(),
+                    devices=config.devices,
+                    use_subgraph=config.use_subgraphs,
+                    # TODO: Support residual_multiplier
+                    # residual_multiplier=config.residual_multiplier,
+                )
+            )
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
@@ -122,6 +147,8 @@ class DistributedLlama3(DistributedTransformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
+        if fp8_cfg and fp8_cfg.embedding_output_dtype:
+            embedding_output_dtype = fp8_cfg.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,
