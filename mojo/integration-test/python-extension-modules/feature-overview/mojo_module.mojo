@@ -13,6 +13,7 @@
 
 from os import abort
 
+from builtin.identifiable import TypeIdentifiable
 from builtin._pybind import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
@@ -20,7 +21,11 @@ from builtin._pybind import (
 )
 from memory import UnsafePointer
 from python import Python, PythonObject, TypedPythonObject
-from python._bindings import PyMojoObject, PythonModuleBuilder
+from python._bindings import (
+    PyMojoObject,
+    PythonModuleBuilder,
+    get_py_type_object,
+)
 from python._cpython import PyObjectPtr, PyTypeObject
 
 
@@ -126,9 +131,11 @@ fn case_mojo_mutate(
 
 
 @fieldwise_init
-struct Person(Defaultable, Representable, Copyable, Movable):
+struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
     var name: String
     var age: Int
+
+    alias TYPE_ID = "mojo_module.Person"
 
     fn __init__(out self):
         self.name = "John Smith"
@@ -175,7 +182,9 @@ struct Person(Defaultable, Representable, Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Defaultable, Representable):
+struct FailToInitialize(Defaultable, Representable, TypeIdentifiable):
+    alias TYPE_ID = "mojo_module.FailToInitialize"
+
     fn __init__(out self):
         pass
 
@@ -215,7 +224,7 @@ fn incr_int__wrapper(
     check_arguments_arity(1, py_args, "incr_int".value)
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
-        "incr_int", "Int", py_args, 0
+        "incr_int", py_args, 0
     )
 
     # Note: Pass an `mut` reference to the wrapped function
@@ -231,12 +240,11 @@ fn add_to_int__wrapper(
     check_arguments_arity(2, py_args, "add_to_int".value)
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
-        "add_to_int", "Int", py_args, 0
+        "add_to_int", py_args, 0
     )
 
     var arg_1: UnsafePointer[Int] = check_and_get_or_convert_arg[Int](
         "add_to_int",
-        "Int",
         py_args,
         1,
     )
@@ -269,10 +277,10 @@ fn create_string__wrapper(
     # TODO(MSTDL-1018):
     #   Improve how we're looking up the PyTypeObject for a Mojo type.
     # NOTE:
-    #   We can't just use python_type_object[String] because that constructs
+    #   We can't just use PythonTypeBuilder.bind[String]() because that constructs
     #   a _new_ PyTypeObject. We want to reference the existing _singleton_
     #   PyTypeObject that represents a given Mojo type.
-    var string_ty = Python.import_module("mojo_module").String
+    var string_ty = get_py_type_object[String]()
 
     # SAFETY:
     #   `Int` was added to the module by us, so it should be an instance
