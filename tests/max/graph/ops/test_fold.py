@@ -138,17 +138,3 @@ def test_fold_invalid_inputs(
                 dilation,
                 padding,
             )
-
-
-def test_fold_fails_on_gpu(graph_builder):
-    input_type = TensorType(DType.float32, (1, 6, 15), DeviceRef.GPU())
-    with graph_builder(input_types=[input_type]) as graph:
-        with pytest.raises(NotImplementedError):
-            _ = ops.fold(
-                graph.inputs[0].tensor,
-                (5, 6),
-                (3, 2),
-                (1, 1),
-                (1, 1),
-                (0, 0),
-            )

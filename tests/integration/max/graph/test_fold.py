@@ -7,12 +7,11 @@
 import numpy as np
 from max.driver import Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.ops import fold
 
 
-def test_fold():
+def test_fold(session):
     input_shape = (1, 6, 15)
     output_size = (5, 6)
     kernel_size = (3, 2)
@@ -36,8 +35,7 @@ def test_fold():
                 11.,  40.,  73.,  52.,  51.,  17.]
     expected = np.array(expected_output, dtype=np.float32).reshape(1, 1, 5, 6)
     # fmt: on
-    session = InferenceSession()
-    device_ref = DeviceRef.CPU(0)
+    device_ref = DeviceRef.from_device(session.devices[0])
     with Graph(
         "fold",
         input_types=(
@@ -62,7 +60,7 @@ def test_fold():
     np.testing.assert_equal(actual, expected)
 
 
-def test_fold_dynamic_shape():
+def test_fold_dynamic_shape(session):
     """Test with dynamic kernel size and output size."""
     input_shape = (1, 6, 15)
     output_size = (5, 6)
@@ -87,15 +85,18 @@ def test_fold_dynamic_shape():
                 11.,  40.,  73.,  52.,  51.,  17.]
     expected = np.array(expected_output, dtype=np.float32).reshape(1, 1, 5, 6)
     # fmt: on
-    session = InferenceSession()
-    device_ref = DeviceRef.CPU(0)
+    device_ref = DeviceRef.from_device(session.devices[0])
     with Graph(
         "fold",
         input_types=(
             TensorType(DType.float32, ["batch", "x", "y"], device_ref),
             # Set up symbolic dimensions for output_size and kernel_size.
-            TensorType(DType.float32, ["output_0", "output_1"], device_ref),
-            TensorType(DType.float32, ["kernel_0", "kernel_1"], device_ref),
+            TensorType(
+                DType.float32, ["output_0", "output_1"], DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, ["kernel_0", "kernel_1"], DeviceRef.CPU()
+            ),
         ),
     ) as graph:
         output_size_0 = graph.inputs[1].tensor.shape[0]

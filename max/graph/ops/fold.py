@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from ..type import DeviceKind, DimLike, Shape, StaticDim
+from ..type import DimLike, Shape, StaticDim
 from ..value import TensorType, TensorValue, TensorValueLike
 from .custom import custom
 from .shape_to_tensor import shape_to_tensor
@@ -50,10 +50,6 @@ def fold(
         The folded 4D tensor with shape ``(N, C, output_shape[0], output_shape[1])``.
     """
     input = TensorValue(input)
-    if input.device.device_type != DeviceKind.CPU:
-        raise NotImplementedError(
-            "Fold is not implemented for non-CPU devices."
-        )
 
     if not isinstance(stride, tuple):
         stride = (stride, stride)
@@ -114,4 +110,5 @@ def fold(
             shape_to_tensor(padding),
         ],
         [TensorType(input.dtype, output_shape, input.device)],
+        device=input.device,
     )[0].tensor
