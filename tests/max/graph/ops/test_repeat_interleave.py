@@ -51,12 +51,12 @@ def test_vector_repeats(graph_builder, type: TensorType, axis: int):
 
     repeats_type = TensorType(DType.int64, [dim], device=DeviceRef.CPU())
     with graph_builder(input_types=[type, repeats_type]) as graph:
-        out_dim = graph.current.unique_symbolic_dim("D")
+        out_dim = "new_dim"
         out = ops.repeat_interleave(
             graph.inputs[0].tensor,
             graph.inputs[1].tensor,
             axis,
-            out_dim=out_dim,
+            out_dim="new_dim",
         )
         target_shape = list(type.shape)
         target_shape[axis] = out_dim

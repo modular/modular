@@ -10,7 +10,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import DeviceRef, TensorType
+from ..type import DeviceRef, DimLike, TensorType
 from ..value import TensorValue, TensorValueLike
 from .nonzero import nonzero
 
@@ -59,7 +59,10 @@ def scatter(
 
 
 def masked_scatter(
-    input: TensorValueLike, mask: TensorValueLike, updates: TensorValueLike
+    input: TensorValueLike,
+    mask: TensorValueLike,
+    updates: TensorValueLike,
+    out_dim: DimLike,
 ) -> TensorValue:
     """
     Creates a new symbolic tensor where the updates are written to input where mask is true.
@@ -68,6 +71,7 @@ def masked_scatter(
         input: The input symbolic tensor to write elements to.
         mask: A symbolic tensor of boolean values to update.
         updates: A symbolic tensor of elements to write to input.
+        out_dim: The new data-dependent dimension.
 
     Returns:
         A new symbolic tensor representing the result of the masked_scatter operation.
@@ -94,9 +98,7 @@ def masked_scatter(
     #    )
 
     mask = mask.broadcast_to(input.shape)
-    indices = nonzero(
-        mask, Graph.current.unique_symbolic_dim("nonzero_indices")
-    )
+    indices = nonzero(mask, out_dim)
 
     updates = updates.flatten()
 

@@ -59,7 +59,7 @@ def test_masked_scatter(
         updates = ops.constant(
             np.array(updates), DType.int32, device=DeviceRef.CPU()
         )
-        out = ops.masked_scatter(input, mask, updates)
+        out = ops.masked_scatter(input, mask, updates, out_dim="masked")
         graph.output(out)
 
     model = session.load(graph)

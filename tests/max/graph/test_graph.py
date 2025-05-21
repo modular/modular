@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 from max import mlir
 from max._core import graph as _graph
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.mlir.dialects import rmo
 
 empty_graphs = st.builds(
@@ -179,33 +179,6 @@ def test_add_op_closure() -> None:
 
     assert "rmo.add" in str(add_graph._mlir_op)
     assert "mo.output" in str(add_graph._mlir_op)
-
-
-def test_unique_symbolic_dim() -> None:
-    """Test that unique_symbolic_dim works, even if the counter is reset."""
-    graph = Graph(
-        "dim_tester",
-        input_types=[TensorType(DType.float32, (50,), device=DeviceRef.CPU())],
-    )
-
-    def use_dim(dim: Dim) -> None:
-        with graph:
-            ops.rebind(
-                ops.reshape(graph.inputs[0], (-1,)), (dim,), "dim mismatch"
-            )
-
-    dim = graph.unique_symbolic_dim("foo")
-    use_dim(dim)
-    assert dim.name == "unique_foo_0"
-    dim = graph.unique_symbolic_dim("bar")
-    use_dim(dim)
-    assert dim.name == "unique_bar_1"
-    # Pretend we forgot the counter.
-    assert graph._unique_symbolic_dim_counter == 2
-    graph._unique_symbolic_dim_counter = 0
-    dim = graph.unique_symbolic_dim("foo")
-    use_dim(dim)
-    assert dim.name == "unique_foo_1"
 
 
 def test_invalid_operand() -> None:

@@ -175,7 +175,6 @@ class Graph:
     _mlir_op: mlir.Operation | mlir.OpView
     _graph_body: mlir.Block
     _module: mlir.Module
-    _unique_symbolic_dim_counter: int
     _context_state: list
     _weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
@@ -217,7 +216,6 @@ class Graph:
             for dim in t.shape
             if isinstance(dim, SymbolicDim)
         )
-        self._unique_symbolic_dim_counter = 0
         self._context_state = []
         context = context or mlir.Context()
         self._should_verify_ops = True
@@ -606,7 +604,6 @@ class Graph:
             ) from None
 
     def _load_mlir(self, path: Path):
-        self._unique_symbolic_dim_counter = 0
         self._context_state = []
         with open(path) as f:
             registry = mlir.DialectRegistry()
@@ -704,22 +701,6 @@ class Graph:
 
     def __repr__(self) -> str:
         return str(self._mlir_op)
-
-    def unique_symbolic_dim(self, tag: str) -> SymbolicDim:
-        """Create a new symbolic dim with a different name from any other.
-
-        Args:
-            tag: An additional identifier to help identify the dimension for debugging purposes.
-
-        Returns:
-            The dimension.
-        """
-        while True:
-            name = f"unique_{tag}_{self._unique_symbolic_dim_counter}"
-            self._unique_symbolic_dim_counter += 1
-            if name not in self._params:
-                break
-        return SymbolicDim(name)
 
     def _location(self):
         """Creates an MLIR Location with the current Python call stack."""
