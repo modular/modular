@@ -5630,6 +5630,7 @@ struct Fold:
         stride: InputTensor,
         dilation: InputTensor,
         padding: InputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         constrained[
             stride.type.is_integral()
@@ -5659,6 +5660,7 @@ struct Fold:
             stride_tuple,
             dilation_tuple,
             padding_tuple,
+            ctx,
         )
 
     @staticmethod
