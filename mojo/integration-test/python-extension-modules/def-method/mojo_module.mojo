@@ -72,9 +72,7 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
 
     @staticmethod
     fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
-        return py_self.unsafe_as_py_object_ptr().unchecked_cast_to_mojo_value[
-            Self
-        ]()
+        return UnsafePointer[Self, **_](unchecked_downcast=py_self)
 
     @staticmethod
     fn get_name(py_self: PythonObject) raises -> PythonObject:

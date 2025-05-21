@@ -154,9 +154,7 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
     fn obj_name(
         self_: PythonObject, args: TypedPythonObject["Tuple"]
     ) -> PythonObject:
-        var self0 = self_.unsafe_as_py_object_ptr().unchecked_cast_to_mojo_value[
-            Person
-        ]()
+        var self0 = UnsafePointer[Self, **_](unchecked_downcast=self_)
 
         return PythonObject(self0[].name)
 
@@ -164,9 +162,9 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
     fn change_name(
         self_: PythonObject, args: TypedPythonObject["Tuple"]
     ) raises -> PythonObject:
-        var self0 = self_.unsafe_as_py_object_ptr().unchecked_cast_to_mojo_value[
-            Person
-        ]()
+        var self0 = UnsafePointer[Self, **_](
+            unchecked_downcast=self_
+        ).origin_cast[mut=True]()
 
         var new_name = args[0]
         if len(new_name) > len(self0[].name.codepoints()):

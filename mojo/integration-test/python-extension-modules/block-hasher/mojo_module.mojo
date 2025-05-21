@@ -110,10 +110,9 @@ fn mojo_block_hasher(
     py_self: PythonObject, py_args: TypedPythonObject["Tuple"]
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var arg0: PyObjectPtr = py_args[0].unsafe_as_py_object_ptr()
-    var py_array_object_ptr: UnsafePointer[
-        PyArrayObject[DType.int32]
-    ] = arg0.unchecked_cast_to_mojo_value[PyArrayObject[DType.int32]]()
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32]](
+        unchecked_downcast=py_args[0]
+    )
 
     # Parse block size
     var block_size = Int(py_args[1])

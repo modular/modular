@@ -65,11 +65,10 @@ fn mojo_incr_np_array(
     alias dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")
-    var arg0: PyObjectPtr = py_args[0].unsafe_as_py_object_ptr()
 
-    var py_array_object_ptr: UnsafePointer[
-        PyArrayObject[dtype]
-    ] = arg0.unchecked_cast_to_mojo_value[PyArrayObject[dtype]]()
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], **_](
+        unchecked_downcast=py_args[0]
+    )
 
     var nd = py_array_object_ptr[].nd
     var data_ptr = py_array_object_ptr[].data
