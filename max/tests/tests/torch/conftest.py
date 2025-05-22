@@ -28,17 +28,10 @@ def modular_path() -> Path:
 
 
 @pytest.fixture(scope="module")
-def mlir_context() -> Generator[mlir.Context]:
-    """Set up the MLIR context by registering and loading Modular dialects."""
-    with mlir.Context() as ctx, mlir.Location.unknown():
-        yield ctx
-
-
-@pytest.fixture(scope="module")
-def kernel_library(mlir_context: mlir.Context) -> Generator[KernelLibrary]:
+def kernel_library() -> Generator[KernelLibrary]:
     """Set up the kernel library for the current system."""
     path = Path(os.environ["MODULAR_PYTORCH_CUSTOM_OPS"])
-    yield KernelLibrary(mlir_context, [path])
+    yield KernelLibrary(mlir.Context(), [path])
 
 
 @pytest.fixture(scope="function")

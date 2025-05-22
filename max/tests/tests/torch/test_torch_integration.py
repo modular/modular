@@ -8,6 +8,7 @@
 import numpy as np
 import pytest
 import torch
+from max import mlir
 from max.torch import CustomOpLibrary
 
 
@@ -147,3 +148,8 @@ def test_parameters(op_library: CustomOpLibrary, backend: str):
         rtol=1e-4,
         atol=1e-4,
     )
+
+
+# This just gut-checks that we run other tests without an active MLIR context
+def test_GEX_2285(op_library: CustomOpLibrary):
+    assert not mlir.Context.current
