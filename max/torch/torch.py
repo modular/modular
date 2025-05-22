@@ -349,17 +349,20 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
 
     parameters = op.parameters or {}
 
+    # Keep the mlir context around for sharing graphs between op models
+    context = mlir.Context()
+
     # Compile the model if it has not been compiled already.
     def compile_model(*args: torch.Tensor) -> Model:
-        key = model_key(args)
+        # Computing the key requires an active mlir context
+        with context:
+            key = model_key(args)
 
         if not (model := model_cache.get(key)):
             sig = model_signature(
                 args[num_dps_outputs:], args[:num_dps_outputs]
             )
-            graph = custom_op_graph(
-                mlir.Context(), op, sig[0], sig[1], parameters
-            )
+            graph = custom_op_graph(context, op, sig[0], sig[1], parameters)
             model = op.library._session.load(graph)
             model_cache[key] = model
 
