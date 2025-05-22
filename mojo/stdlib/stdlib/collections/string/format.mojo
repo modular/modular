@@ -71,7 +71,7 @@ This module has no public API; its functionality is available through the
 methods.
 """
 
-from collections import Optional
+
 from collections.string.string import _chr_ascii
 
 from memory import UnsafePointer

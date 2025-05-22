@@ -21,7 +21,6 @@ from collections import Deque
 ```
 """
 
-from collections import Optional
 
 from bit import next_power_of_two
 from memory import UnsafePointer

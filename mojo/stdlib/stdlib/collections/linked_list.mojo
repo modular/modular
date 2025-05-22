@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+
 from collections._index_normalization import normalize_index
 from os import abort
 

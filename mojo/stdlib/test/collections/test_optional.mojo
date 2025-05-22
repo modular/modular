@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 
 from testing import *
 

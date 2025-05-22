@@ -15,8 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import Optional
-
 
 struct Slice(
     Stringable,

@@ -17,7 +17,6 @@ Your value can take on a value or `None`, and you need to check
 and explicitly extract the value to get it out.
 
 ```mojo
-from collections import Optional
 var a = Optional(1)
 var b = Optional[Int](None)
 if a:
@@ -74,7 +73,6 @@ struct Optional[T: Copyable & Movable](
     copy/move for Optional and allow it to be used in collections itself.
 
     ```mojo
-    from collections import Optional
     var a = Optional(1)
     var b = Optional[Int](None)
     if a:
@@ -432,12 +430,8 @@ struct Optional[T: Copyable & Movable](
         Copy the value of an `Optional[Pointer[_]]`
 
         ```mojo
-        from collections import Optional
-
         var data = String("foo")
-
         var opt = Optional(Pointer(to=data))
-
         var opt_owned: Optional[String] = opt.copied()
         ```
         .
