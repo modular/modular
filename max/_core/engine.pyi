@@ -12,7 +12,8 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Any, Union, overload
 
-import max._core
+import max._core.driver
+import max._core.dtype
 import numpy
 from max import mlir
 from max._core.driver import Tensor
@@ -27,29 +28,56 @@ InputType = Union[
 class FrameworkFormat(enum.Enum):
     max_graph = 0
 
-class InferenceSession:
-    def __init__(self, config: dict = {}) -> None: ...
-    def compile_from_path(
-        self, model_path: str | os.PathLike, config: dict = {}
-    ) -> Model: ...
-    def compile_from_object(
-        self, model: object, format: FrameworkFormat, config: dict = {}
-    ) -> Model: ...
+class TensorSpec:
+    """
+    Defines the properties of a tensor, including its name, shape and
+    data type.
+
+    For usage examples, see :obj:`Model.input_metadata`.
+    """
+
+    def __init__(
+        self,
+        shape: Sequence[int | None] | None,
+        dtype: max._core.dtype.DType,
+        name: str,
+    ) -> None:
+        """
+        Args:
+            shape: The tensor shape.
+            dtype: The tensor data type.
+            name: The tensor name.
+        """
+
     @property
-    def stats_report(self) -> str: ...
-    def reset_stats_report(self) -> None: ...
-    def set_debug_print_options(
-        self, style: PrintStyle, precision: int, directory: str
+    def dtype(self) -> max._core.dtype.DType:
+        """A tensor data type."""
+
+    @property
+    def name(self) -> str:
+        """A tensor name."""
+
+    @property
+    def shape(self) -> list[int | None] | None:
+        """
+        The shape of the tensor as a list of integers.
+
+        If a dimension size is unknown/dynamic (such as the batch size), its
+        value is ``None``.
+        """
+
+    def __getstate__(self) -> tuple: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, arg: tuple, /) -> None: ...
+    def __str__(self) -> str: ...
+
+class TensorData:
+    def __init__(
+        self, ptr: int, shape: Sequence[int], dtype: max._core.dtype.DType
     ) -> None: ...
-    @overload
-    def set_mojo_define(self, key: str, value: bool) -> None: ...
-    @overload
-    def set_mojo_define(self, key: str, value: int) -> None: ...
-    @overload
-    def set_mojo_define(self, key: str, value: str) -> None: ...
-    def register_runtime_context(self, ctx: mlir.Context) -> None: ...
-    @property
-    def devices(self) -> list[max._core.driver.Device]: ...
+
+class MojoValue:
+    pass
 
 class Model:
     """
@@ -260,8 +288,29 @@ class Model:
 
     def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
 
-class MojoValue:
-    pass
+class InferenceSession:
+    def __init__(self, config: dict = {}) -> None: ...
+    def compile_from_path(
+        self, model_path: str | os.PathLike, config: dict = {}
+    ) -> Model: ...
+    def compile_from_object(
+        self, model: object, format: FrameworkFormat, config: dict = {}
+    ) -> Model: ...
+    @property
+    def stats_report(self) -> str: ...
+    def reset_stats_report(self) -> None: ...
+    def set_debug_print_options(
+        self, style: PrintStyle, precision: int, directory: str
+    ) -> None: ...
+    @overload
+    def set_mojo_define(self, key: str, value: bool) -> None: ...
+    @overload
+    def set_mojo_define(self, key: str, value: int) -> None: ...
+    @overload
+    def set_mojo_define(self, key: str, value: str) -> None: ...
+    def register_runtime_context(self, ctx: mlir.Context) -> None: ...
+    @property
+    def devices(self) -> list[max._core.driver.Device]: ...
 
 class PrintStyle(enum.Enum):
     COMPACT = 0
@@ -273,51 +322,3 @@ class PrintStyle(enum.Enum):
     BINARY_MAX_CHECKPOINT = 3
 
     NONE = 4
-
-class TensorData:
-    def __init__(
-        self, ptr: int, shape: Sequence[int], dtype: max._core.dtype.DType
-    ) -> None: ...
-
-class TensorSpec:
-    """
-    Defines the properties of a tensor, including its name, shape and
-    data type.
-
-    For usage examples, see :obj:`Model.input_metadata`.
-    """
-
-    def __init__(
-        self,
-        shape: Sequence[int | None] | None,
-        dtype: max._core.dtype.DType,
-        name: str,
-    ) -> None:
-        """
-        Args:
-            shape: The tensor shape.
-            dtype: The tensor data type.
-            name: The tensor name.
-        """
-
-    @property
-    def dtype(self) -> max._core.dtype.DType:
-        """A tensor data type."""
-
-    @property
-    def name(self) -> str:
-        """A tensor name."""
-
-    @property
-    def shape(self) -> list[int | None] | None:
-        """
-        The shape of the tensor as a list of integers.
-
-        If a dimension size is unknown/dynamic (such as the batch size), its
-        value is ``None``.
-        """
-
-    def __getstate__(self) -> tuple: ...
-    def __repr__(self) -> str: ...
-    def __setstate__(self, arg: tuple, /) -> None: ...
-    def __str__(self) -> str: ...

@@ -34,55 +34,35 @@ DiagnosticHandler = Callable
 #   `const_name` in the type caster will cause it to repro in different places.
 # - For now, really hacky thing to work around.
 
+class DenseElementsAttr(max._core.Attribute):
+    pass
+
+class DenseResourceElementsAttr(max._core.Attribute):
+    pass
+
+class FlatSymbolRefAttr(max._core.Attribute):
+    pass
+
 class AffineMap:
     pass
 
-class AffineMapAttr(max._core.Attribute):
-    """
-    Syntax:
+class IntegerSet:
+    pass
 
-    ```
-    affine-map-attribute ::= `affine_map` `<` affine-map `>`
-    ```
+class _ElementsAttrIndexer:
+    pass
 
-    Examples:
+class SignednessSemantics(enum.Enum):
+    signless = 0
 
-    ```mlir
-    affine_map<(d0) -> (d0)>
-    affine_map<(d0, d1, d2) -> (d0, d1)>
-    ```
-    """
+    signed = 1
 
-    def __init__(self, value: AffineMap) -> None: ...
+    unsigned = 2
+
+class BoolAttr(max._core.Attribute):
+    def __init__(self, arg: bool, /) -> None: ...
     @property
-    def value(self) -> AffineMap: ...
-
-class ArrayAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    array-attribute ::= `[` (attribute-value (`,` attribute-value)*)? `]`
-    ```
-
-    An array attribute is an attribute that represents a collection of attribute
-    values.
-
-    Examples:
-
-    ```mlir
-    []
-    [10, i32]
-    [affine_map<(d0, d1, d2) -> (d0, d1)>, i32, "string attribute"]
-    ```
-    """
-
-    def __init__(self, value: Sequence[max._core.Attribute]) -> None: ...
-    @property
-    def value(self) -> Sequence[max._core.Attribute]: ...
-
-class BFloat16Type(max._core.Type):
-    def __init__(self) -> None: ...
+    def value(self) -> bool: ...
 
 class BlobAttr(Protocol):
     """
@@ -93,199 +73,6 @@ class BlobAttr(Protocol):
 
     @property
     def data(self) -> Sequence[str]: ...
-
-class BoolAttr(max._core.Attribute):
-    def __init__(self, arg: bool, /) -> None: ...
-    @property
-    def value(self) -> bool: ...
-
-class CallSiteLoc(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    callsite-location ::= `callsite` `(` location `at` location `)`
-    ```
-
-    An instance of this location allows for representing a directed stack of
-    location usages. This connects a location of a `callee` with the location
-    of a `caller`.
-
-    Example:
-
-    ```mlir
-    loc(callsite("foo" at "mysource.cc":10:8))
-    ```
-    """
-
-    @overload
-    def __init__(self, callee: Location, caller: Location) -> None: ...
-    @overload
-    def __init__(self, name: Location, frames: Sequence[Location]) -> None: ...
-    @property
-    def callee(self) -> Location: ...
-    @property
-    def caller(self) -> Location: ...
-
-class ComplexType(max._core.Type):
-    """
-    Syntax:
-
-    ```
-    complex-type ::= `complex` `<` type `>`
-    ```
-
-    The value of `complex` type represents a complex number with a parameterized
-    element type, which is composed of a real and imaginary value of that
-    element type. The element must be a floating point or integer scalar type.
-
-    #### Example:
-
-    ```mlir
-    complex<f32>
-    complex<i32>
-    ```
-    """
-
-    def __init__(self, element_type: max._core.Type) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-
-class DenseArrayAttr(max._core.Attribute):
-    """
-    A dense array attribute is an attribute that represents a dense array of
-    primitive element types. Contrary to DenseIntOrFPElementsAttr this is a
-    flat unidimensional array which does not have a storage optimization for
-    splat. This allows to expose the raw array through a C++ API as
-    `ArrayRef<T>` for compatible types. The element type must be bool or an
-    integer or float whose bitwidth is a multiple of 8. Bool elements are stored
-    as bytes.
-
-    This is the base class attribute. Access to C++ types is intended to be
-    managed through the subclasses `DenseI8ArrayAttr`, `DenseI16ArrayAttr`,
-    `DenseI32ArrayAttr`, `DenseI64ArrayAttr`, `DenseF32ArrayAttr`,
-    and `DenseF64ArrayAttr`.
-
-    Syntax:
-
-    ```
-    dense-array-attribute ::= `array` `<` (integer-type | float-type)
-                                          (`:` tensor-literal)? `>`
-    ```
-    Examples:
-
-    ```mlir
-    array<i8>
-    array<i32: 10, 42>
-    array<f64: 42., 12.>
-    ```
-
-    When a specific subclass is used as argument of an operation, the
-    declarative assembly will omit the type and print directly:
-
-    ```mlir
-    [1, 2, 3]
-    ```
-    """
-
-    @overload
-    def __init__(
-        self, element_type: max._core.Type, size: int, raw_data: Sequence[str]
-    ) -> None: ...
-    @overload
-    def __init__(
-        self, element_type: max._core.Type, size: int, raw_data: Sequence[str]
-    ) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-    @property
-    def size(self) -> int: ...
-    @property
-    def raw_data(self) -> Sequence[str]: ...
-
-class DenseElementsAttr(max._core.Attribute):
-    pass
-
-class DenseIntOrFPElementsAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    tensor-literal ::= integer-literal | float-literal | bool-literal | [] | [tensor-literal (, tensor-literal)* ]
-    dense-intorfloat-elements-attribute ::= `dense` `<` tensor-literal `>` `:`
-                                            ( tensor-type | vector-type )
-    ```
-
-    A dense int-or-float elements attribute is an elements attribute containing
-    a densely packed vector or tensor of integer or floating-point values. The
-    element type of this attribute is required to be either an `IntegerType` or
-    a `FloatType`.
-
-    Examples:
-
-    ```
-    // A splat tensor of integer values.
-    dense<10> : tensor<2xi32>
-    // A tensor of 2 float32 elements.
-    dense<[10.0, 11.0]> : tensor<2xf32>
-    ```
-    """
-
-class DenseResourceElementsAttr(max._core.Attribute):
-    pass
-
-class DenseStringElementsAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    dense-string-elements-attribute ::= `dense` `<` attribute-value `>` `:`
-                                        ( tensor-type | vector-type )
-    ```
-
-    A dense string elements attribute is an elements attribute containing a
-    densely packed vector or tensor of string values. There are no restrictions
-    placed on the element type of this attribute, enabling the use of dialect
-    specific string types.
-
-    Examples:
-
-    ```
-    // A splat tensor of strings.
-    dense<"example"> : tensor<2x!foo.string>
-    // A tensor of 2 string elements.
-    dense<["example1", "example2"]> : tensor<2x!foo.string>
-    ```
-    """
-
-    def __init__(self, type: ShapedType, values: Sequence[str]) -> None: ...
-
-class DictionaryAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    dictionary-attribute ::= `{` (attribute-entry (`,` attribute-entry)*)? `}`
-    ```
-
-    A dictionary attribute is an attribute that represents a sorted collection of
-    named attribute values. The elements are sorted by name, and each name must be
-    unique within the collection.
-
-    Examples:
-
-    ```mlir
-    {}
-    {attr_name = "string attribute"}
-    {int_attr = 10, "string attr name" = "string attribute"}
-    ```
-    """
-
-    def __init__(
-        self, value: Sequence[max._core.NamedAttribute] = []
-    ) -> None: ...
-    @property
-    def value(self) -> Sequence[max._core.NamedAttribute]: ...
 
 class ElementsAttr(Protocol):
     """
@@ -411,6 +198,523 @@ class ElementsAttr(Protocol):
         self, arg: max._core.TypeID, /
     ) -> _ElementsAttrIndexer | None: ...
 
+class MemRefLayoutAttrInterface(Protocol):
+    """
+    This interface is used for attributes that can represent the MemRef type's
+    layout semantics, such as dimension order in the memory, strides and offsets.
+    Such a layout attribute should be representable as a
+    [semi-affine map](Affine.md/#semi-affine-maps).
+
+    Note: the MemRef type's layout is assumed to represent simple strided buffer
+    layout. For more complicated case, like sparse storage buffers,
+    it is preferable to use a separate type with a more specific layout, rather
+    than introducing extra complexity to the builtin MemRef type.
+    """
+
+    @property
+    def affine_map(self) -> AffineMap: ...
+    @property
+    def identity(self) -> bool: ...
+    def verify_layout(
+        self, arg0: Sequence[int], arg1: DiagnosticHandler, /
+    ) -> bool: ...
+    def get_strides_and_offset(
+        self, arg0: Sequence[int], arg1: Sequence[int], arg2: int, /
+    ) -> bool: ...
+
+class TypedAttr(Protocol):
+    """
+    This interface is used for attributes that have a type. The type of an
+    attribute is understood to represent the type of the data contained in the
+    attribute and is often used as the type of a value with this data.
+    """
+
+    @property
+    def type(self) -> max._core.Type | None: ...
+
+class AffineMapAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    affine-map-attribute ::= `affine_map` `<` affine-map `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    affine_map<(d0) -> (d0)>
+    affine_map<(d0, d1, d2) -> (d0, d1)>
+    ```
+    """
+
+    def __init__(self, value: AffineMap) -> None: ...
+    @property
+    def value(self) -> AffineMap: ...
+
+class ArrayAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    array-attribute ::= `[` (attribute-value (`,` attribute-value)*)? `]`
+    ```
+
+    An array attribute is an attribute that represents a collection of attribute
+    values.
+
+    Examples:
+
+    ```mlir
+    []
+    [10, i32]
+    [affine_map<(d0, d1, d2) -> (d0, d1)>, i32, "string attribute"]
+    ```
+    """
+
+    def __init__(self, value: Sequence[max._core.Attribute]) -> None: ...
+    @property
+    def value(self) -> Sequence[max._core.Attribute]: ...
+
+class DenseArrayAttr(max._core.Attribute):
+    """
+    A dense array attribute is an attribute that represents a dense array of
+    primitive element types. Contrary to DenseIntOrFPElementsAttr this is a
+    flat unidimensional array which does not have a storage optimization for
+    splat. This allows to expose the raw array through a C++ API as
+    `ArrayRef<T>` for compatible types. The element type must be bool or an
+    integer or float whose bitwidth is a multiple of 8. Bool elements are stored
+    as bytes.
+
+    This is the base class attribute. Access to C++ types is intended to be
+    managed through the subclasses `DenseI8ArrayAttr`, `DenseI16ArrayAttr`,
+    `DenseI32ArrayAttr`, `DenseI64ArrayAttr`, `DenseF32ArrayAttr`,
+    and `DenseF64ArrayAttr`.
+
+    Syntax:
+
+    ```
+    dense-array-attribute ::= `array` `<` (integer-type | float-type)
+                                          (`:` tensor-literal)? `>`
+    ```
+    Examples:
+
+    ```mlir
+    array<i8>
+    array<i32: 10, 42>
+    array<f64: 42., 12.>
+    ```
+
+    When a specific subclass is used as argument of an operation, the
+    declarative assembly will omit the type and print directly:
+
+    ```mlir
+    [1, 2, 3]
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, element_type: max._core.Type, size: int, raw_data: Sequence[str]
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, element_type: max._core.Type, size: int, raw_data: Sequence[str]
+    ) -> None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+    @property
+    def size(self) -> int: ...
+    @property
+    def raw_data(self) -> Sequence[str]: ...
+
+class DenseIntOrFPElementsAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    tensor-literal ::= integer-literal | float-literal | bool-literal | [] | [tensor-literal (, tensor-literal)* ]
+    dense-intorfloat-elements-attribute ::= `dense` `<` tensor-literal `>` `:`
+                                            ( tensor-type | vector-type )
+    ```
+
+    A dense int-or-float elements attribute is an elements attribute containing
+    a densely packed vector or tensor of integer or floating-point values. The
+    element type of this attribute is required to be either an `IntegerType` or
+    a `FloatType`.
+
+    Examples:
+
+    ```
+    // A splat tensor of integer values.
+    dense<10> : tensor<2xi32>
+    // A tensor of 2 float32 elements.
+    dense<[10.0, 11.0]> : tensor<2xf32>
+    ```
+    """
+
+class DenseStringElementsAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    dense-string-elements-attribute ::= `dense` `<` attribute-value `>` `:`
+                                        ( tensor-type | vector-type )
+    ```
+
+    A dense string elements attribute is an elements attribute containing a
+    densely packed vector or tensor of string values. There are no restrictions
+    placed on the element type of this attribute, enabling the use of dialect
+    specific string types.
+
+    Examples:
+
+    ```
+    // A splat tensor of strings.
+    dense<"example"> : tensor<2x!foo.string>
+    // A tensor of 2 string elements.
+    dense<["example1", "example2"]> : tensor<2x!foo.string>
+    ```
+    """
+
+    def __init__(self, type: ShapedType, values: Sequence[str]) -> None: ...
+
+class DictionaryAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    dictionary-attribute ::= `{` (attribute-entry (`,` attribute-entry)*)? `}`
+    ```
+
+    A dictionary attribute is an attribute that represents a sorted collection of
+    named attribute values. The elements are sorted by name, and each name must be
+    unique within the collection.
+
+    Examples:
+
+    ```mlir
+    {}
+    {attr_name = "string attribute"}
+    {int_attr = 10, "string attr name" = "string attribute"}
+    ```
+    """
+
+    def __init__(
+        self, value: Sequence[max._core.NamedAttribute] = []
+    ) -> None: ...
+    @property
+    def value(self) -> Sequence[max._core.NamedAttribute]: ...
+
+class FloatAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    float-attribute ::= (float-literal (`:` float-type)?)
+                      | (hexadecimal-literal `:` float-type)
+    ```
+
+    A float attribute is a literal attribute that represents a floating point
+    value of the specified [float type](#floating-point-types). It can be
+    represented in the hexadecimal form where the hexadecimal value is
+    interpreted as bits of the underlying binary representation. This form is
+    useful for representing infinity and NaN floating point values. To avoid
+    confusion with integer attributes, hexadecimal literals _must_ be followed
+    by a float type to define a float attribute.
+
+    Examples:
+
+    ```
+    42.0         // float attribute defaults to f64 type
+    42.0 : f32   // float attribute of f32 type
+    0x7C00 : f16 // positive infinity
+    0x7CFF : f16 // NaN (one of possible values)
+    42 : f32     // Error: expected integer type
+    ```
+    """
+
+    @overload
+    def __init__(self, type: max._core.Type, value: float) -> None: ...
+    @overload
+    def __init__(self, type: max._core.Type, value: float) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def value(self) -> float: ...
+
+class IntegerAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    integer-attribute ::= (integer-literal ( `:` (index-type | integer-type) )?)
+                          | `true` | `false`
+    ```
+
+    An integer attribute is a literal attribute that represents an integral
+    value of the specified integer or index type. `i1` integer attributes are
+    treated as `boolean` attributes, and use a unique assembly format of either
+    `true` or `false` depending on the value. The default type for non-boolean
+    integer attributes, if a type is not specified, is signless 64-bit integer.
+
+    Examples:
+
+    ```mlir
+    10 : i32
+    10    // : i64 is implied here.
+    true  // A bool, i.e. i1, value.
+    false // A bool, i.e. i1, value.
+    ```
+    """
+
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def value(self) -> int: ...
+    def __init__(self, type: IntegerType, value: int = 0) -> None: ...
+
+class IntegerSetAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    integer-set-attribute ::= `affine_set` `<` integer-set `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    affine_set<(d0) : (d0 - 2 >= 0)>
+    ```
+    """
+
+    def __init__(self, value: IntegerSet) -> None: ...
+    @property
+    def value(self) -> IntegerSet: ...
+
+class OpaqueAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    opaque-attribute ::= dialect-namespace `<` attr-data `>`
+    ```
+
+    Opaque attributes represent attributes of non-registered dialects. These are
+    attribute represented in their raw string form, and can only usefully be
+    tested for attribute equality.
+
+    Examples:
+
+    ```mlir
+    #dialect<"opaque attribute data">
+    ```
+    """
+
+    def __init__(
+        self, dialect: StringAttr, attr_data: str, type: max._core.Type
+    ) -> None: ...
+    @property
+    def dialect_namespace(self) -> StringAttr: ...
+    @property
+    def attr_data(self) -> str: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
+class StringAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    string-attribute ::= string-literal (`:` type)?
+    ```
+
+    A string attribute is an attribute that represents a string literal value.
+
+    Examples:
+
+    ```mlir
+    "An important string"
+    "string with a type" : !dialect.string
+    ```
+    """
+
+    @overload
+    def __init__(self) -> None: ...
+    @overload
+    def __init__(self, bytes: str, type: max._core.Type) -> None: ...
+    @overload
+    def __init__(self, bytes: str) -> None: ...
+    @property
+    def value(self) -> str: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
+class SymbolRefAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    symbol-ref-attribute ::= symbol-ref-id (`::` symbol-ref-id)*
+    ```
+
+    A symbol reference attribute is a literal attribute that represents a named
+    reference to an operation that is nested within an operation with the
+    `OpTrait::SymbolTable` trait. As such, this reference is given meaning by
+    the nearest parent operation containing the `OpTrait::SymbolTable` trait. It
+    may optionally contain a set of nested references that further resolve to a
+    symbol nested within a different symbol table.
+
+    **Rationale:** Identifying accesses to global data is critical to
+    enabling efficient multi-threaded compilation. Restricting global
+    data access to occur through symbols and limiting the places that can
+    legally hold a symbol reference simplifies reasoning about these data
+    accesses.
+
+    See [`Symbols And SymbolTables`](../SymbolsAndSymbolTables.md) for more
+    information.
+
+    Examples:
+
+    ```mlir
+    @flat_reference
+    @parent_reference::@nested_reference
+    ```
+    """
+
+    def __init__(
+        self,
+        root_reference: StringAttr,
+        nested_references: Sequence[FlatSymbolRefAttr],
+    ) -> None: ...
+    @property
+    def root_reference(self) -> StringAttr: ...
+    @property
+    def nested_references(self) -> Sequence[FlatSymbolRefAttr]: ...
+
+class TypeAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    type-attribute ::= type
+    ```
+
+    A type attribute is an attribute that represents a
+    [type object](#type-system).
+
+    Examples:
+
+    ```mlir
+    i32
+    !dialect.type
+    ```
+    """
+
+    def __init__(self, type: max._core.Type) -> None: ...
+    @property
+    def value(self) -> max._core.Type | None: ...
+
+class UnitAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    unit-attribute ::= `unit`
+    ```
+
+    A unit attribute is an attribute that represents a value of `unit` type. The
+    `unit` type allows only one value forming a singleton set. This attribute
+    value is used to represent attributes that only have meaning from their
+    existence.
+
+    One example of such an attribute could be the `swift.self` attribute. This
+    attribute indicates that a function parameter is the self/context parameter.
+    It could be represented as a [boolean attribute](#boolean-attribute)(true or
+    false), but a value of false doesn't really bring any value. The parameter
+    either is the self/context or it isn't.
+
+
+    Examples:
+
+    ```mlir
+    // A unit attribute defined with the `unit` value specifier.
+    func.func @verbose_form() attributes {dialectName.unitAttr = unit}
+
+    // A unit attribute in an attribute dictionary can also be defined without
+    // the value specifier.
+    func.func @simple_form() attributes {dialectName.unitAttr}
+    ```
+    """
+
+    def __init__(self) -> None: ...
+
+class StridedLayoutAttr(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    strided-layout-attribute ::= `strided` `<` `[` stride-list `]`
+                                 (`,` `offset` `:` dimension)? `>`
+    stride-list ::= /*empty*/
+                  | dimension (`,` dimension)*
+    dimension ::= decimal-literal | `?`
+    ```
+
+    A strided layout attribute captures layout information of the memref type in
+    the canonical form. Specifically, it contains a list of _strides_, one for
+    each dimension. A stride is the number of elements in the linear storage
+    one must step over to reflect an increment in the given dimension. For
+    example, a `MxN` row-major contiguous shaped type would have the strides
+    `[N, 1]`. The layout attribute also contains the _offset_ from the base
+    pointer of the shaped type to the first effectively accessed element,
+    expressed in terms of the number of contiguously stored elements.
+
+    Strides must be positive and the offset must be non-negative. Both the
+    strides and the offset may be _dynamic_, i.e. their value may not be known
+    at compile time. This is expressed as a `?` in the assembly syntax and as
+    `ShapedType::kDynamic` in the code. Stride and offset values
+    must satisfy the constraints above at runtime, the behavior is undefined
+    otherwise.
+
+    See [Dialects/Builtin.md#memreftype](MemRef type) for more information.
+    """
+
+    def __init__(self, offset: int, strides: Sequence[int]) -> None: ...
+    @property
+    def offset(self) -> int: ...
+    @property
+    def strides(self) -> Sequence[int]: ...
+
+class CallSiteLoc(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    callsite-location ::= `callsite` `(` location `at` location `)`
+    ```
+
+    An instance of this location allows for representing a directed stack of
+    location usages. This connects a location of a `callee` with the location
+    of a `caller`.
+
+    Example:
+
+    ```mlir
+    loc(callsite("foo" at "mysource.cc":10:8))
+    ```
+    """
+
+    @overload
+    def __init__(self, callee: Location, caller: Location) -> None: ...
+    @overload
+    def __init__(self, name: Location, frames: Sequence[Location]) -> None: ...
+    @property
+    def callee(self) -> Location: ...
+    @property
+    def caller(self) -> Location: ...
+
 class FileLineColRange(max._core.Attribute):
     """
     Syntax:
@@ -476,8 +780,264 @@ class FileLineColRange(max._core.Attribute):
         end_column: int,
     ) -> None: ...
 
-class FlatSymbolRefAttr(max._core.Attribute):
-    pass
+class FusedLoc(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    fusion-metadata ::= `<` attribute-value `>`
+    fused-location ::= `fused` fusion-metadata? `[` (location (`,` location)* )? `]`
+    ```
+
+    An instance of a `fused` location represents a grouping of several other
+    source locations, with optional metadata that describes the context of the
+    fusion. There are many places within a compiler in which several constructs
+    may be fused together, e.g. pattern rewriting, that normally result partial
+    or even total loss of location information. With `fused` locations, this is
+    a non-issue.
+
+    Example:
+
+    ```mlir
+    loc(fused["mysource.cc":10:8, "mysource.cc":22:8])
+    loc(fused<"CSE">["mysource.cc":10:8, "mysource.cc":22:8])
+    ```
+    """
+
+    def __init__(
+        self, locations: Sequence[Location], metadata: max._core.Attribute
+    ) -> None: ...
+    @property
+    def locations(self) -> Sequence[Location]: ...
+    @property
+    def metadata(self) -> max._core.Attribute | None: ...
+
+class NameLoc(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    name-location ::= string-literal (`(` location `)`)?
+    ```
+
+    An instance of this location allows for attaching a name to a child location.
+    This can be useful for representing the locations of variable, or node,
+    definitions.
+
+    #### Example:
+
+    ```mlir
+    loc("CSE"("mysource.cc":10:8))
+    ```
+    """
+
+    @overload
+    def __init__(self, name: StringAttr) -> None: ...
+    @overload
+    def __init__(self, name: StringAttr, child_loc: Location) -> None: ...
+    @property
+    def name(self) -> StringAttr: ...
+    @property
+    def child_loc(self) -> Location: ...
+
+class UnknownLoc(max._core.Attribute):
+    """
+    Syntax:
+
+    ```
+    unknown-location ::= `?`
+    ```
+
+    Source location information is an extremely integral part of the MLIR
+    infrastructure. As such, location information is always present in the IR,
+    and must explicitly be set to unknown. Thus, an instance of the `unknown`
+    location represents an unspecified source location.
+
+    Example:
+
+    ```mlir
+    loc(?)
+    ```
+    """
+
+    def __init__(self) -> None: ...
+
+class ModuleOp(max._core.Operation):
+    """
+    A `module` represents a top-level container operation. It contains a single
+    [graph region](../LangRef.md#control-flow-and-ssacfg-regions) containing a single block
+    which can contain any operations and does not have a terminator. Operations
+    within this region cannot implicitly capture values defined outside the module,
+    i.e. Modules are [IsolatedFromAbove](../Traits.md#isolatedfromabove). Modules have
+    an optional [symbol name](../SymbolsAndSymbolTables.md) which can be used to refer
+    to them in operations.
+
+    Example:
+
+    ```mlir
+    module {
+      func.func @foo()
+    }
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        name: str | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(self, location: Location, name: str | None = None) -> None: ...
+    @property
+    def sym_name(self) -> str | None: ...
+    @sym_name.setter
+    def sym_name(self, arg: StringAttr, /) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(self, arg: StringAttr, /) -> None: ...
+    @property
+    def body(self) -> max._core.Block: ...
+
+class UnrealizedConversionCastOp(max._core.Operation):
+    """
+    An `unrealized_conversion_cast` operation represents an unrealized
+    conversion from one set of types to another, that is used to enable the
+    inter-mixing of different type systems. This operation should not be
+    attributed any special representational or execution semantics, and is
+    generally only intended to be used to satisfy the temporary intermixing of
+    type systems during the conversion of one type system to another.
+
+    This operation may produce results of arity 1-N, and accept as input
+    operands of arity 0-N.
+
+    Example:
+
+    ```mlir
+    // An unrealized 0-1 conversion. These types of conversions are useful in
+    // cases where a type is removed from the type system, but not all uses have
+    // been converted. For example, imagine we have a tuple type that is
+    // expanded to its element types. If only some uses of an empty tuple type
+    // instance are converted we still need an instance of the tuple type, but
+    // have no inputs to the unrealized conversion.
+    %result = unrealized_conversion_cast to !bar.tuple_type<>
+
+    // An unrealized 1-1 conversion.
+    %result1 = unrealized_conversion_cast %operand : !foo.type to !bar.lowered_type
+
+    // An unrealized 1-N conversion.
+    %results2:2 = unrealized_conversion_cast %tuple_operand : !foo.tuple_type<!foo.type, !foo.type> to !foo.type, !foo.type
+
+    // An unrealized N-1 conversion.
+    %result3 = unrealized_conversion_cast %operand, %operand : !foo.type, !foo.type to !bar.tuple_type<!foo.type, !foo.type>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value]: ...
+
+class FloatType(Protocol):
+    """
+    This type interface should be implemented by all floating-point types. It
+    defines the LLVM APFloat semantics and provides a few helper functions.
+    """
+
+    def scale_element_bitwidth(self, arg: int, /) -> FloatType: ...
+
+class MemRefElementTypeInterface(Protocol):
+    """
+    Indication that this type can be used as element in memref types.
+
+    Implementing this interface establishes a contract between this type and the
+    memref type indicating that this type can be used as element of ranked or
+    unranked memrefs. The type is expected to:
+
+      - model an entity stored in memory;
+      - have non-zero size.
+
+    For example, scalar values such as integers can implement this interface,
+    but indicator types such as `void` or `unit` should not.
+
+    The interface currently has no methods and is used by types to opt into
+    being memref elements. This may change in the future, in particular to
+    require types to provide their size or alignment given a data layout.
+    """
+
+class ShapedType(Protocol):
+    """
+    This interface provides a common API for interacting with multi-dimensional
+    container types. These types contain a shape and an element type.
+
+    A shape is a list of sizes corresponding to the dimensions of the container.
+    If the number of dimensions in the shape is unknown, the shape is "unranked".
+    If the number of dimensions is known, the shape "ranked". The sizes of the
+    dimensions of the shape must be positive, or kDynamic (in which case the
+    size of the dimension is dynamic, or not statically known).
+    """
+
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+    @property
+    def shape(self) -> Sequence[int]: ...
+    def clone_with(
+        self, arg0: Sequence[int], arg1: max._core.Type, /
+    ) -> ShapedType: ...
+    def has_rank(self) -> bool: ...
+
+class VectorElementTypeInterface(Protocol):
+    """
+    Implementing this interface establishes a contract between this type and the
+    vector type, indicating that this type can be used as element of vectors.
+
+    Vector element types are treated as a bag of bits without any assumed
+    structure. The size of an element type must be a compile-time constant.
+    However, the bit-width may remain opaque or unavailable during
+    transformations that do not depend on the element type.
+
+    Note: This type interface is still evolving. It currently has no methods
+    and is just used as marker to allow types to opt into being vector elements.
+    This may change in the future, for example, to require types to provide
+    their size or alignment given a data layout. Please post an RFC before
+    adding this interface to additional types. Implementing this interface on
+    downstream types is discourged, until we specified the exact properties of
+    a vector element type in more detail.
+    """
+
+class BFloat16Type(max._core.Type):
+    def __init__(self) -> None: ...
+
+class ComplexType(max._core.Type):
+    """
+    Syntax:
+
+    ```
+    complex-type ::= `complex` `<` type `>`
+    ```
+
+    The value of `complex` type represents a complex number with a parameterized
+    element type, which is composed of a real and imaginary value of that
+    element type. The element must be a floating point or integer scalar type.
+
+    #### Example:
+
+    ```mlir
+    complex<f32>
+    complex<i32>
+    ```
+    """
+
+    def __init__(self, element_type: max._core.Type) -> None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
 
 class Float128Type(max._core.Type):
     def __init__(self) -> None: ...
@@ -564,6 +1124,22 @@ class Float8E3M4Type(max._core.Type):
 
     def __init__(self) -> None: ...
 
+class Float8E4M3Type(max._core.Type):
+    """
+    An 8-bit floating point type with 1 sign bit, 4 bits exponent and 3 bits
+    mantissa. This is not a standard type as defined by IEEE-754, but it
+    follows similar conventions with the following characteristics:
+
+      * bit encoding: S1E4M3
+      * exponent bias: 7
+      * infinities: supported with exponent set to all 1s and mantissa 0s
+      * NaNs: supported with exponent bits set to all 1s and mantissa of
+        (001, 010, 011, 100, 101, 110, 111)
+      * denormals when exponent is 0
+    """
+
+    def __init__(self) -> None: ...
+
 class Float8E4M3B11FNUZType(max._core.Type):
     """
     An 8-bit floating point type with 1 sign bit, 4 bits exponent and 3 bits
@@ -621,18 +1197,20 @@ class Float8E4M3FNUZType(max._core.Type):
 
     def __init__(self) -> None: ...
 
-class Float8E4M3Type(max._core.Type):
+class Float8E5M2Type(max._core.Type):
     """
-    An 8-bit floating point type with 1 sign bit, 4 bits exponent and 3 bits
+    An 8-bit floating point type with 1 sign bit, 5 bits exponent and 2 bits
     mantissa. This is not a standard type as defined by IEEE-754, but it
     follows similar conventions with the following characteristics:
 
-      * bit encoding: S1E4M3
-      * exponent bias: 7
+      * bit encoding: S1E5M2
+      * exponent bias: 15
       * infinities: supported with exponent set to all 1s and mantissa 0s
       * NaNs: supported with exponent bits set to all 1s and mantissa of
-        (001, 010, 011, 100, 101, 110, 111)
+        (01, 10, or 11)
       * denormals when exponent is 0
+
+    Described in: https://arxiv.org/abs/2209.05433
     """
 
     def __init__(self) -> None: ...
@@ -652,24 +1230,6 @@ class Float8E5M2FNUZType(max._core.Type):
       * denormals when exponent is 0
 
     Described in: https://arxiv.org/abs/2206.02915
-    """
-
-    def __init__(self) -> None: ...
-
-class Float8E5M2Type(max._core.Type):
-    """
-    An 8-bit floating point type with 1 sign bit, 5 bits exponent and 2 bits
-    mantissa. This is not a standard type as defined by IEEE-754, but it
-    follows similar conventions with the following characteristics:
-
-      * bit encoding: S1E5M2
-      * exponent bias: 15
-      * infinities: supported with exponent set to all 1s and mantissa 0s
-      * NaNs: supported with exponent bits set to all 1s and mantissa of
-        (01, 10, or 11)
-      * denormals when exponent is 0
-
-    Described in: https://arxiv.org/abs/2209.05433
     """
 
     def __init__(self) -> None: ...
@@ -694,53 +1254,8 @@ class Float8E8M0FNUType(max._core.Type):
 
     def __init__(self) -> None: ...
 
-class FloatAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    float-attribute ::= (float-literal (`:` float-type)?)
-                      | (hexadecimal-literal `:` float-type)
-    ```
-
-    A float attribute is a literal attribute that represents a floating point
-    value of the specified [float type](#floating-point-types). It can be
-    represented in the hexadecimal form where the hexadecimal value is
-    interpreted as bits of the underlying binary representation. This form is
-    useful for representing infinity and NaN floating point values. To avoid
-    confusion with integer attributes, hexadecimal literals _must_ be followed
-    by a float type to define a float attribute.
-
-    Examples:
-
-    ```
-    42.0         // float attribute defaults to f64 type
-    42.0 : f32   // float attribute of f32 type
-    0x7C00 : f16 // positive infinity
-    0x7CFF : f16 // NaN (one of possible values)
-    42 : f32     // Error: expected integer type
-    ```
-    """
-
-    @overload
-    def __init__(self, type: max._core.Type, value: float) -> None: ...
-    @overload
-    def __init__(self, type: max._core.Type, value: float) -> None: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
-    @property
-    def value(self) -> float: ...
-
 class FloatTF32Type(max._core.Type):
     def __init__(self) -> None: ...
-
-class FloatType(Protocol):
-    """
-    This type interface should be implemented by all floating-point types. It
-    defines the LLVM APFloat semantics and provides a few helper functions.
-    """
-
-    def scale_element_bitwidth(self, arg: int, /) -> FloatType: ...
 
 class FunctionType(max._core.Type):
     """
@@ -776,38 +1291,6 @@ class FunctionType(max._core.Type):
     @property
     def results(self) -> Sequence[max._core.Type]: ...
 
-class FusedLoc(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    fusion-metadata ::= `<` attribute-value `>`
-    fused-location ::= `fused` fusion-metadata? `[` (location (`,` location)* )? `]`
-    ```
-
-    An instance of a `fused` location represents a grouping of several other
-    source locations, with optional metadata that describes the context of the
-    fusion. There are many places within a compiler in which several constructs
-    may be fused together, e.g. pattern rewriting, that normally result partial
-    or even total loss of location information. With `fused` locations, this is
-    a non-issue.
-
-    Example:
-
-    ```mlir
-    loc(fused["mysource.cc":10:8, "mysource.cc":22:8])
-    loc(fused<"CSE">["mysource.cc":10:8, "mysource.cc":22:8])
-    ```
-    """
-
-    def __init__(
-        self, locations: Sequence[Location], metadata: max._core.Attribute
-    ) -> None: ...
-    @property
-    def locations(self) -> Sequence[Location]: ...
-    @property
-    def metadata(self) -> max._core.Attribute | None: ...
-
 class IndexType(max._core.Type):
     """
     Syntax:
@@ -826,59 +1309,6 @@ class IndexType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
-
-class IntegerAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    integer-attribute ::= (integer-literal ( `:` (index-type | integer-type) )?)
-                          | `true` | `false`
-    ```
-
-    An integer attribute is a literal attribute that represents an integral
-    value of the specified integer or index type. `i1` integer attributes are
-    treated as `boolean` attributes, and use a unique assembly format of either
-    `true` or `false` depending on the value. The default type for non-boolean
-    integer attributes, if a type is not specified, is signless 64-bit integer.
-
-    Examples:
-
-    ```mlir
-    10 : i32
-    10    // : i64 is implied here.
-    true  // A bool, i.e. i1, value.
-    false // A bool, i.e. i1, value.
-    ```
-    """
-
-    @property
-    def type(self) -> max._core.Type | None: ...
-    @property
-    def value(self) -> int: ...
-    def __init__(self, type: IntegerType, value: int = 0) -> None: ...
-
-class IntegerSet:
-    pass
-
-class IntegerSetAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    integer-set-attribute ::= `affine_set` `<` integer-set `>`
-    ```
-
-    Examples:
-
-    ```mlir
-    affine_set<(d0) : (d0 - 2 >= 0)>
-    ```
-    """
-
-    def __init__(self, value: IntegerSet) -> None: ...
-    @property
-    def value(self) -> IntegerSet: ...
 
 class IntegerType(max._core.Type):
     """
@@ -912,49 +1342,6 @@ class IntegerType(max._core.Type):
     def width(self) -> int: ...
     @property
     def signedness(self) -> SignednessSemantics: ...
-
-class MemRefElementTypeInterface(Protocol):
-    """
-    Indication that this type can be used as element in memref types.
-
-    Implementing this interface establishes a contract between this type and the
-    memref type indicating that this type can be used as element of ranked or
-    unranked memrefs. The type is expected to:
-
-      - model an entity stored in memory;
-      - have non-zero size.
-
-    For example, scalar values such as integers can implement this interface,
-    but indicator types such as `void` or `unit` should not.
-
-    The interface currently has no methods and is used by types to opt into
-    being memref elements. This may change in the future, in particular to
-    require types to provide their size or alignment given a data layout.
-    """
-
-class MemRefLayoutAttrInterface(Protocol):
-    """
-    This interface is used for attributes that can represent the MemRef type's
-    layout semantics, such as dimension order in the memory, strides and offsets.
-    Such a layout attribute should be representable as a
-    [semi-affine map](Affine.md/#semi-affine-maps).
-
-    Note: the MemRef type's layout is assumed to represent simple strided buffer
-    layout. For more complicated case, like sparse storage buffers,
-    it is preferable to use a separate type with a more specific layout, rather
-    than introducing extra complexity to the builtin MemRef type.
-    """
-
-    @property
-    def affine_map(self) -> AffineMap: ...
-    @property
-    def identity(self) -> bool: ...
-    def verify_layout(
-        self, arg0: Sequence[int], arg1: DiagnosticHandler, /
-    ) -> bool: ...
-    def get_strides_and_offset(
-        self, arg0: Sequence[int], arg1: Sequence[int], arg2: int, /
-    ) -> bool: ...
 
 class MemRefType(max._core.Type):
     """
@@ -1218,73 +1605,6 @@ class MemRefType(max._core.Type):
     @property
     def memory_space(self) -> max._core.Attribute | None: ...
 
-class ModuleOp(max._core.Operation):
-    """
-    A `module` represents a top-level container operation. It contains a single
-    [graph region](../LangRef.md#control-flow-and-ssacfg-regions) containing a single block
-    which can contain any operations and does not have a terminator. Operations
-    within this region cannot implicitly capture values defined outside the module,
-    i.e. Modules are [IsolatedFromAbove](../Traits.md#isolatedfromabove). Modules have
-    an optional [symbol name](../SymbolsAndSymbolTables.md) which can be used to refer
-    to them in operations.
-
-    Example:
-
-    ```mlir
-    module {
-      func.func @foo()
-    }
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        name: str | None = None,
-    ) -> None: ...
-    @overload
-    def __init__(self, location: Location, name: str | None = None) -> None: ...
-    @property
-    def sym_name(self) -> str | None: ...
-    @sym_name.setter
-    def sym_name(self, arg: StringAttr, /) -> None: ...
-    @property
-    def sym_visibility(self) -> str | None: ...
-    @sym_visibility.setter
-    def sym_visibility(self, arg: StringAttr, /) -> None: ...
-    @property
-    def body(self) -> max._core.Block: ...
-
-class NameLoc(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    name-location ::= string-literal (`(` location `)`)?
-    ```
-
-    An instance of this location allows for attaching a name to a child location.
-    This can be useful for representing the locations of variable, or node,
-    definitions.
-
-    #### Example:
-
-    ```mlir
-    loc("CSE"("mysource.cc":10:8))
-    ```
-    """
-
-    @overload
-    def __init__(self, name: StringAttr) -> None: ...
-    @overload
-    def __init__(self, name: StringAttr, child_loc: Location) -> None: ...
-    @property
-    def name(self) -> StringAttr: ...
-    @property
-    def child_loc(self) -> Location: ...
-
 class NoneType(max._core.Type):
     """
     Syntax:
@@ -1307,35 +1627,6 @@ class NoneType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
-
-class OpaqueAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    opaque-attribute ::= dialect-namespace `<` attr-data `>`
-    ```
-
-    Opaque attributes represent attributes of non-registered dialects. These are
-    attribute represented in their raw string form, and can only usefully be
-    tested for attribute equality.
-
-    Examples:
-
-    ```mlir
-    #dialect<"opaque attribute data">
-    ```
-    """
-
-    def __init__(
-        self, dialect: StringAttr, attr_data: str, type: max._core.Type
-    ) -> None: ...
-    @property
-    def dialect_namespace(self) -> StringAttr: ...
-    @property
-    def attr_data(self) -> str: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class OpaqueType(max._core.Type):
     """
@@ -1443,142 +1734,6 @@ class RankedTensorType(max._core.Type):
     @property
     def encoding(self) -> max._core.Attribute | None: ...
 
-class ShapedType(Protocol):
-    """
-    This interface provides a common API for interacting with multi-dimensional
-    container types. These types contain a shape and an element type.
-
-    A shape is a list of sizes corresponding to the dimensions of the container.
-    If the number of dimensions in the shape is unknown, the shape is "unranked".
-    If the number of dimensions is known, the shape "ranked". The sizes of the
-    dimensions of the shape must be positive, or kDynamic (in which case the
-    size of the dimension is dynamic, or not statically known).
-    """
-
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-    @property
-    def shape(self) -> Sequence[int]: ...
-    def clone_with(
-        self, arg0: Sequence[int], arg1: max._core.Type, /
-    ) -> ShapedType: ...
-    def has_rank(self) -> bool: ...
-
-class SignednessSemantics(enum.Enum):
-    signless = 0
-
-    signed = 1
-
-    unsigned = 2
-
-class StridedLayoutAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    strided-layout-attribute ::= `strided` `<` `[` stride-list `]`
-                                 (`,` `offset` `:` dimension)? `>`
-    stride-list ::= /*empty*/
-                  | dimension (`,` dimension)*
-    dimension ::= decimal-literal | `?`
-    ```
-
-    A strided layout attribute captures layout information of the memref type in
-    the canonical form. Specifically, it contains a list of _strides_, one for
-    each dimension. A stride is the number of elements in the linear storage
-    one must step over to reflect an increment in the given dimension. For
-    example, a `MxN` row-major contiguous shaped type would have the strides
-    `[N, 1]`. The layout attribute also contains the _offset_ from the base
-    pointer of the shaped type to the first effectively accessed element,
-    expressed in terms of the number of contiguously stored elements.
-
-    Strides must be positive and the offset must be non-negative. Both the
-    strides and the offset may be _dynamic_, i.e. their value may not be known
-    at compile time. This is expressed as a `?` in the assembly syntax and as
-    `ShapedType::kDynamic` in the code. Stride and offset values
-    must satisfy the constraints above at runtime, the behavior is undefined
-    otherwise.
-
-    See [Dialects/Builtin.md#memreftype](MemRef type) for more information.
-    """
-
-    def __init__(self, offset: int, strides: Sequence[int]) -> None: ...
-    @property
-    def offset(self) -> int: ...
-    @property
-    def strides(self) -> Sequence[int]: ...
-
-class StringAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    string-attribute ::= string-literal (`:` type)?
-    ```
-
-    A string attribute is an attribute that represents a string literal value.
-
-    Examples:
-
-    ```mlir
-    "An important string"
-    "string with a type" : !dialect.string
-    ```
-    """
-
-    @overload
-    def __init__(self) -> None: ...
-    @overload
-    def __init__(self, bytes: str, type: max._core.Type) -> None: ...
-    @overload
-    def __init__(self, bytes: str) -> None: ...
-    @property
-    def value(self) -> str: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
-
-class SymbolRefAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    symbol-ref-attribute ::= symbol-ref-id (`::` symbol-ref-id)*
-    ```
-
-    A symbol reference attribute is a literal attribute that represents a named
-    reference to an operation that is nested within an operation with the
-    `OpTrait::SymbolTable` trait. As such, this reference is given meaning by
-    the nearest parent operation containing the `OpTrait::SymbolTable` trait. It
-    may optionally contain a set of nested references that further resolve to a
-    symbol nested within a different symbol table.
-
-    **Rationale:** Identifying accesses to global data is critical to
-    enabling efficient multi-threaded compilation. Restricting global
-    data access to occur through symbols and limiting the places that can
-    legally hold a symbol reference simplifies reasoning about these data
-    accesses.
-
-    See [`Symbols And SymbolTables`](../SymbolsAndSymbolTables.md) for more
-    information.
-
-    Examples:
-
-    ```mlir
-    @flat_reference
-    @parent_reference::@nested_reference
-    ```
-    """
-
-    def __init__(
-        self,
-        root_reference: StringAttr,
-        nested_references: Sequence[FlatSymbolRefAttr],
-    ) -> None: ...
-    @property
-    def root_reference(self) -> StringAttr: ...
-    @property
-    def nested_references(self) -> Sequence[FlatSymbolRefAttr]: ...
-
 class TupleType(max._core.Type):
     """
     Syntax:
@@ -1614,95 +1769,6 @@ class TupleType(max._core.Type):
     def __init__(self, element_types: Sequence[max._core.Type]) -> None: ...
     @property
     def types(self) -> Sequence[max._core.Type]: ...
-
-class TypeAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    type-attribute ::= type
-    ```
-
-    A type attribute is an attribute that represents a
-    [type object](#type-system).
-
-    Examples:
-
-    ```mlir
-    i32
-    !dialect.type
-    ```
-    """
-
-    def __init__(self, type: max._core.Type) -> None: ...
-    @property
-    def value(self) -> max._core.Type | None: ...
-
-class TypedAttr(Protocol):
-    """
-    This interface is used for attributes that have a type. The type of an
-    attribute is understood to represent the type of the data contained in the
-    attribute and is often used as the type of a value with this data.
-    """
-
-    @property
-    def type(self) -> max._core.Type | None: ...
-
-class UnitAttr(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    unit-attribute ::= `unit`
-    ```
-
-    A unit attribute is an attribute that represents a value of `unit` type. The
-    `unit` type allows only one value forming a singleton set. This attribute
-    value is used to represent attributes that only have meaning from their
-    existence.
-
-    One example of such an attribute could be the `swift.self` attribute. This
-    attribute indicates that a function parameter is the self/context parameter.
-    It could be represented as a [boolean attribute](#boolean-attribute)(true or
-    false), but a value of false doesn't really bring any value. The parameter
-    either is the self/context or it isn't.
-
-
-    Examples:
-
-    ```mlir
-    // A unit attribute defined with the `unit` value specifier.
-    func.func @verbose_form() attributes {dialectName.unitAttr = unit}
-
-    // A unit attribute in an attribute dictionary can also be defined without
-    // the value specifier.
-    func.func @simple_form() attributes {dialectName.unitAttr}
-    ```
-    """
-
-    def __init__(self) -> None: ...
-
-class UnknownLoc(max._core.Attribute):
-    """
-    Syntax:
-
-    ```
-    unknown-location ::= `?`
-    ```
-
-    Source location information is an extremely integral part of the MLIR
-    infrastructure. As such, location information is always present in the IR,
-    and must explicitly be set to unknown. Thus, an instance of the `unknown`
-    location represents an unspecified source location.
-
-    Example:
-
-    ```mlir
-    loc(?)
-    ```
-    """
-
-    def __init__(self) -> None: ...
 
 class UnrankedMemRefType(max._core.Type):
     """
@@ -1767,69 +1833,6 @@ class UnrankedTensorType(max._core.Type):
     @property
     def element_type(self) -> max._core.Type | None: ...
 
-class UnrealizedConversionCastOp(max._core.Operation):
-    """
-    An `unrealized_conversion_cast` operation represents an unrealized
-    conversion from one set of types to another, that is used to enable the
-    inter-mixing of different type systems. This operation should not be
-    attributed any special representational or execution semantics, and is
-    generally only intended to be used to satisfy the temporary intermixing of
-    type systems during the conversion of one type system to another.
-
-    This operation may produce results of arity 1-N, and accept as input
-    operands of arity 0-N.
-
-    Example:
-
-    ```mlir
-    // An unrealized 0-1 conversion. These types of conversions are useful in
-    // cases where a type is removed from the type system, but not all uses have
-    // been converted. For example, imagine we have a tuple type that is
-    // expanded to its element types. If only some uses of an empty tuple type
-    // instance are converted we still need an instance of the tuple type, but
-    // have no inputs to the unrealized conversion.
-    %result = unrealized_conversion_cast to !bar.tuple_type<>
-
-    // An unrealized 1-1 conversion.
-    %result1 = unrealized_conversion_cast %operand : !foo.type to !bar.lowered_type
-
-    // An unrealized 1-N conversion.
-    %results2:2 = unrealized_conversion_cast %tuple_operand : !foo.tuple_type<!foo.type, !foo.type> to !foo.type, !foo.type
-
-    // An unrealized N-1 conversion.
-    %result3 = unrealized_conversion_cast %operand, %operand : !foo.type, !foo.type to !bar.tuple_type<!foo.type, !foo.type>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        outputs: Sequence[max._core.Value],
-        inputs: Sequence[max._core.Value],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
-
-class VectorElementTypeInterface(Protocol):
-    """
-    Implementing this interface establishes a contract between this type and the
-    vector type, indicating that this type can be used as element of vectors.
-
-    Vector element types are treated as a bag of bits without any assumed
-    structure. The size of an element type must be a compile-time constant.
-    However, the bit-width may remain opaque or unavailable during
-    transformations that do not depend on the element type.
-
-    Note: This type interface is still evolving. It currently has no methods
-    and is just used as marker to allow types to opt into being vector elements.
-    This may change in the future, for example, to require types to provide
-    their size or alignment given a data layout. Please post an RFC before
-    adding this interface to additional types. Implementing this interface on
-    downstream types is discourged, until we specified the exact properties of
-    a vector element type in more detail.
-    """
-
 class VectorType(max._core.Type):
     """
     Syntax:
@@ -1889,6 +1892,3 @@ class VectorType(max._core.Type):
     def element_type(self) -> max._core.Type | None: ...
     @property
     def scalable_dims(self) -> Sequence[bool]: ...
-
-class _ElementsAttrIndexer:
-    pass
