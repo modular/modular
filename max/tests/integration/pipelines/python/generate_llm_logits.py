@@ -480,6 +480,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
+    "llama3.2-1b": GenericOracle(
+        model_path="meta-llama/Llama-3.2-1B",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+        },
+    ),
     "llama3.3-70b": GenericOracle(
         model_path="meta-llama/Llama-3.3-70B-Instruct",
         config_params={"max_length": 512},

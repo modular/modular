@@ -590,6 +590,24 @@ PIPELINES = {
             kl_div_threshold=3.9e-2,
         ),
     ),
+    "Llama-3.2-1B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        # Needs h100 for specific kernels.
+        tags=["h100-multi"],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3.2-1b",
+            encoding="bfloat16",
+            cos_dist_threshold=9.5e-04,
+            kl_div_threshold=2.5e-03,
+        ),
+    ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
