@@ -11,6 +11,10 @@ from collections.abc import Sequence
 from typing import Callable, overload
 
 import max._core
+import max._core.dialects.builtin
+import max._core.dialects.kgen
+import max._core.dialects.m
+import max._core.dtype
 from max.mlir import Location
 
 # Many of the generated overloads for constructors are more specialized in
@@ -34,6 +38,460 @@ DiagnosticHandler = Callable
 #   `const_name` in the type caster will cause it to repro in different places.
 # - For now, really hacky thing to work around.
 import max._core.dialects.mosh as h
+
+class BufferType(max._core.Type):
+    """
+    This is a close analogue of the existing mo.tensor type but is meant
+    to represent tensors that can be mutated.
+
+    In conjunction with the operations mo.mutable.load and mo.mutable.store
+    this type can be used to model in-place operations in the MO dialect.
+
+    The `shapeAttr` is less permisive than the equivalent for `!mo.tensor`
+    values and must be a `MOSH::ShapeAttr` (i.e. statically ranked).
+
+    The element type is an M::DType, with `invalid` denoting an unknown type.
+
+    Examples:
+    ```mlir
+    !mo.buffer<[4, 16], f32>    // static shape
+    !mo.buffer<[N, N, 6], i32>  // parameterized shape
+    !mo.tensor<Sh, invalid>     // shape parameter reference
+    ```
+    """
+
+    @overload
+    def __init__(self, tensor_type: TensorType) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape_attr: max._core.dialects.builtin.TypedAttr,
+        dtype: max._core.dtype.DType,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape_attr: max._core.dialects.builtin.TypedAttr,
+        element_type: max._core.Type,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: Sequence[max._core.dialects.builtin.TypedAttr],
+        element_type: max._core.Type,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: max._core.dialects.builtin.TypedAttr,
+        dtype: max._core.dtype.DType,
+        device_ref: max._core.dialects.m.DeviceRefAttr,
+        metadata: max._core.dialects.builtin.DictionaryAttr,
+    ) -> None: ...
+    @property
+    def shape_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def dtype(self) -> max._core.dtype.DType: ...
+    @property
+    def device_ref(self) -> max._core.dialects.m.DeviceRefAttr: ...
+    @property
+    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
+
+class ChainType(max._core.Type):
+    """
+    This type is used to sequence side-efffecting operations. Any operation in
+    the MO dialect that has side-effects should both consume and produce a
+    chain type.
+    """
+
+    def __init__(self) -> None: ...
+
+class ListType(max._core.Type):
+    """
+    This type represents an immutable list of elements (currently restricted to
+    `!mo.tensor`).
+    """
+
+    def __init__(self, element_type: max._core.Type) -> None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+
+class OpaqueType(max._core.Type):
+    """
+    This is a custom user-defined type.
+      Example:
+      ```mlir
+        !mo.opaque<"my_list">
+        !mo.opaque<"my_list", {foo = 42}>
+      ```
+    """
+
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.StringAttr,
+        metadata: max._core.dialects.builtin.DictionaryAttr,
+    ) -> None: ...
+    @property
+    def symbol(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr | None: ...
+
+class ScalarType(max._core.Type):
+    """This type represents scalars."""
+
+    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
+    @property
+    def dtype(self) -> max._core.dtype.DType: ...
+
+class TensorType(max._core.Type):
+    """
+    This type represents the shape and element type of a tensor, an optional
+    device ref, and an optional dictionary of metadata (e.g., layout, etc.).
+
+    The `shapeAttr` is one of:
+    1. `KGEN::UnknownAttr` for unparameterized shape of unknown rank, e.g., `?`.
+    2. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
+    3. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
+
+    The element type is an M::DType, with `invalid` denoting an unknown type.
+    The type implements a subset of the methods in ShapedTypeInterface.
+
+    The `deviceRef` optional field denotes the device the tensor lives on.
+
+    Examples:
+    ```mlir
+    !mo.tensor<[4, 16], f32>           // static shape
+    !mo.tensor<[N, N, 6], i32>         // parameterized shape
+    !mo.tensor<[?, ?], i32>            // unknown shape of known rank
+    !mo.tensor<[1, ?, N], i32>         // partially known and parameterized shape
+    !mo.tensor<?, invalid>             // unknown shape of unknown rank
+    !mo.tensor<Sh, invalid>            // shape parameter reference
+    !mo.tensor<[4, 16], f32>    // optional device
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        shape_attr: max._core.dialects.builtin.TypedAttr,
+        dtype: max._core.dtype.DType,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape_attr: max._core.dialects.builtin.TypedAttr,
+        element_type: max._core.Type,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: Sequence[int],
+        element_type: max._core.Type,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: Sequence[max._core.dialects.builtin.TypedAttr],
+        element_type: max._core.Type,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: max._core.dialects.builtin.TypedAttr,
+        dtype: max._core.dtype.DType,
+        device_ref: max._core.dialects.m.DeviceRefAttr,
+        metadata: max._core.dialects.builtin.DictionaryAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: Sequence[int],
+        dtype: max._core.dtype.DType,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        shape: Sequence[max._core.dialects.builtin.TypedAttr],
+        dtype: max._core.dtype.DType,
+        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
+        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @property
+    def shape_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def dtype(self) -> max._core.dtype.DType: ...
+    @property
+    def device_ref(self) -> max._core.dialects.m.DeviceRefAttr: ...
+    @property
+    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
+
+class ChainAttr(max._core.Attribute):
+    """
+    Represents non-error chain values. The type of this attribute is always
+    `!mo.chain`.
+
+    Example:
+
+    ```mlir
+    #mo<chain> : !mo.chain
+    ```
+    """
+
+    @overload
+    def __init__(self, type: ChainType) -> None: ...
+    @overload
+    def __init__(self, type: ChainType) -> None: ...
+    @property
+    def type(self) -> ChainType: ...
+
+class DTypeAttr(max._core.Attribute):
+    """This attribute holds the data type of a tensor."""
+
+    @overload
+    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
+    @overload
+    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
+    @property
+    def dtype(self) -> max._core.dtype.DType: ...
+
+class LayoutAttr(max._core.Attribute):
+    """
+    This attribute holds the memory layout information for some tensor value.
+    """
+
+    @overload
+    def __init__(
+        self, format: max._core.dialects.builtin.StringAttr
+    ) -> None: ...
+    @overload
+    def __init__(self, format_str: str) -> None: ...
+    @property
+    def format(self) -> max._core.dialects.builtin.StringAttr: ...
+
+class CoordinateTransformMode(enum.Enum):
+    half_pixel = 0
+
+    align_corners = 1
+
+    asymmetric = 2
+
+    half_pixel_1D = 3
+
+class CoordinateTransformModeAttr(max._core.Attribute):
+    """This attribute is used by `mo.resize`."""
+
+    def __init__(self, value: CoordinateTransformMode) -> None: ...
+    @property
+    def value(self) -> CoordinateTransformMode: ...
+
+class IfOp(max._core.Operation):
+    """
+    The `mo.if` op takes an `i1` condition, a 'then' block and an 'else'
+    block. If the condition is true, the 'then' block is run and the op
+    returns the results of that block, otherwise the "else" block is
+    run and its values are returned.
+
+    The blocks have access to all outer values. The blocks must return
+    values using the `mo.yield' op, and the returned values must match the
+    types given in the `mo.if` result signature.
+
+    Example:
+
+    ```mlir
+      %res = mo.if (%cond : !mo.tensor<[], bool>) -> !mo.tensor<?, f32> {
+        %v1 = mo.add(%x, %y) : (!mo.tensor<?, f32>, !mo.tensor<?, f32>
+                                ) -> !mo.tensor<?, f32>
+        mo.yield %v1 : !mo.tensor<?, f32>
+      } else {
+        %v2 = mo.sub(%x, %y) : (!mo.tensor<?, f32>, !mo.tensor<?, f32>
+                                  ) -> !mo.tensor<?, f32>
+        mo.yield %v2 : !mo.tensor<?, f32>
+      }
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        results: Sequence[max._core.Value],
+        cond: max._core.Value,
+    ) -> None: ...
+    @property
+    def cond(self) -> max._core.Value: ...
+
+class ShapeFromTensorOp(max._core.Operation):
+    """
+    Casts the input shape value to a shape-like tensor.
+
+    Example:
+
+    ```mlir
+      %sh: !mosh.ape
+      %sht = mo.shape.to_tensor(%sh) -> !mo.tensor<[2], si64>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: h.ShapeType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class ShapeToTensorOp(max._core.Operation):
+    """
+    Casts the input shape value to a shape-like tensor.
+
+    Example:
+
+    ```mlir
+      %sh: !mosh.ape
+      %sht = mo.shape.to_tensor(%sh) -> !mo.tensor<[2], si64>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[h.ShapeType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[h.ShapeType]: ...
+
+class StaticBroadcastToOp(max._core.Operation):
+    """
+    Broadcasts the input tensor to the result tensor. The shape of the input and
+    result tensors must not be unknown or contain unknown dimensions, but can be
+    parametric.
+
+    This op only has limited compile-time check on the validity of the target
+    shape (we expect the user to add any necessary runtime checks); therefore it
+    is not recommended for frontend conversion code to rely on this op (use
+    `mo.broadcast_to` with a constant shape-like tensor instead).
+
+    The broadcasting follows numpy semantics.
+
+    Example:
+
+    ```mlir
+      %from: !mo.tensor<[3], f32>
+      %res1 = mo.static.broadcast_to(%from)
+        : !mo.tensor<[3], f32> -> !mo.tensor<[2, 3], f32>
+      kgen.param.declare N = <...>
+      %res2 = mo.static.broadcast_to(%from)
+        : !mo.tensor<[3], f32> -> !mo.tensor<[N, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class StaticRandomNormalOp(max._core.Operation):
+    """
+    Creates a tensor populated with random values from a normal distribution,
+    with the mean of the distribution equal to `mean` and the standard deviation
+    equal to `variance`. The shape of the result tensor must not be unknown or
+    contain unknown dimensions, but can be parametric.
+
+    Example:
+
+    ```mlir
+    %mean = mo.constant {
+      value = #M.dense_array<2.0> : tensor<1xf32> } : !mo.tensor<[], f32>
+    %variance = mo.constant {
+      value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
+    %seed = mo.constant {
+      value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
+    %res = mo.static.random.normal(%size, %mean, %variance, %seed) :
+          (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
+          !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        mean: max._core.Value[TensorType],
+        variance: max._core.Value[TensorType],
+        seed: max._core.Value[TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def mean(self) -> max._core.Value[TensorType]: ...
+    @property
+    def variance(self) -> max._core.Value[TensorType]: ...
+    @property
+    def seed(self) -> max._core.Value[TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class StaticReshapeOp(max._core.Operation):
+    """
+    Returns a tensor with the same underlying data, but different shape. The
+    shape of the input and result tensors must not be unknown or contain unknown
+    dimensions, but can be parametric. We do not allow inferred dimensions
+    (e.g. -1 in MO_ReshapeOp).
+
+    The op has no compile-time or runtime checks on the validity of the target
+    shape (we expect the user to add any necessary runtime checks); therefore it
+    is not recommended for frontend conversion code to rely on this op (use
+    `mo.reshape` with a constant shape-like tensor instead).
+
+    Example:
+
+    ```mlir
+      %from: !mo.tensor<[2, 3], f32>
+      %res = mo.static.reshape(%from)
+        : !mo.tensor<[2, 3], f32> -> !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
 
 class AbsOp(max._core.Operation):
     """
@@ -107,6 +565,47 @@ class AddSingletonDimOp(max._core.Operation):
     def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+
+class DistributedAllgatherOp(max._core.Operation):
+    """
+    AllGather takes in inputs each coming from a different device and collects
+    the data into an output tensor along the 0th dimension. The output is
+    replicated across the same devices.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value]: ...
+
+class DistributedAllreduceSumOp(max._core.Operation):
+    """
+    Allreduce takes in inputs each coming from a different device with
+    the same shape as the final output and performs a sum reduction
+    across the devices. The output is replicated across the same devices.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        out_chain: ChainType,
+        outputs: Sequence[max._core.Value],
+        in_chain: max._core.Value[ChainType],
+        inputs: Sequence[max._core.Value],
+        signal_buffers: Sequence[max._core.Value],
+    ) -> None: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value]: ...
 
 class AndOp(max._core.Operation):
     """
@@ -553,6 +1052,74 @@ class AvgPoolOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class LinalgBandPartOp(max._core.Operation):
+    """
+    Copies a tensor setting everything outside central (diagonal) band of the
+    matrices to zero, where all but the last two axes are effectively batches,
+    and the last two axes define sub matricies.
+
+    Assumes the input has dimensions [I, J, ..., M, N], then the output tensor
+    has the same shape as the input, and the values values are given by
+
+    out[i, j, ..., m, n] = in_band(m, n) * input[i, j,  ..., m, n].
+
+    With the indicator function
+
+    in_band(m, n) = ((num_lower < 0 || (m - n) <= num_lower)) &&
+                     (num_upper < 0 || (n - m) <= num_upper))
+
+    If `exclude` is set, the selection is reverted: The elements in band are set
+    to zero while the elements outside the band are copied to the output tensor.
+
+    Please explicitly note that with negative values, this kernel returns the
+    entire lower or uppper triangle of the matrix, and otherwise returns
+    a diagonal band around the main diagonal of the matrix.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[3, 2, 3], f32>
+      %num_lower = mo.constant {
+        value = #M.dense_array<-1> : tensor<1xsi64>} : !mo.tensor<[], si64>
+      %num_upper = mo.constant {
+        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
+      %exclude = mo.constant {
+        value = #M.dense_array<0> : tensor<1xui8>} : !mo.tensor<[], bool>
+      %res = mo.linalg.band_part(%arg, %num_lower, %num_upper, %exclude) : (
+        !mo.tensor<[3, 2, 3], f32>, !mo.tensor<[], si64>, !mo.tensor<[], si64>,
+        !mo.tensor<[], bool>
+        ) -> !mo.tensor<[3, 2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        num_lower: max._core.Value[TensorType],
+        num_upper: max._core.Value[TensorType],
+        exclude: max._core.Value[TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def num_lower(self) -> max._core.Value[TensorType]: ...
+    @property
+    def num_upper(self) -> max._core.Value[TensorType]: ...
+    @property
+    def exclude(self) -> max._core.Value[TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class BatchMatmulOp(max._core.Operation):
     """
     Performs matrix multiplication on two batches of matrices, represented by
@@ -814,70 +1381,6 @@ class BufferTransferOp(max._core.Operation):
     @property
     def dst(self) -> max._core.Value[BufferType]: ...
 
-class BufferType(max._core.Type):
-    """
-    This is a close analogue of the existing mo.tensor type but is meant
-    to represent tensors that can be mutated.
-
-    In conjunction with the operations mo.mutable.load and mo.mutable.store
-    this type can be used to model in-place operations in the MO dialect.
-
-    The `shapeAttr` is less permisive than the equivalent for `!mo.tensor`
-    values and must be a `MOSH::ShapeAttr` (i.e. statically ranked).
-
-    The element type is an M::DType, with `invalid` denoting an unknown type.
-
-    Examples:
-    ```mlir
-    !mo.buffer<[4, 16], f32>    // static shape
-    !mo.buffer<[N, N, 6], i32>  // parameterized shape
-    !mo.tensor<Sh, invalid>     // shape parameter reference
-    ```
-    """
-
-    @overload
-    def __init__(self, tensor_type: TensorType) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape_attr: max._core.dialects.builtin.TypedAttr,
-        dtype: max._core.dtype.DType,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape_attr: max._core.dialects.builtin.TypedAttr,
-        element_type: max._core.Type,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: Sequence[max._core.dialects.builtin.TypedAttr],
-        element_type: max._core.Type,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: max._core.dialects.builtin.TypedAttr,
-        dtype: max._core.dtype.DType,
-        device_ref: max._core.dialects.m.DeviceRefAttr,
-        metadata: max._core.dialects.builtin.DictionaryAttr,
-    ) -> None: ...
-    @property
-    def shape_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def dtype(self) -> max._core.dtype.DType: ...
-    @property
-    def device_ref(self) -> max._core.dialects.m.DeviceRefAttr: ...
-    @property
-    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
-
 class CallOp(max._core.Operation):
     """
     This op calls a computation graph.
@@ -969,25 +1472,6 @@ class CeilOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
-class ChainAttr(max._core.Attribute):
-    """
-    Represents non-error chain values. The type of this attribute is always
-    `!mo.chain`.
-
-    Example:
-
-    ```mlir
-    #mo<chain> : !mo.chain
-    ```
-    """
-
-    @overload
-    def __init__(self, type: ChainType) -> None: ...
-    @overload
-    def __init__(self, type: ChainType) -> None: ...
-    @property
-    def type(self) -> ChainType: ...
-
 class ChainCreateOp(max._core.Operation):
     """
     This operation consumes an aribtrary number of values and produces a chain.
@@ -1011,15 +1495,6 @@ class ChainCreateOp(max._core.Operation):
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value]: ...
-
-class ChainType(max._core.Type):
-    """
-    This type is used to sequence side-efffecting operations. Any operation in
-    the MO dialect that has side-effects should both consume and produce a
-    chain type.
-    """
-
-    def __init__(self) -> None: ...
 
 class ConcatFromListOp(max._core.Operation):
     """
@@ -1551,22 +2026,6 @@ class ConvTransposeOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
-class CoordinateTransformMode(enum.Enum):
-    half_pixel = 0
-
-    align_corners = 1
-
-    asymmetric = 2
-
-    half_pixel_1D = 3
-
-class CoordinateTransformModeAttr(max._core.Attribute):
-    """This attribute is used by `mo.resize`."""
-
-    def __init__(self, value: CoordinateTransformMode) -> None: ...
-    @property
-    def value(self) -> CoordinateTransformMode: ...
-
 class CosOp(max._core.Operation):
     """
     Returns `cos(x)`, where `x` is input tensor.
@@ -1728,16 +2187,6 @@ class CustomOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class DTypeAttr(max._core.Attribute):
-    """This attribute holds the data type of a tensor."""
-
-    @overload
-    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
-    @overload
-    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
-    @property
-    def dtype(self) -> max._core.dtype.DType: ...
-
 class DebugPrintOp(max._core.Operation):
     """
     Prints a debug string. If a label attribute is supplied the string is printed with that label.
@@ -1834,47 +2283,6 @@ class DebugTensorUnsafePrintOp(max._core.Operation):
     def label(self) -> str: ...
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
-
-class DistributedAllgatherOp(max._core.Operation):
-    """
-    AllGather takes in inputs each coming from a different device and collects
-    the data into an output tensor along the 0th dimension. The output is
-    replicated across the same devices.
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        outputs: Sequence[max._core.Value],
-        inputs: Sequence[max._core.Value],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
-
-class DistributedAllreduceSumOp(max._core.Operation):
-    """
-    Allreduce takes in inputs each coming from a different device with
-    the same shape as the final output and performs a sum reduction
-    across the devices. The output is replicated across the same devices.
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        out_chain: ChainType,
-        outputs: Sequence[max._core.Value],
-        in_chain: max._core.Value[ChainType],
-        inputs: Sequence[max._core.Value],
-        signal_buffers: Sequence[max._core.Value],
-    ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
-    @property
-    def signal_buffers(self) -> Sequence[max._core.Value]: ...
 
 class DivOp(max._core.Operation):
     """
@@ -2324,42 +2732,6 @@ class GuardOp(max._core.Operation):
     @property
     def inputs(self) -> Sequence[max._core.Value]: ...
 
-class IfOp(max._core.Operation):
-    """
-    The `mo.if` op takes an `i1` condition, a 'then' block and an 'else'
-    block. If the condition is true, the 'then' block is run and the op
-    returns the results of that block, otherwise the "else" block is
-    run and its values are returned.
-
-    The blocks have access to all outer values. The blocks must return
-    values using the `mo.yield' op, and the returned values must match the
-    types given in the `mo.if` result signature.
-
-    Example:
-
-    ```mlir
-      %res = mo.if (%cond : !mo.tensor<[], bool>) -> !mo.tensor<?, f32> {
-        %v1 = mo.add(%x, %y) : (!mo.tensor<?, f32>, !mo.tensor<?, f32>
-                                ) -> !mo.tensor<?, f32>
-        mo.yield %v1 : !mo.tensor<?, f32>
-      } else {
-        %v2 = mo.sub(%x, %y) : (!mo.tensor<?, f32>, !mo.tensor<?, f32>
-                                  ) -> !mo.tensor<?, f32>
-        mo.yield %v2 : !mo.tensor<?, f32>
-      }
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        results: Sequence[max._core.Value],
-        cond: max._core.Value,
-    ) -> None: ...
-    @property
-    def cond(self) -> max._core.Value: ...
-
 class IndexToTensorOp(max._core.Operation):
     """
     Example:
@@ -2561,20 +2933,6 @@ class LayerNormOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class LayoutAttr(max._core.Attribute):
-    """
-    This attribute holds the memory layout information for some tensor value.
-    """
-
-    @overload
-    def __init__(
-        self, format: max._core.dialects.builtin.StringAttr
-    ) -> None: ...
-    @overload
-    def __init__(self, format_str: str) -> None: ...
-    @property
-    def format(self) -> max._core.dialects.builtin.StringAttr: ...
-
 class LayoutTransformOp(max._core.Operation):
     """
     This op transforms the layout of input tensor to the layout specified in
@@ -2602,74 +2960,6 @@ class LayoutTransformOp(max._core.Operation):
     @kgen_params.setter
     def kgen_params(
         self, arg: max._core.dialects.builtin.DictionaryAttr, /
-    ) -> None: ...
-
-class LinalgBandPartOp(max._core.Operation):
-    """
-    Copies a tensor setting everything outside central (diagonal) band of the
-    matrices to zero, where all but the last two axes are effectively batches,
-    and the last two axes define sub matricies.
-
-    Assumes the input has dimensions [I, J, ..., M, N], then the output tensor
-    has the same shape as the input, and the values values are given by
-
-    out[i, j, ..., m, n] = in_band(m, n) * input[i, j,  ..., m, n].
-
-    With the indicator function
-
-    in_band(m, n) = ((num_lower < 0 || (m - n) <= num_lower)) &&
-                     (num_upper < 0 || (n - m) <= num_upper))
-
-    If `exclude` is set, the selection is reverted: The elements in band are set
-    to zero while the elements outside the band are copied to the output tensor.
-
-    Please explicitly note that with negative values, this kernel returns the
-    entire lower or uppper triangle of the matrix, and otherwise returns
-    a diagonal band around the main diagonal of the matrix.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[3, 2, 3], f32>
-      %num_lower = mo.constant {
-        value = #M.dense_array<-1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %num_upper = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %exclude = mo.constant {
-        value = #M.dense_array<0> : tensor<1xui8>} : !mo.tensor<[], bool>
-      %res = mo.linalg.band_part(%arg, %num_lower, %num_upper, %exclude) : (
-        !mo.tensor<[3, 2, 3], f32>, !mo.tensor<[], si64>, !mo.tensor<[], si64>,
-        !mo.tensor<[], bool>
-        ) -> !mo.tensor<[3, 2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-        num_lower: max._core.Value[TensorType],
-        num_upper: max._core.Value[TensorType],
-        exclude: max._core.Value[TensorType],
-        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def num_lower(self) -> max._core.Value[TensorType]: ...
-    @property
-    def num_upper(self) -> max._core.Value[TensorType]: ...
-    @property
-    def exclude(self) -> max._core.Value[TensorType]: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
 class ListAppendOp(max._core.Operation):
@@ -2877,16 +3167,6 @@ class ListSliceOp(max._core.Operation):
     def end(self) -> max._core.Value[TensorType]: ...
     @property
     def step(self) -> max._core.Value[TensorType]: ...
-
-class ListType(max._core.Type):
-    """
-    This type represents an immutable list of elements (currently restricted to
-    `!mo.tensor`).
-    """
-
-    def __init__(self, element_type: max._core.Type) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
 
 class Log1pOp(max._core.Operation):
     """
@@ -3587,26 +3867,6 @@ class NotOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
-
-class OpaqueType(max._core.Type):
-    """
-    This is a custom user-defined type.
-      Example:
-      ```mlir
-        !mo.opaque<"my_list">
-        !mo.opaque<"my_list", {foo = 42}>
-      ```
-    """
-
-    def __init__(
-        self,
-        symbol: max._core.dialects.builtin.StringAttr,
-        metadata: max._core.dialects.builtin.DictionaryAttr,
-    ) -> None: ...
-    @property
-    def symbol(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr | None: ...
 
 class OrOp(max._core.Operation):
     """
@@ -4574,13 +4834,6 @@ class RoundOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
-class ScalarType(max._core.Type):
-    """This type represents scalars."""
-
-    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
-    @property
-    def dtype(self) -> max._core.dtype.DType: ...
-
 class ScatterAddOp(max._core.Operation):
     """
     Produces an output tensor by scattering elements from updates to input
@@ -5176,28 +5429,6 @@ class SelectOp(max._core.Operation):
     @property
     def y(self) -> max._core.Value[TensorType]: ...
 
-class ShapeFromTensorOp(max._core.Operation):
-    """
-    Casts the input shape value to a shape-like tensor.
-
-    Example:
-
-    ```mlir
-      %sh: !mosh.ape
-      %sht = mo.shape.to_tensor(%sh) -> !mo.tensor<[2], si64>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: h.ShapeType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
 class ShapeOfOp(max._core.Operation):
     """
     Returns the shape of a tensor.
@@ -5249,28 +5480,6 @@ class ShapeOfOp(max._core.Operation):
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
-
-class ShapeToTensorOp(max._core.Operation):
-    """
-    Casts the input shape value to a shape-like tensor.
-
-    Example:
-
-    ```mlir
-      %sh: !mosh.ape
-      %sht = mo.shape.to_tensor(%sh) -> !mo.tensor<[2], si64>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[h.ShapeType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[h.ShapeType]: ...
 
 class SinOp(max._core.Operation):
     """
@@ -5641,119 +5850,6 @@ class SqueezeShapeOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class StaticBroadcastToOp(max._core.Operation):
-    """
-    Broadcasts the input tensor to the result tensor. The shape of the input and
-    result tensors must not be unknown or contain unknown dimensions, but can be
-    parametric.
-
-    This op only has limited compile-time check on the validity of the target
-    shape (we expect the user to add any necessary runtime checks); therefore it
-    is not recommended for frontend conversion code to rely on this op (use
-    `mo.broadcast_to` with a constant shape-like tensor instead).
-
-    The broadcasting follows numpy semantics.
-
-    Example:
-
-    ```mlir
-      %from: !mo.tensor<[3], f32>
-      %res1 = mo.static.broadcast_to(%from)
-        : !mo.tensor<[3], f32> -> !mo.tensor<[2, 3], f32>
-      kgen.param.declare N = <...>
-      %res2 = mo.static.broadcast_to(%from)
-        : !mo.tensor<[3], f32> -> !mo.tensor<[N, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
-class StaticRandomNormalOp(max._core.Operation):
-    """
-    Creates a tensor populated with random values from a normal distribution,
-    with the mean of the distribution equal to `mean` and the standard deviation
-    equal to `variance`. The shape of the result tensor must not be unknown or
-    contain unknown dimensions, but can be parametric.
-
-    Example:
-
-    ```mlir
-    %mean = mo.constant {
-      value = #M.dense_array<2.0> : tensor<1xf32> } : !mo.tensor<[], f32>
-    %variance = mo.constant {
-      value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
-    %seed = mo.constant {
-      value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
-    %res = mo.static.random.normal(%size, %mean, %variance, %seed) :
-          (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
-          !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        mean: max._core.Value[TensorType],
-        variance: max._core.Value[TensorType],
-        seed: max._core.Value[TensorType],
-        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @property
-    def mean(self) -> max._core.Value[TensorType]: ...
-    @property
-    def variance(self) -> max._core.Value[TensorType]: ...
-    @property
-    def seed(self) -> max._core.Value[TensorType]: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
-    ) -> None: ...
-
-class StaticReshapeOp(max._core.Operation):
-    """
-    Returns a tensor with the same underlying data, but different shape. The
-    shape of the input and result tensors must not be unknown or contain unknown
-    dimensions, but can be parametric. We do not allow inferred dimensions
-    (e.g. -1 in MO_ReshapeOp).
-
-    The op has no compile-time or runtime checks on the validity of the target
-    shape (we expect the user to add any necessary runtime checks); therefore it
-    is not recommended for frontend conversion code to rely on this op (use
-    `mo.reshape` with a constant shape-like tensor instead).
-
-    Example:
-
-    ```mlir
-      %from: !mo.tensor<[2, 3], f32>
-      %res = mo.static.reshape(%from)
-        : !mo.tensor<[2, 3], f32> -> !mo.tensor<[2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
 class SubOp(max._core.Operation):
     """
     Returns `x - y`, where `x` and `y` are input tensors.
@@ -5801,98 +5897,6 @@ class TanhOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
-
-class TensorType(max._core.Type):
-    """
-    This type represents the shape and element type of a tensor, an optional
-    device ref, and an optional dictionary of metadata (e.g., layout, etc.).
-
-    The `shapeAttr` is one of:
-    1. `KGEN::UnknownAttr` for unparameterized shape of unknown rank, e.g., `?`.
-    2. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
-    3. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
-
-    The element type is an M::DType, with `invalid` denoting an unknown type.
-    The type implements a subset of the methods in ShapedTypeInterface.
-
-    The `deviceRef` optional field denotes the device the tensor lives on.
-
-    Examples:
-    ```mlir
-    !mo.tensor<[4, 16], f32>           // static shape
-    !mo.tensor<[N, N, 6], i32>         // parameterized shape
-    !mo.tensor<[?, ?], i32>            // unknown shape of known rank
-    !mo.tensor<[1, ?, N], i32>         // partially known and parameterized shape
-    !mo.tensor<?, invalid>             // unknown shape of unknown rank
-    !mo.tensor<Sh, invalid>            // shape parameter reference
-    !mo.tensor<[4, 16], f32>    // optional device
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        shape_attr: max._core.dialects.builtin.TypedAttr,
-        dtype: max._core.dtype.DType,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape_attr: max._core.dialects.builtin.TypedAttr,
-        element_type: max._core.Type,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: Sequence[int],
-        element_type: max._core.Type,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: Sequence[max._core.dialects.builtin.TypedAttr],
-        element_type: max._core.Type,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: max._core.dialects.builtin.TypedAttr,
-        dtype: max._core.dtype.DType,
-        device_ref: max._core.dialects.m.DeviceRefAttr,
-        metadata: max._core.dialects.builtin.DictionaryAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: Sequence[int],
-        dtype: max._core.dtype.DType,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        shape: Sequence[max._core.dialects.builtin.TypedAttr],
-        dtype: max._core.dtype.DType,
-        device_ref: max._core.dialects.m.DeviceRefAttr = ...,
-        metadata: max._core.dialects.builtin.DictionaryAttr = ...,
-    ) -> None: ...
-    @property
-    def shape_attr(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def dtype(self) -> max._core.dtype.DType: ...
-    @property
-    def device_ref(self) -> max._core.dialects.m.DeviceRefAttr: ...
-    @property
-    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
 
 class TileOp(max._core.Operation):
     """
@@ -6167,54 +6171,6 @@ class WhileConditionOp(max._core.Operation):
     @property
     def args(self) -> Sequence[max._core.Value]: ...
 
-class WhileOp(max._core.Operation):
-    """
-    The `mo.while` operation takes "cond" and "body" blocks. While the "cond"
-    block evaluates to the true condition, the "body" block is executed.
-
-    The "cond" and "body" blocks have access to both the values listed in the
-    `mo.while` signature and any other outer values.
-
-    - The "cond" block must return a `!mo.tensor<[], bool>` result
-    followed by values whose types match the inputs of the `mo.while` signature.
-
-    - The "body" block must return results with the same types as the `mo.while`
-    signature, again using a `mo.yield`. The signature must include an "as"
-    clause for every input so as to rename it to a fresh symbol.
-
-    The results of the `mo.while` op are the operands of the
-    `mo.while.condition` op when the condition operand evaluates to false.
-
-    Example:
-
-    ```mlir
-      %x: !mo.tensor<[2], f32>
-      %y: !mo.tensor<[], f32>
-      %res = mo.while (%x as %inner_x: !mo.tensor<[2], f32>) {
-        %zero = mo.constant {device = #M.device_ref<"cpu", 0>, value = #M.dense_array<0> : tensor<1xsi64>} : !mo.tensor<[], si64>
-        %shape = mo.constant {device = #M.device_ref<"cpu", 0>, value = #M.dense_array<> : tensor<0xsi64>} : !mo.tensor<[0], si64>
-        %mean0 = mo.mean (%inner_x, %zero) : (!mo.tensor<[2], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[1], f32>
-        %mean1 = mo.reshape (%mean0, %shape) : (!mo.tensor<[1], f32>, !mo.tensor<[0], si64>) -> !mo.tensor<[], f32>
-        %cond = mo.greater (%y, %mean1) : (!mo.tensor<[], f32>, !mo.tensor<[], f32>) -> !mo.tensor<[], bool>
-        mo.while.condition(%cond) %inner_x : !mo.tensor<[2], f32>
-      } do {
-        %new_x = mo.add(%inner_x, %inner_x) : !mo.tensor<[2], f32>
-        mo.yield %new_x : !mo.tensor<[2], f32>
-      }
-      %res: !mo.tensor<[2], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        results: Sequence[max._core.Value],
-        inputs: Sequence[max._core.Value],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
-
 class XorOp(max._core.Operation):
     """
     Returns `x xor y`, where `x` and `y` are input boolean tensors.
@@ -6272,3 +6228,51 @@ class YieldOp(max._core.Operation):
     ) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value]: ...
+
+class WhileOp(max._core.Operation):
+    """
+    The `mo.while` operation takes "cond" and "body" blocks. While the "cond"
+    block evaluates to the true condition, the "body" block is executed.
+
+    The "cond" and "body" blocks have access to both the values listed in the
+    `mo.while` signature and any other outer values.
+
+    - The "cond" block must return a `!mo.tensor<[], bool>` result
+    followed by values whose types match the inputs of the `mo.while` signature.
+
+    - The "body" block must return results with the same types as the `mo.while`
+    signature, again using a `mo.yield`. The signature must include an "as"
+    clause for every input so as to rename it to a fresh symbol.
+
+    The results of the `mo.while` op are the operands of the
+    `mo.while.condition` op when the condition operand evaluates to false.
+
+    Example:
+
+    ```mlir
+      %x: !mo.tensor<[2], f32>
+      %y: !mo.tensor<[], f32>
+      %res = mo.while (%x as %inner_x: !mo.tensor<[2], f32>) {
+        %zero = mo.constant {device = #M.device_ref<"cpu", 0>, value = #M.dense_array<0> : tensor<1xsi64>} : !mo.tensor<[], si64>
+        %shape = mo.constant {device = #M.device_ref<"cpu", 0>, value = #M.dense_array<> : tensor<0xsi64>} : !mo.tensor<[0], si64>
+        %mean0 = mo.mean (%inner_x, %zero) : (!mo.tensor<[2], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[1], f32>
+        %mean1 = mo.reshape (%mean0, %shape) : (!mo.tensor<[1], f32>, !mo.tensor<[0], si64>) -> !mo.tensor<[], f32>
+        %cond = mo.greater (%y, %mean1) : (!mo.tensor<[], f32>, !mo.tensor<[], f32>) -> !mo.tensor<[], bool>
+        mo.while.condition(%cond) %inner_x : !mo.tensor<[2], f32>
+      } do {
+        %new_x = mo.add(%inner_x, %inner_x) : !mo.tensor<[2], f32>
+        mo.yield %new_x : !mo.tensor<[2], f32>
+      }
+      %res: !mo.tensor<[2], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        results: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value]: ...

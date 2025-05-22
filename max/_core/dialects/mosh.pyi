@@ -10,6 +10,9 @@ from collections.abc import Sequence
 from typing import Callable, overload
 
 import max._core
+import max._core.dialects.builtin
+import max._core.dialects.kgen
+import max._core.dialects.m
 from max.mlir import Location
 
 # Many of the generated overloads for constructors are more specialized in

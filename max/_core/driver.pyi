@@ -10,57 +10,10 @@ import os
 from collections.abc import Generator, Mapping, Sequence
 from typing import Annotated, Any, overload
 
-import max._core
+import max._core.dtype
 import numpy
 import typing_extensions
 from numpy.typing import ArrayLike
-
-class Accelerator(Device):
-    def __init__(self, id: int = -1) -> None:
-        """
-        Creates an accelerator device with the specified ID.
-
-        Provides access to GPU or other hardware accelerators in the system.
-
-        .. code-block:: python
-
-            from max import driver
-            # Create default accelerator (usually first available GPU)
-            device = driver.Accelerator()
-            # Or specify GPU id
-            device = driver.Accelerator(id=0)  # First GPU
-            device = driver.Accelerator(id=1)  # Second GPU
-            # Get device id
-            device_id = device.id
-
-        Args:
-            id (int, optional): The device ID to use. Defaults to -1, which selects
-                the first available accelerator.
-
-        Returns:
-            Accelerator: A new Accelerator device object.
-        """
-
-class CPU(Device):
-    def __init__(self, id: int = -1) -> None:
-        """
-        Creates a CPU device.
-
-        .. code-block:: python
-
-            from max import driver
-            # Create default CPU device
-            device = driver.CPU()
-            # Device id is always 0 for CPU devices
-            device_id = device.id
-
-        Args:
-            id (int, optional): The device ID to use.
-                Defaults to -1.
-
-        Returns:
-            CPU: A new CPU device object.
-        """
 
 class Device:
     def can_access(self, other: Device) -> bool:
@@ -205,6 +158,53 @@ class Device:
     def cpu(id: int = -1) -> CPU:
         """Creates a CPU device. The id is ignored currently."""
 
+class Accelerator(Device):
+    def __init__(self, id: int = -1) -> None:
+        """
+        Creates an accelerator device with the specified ID.
+
+        Provides access to GPU or other hardware accelerators in the system.
+
+        .. code-block:: python
+
+            from max import driver
+            # Create default accelerator (usually first available GPU)
+            device = driver.Accelerator()
+            # Or specify GPU id
+            device = driver.Accelerator(id=0)  # First GPU
+            device = driver.Accelerator(id=1)  # Second GPU
+            # Get device id
+            device_id = device.id
+
+        Args:
+            id (int, optional): The device ID to use. Defaults to -1, which selects
+                the first available accelerator.
+
+        Returns:
+            Accelerator: A new Accelerator device object.
+        """
+
+class CPU(Device):
+    def __init__(self, id: int = -1) -> None:
+        """
+        Creates a CPU device.
+
+        .. code-block:: python
+
+            from max import driver
+            # Create default CPU device
+            device = driver.CPU()
+            # Device id is always 0 for CPU devices
+            device_id = device.id
+
+        Args:
+            id (int, optional): The device ID to use.
+                Defaults to -1.
+
+        Returns:
+            CPU: A new CPU device object.
+        """
+
 class DeviceStream:
     """
     Provides access to a stream of execution on a device.
@@ -269,6 +269,9 @@ class DeviceStream:
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
+
+def accelerator_count() -> int:
+    """Returns number of accelerator devices available."""
 
 class Tensor:
     """
@@ -591,6 +594,3 @@ class Tensor:
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
     ) -> Tensor: ...
     def _inplace_copy_from(self, src: Tensor) -> None: ...
-
-def accelerator_count() -> int:
-    """Returns number of accelerator devices available."""
