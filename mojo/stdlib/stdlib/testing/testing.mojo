@@ -30,7 +30,7 @@ def main():
         print(e)
 ```
 """
-from collections import Optional
+
 from math import isclose
 
 from builtin._location import __call_location, _SourceLocation

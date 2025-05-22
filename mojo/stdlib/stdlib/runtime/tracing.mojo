@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides tracing utilities."""
 
-from collections import Optional
+
 from collections.optional import OptionalReg
 from collections.string import StaticString
 from sys import external_call

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.identifiable import TypeIdentifiable
-from collections import Optional
+
 from sys import alignof, sizeof
 
 import python._cpython as cp

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.identifiable import TypeIdentifiable
-from collections import Optional
 from collections.string.string_slice import get_static_string
 from os import abort
 from sys.ffi import c_int, _Global
