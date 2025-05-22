@@ -101,7 +101,7 @@ class Value(Typed[MlirType]):
                 return super().__new__(_OpaqueValue)
             elif _graph.type_is_buffer(value.type):
                 return super().__new__(BufferValue)
-            elif isinstance(_Value(value).type, mo.ChainType):
+            elif isinstance(_Type._from_cmlir(value.type), mo.ChainType):
                 return super().__new__(_ChainValue)
             elif _graph.type_is_tensor(value.type):
                 return super().__new__(TensorValue)
@@ -132,7 +132,7 @@ class Value(Typed[MlirType]):
 
     @property
     def _new_mlir_value(self) -> _Value[MlirType]:
-        return _Value(self._mlir_value)
+        return _Value._from_cmlir(self._mlir_value)
 
     @property
     def buffer(self) -> BufferValue:
@@ -179,7 +179,7 @@ class Value(Typed[MlirType]):
 class _ChainValue(Value[mo.ChainType]):
     def __init__(self, value: Value | mlir.Value):
         if isinstance(value, mlir.Value):
-            assert isinstance(_Type(value.type), mo.ChainType)
+            assert isinstance(_Type._from_cmlir(value.type), mo.ChainType)
             self._mlir_value = value
         elif isinstance(value, _ChainValue):
             self._mlir_value = value._mlir_value
