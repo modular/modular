@@ -271,13 +271,13 @@ struct Optional[T: Copyable & Movable](
         return self.value()
 
     fn __str__[
-        U: Copyable & Movable & Representable, //
+        U: Copyable & Movable & Writable, //
     ](self: Optional[U]) -> String:
         """Return the string representation of the value of the Optional.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable`, `Copyable` and `Movable`.
+                traits `Writable`, `Copyable` and `Movable`.
 
         Returns:
             A string representation of the Optional.
@@ -288,13 +288,13 @@ struct Optional[T: Copyable & Movable](
 
     # TODO: Include the Parameter type in the string as well.
     fn __repr__[
-        U: Representable & Copyable & Movable, //
+        U: Writable & Copyable & Movable, //
     ](self: Optional[U]) -> String:
         """Returns the verbose string representation of the Optional.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable`, `Copyable` and `Movable`.
+                traits `Writable`, `Copyable` and `Movable`.
 
         Returns:
             A verbose string representation of the Optional.
@@ -306,20 +306,20 @@ struct Optional[T: Copyable & Movable](
         return output
 
     fn write_to[
-        W: Writer, U: Representable & Copyable & Movable, //
+        W: Writer, U: Writable & Copyable & Movable, //
     ](self: Optional[U], mut writer: W):
         """Write Optional string representation to a `Writer`.
 
         Parameters:
             W: A type conforming to the Writable trait.
             U: The type of the elements in the list. Must implement the
-              traits `Representable`, `Copyable` and `Movable`.
+                traits `Writable`, `Copyable` and `Movable`.
 
         Args:
             writer: The object to write to.
         """
         if self:
-            writer.write(repr(self.value()))
+            writer.write(self.unsafe_value())
         else:
             writer.write("None")
 

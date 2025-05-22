@@ -415,13 +415,13 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn __str__[
-        U: Representable & Copyable & Movable, //
+        U: Writable & Copyable & Movable, //
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              trait `Representable`.
+                trait `Writable`.
 
         Returns:
             A string representation of the list.
@@ -447,34 +447,33 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn write_to[
-        W: Writer, U: Representable & Copyable & Movable, //
+        W: Writer, U: Writable & Copyable & Movable, //
     ](self: List[U, *_], mut writer: W):
         """Write `my_list.__str__()` to a `Writer`.
 
         Parameters:
             W: A type conforming to the Writable trait.
-            U: The type of the List elements. Must have the trait
-                `Representable`.
+            U: The type of the List elements. Must have the trait `Writable`.
 
         Args:
             writer: The object to write to.
         """
         writer.write("[")
         for i in range(len(self)):
-            writer.write(repr(self[i]))
+            writer.write(self[i])
             if i < len(self) - 1:
                 writer.write(", ")
         writer.write("]")
 
     @no_inline
     fn __repr__[
-        U: Representable & Copyable & Movable, //
+        U: Writable & Copyable & Movable, //
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              trait `Representable`.
+                trait `Writable`.
 
         Returns:
             A string representation of the list.

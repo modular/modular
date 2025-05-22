@@ -404,14 +404,14 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn write_to[
-        T: Representable & Copyable & Movable,
+        T: Writable & Copyable & Movable,
         WriterType: Writer,
     ](self: Deque[T], mut writer: WriterType):
         """Writes `my_deque.__str__()` to a `Writer`.
 
         Parameters:
             T: The type of the Deque elements.
-                Must implement the trait `Representable`.
+                Must implement the trait `Writable`.
             WriterType: A type conforming to the Writable trait.
 
         Args:
@@ -420,15 +420,13 @@ struct Deque[ElementType: Copyable & Movable](
         writer.write("Deque(")
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            writer.write(repr((self._data + offset)[]))
+            writer.write(self._data[offset])
             if i < len(self) - 1:
                 writer.write(", ")
         writer.write(")")
 
     @no_inline
-    fn __str__[
-        T: Representable & Copyable & Movable, //
-    ](self: Deque[T]) -> String:
+    fn __str__[T: Writable & Copyable & Movable, //](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
         Note that since we can't condition methods on a trait yet,
@@ -444,7 +442,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `Representable`.
+                Must implement the trait `Writable`.
 
         Returns:
             A string representation of the deque.
@@ -454,9 +452,7 @@ struct Deque[ElementType: Copyable & Movable](
         return output^
 
     @no_inline
-    fn __repr__[
-        T: Representable & Copyable & Movable, //
-    ](self: Deque[T]) -> String:
+    fn __repr__[T: Writable & Copyable & Movable, //](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
         Note that since we can't condition methods on a trait yet,
@@ -472,7 +468,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         Parameters:
             T: The type of the elements in the deque.
-                Must implement the trait `Representable`.
+                Must implement the trait `Writable`.
 
         Returns:
             A string representation of the deque.

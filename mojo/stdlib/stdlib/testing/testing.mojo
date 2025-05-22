@@ -198,7 +198,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    T: Copyable & Movable & EqualityComparable & Representable, //
+    T: Copyable & Movable & EqualityComparable & Writable, //
 ](
     lhs: List[T],
     rhs: List[T],
@@ -436,7 +436,7 @@ fn assert_not_equal[
 
 @always_inline
 fn assert_not_equal[
-    T: Copyable & Movable & EqualityComparable & Representable, //
+    T: Copyable & Movable & EqualityComparable & Writable, //
 ](
     lhs: List[T],
     rhs: List[T],

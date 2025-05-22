@@ -294,11 +294,11 @@ struct Set[T: KeyElement](
         return hash_value
 
     @no_inline
-    fn __str__[U: KeyElement & Representable, //](self: Set[U]) -> String:
+    fn __str__[U: KeyElement & Writable, //](self: Set[U]) -> String:
         """Returns the string representation of the set.
 
         Parameters:
-            U: The type of the List elements. Must implement the `Representable`
+            U: The type of the List elements. Must implement the `Writable`
                 and `KeyElement` traits.
 
         Returns:
@@ -309,11 +309,11 @@ struct Set[T: KeyElement](
         return output
 
     @no_inline
-    fn __repr__[U: KeyElement & Representable, //](self: Set[U]) -> String:
+    fn __repr__[U: KeyElement & Writable, //](self: Set[U]) -> String:
         """Returns the string representation of the set.
 
         Parameters:
-            U: The type of the List elements. Must implement the `Representable`
+            U: The type of the List elements. Must implement the `Writable`
                 and `KeyElement` traits.
 
         Returns:
@@ -322,13 +322,13 @@ struct Set[T: KeyElement](
         return self.__str__()
 
     fn write_to[
-        W: Writer, U: KeyElement & Representable, //
+        W: Writer, U: KeyElement & Writable, //
     ](self: Set[U], mut writer: W):
         """Write Set string representation to a `Writer`.
 
         Parameters:
             W: A type conforming to the Writer trait.
-            U: The type of the List elements. Must implement the `Representable`
+            U: The type of the List elements. Must implement the `Writable`
                 and `KeyElement` traits.
 
         Args:
@@ -337,7 +337,7 @@ struct Set[T: KeyElement](
         writer.write("{")
         var written = 0
         for item in self:
-            writer.write(repr(item[]))
+            writer.write(item[])
             if written < len(self) - 1:
                 writer.write(", ")
             written += 1
