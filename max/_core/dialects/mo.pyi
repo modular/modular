@@ -105,7 +105,7 @@ class BufferType(max._core.Type):
 
 class ChainType(max._core.Type):
     """
-    This type is used to sequence side-efffecting operations. Any operation in
+    This type is used to sequence side-effecting operations. Any operation in
     the MO dialect that has side-effects should both consume and produce a
     chain type.
     """
