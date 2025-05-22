@@ -15,6 +15,8 @@ def _binary_test_impl(ctx):
             {},
         )
 
+    env_inherit = ctx.attr.env_inherit + ctx.attr.binary[RunEnvironmentInfo].inherited_environment
+
     return [
         DefaultInfo(
             executable = output,
@@ -23,7 +25,7 @@ def _binary_test_impl(ctx):
         ),
         RunEnvironmentInfo(
             environment = ctx.attr.binary[RunEnvironmentInfo].environment | processed_env,
-            inherited_environment = ctx.attr.binary[RunEnvironmentInfo].inherited_environment,
+            inherited_environment = env_inherit,
         ),
     ]
 
@@ -36,6 +38,7 @@ binary_test = rule(
         ),
         "env": attr.string_dict(),
         "data": attr.label_list(allow_files = True),
+        "env_inherit": attr.string_list(),
     },
     test = True,
 )
