@@ -5,10 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """ops.stack tests."""
 
-from conftest import new_axes, tensor_types
-from hypothesis import given
+import pytest
+from conftest import new_axes, shapes, static_dims, tensor_types
+from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import Graph, StaticDim, TensorType, ops
+from max.dtype import DType
+from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
 
 
 @given(
@@ -27,3 +29,127 @@ def test_stack(type: TensorType, stack_size: int, axis: int):
         )
         assert out.shape == target_shape
         graph.output(out)
+
+
+def test_stack_error_with_empty_list():
+    with Graph("stack", input_types=[]) as graph:
+        with pytest.raises(
+            ValueError, match="Expected at least one value to stack"
+        ):
+            ops.stack(graph.inputs)
+
+
+def test_stack_error_with_different_ranks():
+    with Graph(
+        "stack",
+        input_types=[
+            TensorType(
+                shape=[1, 2], dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+            TensorType(
+                shape=[1, 2, 3], dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError, match="All inputs to stack must be the same rank"
+        ):
+            ops.stack(graph.inputs)
+
+
+def test_stack_error_with_different_dtypes():
+    with Graph(
+        "stack",
+        input_types=[
+            TensorType(
+                shape=[1, 2], dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+            TensorType(shape=[1, 2], dtype=DType.int32, device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError, match="All inputs to stack must have the same dtype"
+        ):
+            ops.stack(graph.inputs)
+
+
+def test_stack_error_with_different_devices():
+    with Graph(
+        "stack",
+        input_types=[
+            TensorType(
+                shape=[1, 2], dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+            TensorType(
+                shape=[1, 2], dtype=DType.float32, device=DeviceRef.GPU()
+            ),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError, match="All inputs to stack must have the same device"
+        ):
+            ops.stack(graph.inputs)
+
+
+shared_static_dim = st.shared(static_dims())
+
+
+@given(
+    input_types=st.lists(
+        tensor_types(
+            dtypes=st.shared(st.from_type(DType)),
+            shapes=shapes(),
+        ),
+        min_size=2,
+    )
+)
+def test_stack_error_with_many_different_shapes(
+    graph_builder, input_types: list[TensorType]
+):
+    # Using a list comprehension to check if there are different ranks
+    assume(len(set(len(t.shape) for t in input_types)) > 1)
+    with graph_builder(input_types=input_types) as graph:
+        with pytest.raises(
+            ValueError, match="All inputs to stack must be the same rank"
+        ):
+            ops.stack(graph.inputs)
+
+
+@given(
+    x_type=tensor_types(shapes=shapes(max_rank=2, min_rank=2)),
+    y_type=tensor_types(shapes=shapes(max_rank=2, min_rank=2)),
+)
+def test_stack_error_with_many_different_dtypes(
+    graph_builder, x_type: TensorType, y_type: TensorType
+):
+    assume(x_type.dtype != y_type.dtype)
+    with graph_builder(input_types=[x_type, y_type]) as graph:
+        with pytest.raises(
+            ValueError, match="All inputs to stack must have the same dtype"
+        ):
+            ops.stack(graph.inputs)
+
+
+shared_shapes_rank_gt_0 = st.shared(shapes(min_rank=1))
+
+
+def invalid_axes(rank: int):
+    lower_bound, upper_bound = -(rank + 1), rank
+    return st.one_of(
+        st.integers(max_value=lower_bound - 1),
+        st.integers(min_value=upper_bound + 1),
+    )
+
+
+@given(
+    base_type=tensor_types(shapes=shared_shapes_rank_gt_0),
+    invalid_axis=shared_shapes_rank_gt_0.flatmap(
+        lambda shape: invalid_axes(shape.rank)
+    ),
+)
+def test_stack_error_with_axis_out_of_bounds(
+    graph_builder, base_type: TensorType, invalid_axis: int
+):
+    with graph_builder(input_types=[base_type]) as graph:
+        with pytest.raises(IndexError, match="Axis out of range"):
+            ops.stack([graph.inputs[0]], axis=invalid_axis)

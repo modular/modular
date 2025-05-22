@@ -7,16 +7,31 @@
 
 from collections.abc import Iterable
 
-from max import mlir
-from max.mlir.dialects import rmo
-
-from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
 from .concat import concat
 from .unsqueeze import unsqueeze
 
 
-def stack(vals: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
+def _axis_out_of_range_error(
+    axis: int, lower_bound: int, upper_bound: int
+) -> str:
+    return f"Axis out of range (expected to be in range of [{lower_bound}, {upper_bound}], but got {axis})"
+
+
+def _stack_axis_bounds(rank: int) -> tuple[int, int]:
+    # For stack, valid axis range is [-rank+1, rank] because we're inserting a new dimension
+    return -(rank + 1), rank
+
+
+def _check_stack_axis_in_bounds(axis: int, rank: int) -> None:
+    lower_bound, upper_bound = _stack_axis_bounds(rank)
+    if axis < lower_bound or axis > upper_bound:
+        raise IndexError(
+            _axis_out_of_range_error(axis, lower_bound, upper_bound)
+        )
+
+
+def stack(values: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
     """Stacks a list of tensors along a new axis.
 
     Args:
@@ -36,25 +51,27 @@ def stack(vals: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
         with the new axis inserted. Along the new dimension it will have size
         ``len(values)``.
     """
-    vals_coerced = [TensorValue(v) for v in vals]
-    if len(vals_coerced) == 0:
+    values_coerced = [TensorValue(v) for v in values]
+    if len(values_coerced) == 0:
         raise ValueError("Expected at least one value to stack")
 
-    rank = len(vals_coerced[0].shape)
-    if any(len(v.shape) != rank for v in vals_coerced):
-        raise ValueError("all inputs to stack must be the same rank")
+    rank = len(values_coerced[0].shape)
+    if any(len(v.shape) != rank for v in values_coerced):
+        raise ValueError("All inputs to stack must be the same rank")
 
-    unsqueezed = [unsqueeze(v, axis) for v in vals_coerced]
+    if any(v.dtype != values_coerced[0].dtype for v in values_coerced):
+        raise ValueError("All inputs to stack must have the same dtype")
+
+    if any(v.device != values_coerced[0].device for v in values_coerced):
+        raise ValueError("All inputs to stack must have the same device")
+
+    # Check if axis is within bounds
+    _check_stack_axis_in_bounds(axis, rank)
+
+    unsqueezed = [unsqueeze(v, axis) for v in values_coerced]
 
     # Short circuit to avoid bloating graph with unneeded op.
     if len(unsqueezed) == 1:
         return unsqueezed[0]
 
     return concat(unsqueezed, axis=axis)
-
-
-def stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
-    axis = mlir.IntegerAttr.get(mlir.IndexType.get(), 0)
-
-    vals = [v.reshape([1]) if v.shape != [1] else v for v in vals]
-    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0].tensor

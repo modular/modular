@@ -8,8 +8,11 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Optional, Union
+
+from max import mlir
+from max.mlir.dialects import rmo
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -23,14 +26,12 @@ if TYPE_CHECKING:
 
 import numpy as np
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import DeviceRef, Dim, DimLike, Shape, StaticDim, TensorType
 from ..value import BufferValue, TensorValue
 from .constant import constant
 from .select import select
-from .stack import stack_scalars
 
 # Currently slicing does not have any shape inference in RMO. Instead, it is
 # done in python.
@@ -180,6 +181,13 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
     return not any(index is Ellipsis for index in indices)
 
 
+def _stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
+    axis = mlir.IntegerAttr.get(mlir.IndexType.get(), 0)
+
+    vals = [v.reshape([1]) if v.shape != [1] else v for v in vals]
+    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0].tensor
+
+
 def _slice_and_output_tensors(
     x: BufferValue | TensorValue, indices: SliceIndices
 ):
@@ -229,9 +237,9 @@ def _slice_and_output_tensors(
         )
 
     # Create starts, stops, and steps tensors.
-    starts = stack_scalars(value(s.start) for s in slices)
-    stops = stack_scalars(value(s.stop) for s in slices)
-    steps = stack_scalars(value(s.step) for s in slices)
+    starts = _stack_scalars(value(s.start) for s in slices)
+    stops = _stack_scalars(value(s.stop) for s in slices)
+    steps = _stack_scalars(value(s.step) for s in slices)
 
     return starts, stops, steps, unsqueezed_shape, squeezed_shape
 
