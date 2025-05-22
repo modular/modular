@@ -9,11 +9,12 @@ import numpy as np
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, Weight
+from max.graph import DeviceRef, Graph, ShardingStrategy, Weight
 
 
 def create_sharded_weight_graph() -> Graph:
-    sharding_strategy = lambda weight, i: weight[5 * i : 5 * (i + 1)]
+    num_devices = 5
+    sharding_strategy = lambda weight, i, n: weight[n * i : n * (i + 1)]
 
     # The Weight is sharded evenly across CPU, GPU 0, and GPU 1.
     # Assuming weight=np.arange(15, dtype=np.float32):
@@ -25,7 +26,7 @@ def create_sharded_weight_graph() -> Graph:
         DType.float32,
         [15],
         DeviceRef.CPU(),
-        sharding_strategy=sharding_strategy,
+        sharding_strategy=ShardingStrategy(num_devices, sharding_strategy),
     )
     # Shards must be able to be created outside the graph.
     shard_0 = weight.shard(0, DeviceRef.CPU())  # Keep on CPU.

@@ -20,8 +20,151 @@ from .quantization import QuantizationEncoding
 from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
 
-ShardingStrategy = Callable[["Weight", int], TensorValue]
 DLPackCompatible = Union[DLPackArray, npt.NDArray]
+
+
+def col_sharding_strategy(
+    weight: Weight, i: int, num_devices: int
+) -> TensorValue:
+    """Shards a weight tensor by column for a given device.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion of the weight
+        for the i-th device.
+    """
+    col_size = int(weight.shape[1]) // num_devices
+    return weight[:, i * col_size : (i + 1) * col_size]
+
+
+def row_sharding_strategy(
+    weight: Weight, i: int, num_devices: int
+) -> TensorValue:
+    """Shards a weight tensor by row for a given device.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion of the weight
+        for the i-th device.
+    """
+    row_size = int(weight.shape[0]) // num_devices
+    return weight[i * row_size : (i + 1) * row_size]
+
+
+def replicate_sharding_strategy(
+    weight: Weight, i: int, num_devices: int
+) -> TensorValue:
+    """Replicates the entire weight tensor for a given device.
+
+    Args:
+        weight: The :obj:`Weight` to replicate.
+        i: The index of the current device (unused in this strategy).
+        num_devices: The total number of devices (unused in this strategy).
+
+    Returns:
+        A :obj:`TensorValue` representing the full weight tensor.
+    """
+    return weight
+
+
+@dataclass(frozen=True)
+class ShardingStrategy:
+    """Specifies how a :obj:`Weight` should be sharded across multiple devices.
+
+    This class encapsulates a sharding function and the number of devices
+    over which to shard. It provides static methods for common sharding
+    patterns like row-wise, column-wise, and replication.
+    """
+
+    num_devices: int
+    """The number of devices to shard the weight across."""
+
+    shard: Callable[[Weight, int, int], TensorValue]
+    """A callable that takes a :obj:`Weight`, a device index, and the total
+    number of devices, and returns the sharded :obj:`TensorValue` for that
+    device.
+    """
+
+    def __call__(self, weight: Weight, i: int) -> TensorValue:
+        """Applies the sharding strategy to a given weight for a specific device.
+
+        Args:
+            weight: The :obj:`Weight` to be sharded.
+            i: The index of the device for which to get the shard.
+
+        Returns:
+            A :obj:`TensorValue` representing the portion of the weight for the
+            i-th device.
+        """
+        return self.shard(weight, i, self.num_devices)
+
+    @property
+    def is_rowwise(self) -> bool:
+        """Whether the sharding strategy is row-wise."""
+        return self.shard is row_sharding_strategy
+
+    @property
+    def is_colwise(self) -> bool:
+        """Whether the sharding strategy is column-wise."""
+        return self.shard is col_sharding_strategy
+
+    @staticmethod
+    def rowwise(num_devices: int) -> ShardingStrategy:
+        """Creates a row-wise sharding strategy.
+
+        This strategy shards the weight along its first axis (axis=0).
+
+        Args:
+            num_devices: The number of devices to shard the weight across.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for row-wise sharding.
+        """
+        return ShardingStrategy(
+            num_devices=num_devices, shard=row_sharding_strategy
+        )
+
+    @staticmethod
+    def columnwise(num_devices: int) -> ShardingStrategy:
+        """Creates a column-wise sharding strategy.
+
+        This strategy shards the weight along its second axis (axis=1).
+
+        Args:
+            num_devices: The number of devices to shard the weight across.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for column-wise sharding.
+        """
+        return ShardingStrategy(
+            num_devices=num_devices,
+            shard=col_sharding_strategy,
+        )
+
+    @staticmethod
+    def replicate(num_devices: int) -> ShardingStrategy:
+        """Creates a replication strategy.
+
+        This strategy replicates the entire weight on each device.
+
+        Args:
+            num_devices: The number of devices (primarily for consistency, as
+                the weight is replicated).
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for replication.
+        """
+        return ShardingStrategy(
+            num_devices=num_devices, shard=replicate_sharding_strategy
+        )
 
 
 @dataclass
