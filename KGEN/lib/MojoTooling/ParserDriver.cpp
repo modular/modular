@@ -273,7 +273,15 @@ void MojoParserContext::ensureSignaturesResolved() {
   size_t i = 0;
   while (i != resolver.getParsedDeclList().size()) {
     ASTDecl *parsedDecl = resolver.getParsedDeclList()[i++];
-    (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
+
+    // It isn't safe to leave decls loaded from bytecode in a partially-resolved
+    // state, because their underlying IR may be in an invalid state. To avoid
+    // issues from partially-parsed IR, we need to resolve the bodies of any
+    // decls we load from bytecode.
+    if (parsedDecl->isLoadedFromBytecode())
+      (void)resolver.resolveBody(*parsedDecl, parsedDecl->getLoc());
+    else
+      (void)resolver.resolveSignature(*parsedDecl, parsedDecl->getLoc());
   }
 }
 

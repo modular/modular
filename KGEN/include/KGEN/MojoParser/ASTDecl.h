@@ -144,6 +144,9 @@ public:
   /// or trait.
   ASTDecl *tryGetMethodParentDecl() const;
 
+  /// Whether this decl was loaded from bytecode.
+  bool isLoadedFromBytecode() const { return loadedFromBytecode; }
+
   //===--------------------------------------------------------------------===//
   // Name lookup
   //===--------------------------------------------------------------------===//

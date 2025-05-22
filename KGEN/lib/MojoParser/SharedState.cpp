@@ -1525,6 +1525,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   }
   if (resolvedness < DeclResolvedness::body)
     return success();
+
   decl.resolvedness = DeclResolvedness::body;
 
   // Start body resolution by materializing the regions of this operation from
