@@ -20,7 +20,6 @@ use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
 from collections import List, Optional, OptionalReg
-from collections.string import StaticString, StringSlice
 from math import align_up
 from os import abort
 from pathlib import Path

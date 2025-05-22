@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List, Optional
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys import (

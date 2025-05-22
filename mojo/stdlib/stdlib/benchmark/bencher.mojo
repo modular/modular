@@ -13,7 +13,6 @@
 
 import time
 from collections import Dict, Optional
-from collections.string import StaticString, StringSlice
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path

@@ -38,7 +38,7 @@ print(info)
 ```
 """
 
-from collections.string.string_slice import StaticString, _get_kgen_string
+from collections.string.string_slice import _get_kgen_string
 from os import PathLike
 from pathlib import Path
 from sys.info import _current_target

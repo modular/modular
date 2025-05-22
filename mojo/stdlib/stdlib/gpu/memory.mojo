@@ -27,7 +27,6 @@ achieve optimal memory access patterns and cache utilization.
 """
 
 from collections import OptionalReg
-from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
     alignof,

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from collections.string import StaticString
 
 from compile import compile_info
 from gpu import *

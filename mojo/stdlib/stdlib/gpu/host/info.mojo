@@ -18,7 +18,6 @@ NVIDIA and AMD GPUs. It includes information about compute capabilities,
 memory specifications, thread organization, and performance characteristics.
 """
 
-from collections.string.string_slice import StaticString, StringSlice
 from math import ceildiv, floor
 from os import abort
 from sys import env_get_string

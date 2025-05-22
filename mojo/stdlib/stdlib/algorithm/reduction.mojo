@@ -20,7 +20,6 @@ from algorithm import map_reduce
 """
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv, iota
 from os import abort
 from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof

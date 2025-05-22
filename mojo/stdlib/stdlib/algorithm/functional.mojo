@@ -19,7 +19,7 @@ from algorithm import map
 ```
 """
 
-from collections.string.string_slice import StaticString, get_static_string
+from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
