@@ -1455,7 +1455,7 @@ fn check_arguments_arity(
 fn _get_type_name(obj: PythonObject) raises -> String:
     var cpython = Python().cpython()
 
-    var actual_type = cpython.Py_TYPE(obj.unsafe_as_py_object_ptr())
+    var actual_type = cpython.Py_TYPE(obj.unsafe_py_object_ptr())
     var actual_type_name = PythonObject(
         from_owned_ptr=cpython.PyType_GetName(actual_type)
     )
@@ -1474,9 +1474,9 @@ fn check_argument_type[
     instance of the Mojo `T` type.
     """
 
-    var opt: Optional[UnsafePointer[T]] = obj.py_object.try_cast_to_mojo_value[
-        T
-    ](type_name_id)
+    var opt: Optional[
+        UnsafePointer[T]
+    ] = obj.py_object_ptr.try_cast_to_mojo_value[T](type_name_id)
 
     if not opt:
         raise Error(

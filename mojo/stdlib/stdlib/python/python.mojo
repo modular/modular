@@ -142,7 +142,7 @@ struct Python:
             from_borrowed_ptr=cpython.PyImport_AddModule(name)
         )
         var dict_obj = PythonObject(
-            from_borrowed_ptr=cpython.PyModule_GetDict(module.py_object)
+            from_borrowed_ptr=cpython.PyModule_GetDict(module.py_object_ptr)
         )
         if file:
             # We compile the code as provided and execute in the module
@@ -166,7 +166,9 @@ struct Python:
             # dictionary for the *current* scope. Since we are executing at
             # the module scope for this eval, they should be the same object.
             var result_ptr = cpython.PyEval_EvalCode(
-                code.py_object, dict_obj.py_object, dict_obj.py_object
+                code.py_object_ptr,
+                dict_obj.py_object_ptr,
+                dict_obj.py_object_ptr,
             )
             if result_ptr.is_null():
                 raise cpython.get_error()
@@ -180,7 +182,10 @@ struct Python:
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
             var result = cpython.PyRun_String(
-                expr^, dict_obj.py_object, dict_obj.py_object, Py_eval_input
+                expr^,
+                dict_obj.py_object_ptr,
+                dict_obj.py_object_ptr,
+                Py_eval_input,
             )
             if result.is_null():
                 raise cpython.get_error()
@@ -324,7 +329,7 @@ struct Python:
         var result = cpython.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
-            module.unsafe_as_py_object_ptr(),
+            module.unsafe_py_object_ptr(),
             functions,
         )
 
@@ -354,9 +359,9 @@ struct Python:
         var cpython = Python().cpython()
 
         var result = cpython.PyModule_AddObjectRef(
-            module.unsafe_as_py_object_ptr(),
+            module.unsafe_py_object_ptr(),
             name.unsafe_cstr_ptr(),
-            value.unsafe_as_py_object_ptr(),
+            value.unsafe_py_object_ptr(),
         )
 
         if result != 0:
@@ -385,7 +390,7 @@ struct Python:
 
             var val_obj = entry[].value.to_python_object()
             var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_ptr, val_obj.py_object
+                dict_obj_ptr, key_ptr, val_obj.py_object_ptr
             )
             if result == -1:
                 raise cpython.get_error()
@@ -448,7 +453,7 @@ struct Python:
             var key_obj = tuples[i][0].to_python_object()
             var val_obj = tuples[i][1].to_python_object()
             var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj.py_object, val_obj.py_object
+                dict_obj_ptr, key_obj.py_object_ptr, val_obj.py_object_ptr
             )
             if result == -1:
                 raise cpython.get_error()
@@ -475,8 +480,8 @@ struct Python:
 
         for i in range(len(values)):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object)
+            cpython.Py_IncRef(obj.py_object_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object_ptr)
         return PythonObject(from_owned_ptr=obj_ptr)
 
     @staticmethod
@@ -500,8 +505,8 @@ struct Python:
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object)
+            cpython.Py_IncRef(obj.py_object_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object_ptr)
         return PythonObject(from_owned_ptr=obj_ptr)
 
     @always_inline
@@ -541,8 +546,8 @@ struct Python:
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.py_object)
+            cpython.Py_IncRef(obj.py_object_ptr)
+            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.py_object_ptr)
         return PythonObject(from_owned_ptr=obj_ptr)
 
     @always_inline
@@ -564,7 +569,7 @@ struct Python:
     @no_inline
     fn as_string_slice(
         self, str_obj: PythonObject
-    ) -> StringSlice[__origin_of(str_obj.py_object.unsized_obj_ptr.origin)]:
+    ) -> StringSlice[__origin_of(str_obj.py_object_ptr.unsized_obj_ptr.origin)]:
         """Return a string representing the given Python object.
 
         Args:
@@ -574,7 +579,7 @@ struct Python:
             Mojo string representing the given Python object.
         """
         var cpython = self.cpython()
-        return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
+        return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object_ptr)
 
     @staticmethod
     fn is_type(x: PythonObject, y: PythonObject) -> Bool:
@@ -589,7 +594,7 @@ struct Python:
             True if `x` and `y` are the same object and False otherwise.
         """
         var cpython = Python().cpython()
-        return cpython.Py_Is(x.py_object, y.py_object)
+        return cpython.Py_Is(x.py_object_ptr, y.py_object_ptr)
 
     @staticmethod
     fn type(obj: PythonObject) -> PythonObject:
@@ -602,7 +607,9 @@ struct Python:
             A PythonObject that holds the type object.
         """
         var cpython = Python().cpython()
-        return PythonObject(from_owned_ptr=cpython.PyObject_Type(obj.py_object))
+        return PythonObject(
+            from_owned_ptr=cpython.PyObject_Type(obj.py_object_ptr)
+        )
 
     @staticmethod
     fn none() -> PythonObject:
@@ -627,7 +634,7 @@ struct Python:
             An error if the conversion failed.
         """
         var cpython = Python().cpython()
-        var py_str_ptr = cpython.PyObject_Str(obj.py_object)
+        var py_str_ptr = cpython.PyObject_Str(obj.py_object_ptr)
         if py_str_ptr.is_null():
             raise cpython.get_error()
 
@@ -648,7 +655,7 @@ struct Python:
             A PythonObject representing the result of the conversion to `int`.
         """
         var cpython = Python().cpython()
-        var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
+        var py_obj_ptr = cpython.PyNumber_Long(obj.py_object_ptr)
         if py_obj_ptr.is_null():
             raise cpython.get_error()
 
@@ -673,7 +680,7 @@ struct Python:
             The value of the `long` object as a `Py_ssize_t`.
         """
         var cpython = Python().cpython()
-        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object)
+        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object_ptr)
 
         if long == -1:
             # Note that -1 does not guarantee an error, it just means we need to
@@ -699,7 +706,7 @@ struct Python:
         # TODO: decide if this method should be actually exposed as public,
         # and add tests if so.
         var cpython = Python().cpython()
-        var result = cpython.PyObject_IsTrue(obj.py_object)
+        var result = cpython.PyObject_IsTrue(obj.py_object_ptr)
         if result == -1:
             raise cpython.get_error()
 

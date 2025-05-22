@@ -864,7 +864,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             An error if the conversion failed.
         """
         var cpython = Python().cpython()
-        self = cpython.PyUnicode_AsUTF8AndSize(unsafe_borrowed_obj.py_object)
+        self = cpython.PyUnicode_AsUTF8AndSize(
+            unsafe_borrowed_obj.py_object_ptr
+        )
         if not self.unsafe_ptr():
             raise cpython.get_error()
 

@@ -1649,13 +1649,13 @@ struct CPython(Copyable, Movable):
         return self.lib.call["PyObject_Hash", Py_hash_t](obj)
 
     fn PyObject_GetIter(
-        self, traversable_py_object: PyObjectPtr
+        self, traversable_py_object_ptr: PyObjectPtr
     ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter).
         """
         var iterator = self.lib.call["PyObject_GetIter", PyObjectPtr](
-            traversable_py_object
+            traversable_py_object_ptr
         )
 
         self.log(
@@ -1663,9 +1663,9 @@ struct CPython(Copyable, Movable):
             " NEWREF PyObject_GetIter, refcnt:",
             self._Py_REFCNT(iterator),
             "referencing ",
-            traversable_py_object._get_ptr_as_int(),
+            traversable_py_object_ptr._get_ptr_as_int(),
             "refcnt of traversable: ",
-            self._Py_REFCNT(traversable_py_object),
+            self._Py_REFCNT(traversable_py_object_ptr),
         )
 
         self._inc_total_rc()
@@ -1876,17 +1876,17 @@ struct CPython(Copyable, Movable):
         self._inc_total_rc()
         return r
 
-    fn PyLong_AsSsize_t(self, py_object: PyObjectPtr) -> c_ssize_t:
+    fn PyLong_AsSsize_t(self, py_object_ptr: PyObjectPtr) -> c_ssize_t:
         """[Reference](
         https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t).
         """
-        return self.lib.call["PyLong_AsSsize_t", c_ssize_t](py_object)
+        return self.lib.call["PyLong_AsSsize_t", c_ssize_t](py_object_ptr)
 
-    fn PyNumber_Long(self, py_object: PyObjectPtr) -> PyObjectPtr:
+    fn PyNumber_Long(self, py_object_ptr: PyObjectPtr) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/number.html#c.PyNumber_Long).
         """
-        return self.lib.call["PyNumber_Long", PyObjectPtr](py_object)
+        return self.lib.call["PyNumber_Long", PyObjectPtr](py_object_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
@@ -1910,11 +1910,11 @@ struct CPython(Copyable, Movable):
         self._inc_total_rc()
         return r
 
-    fn PyFloat_AsDouble(self, py_object: PyObjectPtr) -> Float64:
+    fn PyFloat_AsDouble(self, py_object_ptr: PyObjectPtr) -> Float64:
         """[Reference](
         https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble).
         """
-        return self.lib.call["PyFloat_AsDouble", Float64](py_object)
+        return self.lib.call["PyFloat_AsDouble", Float64](py_object_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Unicode Objects
@@ -1969,8 +1969,8 @@ struct CPython(Copyable, Movable):
         return py_slice
 
     fn PyUnicode_AsUTF8AndSize(
-        self, py_object: PyObjectPtr
-    ) -> StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)]:
+        self, py_object_ptr: PyObjectPtr
+    ) -> StringSlice[__origin_of(py_object_ptr.unsized_obj_ptr.origin)]:
         """[Reference](
         https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize).
         """
@@ -1978,8 +1978,8 @@ struct CPython(Copyable, Movable):
         var length = Int(0)
         var ptr = self.lib.call[
             "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
-        ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
-        return StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)](
+        ](py_object_ptr, UnsafePointer(to=length)).bitcast[UInt8]()
+        return StringSlice[__origin_of(py_object_ptr.unsized_obj_ptr.origin)](
             ptr=ptr, length=length
         )
 

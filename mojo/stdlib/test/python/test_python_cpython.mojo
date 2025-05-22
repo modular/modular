@@ -24,13 +24,13 @@ def test_PyObject_HasAttrString(mut python: Python):
 
     var the_object = PythonObject(0)
     var result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object.py_object_ptr, "__contains__"
     )
     assert_equal(0, result)
 
     the_object = Python.list(1, 2, 3)
     result = cpython_env.PyObject_HasAttrString(
-        the_object.py_object, "__contains__"
+        the_object.py_object_ptr, "__contains__"
     )
     assert_equal(1, result)
     _ = the_object
@@ -46,7 +46,7 @@ def test_PyCapsule(mut python: Python):
     # Not a PyCapsule, a NULL pointer is expected.
     var the_object = PythonObject(0)
     var result = cpython_env.PyCapsule_GetPointer(
-        the_object.py_object, "some_name"
+        the_object.py_object_ptr, "some_name"
     )
     var expected_none = UnsafePointer[NoneType]()
     assert_equal(expected_none, result)
