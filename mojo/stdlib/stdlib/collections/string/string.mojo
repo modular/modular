@@ -129,8 +129,10 @@ struct _StringCapacityField:
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # UNUSED_FLAG is not used, but might be used in the future.
-    alias UNUSED_FLAG = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_STATIC_CONSTANT is set, the _data pointer is to static
+    # constant string.  capacity() will always be zero for these strings, so any
+    # attempt to append will reallocate.
+    alias FLAG_IS_STATIC_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string data is inline as the first bytes
     # of the string value (the "Small string optimization").
     alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
@@ -162,9 +164,8 @@ struct _StringCapacityField:
         if static_const_length < Self.NUM_SSO_BYTES and not is_compile_time():
             self._storage = Self.FLAG_IS_INLINE
         else:
-            # We set the capacity to 0 to always force reallocation if we
-            # want the capacity to change.
-            self._storage = 0
+            self = Self(capacity=0)
+            self._storage = Self.FLAG_IS_STATIC_CONSTANT
 
     @always_inline("nodebug")
     fn get_capacity(self) -> UInt:
@@ -183,6 +184,17 @@ struct _StringCapacityField:
             self._storage = self._storage | Self.FLAG_HAS_NUL_TERMINATOR
         else:
             self._storage = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
+
+    @always_inline("nodebug")
+    fn is_static_constant(self) -> Bool:
+        return self._storage & Self.FLAG_IS_STATIC_CONSTANT != 0
+
+    @always_inline("nodebug")
+    fn set_is_static_constant(mut self, is_set: Bool):
+        if is_set:
+            self._storage = self._storage | Self.FLAG_IS_STATIC_CONSTANT
+        else:
+            self._storage = self._storage & ~Self.FLAG_IS_STATIC_CONSTANT
 
     @always_inline("nodebug")
     fn is_inline(self) -> Bool:
@@ -323,7 +335,11 @@ struct String(
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self = Self(capacity=0)
+        self._ptr_or_data = UnsafePointer[UInt8]()
+        self._len_or_data = 0
+        # Note: we treat a nul pointer as a "static constant" pointer because
+        # in the out-of-line form, it has no ARC header.
+        self._capacity_or_data = _StringCapacityField(static_const_length=0)
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
@@ -1180,7 +1196,7 @@ struct String(
         # Add a nul terminator.
         # Reallocate the out-of-line static strings to ensure mutability.
         if not self._capacity_or_data.has_nul_terminator() or (
-            self._is_static_constant()
+            self._capacity_or_data.is_static_constant()
         ):
             var len = self.byte_length()
             self.reserve(len + 1)  # This will reallocate if constant.
@@ -1782,23 +1798,13 @@ struct String(
     fn _make_unique_mutable(mut self):
         # If already mutable and uniquely owned, we're done.
         if (
-            not self._is_static_constant()
+            not self._capacity_or_data.is_static_constant()
             and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
         ):
             return
 
         # Otherwise, copy to a new buffer to ensure mutability.
         self._realloc_mutable(self.byte_length())
-
-    fn _is_static_constant(self) -> Bool:
-        """Checks if the string is a static constant.
-
-        Returns:
-            True if the string is a static constant, False otherwise.
-        """
-        return Bool(self._ptr_or_data) and (
-            self._capacity_or_data.get_capacity() == 0
-        )
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string.
@@ -1833,7 +1839,7 @@ struct String(
 
     @always_inline("nodebug")
     fn _has_mutable_buffer(self) -> Bool:
-        return (not self._is_static_constant()) & (
+        return (not self._capacity_or_data.is_static_constant()) & (
             not self._capacity_or_data.is_inline()
         )
 
