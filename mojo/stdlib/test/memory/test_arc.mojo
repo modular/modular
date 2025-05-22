@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo --debug-level full %s
 
-from collections import List
 
 from memory import ArcPointer, UnsafePointer
 from test_utils import ObservableDel

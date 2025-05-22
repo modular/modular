@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import List
 from math import ceil
 from sys import bitwidthof
 

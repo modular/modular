@@ -14,7 +14,6 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from collections import List
 from random import *
 from random import seed
 

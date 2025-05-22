@@ -19,7 +19,6 @@ from math.polynomial import polynomial_evaluate
 ```
 """
 
-from collections import List
 
 # ===-----------------------------------------------------------------------===#
 # polynomial_evaluate

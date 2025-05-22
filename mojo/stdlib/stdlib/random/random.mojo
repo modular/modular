@@ -20,7 +20,6 @@ from random import seed
 """
 
 import math
-from collections import List, Optional
 from math import floor
 from sys import bitwidthof, external_call
 from sys.ffi import OpaquePointer

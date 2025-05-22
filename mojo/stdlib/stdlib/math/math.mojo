@@ -19,7 +19,6 @@ from math import floor
 ```
 """
 
-from collections import List
 from sys import (
     bitwidthof,
     has_avx512f,
