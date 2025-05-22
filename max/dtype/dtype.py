@@ -96,13 +96,6 @@ def _from_numpy(dtype: np.dtype) -> DType:
     raise ValueError(f"unsupported NumPy dtype: {dtype}")
 
 
-DType._missing_ = _missing  # type: ignore[method-assign]
-DType.__repr__ = _repr  # type: ignore[method-assign]
-DType._mlir = property(_mlir)  # type: ignore[assignment]
-DType.to_numpy = _to_numpy  # type: ignore[method-assign]
-DType.from_numpy = _from_numpy  # type: ignore[method-assign]
-
-
 _DTYPE_TO_MLIR = {
     DType.bool: "bool",
     DType.int8: "si8",
@@ -152,40 +145,25 @@ try:
 
     _TORCH_TO_DTYPE = {v: k for k, v in _DTYPE_TO_TORCH.items()}
 
-    def _max_to_torch_type(dtype: DType) -> torch.dtype:
+    def _to_torch(dtype: DType) -> torch.dtype:
         return _DTYPE_TO_TORCH[dtype]
 
-    def _torch_to_max_type(dtype: torch.dtype) -> DType:
+    def _from_torch(dtype: torch.dtype) -> DType:
         return _TORCH_TO_DTYPE[dtype]
 
 except ImportError as e:
 
-    def _max_to_torch_type(dtype: DType) -> torch.dtype:
+    def _to_torch(dtype: DType) -> torch.dtype:
         raise e
 
-    def _torch_to_max_type(dtype: torch.dtype) -> DType:
+    def _from_torch(dtype: torch.dtype) -> DType:
         raise e
 
 
-def max_to_torch_type(dtype: DType) -> torch.dtype:
-    """Converts a MAX dtype.DType to a torch.dtype.
-
-    Args:
-        dtype (dtype.DType): MAX dtype.DType.
-
-    Returns:
-        torch.dtype: The corresponding torch.dtype.
-    """
-    return _max_to_torch_type(dtype)
-
-
-def torch_to_max_type(dtype: torch.dtype) -> DType:
-    """Converts a torch.dtype to a MAX dtype.DType.
-
-    Args:
-        dtype (torch.dtype): PyTorch torch.dtype.
-
-    Returns:
-        dtype.DType: The corresponding dtype.DType.
-    """
-    return _torch_to_max_type(dtype)
+DType._missing_ = _missing  # type: ignore[method-assign]
+DType.__repr__ = _repr  # type: ignore[method-assign]
+DType._mlir = property(_mlir)  # type: ignore[assignment]
+DType.to_numpy = _to_numpy  # type: ignore[method-assign]
+DType.from_numpy = _from_numpy  # type: ignore[method-assign]
+DType.to_torch = _to_torch  # type: ignore[method-assign]
+DType.from_torch = _from_torch  # type: ignore[assignment]
