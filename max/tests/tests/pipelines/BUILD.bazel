@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "pipelines",
+    srcs = glob(["*.py"]),
+    data = glob(["testdata/*"]),
+    deps = [
+        "//SDK/lib/API/python/max",
+        requirement("numpy"),
+        # TODO(GEX-2238): replace data field in WeightData with driver tensor.
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
