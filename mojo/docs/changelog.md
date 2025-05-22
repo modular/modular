@@ -125,6 +125,12 @@ Changes to Python-Mojo interoperability:
   to allow constructing dictionaries from a list of key-value tuples and from
   keyword arguments.
 
+- `PythonObject` no longer implements `EqualityComparable`, since the
+  `PythonObject.__eq__` and `PythonObject.__ne__` methods need to return other
+  `PythonObject` values to support rich comparisons. Code that previously
+  compared `PythonObject` values should be wrapped in `Bool(..)` to perform the
+  fallible conversion explicitly: `if Bool(obj1 == obj2): ...`.
+
 - `String` and `Bool` now implement `ConvertibleFromPython`.
 
 - A new `def_function` API is added to `PythonModuleBuilder` to allow declaring

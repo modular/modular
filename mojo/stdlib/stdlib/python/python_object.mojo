@@ -300,7 +300,6 @@ struct TypedPythonObject[type_hint: StaticString](
 struct PythonObject(
     Boolable,
     Copyable,
-    EqualityComparable,
     Floatable,
     Movable,
     SizedRaising,
@@ -1203,86 +1202,88 @@ struct PythonObject(
         return self.__call_single_arg_inplace_method__("__pow__", rhs)
 
     fn __lt__(self, rhs: PythonObject) raises -> PythonObject:
-        """Less than comparator. This lexicographically compares strings and
-        lists.
+        """Less than (rich) comparison operator.
 
         Args:
-            rhs: Right hand value.
+            rhs: The value of the right hand side of the comparison.
 
         Returns:
-            True if the object is less than the right hard argument.
+            The result of the comparison, not necessarily a boolean.
+
+        Raises:
+            If the object doesn't implement the `__lt__` method, or if it fails.
         """
         return self.__getattr__("__lt__")(rhs)
 
     fn __le__(self, rhs: PythonObject) raises -> PythonObject:
-        """Less than or equal to comparator. This lexicographically compares
-        strings and lists.
+        """Less than or equal (rich) comparison operator.
 
         Args:
-            rhs: Right hand value.
+            rhs: The value of the right hand side of the comparison.
 
         Returns:
-            True if the object is less than or equal to the right hard argument.
+            The result of the comparison, not necessarily a boolean.
+
+        Raises:
+            If the object doesn't implement the `__le__` method, or if it fails.
         """
         return self.__getattr__("__le__")(rhs)
 
     fn __gt__(self, rhs: PythonObject) raises -> PythonObject:
-        """Greater than comparator. This lexicographically compares the elements
-        of strings and lists.
+        """Greater than (rich) comparison operator.
 
         Args:
-            rhs: Right hand value.
+            rhs: The value of the right hand side of the comparison.
 
         Returns:
-            True if the left hand value is greater.
+            The result of the comparison, not necessarily a boolean.
+
+        Raises:
+            If the object doesn't implement the `__gt__` method, or if it fails.
         """
         return self.__getattr__("__gt__")(rhs)
 
     fn __ge__(self, rhs: PythonObject) raises -> PythonObject:
-        """Greater than or equal to comparator. This lexicographically compares
-        the elements of strings and lists.
+        """Greater than or equal (rich) comparison operator.
 
         Args:
-            rhs: Right hand value.
+            rhs: The value of the right hand side of the comparison.
 
         Returns:
-            True if the left hand value is greater than or equal to the right
-            hand value.
+            The result of the comparison, not necessarily a boolean.
+
+        Raises:
+            If the object doesn't implement the `__ge__` method, or if it fails.
         """
         return self.__getattr__("__ge__")(rhs)
 
-    fn __eq__(self, rhs: PythonObject) -> Bool:
-        """Equality comparator. This compares the elements of strings and lists.
+    fn __eq__(self, rhs: PythonObject) raises -> PythonObject:
+        """Equality (rich) comparison operator.
 
         Args:
-            rhs: Right hand value.
+            rhs: The value of the right hand side of the comparison.
 
         Returns:
-            True if the objects are equal.
-        """
-        # TODO: make this function raise when we can raise parametrically.
-        try:
-            return self.__getattr__("__eq__")(rhs).__bool__()
-        except e:
-            debug_assert(False, "object doesn't implement __eq__")
-            return False
+            The result of the comparison, not necessarily a boolean.
 
-    fn __ne__(self, rhs: PythonObject) -> Bool:
-        """Inequality comparator. This compares the elements of strings and
-        lists.
+        Raises:
+            If the object doesn't implement the `__eq__` method, or if it fails.
+        """
+        return self.__getattr__("__eq__")(rhs)
+
+    fn __ne__(self, rhs: PythonObject) raises -> PythonObject:
+        """Inequality (rich) comparison operator.
 
         Args:
-            rhs: Right hand value.
+            rhs: The value of the right hand side of the comparison.
 
         Returns:
-            True if the objects are not equal.
+            The result of the comparison, not necessarily a boolean.
+
+        Raises:
+            If the object doesn't implement the `__ne__` method, or if it fails.
         """
-        # TODO: make this function raise when we can raise parametrically.
-        try:
-            return self.__getattr__("__ne__")(rhs).__bool__()
-        except e:
-            debug_assert(False, "object doesn't implement __eq__")
-            return False
+        return self.__getattr__("__ne__")(rhs).__bool__()
 
     fn __pos__(self) raises -> PythonObject:
         """Positive.
