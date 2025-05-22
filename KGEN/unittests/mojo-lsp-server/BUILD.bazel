@@ -29,6 +29,7 @@ inputs = [
     "MOGGAnnotateDiags",
     "NotebookTest",
     "ReferencesTest",
+    "RegressionTest",
     "RenameTest",
     "SampleTest",
     "SemanticTokensTest",

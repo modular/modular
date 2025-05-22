@@ -364,7 +364,8 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
-  if (mainDoc.containsLocation(symbol.range.Start)) {
+  if (mainDoc.containsLocation(symbol.range.Start) &&
+      mainDoc.containsLocation(symbol.range.End)) {
     // Don't register modules as they don't have a proper location in the file.
     if (!isa<FileModuleOp>(*declRef))
       insertRangeInMainDoc({symbol, symbol.range});
@@ -376,7 +377,8 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
                               StringRef spelling) {
   // We don't index empty spellings nor references in files other than the main
   // doc.
-  if (spelling.empty() || !mainDoc.containsLocation(range.Start))
+  if (spelling.empty() || !mainDoc.containsLocation(range.Start) ||
+      !mainDoc.containsLocation(range.End))
     return;
 
   SmallVector<Symbol *> symbols;
