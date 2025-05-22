@@ -61,10 +61,10 @@ are valid or either representation:
   to just check to see if the 3rd word is negative.
 
 - `UNUSED_FLAG` is the next bit, which previously indicated whether if indirect
-  string is pointing to static constant data. It has been noticed later on that 
-  we could get the same information by checking that the pointer is non-null 
-  and the capacity of the string is 0. This is because if we point to static 
-  constant data, the capacity is always null to force reallocation. 
+  string is pointing to static constant data. It has been noticed later on that
+  we could get the same information by checking that the pointer is non-null
+  and the capacity of the string is 0. This is because if we point to static
+  constant data, the capacity is always null to force reallocation.
   Thus this flag is now unused. I may be used later on for other purposes.
 
 - `FLAG_HAS_NUL_TERMINATOR` is the next bit, which indicates if the string is
