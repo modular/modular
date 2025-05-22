@@ -154,6 +154,18 @@ Changes to Python-Mojo interoperability:
   instead, callers must create the `String` on their side before calling
   `os.abort(message)`.
 
+- The function `atof` has been entirely rewritten as it produced incorrect
+  results for very low and very high exponents.
+  It now works correctly for strings with less than
+  19 digits left of the `e`. For example `1.1385616158185648648648648648616186186e-3`
+  won't work, and will raise an error. Anything that does
+  not produce an error is now garanteed to be correct.
+  While the current implementation is not the fastest, it's based on the paper
+  [Number Parsing at a Gigabyte per Second](https://arxiv.org/abs/2101.11408) by
+  Daniel Lemire. So with a bit of effort to
+  pinpoints the slow parts, we can easily have state of the
+  art performance in the future.
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
