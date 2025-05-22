@@ -14,11 +14,7 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from .context import (
-    InputContext,
-    TextAndVisionContext,
-    TextContext,
-)
+from .context import InputContext, TextAndVisionContext, TextContext, TTSContext
 from .interfaces import (
     AudioGenerationRequest,
     AudioGenerator,
@@ -67,4 +63,5 @@ __all__ = [
     "TokenGeneratorRequestMessage",
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
+    "TTSContext",
 ]

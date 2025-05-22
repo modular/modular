@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Any, Optional, Protocol, Union, runtime_checkable
 
@@ -572,3 +573,57 @@ class TextAndVisionContext(TextContext):
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
         self.pixel_values = ()
+
+
+SPEECH_TOKEN_audio_chunk_size = 128
+
+
+class TTSContext:
+    """A context for the TTS model."""
+
+    def __init__(self, text_context: TextContext):
+        self.text_context = text_context
+        self._speech_token_size = SPEECH_TOKEN_audio_chunk_size
+        self._speech_token_end_idx = 0
+        self._speech_tokens = np.zeros(self._speech_token_size, dtype=np.int32)
+        self._decoded_index = 0
+
+    @property
+    def speech_tokens(self) -> np.ndarray:
+        return self._speech_tokens[: self._speech_token_end_idx]
+
+    def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
+        """Updates the next_tokens"""
+        self._upsize_speech_tokens(len(new_tokens))
+        self._speech_tokens[
+            self._speech_token_end_idx : self._speech_token_end_idx
+            + len(new_tokens)
+        ] = new_tokens
+        self._speech_token_end_idx += len(new_tokens)
+
+    def _upsize_speech_tokens(self, new_size: int) -> None:
+        if self._speech_token_end_idx + new_size >= self._speech_token_size:
+            self._speech_token_size += (
+                math.ceil(new_size / SPEECH_TOKEN_audio_chunk_size)
+            ) * SPEECH_TOKEN_audio_chunk_size
+            self._speech_tokens = np.resize(
+                self._speech_tokens, self._speech_token_size
+            )
+
+    def next_speech_tokens(self, audio_chunk_size: int) -> np.ndarray:
+        """Returns a chunk of the next unseen speech tokens.
+
+        Calling this function will update the index of the last seen token.
+
+        Args:
+            audio_chunk_size: The number of speech tokens to return.
+
+        Returns:
+            A chunk of speech tokens.
+        """
+        end_idx = min(
+            self._decoded_index + audio_chunk_size, self._speech_token_end_idx
+        )
+        chunk = self._speech_tokens[self._decoded_index : end_idx]
+        self._decoded_index = end_idx
+        return chunk
