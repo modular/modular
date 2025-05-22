@@ -49,7 +49,7 @@ def test_pipelines_cli__smollm_float32(capsys):
     )
 
 
-def test_pipelines_cli__custom_model(capsys):
+def test_pipelines_cli__custom_model():
     path = os.getenv("PIPELINES_CUSTOM_ARCHITECTURE")
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
@@ -60,7 +60,9 @@ def test_pipelines_cli__custom_model(capsys):
         )
         local_model_path = REPO_ID
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(
+        ValueError, match=".*'SupportedEncoding.q4_k' not supported.*"
+    ):
         pipelines.main(
             [
                 "generate",
@@ -76,12 +78,6 @@ def test_pipelines_cli__custom_model(capsys):
                 f"--custom-architectures={path}",
                 "--huggingface-model-revision",
                 REVISION,
+                "--engine=max",
             ]
         )
-    captured = capsys.readouterr()
-    assert (
-        # Normally q4_k is supported by max engine for llama.
-        # We override with a dummy model that does not support q4_k.
-        # So this failing shows that the custom model was loaded.
-        "'SupportedEncoding.q4_k' not supported" in captured.err
-    )
