@@ -47,14 +47,6 @@ class Attribute:
     @property
     def _CAPIPtr(self) -> object: ...
 
-class Block:
-    def __init__(self, arg: MlirBlock, /) -> None: ...
-    @property
-    def end(self) -> InsertPoint: ...
-
-class InsertPoint:
-    pass
-
 class NamedAttribute:
     def __init__(self, arg0: str, arg1: Attribute, /) -> None: ...
     @property
@@ -63,13 +55,35 @@ class NamedAttribute:
     def value(self) -> Attribute: ...
     def __iter__(self) -> tuple: ...
 
-class OpBuilder:
-    def __init__(self, arg: InsertPoint, /) -> None: ...
+class TypeID:
+    pass
 
-    OpType = TypeVar("OpType", bound=type[Operation])
-    def create(
-        self, type: OpType, location: Location
-    ) -> Callable[..., OpType]: ...
+class Type:
+    def __init__(self, arg: MlirType, /) -> None: ...
+    def __eq__(self, arg: object, /) -> bool: ...
+    @property
+    def asm(self) -> str: ...
+    def __repr__(self) -> str: ...
+    @property
+    def _CAPIPtr(self) -> object: ...
+
+T = TypeVar("T", bound=Type)
+
+class Value(Generic[T]):
+    def __init__(self, arg: MlirValue, /) -> None: ...
+    def __eq__(self, arg: object, /) -> bool: ...
+    @property
+    def type(self) -> T: ...
+    @property
+    def _CAPIPtr(self) -> object: ...
+
+class InsertPoint:
+    pass
+
+class Block:
+    def __init__(self, arg: MlirBlock, /) -> None: ...
+    @property
+    def end(self) -> InsertPoint: ...
 
 class Operation:
     def __eq__(self, arg: object, /) -> bool: ...
@@ -81,41 +95,27 @@ class Operation:
     @property
     def _CAPIPtr(self) -> object: ...
 
-T = TypeVar("T", bound=Type)
+class OpBuilder:
+    def __init__(self, arg: InsertPoint, /) -> None: ...
 
-class Type:
-    def __init__(self, arg: MlirType, /) -> None: ...
-    def __eq__(self, arg: object, /) -> bool: ...
-    @property
-    def asm(self) -> str: ...
-    def __repr__(self) -> str: ...
-    @property
-    def _CAPIPtr(self) -> object: ...
+    OpType = TypeVar("OpType", bound=type[Operation])
+    def create(
+        self, type: OpType, location: Location
+    ) -> Callable[..., OpType]: ...
 
-class TypeID:
-    pass
-
-class Value(Generic[T]):
-    def __init__(self, arg: MlirValue, /) -> None: ...
-    def __eq__(self, arg: object, /) -> bool: ...
-    @property
-    def type(self) -> T: ...
-    @property
-    def _CAPIPtr(self) -> object: ...
-
-class _BitVector:
+class _Operation:
     pass
 
 class _LockedSymbolTableCollection:
     pass
 
-class _Operation:
-    pass
-
-class _RelocationModel(enum.Enum):
+class _BitVector:
     pass
 
 class _TargetTriple:
+    pass
+
+class _RelocationModel(enum.Enum):
     pass
 
 __version__: str

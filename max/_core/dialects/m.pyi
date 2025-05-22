@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Callable, Protocol, overload
 
 import max._core
+import max._core.dialects.builtin
 
 # Many of the generated overloads for constructors are more specialized in
 # C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
@@ -32,6 +33,24 @@ DiagnosticHandler = Callable
 #   with `nb_func_render_signature` because for instance adding garbage characters to the
 #   `const_name` in the type caster will cause it to repro in different places.
 # - For now, really hacky thing to work around.
+
+class InOutSemantics(enum.Enum):
+    none = 46
+
+    in_ = 105
+
+    out = 111
+
+    mut = 109
+
+class HasAlignedBytesInterface(Protocol):
+    """
+    This interface allows an attribute to describe the size and
+    alignment of its underlying ArrayRef<uint8_t> data as an !M.aligned_bytes.
+    """
+
+    @property
+    def aligned_bytes_type(self) -> AlignedBytesType: ...
 
 class AlignedBytesAttr(max._core.Attribute):
     """
@@ -61,29 +80,6 @@ class AlignedBytesAttr(max._core.Attribute):
     def __init__(self, data: Sequence[int], align: int) -> None: ...
     @property
     def data(self) -> Sequence[int]: ...
-    @property
-    def align(self) -> int: ...
-
-class AlignedBytesType(max._core.Type):
-    """
-    This type has no values and no runtime representation. It is intended only
-    to be used as a type annotation on `dense_resource` attribute operands
-    so as to convey a desired alignment. This is needed in two situations:
-     - As a way to 'forward declare' the alignment for an attribute who's
-       blob has not yet been parsed.
-     - As a way to override the required alignment for an attribute without
-       reallocating the underlying data.
-
-    Example:
-    ```mlir
-    // An array of 4 uint8_ts with 16 byte alignment
-    !M.aligned_bytes<4, align 16>
-    ```
-    """
-
-    def __init__(self, size: int, align: int) -> None: ...
-    @property
-    def size(self) -> int: ...
     @property
     def align(self) -> int: ...
 
@@ -131,34 +127,6 @@ class ArrayElementsAttr(max._core.Attribute):
     def data(self) -> PrimitiveArrayAttr: ...
     @property
     def type(self) -> max._core.dialects.builtin.ShapedType: ...
-
-class ArrayType(max._core.Type):
-    """
-    The `!M.array` type represents one dimensional data of known length. This
-    type implements `ShapedType` and can be used with `ElementsAttr`.
-
-    Example:
-
-    ```mlir
-    // An array of integers.
-    !M.array<32xi32>
-
-    // An array of floats.
-    !M.array<256xf64>
-    ```
-    """
-
-    @overload
-    def __init__(self, size: int, element_type: max._core.Type) -> None: ...
-    @overload
-    def __init__(self, size: int, element_type: max._core.Type) -> None: ...
-    @property
-    def size(self) -> int: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-
-class DataLayout:
-    pass
 
 class DeviceRefAttr(max._core.Attribute):
     """
@@ -238,24 +206,6 @@ class DeviceSpecCollectionAttr(max._core.Attribute):
     @property
     def devices(self) -> Sequence[DeviceSpecAttr]: ...
 
-class HasAlignedBytesInterface(Protocol):
-    """
-    This interface allows an attribute to describe the size and
-    alignment of its underlying ArrayRef<uint8_t> data as an !M.aligned_bytes.
-    """
-
-    @property
-    def aligned_bytes_type(self) -> AlignedBytesType: ...
-
-class InOutSemantics(enum.Enum):
-    none = 46
-
-    in_ = 105
-
-    out = 111
-
-    mut = 109
-
 class InOutSignatureAttr(max._core.Attribute):
     """
     This attribute captures the intended semantics for each pointer-like
@@ -284,9 +234,6 @@ class InOutSignatureAttr(max._core.Attribute):
     def __init__(self, signature: Sequence[InOutSemantics]) -> None: ...
     @property
     def signature(self) -> str: ...
-
-class IntArrayElementsAttr:
-    pass
 
 class MultiLineStringAttr(max._core.Attribute):
     r"""
@@ -343,13 +290,6 @@ class PrimitiveArrayAttr(max._core.Attribute):
     def data(self) -> Sequence[int]: ...
     @property
     def element_type(self) -> max._core.Type | None: ...
-
-class StringArrayAttr(max._core.Attribute):
-    def __init__(
-        self, value: Sequence[max._core.dialects.builtin.StringAttr]
-    ) -> None: ...
-    @property
-    def value(self) -> Sequence[max._core.dialects.builtin.StringAttr]: ...
 
 class SymbolRefArrayAttr(max._core.Attribute):
     def __init__(
@@ -425,3 +365,64 @@ class TypeArrayAttr(max._core.Attribute):
     def __init__(self, value: Sequence[max._core.Type]) -> None: ...
     @property
     def value(self) -> Sequence[max._core.Type]: ...
+
+class StringArrayAttr(max._core.Attribute):
+    def __init__(
+        self, value: Sequence[max._core.dialects.builtin.StringAttr]
+    ) -> None: ...
+    @property
+    def value(self) -> Sequence[max._core.dialects.builtin.StringAttr]: ...
+
+class AlignedBytesType(max._core.Type):
+    """
+    This type has no values and no runtime representation. It is intended only
+    to be used as a type annotation on `dense_resource` attribute operands
+    so as to convey a desired alignment. This is needed in two situations:
+     - As a way to 'forward declare' the alignment for an attribute who's
+       blob has not yet been parsed.
+     - As a way to override the required alignment for an attribute without
+       reallocating the underlying data.
+
+    Example:
+    ```mlir
+    // An array of 4 uint8_ts with 16 byte alignment
+    !M.aligned_bytes<4, align 16>
+    ```
+    """
+
+    def __init__(self, size: int, align: int) -> None: ...
+    @property
+    def size(self) -> int: ...
+    @property
+    def align(self) -> int: ...
+
+class ArrayType(max._core.Type):
+    """
+    The `!M.array` type represents one dimensional data of known length. This
+    type implements `ShapedType` and can be used with `ElementsAttr`.
+
+    Example:
+
+    ```mlir
+    // An array of integers.
+    !M.array<32xi32>
+
+    // An array of floats.
+    !M.array<256xf64>
+    ```
+    """
+
+    @overload
+    def __init__(self, size: int, element_type: max._core.Type) -> None: ...
+    @overload
+    def __init__(self, size: int, element_type: max._core.Type) -> None: ...
+    @property
+    def size(self) -> int: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+
+class DataLayout:
+    pass
+
+class IntArrayElementsAttr:
+    pass
