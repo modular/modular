@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import Deque, Dict
+from collections import Deque
 
 from testing import assert_equal
 

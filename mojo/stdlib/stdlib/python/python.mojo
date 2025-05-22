@@ -19,7 +19,6 @@ from python import Python
 ```
 """
 
-from collections import Dict
 from collections.dict import OwnedKwargsDict
 from os import abort, getenv
 from sys import external_call, sizeof

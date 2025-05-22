@@ -40,8 +40,6 @@ from sys.ffi import OpaquePointer
 
 from memory import UnsafePointer, bitcast, memcpy
 
-from .optional import Optional
-
 
 trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
     """A trait composition for types which implement all requirements of
@@ -367,7 +365,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
     Examples:
 
     ```mojo
-    from collections import Dict
     var d = Dict[String, Int]()
     d["a"] = 1
     d["b"] = 2
@@ -499,8 +496,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         Examples:
 
         ```mojo
-        from collections import Dict
-
         var x = Dict[Int, Int](power_of_two_initial_capacity = 1024)
         # Insert (2/3 of 1024) entries without reallocation.
         ```
@@ -718,8 +713,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             this method is a bit special. Here is an example below:
 
             ```mojo
-            from collections import Dict
-
             var my_dict = Dict[Int, Float64]()
             my_dict[1] = 1.1
             my_dict[2] = 2.2
@@ -923,8 +916,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         Examples:
 
         ```mojo
-        from collections import Dict
-
         var my_dict = Dict[String, Int]()
         my_dict["a"] = 1
         my_dict["b"] = 2
@@ -1281,8 +1272,6 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         Examples:
 
         ```mojo
-        from collections import Dict
-
         var my_dict = Dict[String, Int]()
         my_dict["a"] = 1
         my_dict["b"] = 2
