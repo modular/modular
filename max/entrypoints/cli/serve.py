@@ -48,9 +48,14 @@ def serve_pipeline(
     model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
     experimental_enable_kvcache_agent: bool = False,
+    port: Optional[int] = None,
 ):
     # Initialize settings
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
+
+    if port is not None:
+        settings.port = port
+
     settings.experimental_enable_kvcache_agent = (
         experimental_enable_kvcache_agent
     )

@@ -150,6 +150,11 @@ def common_server_options(func):
         default=False,
         help="Experimental: Enable KV Cache Agent support.",
     )
+    @click.option(
+        "--port",
+        type=int,
+        help="Port to run the server on.",
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -169,6 +174,7 @@ def cli_serve(
     model_name,
     sim_failure,
     experimental_enable_kvcache_agent,
+    port,
     **config_kwargs,
 ):
     """Start a model serving endpoint for inference.
@@ -193,6 +199,7 @@ def cli_serve(
         model_name=model_name,
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
+        port=port,
     )
 
 
