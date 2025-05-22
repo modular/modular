@@ -370,6 +370,14 @@ def main():
             group=4,
         ](1000, 2000, ctx)
 
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            64,
+            32,
+            group=4,
+        ](201, 600, ctx)
+
         # BF16 token gen
 
         test[
@@ -454,6 +462,14 @@ def main():
             32,
             group=4,
         ](1, 5000, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            64,
+            32,
+            group=4,
+        ](1, 600, ctx)
 
         @parameter
         if ctx.device_info is A100 or ctx.device_info is H100:
