@@ -19,7 +19,6 @@ from python import PythonObject
 ```
 """
 
-from collections import Dict
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import abort
 from sys.ffi import c_ssize_t

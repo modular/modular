@@ -14,7 +14,6 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from collections import Dict
 from random import random_ui64, seed
 from sys import bitwidthof
 from sys.intrinsics import likely, unlikely
