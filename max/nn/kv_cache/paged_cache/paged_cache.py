@@ -27,7 +27,7 @@ from typing import Any, TypeVar, cast
 import numpy as np
 import torch
 from max.driver import Device, Tensor
-from max.dtype import DType, max_to_torch_type
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
     DeviceRef,
@@ -782,7 +782,7 @@ class PagedKVCacheManager(KVCacheManager):
         seq_id = ctx.cache_seq_id
         req_blocks = self.block_manager.get_req_blocks(seq_id)
 
-        torch_dtype = max_to_torch_type(self.params.dtype)
+        torch_dtype = self.params.dtype.to_torch()
 
         # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
         device_tensor = self.device_tensors[device_id]
