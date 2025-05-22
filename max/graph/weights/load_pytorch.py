@@ -22,7 +22,7 @@ try:
 except ImportError:
     torch = None
 
-from max.dtype import DType, torch_to_max_type
+from max.dtype import DType
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
@@ -109,7 +109,7 @@ class PytorchWeights:
     @property
     def dtype(self) -> DType:
         """The current weight dtype, if this weight exists."""
-        return torch_to_max_type(self._tensor_infos[self._prefix].dtype)
+        return DType.from_torch(self._tensor_infos[self._prefix].dtype)
 
     @property
     def shape(self) -> Shape:
@@ -169,7 +169,7 @@ class PytorchWeights:
     def data(self) -> WeightData:
         assert torch is not None
         tensor_info = self._tensor_infos[self._prefix]
-        dtype = torch_to_max_type(self._tensor_infos[self._prefix].dtype)
+        dtype = DType.from_torch(self._tensor_infos[self._prefix].dtype)
         return WeightData(
             np.memmap(
                 self._filepath,
@@ -202,7 +202,7 @@ class PytorchWeights:
         tensor_info = self._tensor_infos[self._prefix]
         weight = Weight(
             self._prefix,
-            torch_to_max_type(tensor_info.dtype),
+            DType.from_torch(tensor_info.dtype),
             tensor_info.shape,
             device=device,
         )

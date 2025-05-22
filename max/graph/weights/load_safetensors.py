@@ -12,7 +12,7 @@ from os import PathLike
 from typing import Any, Optional
 
 import numpy.typing as npt
-from max.dtype import DType, torch_to_max_type
+from max.dtype import DType
 from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
@@ -175,7 +175,7 @@ class SafetensorWeights(Weights):
         return WeightData(
             np_array,
             self.name,
-            torch_to_max_type(tensor.dtype),
+            DType.from_torch(tensor.dtype),
             Shape(tensor.shape),
         )
 
@@ -197,7 +197,7 @@ class SafetensorWeights(Weights):
                 f" format. Got: {quantization_encoding}"
             )
         tensor = self._load_tensor(dtype)
-        weight_dtype = torch_to_max_type(tensor.dtype)
+        weight_dtype = DType.from_torch(tensor.dtype)
         if tensor.dtype == torch.bfloat16:
             np_tensor = tensor.view(torch.float16).numpy()
             weight_dtype = DType.bfloat16

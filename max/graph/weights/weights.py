@@ -23,7 +23,7 @@ try:
     import torch  # type: ignore
 except ImportError:
     torch = None
-from max.dtype import DType, max_to_torch_type
+from max.dtype import DType
 
 from ..quantization import QuantizationEncoding
 from ..type import DeviceRef, Shape, ShapeLike
@@ -126,12 +126,10 @@ class WeightData:
         if self.dtype == DType.bfloat16:
             assert torch is not None
             data = torch.from_numpy(self.data).view(torch.bfloat16)
-            data = data.to(max_to_torch_type(dtype)).numpy()
+            data = data.to(dtype.to_torch()).numpy()
         elif dtype == DType.bfloat16:
             assert torch is not None
-            data = torch.from_numpy(self.data).view(
-                max_to_torch_type(self.dtype)
-            )
+            data = torch.from_numpy(self.data).view(self.dtype.to_torch())
             data = data.to(torch.bfloat16).view(torch.float16).numpy()
         else:
             data = self.data.astype(dtype.to_numpy())

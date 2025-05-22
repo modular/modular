@@ -10,7 +10,7 @@ import pytest
 import torch
 import torch.utils.dlpack
 from max.driver import Tensor
-from max.dtype import DType, max_to_torch_type
+from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 from test_common.graph_utils import is_h100_h200
 
@@ -67,9 +67,7 @@ def test_f8_downcast(session, cast_dtype):
     model = session.load(graph)
 
     x_torch = (
-        torch.tensor([[1.0, 2.0], [3.0, 4.0]])
-        .to(max_to_torch_type(cast_dtype))
-        .cuda()
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]).to(cast_dtype.to_torch()).cuda()
     )
     x_tensor = Tensor.from_dlpack(x_torch)
     out = model.execute(x_tensor)[0]
