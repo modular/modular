@@ -21,24 +21,24 @@ from test_common.evaluate import PROMPTS
 
 MAX_READ_SIZE = 10 * 1024
 
+pipeline_config = PipelineConfig(
+    model_path="HuggingFaceTB/SmolLM-135M",
+    max_length=512,
+    max_new_tokens=3,
+    device_specs=[DeviceSpec.cpu()],
+    quantization_encoding=SupportedEncoding.float32,
+    cache_strategy=KVCacheStrategy.CONTINUOUS,
+    max_batch_size=16,
+)
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
-    [
-        PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
-            max_length=512,
-            max_new_tokens=3,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
-            max_batch_size=16,
-        )
-    ],
+    [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_cpu(app):
+async def test_tinyllama_serve_v1_chat_completions_cpu(app):
     async with TestClient(app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post(
@@ -81,6 +81,14 @@ async def test_tinyllama_serve_cpu(app):
             assert len(response.choices) == n_prompts
             assert response.choices[0].finish_reason == "stop"
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_config",
+    [pipeline_config],
+    indirect=True,
+)
+async def test_tinyllama_serve_v1_completions_cpu(app):
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""
         return {
