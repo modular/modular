@@ -676,7 +676,7 @@ struct UMMAInsDescriptor[
         /,
         *,
         transpose_a: Bool = False,
-        transpose_b: Bool = False,
+        transpose_b: Bool = True,
     ]() -> Self:
         """Create a descriptor for UMMA instructions.
 
@@ -701,7 +701,7 @@ struct UMMAInsDescriptor[
             0x0, 1 if transpose_a else 0
         )
         alias transpose_bit = Self._insert_bit[16](
-            transpose_a_bit, 1 if transpose_b else 0
+            transpose_a_bit, 0 if transpose_b else 1
         )
 
         @parameter
