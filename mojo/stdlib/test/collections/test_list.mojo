@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import List
 from sys.info import sizeof
 
 from memory import Span, UnsafePointer

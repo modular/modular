@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import List
 from collections.string.format import _CurlyEntryFormattable
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike

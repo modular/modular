@@ -21,7 +21,6 @@ from tempfile import gettempdir
 
 import os
 import sys
-from collections import List, Optional
 from pathlib import Path
 
 from memory import Span
