@@ -26,6 +26,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    ShardingStrategy,
     TensorValue,
     TensorValueLike,
     Weight,
@@ -79,6 +80,26 @@ class Float8WeightScaleSpec:
 
     dtype: DType
     """The data type of the weight scale factor(s)."""
+
+    @property
+    def is_tensor(self) -> bool:
+        """Whether the weight scale granularity is per-tensor."""
+        return self.granularity == Float8ScaleGranularity.TENSOR
+
+    @property
+    def is_rowwise(self) -> bool:
+        """Whether the weight scale granularity is row-wise."""
+        return self.granularity == Float8ScaleGranularity.ROWWISE
+
+    @property
+    def is_colwise(self) -> bool:
+        """Whether the weight scale granularity is column-wise."""
+        return self.granularity == Float8ScaleGranularity.COLWISE
+
+    @property
+    def is_block(self) -> bool:
+        """Whether the weight scale granularity is block-wise."""
+        return self.granularity == Float8ScaleGranularity.BLOCK
 
 
 @dataclass
@@ -286,6 +307,39 @@ class Linear(Module):
                 quantization_encoding=quantization_encoding,
             )
 
+    def set_sharding(self, strategy: ShardingStrategy) -> None:
+        """Sets the weight sharding for this linear layer.
+
+        Args:
+            strategy: The strategy describing the weight sharding.
+        """
+        self.weight.set_sharding_strategy(strategy)
+
+        if self.weight_scale:
+            # Weight scale should only be added when a float8 config is passed.
+            assert self.float8_config
+
+            # When the weight scale is rowwise of shape (M, 1), or tensor of
+            # shape (1,), replicate it across devices when weight sharding is
+            # colwise.
+            should_replicate = self.float8_config.weight_scale.is_tensor or (
+                strategy.is_colwise
+                and self.float8_config.weight_scale.is_rowwise
+            )
+            self.weight_scale.set_sharding_strategy(
+                ShardingStrategy.replicate(strategy.num_devices)
+                if should_replicate
+                else strategy
+            )
+
+        if self.bias:
+            # Only shard the bias when the weight sharding is rowwise.
+            self.bias.set_sharding_strategy(
+                strategy
+                if strategy.is_rowwise
+                else ShardingStrategy.replicate(strategy.num_devices)
+            )
+
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
 
@@ -440,14 +494,7 @@ class ColumnParallelLinear(Linear):
         self.devices = devices
         self.num_devices = len(self.devices)
 
-        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
-            row_size = int(weight.shape[0]) // self.num_devices
-            return weight[i * row_size : (i + 1) * row_size, ...]
-
-        # Use row sharding strategy because the weight is transposed.
-        self.weight.set_sharding_strategy(row_sharding_strategy)
-        if self.bias is not None:
-            self.bias.set_sharding_strategy(row_sharding_strategy)
+        self.set_sharding(ShardingStrategy.rowwise(self.num_devices))
 
         # Create normal Linear layers for each device. These layers and weights
         # are not recorded by the nn.Module and do not appear in the state dict.
@@ -1006,29 +1053,11 @@ class DistributedMLP(MLP):
 
         self.num_devices = len(self.devices)
 
-        def col_sharding_strategy(weight: Weight, i: int) -> TensorValue:
-            col_size = int(weight.shape[1]) // self.num_devices
-            return weight[:, i * col_size : (i + 1) * col_size]
-
-        def row_sharding_strategy(weight: Weight, i: int) -> TensorValue:
-            row_size = int(weight.shape[0]) // self.num_devices
-            return weight[i * row_size : (i + 1) * row_size, :]
-
-        self.gate_proj.weight.set_sharding_strategy(row_sharding_strategy)
-        if self.gate_proj.weight_scale:
-            self.gate_proj.weight_scale.set_sharding_strategy(
-                row_sharding_strategy
-            )
-
-        self.down_proj.weight.set_sharding_strategy(col_sharding_strategy)
-        if self.down_proj.weight_scale:
-            self.down_proj.weight_scale.set_sharding_strategy(lambda w, i: w)
-
-        self.up_proj.weight.set_sharding_strategy(row_sharding_strategy)
-        if self.up_proj.weight_scale:
-            self.up_proj.weight_scale.set_sharding_strategy(
-                row_sharding_strategy
-            )
+        self.gate_proj.set_sharding(ShardingStrategy.rowwise(self.num_devices))
+        self.down_proj.set_sharding(
+            ShardingStrategy.columnwise(self.num_devices)
+        )
+        self.up_proj.set_sharding(ShardingStrategy.rowwise(self.num_devices))
 
         # Create normal MLP layers for each device. These layers and weights are
         # not recorded by the nn.Module and do not appear in the state dict.
