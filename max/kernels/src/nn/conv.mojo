@@ -3021,15 +3021,18 @@ fn conv2d_gpu_naive_nhwc_rscf[
     dilation: IndexList[2],
     padding: IndexList[2],
 ):
-    var N = input.dim[0]()
-    var H = input.dim[1]()
-    var W = input.dim[2]()
-    var C_in = input.dim[3]()  # channel_in
-    var R = filter.dim[0]()
-    var S = filter.dim[1]()
-    var H_out = output.dim[1]()
-    var W_out = output.dim[2]()
-    var C_out = output.dim[3]()  # channel_out or #F
+    # Cache dimensions for better register usage
+    alias N = input_dim.get[0]()
+    alias H = input_dim.get[1]()
+    alias W = input_dim.get[2]()
+    alias C_in = input_dim.get[3]()
+    alias R = filter_dim.get[0]()
+    alias S = filter_dim.get[1]()
+    alias H_out = output_dim.get[1]()
+    alias W_out = output_dim.get[2]()
+    alias C_out = output_dim.get[3]()
+
+    # Cache padding and stride values to avoid repeated array access
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3037,37 +3040,67 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var dil_h = dilation[0]
     var dil_w = dilation[1]
 
+    # Thread indexing
     var n = block_idx.z
     var h = block_idx.y * block_dim.y + thread_idx.y
     var w = block_idx.x * block_dim.x + thread_idx.x
 
+    # Bounds check
     if h >= H_out or w >= W_out:
         return
 
-    for co in range(C_out):
-        alias accum_type = get_accum_type[output_type]()
-        var value = Scalar[accum_type](0)
-        for r in range(R):
-            for s in range(S):
-                var h_in = h * stride_h - pad_h + r * dil_h
-                var w_in = w * stride_w - pad_w + s * dil_w
-                if 0 <= h_in < H and 0 <= w_in < W:
-                    for ci in range(C_in):
-                        value += (
-                            input.load(IndexList[4](n, h_in, w_in, ci)).cast[
-                                accum_type
-                            ]()
-                            * filter.load(IndexList[4](r, s, ci, co)).cast[
-                                accum_type
-                            ]()
-                        )
+    # Pre-compute input coordinates for this output position
+    var h_base = h * stride_h - pad_h
+    var w_base = w * stride_w - pad_w
 
-        @parameter
-        if maybe_epilogue_func:
-            alias epilogue_func = maybe_epilogue_func.value()
-            epilogue_func(IndexList[4](n, h, w, co), value.cast[output_type]())
-        else:
-            output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
+    # Process multiple output channels per thread for better memory utilization
+    alias simd_width = simdwidthof[output_type]()
+    alias accum_type = get_accum_type[output_type]()
+
+    for co_base in range(0, C_out, simd_width):
+        var co_end = min(co_base + simd_width, C_out)
+
+        # Use SIMD vectors for accumulation when possible
+        var values = SIMD[accum_type, simd_width](0)
+
+        # Optimize the convolution loops
+        for r in range(R):
+            var h_in = h_base + r * dil_h
+            # Early exit if h_in is out of bounds
+            if h_in < 0 or h_in >= H:
+                continue
+
+            for s in range(S):
+                var w_in = w_base + s * dil_w
+                # Early exit if w_in is out of bounds
+                if w_in < 0 or w_in >= W:
+                    continue
+
+                # Vectorized inner loop over input channels
+                for ci in range(C_in):
+                    var input_val = input.load(
+                        IndexList[4](n, h_in, w_in, ci)
+                    ).cast[accum_type]()
+
+                    # Unrolled computation for multiple output channels
+                    for co_idx in range(co_end - co_base):
+                        var co = co_base + co_idx
+                        var filter_val = filter.load(
+                            IndexList[4](r, s, ci, co)
+                        ).cast[accum_type]()
+                        values[co_idx] += input_val * filter_val
+
+        # Store results for this thread
+        for co_idx in range(co_end - co_base):
+            var co = co_base + co_idx
+            var final_value = values[co_idx].cast[output_type]()
+
+            @parameter
+            if maybe_epilogue_func:
+                alias epilogue_func = maybe_epilogue_func.value()
+                epilogue_func(IndexList[4](n, h, w, co), final_value)
+            else:
+                output.store(IndexList[4](n, h, w, co), final_value)
 
 
 @always_inline
