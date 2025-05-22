@@ -14,7 +14,7 @@ from typing import Optional, Union
 from max import mlir
 from max._core import Type as _Type
 from max.driver import Accelerator, Tensor, accelerator_count
-from max.dtype import DType, torch_to_max_type
+from max.dtype import DType
 from max.engine import Model
 from max.engine.api import InferenceSession
 from max.graph import (
@@ -203,7 +203,7 @@ def convert_device(device: torch.device) -> DeviceRef:
 
 
 def torch_tensor_to_type(tensor: torch.Tensor) -> TensorType:
-    dtype = torch_to_max_type(tensor.dtype)
+    dtype = DType.from_torch(tensor.dtype)
     shape = convert_shape(tensor.shape)
     device = convert_device(tensor.device)
     return TensorType(dtype, shape, device=device)

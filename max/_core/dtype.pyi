@@ -95,5 +95,33 @@ class DType(enum.Enum):
             ValueError: If the input dtype is not supported.
         """
 
+    def to_torch(self):
+        """
+        Converts this ``DType`` to the corresponding torch dtype.
+
+        Returns:
+            DType: The corresponding torch dtype object.
+
+        Raises:
+            ValueError: If the dtype is not supported.
+            ImportError: If `torch` isn't installed.
+        """
+
+    @staticmethod
+    def from_torch(tensor) -> DType:
+        """
+        Converts a torch dtype to the corresponding DType.
+
+        Args:
+            dtype (np.dtype): The torch dtype to convert.
+
+        Returns:
+            DType: The corresponding DType enum value.
+
+        Raises:
+            ValueError: If the input dtype is not supported.
+            ImportError: If `torch` isn't installed.
+        """
+
     @property
     def _mlir(self) -> str: ...
