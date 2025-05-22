@@ -578,11 +578,15 @@ class TextAndVisionContext(TextContext):
 SPEECH_TOKEN_audio_chunk_size = 128
 
 
-class TTSContext:
+class TTSContext(TextContext):
     """A context for the TTS model."""
 
-    def __init__(self, text_context: TextContext):
-        self.text_context = text_context
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
         self._speech_token_size = SPEECH_TOKEN_audio_chunk_size
         self._speech_token_end_idx = 0
         self._speech_tokens = np.zeros(self._speech_token_size, dtype=np.int32)
