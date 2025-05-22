@@ -15,6 +15,7 @@ from collections import OptionalReg
 
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
+from sys import alignof
 
 from utils import IndexList, StaticTuple
 
@@ -33,6 +34,22 @@ fn register(name: StaticString):
 @__mogg_intrinsic_attr("mogg.view_kernel")
 fn view_kernel():
     return
+
+
+@always_inline
+fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
+    """Return a `DimList` of strides for data laid out in row-major order, from
+    a `DimList` representing the shape."""
+
+    @parameter
+    if rank == 1:
+        return 1
+    elif rank == 2:
+        return (shape.get[1](), 1)
+    elif rank == 3:
+        return (shape.get[2]() * shape.get[1](), shape.get[2](), 1)
+    else:
+        return -1
 
 
 # Compile time Tensor informations
@@ -86,6 +103,30 @@ struct StaticTensorSpec[
         self.in_lambda = in_lambda
         self.out_lambda = out_lambda
         self.out_compute_lambda = out_compute_lambda
+
+    fn __init__(out self, shape: DimList):
+        constrained[
+            rank > 0,
+            (
+                "initializing `StaticTensorSpec` with just a shape only"
+                " supports rank 1 to 3"
+            ),
+        ]()
+        debug_assert(
+            len(shape) == rank,
+            (
+                "initialized `StaticTensorSpec` with a shape length not equal"
+                "to the `rank` parameter"
+            ),
+        )
+        self.shape = shape
+        self.strides = _row_major_strides[rank](shape)
+        self.alignment = alignof[type]()
+        self.address_space = AddressSpace.GENERIC
+        self.exclusive = False
+        self.in_lambda = None
+        self.out_lambda = None
+        self.out_compute_lambda = None
 
     @staticmethod
     fn create_unknown() -> Self:
