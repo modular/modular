@@ -13,26 +13,13 @@ from ..graph import Graph
 from ..type import DeviceRef
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
-
-
-def _axis_out_of_range_error(
-    axis_name: str, axis: int, lower_bound: int, upper_bound: int
-) -> str:
-    return f"Axis {axis_name} out of range (expected to be in range of [{lower_bound}, {upper_bound}], but got {axis})"
+from .utils import check_axis_in_bounds
 
 
 def _axis_bounds(rank: int) -> tuple[int, int]:
     if rank == 0:
         return -1, 0
     return -rank, rank - 1
-
-
-def _check_axis_in_bounds(axis: int, axis_name: str, rank: int) -> None:
-    lower_bound, upper_bound = _axis_bounds(rank)
-    if axis < lower_bound or axis > upper_bound:
-        raise IndexError(
-            _axis_out_of_range_error(axis_name, axis, lower_bound, upper_bound)
-        )
 
 
 def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
@@ -56,8 +43,8 @@ def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
 
     rank = len(v.shape)
 
-    _check_axis_in_bounds(axis_1, "axis_1", rank)
-    _check_axis_in_bounds(axis_2, "axis_2", rank)
+    check_axis_in_bounds(axis_1, rank, _axis_bounds, "axis_1")
+    check_axis_in_bounds(axis_2, rank, _axis_bounds, "axis_2")
 
     if axis_1 < 0:
         axis_1 += rank

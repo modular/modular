@@ -10,6 +10,12 @@ from collections.abc import Iterable
 from ..value import TensorValue, TensorValueLike
 from .concat import concat
 from .unsqueeze import unsqueeze
+from .utils import check_axis_in_bounds
+
+
+def _axis_bounds(rank: int) -> tuple[int, int]:
+    # For stack, valid axis range is [-rank+1, rank] because we're inserting a new dimension
+    return -(rank + 1), rank
 
 
 def _axis_out_of_range_error(
@@ -19,7 +25,7 @@ def _axis_out_of_range_error(
 
 
 def _stack_axis_bounds(rank: int) -> tuple[int, int]:
-    # For stack, valid axis range is [-rank+1, rank] because we're inserting a new dimension
+    # For stack, valid axis range is [-rank-1, rank] because we're inserting a new dimension
     return -(rank + 1), rank
 
 
@@ -66,7 +72,7 @@ def stack(values: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
         raise ValueError("All inputs to stack must have the same device")
 
     # Check if axis is within bounds
-    _check_stack_axis_in_bounds(axis, rank)
+    check_axis_in_bounds(axis, rank, _axis_bounds)
 
     unsqueezed = [unsqueeze(v, axis) for v in values_coerced]
 
