@@ -29,12 +29,10 @@ from sys.intrinsics import (
     strided_store,
 )
 
-from builtin.identifiable import TypeIdentifiable
 from builtin.simd import _simd_construction_checks
 from memory.memory import _free, _malloc
 
 from python import PythonObject
-from python._bindings import PyMojoObject
 
 # ===----------------------------------------------------------------------=== #
 # UnsafePointer
@@ -164,7 +162,7 @@ struct UnsafePointer[
     fn __init__(
         out self: UnsafePointer[type, mut=mut, origin=origin],
         *,
-        ref [origin]unchecked_downcast: PythonObject,
+        ref [origin]unchecked_downcast_value: PythonObject,
     ):
         """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
@@ -172,13 +170,10 @@ struct UnsafePointer[
         an initialized Mojo object of matching type.
 
         Args:
-            unchecked_downcast: The Python object to downcast from.
+            unchecked_downcast_value: The Python object to downcast from.
         """
-        var mojo_obj_ptr = unchecked_downcast.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
-            PyMojoObject[type]
-        ]()
 
-        self = __type_of(self)(to=mojo_obj_ptr[].mojo_value)
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
 
     @always_inline
     fn copy(self) -> Self:

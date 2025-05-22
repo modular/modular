@@ -142,10 +142,30 @@ Changes to Python-Mojo interoperability:
   by Mojo types that can be constructed by converting from a `PythonObject`.
   This is the reverse operation of the `PythonConvertible` trait.
 
-- Added `UnsafePointer` initializer for downcasting from a `PythonObject`.
+- `PythonObject` has new methods for downcasting to a pointer to a contained
+  Mojo value, for use in Python/Mojo interop.
 
-  This is used to get a pointer to the underlying Mojo value that was stored
-  into a Python object.
+  ```mojo
+  struct Person:
+      var name: String
+
+  fn greet(obj: PythonObject) raises:
+    var person = obj.downcast_value_ptr[Person]()
+
+    print("Hello ", person[].name, "from Mojo🔥!")
+  ```
+
+  - `PythonObject.downcast_value_ptr[T]()` checks if the object is a wrapped
+    instance of the Mojo type `T`, and if so, returns an `UnsafePointer[T]`.
+    Otherwise, an exception is raised.
+
+  - `PythonObject.unchecked_downcast_value_ptr[T]()` unconditionally
+    returns an `UnsafePointer[T]` with any runtime type checking. This is useful
+    when using Python/Mojo interop to optimize an inner loop and minimizing
+    overhead is desirable.
+
+    Also added equivalent `UnsafePointer` initializer for downcasting from a
+    `PythonObject`.
 
 - `os.abort(messages)` no longer supports generic variadic number of `Writable`
   messages.  While this API was high-level and convenient, it generates a lot of

@@ -27,10 +27,12 @@ from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 # This apparently redundant import is needed so PythonBindingsGen.cpp can find
 # the StringLiteral declaration.
 from builtin.string_literal import StringLiteral
+from builtin.identifiable import TypeIdentifiable
 from memory import UnsafePointer
 
-from ._cpython import CPython, PyObjectPtr
+from ._cpython import CPython, PyObjectPtr, PyObject
 from .python import Python
+from ._bindings import _get_type_name, get_py_type_object, PyMojoObject
 
 
 trait PythonConvertible:
@@ -1514,6 +1516,118 @@ struct PythonObject(
         var result = _unsafe_aliasing_address_to_pointer[dtype](tmp)
         _ = tmp
         return result
+
+    fn downcast_value_ptr[
+        T: TypeIdentifiable
+    ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[T]:
+        """Get a pointer to the expected contained Mojo value of type `T`.
+
+        This method validates that this object actually contains an instance of
+        `T`, and will raise an error if it does not.
+
+        Mojo values are stored as Python objects backed by the `PyMojoObject[T]`
+        struct.
+
+        Args:
+            func: Optional name of bound Mojo function that the raised
+              TypeError should reference if downcasting fails.
+
+        Parameters:
+            T: The type of the Mojo value that this Python object is expected
+              to contain.
+
+        Returns:
+            A pointer to the inner Mojo value.
+
+        Raises:
+            If the Python object does not contain an instance of the Mojo `T`
+            type.
+        """
+        var opt: Optional[UnsafePointer[T]] = self._try_downcast_value[T]()
+
+        if not opt:
+            if func:
+                raise Error(
+                    String.format(
+                        (
+                            "TypeError: {}() expected Mojo '{}' type argument,"
+                            " got '{}'"
+                        ),
+                        func[],
+                        T.TYPE_ID,
+                        _get_type_name(self),
+                    )
+                )
+            else:
+                raise Error(
+                    String.format(
+                        "TypeError: expected Mojo '{}' type value, got '{}'",
+                        T.TYPE_ID,
+                        _get_type_name(self),
+                    )
+                )
+
+        # SAFETY: We just validated that this Optional is not empty.
+        return opt.unsafe_take()
+
+    fn _try_downcast_value[
+        T: TypeIdentifiable,
+    ](owned self) raises -> Optional[UnsafePointer[T]]:
+        """Try to get a pointer to the expected contained Mojo value of type `T`.
+
+        None will be returned if the type of this object does not match the
+        bound Python type of `T`.
+
+        This function will raise if the provided Mojo type `T` has not been
+        bound to a Python type using a `PythonTypeBuilder`.
+
+        Parameters:
+            T: The type of the Mojo value that this Python object is expected
+              to contain.
+
+        Raises:
+            If `T` has not been bound to a Python type object.
+        """
+        var cpython = Python().cpython()
+        var type = PyObjectPtr(
+            cpython.Py_TYPE(self.unsafe_as_py_object_ptr()).bitcast[PyObject]()
+        )
+
+        var expected_type_obj = get_py_type_object[T]()
+
+        if type == expected_type_obj.unsafe_as_py_object_ptr():
+            return self.unchecked_downcast_value_ptr[T]()
+        else:
+            return None
+
+    fn unchecked_downcast_value_ptr[T: AnyType](self) -> UnsafePointer[T]:
+        """Get a pointer to the expected Mojo value of type `T`.
+
+        This function assumes that this Python object was allocated as an
+        instance of `PyMojoObject[T]`.
+
+        Parameters:
+            T: The type of the Mojo value stored in this object.
+
+        Returns:
+            A pointer to the inner Mojo value.
+
+        # Safety
+
+        The user must be certain that this Python object type matches the bound
+        Python type object for `T`.
+        """
+        var obj_ptr = self._unchecked_downcast_object_ptr[PyMojoObject[T]]()
+
+        # TODO(MSTDL-950): Should use something like `addr_of!`
+        return UnsafePointer[T](to=obj_ptr[].mojo_value)
+
+    @always_inline
+    fn _unchecked_downcast_object_ptr[
+        T: AnyType
+    ](owned self) -> UnsafePointer[T]:
+        """Assume that this Python object contains a wrapped Mojo value."""
+        return self.py_object.unsized_obj_ptr.bitcast[T]()
 
 
 # ===-----------------------------------------------------------------------===#

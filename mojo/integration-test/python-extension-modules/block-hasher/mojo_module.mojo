@@ -112,7 +112,7 @@ fn mojo_block_hasher(
 ) raises -> PythonObject:
     # Parse np array tokens input
     var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], **_](
-        unchecked_downcast=py_array_object
+        unchecked_downcast_value=py_array_object
     )
 
     # Parse block size

@@ -54,6 +54,17 @@ class TestMojoPythonInterop(unittest.TestCase):
         feature_overview.case_mojo_mutate(list_obj)
         self.assertEqual(list_obj[0], 2)
 
+    def test_case_downcast_unbound_type(self):
+        with self.assertRaises(Exception) as err:
+            feature_overview.case_downcast_unbound_type(5)
+
+        self.assertEqual(
+            err.exception.args,
+            (
+                "No Python type object registered for Mojo type with id: mojo_module.NonBoundType",
+            ),
+        )
+
     def test_case_create_mojo_type_instance(self):
         person = feature_overview.Person()
 

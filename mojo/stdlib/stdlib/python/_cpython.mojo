@@ -37,10 +37,8 @@ from sys.ffi import (
 
 from memory import UnsafePointer
 from python._bindings import (
-    PyMojoObject,
     Typed_initproc,
     Typed_newfunc,
-    get_py_type_object,
 )
 from builtin.identifiable import TypeIdentifiable
 
@@ -198,37 +196,6 @@ struct PyObjectPtr(Copyable, Movable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    fn try_cast_to_mojo_value[
-        T: TypeIdentifiable,
-    ](owned self) -> Optional[UnsafePointer[T]]:
-        var cpython = Python().cpython()
-        var type = PyObjectPtr(cpython.Py_TYPE(self).bitcast[PyObject]())
-
-        var expected_type_obj: TypedPythonObject["Type"]
-
-        try:
-            expected_type_obj = get_py_type_object[T]()
-        except e:
-            # TODO: Return None here instead? This is defensive for now.
-            return abort[Optional[UnsafePointer[T]]](String(e))
-
-        if type == expected_type_obj.unsafe_as_py_object_ptr():
-            return self.unchecked_cast_to_mojo_value[T]()
-        else:
-            return None
-
-    fn unchecked_cast_to_mojo_object[
-        T: AnyType
-    ](owned self) -> UnsafePointer[PyMojoObject[T]]:
-        """Assume that this Python object contains a wrapped Mojo value."""
-        return self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-
-    fn unchecked_cast_to_mojo_value[T: AnyType](owned self) -> UnsafePointer[T]:
-        var mojo_obj_ptr = self.unchecked_cast_to_mojo_object[T]()
-
-        # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer[T](to=mojo_obj_ptr[].mojo_value)
 
     fn is_null(self) -> Bool:
         """Check if the pointer is null.

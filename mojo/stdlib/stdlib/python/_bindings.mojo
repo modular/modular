@@ -127,12 +127,11 @@ fn default_tp_new_wrapper[
         if len(args) != 0 or keyword_args != PyObjectPtr():
             raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
 
-        var obj_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[
-            T
-        ]()
+        var obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+        var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
 
         # Call the user-provided initialization function on uninit memory.
-        __get_address_as_uninit_lvalue(obj_ptr.address) = T()
+        __get_address_as_uninit_lvalue(obj_value_ptr.address) = T()
         return py_self
 
     except e:
@@ -149,7 +148,8 @@ fn default_tp_new_wrapper[
 
 
 fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
-    var self_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[T]()
+    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
@@ -165,7 +165,8 @@ fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
 fn tp_repr_wrapper[
     T: Defaultable & Representable
 ](py_self: PyObjectPtr) -> PyObjectPtr:
-    var self_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[T]()
+    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
     var repr_str: String = repr(self_ptr[])
 
@@ -1523,31 +1524,6 @@ fn _get_type_name(obj: PythonObject) raises -> String:
     )
 
     return String(actual_type_name)
-
-
-fn check_argument_type[
-    T: TypeIdentifiable
-](func_name: StaticString, obj: PythonObject) raises -> UnsafePointer[T]:
-    """Raise an error if the provided Python object does not contain a wrapped
-    instance of the Mojo `T` type.
-    """
-
-    var opt: Optional[UnsafePointer[T]] = obj.py_object.try_cast_to_mojo_value[
-        T
-    ]()
-
-    if not opt:
-        raise Error(
-            String.format(
-                "TypeError: {}() expected Mojo '{}' type argument, got '{}'",
-                func_name,
-                T.TYPE_ID,
-                _get_type_name(obj),
-            )
-        )
-
-    # SAFETY: We just validated that this Optional is not empty.
-    return opt.unsafe_take()
 
 
 fn _pluralize(

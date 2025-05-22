@@ -65,7 +65,7 @@ fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
     print("Hello from mojo_incr_np_array")
 
     var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], **_](
-        unchecked_downcast=py_array_object
+        unchecked_downcast_value=py_array_object
     )
 
     var nd = py_array_object_ptr[].nd

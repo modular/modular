@@ -29,7 +29,6 @@ from python._bindings import (  # Imported for use by the compiler
     PythonModuleBuilder,
     PythonTypeBuilder,
     _get_type_name,
-    check_argument_type,
     check_arguments_arity,
 )
 from python._cpython import (
@@ -98,7 +97,7 @@ fn check_and_get_arg[
     py_args: TypedPythonObject["Tuple"],
     index: Int,
 ) raises -> UnsafePointer[T]:
-    return check_argument_type[T](func_name, py_args[index])
+    return py_args[index].downcast_value_ptr[T](func=func_name)
 
 
 # NOTE:

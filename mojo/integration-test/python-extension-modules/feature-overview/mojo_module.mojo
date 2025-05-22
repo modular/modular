@@ -45,6 +45,7 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_function[case_raise_string_error]("case_raise_string_error")
         b.def_function[case_mojo_raise]("case_mojo_raise")
         b.def_function[case_mojo_mutate]("case_mojo_mutate")
+        b.def_function[case_downcast_unbound_type]("case_downcast_unbound_type")
         b.def_py_function[incr_int__wrapper]("incr_int")
         b.def_py_function[add_to_int__wrapper]("add_to_int")
         b.def_function[create_string__wrapper]("create_string")
@@ -108,6 +109,14 @@ fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
     return PythonObject(None)
 
 
+struct NonBoundType(TypeIdentifiable):
+    alias TYPE_ID = "mojo_module.NonBoundType"
+
+
+fn case_downcast_unbound_type(value: PythonObject) raises:
+    var _ptr = value.downcast_value_ptr[NonBoundType]()
+
+
 # ===----------------------------------------------------------------------=== #
 # Custom Types
 # ===----------------------------------------------------------------------=== #
@@ -134,8 +143,8 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
         )
 
     @staticmethod
-    fn obj_name(self_: PythonObject) -> PythonObject:
-        var self0 = UnsafePointer[Self, **_](unchecked_downcast=self_)
+    fn obj_name(self_: PythonObject) raises -> PythonObject:
+        var self0 = self_.downcast_value_ptr[Self]()
 
         return PythonObject(self0[].name)
 
@@ -144,7 +153,7 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
         var self0 = UnsafePointer[Self, **_](
-            unchecked_downcast=self_
+            unchecked_downcast_value=self_
         ).origin_cast[mut=True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
@@ -269,9 +278,9 @@ fn create_string__wrapper() raises -> PythonObject:
         0,
     )
 
-    # Initialize the PyMojoObject[String]
-    string_obj_raw_ptr.unchecked_cast_to_mojo_value[String]().init_pointee_move(
-        result
-    )
+    var string_obj = PythonObject(from_owned_ptr=string_obj_raw_ptr)
 
-    return PythonObject(from_owned_ptr=string_obj_raw_ptr)
+    # Initialize the PyMojoObject[String]
+    string_obj.unchecked_downcast_value_ptr[String]().init_pointee_move(result^)
+
+    return string_obj^

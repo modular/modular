@@ -72,7 +72,18 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
 
     @staticmethod
     fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
-        return UnsafePointer[Self, **_](unchecked_downcast=py_self)
+        try:
+            return py_self.downcast_value_ptr[Self]()
+        except e:
+            return abort[UnsafePointer[Self]](
+                String(
+                    (
+                        "Python method receiver object did not have the"
+                        " expected type:"
+                    ),
+                    e,
+                )
+            )
 
     @staticmethod
     fn get_name(py_self: PythonObject) raises -> PythonObject:
