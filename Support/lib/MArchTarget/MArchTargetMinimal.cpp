@@ -39,11 +39,10 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
   // Instantiate the Clang diagnostic engine. Pass in our interceptor.
   clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
       new clang::DiagnosticIDs());
-  clang::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagOpts(
-      new clang::DiagnosticOptions());
+  clang::DiagnosticOptions diagOpts;
   DiagInterceptor interceptor;
-  clang::DiagnosticsEngine diags(std::move(ids), std::move(diagOpts),
-                                 &interceptor, /*ShouldOwnClient=*/false);
+  clang::DiagnosticsEngine diags(std::move(ids), diagOpts, &interceptor,
+                                 /*ShouldOwnClient=*/false);
 
   // Ask Clang to create the target info for the architecture and CPU. This will
   // populate `opts` with the full target triple and feature set.
