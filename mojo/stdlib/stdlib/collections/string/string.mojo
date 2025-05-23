@@ -130,8 +130,10 @@ struct _StringCapacityField:
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # UNUSED_FLAG is not used, but might be used in the future.
-    alias UNUSED_FLAG = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_STATIC_CONSTANT is set, the _data pointer is to static
+    # constant string.  capacity() will always be zero for these strings, so any
+    # attempt to append will reallocate.
+    alias FLAG_IS_STATIC_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string data is inline as the first bytes
     # of the string value (the "Small string optimization").
     alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
@@ -163,9 +165,8 @@ struct _StringCapacityField:
         if static_const_length < Self.NUM_SSO_BYTES and not is_compile_time():
             self._storage = Self.FLAG_IS_INLINE
         else:
-            # We set the capacity to 0 to always force reallocation if we
-            # want the capacity to change.
-            self._storage = 0
+            self = Self(capacity=0)
+            self._storage = Self.FLAG_IS_STATIC_CONSTANT
 
     @always_inline("nodebug")
     fn get_capacity(self) -> UInt:
@@ -184,6 +185,17 @@ struct _StringCapacityField:
             self._storage = self._storage | Self.FLAG_HAS_NUL_TERMINATOR
         else:
             self._storage = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
+
+    @always_inline("nodebug")
+    fn is_static_constant(self) -> Bool:
+        return self._storage & Self.FLAG_IS_STATIC_CONSTANT != 0
+
+    @always_inline("nodebug")
+    fn set_is_static_constant(mut self, is_set: Bool):
+        if is_set:
+            self._storage = self._storage | Self.FLAG_IS_STATIC_CONSTANT
+        else:
+            self._storage = self._storage & ~Self.FLAG_IS_STATIC_CONSTANT
 
     @always_inline("nodebug")
     fn is_inline(self) -> Bool:
@@ -1801,9 +1813,13 @@ struct String(
         Returns:
             True if the string is a static constant, False otherwise.
         """
-        return Bool(self._ptr_or_data) and (
+        alternative = Bool(self._ptr_or_data) and (
             self._capacity_or_data.get_capacity() == 0
         )
+        return self._capacity_or_data.is_static_constant()
+        #return Bool(self._ptr_or_data) and (
+        #    self._capacity_or_data.get_capacity() == 0
+        #)
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string.
