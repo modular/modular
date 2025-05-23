@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import PythonObject
-from python._bindings import PythonModuleBuilder
+from python.bindings import PythonModuleBuilder
 
 from os import abort
 
