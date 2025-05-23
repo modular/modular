@@ -210,7 +210,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(ctx.runCommand("v a_simd").output,
             "(simd<4, f16>) a_simd = ([0] = 1.125, [1] = 2.5, [2] = 0, [3] = "
             "-3.7246)\n");
-  EXPECT_EQ(ctx.runCommand("v b_simd").output,
+  EXPECT_EQ(ctx.runCommand("v b_simd --show-all-children").output,
             R"((simd<32, si64>) b_simd = {
   [0] = 1
   [1] = 2

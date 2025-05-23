@@ -52,6 +52,7 @@ struct ConvertLineTableLocOp : public OpRewritePattern<LineTableLocOp> {
     rewriter.create<LLVM::InlineAsmOp>(
         replacer.replace<LocationAttr>(op.getLoc()), TypeRange{}, ValueRange{},
         "nop", "", /*has_side_effects=*/true, /*is_align_stack=*/false,
+        LLVM::TailCallKind::None,
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         ArrayAttr());
     rewriter.eraseOp(op);
