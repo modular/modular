@@ -479,6 +479,40 @@ struct type_caster<TypeInterface,
   }
 };
 
+template <>
+struct type_caster<mlir::Operation> {
+protected:
+  mlir::Operation *value;
+
+public:
+  using Caster = make_caster<mlir::OpState>;
+  static constexpr auto Name = Caster::Name;
+
+  template <typename T>
+  using Cast = ::mlir::Operation *;
+
+  operator mlir::Operation *() { return value; }
+  operator mlir::Operation **() { return &value; }
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    return false;
+  }
+
+  template <typename T>
+  static constexpr bool can_cast() {
+    return false;
+  }
+
+  static handle from_cpp(mlir::Operation *v, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    // There's no way I can see to do this safely. MLIR expects
+    // you're working in C++ and can use mlir::dyn_cast on a subclass,
+    // but we downcast to the subclass via a nanobind type hook.
+    auto op = std::make_unique<mlir::OpState>(*(mlir::OpState *)&v);
+    return Caster::from_cpp(op, policy, cleanup);
+  }
+};
+
 template <typename Type>
 struct type_caster<mlir::detail::TypedValue<Type>> {
   using Caster = make_caster<mlir::Value>;
