@@ -13,15 +13,7 @@ import torch
 from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    Dim,
-    Graph,
-    TensorType,
-    TensorValue,
-    TensorValueLike,
-    ops,
-)
+from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
 from max.nn import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -263,10 +255,10 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
         assert are_all_tensor_values(graph.inputs)
         x, freqs_cis, cache = graph.inputs
         freqs_cis = freqs_cis.reshape((MAX_SEQ_LEN, -1, 2))  # as complex
-        start_pos_val = TensorValue(cache.shape[0])
+        start_pos = cache.shape[0]
         seq_len = x.shape[1]
         rope = CannedRotaryEmbedding(freqs_cis)
-        graph.output(rope(x, start_pos_val, seq_len))
+        graph.output(rope(x, start_pos, seq_len))
 
         @modular_graph_test(session, graph, max_magnitude=1.0)
         def test_correctness(execute, inputs, torch_inputs):
