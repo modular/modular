@@ -688,6 +688,7 @@ class Graph:
                 # example by checkpoint metadata.
                 weight.align if weight.align is not None else weight.dtype.align
             ),
+            device=initial_device.to_mlir(),
             _ip=mlir.InsertionPoint.at_block_begin(self._graph_body),
         )[0]
 
@@ -696,9 +697,6 @@ class Graph:
         # mo.constant.external to the default device, which could differ from
         # the passed device (for example default is GPU, passed weights on CPU).
         const_external_op = weight_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = mlir.Attribute._CAPICreate(
-            initial_device.to_mlir()._CAPIPtr  # type: ignore
-        )
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
         if initial_device != weight.device:
             weight_tensor = weight_tensor.to(weight.device)
