@@ -1476,6 +1476,11 @@ fn cos[
 
     @parameter
     if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+
+        @parameter
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return cos(x.cast[DType.float32]()).cast[dtype]()
+
         return _call_ptx_intrinsic[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
@@ -1513,6 +1518,11 @@ fn sin[
 
     @parameter
     if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+
+        @parameter
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return sin(x.cast[DType.float32]()).cast[dtype]()
+
         return _call_ptx_intrinsic[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)
