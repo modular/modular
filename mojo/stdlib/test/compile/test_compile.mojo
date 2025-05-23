@@ -21,6 +21,20 @@ from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
 from testing import *
 
+
+def test_compile_llvm():
+    @parameter
+    fn my_add_function[
+        type: DType, size: Int
+    ](x: SIMD[type, size], y: SIMD[type, size]) -> SIMD[type, size]:
+        return x + y
+
+    alias func = my_add_function[DType.float32, 4]
+    var asm = compile_info[func, emission_kind="llvm"]()
+
+    assert_true("fadd" in asm)
+
+
 alias target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
@@ -84,6 +98,7 @@ def test_data_layout_asm():
 
 
 def main():
+    test_compile_llvm()
     test_data_layout_llvm["llvm"]()
     test_data_layout_llvm["llvm-opt"]()
     test_data_layout_asm()

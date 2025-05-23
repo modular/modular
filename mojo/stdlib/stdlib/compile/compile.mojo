@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Provides utilities for compiling and inspecting Mojo code.
 
-This module contains functionality for compiling Mojo functions and examining their
-assembly, LLVM IR, or object code output. It is particularly useful for kernel
-engineers who want to inspect the low-level implementation details of specific
-functions without dealing with entire files or manual invocation of compilation
-tools.
+This module contains functionality for compiling Mojo functions and examining
+their assembly, LLVM IR, or object code output. It is particularly useful for
+kernel engineers who want to inspect the low-level implementation details of
+specific functions without dealing with entire files or manual invocation of
+compilation tools.
 
 Key features:
 - Compile individual functions to assembly, LLVM IR, or object code
@@ -127,7 +127,8 @@ struct Info[
             _PopulateInfo,
         ].populate
     )
-    """Function pointer to populate captured variables in the function closure."""
+    """Function pointer to populate captured variables in the function closure.
+    """
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -154,7 +155,8 @@ struct Info[
         """Writes the assembly/IR to a file.
 
         Parameters:
-            path_like: Type that implements the `PathLike` interface for file path representation.
+            path_like: Type that implements the `PathLike` interface for file
+                path representation.
 
         Args:
             path: Path to write the file to.
@@ -218,8 +220,9 @@ fn compile_info[
     """Compiles a function and returns detailed compilation information.
 
     This function takes a Mojo function and compiles it, providing access to the
-    generated assembly code, linkage information, and other compilation artifacts.
-    It can be used for inspection, debugging, and low-level optimization.
+    generated assembly code, linkage information, and other compilation
+    artifacts. It can be used for inspection, debugging, and low-level
+    optimization.
 
     Parameters:
         func_type: Type of the function to compile. Must be a trivially-copyable
