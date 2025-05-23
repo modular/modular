@@ -1803,7 +1803,7 @@ struct String(
     fn _make_unique_mutable(mut self):
         # If already mutable and uniquely owned, we're done.
         if (
-            not self._is_static_constant()
+            not self._capacity_or_data.is_static_constant()
             and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
         ):
             return
