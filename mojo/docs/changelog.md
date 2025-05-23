@@ -125,6 +125,12 @@ Changes to Python-Mojo interoperability:
   to allow constructing dictionaries from a list of key-value tuples and from
   keyword arguments.
 
+- `PythonObject` no longer implements `EqualityComparable`, since the
+  `PythonObject.__eq__` and `PythonObject.__ne__` methods need to return other
+  `PythonObject` values to support rich comparisons. Code that previously
+  compared `PythonObject` values should be wrapped in `Bool(..)` to perform the
+  fallible conversion explicitly: `if Bool(obj1 == obj2): ...`.
+
 - `String` and `Bool` now implement `ConvertibleFromPython`.
 
 - A new `def_function` API is added to `PythonModuleBuilder` to allow declaring
@@ -135,6 +141,11 @@ Changes to Python-Mojo interoperability:
 - The `ConvertibleFromPython` trait is now public. This trait is implemented
   by Mojo types that can be constructed by converting from a `PythonObject`.
   This is the reverse operation of the `PythonConvertible` trait.
+
+- Added `UnsafePointer` initializer for downcasting from a `PythonObject`.
+
+  This is used to get a pointer to the underlying Mojo value that was stored
+  into a Python object.
 
 - `os.abort(messages)` no longer supports generic variadic number of `Writable`
   messages.  While this API was high-level and convenient, it generates a lot of

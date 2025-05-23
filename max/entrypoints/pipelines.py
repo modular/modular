@@ -98,6 +98,10 @@ class ModelGroup(click.Group):
     help="Show the MAX version and exit.",
 )
 def main():
+    pass
+
+
+def configure_telemetry():
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
@@ -328,4 +332,5 @@ if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
+    configure_telemetry()
     main()

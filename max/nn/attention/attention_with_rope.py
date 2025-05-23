@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    ShardingStrategy,
     TensorType,
     TensorValue,
     Weight,
@@ -1318,24 +1319,24 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                 f"Must provide at least 2 devices to `DistributedAttentionWithRope`, got {self.devices}"
             )
         # Shard weights into separate AttentionWithRope layers.
-        n_devices = len(self.devices)
-        self.allreduce = Allreduce(n_devices)
-
-        def col_sharding_strategy(weight: Weight, i) -> TensorValue:
-            col_size = int(weight.shape[1]) // n_devices
-            return weight[:, i * col_size : (i + 1) * col_size]
-
-        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
-            row_size = int(weight.shape[0]) // n_devices
-            return weight[i * row_size : (i + 1) * row_size, :]
+        num_devices = len(self.devices)
+        self.allreduce = Allreduce(num_devices)
 
         if self.stacked_qkv:
-            self.qkv_proj.set_sharding_strategy(col_sharding_strategy)
+            self.qkv_proj.set_sharding_strategy(
+                ShardingStrategy.columnwise(num_devices)
+            )
         else:
-            self.q_proj.set_sharding_strategy(row_sharding_strategy)
-            self.k_proj.set_sharding_strategy(row_sharding_strategy)
-            self.v_proj.set_sharding_strategy(row_sharding_strategy)
-        self.o_proj.weight.set_sharding_strategy(col_sharding_strategy)
+            self.q_proj.set_sharding_strategy(
+                ShardingStrategy.rowwise(num_devices)
+            )
+            self.k_proj.set_sharding_strategy(
+                ShardingStrategy.rowwise(num_devices)
+            )
+            self.v_proj.set_sharding_strategy(
+                ShardingStrategy.rowwise(num_devices)
+            )
+        self.o_proj.set_sharding(ShardingStrategy.columnwise(num_devices))
 
         self.list_of_attentions = []
         kwargs = kwargs.copy()

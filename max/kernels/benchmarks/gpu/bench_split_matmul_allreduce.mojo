@@ -11,69 +11,88 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from collections import InlineArray
-from math import floor
-from sys import sizeof
+from math import align_up
+from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from buffer import Dim, DimList, NDBuffer
+from buffer.dimlist import _make_tuple
+from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import DEFAULT_GPU_ARCH
+from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse
+import random
+from internal_utils._utils import (
+    InitializationType,
+    ValOrDim,
+    dynamic,
+    initialize,
+    static,
+)
+from utils import IndexList, StaticTuple
+from linalg.matmul_gpu import _matmul_gpu
+from memory import UnsafePointer
 from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
-    allreduce,
     elementwise_epilogue_type,
 )
-from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
-from testing import assert_almost_equal
-from utils import IndexList, StaticTuple
 
 from linalg.distributed_matmul import matmul_allreduce
 
+from utils import IndexList
 
-fn overlap_matmul_allreduce_test[
+
+fn _get_run_name[
+    type: DType,
+    ngpus: Int,
+    partition_dim: Int,
+    num_partitions: Int,
+](m: ValOrDim, n: ValOrDim, k: ValOrDim,) -> String:
+    var vendor_str = "matmul_allreduce"
+    var type_str = String("(", type, ") : ")
+    var m_str = String(m.value, "_dynamic") if m.dim.is_dynamic() else String(
+        m.dim
+    )
+    var n_str = String(n.value, "_dynamic") if n.dim.is_dynamic() else String(
+        n.dim
+    )
+    var k_str = String(k.value, "_dynamic") if k.dim.is_dynamic() else String(
+        k.dim
+    )
+
+    var ngpus_str = String("/ngpus=", ngpus)
+    var num_partitions_str = String(
+        "/num_partitions=", num_partitions
+    ) if num_partitions > 1 else String()
+    var partition_dim_str = String(
+        "/partition_dim=", partition_dim
+    ) if num_partitions > 1 else String()
+    return String(
+        vendor_str,
+        type_str,
+        m_str,
+        " x ",
+        n_str,
+        " x ",
+        k_str,
+        ngpus_str,
+        num_partitions_str,
+        partition_dim_str,
+    )
+
+
+fn bench_matmul_all_reduce[
     type: DType,
     ngpus: Int,
     partition_dim: Int,
     num_partitions: Int,
 ](
-    list_of_ctx: List[DeviceContext], m: ValOrDim, n: ValOrDim, k: ValOrDim
+    mut b: Bench,
+    list_of_ctx: List[DeviceContext],
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
 ) raises:
-    # Demonstrate overlap matmul with allreduce.
-    # The matmul is sharded in K dim. The original matmul before sharding is M x N x (K x ngpus).
-    # The results of shape M x N is allreduced over ngpus.
-
-    # To overlap, we partition in M dimension. The matmul can overlapp with the allreduce
-    # for previous partition.
-    #      matmul part 0
-    #      matmul part 1 | allreduce partition 0
-    #      matmul part 2 | allreduce partition 1
-    #      matmul part 3 | allreduce partition 2
-    #                      allreduce partition 3
-    #
-    # Other than allreduce i depending on matmul i, there is no dependence. The best
-    # performance is obtained by letting allreduce i wait on matmul i but launch
-    # matmul i+1 asap. Matmul doesn't need to wait for any kernel.
-    constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
-
-    print(
-        "num_gpus",
-        ngpus,
-        "m",
-        m.value,
-        "n",
-        n.value,
-        "k",
-        k.value,
-        "stages",
-        num_partitions,
-        "split dim",
-        partition_dim,
-    )
-
     # Create matmul input and output buffers.
     var A_list = List[DeviceBuffer[type]](capacity=ngpus)
     var B_list = List[DeviceBuffer[type]](capacity=ngpus)
@@ -112,11 +131,9 @@ fn overlap_matmul_allreduce_test[
         B_host_list.append(UnsafePointer[Scalar[type]].alloc(nk))
         C_reduced_host_list.append(UnsafePointer[Scalar[type]].alloc(mn))
 
-        # Initialize A with i and B with 1
-        for j in range(mk):
-            A_host_list[i][j] = i
-        for j in range(nk):
-            B_host_list[i][j] = 1.0
+        # Initialize randomdly A and b
+        random.randn(A_host_list[i], mk)
+        random.randn(B_host_list[i], nk)
 
         # Copy A and B to device
         list_of_ctx[i].enqueue_copy(A_list[i], A_host_list[i])
@@ -191,54 +208,40 @@ fn overlap_matmul_allreduce_test[
             rebind[IndexList[2]](coords), rebind[SIMD[type, _width]](val)
         )
 
-    # Call the split matmul + AllReduce implementation
-    for _ in range(10):
+    @parameter
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
 
+    @parameter
+    @always_inline
+    fn bench_func(mut b: Bencher):
         @parameter
-        for i in range(ngpus):
-            list_of_ctx[i].synchronize()
+        @always_inline
+        fn kernel_launch() raises:
+            matmul_allreduce[
+                type=type,
+                ngpus=ngpus,
+                partition_dim=partition_dim,
+                num_partitions=num_partitions,
+                outputs_lambda=outputs_lambda,
+            ](As, Bs, Cs, out_bufs, rank_sigs, list_of_ctx)
 
-        matmul_allreduce[
-            ngpus=ngpus,
-            partition_dim=partition_dim,
-            num_partitions=num_partitions,
-            outputs_lambda=outputs_lambda,
-        ](As, Bs, Cs, out_bufs, rank_sigs, list_of_ctx)
+        b.iter_custom_multicontext[kernel_launch](list_of_ctx)
 
-    @parameter
-    for i in range(ngpus):
-        list_of_ctx[i].synchronize()
-
-    # Last allreduce
-    var expected_sum = Scalar[type](0)
-
-    @parameter
-    for i in range(ngpus):
-        expected_sum += i * k.value
-        list_of_ctx[i].enqueue_copy(C_reduced_host_list[i], C_reduced_list[i])
-
-    @parameter
-    for i in range(ngpus):
-        list_of_ctx[i].synchronize()
-
-    # Verify results
-    @parameter
-    for i in range(ngpus):
-        for j in range(mn):
-            try:
-                assert_almost_equal(C_reduced_host_list[i][j], expected_sum)
-            except e:
-                print("Verification failed at GPU", i, "index", j)
-                print("Value:", C_reduced_host_list[i][j])
-                print("Expected:", expected_sum)
-                raise e
-    print("Verification passed")
-
-    # Cleanup
-    for i in range(ngpus):
-        A_host_list[i].free()
-        B_host_list[i].free()
-        C_reduced_host_list[i].free()
+    b.bench_function[bench_func](
+        BenchId(
+            _get_run_name[
+                type,
+                ngpus,
+                partition_dim,
+                num_partitions,
+            ](m, n, k)
+        ),
+        ThroughputMeasure(
+            BenchMetric.flops,
+            (2 * m.value * m.value * k.value + m.value * m.value) * ngpus,
+        ),
+    )
 
     _ = signal_buffers^
     _ = A_list^
@@ -247,38 +250,37 @@ fn overlap_matmul_allreduce_test[
     _ = C_reduced_list^
 
 
-def main():
-    # Test hyperparameters.
-    alias test_dtypes = (DType.bfloat16,)
-    alias test_gpu_counts = (4, 8)
+fn main() raises:
+    alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    # Run tests for each configuration.
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
-        alias num_gpus = test_gpu_counts[gpu_idx]
-        if DeviceContext.number_of_devices() < num_gpus:
-            break
+    var M = Int(arg_parse("M", 8192))
+    alias N = env_get_int["N", 8192]()
+    alias K = env_get_int["K", 2048]()
+    alias num_gpus = env_get_int["NUM_GPUS", 4]()
+    alias partition_dim = env_get_int["DIM", 1]()
+    alias num_partitions = env_get_int["PARTITIONS", 1]()
 
-        # Create GPU context.
-        var ctx = List[DeviceContext]()
-        for i in range(num_gpus):
-            ctx.append(DeviceContext(device_id=i))
+    var m = Bench()
 
-        # Test all cases for this configuration.
-        @parameter
-        for dtype_idx in range(len(test_dtypes)):
-            alias dtype = test_dtypes[dtype_idx]
+    if DeviceContext.number_of_devices() < num_gpus:
+        raise Error("Not enough GPUs available")
 
-            overlap_matmul_allreduce_test[
-                type=dtype,
-                ngpus=num_gpus,
-                num_partitions=4,
-                partition_dim=0,
-            ](ctx, dynamic(8192), static[8192](), static[2048]())
+    # Create GPU context.
+    var ctx = List[DeviceContext]()
+    for i in range(num_gpus):
+        ctx.append(DeviceContext(device_id=i))
 
-            overlap_matmul_allreduce_test[
-                type=dtype,
-                ngpus=num_gpus,
-                num_partitions=4,
-                partition_dim=1,
-            ](ctx, dynamic(8192), static[8192](), static[2048]())
+    bench_matmul_all_reduce[
+        dtype,
+        ngpus=num_gpus,
+        partition_dim=partition_dim,
+        num_partitions=num_partitions,
+    ](
+        m,
+        ctx,
+        dynamic(M),
+        static[N](),
+        static[K](),
+    )
+
+    m.dump_report()

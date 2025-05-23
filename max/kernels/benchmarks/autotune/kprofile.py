@@ -46,15 +46,20 @@ def specs_to_df(specs):
     return df
 
 
-def extract_pivots(x_labels):
+def extract_pivots(x_labels, exclude=["name", "AUTOTUNING_MODE"]):
     df = specs_to_df(x_labels)
+    valid_columns = []
+    for c in list(df.columns):
+        if c not in exclude:
+            valid_columns.append(c)
+
     pivot_columns = []
-    for c in df.columns:
+    for c in valid_columns:
         if len(set(df[c])) > 1:
             pivot_columns.append(c)
 
     # set(df.columns)-set(pivot_columns)
-    non_pivot_columns = [c for c in df.columns if c not in pivot_columns]
+    non_pivot_columns = [c for c in valid_columns if c not in pivot_columns]
     return pivot_columns, non_pivot_columns
 
 
@@ -132,13 +137,44 @@ class KbenchPKL:
     merged_df: pd.DataFrame
     tune_df: pd.DataFrame
     pkl_data: dict
-    # TODO: rework this
-    met_col: str
+    metric: str
 
-    def __init__(self, pickle_path):
-        self.merged_df, self.tune_df, self.pkl_data, self.met_col = (
-            self.unpack_pkl(pickle_path=pickle_path)
+    def __init__(self, pickle_path, metric: str):
+        self.pkl_data = KbenchPKL.load(pickle_path)
+        self.merged_df = self.pkl_data["merged_df"].drop(
+            ["name", "iters"], axis=1
         )
+        # Finding the appropriate metric
+        cols = list(self.merged_df.columns)
+        valid_metric = metric in cols
+        if not valid_metric:
+            for c in cols:
+                if c.lower().startswith(metric):
+                    metric = c
+                    valid_metric = True
+                    break
+        assert valid_metric, f"ERROR: metric [{metric}] is not valid!"
+        self.metric = metric
+        assert pd.api.types.is_numeric_dtype(self.merged_df[metric]), (
+            f"ERROR: metric [{metric}] is not numeric!"
+        )
+        # Setting the sort order based on the metric
+        # TODO: move this dict to a global variable or singleton.
+        ascending_sort = {
+            "met (ms)": True,  # lower is better
+            "throughput (GElems/s)": False,  # higher is better
+            "DateMovement (GB/s)": False,  # higher is better
+            "Arithmetic (GFLOPS/s)": False,  # higher is better
+            "TheoreticalArithmetic (GFLOPS/s)": False,  # higher is better
+        }[metric]
+
+        # Set tune_df based on sort-order and merged_df
+        tune_df = self.merged_df.sort_values([metric], ascending=ascending_sort)
+        best_spec = tune_df.iloc[0]
+        # Add ratio: current metric/best metric
+        tune_df["ratio"] = tune_df[metric].div(best_spec[metric])
+
+        self.tune_df = tune_df
 
     @staticmethod
     def load(path) -> dict:
@@ -147,33 +183,8 @@ class KbenchPKL:
             assert k in f.keys()
         return f
 
-    @staticmethod
-    def unpack_pkl(
-        pickle_path,
-        select_cols=["mesh_idx", "met (ms)", "Arithmetic (GFLOPS/s)", "spec"],
-    ):
-        pkl_data = KbenchPKL.load(pickle_path)
-        merged_df = pkl_data["merged_df"]
-        met_col = "met (ms)"
-        assert met_col in merged_df.columns
 
-        # Select subset of columns from merged_df that are in 'select_cols'
-        if select_cols:
-            common_cols = [
-                c for c in select_cols if c in list(merged_df.columns)
-            ]
-            assert len(common_cols), "Error: could not find any common columns!"
-            merged_df = merged_df[common_cols]
-
-        tune_df = merged_df.sort_values([met_col], ascending=True)
-        # Add met_ratio: current mean-exec-time/best mean-exec-time
-        top_spec = tune_df.iloc[0]
-        tune_df["met_ratio"] = tune_df[met_col].div(top_spec[met_col])
-
-        return merged_df, tune_df, pkl_data, met_col
-
-
-def df_round_floats(df, prec=3):
+def df_round_floats(df, prec=2):
     "Round values in dataframe to specified precision"
     for c in df.columns:
         if df.dtypes[c] in (np.float64, np.float32):
@@ -189,20 +200,20 @@ def profile_results(
     ratio=False,
     head=-1,
     tail=-1,
+    metric: str = "met (ms)",
     pivots: list[str] = [],
     verbose=False,
 ):
-    pkl = KbenchPKL(pickle_path=pickle_path)
-    merged_df, tune_df, pkl_data, met_col = (
+    pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
+    merged_df, tune_df, pkl_data = (
         pkl.merged_df,
         pkl.tune_df,
         pkl.pkl_data,
-        pkl.met_col,
     )
     print(f"- num entries: {len(merged_df)}")
 
     if top_percentage:
-        idx = top_idx(tune_df[met_col], top_percentage=top_percentage)
+        idx = top_idx(tune_df[pkl.metric], top_percentage=top_percentage)
         subset = merged_df.iloc[idx]
         if verbose:
             print(f"common subset in [{top_percentage}]%")
@@ -212,24 +223,29 @@ def profile_results(
         # form a spec with most frequent values among top percentage of picks
         spec = find_common_params(subset)
     else:
+        prec = 3
         # get the spec from the first pick
         print(f"- best idx: {tune_df.iloc[0]['mesh_idx']}")
-        print(f"- worst_met (ms): {tune_df.iloc[-1]['met (ms)']}")
-        print(f"- best_met (ms) : {tune_df.iloc[0]['met (ms)']}")
+        print(f"- [{metric}] worst: {tune_df.iloc[-1][metric]:.{prec}f}")
+        print(f"- [{metric}] best : {tune_df.iloc[0][metric]:.{prec}f}")
 
         # TODO: revise this part to automatically extract pivots if not provided!
         spec = spec_to_dict(tune_df.iloc[0]["spec"])
+
+        if not pivots:
+            _, pivots = extract_pivots(list(tune_df["spec"]))
+
         shape = "/".join([f"{p}={spec[p]}" for p in pivots])
         print(
-            f"- met_worst/met_best ratio: {tune_df.iloc[-1]['met_ratio']:.4f} [shape: {shape}]"
+            f"- [{metric}] worst/best ratio: {tune_df.iloc[-1]['ratio']:.2f}x [shape: {shape}]"
         )
         print(LINE)
 
     if ratio:
-        tune_df = df_round_floats(tune_df, prec=3)
+        tune_df = df_round_floats(tune_df, prec=2)
         df_to_console_table(
             tune_df,
-            col_style={"met_ratio": "bold green"},
+            col_style={"ratio": "bold green"},
         )
         print(LINE)
 
@@ -242,7 +258,7 @@ def profile_results(
     if verbose:
         # TODO: select based on pivots and cleanup the view
         print(LINE)
-        merged_df = df_round_floats(merged_df, prec=3)
+        merged_df = df_round_floats(merged_df, prec=2)
         df_to_console_table(merged_df)
 
     print("[Best Spec]\n")
@@ -264,9 +280,71 @@ def profile_results(
         print(LINE)
 
 
+def identical_pivot_values(x, y, pivots):
+    for p in pivots:
+        if (
+            (p not in x.keys())
+            or (p not in y.keys())
+            or (x.get(p, None) != y.get(p, None))
+        ):
+            print(f"ERROR: FAILED assert on pivot {p}: [{x[p]}] vs. [{y[p]}]")
+            return False
+    return True
+
+
+def diff_baseline(
+    files, metric: str, pivots: list = [], head: int = -1, verbose: bool = False
+):
+    base_pkl = KbenchPKL(files[0], metric=metric)
+    metric = base_pkl.metric
+    tune_df_base = base_pkl.tune_df
+
+    base_dict = spec_to_dict(str(tune_df_base.iloc[0]["spec"]))
+    if verbose:
+        print("base-config", base_dict)
+        print(LINE)
+
+    if not pivots:
+        _, non_pivot_columns = extract_pivots(list(tune_df_base["spec"]))
+        pivots = non_pivot_columns
+
+    shape = "/".join([f"{p}={base_dict[p]}" for p in pivots])
+    for i, f in enumerate(files[1:]):
+        tune_df = KbenchPKL(f, metric=metric).tune_df
+        spec_dict = spec_to_dict(str(tune_df.iloc[0]["spec"]))
+        assert base_dict["name"] == spec_dict["name"]
+        assert identical_pivot_values(base_dict, spec_dict, pivots=pivots)
+
+        if verbose:
+            print(f"config [{i}]", spec_dict)
+            print(LINE)
+
+        base_metric = tune_df_base.iloc[0][metric]
+        prec = 2
+
+        num_rows = min(len(tune_df[:head]), len(tune_df))
+        for j in range(num_rows):
+            current_metric = tune_df.iloc[j][metric]
+            metric_ratio = round(current_metric / base_metric, prec)
+            metric_speedup = round(1 / metric_ratio, prec)
+            print(
+                f"[{i}][shape:{shape}][metric:{metric}]: {metric_ratio:.{prec}f} (current/baseline = {current_metric:.{prec}f} / {base_metric:.{prec}f})"
+            )
+            d = {
+                "shape": [shape],
+                "metric": metric,
+                "best_tuning_metric": [round(current_metric, prec)],
+                "baseline_metric": [round(base_metric, prec)],
+                "ratio": [metric_ratio],
+                "speedup": [metric_speedup],
+            }
+            shape_path = shape.replace("/", "_")
+            pd.DataFrame.from_dict(d).to_csv(f"{shape_path}.csv", index=False)
+            print(LINE)
+
+
 class ComplexParamList(click.Option):
     """Complext parameter list
-
     Example:
         --pivot=[M] --pivot=[N] --pivot=[K] is equivalent to --pivot=[M,N,K] and vice versa.
     """
@@ -348,10 +426,17 @@ help_str = "Profile kbench output pickle"
     "first one as baseline (preferably auto-tuning results)",
 )
 @click.option(
-    "--pivot",
+    "--metric",
+    "-m",
+    default="met (ms)",
+    help="Specify the profiling metric (default='met (ms)').",
+    multiple=False,
+)
+@click.option(
+    "--pivots",
     "-p",
     cls=ComplexParamList,
-    default=["M", "N", "K"],
+    default=[],
     help="Specify the pivots to select the values.",
     multiple=True,
 )
@@ -372,7 +457,8 @@ def cli(
     head,
     tail,
     diff,
-    pivot,
+    metric,
+    pivots,
     verbose,
 ) -> bool:
     assert files
@@ -395,8 +481,9 @@ def cli(
     if diff:
         if head == -1:
             head = 1
-        print(f"diff on pivots {pivot}")
-        print("--diff is currently not supported")
+        diff_baseline(
+            files, metric=metric, pivots=pivots, head=head, verbose=verbose
+        )
     else:
         profile_results(
             pickle_path=files[0],
@@ -406,7 +493,8 @@ def cli(
             ratio=ratio,
             head=head,
             tail=tail,
-            pivots=pivot,
+            metric=metric,
+            pivots=pivots,
             verbose=verbose,
         )
     return True

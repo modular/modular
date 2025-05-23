@@ -82,21 +82,19 @@ def _quantized_layers_and_embedding_dtype(
             )
 
     # Determine embedding_output_dtype
-    # If `lm_head` is in ignored_modules, its output is its original dtype.
-    # Otherwise, `lm_head` is quantized and its output is float8.
     embedding_output_dtype: DType | None
-    if "lm_head" in ignored_modules:
-        if "lm_head.weight" in state_dict:
-            embedding_output_dtype = state_dict["lm_head.weight"].dtype
-        elif "model.embed_tokens.weight" in state_dict:
-            # Handle tied embeddings.
-            embedding_output_dtype = state_dict[
-                "model.embed_tokens.weight"
-            ].dtype
-        else:
-            raise ValueError("cannot determine original type from checkpoint")
+    if "lm_head.weight" in state_dict:
+        embedding_output_dtype = state_dict["lm_head.weight"].dtype
+    elif "model.embed_tokens.weight" in state_dict:
+        # Handle tied embeddings.
+        embedding_output_dtype = state_dict["model.embed_tokens.weight"].dtype
+    elif "lm_head" in ignored_modules:
+        # If `lm_head` is in ignored_modules, but its weight isn't in the
+        # checkpoint, and neither are the embedding weights, consider that a
+        # buggy checkpoint.
+        raise ValueError("cannot determine original type from checkpoint")
     else:
-        # `lm_head` is quantized to float8.
+        # Default to `lm_head` being quantized to float8.
         embedding_output_dtype = DType.float8_e4m3fn
 
     return mlp_in_float8, attn_qkv_in_float8, embedding_output_dtype
@@ -284,7 +282,7 @@ def _parse_fbgemm_float8_config(
     )
 
 
-def _parse_float8_config(
+def parse_float8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
@@ -314,7 +312,7 @@ def _parse_float8_config(
         )
 
     raise ValueError(
-        f"FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
+        "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
         f"was found. Quant method: '{quant_method}'. "
         "Supported methods are 'compressed-tensors' and 'fbgemm_fp8'."
     )
@@ -478,7 +476,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         ]
 
         # Parse the float8 config from compressed-tensors or FBGEMM.
-        float8_config = _parse_float8_config(
+        float8_config = parse_float8_config(
             huggingface_config, state_dict, dtype
         )
 

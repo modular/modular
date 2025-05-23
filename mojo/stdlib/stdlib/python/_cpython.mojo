@@ -36,7 +36,13 @@ from sys.ffi import (
 )
 
 from memory import UnsafePointer
-from python._bindings import PyMojoObject, Typed_initproc, Typed_newfunc
+from python._bindings import (
+    PyMojoObject,
+    Typed_initproc,
+    Typed_newfunc,
+    get_py_type_object,
+)
+from builtin.identifiable import TypeIdentifiable
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
@@ -194,26 +200,20 @@ struct PyObjectPtr(Copyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn try_cast_to_mojo_value[
-        T: AnyType,
-    ](
-        owned self,
-        # TODO: Make this part of the trait bound
-        expected_type_name: StringSlice,
-    ) -> Optional[UnsafePointer[T]]:
+        T: TypeIdentifiable,
+    ](owned self) -> Optional[UnsafePointer[T]]:
         var cpython = Python().cpython()
-        var type = cpython.Py_TYPE(self)
-        var type_name = PythonObject(
-            from_owned_ptr=cpython.PyType_GetName(type)
-        )
+        var type = PyObjectPtr(cpython.Py_TYPE(self).bitcast[PyObject]())
 
-        # FIXME(MSTDL-978):
-        #   Improve this check. We should do something conceptually equivalent
-        #   to:
-        #       type == T.python_type_object
-        #   where:
-        #       trait Pythonable:
-        #           var python_type_object: PyTypeObject
-        if type_name == PythonObject(expected_type_name):
+        var expected_type_obj: TypedPythonObject["Type"]
+
+        try:
+            expected_type_obj = get_py_type_object[T]()
+        except e:
+            # TODO: Return None here instead? This is defensive for now.
+            return abort[Optional[UnsafePointer[T]]](String(e))
+
+        if type == expected_type_obj.unsafe_as_py_object_ptr():
             return self.unchecked_cast_to_mojo_value[T]()
         else:
             return None

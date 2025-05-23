@@ -142,6 +142,7 @@ class GenerationModel(Module):
                 inputs_embeds,
                 image_mask,
                 image_embeds,
+                out_dim="unmasked_inputs",
             )
 
         def else_fn():
@@ -175,7 +176,12 @@ class GenerationModel(Module):
                 ops.unsqueeze((input_ids == self.video_token_id), -1),
                 inputs_embeds.shape,
             )
-            return ops.masked_scatter(inputs_embeds, video_mask, video_embeds)
+            return ops.masked_scatter(
+                inputs_embeds,
+                video_mask,
+                video_embeds,
+                out_dim="unmasked_inputs",
+            )
 
         inputs_embeds = ops.cond(
             TensorValue(video_pixel_values.shape[0]) > 0,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.grid_controls import _ENABLE_PDL_LAUNCH as ENABLE_PDL_LAUNCH
+from gpu.grid_controls import _SUPPORT_PDL_LAUNCH as SUPPORT_PDL_LAUNCH
 from gpu.grid_controls import (
     PDL,
     launch_dependent_grids,
@@ -33,7 +33,7 @@ fn control_dep_grids_kernel():
 # CHECK: griddepcontrol.launch_dependents
 def test_grid_control_primitives():
     print("== test_grid_control_primitives")
-    assert_true(ENABLE_PDL_LAUNCH)
+    assert_true(SUPPORT_PDL_LAUNCH)
     print(
         _compile_code_asm[
             control_dep_grids_kernel,

@@ -16,6 +16,8 @@ Optional values can be thought of as a type-safe nullable pattern.
 Your value can take on a value or `None`, and you need to check
 and explicitly extract the value to get it out.
 
+Examples:
+
 ```mojo
 from collections import Optional
 var a = Optional(1)
@@ -66,12 +68,17 @@ struct Optional[T: Copyable & Movable](
 ):
     """A type modeling a value which may or may not be present.
 
+    Parameters:
+        T: The type of value stored in the `Optional`.
+
     Optional values can be thought of as a type-safe nullable pattern.
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
 
     Currently T is required to be a `Copyable & Movable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
+
+    Examples:
 
     ```mojo
     from collections import Optional
@@ -86,9 +93,6 @@ struct Optional[T: Copyable & Movable](
     print(c)  # prints 1
     print(d)  # prints 2
     ```
-
-    Parameters:
-        T: The type of value stored in the Optional.
     """
 
     # Fields
@@ -102,15 +106,15 @@ struct Optional[T: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        """Construct an empty Optional."""
+        """Construct an empty `Optional`."""
         self._value = Self._type(_NoneType())
 
     @implicit
     fn __init__(out self, owned value: T):
-        """Construct an Optional containing a value.
+        """Construct an `Optional` containing a value.
 
         Args:
-            value: The value to store in the optional.
+            value: The value to store in the `Optional`.
         """
         self._value = Self._type(value^)
 
@@ -120,7 +124,7 @@ struct Optional[T: Copyable & Movable](
     @doc_private
     @implicit
     fn __init__(out self, value: NoneType._mlir_type):
-        """Construct an empty Optional.
+        """Construct an empty `Optional`.
 
         Args:
             value: Must be exactly `None`.
@@ -129,7 +133,7 @@ struct Optional[T: Copyable & Movable](
 
     @implicit
     fn __init__(out self, value: NoneType):
-        """Construct an empty Optional.
+        """Construct an empty `Optional`.
 
         Args:
             value: Must be exactly `None`.
@@ -137,7 +141,7 @@ struct Optional[T: Copyable & Movable](
         self = Self()
 
     fn copy(self) -> Self:
-        """Copy construct an Optional.
+        """Copy construct an `Optional`.
 
         Returns:
             A copy of the value.
@@ -151,26 +155,30 @@ struct Optional[T: Copyable & Movable](
     fn __is__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has no value.
 
-        It allows you to use the following syntax: `if my_optional is None:`
-
         Args:
             other: The value to compare to (None).
 
         Returns:
             True if the Optional has no value and False otherwise.
+
+        Notes:
+            It allows you to use the following syntax:
+            `if my_optional is None:`.
         """
         return not self.__bool__()
 
     fn __isnot__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has a value.
 
-        It allows you to use the following syntax: `if my_optional is not None:`.
-
         Args:
             other: The value to compare to (None).
 
         Returns:
             True if the Optional has a value and False otherwise.
+
+        Notes:
+            It allows you to use the following syntax:
+            `if my_optional is not None:`.
         """
         return self.__bool__()
 
@@ -188,12 +196,13 @@ struct Optional[T: Copyable & Movable](
     fn __eq__[
         T: EqualityComparable & Copyable & Movable
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
-        """Return `True` if this is the same as another optional value, meaning
-        both are absent, or both are present and have the same underlying value.
+        """Return `True` if this is the same as another `Optional` value,
+        meaning both are absent, or both are present and have the same
+        underlying value.
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-              traits `Copyable`, `Movable` and `EqualityComparable`.
+                traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -221,12 +230,13 @@ struct Optional[T: Copyable & Movable](
     fn __ne__[
         T: EqualityComparable & Copyable & Movable, //
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
-        """Return `False` if this is the same as another optional value, meaning
-        both are absent, or both are present and have the same underlying value.
+        """Return `False` if this is the same as another `Optional` value,
+        meaning both are absent, or both are present and have the same
+        underlying value.
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-              traits `Copyable`, `Movable` and `EqualityComparable`.
+                traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -244,15 +254,15 @@ struct Optional[T: Copyable & Movable](
         """Return true if the Optional has a value.
 
         Returns:
-            True if the optional has a value and False otherwise.
+            True if the `Optional` has a value and False otherwise.
         """
         return not self._value.isa[_NoneType]()
 
     fn __invert__(self) -> Bool:
-        """Return False if the optional has a value.
+        """Return False if the `Optional` has a value.
 
         Returns:
-            False if the optional has a value and True otherwise.
+            False if the `Optional` has a value and True otherwise.
         """
         return not self
 
@@ -268,19 +278,19 @@ struct Optional[T: Copyable & Movable](
         """
         if not self:
             raise Error(".value() on empty Optional")
-        return self.value()
+        return self.unsafe_value()
 
     fn __str__[
         U: Copyable & Movable & Representable, //
     ](self: Optional[U]) -> String:
-        """Return the string representation of the value of the Optional.
+        """Return the string representation of the value of the `Optional`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
-            A string representation of the Optional.
+            A string representation of the `Optional`.
         """
         var output = String()
         self.write_to(output)
@@ -290,14 +300,14 @@ struct Optional[T: Copyable & Movable](
     fn __repr__[
         U: Representable & Copyable & Movable, //
     ](self: Optional[U]) -> String:
-        """Returns the verbose string representation of the Optional.
+        """Returns the verbose string representation of the `Optional`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
-            A verbose string representation of the Optional.
+            A verbose string representation of the `Optional`.
         """
         var output = String()
         output.write("Optional(")
@@ -308,12 +318,12 @@ struct Optional[T: Copyable & Movable](
     fn write_to[
         W: Writer, U: Representable & Copyable & Movable, //
     ](self: Optional[U], mut writer: W):
-        """Write Optional string representation to a `Writer`.
+        """Write `Optional` string representation to a `Writer`.
 
         Parameters:
             W: A type conforming to the Writable trait.
             U: The type of the elements in the list. Must implement the
-              traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Args:
             writer: The object to write to.
@@ -329,15 +339,13 @@ struct Optional[T: Copyable & Movable](
 
     @always_inline
     fn value(ref self) -> ref [self._value] T:
-        """Retrieve a reference to the value of the Optional.
-
-        This check to see if the optional contains a value.
-        If you call this without first verifying the optional with __bool__()
-        eg. by `if my_option:` or without otherwise knowing that it contains a
-        value (for instance with `or_else`), the program will abort
+        """Retrieve a reference to the value of the `Optional`.
 
         Returns:
-            A reference to the contained data of the option as a Pointer[T].
+            A reference to the contained data of the `Optional` as a reference.
+
+        Notes:
+            This will abort on empty `Optional`.
         """
         if not self.__bool__():
             abort(".value() on empty Optional")
@@ -346,63 +354,51 @@ struct Optional[T: Copyable & Movable](
 
     @always_inline
     fn unsafe_value(ref self) -> ref [self._value] T:
-        """Unsafely retrieve a reference to the value of the Optional.
-
-        This doesn't check to see if the optional contains a value.
-        If you call this without first verifying the optional with __bool__()
-        eg. by `if my_option:` or without otherwise knowing that it contains a
-        value (for instance with `or_else`), you'll get garbage unsafe data out.
+        """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:
-            A reference to the contained data of the option as a Pointer[T].
+            A reference to the contained data of the `Optional` as a reference.
+
+        Notes:
+            This will **not** abort on empty `Optional`.
         """
         debug_assert(self.__bool__(), ".value() on empty Optional")
         return self._value.unsafe_get[T]()
 
     fn take(mut self) -> T:
-        """Move the value out of the Optional.
-
-        The caller takes ownership over the new value, which is moved
-        out of the Optional, and the Optional is left in an empty state.
-
-        This check to see if the optional contains a value.
-        If you call this without first verifying the optional with __bool__()
-        eg. by `if my_option:` or without otherwise knowing that it contains a
-        value (for instance with `or_else`), you'll get garbage unsafe data out.
+        """Move the value out of the `Optional`.
 
         Returns:
-            The contained data of the option as an owned T value.
+            The contained data of the `Optional` as an owned T value.
+
+        Notes:
+            This will abort on empty `Optional`.
         """
         if not self.__bool__():
             abort(".take() on empty Optional")
         return self.unsafe_take()
 
     fn unsafe_take(mut self) -> T:
-        """Unsafely move the value out of the Optional.
-
-        The caller takes ownership over the new value, which is moved
-        out of the Optional, and the Optional is left in an empty state.
-
-        This check to see if the optional contains a value.
-        If you call this without first verifying the optional with __bool__()
-        eg. by `if my_option:` or without otherwise knowing that it contains a
-        value (for instance with `or_else`), the program will abort!
+        """Unsafely move the value out of the `Optional`.
 
         Returns:
-            The contained data of the option as an owned T value.
+            The contained data of the `Optional` as an owned T value.
+
+        Notes:
+            This will **not** abort on empty `Optional`.
         """
         debug_assert(self.__bool__(), ".unsafe_take() on empty Optional")
         return self._value.unsafe_replace[_NoneType, T](_NoneType())
 
     fn or_else(self, default: T) -> T:
-        """Return the underlying value contained in the Optional or a default
-        value if the Optional's underlying value is not present.
+        """Return the underlying value contained in the `Optional` or a default
+        value if the `Optional`'s underlying value is not present.
 
         Args:
             default: The new value to use if no value was present.
 
         Returns:
-            The underlying value contained in the Optional or a default value.
+            The underlying value contained in the `Optional` or a default value.
         """
         if self.__bool__():
             return self._value[T]
@@ -413,11 +409,8 @@ struct Optional[T: Copyable & Movable](
         origin: Origin[mut], //,
         T: Copyable & Movable,
     ](self: Optional[Pointer[T, origin]]) -> Optional[T]:
-        """Converts an Optional containing a Pointer to an Optional of an owned
-        value by copying.
-
-        If `self` is an empty `Optional`, the returned `Optional` will be empty
-        as well.
+        """Converts an `Optional` containing a Pointer to an `Optional` of an
+        owned value by copying.
 
         Parameters:
             mut: Mutability of the pointee origin.
@@ -425,22 +418,22 @@ struct Optional[T: Copyable & Movable](
             T: Type of the owned result value.
 
         Returns:
-            An Optional containing an owned copy of the pointee value.
+            An `Optional` containing an owned copy of the pointee value.
 
-        # Examples
+        Examples:
 
         Copy the value of an `Optional[Pointer[_]]`
 
         ```mojo
-        from collections import Optional
-
+        %# from collections import Optional
         var data = String("foo")
-
         var opt = Optional(Pointer(to=data))
-
         var opt_owned: Optional[String] = opt.copied()
         ```
-        .
+
+        Notes:
+            If `self` is an empty `Optional`, the returned `Optional` will be
+            empty as well.
         """
         if self:
             # SAFETY: We just checked that `self` is populated.

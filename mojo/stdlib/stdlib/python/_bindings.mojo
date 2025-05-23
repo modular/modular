@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin.identifiable import TypeIdentifiable
 from collections import Optional
 from collections.string.string_slice import get_static_string
 from os import abort
-from sys.ffi import c_int
+from sys.ffi import c_int, _Global
 from sys.info import sizeof
 
 from memory import UnsafePointer
@@ -32,6 +33,44 @@ from python._cpython import (
     newfunc,
 )
 from python.python_object import PyFunction, PyFunctionRaising, PythonModule
+
+# ===-----------------------------------------------------------------------===#
+# Global `PyTypeObject` Registration
+# ===-----------------------------------------------------------------------===#
+
+alias MOJO_PYTHON_TYPE_OBJECTS = _Global[
+    "MOJO_PYTHON_TYPE_OBJECTS",
+    Dict[StaticString, TypedPythonObject["Type"]],
+    _init_python_type_objects,
+]
+"""Mapping of Mojo type identifiers to unique `PyTypeObject*` binding
+that Mojo type to this CPython interpreter instance."""
+
+
+fn _init_python_type_objects() -> Dict[StaticString, TypedPythonObject["Type"]]:
+    return Dict[StaticString, TypedPythonObject["Type"]]()
+
+
+fn get_py_type_object[
+    T: TypeIdentifiable
+]() raises -> TypedPythonObject["Type"]:
+    """Retrieve a reference to the unique Python type describing Python objects
+    containing Mojo values of type `T`.
+
+    This function will raise if no `PythonTypeBuilder` was ever finalized for
+    `T`.
+    """
+    var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
+
+    # FIXME(MSTDL-1580):
+    #   This should use a unique compiler type ID, not the Python name of this
+    #   type.
+    if entry := type_dict[].find(T.TYPE_ID):
+        return entry.take()
+
+    raise Error(
+        "No Python type object registered for Mojo type with id: ", T.TYPE_ID
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -176,7 +215,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Defaultable & Representable
+        T: Defaultable & Representable & TypeIdentifiable
     ](mut self, type_name: StaticString) -> ref [
         self.type_builders
     ] PythonTypeBuilder:
@@ -745,6 +784,7 @@ struct PythonTypeBuilder(Movable, Copyable):
     """
 
     var type_name: StaticString
+    var _type_id: Optional[StaticString]
     var basicsize: Int
     var _slots: List[PyType_Slot]
     var methods: List[PyMethodDef]
@@ -763,13 +803,14 @@ struct PythonTypeBuilder(Movable, Copyable):
         """
 
         self.type_name = type_name
+        self._type_id = None
         self.basicsize = basicsize
         self._slots = List[PyType_Slot]()
         self.methods = List[PyMethodDef]()
 
     @staticmethod
     fn bind[
-        T: Defaultable & Representable
+        T: Defaultable & Representable & TypeIdentifiable
     ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
@@ -793,6 +834,7 @@ struct PythonTypeBuilder(Movable, Copyable):
             PyType_Slot.tp_repr(tp_repr_wrapper[T]),
         )
         b.methods = List[PyMethodDef]()
+        b._type_id = T.TYPE_ID
 
         return b^
 
@@ -825,9 +867,30 @@ struct PythonTypeBuilder(Movable, Copyable):
         if type_obj.is_null():
             raise cpython.get_error()
 
-        return TypedPythonObject["Type"](
+        var typed_type_obj = TypedPythonObject["Type"](
             unsafe_unchecked_from=PythonObject(from_owned_ptr=type_obj)
         )
+
+        # Every Mojo type that is exposed to Python must have EXACTLY ONE
+        # `PyTypeObject` instance that represents it. That is important for
+        # correctness. This check here ensures that the user is not accidentally
+        # creating multiple `PyTypeObject` instances that bind the same Mojo
+        # type.
+        if type_id := self._type_id:
+            var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
+
+            if type_id[] in type_dict[]:
+                raise Error(
+                    (
+                        "Error building multiple Python type objects bound to"
+                        " Mojo type with id: "
+                    ),
+                    type_id[],
+                )
+
+            type_dict[][type_id[]] = typed_type_obj
+
+        return typed_type_obj^
 
     fn finalize(mut self, module: PythonModule) raises:
         """Finalize the builder, creating the type binding with the registered
@@ -1464,26 +1527,22 @@ fn _get_type_name(obj: PythonObject) raises -> String:
 
 
 fn check_argument_type[
-    T: AnyType
-](
-    func_name: StaticString,
-    type_name_id: StaticString,
-    obj: PythonObject,
-) raises -> UnsafePointer[T]:
+    T: TypeIdentifiable
+](func_name: StaticString, obj: PythonObject) raises -> UnsafePointer[T]:
     """Raise an error if the provided Python object does not contain a wrapped
     instance of the Mojo `T` type.
     """
 
     var opt: Optional[UnsafePointer[T]] = obj.py_object.try_cast_to_mojo_value[
         T
-    ](type_name_id)
+    ]()
 
     if not opt:
         raise Error(
             String.format(
                 "TypeError: {}() expected Mojo '{}' type argument, got '{}'",
                 func_name,
-                type_name_id,
+                T.TYPE_ID,
                 _get_type_name(obj),
             )
         )

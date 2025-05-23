@@ -13,13 +13,17 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
+import enum
 from dataclasses import dataclass
-from typing import (
-    Generic,
-    Protocol,
-    TypeVar,
-    runtime_checkable,
-)
+from typing import Generic, Protocol, TypeVar, runtime_checkable
+
+from .response import TextGenerationStatus
+
+
+class AudioFormat(enum.Enum):
+    """The format of the audio to be generated."""
+
+    WAV = "wav"
 
 
 @dataclass(frozen=True)
@@ -48,31 +52,29 @@ class AudioGenerationRequest:
     """
     voice: str
     """
-    The voice to use for audio generation. Supported voices include alloy, echo, 
-    fable, onyx, nova, and shimmer.
+    The voice to use for audio generation.
     """
-    instructions: str
+    instructions: str = ""
     """
     Control the voice of your generated audio with additional instructions.
+    Currently unused.
     """
-    response_format: str = "mp3"
+    response_format: AudioFormat = AudioFormat.WAV
     """
-    The format to audio in. Supported formats are mp3, opus, aac, and flac.
-    Defaults to mp3.
+    The format to audio in. Currently only supports wav.
     """
     speed: float = 1.0
     """
-    The speed of the generated audio. Select a value from 0.25 to 4.0. 
+    The speed of the generated audio. Select a value from 0.25 to 4.0.
     Defaults to 1.0.
     """
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
-
-# TODO: This is just copy pasted from text_geenration.py and hacked for audio
-# generation purposes. Refactor this later on.
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+
+DecoderOutput = TypeVar("DecoderOutput")
 
 
 @runtime_checkable
@@ -137,6 +139,11 @@ class PipelineAudioTokenizer(
 
         Args:
             prompt (str): Un-encoded prompt text.
+            add_special_tokens (bool): Whether to add special tokens to the
+                prompt.
+
+        Returns:
+            TokenizerEncoded: Encoded tokens.
 
         Raises:
             ValueError: If the prompt exceeds the configured maximum length.
@@ -154,6 +161,7 @@ class PipelineAudioTokenizer(
         Args:
             context (AudioGeneratorContext): Current generation context.
             encoded (TokenizerEncoded): Encoded response tokens.
+            kwargs (Any): Additional keyword arguments.
 
         Returns:
             str: Un-encoded response text.
@@ -162,20 +170,37 @@ class PipelineAudioTokenizer(
 
 
 @runtime_checkable
-class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
+class AudioGenerator(Generic[AudioGeneratorContext, DecoderOutput], Protocol):
     """Interface for audio generation models."""
 
     def next_chunk(
-        self, batch: dict[str, AudioGeneratorContext], num_samples: int
-    ) -> dict[str, bytes]:
+        self, batch: dict[str, AudioGeneratorContext], num_tokens: int
+    ) -> dict[str, TextGenerationStatus]:
         """Computes the next audio chunk for a single batch.
+
+        The new speech tokens are saved to the context.
 
         Args:
             batch (dict[str, AudioGeneratorContext]): Batch of contexts.
-            num_samples (int): Number of audio samples to generate.
+            num_tokens (int): Number of speech tokens to generate.
 
         Returns:
-            dict[str, bytes]: Dictionary mapping request IDs to PCM-encoded WAV audio chunks.
+            dict[str, TextGenerationStatus]: Dictionary mapping request IDs to
+                speech token generation status.
+        """
+        ...
+
+    def decode(
+        self, batch: dict[str, AudioGeneratorContext], num_tokens: int
+    ) -> dict[str, DecoderOutput]:
+        """Decodes speech tokens to audio bytes.
+
+        Args:
+            batch (dict[str, AudioGeneratorContext]): Batch of audio generation contexts.
+            num_tokens (int): Number of speech tokens to decode.
+
+        Returns:
+            dict[str, DecoderOutput]: Dictionary mapping request IDs to WAV audio data.
         """
         ...
 

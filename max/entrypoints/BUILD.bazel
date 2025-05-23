@@ -48,10 +48,10 @@ modular_py_binary(
     srcs = [
         "pipelines.py",
     ],
-    data = ["@flash_attn"],
+    data = ["@daolabs_flash_attn"],
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
-        "FLASH_ATTENTION_LIBRARY": "$(location @flash_attn)",
+        "DAOLABS_FLASH_ATTENTION_LIBRARY": "$(location @daolabs_flash_attn)",
     },
     deps = [
         "//SDK/lib/API/python/max/entrypoints",

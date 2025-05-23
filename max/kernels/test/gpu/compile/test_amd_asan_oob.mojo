@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # Can only run with asan version of amd drivers installed.
+# We also need to disable the buffer cache to not allow for allocations to be
+# extended beyond what ASAN expects.
 # UNSUPPORTED: asan
 # REQUIRES: AMD-GPU
 # RUN: mojo build --sanitize=address --external-libasan=/opt/rocm/lib/llvm/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so --target-accelerator=mi300x -g %s -o %t
@@ -18,10 +20,11 @@
 # RUN: export LD_PRELOAD=/opt/rocm/lib/llvm/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so:/opt/rocm/lib/asan/libamdhip64.so
 # RUN: export ASAN_OPTIONS=detect_leaks=0
 # RUN: export HSA_XNACK=1
+# RUN: export MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=0
 # RUN: not %t 5 2>&1 | FileCheck %s
 
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
-# CHECK: at {{.*}}test_amd_asan_oob.mojo:34
+# CHECK: at {{.*}}test_amd_asan_oob.mojo:37
 
 from sys import argv
 

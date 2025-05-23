@@ -147,14 +147,20 @@ fn tma_umma_kernel[
     tmem_addr = ptr_tmem_addr[0]
 
     alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    alias b_canonical_layout = tile_to_descriptor[b_type, b_smem_layout]()
+    alias b_canonical_layout = tile_to_descriptor[
+        b_type, b_smem_layout, is_k_major=transpose_b
+    ]()
     alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
     alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
     alias bSBO = b_canonical_layout[0].stride[1].value() * sizeof[b_type]()
     alias bLBO = b_canonical_layout[1].stride[1].value() * sizeof[b_type]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
+        a_smem_tile.ptr
+    )
+    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+        b_smem_tile.ptr
+    )
 
     idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
@@ -184,6 +190,8 @@ fn tma_umma_kernel[
         barrier()
 
         if elect_one_thread:
+            adesc = adesc_base
+            bdesc = bdesc_base
             if i == 0:
                 mma[c_scale=0](adesc, bdesc, tmem_addr, idesc)
 
@@ -216,14 +224,13 @@ fn tma_umma_kernel[
 
     tcgen05_load_wait()
 
-    # if thread_idx.x == 0:
-    #     print(c_frag)
-
     if elect_one_warp:
         tcgen05_release_allocation_lock()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     warp_id = thread_idx.x // WARP_SIZE
+
+    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -232,7 +239,7 @@ fn tma_umma_kernel[
         for n_mma in range(num_n_mmas):
             alias mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = c.tile[mma_shape[0] // 4, mma_shape[1]](
+            c_gmem_warp_tile = ctile.tile[mma_shape[0] // 4, mma_shape[1]](
                 4 * m_mma + warp_id, n_mma
             )
 
@@ -353,7 +360,7 @@ def test_tma_umma[
         b_tma_op,
         c.device_tensor(),
         K // BK,
-        grid_dim=(1, 1),
+        grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )
 
@@ -370,7 +377,6 @@ def test_tma_umma[
 
     c_host = c.tensor()
     c_host_ref = c_ref.tensor()
-
     for m in range(M):
         for n in range(N):
             assert_almost_equal(
@@ -398,4 +404,16 @@ def main():
             Index(64, 128, 16),
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](ctx)
+        test_tma_umma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64 * 2, 128 * 2, 64 * 2),
+            Index(64, 128, 64),
+            Index(64, 128, 16),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
         ](ctx)
