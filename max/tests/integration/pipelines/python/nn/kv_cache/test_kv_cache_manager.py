@@ -6,7 +6,6 @@
 
 import numpy as np
 import pytest
-from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -15,6 +14,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from test_common.context_utils import create_text_context
 
 
 @pytest.mark.asyncio

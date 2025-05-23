@@ -12,12 +12,12 @@ import numpy.typing as npt
 import pytest
 import torch
 import torch.nn.functional as F
-from distance_metrics import is_euclidean_distance_close
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import LayerNorm
-from ndarray_from_tensor_type import ndarray_from_tensor_type
+from test_common.distance_metrics import is_euclidean_distance_close
+from test_common.ndarray_from_tensor_type import ndarray_from_tensor_type
 
 
 def torch_layer_norm(

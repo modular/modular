@@ -7,7 +7,6 @@
 import asyncio
 
 import numpy as np
-from context_utils import create_text_context
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -17,6 +16,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from test_common.context_utils import create_text_context
 
 
 def test_kv_cache_gpu():

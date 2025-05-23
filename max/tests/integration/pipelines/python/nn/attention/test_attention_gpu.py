@@ -12,7 +12,6 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from context_utils import create_text_context
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -39,6 +38,7 @@ from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
 )
 from max.support.math import ceildiv
 from modular_graph_test import are_all_tensor_values
+from test_common.context_utils import create_text_context
 from test_common.distance_metrics import is_euclidean_distance_close
 from torch.nn.functional import scaled_dot_product_attention
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig

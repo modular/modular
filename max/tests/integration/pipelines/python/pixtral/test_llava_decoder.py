@@ -10,7 +10,6 @@ import hf_repo_lock
 import numpy as np
 import pytest
 import torch
-from context_utils import create_text_context
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -33,6 +32,7 @@ from max.pipelines.architectures.pixtral.llava.llava_decoder import (
     Transformer as LLavaTransformer,
 )
 from max.pipelines.lib import generate_local_model_path
+from test_common.context_utils import create_text_context
 from transformers import (
     LlavaForConditionalGeneration,
     MistralConfig,

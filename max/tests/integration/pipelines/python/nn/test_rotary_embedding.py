@@ -10,7 +10,6 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
-from context_utils import create_text_context
 from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
@@ -36,6 +35,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
+from test_common.context_utils import create_text_context
 
 MAX_SEQ_LEN = 2**16
 ACCURACY_RTOL = 1e-2

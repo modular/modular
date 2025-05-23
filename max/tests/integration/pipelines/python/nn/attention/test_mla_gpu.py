@@ -7,7 +7,6 @@
 
 import numpy as np
 import torch
-from context_utils import create_text_context
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -19,6 +18,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
+from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
 

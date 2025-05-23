@@ -9,7 +9,7 @@ load(
 modular_py_library(
     name = "test_common",
     srcs = ["__init__.py"],
-    imports = ["."],
+    imports = [".."],
     deps = [
         requirement("pytest"),
         requirement("numpy"),

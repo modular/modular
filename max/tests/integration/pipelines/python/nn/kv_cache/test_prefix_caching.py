@@ -12,7 +12,6 @@ from typing import Any, Optional
 
 import numpy as np
 import pytest
-from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -22,6 +21,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
 )
 from max.pipelines.core import InputContext
+from test_common.context_utils import create_text_context
 
 
 def rand(length: int) -> np.ndarray:

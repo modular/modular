@@ -7,7 +7,6 @@
 import numpy as np
 import pytest
 import torch
-from context_utils import create_text_context
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
@@ -24,6 +23,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2Attention

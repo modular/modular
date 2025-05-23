@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
-from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -27,6 +26,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
+from test_common.context_utils import create_text_context
 
 
 def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
