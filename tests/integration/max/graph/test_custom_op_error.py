@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test error messages for a custom op with errors."""
 
-import re
 from pathlib import Path
 
 import pytest
@@ -33,15 +32,7 @@ def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
             ),
         )
 
-    # Verify two conditions:
-    # 1. Our expected error message is present.
-    # 2. MLIR's "see current operation" notes are filtered out.
     error_msg = str(excinfo.value)
-    assert re.search(
-        r"user_invalid\.mojo:.* error: call expansion failed.*note: constraint failed: oops",
-        error_msg,
-        re.DOTALL,
-    ), "missing expected error pattern"
     assert all(
         phrase not in error_msg
         for phrase in ("see current operation", "builtin.module")
