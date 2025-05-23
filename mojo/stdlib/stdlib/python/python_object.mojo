@@ -32,7 +32,7 @@ from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr, PyObject
 from .python import Python
-from ._bindings import _get_type_name, get_py_type_object, PyMojoObject
+from ._bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
 
 trait PythonConvertible:
@@ -1593,7 +1593,7 @@ struct PythonObject(
             cpython.Py_TYPE(self.unsafe_as_py_object_ptr()).bitcast[PyObject]()
         )
 
-        var expected_type_obj = get_py_type_object[T]()
+        var expected_type_obj = lookup_py_type_object[T]()
 
         if type == expected_type_obj.unsafe_as_py_object_ptr():
             return self.unchecked_downcast_value_ptr[T]()

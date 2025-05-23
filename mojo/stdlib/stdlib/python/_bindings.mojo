@@ -50,7 +50,39 @@ fn _init_python_type_objects() -> Dict[StaticString, TypedPythonObject["Type"]]:
     return Dict[StaticString, TypedPythonObject["Type"]]()
 
 
-fn get_py_type_object[
+fn _register_py_type_object(
+    type_id: StaticString,
+    owned type_obj: TypedPythonObject["Type"],
+) raises:
+    """Register a Python type object for the identified Mojo type.
+
+    The provided Python type object describes how a wrapped Mojo value can
+    be used from within Python code.
+
+    Args:
+        type_id: The unique type id of a Mojo type.
+        type_obj: The Python type object that binds the Mojo type identified
+          by `type_id`.
+
+    Raises:
+        If a Python type object has already been registered in the current
+        session for the provided type id.
+    """
+    var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
+
+    if type_id in type_dict[]:
+        raise Error(
+            (
+                "Error building multiple Python type objects bound to"
+                " Mojo type with id: "
+            ),
+            type_id,
+        )
+
+    type_dict[][type_id] = type_obj^
+
+
+fn lookup_py_type_object[
     T: TypeIdentifiable
 ]() raises -> TypedPythonObject["Type"]:
     """Retrieve a reference to the unique Python type describing Python objects
@@ -877,18 +909,7 @@ struct PythonTypeBuilder(Movable, Copyable):
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
         if type_id := self._type_id:
-            var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
-
-            if type_id[] in type_dict[]:
-                raise Error(
-                    (
-                        "Error building multiple Python type objects bound to"
-                        " Mojo type with id: "
-                    ),
-                    type_id[],
-                )
-
-            type_dict[][type_id[]] = typed_type_obj
+            _register_py_type_object(type_id[], typed_type_obj)
 
         return typed_type_obj^
 

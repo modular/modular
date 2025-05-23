@@ -24,7 +24,7 @@ from python import Python, PythonObject, TypedPythonObject
 from python._bindings import (
     PyMojoObject,
     PythonModuleBuilder,
-    get_py_type_object,
+    lookup_py_type_object,
 )
 from python._cpython import PyObjectPtr, PyTypeObject
 
@@ -262,7 +262,7 @@ fn create_string__wrapper() raises -> PythonObject:
     #   We can't just use PythonTypeBuilder.bind[String]() because that constructs
     #   a _new_ PyTypeObject. We want to reference the existing _singleton_
     #   PyTypeObject that represents a given Mojo type.
-    var string_ty = get_py_type_object[String]()
+    var string_ty = lookup_py_type_object[String]()
 
     # SAFETY:
     #   `Int` was added to the module by us, so it should be an instance
