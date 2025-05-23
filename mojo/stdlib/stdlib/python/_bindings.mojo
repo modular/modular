@@ -88,8 +88,21 @@ fn lookup_py_type_object[
     """Retrieve a reference to the unique Python type describing Python objects
     containing Mojo values of type `T`.
 
-    This function will raise if no `PythonTypeBuilder` was ever finalized for
-    `T`.
+    This function looks up the Python type object that was previously registered
+    for the Mojo type `T` using a `PythonTypeBuilder`. The returned type object
+    can be used to create Python objects that wrap Mojo values of type `T`.
+
+    Parameters:
+        T: The Mojo type to look up. Must implement the `TypeIdentifiable` trait
+           to provide a unique type identifier.
+
+    Returns:
+        A `TypedPythonObject["Type"]` representing the Python type object that
+        binds the Mojo type `T` to the current CPython interpreter instance.
+
+    Raises:
+        If no `PythonTypeBuilder` was ever finalized for type `T`, or if no
+        Python type object has been registered for the provided type identifier.
     """
     var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
 
@@ -125,10 +138,35 @@ alias Typed_newfunc = fn (
 
 
 struct PyMojoObject[T: AnyType]:
-    """Storage backing a PyObject* wrapping a Mojo value."""
+    """Storage backing a PyObject* wrapping a Mojo value.
+
+    This struct represents the C-level layout of a Python object that contains
+    a wrapped Mojo value. It must be ABI-compatible with CPython's PyObject
+    structure to enable seamless interoperability between Mojo and Python.
+
+    The struct follows Python's object model where all Python objects begin
+    with a PyObject header (ob_base), followed by type-specific data. In this
+    case, the type-specific data is a Mojo value of type T.
+
+    See https://docs.python.org/3/c-api/structures.html#c.PyObject for more details.
+
+    Parameters:
+        T: The Mojo type being wrapped. Can be any type that satisfies `AnyType`.
+    """
 
     var ob_base: PyObject
+    """The standard Python object header containing reference count and type information.
+
+    This must be the first field to maintain ABI compatibility with Python's object layout.
+    All Python objects begin with this header structure.
+    """
+
     var mojo_value: T
+    """The actual Mojo value being wrapped and exposed to Python.
+
+    This field stores the Mojo data that Python code can interact with through
+    the registered type methods and bindings.
+    """
 
 
 fn _default_tp_new_wrapper[
@@ -140,8 +178,34 @@ fn _default_tp_new_wrapper[
 ) -> PyObjectPtr:
     """Python-compatible wrapper around a Mojo initializer function.
 
+    This function serves as the `tp_new` slot for Python type objects that
+    wrap Mojo values. It creates new Python objects containing default-initialized
+    Mojo values of type `T`. The function follows Python's object creation
+    protocol and handles error cases by setting appropriate Python exceptions.
+
+    This wrapper is designed to be used with Python types that don't accept
+    any initialization arguments, creating objects with default Mojo values.
+
     Parameters:
-        T: The wrapped Mojo type.
+        T: The wrapped Mojo type that must be `Defaultable` and `Movable`.
+
+    Args:
+        subtype: Pointer to the Python type object for which to create an instance.
+                This allows for proper subtype handling in Python's type system.
+        args: Tuple of positional arguments passed from Python. Must be empty
+              for this default initializer.
+        keyword_args: Pointer to keyword arguments dictionary passed from Python.
+                     Must be NULL for this default initializer.
+
+    Returns:
+        A new Python object pointer containing a default-initialized Mojo value
+        of type `T`, or a null pointer if an error occurs during creation.
+
+    Note:
+        This function sets a Python `ValueError` exception if any arguments
+        are provided, since the default initializer expects no parameters.
+        The returned object follows Python's reference counting rules where
+        the caller takes ownership of the new reference.
     """
 
     var cpython = Python().cpython()
@@ -164,6 +228,18 @@ fn _default_tp_new_wrapper[
 
 
 fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
+    """Python-compatible wrapper for deallocating a `PyMojoObject`.
+
+    This function serves as the tp_dealloc slot for Python type objects that
+    wrap Mojo values. It properly destroys the wrapped Mojo value and frees
+    the Python object memory.
+
+    Parameters:
+        T: The wrapped Mojo type that must be `Defaultable` and `Representable`.
+
+    Args:
+        py_self: Pointer to the Python object to be deallocated.
+    """
     var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
     var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
@@ -181,6 +257,23 @@ fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
 fn _tp_repr_wrapper[
     T: Defaultable & Representable
 ](py_self: PyObjectPtr) -> PyObjectPtr:
+    """Python-compatible wrapper for generating string representation of a
+    `PyMojoObject`.
+
+    This function serves as the `tp_repr` slot for Python type objects that
+    wrap Mojo values. It calls the Mojo `repr()` function on the wrapped value
+    and returns the result as a Python string object.
+
+    Parameters:
+        T: The wrapped Mojo type that must be `Defaultable` and `Representable`.
+
+    Args:
+        py_self: Pointer to the Python object to get representation for.
+
+    Returns:
+        A new Python string object containing the string representation,
+        or null pointer if an error occurs.
+    """
     var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
     var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
@@ -195,11 +288,46 @@ fn _tp_repr_wrapper[
 
 
 struct PythonModuleBuilder:
-    """API for declaring and creating Python bindings for a module."""
+    """A builder for creating Python modules with Mojo function and type bindings.
+
+    This builder provides a high-level API for declaring Python bindings for Mojo
+    functions and types within a Python module. It manages the registration of
+    functions, types, and their associated metadata, then finalizes everything
+    into a complete Python module object.
+
+    The builder follows a declarative pattern where you:
+    1. Create a builder instance with a module name
+    2. Add function bindings using `def_function()`, `def_py_function()`, `def_py_c_function()`
+    3. Add type bindings using `add_type[T]()` and configure them
+    4. Call `finalize()` to finish building the Python module.
+
+    Example:
+        ```mojo
+        from python._bindings import PythonModuleBuilder
+
+        var builder = PythonModuleBuilder("my_module")
+        builder.def_function[my_func]("my_func", "Documentation for my_func")
+
+        _ = builder.add_type[MyType]("MyType").def_method[my_method]("my_method")
+
+        var module = builder.finalize()
+        ```
+
+    Note:
+        After calling `finalize()`, the builder's internal state is cleared and
+        it should not be reused for creating additional modules.
+
+        TODO: This should be enforced programmatically in the future.
+    """
 
     var module: PythonModule
+    """The Python module being built."""
+
     var functions: List[PyMethodDef]
+    """List of function definitions that will be exposed in the module."""
+
     var type_builders: List[PythonTypeBuilder]
+    """List of type builders for types that will be exposed in the module."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -772,8 +900,13 @@ struct PythonModuleBuilder:
     fn finalize(mut self) raises -> PythonModule:
         """Finalize the module builder, creating the module object.
 
+
         All types and functions added to the builder will be built and exposed
-        in the module.
+        in the module. After calling this method, the builder's internal state
+        is cleared and it should not be reused for creating additional modules.
+
+        Returns:
+            The finalized Python module containing all registered functions and types.
 
         Raises:
             If the module creation fails or if we fail to add any of the
@@ -809,10 +942,19 @@ struct PythonTypeBuilder(Movable, Copyable):
     """
 
     var type_name: StaticString
+    """The name the type will be exposed as in the Python module."""
+
     var _type_id: Optional[StaticString]
+    """The unique type identifier for the Mojo type being bound, if any."""
+
     var basicsize: Int
+    """The required allocation size to hold an instance of this type as a Python object."""
+
     var _slots: List[PyType_Slot]
+    """List of Python type slots that define the behavior of the type."""
+
     var methods: List[PyMethodDef]
+    """List of method definitions that will be exposed on the Python type."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -864,6 +1006,32 @@ struct PythonTypeBuilder(Movable, Copyable):
         return b^
 
     fn finalize(mut self) raises -> TypedPythonObject["Type"]:
+        """Finalize the builder and create a Python type object.
+
+        This method completes the construction of a Python type object from the
+        builder's configuration.
+
+        The method ensures that each Mojo type has exactly one corresponding
+        Python type object by registering the created type in a global registry.
+        This prevents accidental creation of multiple type objects for the same
+        Mojo type, which would break Python's type system assumptions.
+
+        Returns:
+            A `TypedPythonObject["Type"]` representing the newly created Python
+            type object that can be used to create instances or register with
+            Python modules.
+
+        Raises:
+            If the Python type object creation fails, typically due to invalid
+            type specifications or Python C API errors.
+
+        Note:
+            After calling this method, the builder's internal state may be
+            modified (methods list is consumed), so the builder should not be
+            reused for creating additional type objects.
+
+            TODO: This should be enforced programmatically in the future.
+        """
         var cpython = Python().cpython()
 
         if self.methods:
@@ -907,11 +1075,34 @@ struct PythonTypeBuilder(Movable, Copyable):
         return typed_type_obj^
 
     fn finalize(mut self, module: PythonModule) raises:
-        """Finalize the builder, creating the type binding with the registered
-        methods.
+        """Finalize the builder and add the created type to a Python module.
+
+        This method completes the type building process by calling the parameterless
+        `finalize()` method to create the Python type object, then automatically
+        adds the resulting type to the specified Python module using the builder's
+        configured type name. After successful completion, the builder's method
+        list is cleared to prevent accidental reuse.
+
+        This is a convenience method that combines type finalization and module
+        registration in a single operation, which is the most common use case
+        when creating Python-accessible Mojo types.
+
+        Args:
+            module: The Python module to which the finalized type will be added.
+                   The type will be accessible from Python code that imports
+                   this module using the name specified during builder construction.
 
         Raises:
-            If we fail to add the type to the module.
+            If the type object creation fails (see `finalize()` for details) or
+            if adding the type to the module fails, typically due to name conflicts
+            or module state issues.
+
+        Note:
+            After calling this method, the builder's internal state is modified
+            (methods list is cleared), so the builder should not be reused for
+            creating additional type objects. If you need the type object for
+            further operations, use the parameterless `finalize()` method instead
+            and manually add it to the module.
         """
         var type_obj = self.finalize()
         Python.add_object(module, self.type_name, type_obj)
@@ -1394,8 +1585,36 @@ struct PythonTypeBuilder(Movable, Copyable):
 fn _py_c_function_wrapper[
     user_func: PyFunction
 ](py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr) -> PyObjectPtr:
-    """The instantiated type of this generic function is a `PyCFunction`,
-    suitable for being called from Python.
+    """Wrapper function that adapts a Mojo `PyFunction` to be callable from
+    Python.
+
+    This function creates a bridge between Python's C API calling convention
+    and Mojo's `PyFunction` signature. It handles the conversion of raw Python
+    object pointers to typed Mojo objects, calls the user function, and
+    properly manages object lifetimes to prevent reference counting issues.
+
+    The instantiated type of this generic function is a `PyCFunction`,
+    suitable for being called from Python's C extension mechanism.
+
+    Parameters:
+        user_func: The Mojo function to wrap. Must have signature
+                  `fn(PythonObject, TypedPythonObject["Tuple"]) -> PythonObject`.
+
+    Args:
+        py_self_ptr: Pointer to the Python object representing 'self' in the
+                    method call. This is borrowed from the caller.
+        args_ptr: Pointer to a Python tuple containing the positional arguments
+                 passed to the function. This is borrowed from the caller.
+
+    Returns:
+        A new Python object pointer containing the result of the user function,
+        or a null pointer if an error occurred during execution.
+
+    Note:
+        This function carefully manages object ownership according to Python's
+        reference counting rules. The input arguments are borrowed references
+        that must not be decremented, while the return value is a new reference
+        that the caller will own.
     """
 
     #   > When a C function is called from Python, it borrows references to its
@@ -1443,6 +1662,24 @@ fn _py_c_function_wrapper[
 fn _py_c_function_wrapper[
     user_func: PyFunctionRaising
 ](py_self_ptr: PyObjectPtr, py_args_ptr: PyObjectPtr) -> PyObjectPtr:
+    """Create a Python C API compatible wrapper for a Mojo function that can raise exceptions.
+
+    This function wraps a Mojo function that follows the `PyFunctionRaising` signature
+    (can raise exceptions) and makes it compatible with Python's C API calling convention.
+
+    Parameters:
+        user_func: The Mojo function to wrap. Must follow the `PyFunctionRaising`
+                  signature: `fn(PythonObject, TypedPythonObject["Tuple"]) raises -> PythonObject`
+
+    Args:
+        py_self_ptr: Pointer to the Python object representing 'self' (borrowed reference).
+        py_args_ptr: Pointer to a Python tuple containing the function arguments (borrowed reference).
+
+    Returns:
+        A new Python object pointer containing the function result, or NULL if an exception occurred.
+        The caller takes ownership of the returned reference.
+    """
+
     fn wrapper(
         mut py_self: PythonObject, mut args: TypedPythonObject["Tuple"]
     ) -> PythonObject:
@@ -1479,11 +1716,20 @@ fn check_arguments_arity(
     arity: Int,
     args: TypedPythonObject["Tuple"],
 ) raises:
-    """Raise an error if the provided argument count does not match the expected
-    function arity.
+    """Validate that the provided arguments match the expected function arity.
 
-    If this function returns normally (without raising), then the argument
-    count is exactly equal to the expected arity.
+    This function checks if the number of arguments in the provided tuple matches
+    the expected arity for a function call. If the counts don't match, it raises
+    a descriptive error message similar to Python's built-in TypeError messages.
+
+    Args:
+        arity: The expected number of arguments for the function.
+        args: A tuple containing the actual arguments passed to the function.
+
+    Raises:
+        Error: If the argument count doesn't match the expected arity. The error
+               message follows Python's convention for TypeError messages, indicating
+               whether too few or too many arguments were provided.
     """
     # TODO: try to extract the current function name from cpython
     return check_arguments_arity(arity, args, "<mojo function>")
@@ -1494,11 +1740,23 @@ fn check_arguments_arity(
     args: TypedPythonObject["Tuple"],
     func_name: StringSlice,
 ) raises:
-    """Raise an error if the provided argument count does not match the expected
-    function arity.
+    """Validate that the provided arguments match the expected function arity.
 
-    If this function returns normally (without raising), then the argument
-    count is exactly equal to the expected arity.
+    This function checks if the number of arguments in the provided tuple matches
+    the expected arity for a function call. If the counts don't match, it raises
+    a descriptive error message similar to Python's built-in TypeError messages.
+
+    Args:
+        arity: The expected number of arguments for the function.
+        args: A tuple containing the actual arguments passed to the function.
+        func_name: The name of the function being called, used in error messages
+                  to provide better debugging information.
+
+    Raises:
+        Error: If the argument count doesn't match the expected arity. The error
+               message follows Python's convention for TypeError messages, indicating
+               whether too few or too many arguments were provided, along with the
+               specific function name.
     """
 
     var arg_count = len(args)
