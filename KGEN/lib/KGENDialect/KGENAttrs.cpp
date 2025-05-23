@@ -356,6 +356,20 @@ FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
 }
 
 //===----------------------------------------------------------------------===//
+// GetLinkageNameAttr
+//===----------------------------------------------------------------------===//
+
+bool GetLinkageNameAttr::isConstant() const { return false; }
+
+LogicalResult GetLinkageNameAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
+    TypedAttr func, Type type) {
+  if (!::isa<TargetType>(target.getType()))
+    return emitError() << "target operand must be of `!kgen.target` type";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
