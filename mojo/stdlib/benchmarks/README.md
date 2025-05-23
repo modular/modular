@@ -38,14 +38,6 @@ on top of the `benchmark` module.  You can also use `BenchConfig` to configure
 `Bench`. For the most part, you can copy-paste from existing
 benchmarks to get started.
 
-Note that the `benchmark` package isn't open source yet and we do not currently
-have a mechanism for generating nightly API docs for closed source packages.
-So, we manually provide relatively up-to-date docs for these [here](../../docs/bencher/).
-In the future, we hope to open source the `benchmark` package and also generate
-nightly API docs.  This is definitely a rough edge, but bear with us!  We eagerly
-wanted to get these benchmarks out to the public even though we fully understand
-the experience is not perfect right now.
-
 ## Benchmarks in CI
 
 Currently, there is no short-term plans for adding these benchmarks with regression
