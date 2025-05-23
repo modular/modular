@@ -14,15 +14,13 @@
 
 from testing import assert_equal
 
-from utils import Writable, Writer
-
-
-fn main() raises:
-    test_writer_of_string()
-    test_string_format_seq()
-    test_stringable_based_on_format()
-
-    test_write_int_padded()
+from memory.memory import memset_zero
+from utils.write import (
+    Writable,
+    Writer,
+    _write_hex,
+    _hex_digits_to_hex_chars,
+)
 
 
 @fieldwise_init
@@ -39,7 +37,7 @@ struct Point(Writable, Stringable):
         return String.write(self)
 
 
-fn test_writer_of_string() raises:
+def test_writer_of_string():
     #
     # Test write_to(String)
     #
@@ -55,7 +53,7 @@ fn test_writer_of_string() raises:
     assert_equal(s2, "Point(3, 8)")
 
 
-fn test_string_format_seq() raises:
+def test_string_write_seq():
     var s1 = String.write("Hello, ", "World!")
     assert_equal(s1, "Hello, World!")
 
@@ -66,11 +64,11 @@ fn test_string_format_seq() raises:
     assert_equal(s3, "")
 
 
-fn test_stringable_based_on_format() raises:
+def test_stringable_based_on_format():
     assert_equal(String(Point(10, 11)), "Point(10, 11)")
 
 
-fn test_write_int_padded() raises:
+def test_write_int_padded():
     var s1 = String()
 
     Int(5).write_padded(s1, width=5)
@@ -90,3 +88,54 @@ fn test_write_int_padded() raises:
     Int(12345).write_padded(s2, width=3)
 
     assert_equal(s2, "12345")
+
+
+def test_hex_digits_to_hex_chars():
+    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    alias S = StringSlice[__origin_of(items)]
+    ptr = items.unsafe_ptr()
+    _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
+    assert_equal("0001f525", String(S(ptr=ptr, length=8)))
+    memset_zero(ptr, len(items))
+    _hex_digits_to_hex_chars(ptr, UInt16(ord("你")))
+    assert_equal("4f60", String(S(ptr=ptr, length=4)))
+    memset_zero(ptr, len(items))
+    _hex_digits_to_hex_chars(ptr, UInt8(ord("Ö")))
+    assert_equal("d6", String(S(ptr=ptr, length=2)))
+    _hex_digits_to_hex_chars(ptr, UInt8(0))
+    assert_equal("00", String(S(ptr=ptr, length=2)))
+    _hex_digits_to_hex_chars(ptr, UInt16(0))
+    assert_equal("0000", String(S(ptr=ptr, length=4)))
+    _hex_digits_to_hex_chars(ptr, UInt32(0))
+    assert_equal("00000000", String(S(ptr=ptr, length=8)))
+    _hex_digits_to_hex_chars(ptr, ~UInt8(0))
+    assert_equal("ff", String(S(ptr=ptr, length=2)))
+    _hex_digits_to_hex_chars(ptr, ~UInt16(0))
+    assert_equal("ffff", String(S(ptr=ptr, length=4)))
+    _hex_digits_to_hex_chars(ptr, ~UInt32(0))
+    assert_equal("ffffffff", String(S(ptr=ptr, length=8)))
+
+
+def test_write_hex():
+    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    alias S = StringSlice[__origin_of(items)]
+    ptr = items.unsafe_ptr()
+    _write_hex[8](ptr, ord("🔥"))
+    assert_equal(r"\U0001f525", String(S(ptr=ptr, length=10)))
+    memset_zero(ptr, len(items))
+    _write_hex[4](ptr, ord("你"))
+    assert_equal(r"\u4f60", String(S(ptr=ptr, length=6)))
+    memset_zero(ptr, len(items))
+    _write_hex[2](ptr, ord("Ö"))
+    assert_equal(r"\xd6", String(S(ptr=ptr, length=4)))
+
+
+def main():
+    test_writer_of_string()
+    test_string_write_seq()
+    test_stringable_based_on_format()
+
+    test_write_int_padded()
+
+    test_hex_digits_to_hex_chars()
+    test_write_hex()
