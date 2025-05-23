@@ -12,10 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Defines the List type.
 
-You can import these APIs from the `collections` package. For example:
-
-```mojo
-```
+These APIs are imported automatically, just like builtins.
 """
 
 
