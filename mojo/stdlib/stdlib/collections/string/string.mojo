@@ -2127,6 +2127,156 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     return result
 
 
+fn stol(str_slice: StringSlice, base: Int = 10) raises -> (Int, String):
+    """Convert a string to a integer and return the remaining unparsed string.
+    Similar to `atol`, but `stol` parses only a portion of the string and returns
+    both the parsed integer and the remaining unparsed part. For example, `stol("32abc")` returns `(32, "abc")`.
+    If base is 0, the string is parsed as an [Integer literal][1], with the following considerations:
+    - '0b' or '0B' prefix indicates binary (base 2)
+    - '0o' or '0O' prefix indicates octal (base 8)
+    - '0x' or '0X' prefix indicates hexadecimal (base 16)
+    - Without a prefix, it's treated as decimal (base 10)
+    Notes:
+        This follows [Python's integer literals](\
+        https://docs.python.org/3/reference/lexical_analysis.html#integers)
+    Raises:
+        If the base is invalid or if the string is empty.
+    Args:
+        str_slice: A string to be parsed as an integer in the given base.
+        base: Base used for conversion, value must be between 2 and 36, or 0.
+    Returns:
+        A tuple containing:
+        - An integer value representing the parsed part of the string.
+        - The remaining unparsed part of the string.
+    Examples:
+        >>> stol("19abc")
+        (19, "abc")
+        >>> stol("0xFF hello", 16)
+        (255, " hello")
+        >>> stol("0x123ghi", 0)
+        (291, "ghi")
+        >>> stol("0b1010 binary", 0)
+        (10, " binary")
+        >>> stol("0o123 octal", 0)
+        (83, " octal")
+    See Also:
+        `atol`: A similar function that parses the entire string and returns an integer.
+    [1]: https://docs.python.org/3/reference/lexical_analysis.html#integers.
+    """
+    if (base != 0) and (base < 2 or base > 36):
+        raise Error("Base must be >= 2 and <= 36, or 0.")
+
+    if not str_slice:
+        raise Error("Cannot convert empty string to integer.")
+
+    var result: Int = 0
+    var real_base: Int
+    var start: Int
+    var is_negative: Bool
+    var has_prefix: Bool
+    var str_len = str_slice.byte_length()
+    var buff = str_slice.unsafe_ptr()
+
+    start, is_negative = _trim_and_handle_sign(str_slice, str_len)
+
+    if start == str_len or not _is_valid_digit(Int(buff[start]), base):
+        return 0, String(str_slice)
+
+    var ord_num_max: Int
+    alias ord_0 = ord("0")
+    var ord_letter_max = (-1, -1)
+    alias ord_letter_min = (ord("a"), ord("A"))
+    alias ord_underscore = ord("_")
+
+    if base == 0:
+        real_base, start = _identify_base(str_slice, start)
+        if real_base == -1:
+            return 0, String(str_slice)
+
+        has_prefix = real_base != 10
+    else:
+        start, has_prefix = _handle_base_prefix(start, str_slice, str_len, base)
+        real_base = base
+
+    if real_base <= 10:
+        ord_num_max = ord(String(real_base - 1))
+    else:
+        ord_num_max = ord("9")
+        ord_letter_max = (
+            ord("a") + (real_base - 11),
+            ord("A") + (real_base - 11),
+        )
+
+    var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
+    for pos in range(start, str_len):
+        var ord_current = Int(buff[pos])
+        if ord_current == ord_underscore and was_last_digit_underscore:
+            break  # Break out as opposed to raising exception as in `atol`
+        if ord_current == ord_underscore:
+            was_last_digit_underscore = True
+            continue
+
+        was_last_digit_underscore = False
+
+        var digit_value: Int
+        if ord_0 <= ord_current <= ord_num_max:
+            digit_value = ord_current - ord_0
+        elif ord_letter_min[0] <= ord_current <= ord_letter_max[0]:
+            digit_value = ord_current - ord_letter_min[0] + 10
+        elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
+            digit_value = ord_current - ord_letter_min[1] + 10
+        else:
+            break
+
+        if digit_value >= real_base:
+            break
+
+        var new_result = result * real_base + digit_value
+        if new_result <= result and result > 0:
+            raise Error(
+                _str_to_base_error(real_base, str_slice)
+                + " String expresses an integer too large to store in Int."
+            )
+        result = new_result
+        start = pos + 1
+
+    if is_negative:
+        result = -result
+
+    return result, String(
+        StringSlice(unsafe_from_utf8=str_slice.as_bytes()[start:])
+    )
+
+
+@always_inline
+fn _is_valid_digit(char: UInt8, base: Int) -> Bool:
+    """Checks if a character is a valid digit for the given base.
+    Args:
+        char: The character to check, as a UInt8.
+        base: The numeric base (0-36, where 0 is special case).
+    Returns:
+        True if the character is a valid digit for the given base, False otherwise.
+    """
+    if base == 0:
+        # For base 0, we need to allow 0-9 and a-f/A-F for potential hex numbers
+        if char >= ord("0") and char <= ord("9"):
+            return True
+        var upper_char = char & ~32  # Convert to uppercase
+        return upper_char >= ord("A") and upper_char <= ord("F")
+
+    if char == ord("_"):
+        return True
+
+    if char >= ord("0") and char <= ord("9"):
+        return (char - ord("0")) < base
+    if base <= 10:
+        return False
+    var upper_char = char & ~32  # Convert to uppercase
+    if upper_char >= ord("A") and upper_char <= ord("Z"):
+        return (upper_char - ord("A") + 10) < base
+    return False
+
+
 @always_inline
 fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     """Trims leading whitespace, handles the sign of the number in the string.

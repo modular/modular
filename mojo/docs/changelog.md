@@ -154,6 +154,10 @@ Changes to Python-Mojo interoperability:
   instead, callers must create the `String` on their side before calling
   `os.abort(message)`.
 
+- Added `stol`, a more permissable version of `atol` allowing for partial parsing,
+  of strings without raising errors. [PR 3951](https://github.com/modular/modular/pull/3951)
+  by [jjvraw](https://github.com/jjvraw).
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
