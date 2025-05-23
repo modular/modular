@@ -46,6 +46,11 @@ class Gemma3_MultiModalModel(Gemma3Model):
     model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
 
+    # The vision and text towers are in the same weights file, but are in
+    # separate models, so load_state_dict will naturally be loading subsets in
+    # each case.
+    _strict_state_dict_loading = False
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
