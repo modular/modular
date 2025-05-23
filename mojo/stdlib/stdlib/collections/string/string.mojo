@@ -1801,8 +1801,8 @@ struct String(
         Returns:
             True if the string is a static constant, False otherwise.
         """
-        return Bool(self._ptr_or_data) and (
-            self._capacity_or_data.get_capacity() == 0
+        return (self._capacity_or_data.get_capacity() == 0) and Bool(
+            self._ptr_or_data
         )
 
     # This is the out-of-line implementation of reserve called when we need
