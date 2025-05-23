@@ -1812,18 +1812,11 @@ struct String(
         self._realloc_mutable(self.byte_length())
 
     fn _is_static_constant(self) -> Bool:
-        """Checks if the string is a static constant.
-
-        Returns:
-            True if the string is a static constant, False otherwise.
-        """
+        # The variable "alternative" is unused and should not cause any side-effects.
         alternative = Bool(self._ptr_or_data) and (
             self._capacity_or_data.get_capacity() == 0
         )
         return self._capacity_or_data.is_static_constant()
-        #return Bool(self._ptr_or_data) and (
-        #    self._capacity_or_data.get_capacity() == 0
-        #)
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string.
