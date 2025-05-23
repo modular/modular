@@ -381,7 +381,11 @@ help_str = "Profile kbench output pickle"
 
 @click.command(help=help_str, no_args_is_help=True)
 @click.option(
-    "--output", "-o", "output_path", default=None, help="Path to output file."
+    "--output",
+    "-o",
+    "output_path",
+    default="output.mojo",
+    help="Path to output file.",
 )
 @click.option(
     "--top",
@@ -488,7 +492,7 @@ def cli(
         profile_results(
             pickle_path=files[0],
             snippet_path=snippet_path,
-            output_path="output.mojo",
+            output_path=output_path,
             top_percentage=top_percentage,
             ratio=ratio,
             head=head,
