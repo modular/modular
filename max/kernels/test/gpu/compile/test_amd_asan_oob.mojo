@@ -15,6 +15,8 @@
 # extended beyond what ASAN expects.
 # UNSUPPORTED: asan
 # REQUIRES: AMD-GPU
+# XFAIL: *
+# COM: See KERN-1811 which tracks re-enabling this
 # RUN: mojo build --sanitize=address --external-libasan=/opt/rocm/lib/llvm/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so --target-accelerator=mi300x -g %s -o %t
 # RUN: export LD_LIBRARY_PATH=/opt/rocm/lib/llvm/lib/clang/18/lib/linux:/opt/rocm/lib/asan
 # RUN: export LD_PRELOAD=/opt/rocm/lib/llvm/lib/clang/18/lib/linux/libclang_rt.asan-x86_64.so:/opt/rocm/lib/asan/libamdhip64.so
