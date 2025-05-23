@@ -22,7 +22,9 @@ from max.pipelines.core import (
 T = TypeVar("T", bound=InputContext)
 
 
-class MockTextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
+class MockTextTokenizer(
+    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+):
     """Mock tokenizer for use in unit tests."""
 
     def __init__(
