@@ -88,6 +88,7 @@ private:
   FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
   FailureOr<StringAttr> evaluateStringPart(TypedAttr part);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
+  FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
