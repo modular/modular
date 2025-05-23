@@ -167,6 +167,9 @@ Changes to Python-Mojo interoperability:
     Also added equivalent `UnsafePointer` initializer for downcasting from a
     `PythonObject`.
 
+- The `Python.is_type(x, y)` static method has been removed. Use the
+  expression `x is y` instead.
+
 - `os.abort(messages)` no longer supports generic variadic number of `Writable`
   messages.  While this API was high-level and convenient, it generates a lot of
   IR for simple and common cases, such as when we have a single `StringLiteral`

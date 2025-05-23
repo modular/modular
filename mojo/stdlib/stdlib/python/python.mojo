@@ -576,21 +576,6 @@ struct Python:
         return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
 
     @staticmethod
-    fn is_type(x: PythonObject, y: PythonObject) -> Bool:
-        """Test if the `x` object is the `y` object, the same as `x is y` in
-        Python.
-
-        Args:
-            x: The left-hand-side value in the comparison.
-            y: The right-hand-side type value in the comparison.
-
-        Returns:
-            True if `x` and `y` are the same object and False otherwise.
-        """
-        var cpython = Python().cpython()
-        return cpython.Py_Is(x.py_object, y.py_object)
-
-    @staticmethod
     fn type(obj: PythonObject) -> PythonObject:
         """Return Type of this PythonObject.
 
