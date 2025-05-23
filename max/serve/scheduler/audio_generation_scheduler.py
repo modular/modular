@@ -50,10 +50,13 @@ logger = logging.getLogger("max.serve")
 class AudioGenerationConfig:
     """Audio Generation Scheduler configuration."""
 
-    max_chunk_size: int
+    # This is set to something very big as there are gaps in audio between
+    # chunks.
+    max_chunk_size: int = 1000
     """The maximum number of audio chunks that can be in the decode batch."""
 
-    max_decode_batch_size: int
+    # The audio decoder can only handle a batch size of 1.
+    max_decode_batch_size: int = 1
     """The maximum number of requests that can be in the decode batch."""
 
 
@@ -91,6 +94,38 @@ class AudioGenerationScheduler(Scheduler):
         self.cancel_q = ZmqPullSocket[list[str]](
             zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
         )
+
+        # Override text generation config based on audio generation config.
+        max_decode_batch_size = (
+            self.audio_generation_config.max_decode_batch_size
+        )
+
+        # We should ensure that the text model's batch size is no larger than
+        # the audio decoder's max_decode_batch_size.
+        if max_decode_batch_size < self.scheduler_config.max_batch_size_tg:
+            logger.info(
+                f"overriding max_batch_size_tg to audio decoder's max_decode_batch_size={max_decode_batch_size}"
+            )
+            self.scheduler_config.max_batch_size_tg = max_decode_batch_size
+
+        if max_decode_batch_size < self.scheduler_config.max_batch_size_ce:
+            logger.info(
+                f"overriding max_batch_size_ce to audio decoder's max_decode_batch_size={max_decode_batch_size}"
+            )
+            self.scheduler_config.max_batch_size_ce = max_decode_batch_size
+
+        # We should ensure that the text model's num_steps is as large as the
+        # audio decoder's max_chunk_size.
+        if (
+            self.audio_generation_config.max_chunk_size
+            > self.scheduler_config.max_forward_steps_tg
+        ):
+            logger.info(
+                f"overriding max_forward_steps_tg to audio decoder's max_chunk_size={self.audio_generation_config.max_chunk_size}"
+            )
+            self.scheduler_config.max_forward_steps_tg = (
+                self.audio_generation_config.max_chunk_size
+            )
 
         # Initialize Scheduler state.
         self.active_batch: dict[str, TTSContext] = {}
@@ -503,7 +538,7 @@ class AudioGenerationScheduler(Scheduler):
 
         if self.paged_manager is None:
             assert cached_tokens == 0
-            logger.info(
+            logger.debug(
                 f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
                 f"Terminated: {terminated_reqs} reqs, "
                 f"Pending: {pending_reqs} reqs | "
@@ -551,7 +586,7 @@ class AudioGenerationScheduler(Scheduler):
             cache_hit_rate=cache_hit_rate,
         )
 
-        logger.info(
+        logger.debug(
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
             f"Pending: {pending_reqs} reqs | "

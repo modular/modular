@@ -485,6 +485,12 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         async for chunk in self.next_chunk(request):
             audio_chunks.append(chunk.audio_data)
 
+        if len(audio_chunks) == 0:
+            return AudioGeneratorOutput(
+                audio_data=torch.tensor([]),
+                metadata={},
+            )
+
         # Combine audio chunks and metadata
         combined_audio = torch.concat(audio_chunks, dim=-1)
         return AudioGeneratorOutput(

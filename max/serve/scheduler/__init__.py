@@ -93,11 +93,7 @@ def load_scheduler(
         return AudioGenerationScheduler(
             process_control=pc,
             scheduler_config=token_gen_config,
-            # TODO: set these appropriately
-            audio_generation_config=AudioGenerationConfig(
-                max_chunk_size=50,
-                max_decode_batch_size=4,
-            ),
+            audio_generation_config=AudioGenerationConfig(),
             pipeline=pipeline,
             request_zmq_endpoint=settings.request_zmq_endpoint,
             response_zmq_endpoint=settings.response_zmq_endpoint,
