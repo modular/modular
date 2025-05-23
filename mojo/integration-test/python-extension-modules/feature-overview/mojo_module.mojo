@@ -21,7 +21,7 @@ from builtin._pybind import (
 )
 from memory import UnsafePointer
 from python import Python, PythonObject, TypedPythonObject
-from python._bindings import (
+from python.bindings import (
     PyMojoObject,
     PythonModuleBuilder,
     lookup_py_type_object,

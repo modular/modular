@@ -18,6 +18,11 @@ what we publish.
 
 ### ✨ Highlights
 
+- The Python-Mojo bindings are available as a preview release!  This is the
+  ability to call into Mojo functions from existing Python codebases.  The use
+  case is to speed up hot spots/slow Python code by rewriting certain portions
+  of your code in Mojo to achieve performance.
+
 - Parts of the Kernel library continue to be progressively open sourced!
   Packages that are open sourced now include:
   - `kv_cache`

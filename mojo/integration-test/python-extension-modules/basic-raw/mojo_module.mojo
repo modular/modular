@@ -14,7 +14,7 @@
 from os import abort
 
 from python import Python, PythonObject
-from python._bindings import PythonModuleBuilder
+from python.bindings import PythonModuleBuilder
 from python._cpython import PyObjectPtr
 
 

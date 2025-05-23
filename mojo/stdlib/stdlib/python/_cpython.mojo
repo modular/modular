@@ -36,7 +36,7 @@ from sys.ffi import (
 )
 
 from memory import UnsafePointer
-from python._bindings import (
+from python.bindings import (
     Typed_initproc,
     Typed_newfunc,
 )
