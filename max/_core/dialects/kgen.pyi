@@ -430,6 +430,34 @@ class GeneratorAttr(max._core.Attribute):
     @property
     def type(self) -> GeneratorType: ...
 
+class GetLinkageNameAttr(max._core.Attribute):
+    """
+    The `#kgen.get_linkage_name` attribute is used to get the linkage name of
+    a function symbol for a given target.
+
+    Example:
+
+    ```mlir
+    #kgen.get_linkage_name<
+      #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
+      #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>
+    > : !kgen.string
+    ```
+    """
+
+    def __init__(
+        self,
+        target: max._core.dialects.builtin.TypedAttr,
+        func: max._core.dialects.builtin.TypedAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class GetWitnessAttr(max._core.Attribute):
     """
     The `#kgen.get_witness` attribute is used to lookup a witness entry
