@@ -20,12 +20,13 @@ import signal
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Callable, Generic, Optional, TypeVar
 
 import numpy as np
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
+    AudioGeneratorOutput,
     PipelineAudioTokenizer,
     PipelineTask,
     PipelineTokenizer,
@@ -396,12 +397,6 @@ def batch_config_from_pipeline_config(
     logger.info(log_str)
 
     return batch_config
-
-
-@dataclass(frozen=True)
-class AudioGeneratorOutput:
-    audio_data: bytes
-    metadata: dict[str, Any]
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")

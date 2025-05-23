@@ -15,7 +15,7 @@
 
 import enum
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 from .response import TextGenerationStatus
 
@@ -75,6 +75,12 @@ AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 TokenizerEncoded = TypeVar("TokenizerEncoded")
 
 DecoderOutput = TypeVar("DecoderOutput")
+
+
+@dataclass(frozen=True)
+class AudioGeneratorOutput:
+    audio_data: bytes
+    metadata: dict[str, Any]
 
 
 @runtime_checkable
