@@ -989,6 +989,97 @@ fn mma[
         constrained[False, String("Unsupported cta group: ", cta_group)]()
 
 
+@always_inline
+fn mma[
+    kind: UMMAKind, //,
+    cta_group: Int = 1,
+    /,
+    *,
+    c_scale: UInt32 = 1,
+](
+    a_desc: UInt32,
+    b_desc: MMASmemDescriptor,
+    c_tmem: UInt32,
+    inst_desc: UMMAInsDescriptor[kind],
+):
+    """Perform a matrix multiply-accumulate operation using the tcgen05.mma instruction.
+
+    Parameters:
+        kind: Data type of the matrices.
+        cta_group: Number of ctas used by MMA.
+        c_scale: Scale factor for the C matrix, 0 or 1.
+
+    Args:
+        a_desc: The descriptor for the A matrix.
+        b_desc: The descriptor for the B matrix.
+        c_tmem: The address of the C matrix in the tensor memory.
+        inst_desc: The descriptor for the MMA instruction.
+    """
+    constrained[
+        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
+    ]()
+
+    constrained[
+        c_scale == 0 or c_scale == 1, String("Invalid c_scale: ", c_scale)
+    ]()
+
+    @parameter
+    if cta_group == 1:
+        var masks = IndexList[4, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::1."""
+            + String(kind)
+            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8}, p;
+            }""",
+            NoneType,
+            constraints="r,r,l,r,n,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+        )
+    elif cta_group == 2:
+        var masks = IndexList[8, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::2."""
+            + String(kind)
+            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+            }""",
+            NoneType,
+            constraints="r,r,l,r,n,r,r,r,r,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+            masks[4],
+            masks[5],
+            masks[6],
+            masks[7],
+        )
+    else:
+        constrained[False, String("Unsupported cta group: ", cta_group)]()
+
+
 # ===----------------------------------------------------------------------=== #
 # UMMA Sync
 # ===----------------------------------------------------------------------=== #
