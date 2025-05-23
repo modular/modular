@@ -131,7 +131,7 @@ struct PyMojoObject[T: AnyType]:
     var mojo_value: T
 
 
-fn default_tp_new_wrapper[
+fn _default_tp_new_wrapper[
     T: Defaultable & Movable
 ](
     subtype: UnsafePointer[PyTypeObject],
@@ -163,7 +163,7 @@ fn default_tp_new_wrapper[
         return PyObjectPtr()
 
 
-fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
+fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
     var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
     var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
@@ -178,7 +178,7 @@ fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
     cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
 
 
-fn tp_repr_wrapper[
+fn _tp_repr_wrapper[
     T: Defaultable & Representable
 ](py_self: PyObjectPtr) -> PyObjectPtr:
     var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
@@ -287,7 +287,7 @@ struct PythonModuleBuilder:
         """
 
         self.def_py_c_function(
-            py_c_function_wrapper[func], func_name, docstring
+            _py_c_function_wrapper[func], func_name, docstring
         )
 
     fn def_py_function[
@@ -310,7 +310,7 @@ struct PythonModuleBuilder:
         """
 
         self.def_py_c_function(
-            py_c_function_wrapper[func], func_name, docstring
+            _py_c_function_wrapper[func], func_name, docstring
         )
 
     # ===-------------------------------------------------------------------===#
@@ -854,9 +854,9 @@ struct PythonTypeBuilder(Movable, Copyable):
         )
         b._slots = List[PyType_Slot](
             # All wrapped Mojo types are allocated generically.
-            PyType_Slot.tp_new(default_tp_new_wrapper[T]),
-            PyType_Slot.tp_dealloc(tp_dealloc_wrapper[T]),
-            PyType_Slot.tp_repr(tp_repr_wrapper[T]),
+            PyType_Slot.tp_new(_default_tp_new_wrapper[T]),
+            PyType_Slot.tp_dealloc(_tp_dealloc_wrapper[T]),
+            PyType_Slot.tp_repr(_tp_repr_wrapper[T]),
         )
         b.methods = List[PyMethodDef]()
         b._type_id = T.TYPE_ID
@@ -966,7 +966,7 @@ struct PythonTypeBuilder(Movable, Copyable):
         """
 
         return self.def_py_c_method(
-            py_c_function_wrapper[method], method_name, docstring
+            _py_c_function_wrapper[method], method_name, docstring
         )
 
     fn def_py_method[
@@ -991,7 +991,7 @@ struct PythonTypeBuilder(Movable, Copyable):
         """
 
         return self.def_py_c_method(
-            py_c_function_wrapper[method], method_name, docstring
+            _py_c_function_wrapper[method], method_name, docstring
         )
 
     # ===-------------------------------------------------------------------===#
@@ -1391,7 +1391,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn py_c_function_wrapper[
+fn _py_c_function_wrapper[
     user_func: PyFunction
 ](py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr) -> PyObjectPtr:
     """The instantiated type of this generic function is a `PyCFunction`,
@@ -1440,7 +1440,7 @@ fn py_c_function_wrapper[
 
 
 # Wrap a `raises` function
-fn py_c_function_wrapper[
+fn _py_c_function_wrapper[
     user_func: PyFunctionRaising
 ](py_self_ptr: PyObjectPtr, py_args_ptr: PyObjectPtr) -> PyObjectPtr:
     fn wrapper(
@@ -1471,8 +1471,8 @@ fn py_c_function_wrapper[
     #   Does this lead to multiple levels of indirect function calls for
     #   `raises` functions? Could we fix that by marking `wrapper` here as
     #   `@always_inline`?
-    # Call the non-`raises` overload of `py_c_function_wrapper`.
-    return py_c_function_wrapper[wrapper](py_self_ptr, py_args_ptr)
+    # Call the non-`raises` overload of `_py_c_function_wrapper`.
+    return _py_c_function_wrapper[wrapper](py_self_ptr, py_args_ptr)
 
 
 fn check_arguments_arity(
