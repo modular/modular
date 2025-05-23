@@ -216,3 +216,6 @@ Changes to Python-Mojo interoperability:
   products incorrect results for large inputs.
 - [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
   False Positive "Uninitialized Value".
+- [#4677](https://github.com/modular/modular/issues/4677),
+  [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
+  unsigned `gt` and `le` comparisions.
