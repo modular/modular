@@ -5174,3 +5174,7 @@ class CreateAudioGenerationRequest(BaseModel):
     instructions: str = Field(..., description='The instructions for the audio generation.')
     response_format: Literal['wav', 'mp3', 'pcm'] = Field(..., description='The response format for the audio generation.')
     speed: float = Field(..., description='The speed of the audio generation.')
+
+class CreateAudioGenerationResponse(BaseModel):
+    audio_data: bytes = Field(..., description='The audio data for the audio generation.')
+    metadata: Dict[str, Any] = Field(..., description='The metadata for the audio generation.')

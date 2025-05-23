@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import MutableSequence
 from hashlib import md5
 from typing import cast
 
@@ -23,6 +24,8 @@ from max.graph import (
     Graph,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     _ChainType,
     ops,
 )
@@ -93,34 +96,26 @@ class DistributedTransformerBlock(Module):
                 ],
                 input_row_offsets: TensorValue,
             ) -> list[TensorValue]:
-                input_row_offsets_type = input_row_offsets.type
-                misc_input_types = [input_row_offsets_type]
+                subgraph_input_types: list[Type] = [
+                    layer_idx.type,
+                    *[x.type for x in xs],
+                    *[signal_buffer.type for signal_buffer in signal_buffers],
+                    *[kv_collection.type for kv_collection in kv_collections],
+                    input_row_offsets.type,
+                    *[w.type for w in weights],
+                ]
 
                 name_suffix = md5(
-                    str(tuple(t.to_mlir() for t in misc_input_types)).encode()
+                    str(
+                        tuple(t.to_mlir() for t in subgraph_input_types)
+                    ).encode()
                 ).hexdigest()
                 subgraph = Graph.current._subgraphs.get(f"{name}_{name_suffix}")
 
                 if subgraph is None:
-                    layer_idx_type = layer_idx.type
-                    x_types = [x.type for x in xs]
-                    signal_buffers_types = [
-                        signal_buffer.type for signal_buffer in signal_buffers
-                    ]
-                    kv_collection_types = [
-                        kv_collection.type for kv_collection in kv_collections
-                    ]
-                    graph_inputs = [
-                        _ChainType(),
-                        layer_idx_type,
-                        *x_types,
-                        *signal_buffers_types,
-                        *kv_collection_types,
-                        *misc_input_types,
-                    ] + [w.type for w in weights]
-
                     with Graph.current.add_subgraph(
-                        f"{name}_{name_suffix}", input_types=graph_inputs
+                        f"{name}_{name_suffix}",
+                        input_types=[_ChainType(), *subgraph_input_types],
                     ) as subgraph:
                         subgraph._current_chain._mlir_value = subgraph.inputs[
                             0
@@ -163,7 +158,7 @@ class DistributedTransformerBlock(Module):
                             *results,
                         )
 
-                call_args = [
+                call_args: MutableSequence[Value] = [
                     layer_idx,
                     *xs,
                     *signal_buffers,

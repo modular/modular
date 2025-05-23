@@ -227,26 +227,6 @@ class PipelineModel(ABC, Generic[T]):
             "PipelineModel must implement calculate_max_seq_len"
         )
 
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        n_devices: int,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Returns the KV cache params for the pipeline model."""
-        ...
-
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Returns the number of layers for the pipeline model."""
-        ...
-
     @classmethod
     def infer_optimal_batch_size(
         cls,
@@ -404,6 +384,26 @@ class KVCacheMixin(Protocol):
             Either a single KV cache manager or a tuple of KV cache managers:
             one per input modality.
         """
+        ...
+
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
+    @classmethod
+    @abstractmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Returns the KV cache params for the pipeline model."""
+        ...
+
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
+    @classmethod
+    @abstractmethod
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """Returns the number of layers for the pipeline model."""
         ...
 
     @classmethod

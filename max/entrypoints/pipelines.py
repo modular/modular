@@ -80,6 +80,8 @@ class ModelGroup(click.Group):
     def get_command(self, ctx, cmd_name):
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
+            if any(param.name == "task_flags" for param in rv.params):
+                rv.ignore_unknown_options = True
             return rv
         supported = ", ".join(self.list_commands(ctx))
         ctx.fail(
@@ -167,6 +169,13 @@ def common_server_options(func):
     cls=WithLazyPipelineOptions,
 )
 @common_server_options
+@click.option(
+    "--task",
+    type=str,
+    default="text_generation",
+    help="The task to run.",
+)
+@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
 def cli_serve(
     profile_serve,
     performance_fake,
@@ -175,6 +184,8 @@ def cli_serve(
     sim_failure,
     experimental_enable_kvcache_agent,
     port,
+    task,
+    task_flags,
     **config_kwargs,
 ):
     """Start a model serving endpoint for inference.
@@ -184,10 +195,23 @@ def cli_serve(
     options and monitoring capabilities.
     """
     from max.entrypoints.cli import serve_pipeline
-    from max.pipelines import PipelineConfig
+    from max.entrypoints.cli.config import parse_task_flags
+    from max.pipelines import (
+        AudioGenerationConfig,
+        PipelineConfig,
+        PipelineTask,
+    )
 
     # Initialize config, and serve.
-    pipeline_config = PipelineConfig(**config_kwargs)
+
+    # Load tokenizer & pipeline.
+    pipeline_config: PipelineConfig
+    if task == PipelineTask.AUDIO_GENERATION:
+        pipeline_config = AudioGenerationConfig(
+            parse_task_flags(task_flags), **config_kwargs
+        )
+    else:
+        pipeline_config = PipelineConfig(**config_kwargs)
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
@@ -200,6 +224,7 @@ def cli_serve(
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
         port=port,
+        pipeline_task=task,
     )
 
 
@@ -290,6 +315,41 @@ def encode(prompt, num_warmups, **config_kwargs):
 
 
 @main.command(
+    name="text-to-speech",
+    cls=WithLazyPipelineOptions,
+)
+@click.option(
+    "--prompt",
+    type=str,
+    default="42 is the meaning of life.",
+    help="The text prompt to synthesize to audio.",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Path to the output WAV audio file.",
+)
+@click.option(
+    "--voice",
+    type=str,
+    default=None,
+    help="Name of the speaker to use for the synthesis. If set, `--audio-prompt-speakers` must also be provided.",
+)
+@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
+def text_to_speech(prompt, output, voice, task_flags, **config_kwargs):
+    """Generate speech from text."""
+    from max.entrypoints.cli.config import parse_task_flags
+    from max.entrypoints.cli.synthesize_speech import synthesize_speech
+    from max.pipelines import AudioGenerationConfig
+
+    config = AudioGenerationConfig(
+        parse_task_flags(task_flags), **config_kwargs
+    )
+    synthesize_speech(config, prompt, voice, output)
+
+
+@main.command(
     name="warm-cache",
     cls=WithLazyPipelineOptions,
 )
@@ -331,7 +391,7 @@ def print_version(ctx, param, value):
         return
     from max import _core
 
-    click.echo(f"\nMAX version {_core.__version__}\n")
+    click.echo(f"MAX {_core.__version__}")
     ctx.exit()
 
 

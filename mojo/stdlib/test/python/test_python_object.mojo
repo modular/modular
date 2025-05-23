@@ -14,7 +14,9 @@
 # RUN: %mojo %s
 
 
+from builtin.identifiable import TypeIdentifiable
 from python import Python, PythonObject
+from python._bindings import PythonTypeBuilder, PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -630,6 +632,36 @@ def test_contains_dunder():
     assert_true("B" in y)
 
 
+@fieldwise_init
+struct Person(Movable, Defaultable, TypeIdentifiable, Representable):
+    var name: String
+    var age: Int
+
+    alias TYPE_ID = "test.Person"
+
+    fn __init__(out self):
+        self.name = ""
+        self.age = 0
+
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
+
+
+def test_python_mojo_object_operations():
+    # Type registration
+    var b = PythonModuleBuilder("fake_module")
+    _ = b.add_type[Person]("Person")
+    _ = b.finalize()
+
+    # Alloc
+    var person_obj = PythonObject(alloc=Person("John Smith", 42))
+
+    # Downcast
+    var person_ptr = person_obj.downcast_value_ptr[Person]()
+
+    assert_equal(person_ptr[].name, "John Smith")
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
@@ -651,3 +683,4 @@ def main():
     test_setitem_raises()
     test_py_slice()
     test_contains_dunder()
+    test_python_mojo_object_operations()

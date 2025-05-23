@@ -78,7 +78,7 @@ from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
-from python import PythonConvertible, PythonObject
+from python import PythonConvertible, PythonObject, Python
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -483,6 +483,36 @@ struct SIMD[dtype: DType, size: Int](
             If the type does not have a float point representation.
         """
         self = value.__float__()
+
+    @always_inline
+    fn __init__[
+        *, `_`: Int = 0
+    ](out self: Float64, value: PythonObject, /) raises:
+        """Initialize a Float64 from a PythonObject.
+
+        Parameters:
+            _: A dummy parameter to ensure this overload has lower priority than
+                the others. Its value is ignored.
+
+        Args:
+            value: The PythonObject to convert.
+
+        Raises:
+            If the conversion to double fails.
+        """
+        # TODO(MSTDL-1587): Remove the dummy parameter.
+        var float_obj = value.__float__()
+        var cpython = Python().cpython()
+        self = Float64(cpython.PyFloat_AsDouble(float_obj.py_object))
+        if self == -1.0 and cpython.PyErr_Occurred():
+            # Note that -1.0 does not guarantee an error, it just means we need
+            # to check if there was an exception. This is also very unlikely,
+            # since the __float__ call above will throw if the underlying Python
+            # method fails. Therefore this can only happen if a custom __float__
+            # implementation is incorrect, and returns a non-double value.
+            raise cpython.get_error()
+
+        _ = float_obj
 
     @always_inline("nodebug")
     @implicit

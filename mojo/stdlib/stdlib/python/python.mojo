@@ -619,8 +619,8 @@ struct Python:
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
-        """Try to convert a PythonObject to a Python `int` (i.e. arbitrary
-        precision integer).
+        """Convert a PythonObject to a Python `int` (i.e. arbitrary precision
+        integer).
 
         Args:
             obj: The PythonObject to convert.
@@ -637,6 +637,27 @@ struct Python:
             raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=py_obj_ptr)
+
+    @staticmethod
+    fn float(obj: PythonObject) raises -> PythonObject:
+        """Convert a PythonObject to a Python `float` object.
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Returns:
+            A Python `float` object.
+
+        Raises:
+            If the conversion fails.
+        """
+        var cpython = Python().cpython()
+
+        var float_obj = cpython.PyNumber_Float(obj.py_object)
+        if float_obj.is_null():
+            raise cpython.get_error()
+
+        return PythonObject(from_owned_ptr=float_obj)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
@@ -658,12 +679,10 @@ struct Python:
         """
         var cpython = Python().cpython()
         var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object)
-
-        if long == -1:
+        if long == -1 and cpython.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
             # check if there was an exception.
-            if cpython.PyErr_Occurred():
-                raise cpython.unsafe_get_error()
+            raise cpython.unsafe_get_error()
 
         return long
 

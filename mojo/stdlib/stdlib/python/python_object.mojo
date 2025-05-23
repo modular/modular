@@ -30,7 +30,7 @@ from builtin.string_literal import StringLiteral
 from builtin.identifiable import TypeIdentifiable
 from memory import UnsafePointer
 
-from ._cpython import CPython, PyObjectPtr, PyObject
+from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
 from .python import Python
 from ._bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
@@ -301,7 +301,6 @@ struct TypedPythonObject[type_hint: StaticString](
 struct PythonObject(
     Boolable,
     Copyable,
-    Floatable,
     Movable,
     SizedRaising,
     Writable,
@@ -377,6 +376,44 @@ struct PythonObject(
         cpython.Py_IncRef(from_borrowed_ptr)
 
         self = PythonObject(from_owned_ptr=from_borrowed_ptr)
+
+    @always_inline
+    fn __init__[
+        T: Movable & TypeIdentifiable
+    ](out self, *, owned alloc: T) raises:
+        """Allocate a new `PythonObject` and store a Mojo value in it.
+
+        The newly allocated Python object will contain the provided Mojo `T`
+        instance directly, without attempting conversion to an equivalent Python
+        builtin type.
+
+        Only Mojo types that have a registered Python 'type' object can be stored
+        as a Python object. Mojo types are registered using a
+        `PythonTypeBuilder`.
+
+        Parameters:
+            T: The Mojo type of the value that the resulting Python object
+              holds.
+
+        Args:
+            alloc: The Mojo value to store in the new Python object.
+
+        Raises:
+            If no Python type object has been registered for `T` by a
+            `PythonTypeBuilder`.
+        """
+
+        # NOTE:
+        #   We can't use PythonTypeBuilder.bind[T]() because that constructs a
+        #   _new_ PyTypeObject. We want to reference the existing _singleton_
+        #   PyTypeObject that represents a given Mojo type.
+        var type_obj = lookup_py_type_object[T]()
+
+        var type_obj_ptr = type_obj.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
+            PyTypeObject
+        ]()
+
+        return PythonObject._unsafe_alloc(type_obj_ptr, alloc^)
 
     @implicit
     fn __init__(out self, owned typed_obj: TypedPythonObject[_]):
@@ -605,6 +642,58 @@ struct PythonObject(
             cpython.Py_DecRef(self.py_object)
         self.py_object = PyObjectPtr()
         cpython.PyGILState_Release(state)
+
+    # ===-------------------------------------------------------------------===#
+    # Factory methods
+    # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    fn _unsafe_alloc[
+        T: Movable
+    ](
+        type_obj_ptr: UnsafePointer[PyTypeObject],
+        owned mojo_value: T,
+    ) raises -> PythonObject:
+        """Allocate a new `PythonObject` and store a Mojo value in it.
+
+        Parameters:
+            T: The Mojo type of the value that the resulting Python object
+              holds.
+
+        Args:
+            type_obj_ptr: Must be the Python type object describing
+              `PyTypeObject[T]`.
+            mojo_value: The Mojo value to store in the new Python object.
+
+        # Safety
+
+        `type_obj_ptr` must be a Python type object created by
+        `PythonTypeBuilder`, whose underying storage type is the `PyMojoObject`
+        struct. Use of any other type object is invalid.
+        """
+
+        var cpython = Python().cpython()
+
+        # Allocates and zero-initializes the new `PyMojoObject[T]`.
+        # (For some objects, zeroed values are valid. But that isn't guaranteed
+        # for any given Mojo object.)
+        var obj_py_ptr: PyObjectPtr = cpython.PyType_GenericAlloc(
+            type_obj_ptr,
+            0,
+        )
+
+        # If we failed to allocate, raise.
+        if not obj_py_ptr.unsized_obj_ptr:
+            # Intentionally try to avoid allocating to raise this error.
+            raise Error("Allocation of Python object failed.")
+
+        var obj_ptr = obj_py_ptr.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+        var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
+
+        # Initialize the PyMojoObject[T] with the user-provided Mojo value.
+        __get_address_as_uninit_lvalue(obj_value_ptr.address) = mojo_value^
+
+        return PythonObject(from_owned_ptr=obj_py_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1391,28 +1480,27 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_Length(self.py_object)
-        if result == -1:
+        if result == -1 and cpython.PyErr_Occurred():
             # Custom python types may return -1 even in non-error cases.
-            if cpython.PyErr_Occurred():
-                raise cpython.unsafe_get_error()
+            raise cpython.unsafe_get_error()
         return result
 
     fn __hash__(self) raises -> Int:
-        """Returns the length of the object.
+        """Returns the hash value of the object.
 
         Returns:
-            The length of the object.
+            The hash value of the object.
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_Hash(self.py_object)
-        if result == -1:
+        if result == -1 and cpython.PyErr_Occurred():
             # Custom python types may return -1 even in non-error cases.
-            if cpython.PyErr_Occurred():
-                raise cpython.unsafe_get_error()
+            raise cpython.unsafe_get_error()
         return result
 
     fn __int__(self) raises -> PythonObject:
-        """Convert the PythonObject to a Python `int`.
+        """Convert the PythonObject to a Python `int` (i.e. arbitrary precision
+        integer).
 
         Returns:
             A Python `int` object.
@@ -1422,14 +1510,16 @@ struct PythonObject(
         """
         return Python.int(self)
 
-    fn __float__(self) -> Float64:
-        """Returns a float representation of the object.
+    fn __float__(self) raises -> PythonObject:
+        """Convert the PythonObject to a Python `float` object.
 
         Returns:
-            A floating point value that represents this object.
+            A Python `float` object.
+
+        Raises:
+            If the conversion fails.
         """
-        cpython = Python().cpython()
-        return cpython.PyFloat_AsDouble(self.py_object)
+        return Python.float(self)
 
     @always_inline
     fn __str__(self) raises -> PythonObject:

@@ -13,17 +13,29 @@
 from __future__ import annotations
 
 import zmq
-from max.pipelines.core import EmbeddingsGenerator, TokenGenerator
+from max.nn.kv_cache import PagedKVCacheManager
+from max.pipelines.core import (
+    AudioGenerator,
+    EmbeddingsGenerator,
+    TokenGenerator,
+)
 from max.pipelines.lib import PipelineRole
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 
+from .audio_generation_scheduler import (
+    AudioGenerationConfig,
+    AudioGenerationScheduler,
+)
 from .base import Scheduler
 from .config import TokenGeneratorSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .prefill_scheduler import load_prefill_scheduler
-from .text_generation_scheduler import load_text_generation_scheduler
+from .text_generation_scheduler import (
+    TokenGenerationSchedulerConfig,
+    load_text_generation_scheduler,
+)
 from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 __all__ = [
@@ -34,12 +46,14 @@ __all__ = [
     "TokenGeneratorSchedulerConfig",
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
+    "AudioGenerationScheduler",
+    "AudioGenerationConfig",
 ]
 
 
 def load_scheduler(
     pc: ProcessControl,
-    pipeline: TokenGenerator | EmbeddingsGenerator,
+    pipeline: TokenGenerator | EmbeddingsGenerator | AudioGenerator,
     zmq_ctx: zmq.Context,
     settings: Settings,
     config: TokenGeneratorSchedulerConfig,
@@ -57,7 +71,43 @@ def load_scheduler(
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
             zmq_ctx=zmq_ctx,
         )
+    elif pipeline.__class__.__name__ in (
+        "TTSPipeline",  # TODO: Remove this.
+        "AudioGeneratorPipeline",
+    ):
+        assert isinstance(pipeline, AudioGenerator)
+        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
+        assert isinstance(paged_manager, PagedKVCacheManager)
+        token_gen_config = TokenGenerationSchedulerConfig(
+            max_batch_size_tg=config.max_batch_size_tg,
+            max_forward_steps_tg=config.max_forward_steps_tg,
+            target_tokens_per_batch_tg=config.target_tokens_per_batch_tg,
+            max_batch_size_ce=config.max_batch_size_ce,
+            max_forward_steps_ce=config.max_forward_steps_ce,
+            target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
+            batch_timeout=config.batch_timeout,
+            enable_chunked_prefill=config.enable_chunked_prefill,
+            enable_in_flight_batching=config.enable_in_flight_batching,
+        )
+
+        return AudioGenerationScheduler(
+            process_control=pc,
+            scheduler_config=token_gen_config,
+            # TODO: set these appropriately
+            audio_generation_config=AudioGenerationConfig(
+                max_chunk_size=50,
+                max_decode_batch_size=4,
+            ),
+            pipeline=pipeline,
+            request_zmq_endpoint=settings.request_zmq_endpoint,
+            response_zmq_endpoint=settings.response_zmq_endpoint,
+            cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+            zmq_ctx=zmq_ctx,
+            paged_manager=paged_manager,
+        )
     elif config.pipeline_role == PipelineRole.PrefillAndDecode:
+        print("creating a text generation scheduler with paged manager")
+        assert isinstance(pipeline, TokenGenerator)
         return load_text_generation_scheduler(
             zmq_ctx,
             settings,
@@ -74,6 +124,7 @@ def load_scheduler(
             enable_in_flight_batching=config.enable_in_flight_batching,
         )
     elif config.pipeline_role == PipelineRole.DecodeOnly:
+        assert isinstance(pipeline, TokenGenerator)
         return load_decode_scheduler(
             zmq_ctx,
             settings,
@@ -83,6 +134,7 @@ def load_scheduler(
             max_forward_steps_tg=config.max_forward_steps_tg,
         )
     elif config.pipeline_role == PipelineRole.PrefillOnly:
+        assert isinstance(pipeline, TokenGenerator)
         return load_prefill_scheduler(
             zmq_ctx,
             settings,

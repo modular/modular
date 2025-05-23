@@ -26,6 +26,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("psutil"),
         requirement("requests"),
+        requirement("soundfile"),
         requirement("tokenizers"),
         requirement("tqdm"),
         requirement("transformers"),

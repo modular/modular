@@ -214,3 +214,43 @@ def pipeline_config_options(func):
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def parse_task_flags(task_flags: list[str]) -> dict[str, str]:
+    """Parse task flags into a dictionary.
+
+    The flags must be in the format `--flag_name=flag_value` or
+    `--flag_name flag_value`.
+
+    Args:
+        task_flags: A list of task flags.
+
+    Returns:
+        A dictionary of parsed flag values.
+    """
+    flags = {}
+    index = 0
+    while index < len(task_flags):
+        flag = task_flags[index]
+        if not flag.startswith("--"):
+            raise ValueError(f"Expected flag to start with '--', got: {flag}")
+
+        flag_data = flag[2:].split("=", 1)
+
+        if len(flag_data) == 1:
+            flag_name = flag_data[0]
+
+            next_value = task_flags[index + 1]
+            if next_value.startswith("--"):
+                raise ValueError(
+                    "Flag value cannot start with '--', got: {next_value}."
+                    " Check your flags or use the --flag=value format."
+                )
+            flag_value = next_value
+            index += 1
+        else:
+            flag_name, flag_value = flag_data
+
+        flags[flag_name.replace("-", "_")] = flag_value
+        index += 1
+    return flags

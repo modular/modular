@@ -34,7 +34,7 @@ from .core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from .lib.config import PipelineConfig
+from .lib.config import AudioGenerationConfig, PipelineConfig
 from .lib.config_enums import (
     PipelineEngine,
     PipelineRole,
@@ -76,6 +76,7 @@ from .lib.tokenizer import (
 register_all_models()
 
 __all__ = [
+    "AudioGenerationConfig",
     "download_weight_files",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",

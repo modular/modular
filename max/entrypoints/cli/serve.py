@@ -20,7 +20,11 @@ from typing import Optional, Union
 
 import uvloop
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    AudioGenerationConfig,
+    PipelineConfig,
+)
 from max.pipelines.core import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
@@ -49,6 +53,7 @@ def serve_pipeline(
     failure_percentage: Optional[int] = None,
     experimental_enable_kvcache_agent: bool = False,
     port: Optional[int] = None,
+    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ):
     # Initialize settings
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
@@ -60,14 +65,19 @@ def serve_pipeline(
         experimental_enable_kvcache_agent
     )
 
+    override_architecture: Optional[str] = None
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
-    pipeline_task = PipelineTask.TEXT_GENERATION
     if (
         pipeline_config.model_config.model_path
         == "sentence-transformers/all-mpnet-base-v2"
     ):
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
+
+    # Use the audio decoder architecture for the audio generation pipeline.
+    if pipeline_task == PipelineTask.AUDIO_GENERATION:
+        assert isinstance(pipeline_config, AudioGenerationConfig)
+        override_architecture = pipeline_config.audio_decoder
 
     if performance_fake == "none":
         logger.info(
@@ -77,6 +87,7 @@ def serve_pipeline(
         tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_task,
+            override_architecture=override_architecture,
         )
     else:
         logger.info(
@@ -115,6 +126,7 @@ def serve_pipeline(
         model_factory=pipeline_factory,
         pipeline_config=batch_config,
         tokenizer=tokenizer,
+        pipeline_task=pipeline_task,
     )
 
     # Intialize and serve webserver.

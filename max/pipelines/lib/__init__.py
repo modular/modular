@@ -13,7 +13,7 @@
 
 """Types to interface with ML pipelines such as text/token generation."""
 
-from .config import PipelineConfig
+from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import (
     PipelineEngine,
     PipelineRole,
@@ -57,6 +57,7 @@ from .tokenizer import (
 )
 
 __all__ = [
+    "AudioGenerationConfig",
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",

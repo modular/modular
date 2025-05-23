@@ -38,7 +38,9 @@ from .interfaces import (
     TokenGeneratorResponseFormat,
 )
 
-PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
+PipelinesFactory = _Callable[
+    [], _Union[TokenGenerator, EmbeddingsGenerator, AudioGenerator]
+]
 
 __all__ = [
     "AudioGenerationRequest",

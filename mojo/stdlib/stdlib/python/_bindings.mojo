@@ -132,7 +132,7 @@ struct PyMojoObject[T: AnyType]:
 
 
 fn default_tp_new_wrapper[
-    T: Defaultable
+    T: Defaultable & Movable
 ](
     subtype: UnsafePointer[PyTypeObject],
     args: TypedPythonObject["Tuple"],
@@ -146,30 +146,14 @@ fn default_tp_new_wrapper[
 
     var cpython = Python().cpython()
 
-    # Allocates and zero-initializes the new object.
-    # For some objects, zeroed values are valid. But that isn't guaranteed
-    # for any given Mojo object, so we further call `T`'s default initializer.
-    var py_self = cpython.PyType_GenericAlloc(subtype, 0)
-
-    # If we failed to allocate, return NULL.
-    if not py_self.unsized_obj_ptr:
-        return py_self
-
     try:
         if len(args) != 0 or keyword_args != PyObjectPtr():
             raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
 
-        var obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-        var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
-
-        # Call the user-provided initialization function on uninit memory.
-        __get_address_as_uninit_lvalue(obj_value_ptr.address) = T()
-        return py_self
+        # Create a new Python object with a default initialized Mojo value.
+        return PythonObject._unsafe_alloc(subtype, T()).steal_data()
 
     except e:
-        # Free the object memory we just allocated but failed to initialize.
-        cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
-
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
         cpython.PyErr_SetString(
@@ -247,7 +231,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Defaultable & Representable & TypeIdentifiable
+        T: Movable & Defaultable & Representable & TypeIdentifiable
     ](mut self, type_name: StaticString) -> ref [
         self.type_builders
     ] PythonTypeBuilder:
@@ -813,6 +797,15 @@ struct PythonTypeBuilder(Movable, Copyable):
 
     This builder is used to declare method bindings for a Python type, and then
     create the type binding.
+
+    Finalizing builder created with `PythonTypeObject.bind[T]()` will globally
+    register the resulting Python 'type' object as the single canonical type
+    object for the Mojo type `T`. Subsequent attempts to register a Python type
+    for `T` will raise an exception.
+
+    Registering a Python type object for `T` is necessary to be able to
+    construct a `PythonObject` from an instance of `T`, or to downcast an
+    existing `PythonObject` to a pointer to the inner `T` value.
     """
 
     var type_name: StaticString
@@ -842,7 +835,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
     @staticmethod
     fn bind[
-        T: Defaultable & Representable & TypeIdentifiable
+        T: Movable & Defaultable & Representable & TypeIdentifiable
     ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 

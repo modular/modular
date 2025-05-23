@@ -111,25 +111,25 @@ Changes to Python-Mojo interoperability:
   `Int`, so users must explicitly convert to a mojo `Int` if they need one (and
   must handle the exception if the conversion fails, e.g. due to overflow).
 
-- `PythonObject` no longer implements `Stringable`. Instead, the
-  `PythonObject.__str__` method now returns a Python `str` object and can raise.
-  The new `Python.str` function can also be used to convert an arbitrary
-  `PythonObject` to a Python `str` object.
-
-- `PythonObject` no longer implements the `KeyElement` trait. Since Python
-  objects may not be hashable, and even if they are, could theoretically raise
-  in the `__hash__` method, `PythonObject` cannot conform to `Hashable`.
-  This has no effect on accessing Python `dict` objects with `PythonObject`
-  keys, since `__getitem__` and `__setitem__` should behave correctly and raise
-  as needed. Two overloads of the `Python.dict` factory function have been added
-  to allow constructing dictionaries from a list of key-value tuples and from
-  keyword arguments.
-
-- `PythonObject` no longer implements `EqualityComparable`, since the
-  `PythonObject.__eq__` and `PythonObject.__ne__` methods need to return other
-  `PythonObject` values to support rich comparisons. Code that previously
-  compared `PythonObject` values should be wrapped in `Bool(..)` to perform the
-  fallible conversion explicitly: `if Bool(obj1 == obj2): ...`.
+- `PythonObject` no longer implements the following traits:
+  - `Stringable`. Instead, the `PythonObject.__str__` method now returns a
+    Python `str` object and can raise. The new `Python.str` function can also be
+    used to convert an arbitrary `PythonObject` to a Python `str` object.
+  - `KeyElement`. Since Python objects may not be hashable, and even if they
+    are, could theoretically raise in the `__hash__` method, `PythonObject`
+    cannot conform to `Hashable`. This has no effect on accessing Python `dict`
+    objects with `PythonObject` keys, since `__getitem__` and `__setitem__`
+    should behave correctly and raise as needed. Two overloads of the
+    `Python.dict` factory function have been added to allow constructing
+    dictionaries from a list of key-value tuples and from keyword arguments.
+  - `EqualityComparable`. The `PythonObject.{__eq__, __ne__}` methods need to
+    return other `PythonObject` values to support rich comparisons.
+    Code that previously compared `PythonObject` values should be wrapped in
+    `Bool(..)` to perform the fallible conversion explicitly:
+    `if Bool(obj1 == obj2): ...`.
+  - `Floatable`. An explicit, raising constructor is added to `SIMD` to allow
+    constructing `Float64` values from `PythonObject` values that implement
+    `__float__`.
 
 - `String` and `Bool` now implement `ConvertibleFromPython`.
 
@@ -141,6 +141,13 @@ Changes to Python-Mojo interoperability:
 - The `ConvertibleFromPython` trait is now public. This trait is implemented
   by Mojo types that can be constructed by converting from a `PythonObject`.
   This is the reverse operation of the `PythonConvertible` trait.
+
+- `PythonObject(alloc=<value>)` is a new constructor that can be used to
+  directly store Mojo values in Python objects.
+
+  This initializer will fail if the type of the provided Mojo value has not
+  previously had a corresponding Python 'type' object globally registered using
+  `PythonModuleBuilder.add_type[T]()`.
 
 - `PythonObject` has new methods for downcasting to a pointer to a contained
   Mojo value, for use in Python/Mojo interop.

@@ -53,6 +53,7 @@ from max.serve.schemas.openai import (  # type: ignore
     Choice3,
     CompletionUsage,
     CreateAudioGenerationRequest,
+    CreateAudioGenerationResponse,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
@@ -419,6 +420,30 @@ class OpenAIEmbeddingsResponseGenerator:
                 request_timer.elapsed_ms,
                 0,
             )
+
+
+class OpenAISpeechResponseGenerator:
+    def __init__(
+        self,
+        pipeline: AudioGeneratorPipeline,
+    ):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.pipeline = pipeline
+
+    async def synthesize_speech(
+        self, request: AudioGenerationRequest
+    ) -> CreateAudioGenerationResponse:
+        self.logger.debug(
+            "Streaming: Start: %s",
+            request,
+        )
+        response = await self.pipeline.generate_full_audio(request)
+        audio_data = response.audio_data.numpy().tobytes()
+        response = CreateAudioGenerationResponse(
+            audio_data=base64.b64encode(audio_data),
+            metadata=response.metadata,
+        )
+        return response
 
 
 def openai_parse_chat_completion_request(
@@ -1034,7 +1059,7 @@ async def openai_get_model(model_id: str, request: Request) -> Model:
 @router.post("/audio/speech", response_model=None)
 async def create_streaming_audio_speech(
     request: Request,
-) -> EventSourceResponse:
+) -> CreateAudioGenerationResponse:
     """Audio generation endpoint that streams audio data."""
     try:
         request_id = request.state.request_id
@@ -1052,33 +1077,15 @@ async def create_streaming_audio_speech(
             index=audio_generation_request.index,
             model=audio_generation_request.model,
             voice=audio_generation_request.voice,
-            instructions=audio_generation_request.instructions,
-            response_format=audio_generation_request.response_format,
-            speed=audio_generation_request.speed,
+            # TODO: Add support for these options.
+            # instructions=audio_generation_request.instructions,
+            # response_format=audio_generation_request.response_format,
+            # speed=audio_generation_request.speed,
         )
-    #     response_format = _create_response_format(
-    #         completion_request.response_format
-    #     )
 
-    # TODO: We need to implement a new response generator for audio generation.
-    # response_generator = OpenAIChatResponseGenerator(pipeline)
-
-    #     if completion_request.stream:
-    #         # Currently, tools are not supported in streaming mode.
-    #         if tools:
-    #             raise HTTPException(
-    #                 status_code=400,
-    #                 detail="Tools are not supported in streaming mode.",
-    #             )
-
-    #         # We set a large timeout for ping otherwise benchmarking scripts
-    #         # such as sglang will fail in parsing the ping message.
-    #         return EventSourceResponse(
-    #             response_generator.stream(token_request), ping=100000
-    #         )
-
-    #     response = await response_generator.complete([token_request])
-    #     return response
+        response_generator = OpenAISpeechResponseGenerator(pipeline)
+        response = await response_generator.synthesize_speech(audio_request)
+        return response
 
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
@@ -1092,23 +1099,3 @@ async def create_streaming_audio_speech(
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
         raise HTTPException(status_code=400, detail="Value error.") from e
-
-    async def generate_audio():
-        try:
-            # Process audio generation request
-            async for audio_chunk in pipeline.next_chunk(audio_request):
-                yield audio_chunk
-
-        except Exception as e:
-            logger.exception("Error generating audio")
-            error_response = ErrorResponse(
-                error=Error(
-                    code="500", message=str(e), param="", type="server_error"
-                )
-            )
-            yield error_response
-
-    return EventSourceResponse(
-        generate_audio(),
-        media_type="audio/" + audio_generation_request.response_format,
-    )

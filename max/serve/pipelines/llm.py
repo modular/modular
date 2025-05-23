@@ -23,6 +23,7 @@ from functools import partial
 from typing import Callable, Generic, Optional, TypeVar
 
 import numpy as np
+import torch
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
@@ -406,6 +407,10 @@ AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
+    # We import torch here so that only folks that use the AudioGeneratorPipeline
+    # will need to have it installed.
+    import torch
+
     def __init__(
         self,
         model_name: str,
@@ -481,7 +486,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             audio_chunks.append(chunk.audio_data)
 
         # Combine audio chunks and metadata
-        combined_audio = b"".join(audio_chunks)
+        combined_audio = torch.concat(audio_chunks, dim=-1)
         return AudioGeneratorOutput(
             audio_data=combined_audio,
             metadata=chunk.metadata,  # Use metadata from last chunk

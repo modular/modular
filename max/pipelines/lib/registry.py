@@ -27,7 +27,6 @@ from max.pipelines.core import (
     EmbeddingsGenerator,
     PipelineTask,
     PipelineTokenizer,
-    TokenGenerator,
 )
 from transformers import (
     AutoConfig,
@@ -37,7 +36,10 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
+    from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
+
+from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import (
     PipelineEngine,
     RopeType,
@@ -48,9 +50,16 @@ from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import HuggingFaceRepo
 from .pipeline import PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
-from .tokenizer import TextAndVisionTokenizer, TextTokenizer
+from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
+
+PipelineTypes = Union[
+    TextGenerationPipeline,
+    EmbeddingsGenerator,
+    AudioGeneratorPipeline,
+    SpeculativeDecodingTextGenerationPipeline,
+]
 
 
 def get_pipeline_for_task(
@@ -59,6 +68,7 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline]
     | type[EmbeddingsPipeline]
     | type[SpeculativeDecodingTextGenerationPipeline]
+    | type[AudioGeneratorPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config.draft_model_config is not None:
@@ -67,6 +77,8 @@ def get_pipeline_for_task(
             return TextGenerationPipeline
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         return EmbeddingsPipeline
+    elif task == PipelineTask.AUDIO_GENERATION:
+        return AudioGeneratorPipeline
     else:
         msg = f"PipelineTask ({task}) does not have supported Pipeline"
         raise ValueError(msg)
@@ -89,7 +101,7 @@ class SupportedArchitecture:
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
         pipeline_model: type[PipelineModel],
         task: PipelineTask,
-        tokenizer: type[Union[TextTokenizer, TextAndVisionTokenizer]],
+        tokenizer: Callable[..., PipelineTokenizer],
         default_weights_format: WeightsFormat,
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
@@ -147,6 +159,13 @@ class SupportedArchitecture:
             return True
 
         return False
+
+    @property
+    def tokenizer_cls(self) -> type[PipelineTokenizer]:
+        if isinstance(self.tokenizer, type):
+            return self.tokenizer
+        # Otherwise fall back to PipelineTokenizer.
+        return PipelineTokenizer
 
 
 class PipelineRegistry:
@@ -325,20 +344,25 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
+        override_architecture: str | None = None,
     ) -> tuple[
         PipelineTokenizer,
-        Callable[[], TokenGenerator | EmbeddingsGenerator],
+        Callable[[], PipelineTypes],
     ]:
         tokenizer: PipelineTokenizer
-        pipeline_factory: Callable[[], TokenGenerator | EmbeddingsGenerator]
+        pipeline_factory: Callable[[], PipelineTypes]
 
         if pipeline_config.engine == PipelineEngine.MAX:
             pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
             # MAX pipeline
-            arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
-            )
+            arch: SupportedArchitecture | None = None
+            if override_architecture:
+                arch = self.architectures[override_architecture]
+            else:
+                arch = self.retrieve_architecture(
+                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                )
 
             # Load HuggingFace Config
             huggingface_config = pipeline_config.model_config.huggingface_config
@@ -349,7 +373,7 @@ class PipelineRegistry:
             logger.info(
                 self._load_logging_message(
                     pipeline_config=pipeline_config,
-                    tokenizer_type=arch.tokenizer,
+                    tokenizer_type=arch.tokenizer_cls,
                     pipeline_model=arch.pipeline_model.__name__,
                     pipeline_name=pipeline_class.__name__,
                     architecture_id=arch.name,
@@ -386,19 +410,22 @@ class PipelineRegistry:
                 )
             else:
                 tokenizer = arch.tokenizer(
-                    pipeline_config.model_config.model_path,
+                    model_path=pipeline_config.model_config.model_path,
                     revision=pipeline_config.model_config.huggingface_model_revision,
                     max_length=max_length,
                     max_new_tokens=pipeline_config.max_new_tokens,
                     trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                    pipeline_config=pipeline_config,
                 )
-
-            pipeline_factory = functools.partial(
-                pipeline_class,
-                pipeline_config=pipeline_config,
-                pipeline_model=arch.pipeline_model,
-                eos_token_id=tokenizer.eos,
-                weight_adapters=arch.weight_adapters,
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(  # type: ignore[misc]
+                    pipeline_class,
+                    pipeline_config=pipeline_config,
+                    pipeline_model=arch.pipeline_model,
+                    eos_token_id=tokenizer.eos,
+                    weight_adapters=arch.weight_adapters,
+                ),
             )
         else:
             pipeline_config = self._set_hf_pipeline_defaults(pipeline_config)
@@ -435,10 +462,13 @@ class PipelineRegistry:
                     ),
                 )
             )
-            pipeline_factory = functools.partial(
-                hf_pipeline_class,
-                pipeline_config=pipeline_config,
-                torch_device_type=torch_device_type,
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(
+                    hf_pipeline_class,
+                    pipeline_config=pipeline_config,
+                    torch_device_type=torch_device_type,
+                ),
             )
 
         if tokenizer.eos is None:
@@ -451,9 +481,10 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
-    ) -> tuple[PipelineTokenizer, TokenGenerator | EmbeddingsGenerator]:
+        override_architecture: str | None = None,
+    ) -> tuple[PipelineTokenizer, PipelineTypes]:
         tokenizer, pipeline_factory = self.retrieve_factory(
-            pipeline_config, task
+            pipeline_config, task, override_architecture
         )
         return tokenizer, pipeline_factory()
 

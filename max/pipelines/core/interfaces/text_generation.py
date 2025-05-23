@@ -22,10 +22,11 @@ from typing import (
     Optional,
     Protocol,
     TypedDict,
-    TypeVar,
     Union,
     runtime_checkable,
 )
+
+from typing_extensions import TypeVar
 
 from .response import TextGenerationResponse
 
@@ -186,11 +187,15 @@ TokenGeneratorContext = TypeVar("TokenGeneratorContext")
 TokenGeneratorBatchKey = TypeVar("TokenGeneratorBatchKey")
 
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+PipelineTokenizerRequest = TypeVar(
+    "PipelineTokenizerRequest", contravariant=True
+)
 
 
 @runtime_checkable
 class PipelineTokenizer(
-    Generic[TokenGeneratorContext, TokenizerEncoded], Protocol
+    Generic[TokenGeneratorContext, TokenizerEncoded, PipelineTokenizerRequest],
+    Protocol,
 ):
     """Interface for LLM tokenizers."""
 
@@ -223,18 +228,18 @@ class PipelineTokenizer(
             { "type": "image" }
 
         Their content is provided as byte arrays through the top-level property
-        on the request object, i.e., :obj:`TokenGeneratorRequest.images`.
+        on the request object, i.e., :obj:`PipelineTokenizerRequest.images`.
         """
         ...
 
     async def new_context(
-        self, request: TokenGeneratorRequest
+        self, request: PipelineTokenizerRequest
     ) -> TokenGeneratorContext:
         """Creates a new context from a request object. This is sent to the
         worker process once and then cached locally.
 
         Args:
-            request (TokenGeneratorRequest): Incoming request.
+            request (PipelineTokenizerRequest): Incoming request.
 
         Returns:
             TokenGeneratorContext: Initialized context.

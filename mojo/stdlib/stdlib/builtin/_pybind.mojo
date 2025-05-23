@@ -64,7 +64,7 @@ fn fail_initialization(owned err: Error) -> PythonObject:
 
 
 fn gen_pytype_wrapper[
-    T: Defaultable & Representable & TypeIdentifiable,
+    T: Movable & Defaultable & Representable & TypeIdentifiable,
     name: StaticString,
 ](module: PythonObject) raises:
     # TODO(MOCO-1301): Add support for member method generation.

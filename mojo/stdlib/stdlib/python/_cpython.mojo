@@ -1859,6 +1859,12 @@ struct CPython(Copyable, Movable):
     # Floating-Point Objects
     # ===-------------------------------------------------------------------===#
 
+    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/number.html#c.PyNumber_Float).
+        """
+        return self.lib.call["PyNumber_Float", PyObjectPtr](obj)
+
     fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble).

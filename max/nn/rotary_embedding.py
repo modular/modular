@@ -134,7 +134,7 @@ class RotaryEmbedding(Module):
     def __call__(
         self,
         x: TensorValueLike,
-        start_pos: Optional[TensorValue] = None,
+        start_pos: Optional[Dim] = None,
         seq_len: Optional[Dim] = None,
     ) -> TensorValue:
         """Applies rotary positional embeddings (RoPE) to `x`.
@@ -156,25 +156,16 @@ class RotaryEmbedding(Module):
             x_im = complex[..., 1]
         else:
             head_dim = v.shape[-1]
-            head_dim_val = TensorValue(head_dim)
             half_dim = head_dim // 2
-            half_dim_val = TensorValue(half_dim)
-            slice_re = (slice(0, half_dim_val), half_dim)
-            slice_im = (slice(half_dim_val, head_dim_val), half_dim)
-            x_re = v[..., slice_re]
-            x_im = v[..., slice_im]
+            x_re = v[..., :half_dim]
+            x_im = v[..., half_dim:head_dim]
 
         if start_pos is None:
-            start_pos = ops.constant(
-                0, dtype=DType.int64, device=DeviceRef.CPU()
-            )
+            start_pos = Dim(0)
         if seq_len is None:
             seq_len = v.shape[-3]
 
-        seq_len_val = TensorValue(seq_len)
-        freqs_cis_sliced = self.freqs_cis[
-            (slice(start_pos, start_pos + seq_len_val), seq_len),
-        ]
+        freqs_cis_sliced = self.freqs_cis[start_pos : start_pos + seq_len]
         # Handle optimized case that flattens freqs_cis.
         # This is needed so naive llama3 can still use Llama3RotaryEmbedding with correct freq_cis.
         if len(freqs_cis_sliced.shape) == 2:

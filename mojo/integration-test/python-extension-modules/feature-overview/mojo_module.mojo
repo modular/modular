@@ -48,7 +48,7 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_function[case_downcast_unbound_type]("case_downcast_unbound_type")
         b.def_py_function[incr_int__wrapper]("incr_int")
         b.def_py_function[add_to_int__wrapper]("add_to_int")
-        b.def_function[create_string__wrapper]("create_string")
+        b.def_function[create_string]("create_string")
 
         _ = (
             b.add_type[Person]("Person")
@@ -95,6 +95,13 @@ fn case_raise_string_error() -> PythonObject:
     cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
 
     return PythonObject(from_owned_ptr=PyObjectPtr())
+
+
+# Returning New Mojo Values
+fn create_string() raises -> PythonObject:
+    var result = String("Hello")
+
+    return PythonObject(alloc=result^)
 
 
 fn case_mojo_raise() raises -> PythonObject:
@@ -169,7 +176,7 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Defaultable, Representable, TypeIdentifiable):
+struct FailToInitialize(Movable, Defaultable, Representable, TypeIdentifiable):
     alias TYPE_ID = "mojo_module.FailToInitialize"
 
     fn __init__(out self):
@@ -240,47 +247,3 @@ fn add_to_int__wrapper(
     add_to_int(arg_0[], arg_1[])
 
     return PythonObject(None)
-
-
-# ====================================
-# Recipe: Function: Returning New Mojo Values
-# ====================================
-
-
-fn create_string() raises -> String:
-    return "Hello"
-
-
-fn create_string__wrapper() raises -> PythonObject:
-    var cpython = Python().cpython()
-
-    var result = create_string()
-
-    # TODO(MSTDL-1018):
-    #   Improve how we're looking up the PyTypeObject for a Mojo type.
-    # NOTE:
-    #   We can't just use PythonTypeBuilder.bind[String]() because that constructs
-    #   a _new_ PyTypeObject. We want to reference the existing _singleton_
-    #   PyTypeObject that represents a given Mojo type.
-    var string_ty = lookup_py_type_object[String]()
-
-    # SAFETY:
-    #   `Int` was added to the module by us, so it should be an instance
-    #   of PyTypeObject. (Caveat: This theoretically might not be true if the
-    #   user has manually re-assigned the `Int` attribute.)
-    var string_ty_ptr = string_ty.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
-        PyTypeObject
-    ]()
-
-    # Allocate storage to hold a PyMojoObject[String]
-    var string_obj_raw_ptr: PyObjectPtr = cpython.PyType_GenericAlloc(
-        string_ty_ptr,
-        0,
-    )
-
-    var string_obj = PythonObject(from_owned_ptr=string_obj_raw_ptr)
-
-    # Initialize the PyMojoObject[String]
-    string_obj.unchecked_downcast_value_ptr[String]().init_pointee_move(result^)
-
-    return string_obj^
