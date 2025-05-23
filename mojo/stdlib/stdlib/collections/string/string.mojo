@@ -340,7 +340,11 @@ struct String(
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self = Self(capacity=0)
+        self._ptr_or_data = UnsafePointer[UInt8]()
+        self._len_or_data = 0
+        # Note: we treat a nul pointer as a "static constant" pointer because
+        # in the out-of-line form, it has no ARC header.
+        self._capacity_or_data = _StringCapacityField(static_const_length=0)
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
