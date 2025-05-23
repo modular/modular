@@ -429,7 +429,9 @@ struct FileHandle(Writer):
     fn _write[
         address_space: AddressSpace
     ](
-        self, ptr: UnsafePointer[UInt8, address_space=address_space], len: Int
+        self,
+        ptr: UnsafePointer[UInt8, address_space=address_space, mut=False, **_],
+        len: Int,
     ) raises:
         """Write the data to the file.
 
