@@ -1201,7 +1201,7 @@ struct String(
         # Add a nul terminator.
         # Reallocate the out-of-line static strings to ensure mutability.
         if not self._capacity_or_data.has_nul_terminator() or (
-            self._is_static_constant()
+            self._capacity_or_data.is_static_constant()
         ):
             var len = self.byte_length()
             self.reserve(len + 1)  # This will reallocate if constant.
