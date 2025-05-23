@@ -9,3 +9,9 @@ transformers
 nvitop
 Jinja2
 Pillow
+
+# for upload.py
+boto3
+click
+google-auth
+google-cloud-bigquery
