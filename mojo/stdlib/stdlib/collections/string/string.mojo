@@ -2166,9 +2166,6 @@ fn stol(str_slice: StringSlice, base: Int = 10) raises -> (Int, String):
     if (base != 0) and (base < 2 or base > 36):
         raise Error("Base must be >= 2 and <= 36, or 0.")
 
-    if not str_slice:
-        raise Error("Cannot convert empty string to integer.")
-
     var result: Int = 0
     var real_base: Int
     var start: Int
