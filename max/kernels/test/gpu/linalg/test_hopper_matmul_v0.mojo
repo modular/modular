@@ -45,8 +45,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
 )
 from linalg.matmul_sm90 import hopper_matmul_tma_wgmma

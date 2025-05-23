@@ -37,8 +37,6 @@ from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
     tile_layout_mn_major,
 )

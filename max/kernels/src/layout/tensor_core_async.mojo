@@ -558,94 +558,54 @@ fn _wgmma_descriptor[
 
 
 fn _lhs_descriptor[
-    mma_shape: IndexList[3],
+    dtype: DType,
+    layout: Layout, //,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+    tensor: LayoutTensor[
+        dtype, layout, address_space = AddressSpace.SHARED, *_, **_
+    ]
 ) -> WGMMADescriptor[tensor.dtype]:
-    constrained[
-        _supported_mma_shape[mma_shape](),
-        "WGMMA operation of shape '",
-        String(mma_shape),
-        "' is not supported",
+    alias BM = layout[0].size()
+    alias BK = layout[1].size()
+    alias canonical_K = swizzle_mode.bytes() // sizeof[
+        dtype
+    ]() if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE else BK
+    alias canonical_layout_flat = tile_layout_k_major[
+        dtype, BM, canonical_K, swizzle_mode
     ]()
-
-    alias flat_layout = __type_of(tensor).layout
-    alias layout = tile_to_descriptor[tensor.dtype, flat_layout, True]()
-    constrained[
-        layout.rank() == 2 and layout[0].rank() == 2 and layout[1].rank() == 2,
-        (
-            "shared memory tile layout should have structure (rank-2, rank-2)."
-            " But got "
-        ),
-        String(layout),
+    alias canonical_layout = tile_to_descriptor[
+        dtype, canonical_layout_flat, True
     ]()
-
-    alias shape00 = layout[0].shape[0].value()
-    alias shape11 = layout[1].shape[1].value()
-
-    # General constraints for all swizzle types.
-    constrained[
-        shape00 == 8 and shape11 % 2 == 0,
-        "Tile shape must be ((8, _), (_, multiple of 2)). But got ",
-        String(layout),
-    ]()
-
-    alias type = __type_of(tensor).dtype
-    alias stride10 = layout[1].stride[0].value()
-
-    # Constraints for swizzle
-    @parameter
-    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        alias stride_bytes = stride10 * sizeof[type]()
-        constrained[
-            stride_bytes != swizzle_mode.bytes(),
-            "Stride dim bytes ",
-            String(stride_bytes),
-            " doesn't match ",
-            String(swizzle_mode),
-        ]()
-
-    # Ingore 4 LSB.
-    alias SBO = (layout[0].stride[1].value() * sizeof[type]()) >> 4
-    alias LBO = (layout[1].stride[1].value() * sizeof[type]()) >> 4
-
-    return WGMMADescriptor.create[SBO, LBO, swizzle_mode](tensor.ptr)
+    return _wgmma_descriptor[
+        layout=canonical_layout, is_k_major=True, swizzle=swizzle_mode
+    ](tensor.ptr)
 
 
 fn _rhs_descriptor[
-    mma_shape: IndexList[3],
+    dtype: DType,
+    layout: Layout, //,
     transposed: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+    tensor: LayoutTensor[
+        dtype, layout, address_space = AddressSpace.SHARED, *_, **_
+    ]
 ) -> WGMMADescriptor[tensor.dtype]:
-    constrained[
-        _supported_mma_shape[mma_shape](),
-        "WGMMA operation of shape '",
-        String(mma_shape),
-        "' is not supported",
+    alias BN = layout[0].size()
+    alias BK = layout[1].size()
+    alias canonical_K = swizzle_mode.bytes() // sizeof[
+        dtype
+    ]() if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE else BK
+    alias canonical_layout_flat = tile_layout_k_major[
+        dtype, BN, canonical_K, swizzle_mode
+    ]() if transposed else layout
+    alias canonical_layout = tile_to_descriptor[
+        dtype, canonical_layout_flat, transposed
     ]()
-
-    # Transposed case is same to K-major A matrix.
-    @parameter
-    if transposed:
-        return _lhs_descriptor[mma_shape, swizzle_mode](tensor)
-
-    # Non-Transposed case is MN-major
-    alias layout = tensor.layout
-    alias stride01 = layout[0].stride[1].value()
-    alias stride11 = layout[1].stride[1].value()
-
-    alias type = tensor.dtype
-    alias no_swizzle = swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE
-
-    # Swizzle and non-swizzle modes switch SBO and LBO based on
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=bar%2520sync#asynchronous-warpgroup-level-majorness-supported-by-strides
-    alias SBO = ((stride01 if no_swizzle else stride11) * sizeof[type]()) >> 4
-    alias LBO = ((stride11 if no_swizzle else stride01) * sizeof[type]()) >> 4
-
-    return WGMMADescriptor.create[SBO, LBO, swizzle_mode](tensor.ptr)
+    return _wgmma_descriptor[
+        layout=canonical_layout, is_k_major=transposed, swizzle=swizzle_mode
+    ](tensor.ptr)
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
@@ -840,36 +800,38 @@ struct TensorCoreAsync[
         if num_warp_groups > 1:
             a_desc += a_m_stride * num_m_mmas * wg_idx
 
+        alias layout_b = "col" if transpose_b else StaticString("row")
+        alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
+
         @parameter
         for k_mma in range(num_k_mmas):
             alias scale_d = scale_c if k_mma == 0 else 1
 
+            # Offsets when K is multiple of canonical layouts.
+            alias a_offset_bytes = (
+                k_mma // a_num_k_mmas_per_tile
+            ) * a_canonical_layout.size() * sizeof[a_type]()
+            alias b_offset_bytes = (
+                k_mma // b_num_k_mmas_per_tile
+            ) * b_canonical_layout.size() * sizeof[
+                b_type
+            ]() if transpose_b else 0
+
+            alias a_k_mma_offset = (k_mma % a_num_k_mmas_per_tile) * a_k_stride
+            alias b_k_mma_offset = (k_mma % b_num_k_mmas_per_tile) * b_k_stride
+
             @parameter
             for m_mma in range(num_m_mmas):
+                alias a_offset = m_mma * a_m_stride + a_k_mma_offset + a_offset_bytes
+                a_desc_m = a_desc + a_offset
 
                 @parameter
                 for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
-                    # Offsets when K is multiple of canonical layouts.
-                    alias a_offset_bytes = (
-                        k_mma // a_num_k_mmas_per_tile
-                    ) * a_canonical_layout.size() * sizeof[a_type]()
-                    alias b_offset_bytes = (
-                        k_mma // b_num_k_mmas_per_tile
-                    ) * b_canonical_layout.size() * sizeof[
-                        b_type
-                    ]() if transpose_b else 0
-
-                    alias a_k_mma = k_mma % a_num_k_mmas_per_tile
-                    alias b_k_mma = k_mma % b_num_k_mmas_per_tile
-
-                    alias a_offset = m_mma * a_m_stride + a_k_mma * a_k_stride + a_offset_bytes
-                    alias b_offset = n_mma * b_n_stride + b_k_mma * b_k_stride + b_offset_bytes
-                    a_desc_m = a_desc + a_offset
+                    alias b_offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
                     b_desc_n = b_desc + b_offset
 
-                    alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
                     var c_frags = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
 
                     var c_frags_in_tuple = _convert_cfrags_to_tuple[
@@ -882,9 +844,7 @@ struct TensorCoreAsync[
                         mma_shape[2],
                         a_type=a_type,
                         b_type=b_type,
-                        layout_b = "col" if transpose_b else StaticString(
-                            "row"
-                        ),
+                        layout_b=layout_b,
                         scale_d=scale_d,
                         scale_a=scale_a,
                         scale_b=scale_b,
@@ -897,7 +857,7 @@ struct TensorCoreAsync[
     @staticmethod
     @always_inline
     fn wgmma(
-        a_frag: LayoutTensor[
+        a_frag_tile: LayoutTensor[
             a_type, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
         b_smem_tile: LayoutTensor[
@@ -913,33 +873,43 @@ struct TensorCoreAsync[
         is in shared memory.
 
         Args:
-            a_frag: Matrix A in register memory.
+            a_frag_tile: Matrix A in register memory.
             b_smem_tile: Matrix B in shared memory.
             c_reg_tile: Output matrix C in register memory.
         """
-        # alias a_smem_layout = a_smem_tile.layout
-        alias b_smem_layout = tile_to_descriptor[
-            b_type, b_smem_tile.layout, transpose_b
+        alias BN = b_smem_layout[0].size()
+        alias BK = b_smem_layout[1].size()
+        alias b_smem_layout = b_smem_tile.layout
+        alias b_canonical_K = b_swizzle.bytes() // sizeof[
+            b_type
+        ]() if b_swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
+        alias b_canonical_layout_flat = tile_layout_k_major[
+            b_type, BN, b_canonical_K, b_swizzle
+        ]() if transpose_b else b_smem_layout
+        alias b_canonical_layout = tile_to_descriptor[
+            b_type, b_canonical_layout_flat, transpose_b
         ]()
 
         # Layout modes are always (MN, K) transpose or not.
         # Note that shape00 may not equal core matrix dim for MN-major layouts.
         # TODO: use layout algebra like `tile_to_shape` here.
-        alias b_shape00 = b_smem_layout[0].shape[0].value()
-        alias b_stride01 = b_smem_layout[0].stride[1].value()
-        alias b_stride11 = b_smem_layout[1].stride[1].value()
+        alias b_shape00 = b_canonical_layout[0].shape[0].value()
+        alias b_stride01 = b_canonical_layout[0].stride[1].value()
+        alias b_stride11 = b_canonical_layout[1].stride[1].value()
         # Strides between WGMMA tiles
         constrained[mma_shape[1] % b_shape00 == 0]()
         # fmt: off
         alias b_n_stride = b_stride01 * (mma_shape[1] // b_shape00) * sizeof[b_type]()
-        # fmt: on
         # K dim is stepped by 2 core matrices.
         alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
         constrained[b_k_stride > 0]()
 
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
         alias num_k_mmas = b_smem_layout[1].size() // mma_shape[2]
-        alias num_m_mmas = a_frag.layout[0].shape[0].value() // num_k_mmas
+        alias num_m_mmas = a_frag_tile.layout[0].shape[0].value() // num_k_mmas
+
+        alias b_num_k_mmas_per_tile = b_canonical_K // mma_shape[2] if transpose_b else num_k_mmas
+        # fmt: on
 
         constrained[
             b_n_stride > 0 or (b_n_stride == 0 and num_n_mmas == 1),
@@ -950,7 +920,7 @@ struct TensorCoreAsync[
         # Vectorize each wgmma's fragment size.
         alias a_frag_size = mma_shape[0] * mma_shape[2] // 128
         alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
-        a_frags = a_frag.vectorize[1, a_frag_size]()
+        a_frags = a_frag_tile.vectorize[1, a_frag_size]()
         c_frags = c_reg_tile.vectorize[1, c_frag_size]()
         constrained[
             __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
@@ -963,26 +933,36 @@ struct TensorCoreAsync[
             String(num_m_mmas),
             " * ",
             String(num_n_mmas),
-            ".\na_frag.layout[0].shape[0].value() = ",
-            String(a_frag.layout[0].shape[0].value()),
+            ".\na_frag_tile.layout[0].shape[0].value() = ",
+            String(a_frag_tile.layout[0].shape[0].value()),
             "\nnum_k_mmas = ",
             String(num_k_mmas),
         ]()
 
-        b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
+        b_desc = _wgmma_descriptor[b_canonical_layout, transpose_b, b_swizzle](
+            b_smem_tile.ptr
+        )
+        alias layout_b = "col" if transpose_b else StaticString("row")
 
         @parameter
         for k_mma in range(num_k_mmas):
+            alias b_offset_bytes = (
+                k_mma // b_num_k_mmas_per_tile
+            ) * b_canonical_layout.size() * sizeof[
+                b_type
+            ]() if transpose_b else 0
+            alias b_k_mma_offset = (k_mma % b_num_k_mmas_per_tile) * b_k_stride
 
             @parameter
             for m_mma in range(num_m_mmas):
+                a_frag = a_frags[m_mma + k_mma * num_m_mmas, 0]
 
                 @parameter
                 for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
-                    alias offset = n_mma * b_n_stride + k_mma * b_k_stride
+                    alias offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
                     b_desc_n = b_desc + offset
 
                     c_frags[mma_id, 0] = wgmma_async[
@@ -991,11 +971,9 @@ struct TensorCoreAsync[
                         mma_shape[2],
                         a_type=a_type,
                         b_type=b_type,
-                        layout_b = "col" if transpose_b else StaticString(
-                            "row"
-                        ),
+                        layout_b=layout_b,
                     ](
-                        a_frags[m_mma + k_mma * num_m_mmas, 0],
+                        a_frag,
                         b_desc_n,
                         c_frags[mma_id, 0],
                     )
