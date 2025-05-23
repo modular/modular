@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable
-from typing import Any, Protocol, TypeVar, Union
+from typing import Any, Protocol, TypeVar, Union, overload
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -16,10 +16,8 @@ else:
     from typing_extensions import TypeGuard
 
 import numpy as np
-from max import mlir
 from max._core import Type as _Type
 from max._core import Value as _Value
-from max._core import graph as _graph
 from max._core.dialects import mo
 from max.dtype import DType
 
@@ -84,55 +82,42 @@ class Value(Typed[MlirType]):
     Similar to a regular variable, a `Value` has a data type.
     """
 
-    _mlir_value: mlir.Value
+    _mlir_value: _Value[MlirType]
 
-    def __new__(cls, value: Union[Value, mlir.Value, TensorValueLike]):
-        # If a subclass is being requested, let the subclass `__init__` deal with everything.
-        # Note, we can't use `issubclass` here cause `Value` is a subclass of `Value` according to python.
-        if cls is not Value:
-            return super().__new__(cls)
+    def __init__(self):
+        """Value is abstract, it shouldn't be constructed directly."""
+        raise NotImplementedError
 
-        # Otherwise, the user is requesting a Value(x) directly.
-        # we need to dispatch to the correct subclass.
-        if isinstance(value, mlir.Value):
-            # Value(x) where x is an MLIR value
-            # Return the correct subclass based on the mlir value's type.
-            if _graph.type_is_opaque(value.type):
-                return super().__new__(_OpaqueValue)
-            elif _graph.type_is_buffer(value.type):
-                return super().__new__(BufferValue)
-            elif isinstance(_Type._from_cmlir(value.type), mo.ChainType):
-                return super().__new__(_ChainValue)
-            elif _graph.type_is_tensor(value.type):
-                return super().__new__(TensorValue)
-            else:
-                raise TypeError(
-                    f"Value() argument is an mlir.Value of unknown type '{value.type}'"
-                )
-        elif isinstance(value, Value):
-            # Value(x) where x is an instance of a subclass of Value.
-            # Return the correct subclass based on the type of value.
-            return super().__new__(type(value))
-        elif isinstance(value, _tensor_value_like):
-            # Value(x) where x is a TensorValueLike.
-            # Explicitly tell the user to call `TensorValue` if that is what they wanted.
-            raise TypeError(
-                "Value() can not be created directly from a"
-                f" '{type(value).__name__}'. If you are trying to create a"
-                " tensor, call TensorValue() directly."
-            )
-        else:
-            raise TypeError(
-                "Value() argument must be an mlir.Value, a graph.Value, or"
-                f" an np.ndarray, not '{type(value).__name__}'"
-            )
+    @overload
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.TensorType]) -> TensorValue: ...
+
+    @overload
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.BufferType]) -> BufferValue: ...
+
+    @overload
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.OpaqueType]) -> _OpaqueValue: ...
+
+    @overload
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.ChainType]) -> _ChainValue: ...
+
+    @classmethod
+    def from_mlir(cls, value: _Value) -> Value:
+        if isinstance(value.type, mo.TensorType):
+            return TensorValue(value)
+        elif isinstance(value.type, mo.ChainType):
+            return _ChainValue(value)
+        elif isinstance(value.type, mo.OpaqueType):
+            return _OpaqueValue(value)
+        elif isinstance(value.type, mo.BufferType):
+            return BufferValue(value)
+        raise TypeError(f"Invalid mlir value {value=}")
 
     def __repr__(self):
-        return str(self._new_mlir_value.type)
-
-    @property
-    def _new_mlir_value(self) -> _Value[MlirType]:
-        return _Value._from_cmlir(self._mlir_value)
+        return str(self._mlir_value.type)
 
     @property
     def buffer(self) -> BufferValue:
@@ -177,9 +162,8 @@ class Value(Typed[MlirType]):
 
 
 class _ChainValue(Value[mo.ChainType]):
-    def __init__(self, value: Value | mlir.Value):
-        if isinstance(value, mlir.Value):
-            assert isinstance(_Type._from_cmlir(value.type), mo.ChainType)
+    def __init__(self, value: Value | _Value[mo.ChainType]):
+        if isinstance(value, _Value):
             self._mlir_value = value
         elif isinstance(value, _ChainValue):
             self._mlir_value = value._mlir_value
@@ -192,14 +176,15 @@ class _ChainValue(Value[mo.ChainType]):
     @property
     def type(self) -> _ChainType:
         """Returns the type of the :obj:`_ChainValue` as a :obj:`_ChainType`."""
-        return _ChainType.from_mlir(self._new_mlir_value.type)
+        return _ChainType.from_mlir(self._mlir_value.type)
 
 
-class _OpaqueValue(Value):
+class _OpaqueValue(Value[mo.OpaqueType]):
     """Represents an opaque value within a `Graph`."""
 
-    def __init__(self, value: Union[Value, mlir.Value]) -> None:
-        if isinstance(value, mlir.Value) and _graph.type_is_opaque(value.type):
+    def __init__(self, value: Value | _Value[mo.OpaqueType]) -> None:
+        if isinstance(value, _Value):
+            assert isinstance(value.type, mo.OpaqueType)
             self._mlir_value = value
         elif isinstance(value, _OpaqueValue):
             self._mlir_value = value._mlir_value
@@ -212,14 +197,15 @@ class _OpaqueValue(Value):
     @property
     def type(self) -> _OpaqueType:
         """Returns the type of the :obj:`_OpaqueValue` as a :obj:`_OpaqueType`."""
-        return _OpaqueType.from_mlir(self._new_mlir_value.type)
+        return _OpaqueType.from_mlir(self._mlir_value.type)
 
 
-class BufferValue(Value):
+class BufferValue(Value[mo.BufferType]):
     """Represents a mutable semantic tensor within a `Graph`."""
 
-    def __init__(self, value: Union[Value, mlir.Value]) -> None:
-        if isinstance(value, mlir.Value) and _graph.type_is_buffer(value.type):
+    def __init__(self, value: Value | _Value[mo.BufferType]) -> None:
+        if isinstance(value, _Value):
+            assert isinstance(value.type, mo.BufferType)
             self._mlir_value = value
         elif isinstance(value, BufferValue):
             self._mlir_value = value._mlir_value
@@ -232,7 +218,7 @@ class BufferValue(Value):
     @property
     def type(self) -> BufferType:
         """Returns the type of the :obj:`BufferValue` as a :obj:`BufferType`."""
-        return BufferType.from_mlir(self._new_mlir_value.type)
+        return BufferType.from_mlir(self._mlir_value.type)
 
     @property
     def shape(self) -> Shape:
@@ -244,29 +230,15 @@ class BufferValue(Value):
         """Returns the device of the BufferValue."""
         return self.type.device
 
-    # dtype and rank are implemented like TensorValue implementation.
-    # They use _graph directly to avoid loading the shape dimension if they
-    # aren't needed.
-    # This also avoids accidentally loading algebraic expression dimensions
-    # (which will throw an exception).
     @property
     def dtype(self) -> DType:
         """Returns the tensor data type."""
-        t = self._new_mlir_value.type
-        if not _graph.type_is_buffer(t):
-            raise TypeError(f"Expected BufferType, got: {t}")
-
-        return DType(_graph.buffer_type_get_dtype(t))
+        return self.type.dtype
 
     @property
     def rank(self) -> int:
         """Returns the rank (number of dims) of the buffer."""
-        t = self._new_mlir_value.type
-        if not _graph.type_is_buffer(t):
-            msg = f"Expected BufferType, got: {t}"
-            raise TypeError(msg)
-
-        return _graph.buffer_type_get_rank(t)
+        return self.type.rank
 
     def __repr__(self):
         dtype = self.dtype
@@ -300,7 +272,7 @@ class BufferValue(Value):
         ops.print(self[...], label=label)
 
 
-class TensorValue(Value):
+class TensorValue(Value[mo.TensorType]):
     """
     Represents a value semantic tensor within a :obj:`Graph`. It provides
     various methods and properties to manipulate and query tensor attributes
@@ -339,7 +311,8 @@ class TensorValue(Value):
     __iter__ = None
 
     def __init__(self, value: TensorValueLike) -> None:
-        if isinstance(value, mlir.Value) and _graph.type_is_tensor(value.type):
+        if isinstance(value, _Value):
+            assert isinstance(value.type, mo.TensorType)
             self._mlir_value = value
         elif isinstance(value, TensorValue):
             self._mlir_value = value._mlir_value
@@ -397,7 +370,7 @@ class TensorValue(Value):
     @property
     def type(self) -> TensorType:
         """Returns the type of the :obj:`TensorValue` as a :obj:`TensorType`."""
-        return TensorType.from_mlir(self._new_mlir_value.type)
+        return TensorType.from_mlir(self._mlir_value.type)
 
     @property
     def shape(self) -> Shape:
@@ -429,9 +402,6 @@ class TensorValue(Value):
         """Returns the device of the TensorValue."""
         return self.type.device
 
-    # dtype and rank are special.
-    # They use _graph directly to avoid loading the shape dimension if they aren't needed.
-    # This also avoids accidentally loading algebraic expression dimensions (which will throw an exception).
     @property
     def dtype(self) -> DType:
         """Returns the tensor data type.
@@ -455,11 +425,7 @@ class TensorValue(Value):
                 # Access tensor data type
                 print(f"Data type: {tensor.dtype}")  # Output: DType.float32
         """
-        t = self._new_mlir_value.type
-        if not _graph.type_is_tensor(t):
-            raise TypeError(f"Expected TensorType, got: {t}")
-
-        return DType(_graph.tensor_type_get_dtype(t))
+        return self.type.dtype
 
     @property
     def rank(self) -> int:
@@ -484,11 +450,7 @@ class TensorValue(Value):
                 # Access tensor rank (number of dimensions)
                 print(f"Rank: {tensor.rank}")  # Output: 2
         """
-        t = self._new_mlir_value.type
-        if not _graph.type_is_tensor(t):
-            raise TypeError(f"Expected TensorType, got: {t}")
-
-        return _graph.tensor_type_get_rank(t)
+        return self.type.rank
 
     def print(self, label: str = "debug_tensor"):
         """Prints detailed information about the tensor.
@@ -861,15 +823,21 @@ class TensorValue(Value):
 
 
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
-StrongTensorValueLike = Union[mlir.Value, TensorValue, Shape, Dim]
+StrongTensorValueLike = Union[_Value[mo.TensorType], TensorValue, Shape, Dim]
 TensorValueLike = Union[StrongTensorValueLike, Numeric]
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
-_strong_tensor_value_like = (mlir.Value, TensorValue, Shape, Dim)
+_strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
 
 
+def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:
+    return isinstance(obj, (TensorValue, Shape, Dim)) or (
+        isinstance(obj, _Value) and isinstance(obj.type, mo.TensorType)
+    )
+
+
 def _is_tensor_value_like(obj: Any) -> TypeGuard[TensorValueLike]:
-    return isinstance(obj, _tensor_value_like)
+    return _is_strong_tensor_value_like(obj) or isinstance(obj, _numeric)

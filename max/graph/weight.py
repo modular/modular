@@ -11,7 +11,8 @@ from functools import cached_property
 from typing import Callable, Optional, Union
 
 import numpy.typing as npt
-from max import mlir
+from max._core import Value as _Value
+from max._core.dialects import mo
 from max._core_types.driver import DLPackArray
 from max.dtype import DType
 
@@ -224,7 +225,6 @@ class Weight(TensorValue):
             else None
         )
         self.shard_idx = None
-        self._cached_mlir_value: Optional[mlir.Value] = None
 
     @property
     def dtype(self) -> DType:
@@ -252,29 +252,16 @@ class Weight(TensorValue):
     def device(self) -> DeviceRef:
         return self._device
 
-    @property
-    def _mlir_value(self) -> mlir.Value:
-        # We have to use a closure here because mypy complains about using
-        # @cached_property on a property that has a setter in the parent class.
-        def _get_mlir_value():
-            if self.sharding_strategy and self.shard_idx is not None:
-                host_weight = self.sharding_strategy.host_weight
-                tensor_value = self.sharding_strategy.shard_value(
-                    host_weight, self.shard_idx
-                )
-                tensor_value = tensor_value.to(self._device)
-                return tensor_value._mlir_value
-            else:
-                res = _add_weight_to_graph(self)._mlir_value
-                return res
-
-        if self._cached_mlir_value is None:
-            self._cached_mlir_value = _get_mlir_value()
-        return self._cached_mlir_value
-
-    @_mlir_value.setter
-    def _mlir_value(self, value: mlir.Value) -> None:
-        raise ValueError("Cannot re-define Weight._mlir_value.")
+    @cached_property
+    def _mlir_value(self) -> _Value[mo.TensorType]:  # type: ignore[override]
+        if not self.sharding_strategy or self.shard_idx is None:
+            return _add_weight_to_graph(self)._mlir_value
+        host_weight = self.sharding_strategy.host_weight
+        tensor_value = self.sharding_strategy.shard_value(
+            host_weight, self.shard_idx
+        )
+        tensor_value = tensor_value.to(self._device)
+        return tensor_value._mlir_value
 
     def __repr__(self):
         device_str = f", {self._device}"

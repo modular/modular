@@ -14,13 +14,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Generic,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Generic, TypeVar, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -649,12 +643,15 @@ class Type(Generic[MlirType]):
         Returns:
             The type represented by the MLIR Type value.
         """
-        for cls in Type.__subclasses__():
-            try:
-                return cls.from_mlir(t)
-            except TypeError:
-                continue
-        raise NotImplementedError(f"No type found for MLIR type: {t}")
+        if isinstance(t, mo.TensorType):
+            return TensorType.from_mlir(t)
+        elif isinstance(t, mo.BufferType):
+            return BufferType.from_mlir(t)
+        elif isinstance(t, mo.ChainType):
+            return _ChainType.from_mlir(t)
+        elif isinstance(t, mo.OpaqueType):
+            return _OpaqueType.from_mlir(t)
+        raise TypeError(f"No type found for MLIR type: {t}")
 
 
 @dataclass

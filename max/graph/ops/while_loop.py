@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from typing import Callable
 
 from max import mlir
+from max._core import Value as _Value
 from max.dtype import DType
 from max.mlir.dialects import mo
 
@@ -102,12 +103,7 @@ def while_loop(
         raise ValueError("While loops must have at least one iteration value.")
 
     # Add execution chain to initial values to track side effects across iterations
-    initial_values = [
-        *(
-            Value(v) for v in initial_values
-        ),  # Convert all inputs to Value types
-        Graph.current._current_chain,  # Append current execution chain for sequencing
-    ]
+    initial_values = [*initial_values, Graph.current._current_chain]
 
     # Temporary restriction until buffer support is implemented
     if any(isinstance(arg, BufferValue) for arg in initial_values):
@@ -155,7 +151,7 @@ def while_loop(
             loop_vars: list[Value]
             execution_chain: Value
             *loop_vars, execution_chain = (
-                Value(mlir.Value(arg)) for arg in block_args
+                Value.from_mlir(_Value._from_cmlir(arg)) for arg in block_args
             )
 
             # Update the graph's chain state before running user code

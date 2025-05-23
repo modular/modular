@@ -57,38 +57,31 @@ def test_value_constructor(tensor_type: TensorType, buffer_type: BufferType):
             buffer_type,
         ],
     ) as graph:
-        buffer = Value(graph.inputs[1]._mlir_value)
+        buffer = Value.from_mlir(graph.inputs[1]._mlir_value)
         assert isinstance(buffer, BufferValue)
-        assert buffer._mlir_value is not None
-        tensor = Value(graph.inputs[0]._mlir_value)
+        assert isinstance(buffer.type, BufferType)
+        tensor = Value.from_mlir(graph.inputs[0]._mlir_value)
         assert isinstance(tensor, TensorValue)
-        assert tensor._mlir_value is not None
+        assert isinstance(tensor.type, TensorType)
 
         buffer = BufferValue(graph.inputs[1]._mlir_value)
         assert isinstance(buffer, BufferValue)
-        assert buffer._mlir_value is not None
+        assert isinstance(buffer.type, BufferType)
         tensor = TensorValue(graph.inputs[0]._mlir_value)
         assert isinstance(tensor, TensorValue)
-        assert tensor._mlir_value is not None
+        assert isinstance(tensor.type, TensorType)
 
-        with pytest.raises(TypeError):
+        with pytest.raises(AssertionError):
             BufferValue(graph.inputs[0]._mlir_value)
-        with pytest.raises(TypeError):
+        with pytest.raises(AssertionError):
             TensorValue(graph.inputs[1]._mlir_value)
-
-        buffer = Value(graph.inputs[1])
-        assert isinstance(buffer, BufferValue)
-        assert buffer._mlir_value is not None
-        tensor = Value(graph.inputs[0])
-        assert isinstance(tensor, TensorValue)
-        assert tensor._mlir_value is not None
 
         buffer = BufferValue(graph.inputs[1])
         assert isinstance(buffer, BufferValue)
-        assert buffer._mlir_value is not None
+        assert isinstance(buffer.type, BufferType)
         tensor = TensorValue(graph.inputs[0])
         assert isinstance(tensor, TensorValue)
-        assert tensor._mlir_value is not None
+        assert isinstance(tensor.type, TensorType)
 
         with pytest.raises(TypeError):
             BufferValue(graph.inputs[0])

@@ -7,16 +7,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
-from max import mlir
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..value import Value
+from ..type import _ChainType
+from ..value import Value, _ChainValue
 
 
-def call(graph: Graph, *args: Value | mlir.Value) -> list[Value]:
+def call(graph: Graph, *args: Value) -> list[Value]:
     """Call a graph with the provided arguments and return its results.
 
     This function invokes a previously defined graph, passing in the provided
@@ -41,74 +39,31 @@ def call(graph: Graph, *args: Value | mlir.Value) -> list[Value]:
     """
     # Get the current graph context
     current_graph = Graph.current
+    call_args = list(args)  # mutable so we can add a chain
+    # Be careful, input_types are type[Value], output_types are Type
+    input_types = [type(input) for input in graph.inputs]
+    output_types = graph.output_types
 
-    # Get the symbol name of the target graph
-    symbol_name = graph.name
+    if _ChainValue in input_types:
+        input_chain_idx = input_types.index(_ChainValue)
+        call_args.insert(input_chain_idx, current_graph._current_chain)
 
-    # Extract MLIR operation details from the graph
-    graph_mlir_op = graph._mlir_op
-    function_type_attr = graph_mlir_op.attributes["functionType"]
-    assert isinstance(function_type_attr, mlir.TypeAttr)
-    function_type = function_type_attr.value
-    assert isinstance(function_type, mlir.FunctionType)
-    output_types = function_type.results
-
-    # TODO: This is a hack to get the chain type that allows for equivalence testing with the function's type arguments.
-    # Ideally, we should be able to use _ChainType().to_mlir() directly, but that returns `ChainType(!mo.chain)` which
-    # is a max._core.dialects.mo.ChainType instance, not a mlir.Type instance.
-    chain_type = Graph.current._current_chain._mlir_value.type
-
-    has_chain_input = (
-        len(function_type.inputs) > 0 and function_type.inputs[0] == chain_type
-    )
-    has_chain_output = (
-        len(function_type.results) > 0
-        and function_type.results[0] == chain_type
-    )
-    if has_chain_input != has_chain_output:
+    # Mostly leave type checking up to the op builder.
+    # We can do some basic type checking to improve error messages,
+    # but for instance can't check forward shape propagation correctness.
+    if len(call_args) != len(input_types):
         raise ValueError(
-            "Subgraphs with chain inputs must also have chain outputs, and vice versa"
+            f"Expected {len(input_types)} args to call to {graph.name}, got {len(call_args)}. "
+            f"\n    {graph.name}{tuple(input_types)}"
         )
-
-    data_func_inputs = function_type.inputs[int(has_chain_input) :]
-    if len(args) != len(data_func_inputs):
-        raise ValueError(
-            f"In call to {symbol_name}, expected {len(data_func_inputs)} arguments, got {len(args)}"
-        )
-
-    arg_types: Iterable[mlir.Type] = map(
-        lambda arg: arg._mlir_value.type
-        if isinstance(arg, Value)
-        else arg.type,
-        args,
-    )
-    for idx, (arg_type, operand_type) in enumerate(
-        zip(arg_types, data_func_inputs)
-    ):
-        if arg_type != operand_type:
-            raise ValueError(
-                f"Argument {idx} type mismatch: expected {arg_type}, got {operand_type}"
-            )
 
     # Add a call operation to the current graph
     call_results = current_graph._add_op(
-        mo.call_,
-        symbol=symbol_name,
-        results=output_types,
-        operands=([Graph.current._current_chain] if has_chain_input else [])
-        + list(args),
+        mo.call_, symbol=graph.name, results=output_types, operands=call_args
     )
 
-    # Extract the chain result and return the other results
-    results_count = len(call_results)
-    if has_chain_output:
-        output_chain = call_results[0]  # First result is the chain
-        # Update the current chain in the graph
-        current_graph._current_chain = output_chain
-
-    output_values = call_results[
-        int(has_chain_output) : results_count
-    ]  # Other results are the actual outputs
-
-    # Return the actual outputs (excluding the chain)
-    return output_values
+    # Update the chain if necessary, and return non-chain results
+    if _ChainType() in output_types:
+        output_chain_idx = output_types.index(_ChainType())
+        current_graph._current_chain = call_results.pop(output_chain_idx)
+    return call_results

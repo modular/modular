@@ -11,7 +11,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, Shape, TensorType, ops
-from max.graph.value import TensorValue, _strong_tensor_value_like
+from max.graph.value import TensorValue, _is_strong_tensor_value_like
 
 
 @given(input_type=...)
@@ -28,7 +28,7 @@ def test_tensor_value__T(input_type: TensorType):
 
 @given(input_type=...)
 def test_buffer__not_tensorvalue(input_type: BufferType):
-    assert not isinstance(input_type, _strong_tensor_value_like)
+    assert not _is_strong_tensor_value_like(input_type)
     with Graph("buffer", input_types=[input_type]) as graph:
         with pytest.raises(TypeError):
             TensorValue(input_type)  # type: ignore

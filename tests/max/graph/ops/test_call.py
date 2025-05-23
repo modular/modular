@@ -128,7 +128,7 @@ def test_call_type_mismatch():
         input_types=[int_type],
     ) as main_graph:
         subgraph = create_simple_subgraph(main_graph, float_type)
-        with pytest.raises(ValueError, match="type mismatch"):
+        with pytest.raises(ValueError, match="wrong type"):
             ops.call(subgraph, main_graph.inputs[0])
 
 
@@ -157,7 +157,7 @@ def test_call_num_inputs_mismatch():
         input_types=input_types,
     ) as main_graph:
         subgraph = create_multi_input_subgraph(main_graph, input_types)
-        with pytest.raises(ValueError, match="expected 4 arguments, got 1"):
+        with pytest.raises(ValueError, match="Expected 4 args.*, got 1"):
             ops.call(subgraph, main_graph.inputs[0])
 
 
@@ -204,12 +204,10 @@ def test_call_chain_input_output_mismatch():
             ten_val = tensor.tensor
             # This will use the chain, but we intentionally do NOT output anything (no chain output)
             ops.buffer_store(buf_val, ten_val)
-            # No subgraph.output() call, so chain output is missing
+            subgraph.output()  # no chain!
         buffer = main_graph.inputs[0]
         tensor = main_graph.inputs[1]
-        with pytest.raises(
-            ValueError, match="chain inputs must also have chain outputs"
-        ):
+        with pytest.raises(ValueError, match="must have.*chain output"):
             ops.call(subgraph, buffer, tensor)
 
 

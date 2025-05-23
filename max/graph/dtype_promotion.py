@@ -32,7 +32,7 @@ from max.dtype import DType
 
 from . import ops
 from .graph import DeviceRef
-from .value import TensorValue, TensorValueLike, _strong_tensor_value_like
+from .value import TensorValue, TensorValueLike, _is_strong_tensor_value_like
 
 
 def _restrict_to_strong_dtypes(value: TensorValueLike) -> TensorValue:
@@ -40,7 +40,7 @@ def _restrict_to_strong_dtypes(value: TensorValueLike) -> TensorValue:
 
     Raise an error if the input dtype is weak.
     """
-    if _is_strong(value):
+    if _is_strong_tensor_value_like(value):
         # Valid unary op with proper dtype.
         return TensorValue(value)
     else:
@@ -70,8 +70,8 @@ def _promote_weak_dtypes(
     on the strong type's device.
     """
 
-    x_was_strong = _is_strong(x)
-    y_was_strong = _is_strong(y)
+    x_was_strong = _is_strong_tensor_value_like(x)
+    y_was_strong = _is_strong_tensor_value_like(y)
 
     if x_was_strong and y_was_strong:
         return (TensorValue(x), TensorValue(y))
@@ -111,7 +111,7 @@ def _promote_to_strong(
     If the the input value is already strong, its dtype will not be changed.
     Instead, strong dtype promotion will be handled by the individual ops in RMO.
     """
-    if _is_strong(value):
+    if _is_strong_tensor_value_like(value):
         return TensorValue(value)
     elif isinstance(value, (int, np.integer)):
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
@@ -161,10 +161,6 @@ def _promote_to_strong(
             "_promote_weak_dtypes() argument must be a TensorValueLike, not"
             f" '{type(value).__name__}'"
         )
-
-
-def _is_strong(value: TensorValueLike) -> bool:
-    return isinstance(value, _strong_tensor_value_like)
 
 
 # For each DType, this is the range of values where a conversion would not lose precision.

@@ -19,7 +19,9 @@ from typing import Any, Callable, Optional
 
 from max import mlir
 from max._core import Attribute as _Attribute
+from max._core import Operation as _Operation
 from max._core import Type as _Type
+from max._core import Value as _Value
 from max._core import graph as _graph
 
 # TODO(GEX-1846): Get rid of this include.
@@ -275,7 +277,10 @@ class Graph:
     @functools.cached_property
     def inputs(self) -> Sequence[Value]:
         """The input values of the graph."""
-        return tuple(Value(arg) for arg in self._body.arguments)  # type: ignore
+        return tuple(
+            Value.from_mlir(_Value._from_cmlir(arg))
+            for arg in self._body.arguments  # type: ignore
+        )
 
     @property
     def _context(self) -> mlir.Context:
@@ -407,13 +412,17 @@ class Graph:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg):
             if isinstance(arg, Value):
-                return arg._mlir_value
-            if isinstance(arg, list):
+                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore
+            elif isinstance(arg, Type):
+                return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)
+            elif isinstance(arg, list):
                 return [unwrap(elem) for elem in arg]
             elif isinstance(arg, _Attribute):
                 return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
             elif isinstance(arg, _Type):
                 return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
+            elif isinstance(arg, _Value):
+                return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore
             else:
                 return arg
 
@@ -479,9 +488,12 @@ class Graph:
 
         # Convert op results from  mlir.Value to instances of Value graph-api
         if isinstance(results, mlir.Value):
-            results = [Value(results)]
+            results = [Value.from_mlir(_Value._from_cmlir(results))]
         else:
-            results = [Value(result) for result in results]
+            results = [
+                Value.from_mlir(_Value._from_cmlir(result))
+                for result in results
+            ]
 
         # Add symbolic dims of tensor results to the list of graph params and
         # declared output params of the op
@@ -605,7 +617,10 @@ class Graph:
         terminator = self._body.operations[-1]
         if not isinstance(terminator, mo.OutputOp):
             raise TypeError("Graph not yet terminated by a call to output")
-        return [Value(v).type for v in terminator.operands]  # type: ignore
+        return [
+            Value.from_mlir(_Value._from_cmlir(v)).type
+            for v in terminator.operands  # type: ignore
+        ]
 
     def _load_mlir(self, path: Path):
         self._context_state = []
@@ -661,6 +676,12 @@ class Graph:
                 if force_initial_weight_on_host:
                     transferred_value = graph_weight.value.to(weight.device)
                     if transferred_value is not graph_weight.value:
+                        assert isinstance(
+                            transferred_value._mlir_value.owner, _Operation
+                        )
+                        assert isinstance(
+                            graph_weight.value._mlir_value.owner, _Operation
+                        )
                         transferred_value._mlir_value.owner.move_after(
                             graph_weight.value._mlir_value.owner
                         )
@@ -692,10 +713,6 @@ class Graph:
             _ip=mlir.InsertionPoint.at_block_begin(self._graph_body),
         )[0]
 
-        # Set the constant external op's device explicitly to the passed device.
-        # This is needed to prevent AssignDevices from automatically assigning
-        # mo.constant.external to the default device, which could differ from
-        # the passed device (for example default is GPU, passed weights on CPU).
         const_external_op = weight_tensor._mlir_value.owner
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
         if initial_device != weight.device:
