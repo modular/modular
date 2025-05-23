@@ -501,6 +501,42 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
 }
 
 //===----------------------------------------------------------------------===//
+// GetLinkageNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
+    "get_linkage_name", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the linkage name of a function symbol.";
+  let description = [{
+    The `#kgen.get_linkage_name` attribute is used to get the linkage name of
+    a function symbol for a given target.
+
+    Example:
+
+    ```mlir
+    #kgen.get_linkage_name<
+      #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
+      #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>
+    > : !kgen.string
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$target,
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,`
+    custom<ColonTypeParamValue>($func) `>`
+  }];
+
+
+  let genVerifyDecl = 1;  // Generate getChecked/verify.
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 
