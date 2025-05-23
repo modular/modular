@@ -753,7 +753,7 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
     };
 
     if (OpFoldResult res =
-            foldUnsignedCmp(CmpPredicate::GT, CmpPredicate::LE, getPred(),
+            foldUnsignedCmp(CmpPredicate::LE, CmpPredicate::GT, getPred(),
                             adaptor.getRhs(), adaptor.getLhs()))
       return res;
     if (OpFoldResult res =

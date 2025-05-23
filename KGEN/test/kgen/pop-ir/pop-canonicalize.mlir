@@ -504,7 +504,7 @@ kgen.func @cmp_unsigned(%simd: !pop.simd<2, ui8>) -> (
   // CHECK: %[[UNOPTIMIZED_LT:.*]] = pop.cmp lt(%[[ZERO]], %arg0)
   %6 = pop.cmp lt(%zero, %simd) : <2, ui8>
 
-  // CHECK-NEXT: return %[[TRUE]], %[[UNOPTIMIZED_GE]], %[[TRUE]], %[[UNOPTIMIZED_GT]], %[[UNOPTIMIZED_LE]], %[[FALSE]], %[[UNOPTIMIZED_LT]], %[[FALSE]]
+  // CHECK-NEXT: return %[[TRUE]], %[[UNOPTIMIZED_GE]], %[[FALSE]], %[[UNOPTIMIZED_GT]], %[[UNOPTIMIZED_LE]], %[[TRUE]], %[[UNOPTIMIZED_LT]], %[[FALSE]]
   kgen.return %0, %1, %2, %3,
               %4, %5, %6, %7 : !pop.simd<2, bool>, !pop.simd<2, bool>,
                                !pop.simd<2, bool>, !pop.simd<2, bool>,
