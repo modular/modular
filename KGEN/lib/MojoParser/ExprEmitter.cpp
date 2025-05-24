@@ -838,6 +838,14 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   if (auto mbp = bValue.getIfMBPValue())
     return MBValue(mbp);
 
+  // Mojo can't turn an SBValue into an MBValue - the former only occurs in
+  // special places, and cannot be lifetime tracked back to the original RValue
+  // it was derived from.  If this assert fires, something is wrong up-stack of
+  // this code.
+  assert((!bValue.getIfSBValue() || bValue.getRValueType().isRegisterPassable(
+                                        value.expr->getLoc(), shared)) &&
+         "Cannot convert an SBValue to an MBValue");
+
   // PValue's and SValues need to be emitted into an owned memory temporary,
   // which we can then decay to an MBValue.
   assert(bValue.getIfPValue() || bValue.isSValue());
