@@ -32,6 +32,16 @@ complex, on an available GPU. Note that
 [a MAX-compatible GPU](https://docs.modular.com/max/faq/#gpu-requirements) will
 be necessary to build and run these.
 
+## [Using Mojo from Python](python_mojo_interop/)
+
+To enable progressive introduction of Mojo into an existing Python codebase,
+Mojo modules and functions can be referenced as if they were native Python
+code. This interoperability between Python and Mojo can allow for slower Python
+algorithms to be selectively replaced with faster Mojo alternatives.
+
+These examples illustrate how that can work, including using Mojo functions
+running on a compatible GPU.
+
 ## [PyTorch inference on MAX](inference/)
 
 MAX has the power to accelerate existing PyTorch models directly, and
