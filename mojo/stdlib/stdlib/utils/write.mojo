@@ -47,10 +47,8 @@ trait Writer:
         # Writer requirement to take multiple args
         fn write[*Ts: Writable](mut self, *args: *Ts):
             @parameter
-            fn write_arg[T: Writable](arg: T):
-                arg.write_to(self)
-
-            args.each[write_arg]()
+            for i in range(args.__len__()):
+                args[i].write_to(self)
 
         # Also make it Writable to allow `print` to write the inner String
         fn write_to[W: Writer](self, mut writer: W):
@@ -110,9 +108,8 @@ trait Writer:
         ...
         # TODO: When have default implementations on traits, we can use this:
         # @parameter
-        # fn write_arg[W: Writable](arg: W):
-        #     arg.write_to(self)
-        # args.each[write_arg]()
+        # for i in range(args.__len__()):
+        #     args[i].write_to(self)
         #
         # To only have to implement `write_bytes` to make a type a valid Writer
 
@@ -200,18 +197,14 @@ fn write_args[
     ```
     3, total, args[end]
     ```
-    .
     """
 
     @parameter
-    fn print_with_separator[i: Int, T: Writable](value: T):
-        value.write_to(writer)
-
-        @parameter
-        if i < len(VariadicList(Ts)) - 1:
+    for i in range(args.__len__()):
+        args[i].write_to(writer)
+        if i < args.__len__() - 1:
             sep.write_to(writer)
 
-    args.each_idx[print_with_separator]()
     if end:
         end.write_to(writer)
 
@@ -254,10 +247,8 @@ struct _WriteBufferHeap(Writer):
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 struct _TotalWritableBytes(Writer):
@@ -283,10 +274,8 @@ struct _TotalWritableBytes(Writer):
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 struct _WriteBufferStack[
@@ -337,10 +326,8 @@ struct _WriteBufferStack[
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 fn write_buffered[

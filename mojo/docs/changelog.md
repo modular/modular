@@ -215,6 +215,9 @@ Changes to Python-Mojo interoperability:
 
 ### ❌ Removed
 
+- `VariadPack.each` and `VariadPack.each_idx` methods have been removed.
+  Use the `@parameter for` language construct to achieve this now.
+
 ### 🛠️ Fixed
 
 - [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
