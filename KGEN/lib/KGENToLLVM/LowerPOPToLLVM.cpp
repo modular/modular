@@ -1255,7 +1255,8 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
       return op.emitError("failed to convert result type");
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, ptrType, elementType, adaptor.getArray(),
-        ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()});
+        ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()},
+        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
     return success();
   }
 };
@@ -1383,7 +1384,8 @@ static LogicalResult convertVariadicCreate(VariadicType resultType,
     auto destination = rewriter.create<LLVM::GEPOp>(
         op->getLoc(), /*resultType=*/opaquePtr,
         /*basePtrType=*/elementType, /*basePtr=*/ptr,
-        ArrayRef<LLVM::GEPArg>{indexConstant});
+        ArrayRef<LLVM::GEPArg>{indexConstant},
+        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
     rewriter.create<LLVM::StoreOp>(op->getLoc(), operand, destination);
   }
 
@@ -1474,7 +1476,8 @@ struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
     Value ptr = rewriter.create<LLVM::ExtractValueOp>(op.getLoc(),
                                                       adaptor.getVariadic(), 0);
     auto gep = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), ptr.getType(), ptrElement, ptr, adaptor.getIndex());
+        op.getLoc(), ptr.getType(), ptrElement, ptr, adaptor.getIndex(),
+        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrElement, gep);
     return success();
   }
