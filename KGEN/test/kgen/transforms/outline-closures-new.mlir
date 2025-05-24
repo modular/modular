@@ -329,3 +329,46 @@ kgen.generator @move(%arg0:!kgen.pointer<struct<(index, pointer<index>)>>, %arg1
 kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>>) {
     kgen.return
 }
+
+// -----
+
+// COM: Ensure that captured parameters in arguments are expressed correctly in signature and rebinds are emitted properly.
+
+#type_value =
+#kgen.type<!kgen.closure<@foo, "fn" nonescaping>,
+  {"__call__" :
+    (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> !kgen.param<D> =
+    #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">> >}
+> : !kgen.type
+
+
+kgen.generator @consume<x: type, T: type>(%arg0: !kgen.pointer<x>) -> !kgen.param<T> {
+%0 = kgen.call_param[(!kgen.pointer<x>) -> !kgen.param<T>: get_vtable_entry(x, "__call__")](%arg0)
+kgen.return %0 : !kgen.param<T>
+}
+
+// COM: Signature check
+// CHECK:  kgen.generator @foo_fn<CAPTURES: struct<(type, type)>>
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>,
+// CHECK-SAME: #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>)>>) -> !kgen.param<#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>> {
+
+// COM: Unpack check (adds declarations for all references to captured params in stolen body from original nested)
+// CHECK-NEXT:  kgen.param.declare E: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>>
+// CHECK-NEXT:  kgen.param.declare D: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
+
+// COM: Argument Rebind checks (if extractions were used in the signature, these rebinds prevent type mismatch errors)
+// CHECK:  kgen.rebind %arg0 : !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>, #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>)>> to !kgen.pointer<struct<(pointer<struct<(E, D)>>)>>
+
+// COM: Result Rebind check (if extractions were used in the signature, this rebinds the result to the extraction type in signature)
+// CHECK:  [[RES:%.*]] = kgen.rebind {{.*}} : !kgen.param<D> to !kgen.param<#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
+// CHECK:  kgen.return [[RES]] : !kgen.param<#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
+
+kgen.generator @foo<D: type, E: type>(%arg0 : !kgen.pointer<struct<(E, D)>>) {
+%3 = kgen.closure.init(%arg0)() -> !kgen.param<D> {
+  %1 = kgen.struct.gep %arg0[1] : !kgen.pointer<struct<(E, D)>>
+  %2 = pop.load %1 : !kgen.pointer<D>
+  kgen.return %2 : !kgen.param<D>
+} : (!kgen.pointer<struct<(E, D)>>), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
+%2 = kgen.call @consume<:type #type_value, :type D>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> !kgen.param<D>
+kgen.return
+}
