@@ -471,8 +471,7 @@ def POP_SIMDXOrOp : POP_BitwiseOp<"simd.xor"> {
 // BitCastOp
 //===----------------------------------------------------------------------===//
 
-def POP_BitcastOp : POPOp<"bitcast", [Pure,
-    DeclareOpInterfaceMethods<CastOpInterface>]> {
+def POP_BitcastOp : POPOp<"bitcast", [Pure]> {
   let summary = "scalar and simd bitcast";
   let description = [{
     Bitcast an integer or floating point value to an integer or floating point
@@ -496,6 +495,7 @@ def POP_BitcastOp : POPOp<"bitcast", [Pure,
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
   }];
   let hasFolder = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

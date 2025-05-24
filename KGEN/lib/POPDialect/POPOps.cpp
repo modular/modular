@@ -72,12 +72,9 @@ LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx,
 // BitcastOp
 //===----------------------------------------------------------------------===//
 
-bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
-  if (inputs.size() != 1 || outputs.size() != 1)
-    return false;
-
-  auto inputType = cast<SIMDType>(inputs.front());
-  auto outputType = cast<SIMDType>(outputs.front());
+LogicalResult BitcastOp::verify() {
+  auto inputType = getInput().getType();
+  auto outputType = getType();
 
   // First, check the input and output types must be of the same kind.
   // TODO: In theory we can support casting a scalar type to a vector type (e.g.
@@ -88,10 +85,11 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 
   // If neither dtype could be resolved, allow the cast.
   if (!inputDType || !outputDType)
-    return true;
+    return success();
 
-  ssize_t inputDTypeWidth = inputDType->getWidthInBits();
-  ssize_t outputDTypeWidth = outputDType->getWidthInBits();
+  TargetInfoAttr target = lookupTargetInfo(*this);
+  ssize_t inputDTypeWidth = inputDType->getWidthInBits(target);
+  ssize_t outputDTypeWidth = outputDType->getWidthInBits(target);
 
   // If we have a simd type, then the bitwidths must match.
   std::optional<int64_t> inputSize = 1, outputSize = 1;
@@ -101,15 +99,21 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
     outputSize = outputSimd.getResolvedSize();
     // If neither size could be resolved, allow the cast.
     if (!inputSize || !outputSize)
-      return true;
+      return success();
   }
 
-  if (inputDType->isBool() || outputDType->isBool())
-    return *inputSize == outputDTypeWidth * *outputSize ||
-           *outputSize == inputDTypeWidth * *inputSize;
-
-  // If the sizes do not match, then we cannot cast.
-  return inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize;
+  if (inputDType->isBool() || outputDType->isBool()) {
+    if (*inputSize == outputDTypeWidth * *outputSize ||
+        *outputSize == inputDTypeWidth * *inputSize) {
+      return success();
+    }
+  } else {
+    // If the sizes do not match, then we cannot cast.
+    if (inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize)
+      return success();
+  }
+  return emitOpError("input type ") << inputType << " and result type "
+                                    << outputType << " are cast incompatible";
 }
 
 //===----------------------------------------------------------------------===//

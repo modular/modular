@@ -1134,3 +1134,12 @@ kgen.func @noalias_cast(%arg0: !kgen.pointer<index>) {
   %0 = pop.noalias_pointer_cast %arg0 : <index>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @bitcast_scalar_index
+kgen.func @bitcast_scalar_index(%a: !pop.scalar<index>) {
+  // CHECK-NEXT: %[[R0:.+]] = pop.bitcast %arg0 : !pop.scalar<index> to !pop.scalar<ui64>
+  // CHECK-NEXT: %[[R1:.+]] = pop.bitcast %[[R0]] : !pop.scalar<ui64> to !pop.scalar<index>
+  %0 = pop.bitcast %a : !pop.scalar<index> to !pop.scalar<ui64>
+  %1 = pop.bitcast %0 : !pop.scalar<ui64> to !pop.scalar<index>
+  kgen.return
+}
