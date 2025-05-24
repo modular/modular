@@ -62,13 +62,6 @@ In addition to the end-to-end pipelines, there are many [examples](./examples/)
 that exercise various aspects of Modular platform. You can follow the
 instructions in the README for each example or notebook you want to run.
 
-### Notebooks
-
-Check out the [notebooks examples](./examples/notebooks/) for using MAX Engine
-🏎️ for models such as
-
-- [Roberta-pytorch](./examples/notebooks/roberta-python-pytorch.ipynb)
-
 ### Tutorials
 
 The [tutorials](./tutorials/) directory contains the "finished" code for

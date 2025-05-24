@@ -15,6 +15,7 @@ from .audio_generation import (
     AudioGenerationRequest,
     AudioGenerator,
     AudioGeneratorContext,
+    AudioGeneratorOutput,
     PipelineAudioTokenizer,
 )
 from .embeddings_generation import EmbeddingsGenerator
@@ -41,6 +42,7 @@ __all__ = [
     "AudioGenerationRequest",
     "AudioGenerator",
     "AudioGeneratorContext",
+    "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsResponse",
     "LogProbabilities",

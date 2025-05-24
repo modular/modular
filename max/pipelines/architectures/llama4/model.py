@@ -22,12 +22,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
@@ -351,7 +346,11 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         nn_model = Llama4(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
+        nn_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=False,  # We do not use vision weights
+        )
         self.state_dict = nn_model.state_dict()
 
         signals = Signals(

@@ -73,13 +73,31 @@ fn test_call(mut python: Python) -> String:
         return String(e)
 
 
-def test_python_int():
+def test_int_conversion():
     var py_int = Python.int(PythonObject("123"))
     # TODO: use assert_equal once we have parametric raises in __eq__.
     assert_true(py_int == PythonObject(123))
 
     with assert_raises(contains="invalid literal for int()"):
         _ = Python.int(PythonObject("foo"))
+
+
+def test_float_conversion():
+    var math = Python.import_module("math")
+
+    var f = Python.float(PythonObject("123.45"))
+    assert_true(f == PythonObject(123.45))
+
+    f = Python.float(PythonObject("inf"))
+    assert_true(f == math.inf)
+
+    with assert_raises(contains="could not convert string to float"):
+        _ = Python.float(PythonObject("foo"))
+
+
+def test_str_conversion():
+    var py_str = Python.str(PythonObject(123))
+    assert_true(py_str == PythonObject("123"))
 
 
 def main():
@@ -112,4 +130,6 @@ def main():
 
     assert_equal(test_execute_python_string(python), "ab")
 
-    test_python_int()
+    test_int_conversion()
+    test_float_conversion()
+    test_str_conversion()

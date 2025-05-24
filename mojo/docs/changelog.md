@@ -111,25 +111,25 @@ Changes to Python-Mojo interoperability:
   `Int`, so users must explicitly convert to a mojo `Int` if they need one (and
   must handle the exception if the conversion fails, e.g. due to overflow).
 
-- `PythonObject` no longer implements `Stringable`. Instead, the
-  `PythonObject.__str__` method now returns a Python `str` object and can raise.
-  The new `Python.str` function can also be used to convert an arbitrary
-  `PythonObject` to a Python `str` object.
-
-- `PythonObject` no longer implements the `KeyElement` trait. Since Python
-  objects may not be hashable, and even if they are, could theoretically raise
-  in the `__hash__` method, `PythonObject` cannot conform to `Hashable`.
-  This has no effect on accessing Python `dict` objects with `PythonObject`
-  keys, since `__getitem__` and `__setitem__` should behave correctly and raise
-  as needed. Two overloads of the `Python.dict` factory function have been added
-  to allow constructing dictionaries from a list of key-value tuples and from
-  keyword arguments.
-
-- `PythonObject` no longer implements `EqualityComparable`, since the
-  `PythonObject.__eq__` and `PythonObject.__ne__` methods need to return other
-  `PythonObject` values to support rich comparisons. Code that previously
-  compared `PythonObject` values should be wrapped in `Bool(..)` to perform the
-  fallible conversion explicitly: `if Bool(obj1 == obj2): ...`.
+- `PythonObject` no longer implements the following traits:
+  - `Stringable`. Instead, the `PythonObject.__str__` method now returns a
+    Python `str` object and can raise. The new `Python.str` function can also be
+    used to convert an arbitrary `PythonObject` to a Python `str` object.
+  - `KeyElement`. Since Python objects may not be hashable, and even if they
+    are, could theoretically raise in the `__hash__` method, `PythonObject`
+    cannot conform to `Hashable`. This has no effect on accessing Python `dict`
+    objects with `PythonObject` keys, since `__getitem__` and `__setitem__`
+    should behave correctly and raise as needed. Two overloads of the
+    `Python.dict` factory function have been added to allow constructing
+    dictionaries from a list of key-value tuples and from keyword arguments.
+  - `EqualityComparable`. The `PythonObject.{__eq__, __ne__}` methods need to
+    return other `PythonObject` values to support rich comparisons.
+    Code that previously compared `PythonObject` values should be wrapped in
+    `Bool(..)` to perform the fallible conversion explicitly:
+    `if Bool(obj1 == obj2): ...`.
+  - `Floatable`. An explicit, raising constructor is added to `SIMD` to allow
+    constructing `Float64` values from `PythonObject` values that implement
+    `__float__`.
 
 - `String` and `Bool` now implement `ConvertibleFromPython`.
 
@@ -142,10 +142,40 @@ Changes to Python-Mojo interoperability:
   by Mojo types that can be constructed by converting from a `PythonObject`.
   This is the reverse operation of the `PythonConvertible` trait.
 
-- Added `UnsafePointer` initializer for downcasting from a `PythonObject`.
+- `PythonObject(alloc=<value>)` is a new constructor that can be used to
+  directly store Mojo values in Python objects.
 
-  This is used to get a pointer to the underlying Mojo value that was stored
-  into a Python object.
+  This initializer will fail if the type of the provided Mojo value has not
+  previously had a corresponding Python 'type' object globally registered using
+  `PythonModuleBuilder.add_type[T]()`.
+
+- `PythonObject` has new methods for downcasting to a pointer to a contained
+  Mojo value, for use in Python/Mojo interop.
+
+  ```mojo
+  struct Person:
+      var name: String
+
+  fn greet(obj: PythonObject) raises:
+    var person = obj.downcast_value_ptr[Person]()
+
+    print("Hello ", person[].name, "from Mojo🔥!")
+  ```
+
+  - `PythonObject.downcast_value_ptr[T]()` checks if the object is a wrapped
+    instance of the Mojo type `T`, and if so, returns an `UnsafePointer[T]`.
+    Otherwise, an exception is raised.
+
+  - `PythonObject.unchecked_downcast_value_ptr[T]()` unconditionally
+    returns an `UnsafePointer[T]` with any runtime type checking. This is useful
+    when using Python/Mojo interop to optimize an inner loop and minimizing
+    overhead is desirable.
+
+    Also added equivalent `UnsafePointer` initializer for downcasting from a
+    `PythonObject`.
+
+- The `Python.is_type(x, y)` static method has been removed. Use the
+  expression `x is y` instead.
 
 - `os.abort(messages)` no longer supports generic variadic number of `Writable`
   messages.  While this API was high-level and convenient, it generates a lot of
@@ -153,6 +183,18 @@ Changes to Python-Mojo interoperability:
   message.  We now no longer need to generate a bunch of bloated IR, and
   instead, callers must create the `String` on their side before calling
   `os.abort(message)`.
+
+- The function `atof` has been entirely rewritten as it produced incorrect
+  results for very low and very high exponents.
+  It now works correctly for strings with less than
+  19 digits left of the `e`. For example `1.1385616158185648648648648648616186186e-3`
+  won't work, and will raise an error. Anything that does
+  not produce an error is now garanteed to be correct.
+  While the current implementation is not the fastest, it's based on the paper
+  [Number Parsing at a Gigabyte per Second](https://arxiv.org/abs/2101.11408) by
+  Daniel Lemire. So with a bit of effort to
+  pinpoints the slow parts, we can easily have state of the
+  art performance in the future.
 
 ### Tooling changes
 
@@ -174,3 +216,6 @@ Changes to Python-Mojo interoperability:
   products incorrect results for large inputs.
 - [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
   False Positive "Uninitialized Value".
+- [#4677](https://github.com/modular/modular/issues/4677),
+  [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
+  unsigned `gt` and `le` comparisions.

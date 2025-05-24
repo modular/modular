@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, Optional
 from collections.string import StaticString
 from os import abort
 from pathlib import Path

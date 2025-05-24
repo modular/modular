@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import Optional
 from collections.counter import Counter
 
 from testing import assert_equal, assert_false, assert_raises, assert_true

@@ -138,7 +138,6 @@ r = benchmark.run[sleeper](1, 2, 3, 4)
 Note that the min total time will take precedence over max iterations
 """
 
-from collections import List
 from time import time_function
 
 from utils.numerics import max_finite, min_finite

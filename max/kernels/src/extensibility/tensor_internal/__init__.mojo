@@ -42,6 +42,4 @@ from .managed_tensor_slice import (
     trace_slice_arg,
     view_copy_impl,
 )
-from .tensor import Tensor
-from .tensor_shape import TensorShape
-from .tensor_spec import RuntimeTensorSpec, TensorSpec
+from .tensor_spec import RuntimeTensorSpec

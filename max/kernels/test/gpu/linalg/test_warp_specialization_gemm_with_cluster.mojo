@@ -54,12 +54,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
-    tile_layout_k_major,
-)
+from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
 from linalg.matmul_tile_scheduler import MatmulSchedule

@@ -50,7 +50,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 class IdentityPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, str],
+    PipelineTokenizer[TokenGeneratorContext, str, TokenGeneratorRequest],
 ):
     @property
     def eos(self) -> int:
@@ -77,7 +77,7 @@ class IdentityPipelineTokenizer(
 
 
 class PreTrainedPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, np.ndarray]
+    PipelineTokenizer[TokenGeneratorContext, np.ndarray, TokenGeneratorRequest],
 ):
     def __init__(
         self,
@@ -145,7 +145,9 @@ async def run_with_default_executor(fn, *args):
     return await loop.run_in_executor(None, fn, *args)
 
 
-class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
+class TextTokenizer(
+    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
     def __init__(
@@ -157,6 +159,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
+        **unused_kwargs,
     ) -> None:
         self.model_path = model_path
         self.max_length = max_length
@@ -369,7 +372,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
 
 
 class TextAndVisionTokenizer(
-    PipelineTokenizer[TextAndVisionContext, np.ndarray]
+    PipelineTokenizer[TextAndVisionContext, np.ndarray, TokenGeneratorRequest],
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -381,6 +384,7 @@ class TextAndVisionTokenizer(
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
+        **unused_kwargs,
     ) -> None:
         self.model_path = model_path
         self.max_length = max_length

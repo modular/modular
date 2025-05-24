@@ -14,7 +14,7 @@
 
 import subprocess
 import tempfile
-from collections import Optional
+
 from collections.string import StaticString
 from pathlib import Path
 from sys.info import _get_arch

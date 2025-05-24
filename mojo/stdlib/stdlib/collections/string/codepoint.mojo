@@ -40,7 +40,7 @@ var s = String(c)  # "A"
 ```
 """
 
-from collections import Optional
+
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros

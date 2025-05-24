@@ -22,12 +22,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
@@ -473,6 +468,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
+                strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
             )
 
             self.state_dict = nn_model.state_dict()
@@ -515,6 +511,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
+                strict=False,  # TODO(MODELS-550) `rope_freqs.weight` not used
             )
 
             self.state_dict = nn_model.state_dict()

@@ -13,9 +13,21 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
+from __future__ import annotations
+
 import enum
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Protocol,
+    TypeVar,
+    runtime_checkable,
+)
+
+if TYPE_CHECKING:
+    import torch
 
 from .response import TextGenerationStatus
 
@@ -50,7 +62,7 @@ class AudioGenerationRequest:
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
-    voice: str
+    voice: str | None = None
     """
     The voice to use for audio generation.
     """
@@ -75,6 +87,12 @@ AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 TokenizerEncoded = TypeVar("TokenizerEncoded")
 
 DecoderOutput = TypeVar("DecoderOutput")
+
+
+@dataclass(frozen=True)
+class AudioGeneratorOutput:
+    audio_data: torch.Tensor
+    metadata: dict[str, Any]
 
 
 @runtime_checkable
@@ -210,4 +228,9 @@ class AudioGenerator(Generic[AudioGeneratorContext, DecoderOutput], Protocol):
         Args:
             context (AudioGeneratorContext): Finished context.
         """
+        ...
+
+    @property
+    def decoder_sample_rate(self) -> int:
+        """The sample rate of the decoder."""
         ...

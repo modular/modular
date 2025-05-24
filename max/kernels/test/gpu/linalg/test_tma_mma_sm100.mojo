@@ -152,8 +152,11 @@ fn tma_umma_kernel[
     ]()
     alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
     alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
-    alias bSBO = b_canonical_layout[0].stride[1].value() * sizeof[b_type]()
-    alias bLBO = b_canonical_layout[1].stride[1].value() * sizeof[b_type]()
+    alias b_stride01 = b_canonical_layout[0].stride[1].value()
+    alias b_stride11 = b_canonical_layout[1].stride[1].value()
+    alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
 
     adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
@@ -167,6 +170,7 @@ fn tma_umma_kernel[
         a_type,
         b_type,
         Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        transpose_b=transpose_b,
     ]()
 
     for i in range(num_iters):
@@ -198,7 +202,7 @@ fn tma_umma_kernel[
                 @parameter
                 for j in range(1, BK // mma_shape[2]):
                     adesc += mma_shape[2] * sizeof[a_type]()
-                    bdesc += mma_shape[2] * sizeof[b_type]()
+                    bdesc += b_k_stride
                     mma[c_scale=1](adesc, bdesc, tmem_addr, idesc)
             else:
 
@@ -206,7 +210,7 @@ fn tma_umma_kernel[
                 for j in range(BK // mma_shape[2]):
                     mma[c_scale=1](adesc, bdesc, tmem_addr, idesc)
                     adesc += mma_shape[2] * sizeof[a_type]()
-                    bdesc += mma_shape[2] * sizeof[b_type]()
+                    bdesc += b_k_stride
 
             mma_arrive(mma_mbar)
 
@@ -395,25 +399,20 @@ def test_tma_umma[
 
 def main():
     with DeviceContext() as ctx:
-        test_tma_umma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 64),
-            Index(64, 128, 64),
-            Index(64, 128, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            transpose_b=True,
-        ](ctx)
-        test_tma_umma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64 * 2, 128 * 2, 64 * 2),
-            Index(64, 128, 64),
-            Index(64, 128, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            transpose_b=True,
-        ](ctx)
+
+        @parameter
+        for size_scale in range(1, 3):
+
+            @parameter
+            for transpose_b in range(0, 2):
+                test_tma_umma[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    Index(64 * size_scale, 128 * size_scale, 64 * size_scale),
+                    Index(64, 128, 64),
+                    Index(64, 128, 16),
+                    a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    transpose_b=transpose_b,
+                ](ctx)

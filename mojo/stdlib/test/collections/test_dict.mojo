@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import Dict, KeyElement, Optional
+from collections import KeyElement
 from collections.dict import OwnedKwargsDict
 from os import abort
 

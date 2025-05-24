@@ -286,6 +286,10 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         )
         return model
 
+    # For text-only models, we should be using all the weights.  This is
+    # overridden for Gemma3 multi-modal.
+    _strict_state_dict_loading = True
+
     def _build_graph(self):
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
@@ -326,7 +330,11 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         nn_model = Gemma3(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
+        nn_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=self._strict_state_dict_loading,
+        )
         self.state_dict = nn_model.state_dict(auto_initialize=False)
 
         with Graph(

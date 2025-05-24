@@ -14,5 +14,6 @@ modular_py_library(
         requirement("psutil"),
         requirement("sentinel"),
         requirement("pyzmq"),
+        requirement("torch"),
     ],
 )

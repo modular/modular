@@ -16,5 +16,6 @@ modular_py_library(
         requirement("uvloop"),
         requirement("psutil"),
         requirement("pyzmq"),
+        requirement("torch"),
     ],
 )

@@ -19,7 +19,6 @@ and explicitly extract the value to get it out.
 Examples:
 
 ```mojo
-from collections import Optional
 var a = Optional(1)
 var b = Optional[Int](None)
 if a:
@@ -81,7 +80,6 @@ struct Optional[T: Copyable & Movable](
     Examples:
 
     ```mojo
-    from collections import Optional
     var a = Optional(1)
     var b = Optional[Int](None)
     if a:
@@ -425,7 +423,6 @@ struct Optional[T: Copyable & Movable](
         Copy the value of an `Optional[Pointer[_]]`
 
         ```mojo
-        %# from collections import Optional
         var data = String("foo")
         var opt = Optional(Pointer(to=data))
         var opt_owned: Optional[String] = opt.copied()

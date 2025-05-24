@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from collections.string import StaticString
 from pathlib import Path
 from sys.ffi import _find_dylib

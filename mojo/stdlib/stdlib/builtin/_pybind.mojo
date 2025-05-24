@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.identifiable import TypeIdentifiable
-from collections import Optional
+
 from sys import alignof, sizeof
 
 import python._cpython as cp
@@ -29,7 +29,6 @@ from python._bindings import (  # Imported for use by the compiler
     PythonModuleBuilder,
     PythonTypeBuilder,
     _get_type_name,
-    check_argument_type,
     check_arguments_arity,
 )
 from python._cpython import (
@@ -65,7 +64,7 @@ fn fail_initialization(owned err: Error) -> PythonObject:
 
 
 fn gen_pytype_wrapper[
-    T: Defaultable & Representable & TypeIdentifiable,
+    T: Movable & Defaultable & Representable & TypeIdentifiable,
     name: StaticString,
 ](module: PythonObject) raises:
     # TODO(MOCO-1301): Add support for member method generation.
@@ -98,7 +97,7 @@ fn check_and_get_arg[
     py_args: TypedPythonObject["Tuple"],
     index: Int,
 ) raises -> UnsafePointer[T]:
-    return check_argument_type[T](func_name, py_args[index])
+    return py_args[index].downcast_value_ptr[T](func=func_name)
 
 
 # NOTE:

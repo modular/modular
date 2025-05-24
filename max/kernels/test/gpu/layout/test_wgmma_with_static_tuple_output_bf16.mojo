@@ -95,10 +95,8 @@ fn wgmma_kernel_ss[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         wgmma_fence_aligned()
 

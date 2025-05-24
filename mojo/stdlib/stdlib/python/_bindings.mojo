@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.identifiable import TypeIdentifiable
-from collections import Optional
 from collections.string.string_slice import get_static_string
 from os import abort
 from sys.ffi import c_int, _Global
@@ -51,7 +50,39 @@ fn _init_python_type_objects() -> Dict[StaticString, TypedPythonObject["Type"]]:
     return Dict[StaticString, TypedPythonObject["Type"]]()
 
 
-fn get_py_type_object[
+fn _register_py_type_object(
+    type_id: StaticString,
+    owned type_obj: TypedPythonObject["Type"],
+) raises:
+    """Register a Python type object for the identified Mojo type.
+
+    The provided Python type object describes how a wrapped Mojo value can
+    be used from within Python code.
+
+    Args:
+        type_id: The unique type id of a Mojo type.
+        type_obj: The Python type object that binds the Mojo type identified
+          by `type_id`.
+
+    Raises:
+        If a Python type object has already been registered in the current
+        session for the provided type id.
+    """
+    var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
+
+    if type_id in type_dict[]:
+        raise Error(
+            (
+                "Error building multiple Python type objects bound to"
+                " Mojo type with id: "
+            ),
+            type_id,
+        )
+
+    type_dict[][type_id] = type_obj^
+
+
+fn lookup_py_type_object[
     T: TypeIdentifiable
 ]() raises -> TypedPythonObject["Type"]:
     """Retrieve a reference to the unique Python type describing Python objects
@@ -101,7 +132,7 @@ struct PyMojoObject[T: AnyType]:
 
 
 fn default_tp_new_wrapper[
-    T: Defaultable
+    T: Defaultable & Movable
 ](
     subtype: UnsafePointer[PyTypeObject],
     args: TypedPythonObject["Tuple"],
@@ -115,31 +146,14 @@ fn default_tp_new_wrapper[
 
     var cpython = Python().cpython()
 
-    # Allocates and zero-initializes the new object.
-    # For some objects, zeroed values are valid. But that isn't guaranteed
-    # for any given Mojo object, so we further call `T`'s default initializer.
-    var py_self = cpython.PyType_GenericAlloc(subtype, 0)
-
-    # If we failed to allocate, return NULL.
-    if not py_self.unsized_obj_ptr:
-        return py_self
-
     try:
         if len(args) != 0 or keyword_args != PyObjectPtr():
             raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
 
-        var obj_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[
-            T
-        ]()
-
-        # Call the user-provided initialization function on uninit memory.
-        __get_address_as_uninit_lvalue(obj_ptr.address) = T()
-        return py_self
+        # Create a new Python object with a default initialized Mojo value.
+        return PythonObject._unsafe_alloc(subtype, T()).steal_data()
 
     except e:
-        # Free the object memory we just allocated but failed to initialize.
-        cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
-
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
         cpython.PyErr_SetString(
@@ -150,7 +164,8 @@ fn default_tp_new_wrapper[
 
 
 fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
-    var self_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[T]()
+    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
@@ -166,7 +181,8 @@ fn tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
 fn tp_repr_wrapper[
     T: Defaultable & Representable
 ](py_self: PyObjectPtr) -> PyObjectPtr:
-    var self_ptr: UnsafePointer[T] = py_self.unchecked_cast_to_mojo_value[T]()
+    var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
+    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
 
     var repr_str: String = repr(self_ptr[])
 
@@ -215,7 +231,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Defaultable & Representable & TypeIdentifiable
+        T: Movable & Defaultable & Representable & TypeIdentifiable
     ](mut self, type_name: StaticString) -> ref [
         self.type_builders
     ] PythonTypeBuilder:
@@ -781,6 +797,15 @@ struct PythonTypeBuilder(Movable, Copyable):
 
     This builder is used to declare method bindings for a Python type, and then
     create the type binding.
+
+    Finalizing builder created with `PythonTypeObject.bind[T]()` will globally
+    register the resulting Python 'type' object as the single canonical type
+    object for the Mojo type `T`. Subsequent attempts to register a Python type
+    for `T` will raise an exception.
+
+    Registering a Python type object for `T` is necessary to be able to
+    construct a `PythonObject` from an instance of `T`, or to downcast an
+    existing `PythonObject` to a pointer to the inner `T` value.
     """
 
     var type_name: StaticString
@@ -810,7 +835,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
     @staticmethod
     fn bind[
-        T: Defaultable & Representable & TypeIdentifiable
+        T: Movable & Defaultable & Representable & TypeIdentifiable
     ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
@@ -877,18 +902,7 @@ struct PythonTypeBuilder(Movable, Copyable):
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
         if type_id := self._type_id:
-            var type_dict = MOJO_PYTHON_TYPE_OBJECTS.get_or_create_ptr()
-
-            if type_id[] in type_dict[]:
-                raise Error(
-                    (
-                        "Error building multiple Python type objects bound to"
-                        " Mojo type with id: "
-                    ),
-                    type_id[],
-                )
-
-            type_dict[][type_id[]] = typed_type_obj
+            _register_py_type_object(type_id[], typed_type_obj)
 
         return typed_type_obj^
 
@@ -1524,31 +1538,6 @@ fn _get_type_name(obj: PythonObject) raises -> String:
     )
 
     return String(actual_type_name)
-
-
-fn check_argument_type[
-    T: TypeIdentifiable
-](func_name: StaticString, obj: PythonObject) raises -> UnsafePointer[T]:
-    """Raise an error if the provided Python object does not contain a wrapped
-    instance of the Mojo `T` type.
-    """
-
-    var opt: Optional[UnsafePointer[T]] = obj.py_object.try_cast_to_mojo_value[
-        T
-    ]()
-
-    if not opt:
-        raise Error(
-            String.format(
-                "TypeError: {}() expected Mojo '{}' type argument, got '{}'",
-                func_name,
-                T.TYPE_ID,
-                _get_type_name(obj),
-            )
-        )
-
-    # SAFETY: We just validated that this Optional is not empty.
-    return opt.unsafe_take()
 
 
 fn _pluralize(
