@@ -303,7 +303,7 @@ struct PythonModuleBuilder:
 
     Example:
         ```mojo
-        from python._bindings import PythonModuleBuilder
+        from python.bindings import PythonModuleBuilder
 
         var builder = PythonModuleBuilder("my_module")
         builder.def_function[my_func]("my_func", "Documentation for my_func")
