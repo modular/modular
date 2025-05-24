@@ -12,6 +12,7 @@
 #define KGEN_KGENDIALECT_KGENDTYPE_H
 
 #include "Support/ForwardDecls.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/ML/DType.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
@@ -23,6 +24,7 @@ namespace M::KGEN {
 class KGENDType : public DType {
 public:
   using DType::DType;
+  using DType::getWidthInBits;
 
   enum ExtraCases : uint8_t {
     // Represents an address (e.g. a pointer). The size of the address is not
@@ -50,6 +52,12 @@ public:
   /// Returns true if the type is any valid integer representation.
   constexpr bool isIntLike() const {
     return isIndex() || isInt() || isBool() || isAddress();
+  }
+
+  ssize_t getWidthInBits(TargetInfoAttr target) const {
+    if (isAddress() || isIndex())
+      return target ? target.resolveIndexBitWidth() : 64;
+    return DType::getWidthInBits();
   }
 
   /// Return the element type for it's string representation.

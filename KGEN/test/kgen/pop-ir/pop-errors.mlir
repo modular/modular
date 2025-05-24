@@ -27,7 +27,7 @@ kgen.func @pop_select_simd(
 // -----
 
 kgen.generator @bitcast_scalar(%a: !pop.scalar<f32>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!pop.scalar<f32>' and result type '!pop.scalar<si8>' are cast incompatible}}
+  // expected-error @below {{'pop.bitcast' op input type '!pop.scalar<f32>' and result type '!pop.scalar<si8>' are cast incompatible}}
   %0 = pop.bitcast %a : !pop.scalar<f32> to !pop.scalar<si8>
   kgen.return
 }
@@ -35,7 +35,7 @@ kgen.generator @bitcast_scalar(%a: !pop.scalar<f32>) {
 // -----
 
 kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!pop.simd<4, f32>' and result type '!pop.simd<8, f32>' are cast incompatible}}
+  // expected-error @below {{'pop.bitcast' op input type '!pop.simd<4, f32>' and result type '!pop.simd<8, f32>' are cast incompatible}}
   %0 = pop.bitcast %a : !pop.simd<4, f32> to !pop.simd<8, f32>
   kgen.return
 }
@@ -43,7 +43,7 @@ kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
 // -----
 
 kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
-  // expected-error @below {{'pop.bitcast' op operand type '!pop.simd<4, f32>' and result type '!pop.simd<4, f64>' are cast incompatible}}
+  // expected-error @below {{'pop.bitcast' op input type '!pop.simd<4, f32>' and result type '!pop.simd<4, f64>' are cast incompatible}}
   %0 = pop.bitcast %a : !pop.simd<4, f32> to !pop.simd<4, f64>
   kgen.return
 }
