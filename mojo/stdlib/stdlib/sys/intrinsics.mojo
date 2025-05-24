@@ -141,10 +141,10 @@ fn gather[
     corresponding lanes of the `passthrough` operand.
 
     In general, for some vector of pointers `base`, mask `mask`, and passthrough
-    `pass` a call of the form:
+    `passthrough` a call of the form:
 
-    ```python
-    gather(base, mask, pass)
+    ```mojo
+    result = gather(base, mask, passthrough)
     ```
 
     is equivalent to the following sequence of scalar loads in C++:
@@ -237,14 +237,14 @@ fn scatter[
     Scatter with overlapping addresses is guaranteed to be ordered from
     least-significant to most-significant element.
 
-    In general, for some vector %value, vector of pointers %base, and mask
-    %mask instructions of the form:
+    In general, for some vector `value`, vector of pointers `base`, and mask
+    `mask` a call of the form:
 
-    ```mlir
-    %0 = pop.simd.scatter %value, %base[%mask] : !pop.simd<N, type>
+    ```mojo
+    scatter(value, base, mask)
     ```
 
-    is equivalent to the following sequence of scalar loads in C++:
+    is equivalent to the following sequence of scalar stores in C++:
 
     ```cpp
     for (int i = 0; i < N; i++)
