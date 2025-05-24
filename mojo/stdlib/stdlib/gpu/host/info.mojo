@@ -1495,7 +1495,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     elif target_arch == "90" or target_arch == "90a":
         return H100
     elif target_arch == "100" or target_arch == "100a":
-        return B100
+        # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
+        # architecture wise are different. We need to differentiate between them here.
+        return B200
     elif target_arch == "120" or target_arch == "120a":
         return RTX5090
     elif (

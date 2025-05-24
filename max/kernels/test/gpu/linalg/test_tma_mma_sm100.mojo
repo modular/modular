@@ -471,7 +471,7 @@ fn tma_umma_kernel_ts[
     tcgen05_load_wait()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock()
+        tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     c_gmem_warp_tile = c.tile[mma_shape[0] // 4, mma_shape[1]](warp_id, 0)
