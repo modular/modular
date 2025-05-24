@@ -237,10 +237,8 @@ fn owned_variadic_pack[*Ts: Writable](owned *pack: *Ts):
 
     # TODO: Test mutation of the value not just reading of the value.
     @parameter
-    fn process[T: Writable](a: T):
-        print("hello", a)
-
-    pack.each[process]()
+    for i in range(pack.__len__()):
+        print("hello", pack[i])
 
     print("owned_variadic_pack done")
 
@@ -282,10 +280,8 @@ fn inout_variadic_pack[*Ts: Writable](mut*pack: *Ts):
 
     # TODO: Test mutation of the value not just reading of the value.
     @parameter
-    fn process[T: Writable](a: T):
-        print("hello", a)
-
-    pack.each[process]()
+    for i in range(pack.__len__()):
+        print("hello", pack[i])
 
 
 fn test_inout_variadic_pack():
@@ -317,10 +313,8 @@ fn borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
     print("-- testing read-only variadic pack with", len(pack), "elements")
 
     @parameter
-    fn process[T: Writable](a: T):
-        print("hello", a)
-
-    pack.each[process]()
+    for i in range(pack.__len__()):
+        print("hello", pack[i])
 
 
 fn test_borrowed_variadic_pack():
@@ -350,10 +344,9 @@ fn sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
     var result = 0
 
     @parameter
-    fn process[T: Intable](a: T):
-        result += Int(a)
+    for i in range(pack.__len__()):
+        result += Int(pack[i])
 
-    pack.each[process]()
     return result
 
 
