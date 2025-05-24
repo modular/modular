@@ -254,16 +254,18 @@ ClosureLifter::ClosureInitData::ClosureInitData(
 ///
 ///   ... now the original references to "C" and "D" are referencing parameters
 ///   in this scope rather than the parent scope it was lifted from.
-static void
+/// Returns a map from the original captured parameter to the struct extraction
+/// expression so that the mapping can be reused in the signature remapping.
+static DenseMap<StringAttr, TypedAttr>
 unpackCapturesInto(ImplicitLocOpBuilder &b, Region &region,
                    ClosureLifter::ClosureInitData &closureInitData) {
+  DenseMap<StringAttr, TypedAttr> fromRefToExtract;
   // Only structs need unpacking.
   if (closureInitData.getCapturedParamDecls().size() <= 1)
-    return;
+    return fromRefToExtract;
   ParamDeclRefAttr selfParamRef =
       ParamDeclRefAttr::get(closureInitData.getSelfParam());
   b.setInsertionPointToStart(&region.front());
-  SmallVector<TypedAttr> values;
   for (auto [index, paramCapture] :
        llvm::enumerate(closureInitData.getCapturedParamDecls())) {
     TypedAttr extractedMember = StructExtractAttr::get(
@@ -271,8 +273,64 @@ unpackCapturesInto(ImplicitLocOpBuilder &b, Region &region,
     b.create<ParamDeclareOp>(
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
         extractedMember);
-    values.push_back(ParamDeclRefAttr::get(paramCapture));
+    fromRefToExtract[paramCapture.getName()] = extractedMember;
   }
+  return fromRefToExtract;
+}
+
+/// Given
+/// (1) FuncType: the original closure method signature
+/// (2) fromRefToExtract: a map from parameter names to a struct extract
+/// expression Return a new function type that replaces captured parameters with
+/// struct extract expressions. The region is also provided so that rebinds can
+/// be emitted to adapt to the different representations of the same type.
+FunctionType
+remapFuncType(ImplicitLocOpBuilder &b, Region &region, FunctionType oldFuncType,
+              DenseMap<StringAttr, TypedAttr> const &fromRefToExtract) {
+  // We need to replace the captured parameters in the arguments of the region
+  // with the extract expressions
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamDeclRefAttr attr) -> Attribute {
+    if (fromRefToExtract.count(attr.getName())) {
+      return fromRefToExtract.at(attr.getName());
+    }
+    return attr;
+  });
+
+  // Remap argument types and add rebind adaptors.
+  for (auto arg : region.getArguments()) {
+    Type oldType = arg.getType();
+    Type newType = replacer.replace(arg.getType());
+    if (newType != oldType) {
+      arg.setType(newType);
+      Value newValue = b.create<KGEN::RebindOp>(oldType, arg);
+      arg.replaceAllUsesExcept(newValue, newValue.getDefiningOp());
+    }
+  }
+
+  // Remap result types and add rebind adaptors.
+  SmallVector<Type> resultTypes =
+      llvm::map_to_vector(oldFuncType.getResults(), [&](Type type) -> Type {
+        return replacer.replace(type);
+      });
+  region.walk([&](ReturnOp op) {
+    b.setInsertionPoint(op);
+    for (auto [index, operand] : llvm::enumerate(op.getOperands())) {
+      Type oldType = operand.getType();
+      Type newType = resultTypes[index];
+      if (newType != oldType) {
+        Value newValue = b.create<KGEN::RebindOp>(newType, operand);
+        operand.replaceAllUsesExcept(newValue, newValue.getDefiningOp());
+      }
+    }
+  });
+
+  return FunctionType::get(b.getContext(),
+                           llvm::map_to_vector(region.getArguments(),
+                                               [&](BlockArgument arg) -> Type {
+                                                 return arg.getType();
+                                               }),
+                           resultTypes);
 }
 
 ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
@@ -365,7 +423,10 @@ void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
     }
   }
   b.create<KGEN::ReturnOp>(ValueRange{});
-  unpackCapturesInto(b, moveGenerator.getBodyRegion(), closureInitData);
+  auto fromParamToExtractExpr =
+      unpackCapturesInto(b, moveGenerator.getBodyRegion(), closureInitData);
+  moveGenerator.setFunctionType(remapFuncType(
+      b, moveGenerator.getBodyRegion(), funcType, fromParamToExtractExpr));
 
   // Map from synthesized function to abstracted symbols.
   SmallVector<TypedAttr> boundParams;
@@ -425,7 +486,9 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
       boundParams);
   Region &body = liftedWrapper.getBodyRegion();
   body.takeBody(region);
-  unpackCapturesInto(b, body, closureInitData);
+  auto fromParamToExtractExpr = unpackCapturesInto(b, body, closureInitData);
+  liftedWrapper.setFunctionType(
+      remapFuncType(b, body, funcType, fromParamToExtractExpr));
 
   // The closure symbol does not have the implicit argument; remove it
   argTypes.erase(argTypes.begin());
@@ -568,8 +631,8 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
     }
   }
 
-  // TODO (MOCO-1660): Scan locations for captured parameters when in a debug
-  // build.
+  for (auto use : capturedUses)
+    capturedParamDecls.insert(ParamDeclAttr::get(use.getName(), use.getType()));
 
   // Add all parameter uses that were defined above to the capture set.
   for (ParamDeclRefAttr paramCapture :
@@ -578,6 +641,10 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType());
     capturedParamDecls.insert(decl);
   }
+
+  // TODO (MOCO-1660): Scan locations for captured parameters when in a debug
+  // build.
+
   return capturedParamDecls;
 }
 
