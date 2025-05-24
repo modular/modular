@@ -60,12 +60,7 @@ are valid or either representation:
   flags, so it is important that it is fast.  Being the top bit allows hardware
   to just check to see if the 3rd word is negative.
 
-- `UNUSED_FLAG` is the next bit, which previously indicated whether if indirect
-  string is pointing to static constant data. It has been noticed later on that
-  we could get the same information by checking that the pointer is non-null
-  and the capacity of the string is 0. This is because if we point to static
-  constant data, the capacity is always null to force reallocation.
-  Thus this flag is now unused. I may be used later on for other purposes.
+- `UNUSED_FLAG` is the next bit, which is unused for now.
 
 - `FLAG_HAS_NUL_TERMINATOR` is the next bit, which indicates if the string is
   known to have an accessible "NUL" byte just beyond its declared length.  This

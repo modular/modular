@@ -1801,7 +1801,7 @@ struct String(
         Returns:
             True if the string is a static constant, False otherwise.
         """
-        return (self._capacity_or_data.get_capacity() == 0) and Bool(
+        return (self._capacity_or_data.get_capacity() == 0) & Bool(
             self._ptr_or_data
         )
 
