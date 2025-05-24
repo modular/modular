@@ -78,6 +78,20 @@ fn is_true[
 
 
 @always_inline
+fn is_true(value: Bool) -> Int:
+    """Get a bitmask of whether the value is `True`.
+
+    Args:
+        value: The value to check.
+
+    Returns:
+        A bitmask filled with `1` if the value is `True`, filled with `0`
+        otherwise.
+    """
+    return Int(is_true[DType.index](value))
+
+
+@always_inline
 fn is_false[
     dtype: DType, size: Int = 1
 ](value: SIMD[DType.bool, size]) -> SIMD[dtype, size]:

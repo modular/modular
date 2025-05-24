@@ -20,6 +20,7 @@ from sys.intrinsics import likely, unlikely
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
 from bit import bit_width, count_leading_zeros
+from bit._mask import is_true
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
@@ -59,7 +60,7 @@ fn next_power_of_two_int_v3(val: Int) -> Int:
 fn next_power_of_two_int_v4(val: Int) -> Int:
     return 1 << (
         (bitwidthof[Int]() - count_leading_zeros(val - 1))
-        & -Int(likely(val > 1))
+        & is_true(likely(val > 1))
     )
 
 
