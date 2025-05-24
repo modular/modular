@@ -9,8 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
@@ -203,13 +203,13 @@ struct StmtParser : public ParserBase {
 
   // Expression emission.
 
-  ExprEmitter getEmitter() {
-    return ExprEmitter(*curDeclScope, builder, varDeclCursor);
+  IREmitter getEmitter() {
+    return IREmitter(*curDeclScope, builder, varDeclCursor);
   }
 
   /// Get an expression emitter for a parameter expression.
-  ExprEmitter getParamEmitter(ExprContext context) {
-    return ExprEmitter(*curDeclScope, context);
+  IREmitter getParamEmitter(ExprContext context) {
+    return IREmitter(*curDeclScope, context);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -888,7 +888,7 @@ static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
 /// Inject a call to a special method that the debugger stops at when
 /// supporting exception/error breakpoints.
 static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
-                                                 ExprEmitter &&emitter,
+                                                 IREmitter &&emitter,
                                                  ASTDecl &declContext,
                                                  llvm::SMLoc loc,
                                                  ExprNode *node) {
@@ -1736,7 +1736,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   exitCallOperands.add({PValue(UnknownAttr::get(errorType)), contextExp});
   PValue conditionalExit;
   if (inExceptRegion && hasExitMethod) {
-    ExprEmitter exitEmitter = getEmitter();
+    IREmitter exitEmitter = getEmitter();
     conditionalExit = OverloadSet::lookupAndResolve(
         contextRVType, "__exit__", exitCallOperands, contextExp,
         CallSyntax::kMethodCall, exitEmitter);
@@ -2572,7 +2572,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
 
   // Parse the type if present.
   ASTType parsedType;
-  ExprEmitter emitter = getEmitter();
+  IREmitter emitter = getEmitter();
   if (consumeIf(Token::colon)) {
     ExprNode *typeExpr = nullptr;
     if (parseExpression(typeExpr, stmtIndent))

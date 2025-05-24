@@ -11,8 +11,8 @@
 
 #include "Traits.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 #include "StructEmitter.h"
@@ -33,7 +33,7 @@ using namespace LIT;
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
 static std::pair<FnTypeGeneratorType, ParamBindings>
-getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
+getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
@@ -87,7 +87,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
-  ExprEmitter emitter(structDecl, EC_Trait);
+  IREmitter emitter(structDecl, EC_Trait);
   ASTType selfType = structDecl.getTypeDeclSelf();
 
   ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(parent);
@@ -192,9 +192,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     aliasValues[name] = initializerExpr;
 
     SyntheticNode synthNode(structAliasDecl->getLoc());
-    if (!ExprEmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
-                                                 traitAliasType,
-                                                 emitter.getDeclScope())) {
+    if (!IREmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
+                                               traitAliasType,
+                                               emitter.getDeclScope())) {
       diag->attachNote(traitAliasDecl->getLoc())
           << "alias '" + name.str() + "' type " << structAliasType
           << " doesn't conform to trait's alias '" << name.str() << "' type "
@@ -454,7 +454,7 @@ void LIT::canonicalizeTraitCompositionSymbols(
 }
 
 //===----------------------------------------------------------------------===//
-// ExprEmitter::emitMetaTypeToTraitConversion
+// IREmitter::emitMetaTypeToTraitConversion
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -679,8 +679,8 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
 ///     }> : !lit.trait<@AnyType>
 ///
 /// This maps from the Movable trait metatype into the AnyType trait metatype.
-PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
-                                                  TraitType trait) {
+PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
+                                                TraitType trait) {
   // Only static vtables are supported right now.
   PValue typePValue = value.ir.getIfPValue();
   if (!typePValue) {

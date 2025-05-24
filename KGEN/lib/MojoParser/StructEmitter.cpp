@@ -10,8 +10,8 @@
 
 #include "StructEmitter.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
@@ -333,7 +333,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
   builder.setLoc(funcOp->getLoc());
   ASTDecl *funcDecl = shared.declResolver->getDeclForFuncSymbol(
       getFullyResolvedSymbolRef(funcOp));
-  ExprEmitter emitter(*funcDecl, builder);
+  IREmitter emitter(*funcDecl, builder);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -439,7 +439,7 @@ std::pair<FnOp, ASTDecl *> StructEmitter::addVoidMethod(
 
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
-  ExprEmitter::emitNormalReturn(b);
+  IREmitter::emitNormalReturn(b);
   return {func, funcDecl};
 }
 
@@ -484,7 +484,7 @@ FnOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
 
   // Finish off the function with a return + lit.endfunc.
   builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
-  ExprEmitter::emitNormalReturn(builder);
+  IREmitter::emitNormalReturn(builder);
 
   // Remember this as the destructor for the struct.
   structOp.setDestructorAttr(
@@ -546,7 +546,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     diScopeGuard = shared.diBuilder->pushScopeGuard(fn.getLocScope());
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
       shared.translateLocation(location), fn.getBody());
-  ExprEmitter emitter(*structDecl, b);
+  IREmitter emitter(*structDecl, b);
 
   assert(fn.getNumArguments() == 2 &&
          "copy and move functions should have two arguments");
@@ -603,7 +603,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
 }
 
 FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
-  ExprEmitter emitter(structDecl, EC_Decorator);
+  IREmitter emitter(structDecl, EC_Decorator);
 
   ASTType selfType = structDecl.getTypeDeclSelf();
   MLIRContext *ctx = this->shared.getContext();
@@ -665,7 +665,7 @@ void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
   ASTDecl &structDecl = *fnDecl.getParentDecl();
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
 
-  ExprEmitter emitter(structDecl, EC_Decorator);
+  IREmitter emitter(structDecl, EC_Decorator);
 
   // Point a `builder` at the end of the new copy() FnOp
   emitter.builder = OpBuilder::atBlockEnd(fn.getBody());

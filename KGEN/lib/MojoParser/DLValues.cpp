@@ -9,8 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "DLValues.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 
@@ -34,7 +34,7 @@ DLValue &DLValue::operator=(const DLValue &existing) {
 BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
 // This hook is called before an argument is passed mut.
-LValue BaseDLValue::prepareForMutAccess(SMLoc loc, ExprEmitter &emitter) const {
+LValue BaseDLValue::prepareForMutAccess(SMLoc loc, IREmitter &emitter) const {
   return DLValue(RCRef<BaseDLValue>::copy(const_cast<BaseDLValue *>(this)));
 }
 
@@ -53,14 +53,14 @@ void DiscardDLValue::print(raw_ostream &os) const {
   os << "discard pattern, type=" << elementType;
 }
 
-CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
+CValue DiscardDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
       << expr->getRange();
   return {};
 }
 
 CValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
-                                 ExprEmitter &emitter) const {
+                                 IREmitter &emitter) const {
   // Convert to an RValue to fully evaluate it.
   auto rvalue = emitter.emitRValue(value, EC_Assignment, elementType);
   // Promote to a CValue to return.
@@ -87,7 +87,7 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
 }
 
 CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
-                                           ExprEmitter &emitter) const {
+                                           IREmitter &emitter) const {
   // To load x.y, we load x, then then load y out of it.
   ValueDest baseDest(dest.getContext());
   auto base = baseVal.ir->emitLoad(baseDest, emitter);
@@ -98,7 +98,7 @@ CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
 }
 
 CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
-                                            ExprEmitter &emitter) const {
+                                            IREmitter &emitter) const {
 
   if (!emitter.builder) {
     emitter.emitErrorForDynamicValueInParameter(expr);
@@ -131,7 +131,7 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 }
 
 MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
-    ExprEmitter &emitter) const {
+    IREmitter &emitter) const {
   auto baseRef = baseVal.ir->emitMBValueFromDefArgument(emitter);
   if (!baseRef)
     return {};
@@ -170,7 +170,7 @@ void SubscriptDLValue::print(raw_ostream &os) const {
      << " ";
 }
 
-CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
+CValue SubscriptDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   // We got an elementType, so we know it has at least a getter or a setter.
   if (!getter) {
     emitter.emitError(expr->getLoc(),
@@ -184,7 +184,7 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
-                                   ExprEmitter &emitter) const {
+                                   IREmitter &emitter) const {
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
   CallOperands operandsWithValue(operands);
@@ -219,21 +219,21 @@ void TupleDLValue::print(raw_ostream &os) const {
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
-CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
+CValue TupleDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
   // Emit a call to the tuple type constructor as an explicit construction.
   return emitter.emitConstructorCall(elementType, CallOperands(eltLValues),
                                      expr, CallSyntax::kTypeCall, dest);
 }
 
-// TODO: Move this somewhere common like ExprEmitter
+// TODO: Move this somewhere common like IREmitter
 AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
                                 ArrayRef<Operand> exprOperands, ValueDest &dest,
-                                ExprEmitter &emitter);
+                                IREmitter &emitter);
 
 /// Storing to a tuple LValue extracts the elements out of the provided value
 /// stores them into each component LValue.
 CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
-                               ExprEmitter &emitter) const {
+                               IREmitter &emitter) const {
   auto emitError = [&]() -> InflightDiag {
     return emitter.emitError(expr->getLoc())
            << value.expr->getRange() << expr->getRange();
@@ -331,7 +331,7 @@ DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
 /// If this is a def argument shadow, resolve it to the incoming immutable
 /// borrowed value without forming a local copy.  Otherwise return null.
 MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
-    ExprEmitter &emitter) const {
+    IREmitter &emitter) const {
   return argRef.getIfMBValue();
 }
 
@@ -350,7 +350,7 @@ void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
 // This hook is called before an argument is passed mut.
 LValue
 DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
-                                               ExprEmitter &emitter) const {
+                                               IREmitter &emitter) const {
   // Okay, if the by-reg def argument is mutated, we need to snap into action
   // and lazily build a shadow in the function entry.
   auto func = cast<FnOp>(argDecl->getParentDecl());
@@ -367,8 +367,8 @@ DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
   for (auto &use : bbArg.getUses())
     argUses.push_back(&use);
 
-  ExprEmitter entryEmitter(*argDecl->getParentDecl(),
-                           OpBuilder::atBlockBegin(func.getBody()));
+  IREmitter entryEmitter(*argDecl->getParentDecl(),
+                         OpBuilder::atBlockBegin(func.getBody()));
   StringAttr argName = func.getFuncTypeGenerator().getArgName(argIndex);
 
   // Create the shadow box that has an address and copy the argument into it.
@@ -414,14 +414,14 @@ DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
 }
 
 CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
-                                           ExprEmitter &emitter) const {
+                                           IREmitter &emitter) const {
   // Loads of the def argument wrapper are simple enough.
   SyntheticNode expr(argDecl->getLoc());
   return emitter.emitCResult(argRef, &expr, dest);
 }
 
 CValue DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
-                                            ExprEmitter &emitter) const {
+                                            IREmitter &emitter) const {
   // Okay, if the def argument is mutated, we need to snap into action and
   // lazily build a shadow in the function entry.
   LValue newVal = prepareForMutAccess(value.expr->getLoc(), emitter);

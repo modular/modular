@@ -124,13 +124,13 @@ public:
                                  const ExprNode *callExpr, CallSyntax syntax,
                                  function_ref<void()> lookupFailureErrorHandler,
                                  bool shouldPrintOverloadErrors,
-                                 ExprEmitter &emitter);
+                                 IREmitter &emitter);
 
   /// Same as the above but a convenience when never emitting an error.
   static PValue lookupAndResolve(ASTType type, StringRef methodName,
                                  CallOperands &operands,
                                  const ExprNode *callExpr, CallSyntax syntax,
-                                 ExprEmitter &emitter) {
+                                 IREmitter &emitter) {
     return lookupAndResolve(type, methodName, operands, callExpr, syntax, {},
                             false, emitter);
   }
@@ -165,7 +165,7 @@ public:
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
   PValue filterOverloadSet(CallOperands &operands, bool emitDiagnosticOnFailure,
-                           ExprEmitter &emitter) const;
+                           IREmitter &emitter) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings on the overload
@@ -184,7 +184,7 @@ public:
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
-  CValue emitAsCValue(ExprEmitter &emitter, ValueDest &dest);
+  CValue emitAsCValue(IREmitter &emitter, ValueDest &dest);
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
@@ -194,7 +194,7 @@ public:
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
   CValue emitCall(CallOperands &&callOperands, ValueDest &dest,
-                  ExprEmitter &emitter);
+                  IREmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.  This returns a

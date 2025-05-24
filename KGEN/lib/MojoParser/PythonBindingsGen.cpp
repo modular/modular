@@ -11,8 +11,8 @@
 
 #include "PythonBindingsGen.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "MojoUtils.h"
 #include "StructEmitter.h"
 
@@ -103,7 +103,7 @@ static ASTType makeTupleTypedPythonObj(ASTDecl &moduleDecl,
   SubscriptNode subscript(&typePythonObject, moduleLoc, subscriptOperand,
                           moduleLoc);
   // Emit it as a type.
-  ExprEmitter emitter(pythonModule, ExprContext::EC_PyBindGen);
+  IREmitter emitter(pythonModule, ExprContext::EC_PyBindGen);
   return emitter.emitExprType(&subscript);
 }
 
@@ -144,7 +144,7 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
   CallNode call(&subscript, moduleLoc, {}, moduleLoc);
 
   // Emit it.
-  ExprEmitter emitter(*pyBindDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  IREmitter emitter(*pyBindDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   pyModule = MLValue(pyInitFunc.getArgument(1));
   ValueDest moduleDest(pyModule, EC_PyBindGen);
   if (!emitter.emitExpr(&call, moduleDest))
@@ -157,7 +157,7 @@ void BindingGenerator::finalizePyInit() {
   ImplicitLocOpBuilder b(pyInitFunc.getLoc(),
                          OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   // Return none.
-  ExprEmitter::emitNormalReturn(b);
+  IREmitter::emitNormalReturn(b);
 }
 
 LogicalResult BindingGenerator::genPyInitHook() {
@@ -200,8 +200,8 @@ LogicalResult BindingGenerator::genPyInitHook() {
             b.getStringAttr("PyInit_" + moduleOp.getSymName()));
   pyInitHook->setAttrs(attrs.getDictionary(ctx));
 
-  ExprEmitter emitter(*pyInitHookDecl,
-                      OpBuilder::atBlockBegin(pyInitHook.getBody()));
+  IREmitter emitter(*pyInitHookDecl,
+                    OpBuilder::atBlockBegin(pyInitHook.getBody()));
   VarDeclOp moduleDecl = emitter.emitVarDecl(
       "module", UnresolvedType::get(ctx), b.getLoc(), VarDeclKind::Synthesized);
   VarDeclOp errDecl = emitter.emitVarDecl("error", errorType, b.getLoc(),
@@ -387,7 +387,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
   AnyValue pyArgsTuple = MBValue(wrapperFunc.getArgument(1));
 
-  ExprEmitter emitter(*pyBindDecl, builder);
+  IREmitter emitter(*pyBindDecl, builder);
 
   SyntheticNode synth(funcDecl.getLoc());
 
@@ -526,8 +526,8 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   SyntheticNode moduleVal(moduleLoc, pyModule);
   Operand moduleOp(&moduleVal, moduleLoc, Operand::kPositional);
   CallNode call(&subscript, moduleLoc, moduleOp, moduleLoc);
-  ExprEmitter pyInitEmitter(*pyBindDecl,
-                            OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  IREmitter pyInitEmitter(*pyBindDecl,
+                          OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   pyInitEmitter.emitExpr(&call, EC_PyBindGen);
   return success();
 }
@@ -577,7 +577,7 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
   CallNode call(&subscript, loc, moduleOp, loc);
 
   // Emit it.
-  ExprEmitter emitter(*pyBindDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  IREmitter emitter(*pyBindDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   if (!emitter.emitExpr(&call, ExprContext::EC_PyBindGen))
     return Error("Error emitting 'gen_pytype_wrapper' call");
   return success();

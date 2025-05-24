@@ -11,8 +11,8 @@
 #include "CallEmission.h"
 #include "ClosureEmitter.h"
 #include "DebugInfo.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "ParserEvaluationContext.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"

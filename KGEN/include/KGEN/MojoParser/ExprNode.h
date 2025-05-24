@@ -26,7 +26,7 @@ namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class AnyValue;
 class ASTType;
-class ExprEmitter;
+class IREmitter;
 class ValueDest;
 
 //===----------------------------------------------------------------------===//
@@ -148,7 +148,7 @@ public:
   virtual llvm::SMLoc getLoc() const = 0;
 
   /// Return the 'loc' for this node translated to an MLIR location.
-  Location getLocation(ExprEmitter &emitter) const;
+  Location getLocation(IREmitter &emitter) const;
 
   /// Return the source range spanned by this expression.
   virtual SourceRange getRange() const = 0;
@@ -177,7 +177,7 @@ public:
   /// ValueDest indicates information about where to emit the expression result
   /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.  On success, the
   /// ValueDest /must/ be emitted into.
-  virtual AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const = 0;
+  virtual AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const = 0;
 };
 
 } // namespace M::KGEN::LIT

@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ParameterInference.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -261,7 +261,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
       // argument, as long as that struct conforms to that trait.
       // In other words, here we're handling function conversions with covariant
       // arguments (see TTSMFS).
-      ExprEmitter emitter(declScope, EC_TypeParamValue);
+      IREmitter emitter(declScope, EC_TypeParamValue);
       SyntheticNode synthNode(declScope.getLoc());
       CValue actualAstTypeCValue = CValue(actualValueAstType.mlirType);
       // Now, check if the actual arg can be converted to the expected trait.
@@ -397,7 +397,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       // If that fails, check compatibility, actualType might be mutable=true,
       // and expected might be mutable=false, and this is fine.
       return success(
-          ExprEmitter::canZeroCostConvert(actualType, expectedType, shared));
+          IREmitter::canZeroCostConvert(actualType, expectedType, shared));
     }
 
   // Handle PointerType.
@@ -521,9 +521,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
       if (actualAttr.getType() != expectedType) {
-        ExprEmitter emitter(declScope, EC_TypeParamValue);
+        IREmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
-        if (ExprEmitter::canImplicitlyConvertToType(
+        if (IREmitter::canImplicitlyConvertToType(
                 {actualAttr, node}, expectedType, emitter.getDeclScope())) {
           if (PValue result = emitter.emitPValue(
                   {actualAttr, node}, EC_TypeParamValue, expectedType))
@@ -729,9 +729,8 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
         argRVType = ASTType(argRVType).getReferenceElementType();
 
       if (actual.getType() != argRVType &&
-          ExprEmitter::canZeroCostConvert(actual.getType(), argRVType,
-                                          shared)) {
-        actual = ExprEmitter::emitZeroCostConvert(actual, argRVType, shared);
+          IREmitter::canZeroCostConvert(actual.getType(), argRVType, shared)) {
+        actual = IREmitter::emitZeroCostConvert(actual, argRVType, shared);
       }
     }
 
@@ -1022,7 +1021,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
+    IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
     auto inferredType = getPartiallySpecializedType();
 
     // If we have a type like List[$0] replace it with List[?] so we can infer
@@ -1080,7 +1079,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   // Zero cost conversions don't count as implicit conversions. We attempt this
   // after trying to match the types to try to infer values first.
-  if (ExprEmitter::canZeroCostConvert(argType, expectedType, shared))
+  if (IREmitter::canZeroCostConvert(argType, expectedType, shared))
     return success();
 
   // Handle values of nonmaterializable types.  These freely convert to their
@@ -1114,7 +1113,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // Determine if we can construct the requested type given the existing value
   // we have.  If so, get the type inferred signature of the init method that
   // would make it work.
-  ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
+  IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
 
   // The expected type may be parameterized, and that type may both have
   // parameters that we are trying to infer as well as parameters that are
@@ -1354,7 +1353,7 @@ LogicalResult ParameterInferenceState::infer(
       Type elementType = packType.getVariadicElementType();
 
       SmallVector<TypedAttr> types;
-      ExprEmitter emitter(declScope, EC_TypeParamValue);
+      IREmitter emitter(declScope, EC_TypeParamValue);
       while (posOperandIdx != numOperands) {
         const auto &operand = operands[posOperandIdx++];
         if (operand.keyword) // Ignore keyword operands.
@@ -1376,7 +1375,7 @@ LogicalResult ParameterInferenceState::infer(
         TypedAttr actualAttr = TypeParamAttr::get(
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         SyntheticNode node(shared.getTopLevelDecl().getLoc());
-        if (!ExprEmitter::canImplicitlyConvertToType(
+        if (!IREmitter::canImplicitlyConvertToType(
                 {actualAttr, node}, elementType, emitter.getDeclScope())) {
 
           // If that didn't work, then we fail due to the type mismatch.  If the

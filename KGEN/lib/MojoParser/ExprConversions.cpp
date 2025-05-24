@@ -4,14 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains implementation details of ExprEmitter that are related to
+// This file contains implementation details of IREmitter that are related to
 // value conversions.
 //
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 #include "StructEmitter.h"
@@ -36,7 +36,7 @@ using namespace LIT;
 // this directly.
 extern LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
                                                  ArrayRef<Operand> operands,
-                                                 ExprEmitter &emitter);
+                                                 IREmitter &emitter);
 
 //===----------------------------------------------------------------------===//
 // Function Conversions
@@ -363,7 +363,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
-  ExprEmitter emitter(*thunkDecl, b);
+  IREmitter emitter(*thunkDecl, b);
 
   // Construct the call operands from the function block arguments.
   CallOperands operands;
@@ -536,7 +536,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
 static CValue convertFunctionValue(CValue value, const ExprNode *expr,
                                    FnTypeGeneratorType expected,
-                                   ExprEmitter &emitter, ValueDest &dest) {
+                                   IREmitter &emitter, ValueDest &dest) {
   PValue callee = value.getIfPValue();
   if (!callee) {
     emitter.emitError(
@@ -707,8 +707,8 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a zero-cost conversion like a rebind.  This means that values of the
 /// two types have exactly the same representation post-elaboration.
-bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
-                                     SharedState &shared) {
+bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
+                                   SharedState &shared) {
   if (fromType.isEqualCanon(toType))
     return true; // No rebind needed!
 
@@ -831,7 +831,7 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
 
 /// If there is a common type shared between the two reference types, return
 /// it. Otherwise return null.
-RefType ExprEmitter::getCommonRefType(RefType ref1, RefType ref2) {
+RefType IREmitter::getCommonRefType(RefType ref1, RefType ref2) {
   if (ref1 == ref2)
     return ref1;
   // Element types and addr spaces have to be exactly equal.
@@ -870,7 +870,7 @@ enum CommonTypeResult {
 
 static std::tuple<CommonTypeResult, PValue, PValue>
 findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
-               ASTType &result, ExprEmitter &emitter) {
+               ASTType &result, IREmitter &emitter) {
 
   // If the types already match, then we're done.
   ASTType type1 = val1.ir.getRValueType();
@@ -920,15 +920,15 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // If there is one __merge_with__ method, then we use that if the other type
   // converts to the result value.
   if (lhsMWPV) {
-    if (ExprEmitter::canImplicitlyConvertToType(val2, lhsMPType,
-                                                emitter.declScope))
+    if (IREmitter::canImplicitlyConvertToType(val2, lhsMPType,
+                                              emitter.declScope))
       return succeed(lhsMPType, lhsMWPV, PValue());
     result = lhsMPType;
     return {CTR_MergeWithConvertFail, lhsMWPV, PValue()};
   }
   if (rhsMWPV) {
-    if (ExprEmitter::canImplicitlyConvertToType(val1, rhsMPType,
-                                                emitter.declScope))
+    if (IREmitter::canImplicitlyConvertToType(val1, rhsMPType,
+                                              emitter.declScope))
       return succeed(rhsMPType, PValue(), rhsMWPV);
     result = rhsMPType;
     return {CTR_MergeWithConvertFail, PValue(), rhsMWPV};
@@ -941,9 +941,9 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // type.  Don't do this if both convert to each other, this would be
   // ambiguous.
   bool isConvertibleToType2 =
-      ExprEmitter::canImplicitlyConvertToType(val1, type2, emitter.declScope);
+      IREmitter::canImplicitlyConvertToType(val1, type2, emitter.declScope);
   bool isConvertibleToType1 =
-      ExprEmitter::canImplicitlyConvertToType(val2, type1, emitter.declScope);
+      IREmitter::canImplicitlyConvertToType(val2, type1, emitter.declScope);
   if (isConvertibleToType2 && !isConvertibleToType1)
     return succeed(type2);
   if (isConvertibleToType1 && !isConvertibleToType2)
@@ -958,10 +958,10 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   auto type1Nonmat = type1.getNonmaterializableTarget(emitter.shared);
   auto type2Nonmat = type2.getNonmaterializableTarget(emitter.shared);
   if (type1Nonmat)
-    type2ConvertsToType1Nonmat = ExprEmitter::canImplicitlyConvertToType(
+    type2ConvertsToType1Nonmat = IREmitter::canImplicitlyConvertToType(
         val2, type1Nonmat, emitter.declScope);
   if (type2Nonmat)
-    type1ConvertsToType2Nonmat = ExprEmitter::canImplicitlyConvertToType(
+    type1ConvertsToType2Nonmat = IREmitter::canImplicitlyConvertToType(
         val1, type2Nonmat, emitter.declScope);
 
   if (type2ConvertsToType1Nonmat && !type1ConvertsToType2Nonmat)
@@ -984,7 +984,7 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
 ///
 /// The 'configEmitter' function is called to set the insertion point of the
 /// emitter for the true/false branches of the conditional.
-ParseResult ExprEmitter::coerceTypesToEachOther(
+ParseResult IREmitter::coerceTypesToEachOther(
     SMLoc loc, CValue &lhs, const ExprNode *lhsExpr, CValue &rhs,
     const ExprNode *rhsExpr, std::function<void(bool isLHS)> configEmitter) {
   if (!configEmitter)
@@ -1089,8 +1089,8 @@ ParseResult ExprEmitter::coerceTypesToEachOther(
 
 /// Given a value of a type that can be zero cost converted to another type,
 /// emit a rebind or other operation to get it in the right type.
-PValue ExprEmitter::emitZeroCostConvert(PValue value, ASTType toType,
-                                        SharedState &shared) {
+PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
+                                      SharedState &shared) {
   assert(toType.mlirType != value.getType() && "Already the same");
 
   // PValues of origin type have a special conversion.
@@ -1100,8 +1100,8 @@ PValue ExprEmitter::emitZeroCostConvert(PValue value, ASTType toType,
   return ParamOperatorAttr::get(POC::Rebind, value.get(), toType);
 }
 
-CValue ExprEmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
-                                        ASTType toType) {
+CValue IREmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
+                                      ASTType toType) {
   assert(toType.mlirType != value.ir.getType() && "Already the same");
 
   // PValue handling has a helper.
@@ -1150,7 +1150,7 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
 /// Emit a conversion from an MLIR type to a trait type by materializing stubs
 /// for the type's witness table.
 static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
-                                  ExprEmitter &emitter) {
+                                  IREmitter &emitter) {
   SharedState &shared = emitter.shared;
 
   // Only static vtables are supported right now.
@@ -1251,9 +1251,9 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
 /// any IR.
 ///
 /// CAUTION: This method must line up with `emitImplicitConversionToType`!!!
-bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                             ASTType requiredType,
-                                             ASTDecl &declScope) {
+bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
+                                           ASTType requiredType,
+                                           ASTDecl &declScope) {
   auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
@@ -1347,9 +1347,9 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 /// implicit promotions like origin conversions.
 ///
 /// CAUTION: This method must line up with `canImplicitlyConvertToType`!!!
-CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
-                                                 ASTType requiredType,
-                                                 ValueDest &dest) {
+CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
+                                               ASTType requiredType,
+                                               ValueDest &dest) {
   CValue value = valueExpr.ir;
   const ExprNode *expr = valueExpr.expr;
 

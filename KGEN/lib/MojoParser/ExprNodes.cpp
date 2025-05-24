@@ -11,7 +11,7 @@
 
 #include "CallEmission.h"
 #include "DLValues.h"
-#include "ExprEmitter.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -123,7 +123,7 @@ static PValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
 /// subscript operands and return the result.  On error, emit an error and
 /// return an empty string.
 static std::string substituteMLIRMagic(const SubscriptNode &node,
-                                       ExprEmitter &emitter) {
+                                       IREmitter &emitter) {
   std::string result;
   llvm::raw_string_ostream os(result);
 
@@ -179,7 +179,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 
 static AttrCtorDeferredAttr
 buildAttrCtorDeferredAttrFromMLIRAttr(const SubscriptNode &node,
-                                      ExprEmitter &emitter) {
+                                      IREmitter &emitter) {
   SmallVector<TypedAttr> strings;
   SMLoc loc = node.getLoc();
   for (const Operand &operand : node.operands) {
@@ -256,7 +256,7 @@ static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
 
 /// Report a warning to let user know that they should use __mlir_attr instead.
 static void emitMLIRDeferedAttrToMLIRAttrWarning(SMLoc loc,
-                                                 ExprEmitter &emitter) {
+                                                 IREmitter &emitter) {
   emitter.emitWarning(loc)
       << "trivially constructable attribute. Use `__mlir_attr` "
          "instead.";
@@ -265,7 +265,7 @@ static void emitMLIRDeferedAttrToMLIRAttrWarning(SMLoc loc,
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
-static PValue synthesizeMLIROpFromString(StringRef name, ExprEmitter &emitter) {
+static PValue synthesizeMLIROpFromString(StringRef name, IREmitter &emitter) {
   auto *context = emitter.getContext();
   auto nameStr = StringAttr::get(context, name);
 
@@ -277,7 +277,7 @@ static PValue synthesizeMLIROpFromString(StringRef name, ExprEmitter &emitter) {
 /// Given an expression, try to resolve it into an Attribute that we can install
 /// on this operation.
 static Attribute getAttrFromExpr(StringRef name, ExprNode *node,
-                                 ExprEmitter &emitter) {
+                                 IREmitter &emitter) {
   // Special case handling of __mlir_attr.`xxx` directly in this parser,
   // because we want to be able to install arbitrary attributes into an
   // operation's attribute list, and emitPValue only supports TypedAttrs.
@@ -313,7 +313,7 @@ static Attribute getAttrFromExpr(StringRef name, ExprNode *node,
 static PValue
 bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
                                  UnboundMLIROperationAttr unboundOp,
-                                 ExprEmitter &emitter) {
+                                 IREmitter &emitter) {
   SMLoc loc = subscript.getLoc();
   MLIRContext *context = emitter.getContext();
 
@@ -481,7 +481,7 @@ llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
 llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
 /// Return the 'loc' for this node translated to an MLIR location.
-Location ExprNode::getLocation(ExprEmitter &emitter) const {
+Location ExprNode::getLocation(IREmitter &emitter) const {
   return emitter.translateLocation(getLoc());
 }
 /// Recursively dig through noop paren nodes (if present) to find what is
@@ -503,7 +503,7 @@ bool ExprNode::isEmptyTuple() const {
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
 
-AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue BoolLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Create the SIMDAttr to represent the constant.
   auto boolAttr = BoolAttr::get(emitter.getContext(), value);
 
@@ -512,8 +512,7 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitBool({boolAttr, this}, dest);
 }
 
-AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
-                                   ExprEmitter &emitter) const {
+AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (kind == kNoneLiteral)
     return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 
@@ -555,7 +554,7 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
 //     StringLiteral[value: __mlir_type.`!kgen.string`]
 static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
                                        const ExprNode *expr, ValueDest &dest,
-                                       ExprEmitter &emitter) {
+                                       IREmitter &emitter) {
   if (isa<TypeCheckErrorType>(type))
     return {}; // Sanity check the returned declaration.
   ASTDecl *decl = type.getDecl(emitter.shared);
@@ -576,7 +575,7 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
                                      CallSyntax::kTypeCall, dest);
 }
 
-AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue IntLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   APInt value = Lexer::getIntegerLiteralValue(spelling);
   // Values produced are sometimes produced unsigned, so we must add an extra
   // sign bit.
@@ -591,7 +590,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return handleIntFPStringLiteral(attr, type, this, dest, emitter);
 }
 
-AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue FloatLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   IPRational value = Lexer::getFloatLiteralValue(spelling);
   auto attr = POP::FloatLiteralAttr::get(emitter.getContext(), value);
   ASTType type =
@@ -612,15 +611,14 @@ std::string StringLiteralNode::getValue() const {
 /// does not include enclosing quotes.  The specified expression specifies the
 /// location but need not by a StringLiteral.
 CValue StringLiteralNode::emitCtorCall(StringRef bytes, const ExprNode *expr,
-                                       ValueDest &dest, ExprEmitter &emitter) {
+                                       ValueDest &dest, IREmitter &emitter) {
   auto attr = StringAttr::get(bytes, StringType::get(emitter.getContext()));
   ASTType type = emitter.shared.getBuiltinStringLiteralType(emitter.declScope,
                                                             expr->getLoc());
   return handleIntFPStringLiteral(attr, type, expr, dest, emitter);
 }
 
-AnyValue StringLiteralNode::emitIR(ValueDest &dest,
-                                   ExprEmitter &emitter) const {
+AnyValue StringLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Flatten multiple concat'd strings, remove """'s and "'s etc.
   std::string value = getValue();
   return emitCtorCall(value, this, dest, emitter);
@@ -633,7 +631,7 @@ bool Operand::isPositionalStringLiteral(StringRef str) const {
   return false;
 }
 
-AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue SyntheticNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   assert(irValue && "emitIR is undefined for synthetic nodes.");
   return emitter.emitResult(irValue, this, dest);
 }
@@ -642,7 +640,7 @@ AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// variable definitions, check to see if the lookup set contains immutable
 /// symbols found through global lookup. If so, return true.
 static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
-                                          ExprEmitter &emitter) {
+                                          IREmitter &emitter) {
   for (ASTDecl *decl : lookup.getIfSuccess()) {
     // If this contains anything mutable, return false.
     if (isa<VarDeclOp, GlobalVarDeclOp>(*decl) ||
@@ -659,7 +657,7 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
-AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
   // Notify the listener of a normal decl reference lookup.
@@ -694,7 +692,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     OpBuilder varDeclBuilder(
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
-    ExprEmitter varDeclEmitter(emitter.declScope, varDeclBuilder);
+    IREmitter varDeclEmitter(emitter.declScope, varDeclBuilder);
 
     // Add implicitly declared variable to the name table OF THE FUNCTION, so
     // subsequent uses find this one.  We don't want implicit declarations in
@@ -902,7 +900,7 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
                                             StructFieldOp fieldOp,
                                             const ExprNode *expr,
                                             ValueDest &dest,
-                                            ExprEmitter &emitter) {
+                                            IREmitter &emitter) {
   assert(!base.ir.getIfDLValue() &&
          "Dynamic lvalues should already be handled");
   auto mlirLoc = expr->getLocation(emitter);
@@ -957,7 +955,7 @@ public:
   /// the next expected parameter type according to the current in-progress
   /// bindings.
   ASTType getNextParamType(const Operand &operand,
-                           const ParamBindings &bindings, ExprEmitter &emitter);
+                           const ParamBindings &bindings, IREmitter &emitter);
 
 private:
   /// The types of the parameters in the list.
@@ -975,7 +973,7 @@ private:
 
 ASTType InProgressBindings::getNextParamType(const Operand &operand,
                                              const ParamBindings &paramBindings,
-                                             ExprEmitter &emitter) {
+                                             IREmitter &emitter) {
   // Unpacked operands don't have expected types.
   if (operand.isUnpacked())
     return {};
@@ -1055,8 +1053,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
 
 /// Emit the PValue result for a single parameter binding.
 static TypedAttr emitSingleParamBinding(const Operand &operand,
-                                        ExprEmitter &emitter,
-                                        ExprContext context,
+                                        IREmitter &emitter, ExprContext context,
                                         ASTType expectedType) {
   MLIRContext *ctx = emitter.getContext();
 
@@ -1111,7 +1108,7 @@ static TypedAttr emitSingleParamBinding(const Operand &operand,
 static LogicalResult
 bindParameterOperands(MutableArrayRef<InProgressBindings> bindables,
                       ArrayRef<Operand> operands, ParamBindings &paramBindings,
-                      ExprEmitter &emitter, ExprContext context) {
+                      IREmitter &emitter, ExprContext context) {
   assert(!bindables.empty() && "expected something to bind");
 
   // Process each operand.
@@ -1150,7 +1147,7 @@ bindParameterOperands(MutableArrayRef<InProgressBindings> bindables,
 /// fails be emitted as a PValue, the function returns null.
 static std::optional<ParamBindings> getBindingsForParameterOperands(
     ArrayRef<Operand> operands, ArrayRef<Type> paramTypes,
-    PogListAttr paramList, ExprEmitter &emitter, ExprContext context) {
+    PogListAttr paramList, IREmitter &emitter, ExprContext context) {
   InProgressBindings bindable(paramTypes, paramList);
   // Start with an empty binding set.
   ParamBindings paramBindings(emitter.getDeclScope());
@@ -1164,7 +1161,7 @@ static std::optional<ParamBindings> getBindingsForParameterOperands(
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
     PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
-    SMLoc rhsLoc, ExprEmitter &emitter) {
+    SMLoc rhsLoc, IREmitter &emitter) {
   auto metaType = cast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
@@ -1208,8 +1205,7 @@ static PValue substituteParametersIntoUserDefinedType(
 
 /// Bind parameter operands to a callable parameter.
 static PValue bindToIndirectCall(PValue callable, FnTypeGeneratorType sig,
-                                 ArrayRef<Operand> operands,
-                                 ExprEmitter &emitter,
+                                 ArrayRef<Operand> operands, IREmitter &emitter,
                                  const SourceRange &range) {
   // Build up a ParamBindings set to validate and check the bindings.
   std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
@@ -1232,7 +1228,7 @@ static PValue bindToIndirectCall(PValue callable, FnTypeGeneratorType sig,
 // let's refactor emitGetterSetterAccess so it can be used by thunks instead.
 LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
                                           ArrayRef<Operand> operands,
-                                          ExprEmitter &emitter) {
+                                          IREmitter &emitter) {
   // Build a list of all the things we can bind. Remember the number of
   // positional parmaeters that have already been bound.
   SmallVector<InProgressBindings> bindables;
@@ -1262,7 +1258,7 @@ LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
 /// the operands because it might move them to a SubscriptDLValue, if emitted.
 AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
                                 ArrayRef<Operand> exprOperands, ValueDest &dest,
-                                ExprEmitter &emitter) {
+                                IREmitter &emitter) {
   ASTType baseType = base.ir.getRValueType();
 
   // This is either a SubscriptNode for x[i,j] or a AttributeRefNode for x.name.
@@ -1491,7 +1487,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
 /// return a null value.
-AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue AttributeRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto &shared = emitter.shared;
 
   // In-order to allow parameter expressions which technically include a runtime
@@ -1574,13 +1570,13 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // thus, cannot be on the stack.
     DeclRefNode *declRef = shared.allocPersistent<DeclRefNode>(spelling);
     if (emitter.builder) {
-      ExprEmitter moduleEmitter(*typeDecl, *emitter.builder,
-                                emitter.varDeclCursor);
+      IREmitter moduleEmitter(*typeDecl, *emitter.builder,
+                              emitter.varDeclCursor);
 
       return declRef->emitIR(dest, moduleEmitter);
     }
 
-    ExprEmitter moduleEmitter(*typeDecl, emitter.paramContext);
+    IREmitter moduleEmitter(*typeDecl, emitter.paramContext);
     return declRef->emitIR(dest, moduleEmitter);
   }
 
@@ -1735,7 +1731,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// the operands as SSA values.
 static AnyValue emitMLIROperatorCall(const CallNode &call,
                                      UnboundMLIROperationAttr unboundOp,
-                                     ValueDest &dest, ExprEmitter &emitter) {
+                                     ValueDest &dest, IREmitter &emitter) {
   auto *context = emitter.getContext();
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(&call);
@@ -2066,7 +2062,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
                                      CallSyntax::kTypeCall, dest);
 }
 
-AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   AnyValue calleeVal = emitter.emitExpr(callee, EC_CallCalleeValue);
   if (!calleeVal)
     return {};
@@ -2138,7 +2134,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return {};
 }
 
-AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto getOperand = [&](const ExprNode *expr) -> ASTExprAnd<AnyValue> {
     if (expr)
       return {emitter.emitExpr(expr, ExprContext::EC_SliceIndex), expr};
@@ -2165,7 +2161,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(result, this, dest);
 }
 
-AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue SubscriptNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
   auto baseAnyValue = emitter.emitExpr(base, EC_SubscriptBase);
   if (!baseAnyValue)
@@ -2308,13 +2304,13 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                 emitter);
 }
 
-AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue ParenNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitExpr(subExpr, dest);
 }
 
 static AnyValue emitListLiteral(const ExprNode *expr,
                                 ArrayRef<ExprNode *> elements,
-                                ExprEmitter &emitter) {
+                                IREmitter &emitter) {
   CallOperands operands;
   for (ExprNode *expr : elements) {
     auto value = emitter.emitExpr(expr, EC_CollectionLiteral);
@@ -2326,11 +2322,11 @@ static AnyValue emitListLiteral(const ExprNode *expr,
                                    std::move(operands));
 }
 
-AnyValue ListLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue ListLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(emitListLiteral(this, exprs, emitter), this, dest);
 }
 
-AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   assert(!values.empty() && "empty syntax doesn't turn into dict literal");
 
   // We emit dictionary literal syntax like `{a:b, c:d}` as an initializer list
@@ -2363,8 +2359,7 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(result, this, dest);
 }
 
-AnyValue SetInitLiteralNode::emitIR(ValueDest &dest,
-                                    ExprEmitter &emitter) const {
+AnyValue SetInitLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // We emit this as a simple initializer list directly, but resolution of the
   // UValue detects when this should be a set initializer and handles that.
   CallOperands operands;
@@ -2418,7 +2413,7 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
 static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
                               ValueDest &dest, const ExprNode *callExpr,
-                              ExprEmitter &emitter) {
+                              IREmitter &emitter) {
 
   // If this is a 'not in' emit the 'in' expression and then invert the result.
   //  We use this style to make sure that a direct emission emits into
@@ -2490,7 +2485,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 ///
 /// The walrus := operator in Python requires the left side to be a simple
 /// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
-AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitAssign(ValueDest &dest, IREmitter &emitter) const {
   // In an assignment, we emit the RHS into the LHS as its context.  This is
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
@@ -2510,7 +2505,7 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
 ///    def test2(): print("test2"); return 1
 ///    a[test1()] += test2()
 ///  ==> test1; test2
-AnyValue BinOpNode::emitInplace(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitInplace(ValueDest &dest, IREmitter &emitter) const {
   AnyValue lhsRep;
   RValue rhsRep;
 
@@ -2529,7 +2524,7 @@ AnyValue BinOpNode::emitInplace(ValueDest &dest, ExprEmitter &emitter) const {
   return emitBinOpCall({lhsLV, lhs}, {rhsV, rhs}, kind, dest, this, emitter);
 }
 
-AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
     return emitAndOr(dest, emitter);
@@ -2575,7 +2570,7 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// can be converted to each other unambiguously) or to return the common Bool
 /// type if they don't.
 ///
-AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
 
   // Emit the LHS value as a bool/i1 value.
@@ -2764,7 +2759,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 
 /// Emit the x^ expression.
 AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
-                                   ExprEmitter &emitter) const {
+                                   IREmitter &emitter) const {
   auto loc = getLoc();
   // We don't track ownership right in parameter expressions, e.g. we don't have
   // a PBValue to correspond to PRValue (which is what PValue really is).  As
@@ -2845,7 +2840,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   return emitter.emitResult(MRValue(value), this, dest);
 }
 
-AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto exprRep = emitter.emitExpr(subExpr, EC_OperatorOperandValue);
   if (!exprRep)
     return {};
@@ -2866,7 +2861,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// Emit a unary arithmetic operation as a dynamic expression.
 AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
                                 ASTExprAnd<AnyValue> argValue, ValueDest &dest,
-                                ExprEmitter &emitter) {
+                                IREmitter &emitter) {
   if (!argValue.ir)
     return {};
 
@@ -2891,7 +2886,7 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
                                      dest, CallSyntax::kOperator, expr);
 }
 
-AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
 
   // Inside a parameter context, emit conditional expression.
@@ -3134,7 +3129,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 ///  value of b in the previous comparison (a < b). lastCmpExpr is the value
 ///  of a < b.
 ///  Note that a < b  is handled by ChainedCmpOpNode::emitIR.
-RValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
+RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
                                      RValue prevCmpVal, RValue prevRHS,
                                      bool hasPrevIfOp, ValueDest &dest) const {
   ExprContext context = dest.getContext();
@@ -3250,7 +3245,7 @@ RValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   return SRValue(r0);
 }
 
-AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   AnyValue e0Rep = emitter.emitExpr(exprs[0], EC_OperatorOperandValue);
   AnyValue e1Rep = emitter.emitExpr(exprs[1], EC_OperatorOperandValue);
   if (!e0Rep || !e1Rep)
@@ -3272,7 +3267,7 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       emitNextCmp(emitter, 1, lastCmpExpr, e1RV, false, dest), this, dest);
 }
 
-AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Parameters declared within the function type must be visible. Create a
   // dummy declaration.
   ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
@@ -3336,8 +3331,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(ASTType(signature), this, dest);
 }
 
-AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
-                                   ExprEmitter &emitter) const {
+AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (kind == kOriginOf)
     return emitOriginOf(dest, emitter);
 
@@ -3439,7 +3433,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
 }
 
 AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
-                                         ExprEmitter &emitter) const {
+                                         IREmitter &emitter) const {
   // Gather the origins of each subexpression value. If any of the origins
   // are immutable, then we mutcast the rest to immutable.
   SmallVector<TypedAttr> origins;
@@ -3456,7 +3450,7 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
 }
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
-                                       ExprEmitter &emitter) const {
+                                       IREmitter &emitter) const {
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
   emitter.emitExpressionWithOutEvaluatingIt(
@@ -3477,7 +3471,7 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
 //      (exp, exp) is sugar for Tuple[typeof(expr), typeof(expr)](exp, exp)
 // and we want to emit a constructor call and infer the parameter types
 // of Tuple.
-AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+AnyValue TupleNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   ASTType tupleType =
       emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
 

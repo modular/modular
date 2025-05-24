@@ -37,7 +37,7 @@ PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
                              ArrayRef<TypedAttr> paramValues, SMLoc errLoc,
                              SharedState &shared);
 
-/// The ExprEmitter depends on ExprNode to provide a location and emit IR for
+/// The IREmitter depends on ExprNode to provide a location and emit IR for
 /// its value. In the case of synthetic code, there is a source sequence that
 /// triggered the generation but not necessarily a value associated with the
 /// synthetic code. To solve this, we use the synthetic node which will vend a
@@ -56,7 +56,7 @@ struct SyntheticNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kSynthetic; }
   SMLoc getLoc() const override { return location; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
   operator ExprNode *() { return this; }
@@ -80,7 +80,7 @@ struct IntLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -95,7 +95,7 @@ struct FloatLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -112,7 +112,7 @@ struct BoolLiteralNode final : public ExprNode {
 
   SMLoc getLoc() const override { return loc; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -133,7 +133,7 @@ struct SimpleLiteralNode final : public ExprNode {
 
   SMLoc getLoc() const override { return loc; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -153,7 +153,7 @@ struct StringLiteralNode final : public ExprNode {
   /// does not include enclosing quotes.  The specified expression specifies the
   /// location but need not by a StringLiteral.
   static CValue emitCtorCall(StringRef bytes, const ExprNode *expr,
-                             ValueDest &dest, ExprEmitter &emitter);
+                             ValueDest &dest, IREmitter &emitter);
 
   static bool classof(const ExprNode *node) {
     return node->kind == kStringLiteral;
@@ -164,7 +164,7 @@ struct StringLiteralNode final : public ExprNode {
   SourceRange getRange() const override {
     return {getLoc(), getSMLocFromStringRef(spellings.back())};
   }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -198,7 +198,7 @@ struct DeclRefNode final : public ExprNode, Identifier {
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getIdentifierLoc(); }
   SourceRange getRange() const override { return getIdentifierRange(); }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -219,14 +219,14 @@ struct AttributeRefNode final : public ExprNode, Identifier {
   SourceRange getRange() const override {
     return {base->getRangeStart(), getIdentifierLoc()};
   }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
   /// Emit a reference to a stored field with a base that is known not to be a
   /// dynamic lvalue.
   static CValue emitStoredFieldRef(ASTExprAnd<CValue> base,
                                    StructFieldOp fieldOp, const ExprNode *expr,
-                                   ValueDest &dest, ExprEmitter &emitter);
+                                   ValueDest &dest, IREmitter &emitter);
 };
 
 /// Struct to represent an expression passed as a parameter or argument operand,
@@ -303,7 +303,7 @@ struct CallNode final : public ExprNode {
     return {callee->getRangeStart(), rparenLoc};
   }
   SourceRange getParenRange() const { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -328,7 +328,7 @@ struct SubscriptNode final : public ExprNode {
   /// Return a source range from '[' to ']'.
   SourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -364,7 +364,7 @@ struct SliceNode final : public ExprNode {
     return {startLoc, colon1Loc};
   }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -380,7 +380,7 @@ struct ParenNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kParen; }
   SMLoc getLoc() const override { return lparenLoc; }
   SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -403,7 +403,7 @@ struct TupleNode final : public ExprNode {
       return {firstCommaLoc, firstCommaLoc};
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -423,7 +423,7 @@ struct ListLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -447,7 +447,7 @@ struct DictLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -470,7 +470,7 @@ struct SetInitLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -493,7 +493,7 @@ struct IfElseOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {trueExpr->getRangeStart(), falseExpr->getRangeEnd()};
   }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -519,13 +519,13 @@ struct BinOpNode final : public ExprNode {
     return {lhs->getRangeStart(), rhs->getRangeEnd()};
   }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
 private:
-  AnyValue emitAndOr(ValueDest &dest, ExprEmitter &emitter) const;
-  AnyValue emitAssign(ValueDest &dest, ExprEmitter &emitter) const;
-  AnyValue emitInplace(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitAndOr(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitAssign(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitInplace(ValueDest &dest, IREmitter &emitter) const;
 };
 
 struct UnaryOpNode final : public ExprNode {
@@ -542,15 +542,15 @@ struct UnaryOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {opLoc, subExpr->getRangeEnd()};
   }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
   AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
-                        ExprEmitter &emitter) const;
+                        IREmitter &emitter) const;
 
   /// Emit a unary arithmetic operation.
   static AnyValue emitArith(Kind kind, const ExprNode *expr,
                             ASTExprAnd<AnyValue> value, ValueDest &dest,
-                            ExprEmitter &emitter);
+                            IREmitter &emitter);
 };
 
 /// This represents a chained comparison expression (ex. a < b <= c).
@@ -574,9 +574,9 @@ struct ChainedCmpOpNode final : public ExprNode {
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
 
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
-  RValue emitNextCmp(ExprEmitter &emitter, size_t opIdx, RValue lastCmp,
+  RValue emitNextCmp(IREmitter &emitter, size_t opIdx, RValue lastCmp,
                      RValue lastExpr, bool hasPrevIfOp, ValueDest &dest) const;
 };
 
@@ -602,7 +602,7 @@ struct FunctionTypeNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, endLoc}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -627,11 +627,11 @@ struct MagicFunctionNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, rparenLoc}; }
-  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
-  AnyValue emitOriginOf(ValueDest &dest, ExprEmitter &emitter) const;
-  AnyValue emitTypeOf(ValueDest &dest, ExprEmitter &emitter) const;
+  AnyValue emitOriginOf(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitTypeOf(ValueDest &dest, IREmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT

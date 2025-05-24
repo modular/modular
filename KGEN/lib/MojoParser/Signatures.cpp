@@ -12,8 +12,8 @@
 
 #include "Signatures.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
@@ -77,7 +77,7 @@ TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
 /// Given an expression that can be used in __origin_of or a ref expression,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
-TypedAttr ExprEmitter::extractOriginOf(const ExprNode *expr, CValue value) {
+TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
   // If this is a DLValue, it may be a def argument with an unresolved box.  We
   // could materialize the box, but Python doesn't have origin_of, so we aren't
   // in a compatibility situation: just collapse to immut ref.
@@ -120,7 +120,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
   if (isa<TypeCheckErrorType>(type))
     return hadError();
 
-  ExprEmitter emitter(paramList.declScope, EC_Origin);
+  IREmitter emitter(paramList.declScope, EC_Origin);
 
   // Check to see if this is a value address space specifier.  If so, return
   // true, otherwise return false.
@@ -647,7 +647,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
 /// Helper to emit a consistent error message when a required argument or
 /// parameter follows a optional one.
-static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
+static InflightDiag emitOptionalAfterRequired(IREmitter &emitter,
                                               const ParsedArgument &arg,
                                               StringRef argOrParam) {
   std::string kindStr = arg.kwArgHandling == KWArgHandling::kKeywordOnly
@@ -666,7 +666,7 @@ static LogicalResult
 emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
                       SmallVectorImpl<TypedAttr> &defaultPos,
                       SmallVectorImpl<TypedAttr> &defaultKwOnly,
-                      ExprEmitter &emitter, ExprContext exprContext) {
+                      IREmitter &emitter, ExprContext exprContext) {
   SmallVectorImpl<TypedAttr> &defaults =
       arg.kwArgHandling == KWArgHandling::kKeywordOnly ? defaultKwOnly
                                                        : defaultPos;
@@ -782,7 +782,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope)
     : declScope(declScope), shared(declScope.getShared()) {
   // Resolve each of the parameter declarations.
-  ExprEmitter emitter(declScope, EC_Type);
+  IREmitter emitter(declScope, EC_Type);
   for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -1019,7 +1019,7 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
 // process it into a VariadicPack.
 static ASTType
 typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
-                                   ExprEmitter &emitter,
+                                   IREmitter &emitter,
                                    TypeCheckedFnSignature &tcSignature) {
   assert(arg.variadicKind == VariadicKind::PackVarArg &&
          "this applies to pack arguments");
@@ -1163,7 +1163,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = declScope.getShared();
-  ExprEmitter typeEmitter(declScope, EC_Type);
+  IREmitter typeEmitter(declScope, EC_Type);
 
   // Start by computing the declared type of the argument.
   ASTType type;
@@ -1453,7 +1453,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else if (resultArg.typeExpr) {
-    ExprEmitter typeEmitter(declScope, EC_Type);
+    IREmitter typeEmitter(declScope, EC_Type);
     resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
     // On error, a diagnostic will be emitted, but we don't want to kill the
@@ -1654,7 +1654,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList) {
   SharedState &shared = paramList.shared;
-  ExprEmitter typeEmitter(paramList.declScope, EC_Type);
+  IREmitter typeEmitter(paramList.declScope, EC_Type);
 
   // If this definition is a struct/class member, compute the self type.
   if (fnDecl) {
