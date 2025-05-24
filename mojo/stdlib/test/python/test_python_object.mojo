@@ -16,7 +16,7 @@
 
 from builtin.identifiable import TypeIdentifiable
 from python import Python, PythonObject
-from python._bindings import PythonTypeBuilder, PythonModuleBuilder
+from python.bindings import PythonTypeBuilder, PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 

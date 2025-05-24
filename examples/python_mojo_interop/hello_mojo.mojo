@@ -11,33 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+
+from python import PythonObject, PythonModule
+from python.bindings import PythonModuleBuilder
 from os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
-from python._cpython import PyObjectPtr
 
-
+# An interface for this Mojo module must be exported to Python.
 @export
-fn PyInit_mojo_module() -> PythonObject:
-    """Create a Python module with a function binding for `mojo_count_args`."""
-
+fn PyInit_hello_mojo() -> PythonObject:
     try:
-        var b = PythonModuleBuilder("mojo_module")
-        b.def_py_c_function(
-            mojo_count_args,
-            "mojo_count_args",
-            docstring="Count the provided arguments",
-        )
-        return b.finalize()
+        # A Python module is constructed, matching the name of this Mojo module.
+        var module = PythonModuleBuilder("hello_mojo")
+        # The functions to be exported are registered within this module.
+        module.def_function[passthrough]("passthrough")
+        return module.finalize()
     except e:
         return abort[PythonObject](
             String("failed to create Python module: ", e)
         )
 
 
-@export
-fn mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
-    var cpython = Python().cpython()
-
-    return PythonObject(cpython.PyObject_Length(args)).py_object
+fn passthrough(value: PythonObject) raises -> PythonObject:
+    """A very basic function illustrating passing values to and from Mojo."""
+    return value + " world from Mojo"

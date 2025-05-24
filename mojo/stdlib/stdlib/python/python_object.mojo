@@ -32,7 +32,7 @@ from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
 from .python import Python
-from ._bindings import _get_type_name, lookup_py_type_object, PyMojoObject
+from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
 
 trait PythonConvertible:

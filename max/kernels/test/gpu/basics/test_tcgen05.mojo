@@ -19,12 +19,15 @@ from gpu.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_st,
+    tcgen05_cp,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
 from memory import UnsafePointer, stack_allocation
 from testing import assert_true
+from gpu.mma_sm100 import MMASmemDescriptor
+from layout import LayoutTensor, Layout, IntTuple
 
 
 fn alloc_test_fn[cta_group: Int32]():
@@ -59,7 +62,7 @@ fn alloc_dealloc_test_fn():
     var tmem_addr: UInt32 = 0
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
-    tcgen05_release_allocation_lock()
+    tcgen05_release_allocation_lock[1]()
     tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
@@ -125,9 +128,46 @@ fn test_tcgen05_st() raises:
         st_test_fn,
         target = _get_gpu_target["sm_100a"](),
     ]()
-    print(asm)
     assert_true("tcgen05.st.sync.aligned.32x32b.x64.b32" in asm)
     assert_true("tcgen05.wait::st.sync.aligned;" in asm)
+
+
+fn cp_test_fn():
+    var ptr_tmem_addr = UnsafePointer[
+        UInt32, address_space = AddressSpace.SHARED, alignment=16
+    ]()
+    var num_cols: UInt32 = 32
+    tcgen05_alloc[1](ptr_tmem_addr, num_cols)
+    var tmem_addr = ptr_tmem_addr[0]
+
+    var smem_tile = LayoutTensor[
+        DType.float32,
+        IntTuple(32, 32),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ].stack_allocation()
+
+    var s_desc = MMASmemDescriptor.create[0, 0](smem_tile.ptr)
+
+    tcgen05_cp[
+        cta_group=1,
+        datapaths=128,
+        bits=256,
+        src_fmt="b6x16_p32",
+        dst_fmt="b8x16",
+        multicast="warpx2::01_23",
+    ](tmem_addr, s_desc)
+
+
+fn test_tcgen05_cp() raises:
+    var asm = _compile_code_asm[
+        cp_test_fn,
+        target = _get_gpu_target["sm_100a"](),
+    ]()
+    assert_true(
+        "tcgen05.cp.cta_group::1.128x256b.warpx2::01_23.b8x16.b6x16_p32" in asm
+    )
 
 
 fn main() raises:
@@ -135,3 +175,4 @@ fn main() raises:
     test_tcgen05_dealloc()
     test_tcgen05_ld()
     test_tcgen05_st()
+    test_tcgen05_cp()

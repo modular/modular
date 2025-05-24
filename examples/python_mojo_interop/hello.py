@@ -10,24 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
-from compile import compile_info
-from testing import *
+# The Mojo importer module will handle compilation of the Mojo files.
+import max._mojo.mojo_importer  # noqa
+import os
+import sys
 
+sys.path.insert(0, "")
 
-def test_compile_llvm():
-    @parameter
-    fn my_add_function[
-        type: DType, size: Int
-    ](x: SIMD[type, size], y: SIMD[type, size]) -> SIMD[type, size]:
-        return x + y
+# This is a temporary workaround to prevent conflicts.
+os.environ["MOJO_PYTHON_LIBRARY"] = ""
 
-    alias func = my_add_function[DType.float32, 4]
-    var asm = compile_info[func, emission_kind="llvm"]()
+# Importing our Mojo module, defined in the `hello_mojo.mojo` file.
+import hello_mojo
 
-    assert_true("fadd" in asm)
-
-
-def main():
-    test_compile_llvm()
+if __name__ == "__main__":
+    # Calling into a Mojo `passthrough` function from Python:
+    result = hello_mojo.passthrough("Hello")
+    print(result)

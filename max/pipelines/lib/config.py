@@ -246,9 +246,10 @@ class PipelineConfig(MAXConfig):
                 raise ValueError(msg)
             elif len(module_parts) == 2:
                 module_path, module_name = module_parts
-                sys.path.append(module_path)
             else:
-                module_name = module_parts[0]
+                module_path = os.path.dirname(module_parts[0])
+                module_name = os.path.basename(module_parts[0])
+            sys.path.append(module_path)
             try:
                 module = importlib.import_module(module_name)
             except Exception as e:

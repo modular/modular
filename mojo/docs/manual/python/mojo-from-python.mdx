@@ -1,0 +1,517 @@
+---
+title: Calling Mojo from Python
+sidebar_position: 3
+description: How to import and use Mojo modules in Python code.
+---
+
+If you have an existing Python project that would benefit from Mojo's
+high-performance computing, you shouldn't have to rewrite the whole thing in
+Mojo. Instead, you can write just the performance-critical parts your code in
+Mojo and then call it from Python.
+
+:::caution Early preview
+
+Calling Mojo code from Python is in early development. You should expect a lot
+of changes to the API and ergonomics. Likewise, this documentation is still a
+work in progress. See below for [known limitations](#known-limitations).
+
+:::
+
+## Import a Mojo module in Python
+
+To illustrate what calling Mojo from Python looks like, we'll start with a
+simple example, and then dig into the details of how it works and what is
+possible today.
+
+Consider a project with the following structure:
+
+```text
+project
+├── 🐍 main.py
+└── 🔥 mojo_module.mojo
+```
+
+The main entrypoint is a Python program called `main.py`, and the Mojo code
+includes functions to call from Python.
+
+For example, let's say we want a Mojo function to take a Python value as an
+argument:
+
+```mojo title="🔥 mojo_module.mojo"
+fn factorial(py_obj: PythonObject) raises -> Python
+    var n = Int(py_obj)
+    return math.factorial(n)
+```
+
+And we want to call it from Python like this:
+
+```python title="🐍 main.py"
+import mojo_module
+
+print(mojo_module.factorial(5))
+```
+
+However, before we can call the Mojo function from Python, we must declare it
+so Python knows it exists.
+
+Because Python is trying to load `mojo_module`, it looks for a function called
+`PyInit_mojo_module()`. (If our file is called `foo.mojo`, the function would
+be `PyInit_foo()`.) Within the `PyInit_mojo_module()`, we must declare all Mojo
+functions and types that are callable from Python using
+[`PythonModuleBuilder`](/mojo/stdlib/python/bindings/PythonModuleBuilder).
+
+So the complete Mojo code looks like this:
+
+```mojo title="🔥 mojo_module.mojo"
+from python import PythonObject
+from python.bindings import PythonModuleBuilder
+import math
+from os import abort
+
+@export
+fn PyInit_mojo_module() -> PythonObject:
+    try:
+        var m = PythonModuleBuilder("mojo_module")
+        m.def_function[factorial]("factorial", docstring="Compute n!")
+        return m.finalize()
+    except e:
+        return abort[PythonObject](String("error creating Python Mojo module:", e))
+
+fn factorial(py_obj: PythonObject) raises -> PythonObject:
+    # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
+    var n = Int(py_obj)
+
+    return math.factorial(n)
+```
+
+On the Python side, we currently need some more boilerplate code to make it
+work (but this will improve soon):
+
+```python title="🐍 main.py"
+import max._mojo.mojo_importer
+import os
+import sys
+
+sys.path.insert(0, "")
+os.environ["MOJO_PYTHON_LIBRARY"] = ""
+
+import mojo_module
+
+print(mojo_module.factorial(5))
+```
+
+That's it! Try it:
+
+```sh
+python main.py
+```
+
+```output
+120
+```
+
+
+### How it works
+
+Python supports a standard mechanism called [Python extension
+modules](https://docs.python.org/3/extending/extending.html) that enables
+compiled languages (like Mojo, C, C++, or Rust) to make themselves callable
+from Python in an intuitive way. Concretely, a Python extension module is
+simply a dynamic library that defines a suitable `PyInit_*()` function.
+
+Mojo comes with built-in functionality for defining Python extension modules.
+The special stuff happens in the `max._mojo.mojo_importer` module we imported.
+
+If we have a look at the filesystem after Python imports the Mojo code, we'll
+notice there's a new `__mojocache__` directory, with dynamic library (`.so`)
+file inside:
+
+```text
+project
+├── main.py
+├── mojo_module.mojo
+└── __mojocache__
+    └── mojo_module.hash-ABC123.so
+```
+
+Loading `max._mojo.mojo_importer` loads our Python Mojo [import
+hook](https://docs.python.org/3/reference/import.html#import-hooks), which
+behind the scenes looks for a `.mojo` (or `.🔥`) file that matches the imported
+module name, and if found, compiles it using [`mojo build --emit
+shared-lib`](/mojo/cli/build#--emit-file_type) to generate a static library.
+The resulting file is stored in `__mojocache__`, and is rebuilt only when
+it becomes stale (typically, when the Mojo source file changes).
+
+Now that we've looked at the basics of how Mojo can be used from Python, let's
+dig into the available features and how you can leverage them to accelerate
+your Python with Mojo.
+
+## Binding Mojo types
+
+All Mojo type are eligible to be bound for use from Python.
+To expose a Mojo type to Python, it must implement the
+[`TypeIdentifiable`][TypeIdentifiable] trait.
+For a simple Mojo type, this might look like:
+
+```mojo title="🔥 Mojo"
+struct Person(TypeIdentifiable, ...):
+    var name: String
+    var age: Int
+
+    # Unique name under which the type object is stored.
+    # Eventually this will be a compiler provided unique type ID.
+    alias TYPE_ID = "mojo_module.Person"
+```
+
+:::note
+
+Types currently must also implement `Movable`, `Defaultable`, and
+`Representable` to be bound for use from Python.
+
+:::
+
+This enables the type to be bound using `PythonModuleBuilder.add_type[Person]()`:
+
+```mojo title="🔥 Mojo"
+var mb = PythonModuleBuilder("mojo_module")
+mb.add_type[Person]("Person")
+```
+
+Any Mojo type bound using a `PythonTypeBuilder` will have the resulting
+Python 'type' object be globally registered, enabling two features:
+
+* Constructing Python objects that wrap Mojo values for use from Python using
+  `PythonObject(alloc=Person(..))`.
+
+* Downcasting using `python_obj.downcast_value_ptr[Person]()`
+
+{/* <!-- TODO:
+## Binding Mojo Functions
+-->
+
+<!-- TODO:
+## Binding Mojo Methods
+--> */}
+
+## Constructing Python objects in Mojo
+
+:::note
+
+Python Mojo bindings do not currently support Mojo `__init__()` methods that
+take arguments. However, a workaround is possible using free functions that
+construct new objects, shown below.
+
+:::
+
+Mojo functions called from Python don't just need to be able to accept
+[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) values as
+arguments, they also need to be able to return new values. And sometimes, they
+even need to be able to return Mojo native values back to Python. This is
+possible by using the `PythonObject(alloc=<value>)` constructor.
+
+An example of this looks like:
+
+```mojo title="🔥 Mojo"
+fn create_person() -> PythonObject:
+    var person = Person("Sarah", 32)
+    return PythonObject(alloc=person^)
+```
+
+:::caution
+
+`PythonObject(alloc=...)` will raise an exception if the provided Mojo
+object type had not previously been registered using
+[`PythonModuleBuilder.add_type()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#add_type).
+
+:::
+
+{/*
+TODO: How to distinguish this constructor from the converting constructor?
+TODO: Maybe `PythonObject.mojo()` / `PythonObject(mojo_object=)`?
+TODO: `PythonObject.__init__[T: TypeIdentifiable](out self, *, owned alloc: T)
+*/}
+
+
+{/* <!--
+## The `__mojocache__`
+
+TODO: What is this directory, when is it created, what artifacts are stored in
+    it, note that its always safe to delete.
+--> */}
+
+## `PythonObject` to Mojo values
+
+Within any Mojo code that is handling a
+[`PythonObject`](/mojo/stdlib/python/python_object/PythonObject), but
+especially within Mojo functions called from Python, it's common to expect an
+argument of a particular type. particular type and wish
+
+There are two scenarios where a `PythonObject` can be "converted" into a native
+Mojo value:
+
+* **Converting** a Python object into a newly constructed Mojo value that has
+   the same logical value as the original Python object.
+   This is handled by the [`ConvertibleFromPython`][ConvertibleFromPython] trait.
+
+* **Downcasting** a Python object that holds a native Mojo value to a pointer
+   to that inner value.
+   This is handled by [`PythonObject.downcast_value_ptr()`][downcast_value_ptr].
+
+{/* <!-- TODO:
+3. **Narrowing** a generic Python object into a more specific object type, like
+   `TypedPythonObject["Tuple"]` or `TypedPythonObject["List"]`
+-->
+
+<!-- TODO:
+Since `PythonObject` are reference counted, and Mojo `Pointer` is guaranteed
+to be either immutable or a unique pointer, safe object downcasting currently
+only works to immutable pointers.
+--> */}
+
+### `PythonObject` conversions
+
+:::note
+
+**Binding Initializers.** One current limitation is that non-default Mojo
+type `__init__()` methods cannot be bound for calling from Python. In addition
+to showing argument conversions, this example also shows how a top-level
+function can be used to construct and return instances of Mojo types to Python.
+
+:::
+
+Many Mojo types support conversion directly from equivalent Python types, via
+the [`ConvertibleFromPython`][ConvertibleFromPython] trait:
+
+```mojo title="🔥 Mojo"
+fn create_person(
+    name_obj: PythonObject,
+    age_obj: PythonObject
+) raises -> PythonObject:
+    # These conversions will raise an exception if they fail
+    var name = String(name_obj)
+    var age = Int(age_obj)
+
+    return PythonObject(alloc=Person(name, age))
+```
+
+Which could be called from Python using:
+
+```python title="🐍 Python"
+person = mojo_module.create_person("John Smith", 42)
+```
+
+Passing invalid arguments would result in a type error:
+
+```python title="🐍 Python"
+# TODO: What is the exact error message this emits today?
+person = mojo_module.create_person([1, 2, 3], {"foo": 4})
+```
+
+### `PythonObject` downcasts
+
+Downcasting from `PythonObject` values to the inner Mojo value:
+
+```mojo title="🔥 Mojo"
+fn print_age(person_obj: PythonObject):
+    # Raises if `obj` does not contain an instance of the Mojo `Person` type.
+    var person = person_obj.downcast_value_ptr[Person]()
+    # TODO(MSTDL-1581):
+    #   var person = Pointer[Person](downcast_value=person_obj)
+    print("Person is", person[].age, "years old")
+```
+
+Unsafe mutable via downcasting is also supported. It is up to the user to ensure
+that this mutable pointer does not alias any other pointers to the same object
+within Mojo:
+
+```mojo title="🔥 Mojo"
+fn birthday(person_obj: PythonObject):
+    var person = person_obj.downcast_value_ptr[Person]()
+    # TODO:
+    #   var person = Pointer[Person](unsafe_unique_downcast=person_obj)
+    person[].age += 1
+```
+
+Entirely unchecked downcasting--which does no type checking--can be done using:
+
+```mojo title="🔥 Mojo"
+fn get_person(person_obj: PythonObject):
+    var person = person_obj.unchecked_downcast_value_ptr[Person]()
+    # TODO:
+    #   var person = Pointer[Person](unchecked_downcast_value=person_obj)
+```
+
+Unchecked downcasting can be used to eliminate overhead when optimizing a tight
+inner loop with Mojo, and you've benchmarked and measured that type checking
+downcasts is a significant bottleneck.
+
+## Writing Python in Mojo
+
+In this approach to bindings, we embrace the flexibility of Python, and eschew
+trying to convert `PythonObject` arguments into the narrowly constrained,
+strongly-typed space of the Mojo type system, in favor of just writing some code
+and letting it raise an exception at runtime if we got something wrong.
+
+The flexibility of `PythonObject` enables a unique programming style, wherein
+Python code can be "ported" to Mojo with relatively few changes.
+
+```python title="🐍 Python"
+def foo(x, y, z):
+    x[y] = int(z)
+    x = y + z
+```
+
+Rule of thumb: Any Python builtin function should be accessible in Mojo using
+`Python.<builtin>()`.
+
+```mojo title="🔥 Mojo"
+fn foo(x: PythonObject, y: PythonObject, z: PythonObject) -> PythonObject:
+    x[y] = Python.int(z)
+    x = y + z
+    x.attr = z
+```
+
+## Keyword arguments
+
+Keyword arguments are not currently supported natively in Python Mojo bindings,
+but a simple pattern can be used to provide them to users of your library, using
+a Python wrapper function that passes keyword arguments into Mojo using a dict.
+
+A simple example of this pattern looks like:
+
+```python title="🐍 Python"
+import mojo_module
+
+def supports_kwargs(pos, *, kw1 = None, kw2 = None):
+    mojo_module.supports_kwargs(pos, { "kw1": kw1, "kw2": kw2})
+```
+
+```mojo title="🔥 Mojo"
+fn supports_kwargs(pos: PythonObject, kwargs: PythonObject) raises:
+    var kw1 = kwargs["kw1"]
+    var kw2 = kwargs["kw2"]
+```
+
+Because keyword argument validation and default values are handled within the
+Python wrapper function, callers will get the standard argument errors they
+expect.
+And the Mojo code stays simple, as getting the keyword argument is a simple
+dictionary lookup.
+
+## Variadic functions
+
+When binding functions using
+[`PythonModuleBuilder.def_function()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#def_function),
+only fixed-arity functions are supported. To expose Mojo functions that accept
+a variadic number of arguments to Python, you can use the lower-level
+[`def_py_function()`](/mojo/stdlib/python/bindings/PythonModuleBuilder#def_py_function)
+interface, which leaves it to the user to validate the number of arguments
+provided.
+
+```mojo title="🔥 Mojo"
+@export
+fn PyInit_mojo_module() -> PythonObject:
+    try:
+        var b = PythonModuleBuilder("mojo_module")
+        b.def_py_function[count_args]("count_args")
+        b.def_py_function[sum_args]("sum_args")
+        b.def_py_function[lookup]("lookup")
+
+fn count_args(py_self: PythonObject, args: TypedPythonObject["Tuple"]):
+    return len(args)
+
+fn sum_args(py_self: PythonObject, args: TypedPythonObject["Tuple"]):
+    var total = args[0]
+    for i in range(1, len(args)):
+        total += args[i]
+    return total
+
+fn lookup(py_self: PythonObject, args: TypedPythonObject["Tuple"]) raises:
+    if len(args) != 2 and len(args) != 3:
+        raise Error("lookup() expects 2 or 3 arguments")
+
+    var collection = args[0]
+    var key = args[1]
+
+    try:
+        return collection[key]
+    except e:
+        if len(args) == 3:
+            return args[2]
+        else:
+            raise e
+```
+
+## Building Mojo extension modules
+
+You can create and distribute your Mojo modules for Python in the following
+ways:
+
+* As source files, compiled on demand using the Python Mojo importer hook.
+
+   The advantage of this approach is that it's easy to get started with, and
+   keeps your project structure simple, while ensuring that your imported Mojo
+   code is always up to date after you make an edit.
+
+* As pre-built Python extension module `.so` dynamic libraries, compiled using:
+
+   ```shell
+   $ mojo build mojo_module.mojo --emit shared-lib -o mojo_module.so
+   ```
+
+   This has the advantage that you can specify any other necessary build options
+   manually (optimization or debug flags, import paths, etc.), providing an
+   "escape hatch" from the Mojo import hook abstraction for advanced users.
+
+
+## Known limitations
+
+While we have big ambitions for Python to Mojo interoperability—our goal is for
+Mojo to be the best way to extend Python—this feature is still in early and
+active development, and there are some limitations to be aware of. These will
+be lifted over time.
+
+* **Functions taking more than 3 arguments.**
+  Currently `PyTypeBuilder.add_function()` and related
+  function bindings only support Mojo functions that take up to 3 `PythonObject`
+  arguments: `fn(PythonObject, PythonObject, PythonObject)`.
+
+* **Binding non-default initializers.**
+  Currently, only Mojo types that are default constructible (`Foo()`) can be
+  bound and constructed using standard object init syntax from within Python.
+  A workaround pattern is described below.
+
+* **Keyword arguments.**
+  Currently, Mojo functions callable from Python only natively support positional
+  arguments. (However, if you really need them, a simple pattern for supporting
+  keyword arguments is described below.)
+
+* **Mojo package dependencies.**
+  Mojo code that has dependencies on packages other than the Mojo stdlib
+  (like those in the ever-growing
+  [Modular Community](https://github.com/modular/modular-community) package
+  channel) are currently only supported when building Mojo extension modules
+  manually, as the Mojo import hook does not currently support a way to
+  specify import paths for Mojo package dependencies.
+
+* **Static methods.**
+  Binding to type `@staticmethod` methods is not currently supported. Consider
+  using a free function (top-level function) instead for the time being.
+
+* **Properties.**
+  Computed properties getter and setters are not currently supported.
+
+* **Expected type conversions.**
+  A handful of Mojo standard library types can be constructed directly from
+  equivalent Python builtin object types, by implementing the
+  [`ConvertibleFromPython`][ConvertibleFromPython] trait.
+  However, many Mojo standard library types do not yet implement this trait,
+  so may require manual conversion logic if needed.
+
+{/*
+link reference
+*/}
+
+[ConvertibleFromPython]: /mojo/stdlib/python/python_object/ConvertibleFromPython
+[TypeIdentifiable]: /mojo/stdlib/builtin/identifiable/TypeIdentifiable
+[downcast_value_ptr]: /mojo/stdlib/python/python_object/PythonObject#downcast_value_ptr

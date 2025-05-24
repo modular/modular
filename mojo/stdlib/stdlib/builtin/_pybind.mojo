@@ -24,7 +24,7 @@ from python import (
     TypedPythonObject,
     ConvertibleFromPython,
 )
-from python._bindings import (  # Imported for use by the compiler
+from python.bindings import (  # Imported for use by the compiler
     PyMojoObject,
     PythonModuleBuilder,
     PythonTypeBuilder,

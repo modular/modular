@@ -16,7 +16,7 @@ from builtin.identifiable import TypeIdentifiable
 
 from memory import UnsafePointer
 from python import Python, PythonObject
-from python._bindings import PythonModuleBuilder
+from python.bindings import PythonModuleBuilder
 
 
 @export
