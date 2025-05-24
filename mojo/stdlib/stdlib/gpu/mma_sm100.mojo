@@ -848,15 +848,15 @@ struct MMASmemDescriptor:
         var start_address = UInt64((base_ptr & 0x3FFFF) >> 4)
 
         # Ignore 4 LSB.
-        var sbo = UInt64(stride_byte_offset >> 4)
-        var lbo = UInt64(leading_byte_offset >> 4)
+        var sbo = UInt64((stride_byte_offset & 0x3FFF) >> 4)
+        var lbo = UInt64((leading_byte_offset & 0x3FFF) >> 4)
 
-        # Start from LSB in case updated higher bits gets overwritten.
+        # Start from LSB. Mask out higher bits to avoid overwriting.
         var desc = UInt64(0)
         # bits  0-13 address in share memory
         desc = Self._insert_bit[0](desc, start_address)
         # bits 14-16 unused
-        # bits 16-30 leading dim byte offset
+        # bits 16-29 leading dim byte offset
         desc = Self._insert_bit[16](desc, lbo)
         # bits 30-32 unused
         # bits 32-45 stride dim byte offset
