@@ -10,7 +10,7 @@
 
 #include "ClosureEmitter.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "ParserEvaluationContext.h"
@@ -234,7 +234,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   storeField(b, self,
              b.create<CreateClosureOp>(ParamDeclRefAttr::get(paramDecl)),
              b.getStringAttr("call"));
-  ExprEmitter::emitNormalReturn(b);
+  IREmitter::emitNormalReturn(b);
 
   // Populate the lambda.
   b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
@@ -248,7 +248,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto callIndirect =
       b.create<CallIndirectOp>(fnPtrType.getResultType(), fnPtr, origins,
                                ArrayRef(callArgs).drop_front());
-  ExprEmitter::emitNormalReturn(b, callIndirect.getResult(0));
+  IREmitter::emitNormalReturn(b, callIndirect.getResult(0));
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
@@ -434,7 +434,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
     auto callResult = builder.create<CallIndirectOp>(
         resultType, callMemberPtr, implicitOrigins, arguments);
-    ExprEmitter::emitNormalReturn(builder, callResult.getResult(0));
+    IREmitter::emitNormalReturn(builder, callResult.getResult(0));
   }
 
   synthesizeWrapperFnPtrCtor(structDecl, selfType, dependentSignatureType);
@@ -583,7 +583,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
 
   StructFieldOp paramField;
-  ExprEmitter emitter(nestedFnDecl, builder);
+  IREmitter emitter(nestedFnDecl, builder);
   SyntheticNode loc(nestedFnDecl.getLoc());
   if (hasParamClosureCaptures) {
     // Propagate the 'capturing' bit to the init function.
@@ -861,7 +861,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                      /*endUninit=*/false);
 
   // Move the contents of the injected impl into the heap memory.
-  ExprEmitter emitter(moduleDecl, builder);
+  IREmitter emitter(moduleDecl, builder);
   emitter.emitStoreToLValue({MRValue(source), &node}, MLValue(targetRef),
                             EC_Assignment);
 
@@ -945,7 +945,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
     // Copy the existing value into the target.
     // TODO: Use nicer expr emitter for the result expr.
-    ExprEmitter emitter(*copyInitDecl, builder);
+    IREmitter emitter(*copyInitDecl, builder);
     emitter.emitStoreToLValue({MLValue(existingRef), &node}, MLValue(targetRef),
                               EC_Assignment);
 
@@ -992,7 +992,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
-    ExprEmitter::emitNormalReturn(builder);
+    IREmitter::emitNormalReturn(builder);
   }
 
   // Set the member.
@@ -1067,7 +1067,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     Value result =
         builder.create<CallOp>(resultType, typedSymbol, implicitOrigins, args)
             .getResult(0);
-    ExprEmitter::emitNormalReturn(builder, result);
+    IREmitter::emitNormalReturn(builder, result);
   }
   setMember(topLevelCall, callFieldAttr, topLevelTypes.callFuncFieldType);
   return init;

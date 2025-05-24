@@ -25,7 +25,7 @@ class raw_indented_ostream;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
-class ExprEmitter;
+class IREmitter;
 class ExprNode;
 class FnTypeGeneratorType;
 class ParserBase;

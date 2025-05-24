@@ -10,8 +10,8 @@
 
 #include "KGEN/MojoParser/IRValues.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -399,7 +399,7 @@ InitializerUValue InitializerUValue::create(Syntax syntax, const ExprNode *expr,
 const CallOperands &InitializerUValue::get() const { return storage->operands; }
 
 static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
-                          const ExprNode *expr, ExprEmitter &emitter) {
+                          const ExprNode *expr, IREmitter &emitter) {
   // Emit the tuple in a parameter context so we don't eagerly generated IR into
   // the body of any current function.
   auto paramEmitter = emitter.getParamEmitter(EC_CollectionLiteral);
@@ -415,7 +415,7 @@ static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
 /// we should use to try to construct it.  This returns failure if invalid.
 CallOperands
 InitializerUValue::getOperandsForInferredType(ASTType type,
-                                              ExprEmitter &emitter) const {
+                                              IREmitter &emitter) const {
   CallOperands operands(get());
   switch (syntax) {
   case Syntax::kSlice:
@@ -479,7 +479,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
 
 /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CValue InitializerUValue::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
+CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 
   // If we have the inferred contextual type, we can emit the constructor call.
   if (ASTType expectedType = dest.getExpectedTypeIfSpecified()) {

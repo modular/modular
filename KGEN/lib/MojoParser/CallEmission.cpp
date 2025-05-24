@@ -9,8 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParameterInference.h"
@@ -284,9 +284,10 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   return {};
 }
 
-static LogicalResult emitOperandsNeedingOriginsToMemory(
-    const OverloadFitness &info, FnTypeGeneratorType expectedSig,
-    CallOperands &operands, ExprEmitter &emitter) {
+static LogicalResult
+emitOperandsNeedingOriginsToMemory(const OverloadFitness &info,
+                                   FnTypeGeneratorType expectedSig,
+                                   CallOperands &operands, IREmitter &emitter) {
   const auto &argsNeedingOrigins = info.getArgsNeedingOrigins();
   assert(argsNeedingOrigins.any() && "should emit something");
 
@@ -332,7 +333,7 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
 /// return null.
 PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                                       bool emitDiagnosticOnFailure,
-                                      ExprEmitter &emitter) const {
+                                      IREmitter &emitter) const {
 
   // We allow implicit conversion of the operands to this call unless it is
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
@@ -620,7 +621,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
     // This candidate is valid if it can be implicitly converted to the required
     // function type.
-    if (ExprEmitter::canImplicitlyConvertToType(
+    if (IREmitter::canImplicitlyConvertToType(
             {UnboundAttr::get(candidateType), expr}, functionType, declScope))
       return newBindings;
     return {};
@@ -651,7 +652,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
       newBindings.addPrechecked(expr, bind);
 
     // Use an emitter with invalid context, since errors aren't expected.
-    ExprEmitter emitter(declScope, EC_InvalidContext);
+    IREmitter emitter(declScope, EC_InvalidContext);
     PValue callee =
         getCallee(validCandidates.front(), baseName, newBindings, expr);
     return emitter.emitPValue({callee, expr}, EC_InvalidContext, functionType);
@@ -805,7 +806,7 @@ PValue OverloadSet::lookupAndResolve(
     ASTType type, StringRef methodName, CallOperands &callOperands,
     const ExprNode *callExpr, CallSyntax syntax,
     function_ref<void()> lookupFailureErrorHandler,
-    bool shouldPrintOverloadErrors, ExprEmitter &emitter) {
+    bool shouldPrintOverloadErrors, IREmitter &emitter) {
   auto ovSet = OverloadSet::lookup(emitter.getDeclScope(), type, methodName,
                                    callExpr, syntax, lookupFailureErrorHandler);
 
@@ -870,7 +871,7 @@ PValue OverloadSet::getIfPValue() const {
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
+CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
   // If we have an overload set with multiple possibilities, we'll fail to emit
   // this as a RValue.  Try to resolve it based on the destination's type.
   ASTType expectedType;
@@ -919,7 +920,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
-                             ExprEmitter &emitter) {
+                             IREmitter &emitter) {
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
   if (baseValue)
@@ -937,9 +938,9 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
   return emitter.emitCallUnchecked(callee, operands, dest, syntax, expr);
 }
 
-CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
-                                     ValueDest &dest, CallSyntax syntax,
-                                     const ExprNode *callExpr) {
+CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
+                                   ValueDest &dest, CallSyntax syntax,
+                                   const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<FuncTypeGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
     // If we are invoking something other than a FuncTypeGeneratorType, try to
@@ -1002,10 +1003,10 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   return emitCallUnchecked(boundCalleeRV, operands, dest, syntax, callExpr);
 }
 
-CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
-                                        CallOperands &&operands,
-                                        ValueDest &dest, CallSyntax syntax,
-                                        const ExprNode *callNode) {
+CValue IREmitter::emitNamedMethodCall(StringRef methodName,
+                                      CallOperands &&operands, ValueDest &dest,
+                                      CallSyntax syntax,
+                                      const ExprNode *callNode) {
   assert(!operands.values.empty() &&
          "Cannot emit a method call without a receiver!");
 
@@ -1057,10 +1058,9 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 /// Emit a call to __init__, returning an instance of the specified type.  If
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
-CValue ExprEmitter::emitConstructorCall(ASTType type,
-                                        CallOperands &&callOperands,
-                                        const ExprNode *expr, CallSyntax syntax,
-                                        ValueDest &dest) {
+CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
+                                      const ExprNode *expr, CallSyntax syntax,
+                                      ValueDest &dest) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType()) {
     dest.resetForError();
@@ -1180,9 +1180,9 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   callee.paramBindings =
       ParamBindings::getForDeclaredType(declScope, requiredType, expr);
 
-  // Determine if we can emit this using an ExprEmitter in the parameter domain.
+  // Determine if we can emit this using an IREmitter in the parameter domain.
   // This ensures we don't emit any code converting parameters to MValues etc.
-  ExprEmitter paramEmitter(declScope, ExprContext::EC_CallCalleeValue);
+  IREmitter paramEmitter(declScope, ExprContext::EC_CallCalleeValue);
 
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not

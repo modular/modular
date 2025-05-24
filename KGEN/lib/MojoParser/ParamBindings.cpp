@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ParamBindings.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "MojoUtils.h"
@@ -183,7 +183,7 @@ void ParamBindings::add(const ExprNode *expr, PValue value, StringAttr name) {
 static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
                                        ASTType expectedType,
                                        size_t &numImplicitConversions,
-                                       ExprEmitter &emitter,
+                                       IREmitter &emitter,
                                        ParserParameterEvaluator &evaluator) {
 
   PValue bindingVal = binding.ir.getIfPValue();
@@ -207,7 +207,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
     return bindingVal;
 
   // If the parameter can be implicitly converted, do so.
-  if (ExprEmitter::canImplicitlyConvertToType(
+  if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     numImplicitConversions += 2;
     return emitter.emitPValue(binding, EC_CallParamValue, expectedType);
@@ -319,7 +319,7 @@ ParamBindings::verifyBindingsImpl(
 
   // Use an expr emitter to perform implicit conversions within a parameter
   // context.
-  ExprEmitter emitter(declScope, EC_ParameterList);
+  IREmitter emitter(declScope, EC_ParameterList);
 
   // The next positional (or explicitly-specified inferred) binding index.
   size_t posBindingIdx = 0;

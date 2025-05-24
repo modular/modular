@@ -36,7 +36,7 @@
 // One of the important functions of IRValue is to allow the parser to track
 // different value kinds without inserting lots of casts everywhere.  In
 // particular, MBValue can be a reference with arbitrary mutability because
-// ExprEmitter::emitResult needs to return a borrow to a value emitted to a
+// IREmitter::emitResult needs to return a borrow to a value emitted to a
 // ValueDest, but often the result is ignored.  We wouldn't want the parser to
 // insert tons of dead "imm cast" ops into the IR.
 //
@@ -55,7 +55,7 @@
 namespace M::KGEN::LIT {
 class BaseDLValue;
 class ExprNode;
-class ExprEmitter;
+class IREmitter;
 class OverloadSet;
 class FnOp;
 class ValueDest;
@@ -325,11 +325,11 @@ public:
   /// Given an inferred type for this initializer list, return the operands that
   /// we should use to try to construct it.  This returns failure if invalid.
   CallOperands getOperandsForInferredType(ASTType type,
-                                          ExprEmitter &emitter) const;
+                                          IREmitter &emitter) const;
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
-  CValue emitAsCValue(ExprEmitter &emitter, ValueDest &dest);
+  CValue emitAsCValue(IREmitter &emitter, ValueDest &dest);
 
 private:
   struct ImplWrapper;
@@ -726,16 +726,15 @@ public:
   virtual void print(raw_ostream &os) const = 0;
 
   // This hook is called before an argument is passed 'mut'.
-  virtual LValue prepareForMutAccess(llvm::SMLoc loc,
-                                     ExprEmitter &emitter) const;
+  virtual LValue prepareForMutAccess(llvm::SMLoc loc, IREmitter &emitter) const;
 
-  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
+  virtual CValue emitLoad(ValueDest &dest, IREmitter &emitter) const = 0;
   virtual CValue emitStore(ASTExprAnd<CValue> value,
-                           ExprEmitter &emitter) const = 0;
+                           IREmitter &emitter) const = 0;
 
   /// If this is a def argument shadow, resolve it to the incoming immutable
   /// borrowed value without forming a local copy.  Otherwise return null.
-  virtual MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const {
+  virtual MBValue emitMBValueFromDefArgument(IREmitter &emitter) const {
     return MBValue();
   }
 

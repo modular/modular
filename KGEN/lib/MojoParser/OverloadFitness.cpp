@@ -10,8 +10,8 @@
 
 #include "OverloadFitness.h"
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "MojoUtils.h"
 #include "ParameterInference.h"
@@ -261,13 +261,12 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                          << operandRefTy.getAddressSpace()
                          << " doesn't match expected address space "
                          << argType.getAddressSpace();
-  } else if (!ExprEmitter::canZeroCostConvert(operandRefTy.getOriginType(),
-                                              argType.getOriginType(),
-                                              shared)) {
+  } else if (!IREmitter::canZeroCostConvert(operandRefTy.getOriginType(),
+                                            argType.getOriginType(), shared)) {
     diag.attachNote(loc) << "operand mutability " << operandRefTy.isMutable()
                          << " doesn't match expected mutability "
                          << argType.isMutable();
-  } else if (!ExprEmitter::canZeroCostConvert(operandRefTy, argType, shared)) {
+  } else if (!IREmitter::canZeroCostConvert(operandRefTy, argType, shared)) {
     auto operandO = operandRefTy.getOrigin();
     auto argO = argType.getOrigin();
     // Strip off mutcasts etc - if the origins still differ we can complain
@@ -523,7 +522,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.
     if (valueRefType) {
-      if (ExprEmitter::canZeroCostConvert(valueRefType, expectedType, shared))
+      if (IREmitter::canZeroCostConvert(valueRefType, expectedType, shared))
         return {kValidType, expectedType};
       // Otherwise this is the wrong type for the argument.
       return {kWrongType, expectedType};
@@ -569,7 +568,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // type.
     if (!argVal) {
       if (auto initValue = operand.ir.getIfInitializer()) {
-        ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
+        IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
         CallOperands operands =
             initValue->getOperandsForInferredType(expectedType, emitter);
 
@@ -620,14 +619,14 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (ExprEmitter::canZeroCostConvert(argType, expectedType, shared))
+    if (IREmitter::canZeroCostConvert(argType, expectedType, shared))
       return {kValidType, expectedType};
 
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
     if (allowImplicitConversions &&
-        ExprEmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                                expectedType, declScope)) {
+        IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
+                                              expectedType, declScope)) {
       // If we had one, this bumps our # implicit conversions.
       payload.numImplicitConversions += 2;
       return {kValidType, expectedType};

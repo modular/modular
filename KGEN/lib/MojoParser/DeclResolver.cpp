@@ -9,7 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "ExprEmitter.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -922,7 +922,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   auto wrappedCall = shimBodyBuilder.create<CallOp>(
       shimMainFn.getArgumentTypes()[0], wrapperFnRef,
       /*originParams=*/std::nullopt, shimMainFn.getArguments());
-  ExprEmitter::emitNormalReturn(shimBodyBuilder, wrappedCall.getResult(0));
+  IREmitter::emitNormalReturn(shimBodyBuilder, wrappedCall.getResult(0));
 
   exportedSymbolNames.insert({mainAttr, funcDecl.getLoc()});
 }

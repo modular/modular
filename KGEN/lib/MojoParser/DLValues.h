@@ -24,9 +24,8 @@ public:
   DiscardDLValue(ASTType elementType, const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  CValue emitStore(ASTExprAnd<CValue> value,
-                   ExprEmitter &emitter) const override;
+  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents a stored attribute projected from
@@ -41,16 +40,15 @@ public:
                             ASTType elementType, const ExprNode *expr);
 
   StructFieldOp getField() const;
-  MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const override;
+  MBValue emitMBValueFromDefArgument(IREmitter &emitter) const override;
 
   /// If this is a def argument shadow, resolve the underlying ref type for the
   /// def argument.
   RefType getMBValueTypeFromDefArgument() const override;
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  CValue emitStore(ASTExprAnd<CValue> value,
-                   ExprEmitter &emitter) const override;
+  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents property access `a.x =`
@@ -78,9 +76,8 @@ public:
                    const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  CValue emitStore(ASTExprAnd<CValue> value,
-                   ExprEmitter &emitter) const override;
+  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
 /// This DLValue implementation represents tuple lvalues, e.g. `(a[i], b) = x`.
@@ -94,9 +91,8 @@ public:
                const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  CValue emitStore(ASTExprAnd<CValue> value,
-                   ExprEmitter &emitter) const override;
+  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
 /// This DLValue is used to lazily synthesize a def argument box the first time
@@ -111,16 +107,15 @@ public:
   // location indicates where diagnostics should be produced if this cannot be
   // done.  This returns null on failure.
   LValue prepareForMutAccess(llvm::SMLoc loc,
-                             ExprEmitter &emitter) const override;
+                             IREmitter &emitter) const override;
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  CValue emitStore(ASTExprAnd<CValue> value,
-                   ExprEmitter &emitter) const override;
+  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 
   /// If this is a def argument shadow, resolve it to the incoming immutable
   /// borrowed value without forming a local copy.  Otherwise return null.
-  MBValue emitMBValueFromDefArgument(ExprEmitter &emitter) const override;
+  MBValue emitMBValueFromDefArgument(IREmitter &emitter) const override;
 
   /// If this is a def argument shadow, resolve the underlying ref type for the
   /// def argument.

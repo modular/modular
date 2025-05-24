@@ -8,8 +8,8 @@
 
 #include "ClosureEmitter.h"
 #include "DLValues.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "MojoUtils.h"
@@ -47,7 +47,7 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
-  ExprEmitter emitter(declScope, EC_Type);
+  IREmitter emitter(declScope, EC_Type);
   result = emitter.emitExprType(expr);
   if (!result)
     return failure();
@@ -272,7 +272,7 @@ void Decorators::applyBodyDecorators(
   // TODO: Emit an attempt to call the decorator value.
   SmallVector<TypedAttr> decoPValues;
   decoPValues.reserve(decoratorExprs.size());
-  ExprEmitter emitter(decl, EC_Decorator);
+  IREmitter emitter(decl, EC_Decorator);
   for (auto [i, decorator] : llvm::enumerate(decoratorExprs)) {
     // Make sure we don't have another body decorator.
     if (failed(process(decorator))) {
@@ -601,7 +601,7 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
       return;
     }
 
-    ExprEmitter emitter(*decl.getParentDecl(), OpBuilder(funcOp));
+    IREmitter emitter(*decl.getParentDecl(), OpBuilder(funcOp));
     RValue captureRVal;
     if (!isMove) {
       // For a copy capture, just emit the value reference as an RValue, which
@@ -698,7 +698,7 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
 }
 
 ArrayAttr FnSigDecorators::getLLVMMetadataArray(ArrayRef<Operand> operands) {
-  ExprEmitter emitter(sigDecl, EC_Decorator);
+  IREmitter emitter(sigDecl, EC_Decorator);
   SmallVector<Attribute> metadata;
   for (Operand value : operands) {
     StringAttr metadataName;
@@ -855,7 +855,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
   if (allVanillaKernelArgs && resultType.isNoneType())
     return;
 
-  ExprEmitter emitter(decl, EC_Type);
+  IREmitter emitter(decl, EC_Type);
   auto generateValueWitnesses = [&](ASTType type,
                                     Location loc) -> DictionaryAttr {
     SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
@@ -997,7 +997,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 
   builder.restoreInsertionPoint(insertPoint);
 
-  ExprEmitter exprEmitter(*nestedFnDecl.getParentDecl(), builder);
+  IREmitter exprEmitter(*nestedFnDecl.getParentDecl(), builder);
   SyntheticNode node(loc);
 
   // Pass all the captured values into the initializer.  In the case of a move
@@ -1317,7 +1317,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 /// Given a value of !kgen.variadic<..> construct a VariadicList and return
 /// the variable declaration holding it.
 static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
-                                   ASTDecl &parentDecl, ExprEmitter &emitter,
+                                   ASTDecl &parentDecl, IREmitter &emitter,
                                    SMLoc loc, ArgConvention convention) {
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
@@ -1458,7 +1458,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   }
 
   // Set up information about value arguments, emitting before the lit.endfn.
-  ExprEmitter emitter(decl, OpBuilder(&body.front()));
+  IREmitter emitter(decl, OpBuilder(&body.front()));
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
@@ -1756,7 +1756,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
 
   // Parse the type if present.
   ASTType parsedType;
-  ExprEmitter emitter(*decl.getParentDecl(), EC_VarInit);
+  IREmitter emitter(*decl.getParentDecl(), EC_VarInit);
   if (p.consumeIf(Token::colon)) {
     ExprNode *typeExpr = nullptr;
     if (p.parseExpression(typeExpr, decl.getIndentation()))
@@ -1852,7 +1852,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       // Don't return; continue parsing as if it has no name, so that references
       // to the name will resolve.
     } else {
-      ExprEmitter emitter(parentDecl, EC_AliasValue);
+      IREmitter emitter(parentDecl, EC_AliasValue);
 
       // Emit the value and convert to the expected type if we know it.
       auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
@@ -2062,7 +2062,7 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           ASTDecl *parentDecl = structDecl.getParentDecl();
-          ExprEmitter emitter(*parentDecl, EC_Type);
+          IREmitter emitter(*parentDecl, EC_Type);
           if (ASTType t = emitter.emitExprType(drn)) {
             structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
             return success();
@@ -2403,7 +2403,7 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
 
   // Emit the constant symbol.
   auto methodsUValue = OverloadSetUValue::create(std::move(methods));
-  ExprEmitter emitter(structDecl, {});
+  IREmitter emitter(structDecl, {});
   PValue value =
       emitter.emitPValue({methodsUValue, decorator}, ExprContext::EC_Decorator);
   if (!value)

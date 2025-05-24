@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-/// The ExprEmitter class is the main driver for expression emission, providing
+/// The IREmitter class is the main driver for expression emission, providing
 /// helper functions used by the individual node emission hooks.
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEmitter.h"
+#include "IREmitter.h"
 #include "CallEmission.h"
 #include "ExprNodes.h"
 #include "MojoUtils.h"
@@ -217,7 +217,7 @@ ASTType ValueDest::getExpectedTypeIfSpecified() const {
 /// Note that this will mutate the ValueDest if it is an ExprNode, turning it
 /// into an LValue to store to.
 ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
-                                      ExprEmitter &emitter) {
+                                      IREmitter &emitter) {
   // Operations generally don't have implied types, except if this is global
   // variable declaration.
   if (auto op = dyn_cast<Operation *>(representation)) {
@@ -274,7 +274,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
 MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
-                                             ExprEmitter &emitter) {
+                                             IREmitter &emitter) {
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
     ValueDest dest(LValueInitializerType{resultType}, getContext());
@@ -316,8 +316,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
 /// NOTE: This needs to be kept in sync with getDefinedMLValueIfExists.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
-                                     bool requireMLValue,
-                                     ExprEmitter &emitter) {
+                                     bool requireMLValue, IREmitter &emitter) {
   // Handle inference of a 'var' declaration's type.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
     // If the result type has a non-materializable type, then we infer the var
@@ -432,7 +431,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 /// initialize. This uses and consumes the destination if it matches the type
 /// of the value dest.
 MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
-                                       ExprEmitter &emitter) {
+                                       IREmitter &emitter) {
   LValue lv =
       getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
                          /*requireMLValue=*/true, emitter);
@@ -454,26 +453,26 @@ bool ValueDest::isNonDefaultAddressSpace() const {
 }
 
 //===----------------------------------------------------------------------===//
-// ExprEmitter
+// IREmitter
 //===----------------------------------------------------------------------===//
 
-/// Create an ExprEmitter for a dynamic context with a builder.
-ExprEmitter::ExprEmitter(ASTDecl &declScope, OpBuilder builder,
-                         std::optional<OpBuilder> varDeclCursor)
+/// Create an IREmitter for a dynamic context with a builder.
+IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
+                     std::optional<OpBuilder> varDeclCursor)
     : SharedStateUser(declScope.getShared()), builder(builder),
       paramContext(EC_InvalidContext), declScope(declScope),
       varDeclCursor(varDeclCursor) {}
 
-/// Create an ExprEmitter for a parameter context.
-ExprEmitter::ExprEmitter(ASTDecl &declScope, ExprContext paramContext)
+/// Create an IREmitter for a parameter context.
+IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext)
     : SharedStateUser(declScope.getShared()), builder({}),
       paramContext(paramContext), declScope(declScope) {}
 
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
 /// PValue.
-PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
-                                                        const char *message) {
+PValue IREmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
+                                                      const char *message) {
   assert(paramContext != EC_InvalidContext &&
          "parameter context not set correctly");
   if (!message)
@@ -484,8 +483,8 @@ PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
 }
 
 PValue
-ExprEmitter::emitErrorForDynamicValueInParameter(llvm::SMLoc loc,
-                                                 const char *customMessage) {
+IREmitter::emitErrorForDynamicValueInParameter(llvm::SMLoc loc,
+                                               const char *customMessage) {
   return emitErrorForDynamicValueInParameter(shared.translateLocation(loc),
                                              customMessage);
 }
@@ -493,8 +492,8 @@ ExprEmitter::emitErrorForDynamicValueInParameter(llvm::SMLoc loc,
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
 /// PValue.
-PValue ExprEmitter::emitErrorForDynamicValueInParameter(Location loc,
-                                                        const char *message) {
+PValue IREmitter::emitErrorForDynamicValueInParameter(Location loc,
+                                                      const char *message) {
   assert(paramContext != EC_InvalidContext &&
          "parameter context not set correctly");
   if (!message)
@@ -506,7 +505,7 @@ PValue ExprEmitter::emitErrorForDynamicValueInParameter(Location loc,
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
-CValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
 
@@ -536,8 +535,8 @@ CValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return emitCopyOfValue({cValue, value.expr}, dest);
 }
 
-RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                               ASTType resultType) {
+RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                             ASTType resultType) {
   ValueDest dest(resultType, context);
   CValue result = emitRValue(value, dest);
   while (true) {
@@ -556,8 +555,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
   }
 }
 
-CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                               ASTType resultType) {
+CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                             ASTType resultType) {
   ValueDest dest(resultType, context);
   if (auto c = emitCValue(value, dest))
     return c;
@@ -565,7 +564,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
   return {};
 }
 
-CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
   // If this is already an CValue, then we are done.
@@ -591,7 +590,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 }
 
 /// Emit an expression providing an immutable borrowed reference to a value.
-BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};
 
@@ -645,8 +644,8 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return resultBV;
 }
 
-BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                               ASTType resultType) {
+BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                             ASTType resultType) {
   ValueDest dest(resultType, context);
   if (auto result = emitBValue(value, dest))
     return result;
@@ -654,7 +653,7 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
   return {};
 }
 
-LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+LValue IREmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value)
     return {};
 
@@ -673,7 +672,7 @@ LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 }
 
 /// Helper to check if we are trying to materialize a dynamic type value.
-static bool emitErrorForMaterializingTypeValues(ExprEmitter &emitter,
+static bool emitErrorForMaterializingTypeValues(IREmitter &emitter,
                                                 ASTExprAnd<PValue> value,
                                                 ExprContext context) {
   TypedAttr attr = value.ir.get();
@@ -691,8 +690,8 @@ static bool emitErrorForMaterializingTypeValues(ExprEmitter &emitter,
   return true;
 }
 
-SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
-                                         ExprContext context) {
+SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
+                                       ExprContext context) {
   TypedAttr attr = value.ir.get();
   const ExprNode *expr = value.expr;
 
@@ -762,8 +761,8 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
-SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
-                                 ExprContext context, ASTType resultType) {
+SRValue IREmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
+                               ExprContext context, ASTType resultType) {
   const ExprNode *expr = anyValue.expr;
 
   // Emit using resultType if present, and eliminate LValue/OverloadSetUValue's.
@@ -797,8 +796,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   return emitPValueToSRValue({pValue, expr}, context);
 }
 
-MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context) {
+MRValue IREmitter::emitMRValue(ASTExprAnd<AnyValue> value,
+                               ExprContext context) {
   auto rVal = emitRValue(value, context);
   if (!rVal)
     return {};
@@ -825,8 +824,8 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
 /// This helper emits the specified value as an MBValue which has
 /// memory-only representation, materializing PValues as needed. This
 /// returns null if emission fails.
-MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
-                                 ExprContext context, ASTType resultType) {
+MBValue IREmitter::emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
   BValue bValue = emitBValue(value, context, resultType);
   if (!bValue)
     return {};
@@ -855,8 +854,8 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   return MBValue(mrVal);
 }
 
-PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                               ASTType resultType) {
+PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                             ASTType resultType) {
   if (!value)
     return {};
 
@@ -899,8 +898,7 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 /// This helper emits the specified expression as a 'ref' expression value,
 /// and returns the value of RefType for the result.
 /// This emits an error and returns null if emission fails.
-Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
-                                ExprContext context) {
+Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
   // If this is an RValue (including PValue's), put it into a memory box so
   // we can get its origin.
   if (auto rv = value.ir.getIfRValue()) {
@@ -938,7 +936,7 @@ Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
 /// or do other non-trivial conversions.
 ///
 /// This produces an error and returns null on an invalid conversion.
-CValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
+CValue IREmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
   // Materialize a parameter rebind.
   if (auto pvalue = value.ir.getIfPValue())
     return ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType);
@@ -991,8 +989,8 @@ CValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
 /// Note that the `value` provided here may require an implicit conversion
 /// into the destination slot, so the input may be memory-only and result be
 /// register-passable (and visa-versa).
-AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
-                                 ValueDest &dest) {
+AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
+                               ValueDest &dest) {
   if (!value) {
     dest.resetForError();
     return {};
@@ -1070,8 +1068,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   return emitStoreToLValue({cValue, expr}, destLV, context);
 }
 
-CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
-                                ValueDest &dest) {
+CValue IREmitter::emitCResult(CValue value, const ExprNode *expr,
+                              ValueDest &dest) {
   // Emitting a CValue always produces a CValue.
   auto result = emitResult(value, expr, dest);
   assert((!result || result.getIfCValue()) &&
@@ -1080,7 +1078,7 @@ CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
 }
 
 /// Emit the specified expression into the specified destination.
-AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
+AnyValue IREmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
   assert(expr && "cannot emit a null node");
   if (auto result = expr->emitIR(dest, *this))
     return result;
@@ -1088,31 +1086,31 @@ AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
   return {};
 }
 
-AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
-                               ASTType resultType) {
+AnyValue IREmitter::emitExpr(const ExprNode *expr, ExprContext context,
+                             ASTType resultType) {
   ValueDest dest(resultType, context);
   return emitExpr(expr, dest);
 }
 
-RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
-                                   ASTType resultType) {
+RValue IREmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
+                                 ASTType resultType) {
   return emitRValue({emitExpr(expr, context, resultType), expr}, context,
                     resultType);
 }
 
-CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context,
-                                   ASTType resultType) {
+CValue IREmitter::emitExprCValue(const ExprNode *expr, ExprContext context,
+                                 ASTType resultType) {
   return emitCValue({emitExpr(expr, context, resultType), expr}, context);
 }
 
-SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
-                                     ASTType resultType) {
+SRValue IREmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
+                                   ASTType resultType) {
   return emitSRValue({emitExpr(expr, context, resultType), expr}, context,
                      resultType);
 }
 
-PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
-                                   ASTType resultType) {
+PValue IREmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
+                                 ASTType resultType) {
   // Clear the builder to indicate that an PValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder, {});
   llvm::SaveAndRestore savedContext(paramContext, context);
@@ -1122,14 +1120,13 @@ PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
   return emitPValue({rep, expr}, context);
 }
 
-LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
+LValue IREmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
   AnyValue anyValue = expr->emitIR(dest, *this);
   if (!anyValue)
     return {}; // Error already diagnosed.
   return emitLValue({anyValue, expr}, dest);
 }
-CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
-                                     ValueDest &dest) {
+CValue IREmitter::emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest) {
   // If this is a computed LValue emit call to the "getter".
   if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitLoad(dest, *this);
@@ -1144,7 +1141,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
 /// Emit a copy of the specified value, producing a new owned instance of the
 /// value in the specified destination.  This returns an RValue if
 /// there is no consuming dest, otherwise a BValue.
-CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
+CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
   if (!value.ir)
@@ -1262,8 +1259,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   return emitCResult(MRValue(destBuffer), value.expr, dest);
 }
 
-CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                                      ExprContext context) {
+CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                                    ExprContext context) {
   // Convert nonmaterializables.
   if (auto nmTarget =
           value.ir.getRValueType().getNonmaterializableTarget(shared)) {
@@ -1374,7 +1371,7 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 ///
 /// This is used for evaluating expressions like __origin_of(x) and
 /// __type_of(x) and `ref [x] T`.
-void ExprEmitter::emitExpressionWithOutEvaluatingIt(
+void IREmitter::emitExpressionWithOutEvaluatingIt(
     const ExprNode *expr, ExprContext exprContext,
     std::function<void(CValue)> callback) {
   SMLoc loc = expr->getLoc();
@@ -1402,7 +1399,7 @@ void ExprEmitter::emitExpressionWithOutEvaluatingIt(
   // block, which keeps any code we're emitting contained.
   Region &r = opToInsertInto->getRegion(0);
   Block &tmpBlock = r.emplaceBlock();
-  ExprEmitter tmpEmitter(declScope, OpBuilder::atBlockBegin(&tmpBlock));
+  IREmitter tmpEmitter(declScope, OpBuilder::atBlockBegin(&tmpBlock));
 
   // Go further and add a 'try' op to it, ensuring that throwing functions are
   // allowed in this expression.
@@ -1428,7 +1425,7 @@ void ExprEmitter::emitExpressionWithOutEvaluatingIt(
 //===----------------------------------------------------------------------===//
 // Emission helpers for specific value types.
 
-ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
+ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // We have two ambiguous expressions that can either be types or dynamic
   // values: an empty tuple () and None.  In a type context, we want to treat
   // these as types, and not dynamic values.  Sniff these out to see if we have
@@ -1445,7 +1442,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
 /// This emits the specified PValue as a type, binding defaulted parameters
 /// etc if needed.
-ASTType ExprEmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
+ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   if (!value.ir)
     return {};
 
@@ -1504,7 +1501,7 @@ ASTType ExprEmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   return type;
 }
 
-RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
+RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   if (!value.ir)
     return {};
 
@@ -1539,11 +1536,11 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   return emitRValue({litBoolCall, value.expr}, context);
 }
 
-RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
+RValue IREmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
   return emitI1({emitExprCValue(condExpr, context), condExpr}, context);
 }
 
-CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
+CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
   // If the value is already of index type, just use it.
   if (CValue cvalue = value.ir.getIfCValue())
     if (isa<IndexType>(cvalue.getRValueType().mlirType))
@@ -1554,25 +1551,25 @@ CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
                              CallSyntax::kMethodCall, value.expr);
 }
 
-CValue ExprEmitter::emitIndex(const ExprNode *expr, ExprContext context) {
+CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
   return emitIndex({emitExprCValue(expr, context), expr}, context);
 }
 
-CValue ExprEmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
+CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
   ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
   return emitConstructorCall(boolType, CallOperands({value}), value.expr,
                              CallSyntax::kImplicitConvert, dest);
 }
 
-CValue ExprEmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
+CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
   ValueDest dest(context);
   return emitBool(value, dest);
 }
 
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
-ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
-                                                  ArrayRef<Type> elements) {
+ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
+                                                ArrayRef<Type> elements) {
   auto tupleType = shared.getBuiltinTupleType(declScope, loc);
   if (tupleType.isTypeCheckErrorType())
     return {};
@@ -1602,7 +1599,7 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 //===----------------------------------------------------------------------===//
 // Return emission helpers.
 
-MLValue ExprEmitter::findNearestErrorSlot() {
+MLValue IREmitter::findNearestErrorSlot() {
   assert(builder && "cannot raise in a context without a builder");
   Operation *opForRaise = findOpProcessingRaise(builder->getInsertionBlock());
   // Return null to indicate that the current context cannot raise.
@@ -1619,8 +1616,8 @@ MLValue ExprEmitter::findNearestErrorSlot() {
   return cast<LIT::TryOp>(opForRaise).getErr();
 }
 
-void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                                   bool emitEndFunc) {
+void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
+                                 bool emitEndFunc) {
   auto func = getBlockParentOfType<FnOp>(builder.getInsertionBlock());
   assert(func && "Emitting a return in a non-function?");
 
@@ -1690,8 +1687,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 /// Emit a normal return (not a 'raise' return) out of the function, along
 /// with any special logic that goes with it.  If the value is missing this is
 /// treated as a 'return;' synthesizing a None result.
-void ExprEmitter::emitNormalReturn(Location loc, Value value,
-                                   bool emitEndFunc) {
+void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
 
   // If this function returns in a register, load the result value from the
   // result slot temp. We compile things like:
@@ -1724,8 +1720,8 @@ void ExprEmitter::emitNormalReturn(Location loc, Value value,
 //===--------------------------------------------------------------------===//
 // Var/let emission helpers.
 
-VarDeclOp ExprEmitter::emitVarDecl(const Twine &name, Type type, Location loc,
-                                   VarDeclKind kind) {
+VarDeclOp IREmitter::emitVarDecl(const Twine &name, Type type, Location loc,
+                                 VarDeclKind kind) {
   if (!builder) {
     emitErrorForDynamicValueInParameter(loc);
     return {};
@@ -1734,7 +1730,7 @@ VarDeclOp ExprEmitter::emitVarDecl(const Twine &name, Type type, Location loc,
   return builder->create<VarDeclOp>(loc, type, name.str(), originAttr, kind);
 }
 
-VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,
-                                   VarDeclKind kind) {
+VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,
+                                 VarDeclKind kind) {
   return emitVarDecl(name.strref(), type, loc, kind);
 }

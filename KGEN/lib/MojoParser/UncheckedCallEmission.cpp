@@ -10,8 +10,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
-#include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
@@ -39,7 +39,7 @@ using namespace M::KGEN::LIT;
 /// per the function signature.
 static CValue
 emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
-                            const ExprNode *expr, ExprEmitter &emitter,
+                            const ExprNode *expr, IREmitter &emitter,
                             std::function<CValue(RefPackType)> refPackBuilder) {
   RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
 
@@ -102,7 +102,7 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
 
 class CallEmitter {
 public:
-  CallEmitter(RValue callee, const ExprNode *callExpr, ExprEmitter &emitter,
+  CallEmitter(RValue callee, const ExprNode *callExpr, IREmitter &emitter,
               ValueDest &dest)
       : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
@@ -142,7 +142,7 @@ public:
                               const CallOperands &callOperands);
 
   /// The underlying expression emitter instance.
-  ExprEmitter &emitter;
+  IREmitter &emitter;
 
   /// Given a call to a function with a memory only result and the desired value
   /// destination, decide if it is safe to directly emit into the slot.  Doing
@@ -200,7 +200,7 @@ private:
 };
 
 void CallEmitter::AfterCallActions::emit() {
-  ExprEmitter &emitter = callEmitter.emitter;
+  IREmitter &emitter = callEmitter.emitter;
 
   // Emit the elements and clear the writebacks so the ValueDest's get
   // destroyed when they are emitted into.
@@ -1086,7 +1086,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 }
 
 //===----------------------------------------------------------------------===//
-// ExprEmitter::emitCallUnchecked
+// IREmitter::emitCallUnchecked
 //===----------------------------------------------------------------------===//
 
 /// The results of calls to async functions are always bound to a `Coroutine`
@@ -1160,7 +1160,7 @@ namespace {
 struct ExclusivityChecker : public SharedStateUser {
   ExclusivityChecker(RValue callee, const ExprNode *callExpr, CallSyntax syntax,
                      ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                     ExprEmitter &emitter)
+                     IREmitter &emitter)
       : SharedStateUser(emitter.shared), callee(callee), callExpr(callExpr),
         syntax(syntax), argumentValues(argumentValues),
         builder(emitter.builder) {
@@ -1522,10 +1522,10 @@ static TypedAttr computeArgumentsOrigin(AsyncCallOp call,
   return OriginSetAttr::get(call.getContext(), origins);
 }
 
-CValue ExprEmitter::emitCallUnchecked(RValue callee,
-                                      const CallOperands &callOperands,
-                                      ValueDest &dest, CallSyntax syntax,
-                                      const ExprNode *callExpr) {
+CValue IREmitter::emitCallUnchecked(RValue callee,
+                                    const CallOperands &callOperands,
+                                    ValueDest &dest, CallSyntax syntax,
+                                    const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = cast<FnTypeGeneratorType>(callee.getRValueType());
 

@@ -249,8 +249,9 @@ private:
 // IREmitter
 //===----------------------------------------------------------------------===//
 
-/// This class is the main driver for expression emission, providing helper
-/// functions used by the individual node emission hooks.
+/// This class is the main helper for expr and stmt emission, providing helper
+/// functions for working with IRValues.  This maintains an optional builder
+/// when in a dynamic context) as well as a scope to perform lookups against.
 class IREmitter : public SharedStateUser {
 public:
   /// Create an IREmitter for a dynamic context with a builder.
