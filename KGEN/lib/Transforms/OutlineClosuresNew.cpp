@@ -43,6 +43,9 @@ namespace {
 struct Capture {
   /// the symbol of the copy/move constructor, if applicable
   std::optional<SymbolConstantAttr> moveOrCopySym;
+  /// the symbol of the destructor, if applicable
+  std::optional<SymbolConstantAttr> delSym;
+
   /// the source of the capture. This is the value used to create a copy if the
   /// symbol is nonnull.
   Value origin;
@@ -182,6 +185,17 @@ private:
                         Type loweredClosureType,
                         ArrayRef<Capture> captureMechanisms,
                         TypedAttr capturedInstance);
+  void liftDelFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+                       Type loweredClosureType,
+                       ArrayRef<Capture> captureMechanisms,
+                       TypedAttr capturedInstance);
+
+  void
+  createClosureGenerator(ImplicitLocOpBuilder &b,
+                         ClosureInitData &closureInitData, ClosureMethod method,
+                         FunctionType funcType, TypedAttr capturedInstance,
+                         llvm::function_ref<void(GeneratorOp)> populateBody);
+
   /// Given closure metadata the captures, emit code that results in the storage
   /// of the captures into capture struct.
   void storeCaptures(ImplicitLocOpBuilder &b, Value captureStructArg,
@@ -377,72 +391,123 @@ static ClosureType getClosureType(ClosureInitOp closureInit) {
   return closureType;
 }
 
-void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
-                                     ClosureInitData &closureInitData,
-                                     Type loweredClosureType,
-                                     ArrayRef<Capture> captureMechanisms,
-                                     TypedAttr capturedInstance) {
-  // create signature
-  Type selfType = closureInitData.selfType(loweredClosureType);
+void ClosureLifter::createClosureGenerator(
+    ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
+    ClosureMethod method, FunctionType funcType, TypedAttr capturedInstance,
+    llvm::function_ref<void(GeneratorOp)> populateBody) {
   GeneratorOp generator = closureInitData.getGenerator();
-  SmallVector<Type> argTypes;
-  argTypes.push_back(selfType);
-  argTypes.push_back(selfType);
-  FunctionType funcType = FunctionType::get(b.getContext(), argTypes, {});
   FuncTypeGeneratorType funcGenType =
       FuncTypeGeneratorType::remapToFuncTypeGenerator(
           closureInitData.getSelfParam(), funcType, /*argConv=*/{},
           /*effects=*/{},
           /*fnMetadata=*/{}, /*genMetadata=*/{});
-
+  StringRef baseName;
+  SmallVector<Type> argTypes;
+  SmallVector<Type> resultTypes;
+  switch (method) {
+  case ClosureMethod::MOVE:
+    argTypes.push_back(PointerType::get(closureInitData.getClosureType()));
+    baseName = "_move_";
+    break;
+  case ClosureMethod::DEL:
+    baseName = "_del_";
+    break;
+  default:
+    llvm_unreachable("Invalid closure method");
+    break;
+  }
   auto uniqueName = b.getStringAttr(getUniqueSymbolName(
-      (generator.getName() + "_move_" + closureInitData.regionName()).str(),
+      (generator.getName() + baseName + closureInitData.regionName()).str(),
       symtab, counter));
   b.setInsertionPoint(generator);
-  auto moveGenerator = b.create<GeneratorOp>(uniqueName, funcGenType, funcType,
-                                             closureInitData.getSelfParam());
-  symtab.insert(moveGenerator);
+  auto closureGenerator = b.create<GeneratorOp>(
+      uniqueName, funcGenType, funcType, closureInitData.getSelfParam());
+  symtab.insert(closureGenerator);
 
-  // Populate move body.
-  Block &moveBlock = moveGenerator.getBodyRegion().emplaceBlock();
-  for (Type type : argTypes)
-    moveBlock.addArgument(type, moveGenerator.getLoc());
-  b.setInsertionPointToStart(&moveBlock);
-  Value source = moveBlock.getArgument(0);
-  Value target = moveBlock.getArgument(1);
-  unsigned moveIndex = 0;
-  for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
-    Value targetField = b.create<KGEN::StructGEPOp>(target, index);
-    Value sourceField = b.create<KGEN::StructGEPOp>(source, index);
-    if (!capture.moveOrCopySym.has_value()) {
-      b.create<POP::StoreOp>(b.create<POP::LoadOp>(sourceField), targetField);
-    } else {
-      SymbolConstantAttr moveSymbol =
-          closureInitData.getMoveSymbols()[moveIndex++];
-      b.create<KGEN::CallOp>(moveSymbol, ValueRange{sourceField, targetField});
-    }
-  }
-  b.create<KGEN::ReturnOp>(ValueRange{});
+  populateBody(closureGenerator);
+
   auto fromParamToExtractExpr =
-      unpackCapturesInto(b, moveGenerator.getBodyRegion(), closureInitData);
-  moveGenerator.setFunctionType(remapFuncType(
-      b, moveGenerator.getBodyRegion(), funcType, fromParamToExtractExpr));
+      unpackCapturesInto(b, closureGenerator.getBodyRegion(), closureInitData);
+  auto newFuncType = remapFuncType(b, closureGenerator.getBodyRegion(),
+                                   funcType, fromParamToExtractExpr);
+  closureGenerator.setFunctionType(newFuncType);
 
   // Map from synthesized function to abstracted symbols.
   SmallVector<TypedAttr> boundParams;
   boundParams.push_back(capturedInstance);
   auto sym = SymbolConstantAttr::get(
-      moveGenerator,
-      FuncTypeGeneratorType::get({}, funcType, /*argConv=*/{},
+      closureGenerator,
+      FuncTypeGeneratorType::get({}, newFuncType, /*argConv=*/{},
                                  /*effects=*/{},
                                  /*fnMetadata=*/{}, /*genMetadata=*/{}),
       boundParams);
   ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
-      closureInitData.getGenerator(), closureInitData.regionName(),
-      ClosureMethod::MOVE, {PointerType::get(closureInitData.getClosureType())},
-      {}, closureInitData.getClosureType(), {},
+      closureInitData.getGenerator(), closureInitData.regionName(), method,
+      argTypes, resultTypes, closureInitData.getClosureType(), {},
       closureInitData.getParamClosureType());
   liftedClosureSymbols[closureAttr] = sym;
+}
+
+void ClosureLifter::liftDelFunction(ImplicitLocOpBuilder &b,
+                                    ClosureInitData &closureInitData,
+                                    Type loweredClosureType,
+                                    ArrayRef<Capture> captureMechanisms,
+                                    TypedAttr capturedInstance) {
+  Type selfType = closureInitData.selfType(loweredClosureType);
+  SmallVector<Type> argTypes;
+  argTypes.push_back(selfType);
+  FunctionType funcType = FunctionType::get(b.getContext(), argTypes, {});
+  auto populateBody = [&](GeneratorOp delGenerator) {
+    Block &delBlock = delGenerator.getBodyRegion().emplaceBlock();
+    for (Type type : argTypes)
+      delBlock.addArgument(type, delGenerator.getLoc());
+    b.setInsertionPointToStart(&delBlock);
+    Value source = delBlock.getArgument(0);
+    for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
+      if (capture.delSym.has_value()) {
+        Value field = b.create<KGEN::StructGEPOp>(source, index);
+        SymbolConstantAttr delSymbol = *capture.delSym;
+        b.create<KGEN::CallOp>(delSymbol, field);
+      }
+    }
+    b.create<KGEN::ReturnOp>(ValueRange{});
+  };
+  createClosureGenerator(b, closureInitData, ClosureMethod::DEL, funcType,
+                         capturedInstance, populateBody);
+}
+
+void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
+                                     ClosureInitData &closureInitData,
+                                     Type loweredClosureType,
+                                     ArrayRef<Capture> captureMechanisms,
+                                     TypedAttr capturedInstance) {
+  Type selfType = closureInitData.selfType(loweredClosureType);
+  SmallVector<Type> argTypes{selfType, selfType};
+  FunctionType funcType = FunctionType::get(b.getContext(), argTypes, {});
+  auto populateBody = [&](GeneratorOp moveGenerator) {
+    Block &moveBlock = moveGenerator.getBodyRegion().emplaceBlock();
+    for (Type type : argTypes)
+      moveBlock.addArgument(type, moveGenerator.getLoc());
+    b.setInsertionPointToStart(&moveBlock);
+    Value source = moveBlock.getArgument(0);
+    Value target = moveBlock.getArgument(1);
+    unsigned moveIndex = 0;
+    for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
+      Value targetField = b.create<KGEN::StructGEPOp>(target, index);
+      Value sourceField = b.create<KGEN::StructGEPOp>(source, index);
+      if (!capture.moveOrCopySym.has_value()) {
+        b.create<POP::StoreOp>(b.create<POP::LoadOp>(sourceField), targetField);
+      } else {
+        SymbolConstantAttr moveSymbol =
+            closureInitData.getMoveSymbols()[moveIndex++];
+        b.create<KGEN::CallOp>(moveSymbol,
+                               ValueRange{sourceField, targetField});
+      }
+    }
+    b.create<KGEN::ReturnOp>(ValueRange{});
+  };
+  createClosureGenerator(b, closureInitData, ClosureMethod::MOVE, funcType,
+                         capturedInstance, populateBody);
 }
 
 void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
@@ -586,6 +651,8 @@ Value ClosureLifter::liftNonRegPassableClosure(
                   loweredClosureType, replacementFn);
   liftMoveFunction(b, closureInitData, loweredClosureType, captureMechanisms,
                    capturedInstance);
+  liftDelFunction(b, closureInitData, loweredClosureType, captureMechanisms,
+                  capturedInstance);
   return captureStruct;
 }
 
@@ -731,14 +798,15 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
       SymbolConstantAttr symbol = cast<SymbolConstantAttr>(
           triple.getCopy() ? triple.getCopy() : triple.getMove());
       moveSymbols.push_back(cast<SymbolConstantAttr>(triple.getMove()));
+      SymbolConstantAttr del = cast<SymbolConstantAttr>(triple.getDel());
       Type capturingType =
           cast<PointerType>(capture.getType()).getElementType();
       fieldTypes.push_back(capturingType);
-      captureMechanisms.push_back({symbol, capture});
+      captureMechanisms.push_back({symbol, del, capture});
       continue;
     }
     fieldTypes.push_back(capture.getType());
-    captureMechanisms.push_back({{}, capture});
+    captureMechanisms.push_back({{}, {}, capture});
   }
   bool isThin = fieldTypes.empty();
   ClosureInitData closureInitData(std::move(capturedParamDecls), closureType,

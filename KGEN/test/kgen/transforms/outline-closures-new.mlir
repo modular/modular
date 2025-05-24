@@ -372,3 +372,47 @@ kgen.generator @foo<D: type, E: type>(%arg0 : !kgen.pointer<struct<(E, D)>>) {
 %2 = kgen.call @consume<:type #type_value, :type D>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> !kgen.param<D>
 kgen.return
 }
+
+// -----
+
+// COM: Test that the del method is synthesized correctly.
+
+
+// CHECK: "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>) -> () = @foo_del_fn<C>}> : !kgen.type
+
+#type_value =
+  #kgen.type<!kgen.closure<@foo, "fn" escaping>,
+    { "__del__" :
+      (!kgen.pointer<!kgen.closure<@foo, "fn" escaping>>) -> () =
+      #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">> >}
+  > : !kgen.type
+
+
+kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
+  %0 = kgen.call_param[(!kgen.pointer<x>) -> index: bind_params(:<index>(!kgen.pointer<none>) -> index get_vtable_entry(x, "__del__"), 3)](%arg0)
+  kgen.return %0 : index
+}
+// CHECK: kgen.generator @foo_del_fn<C>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>) {
+// CHECK-NEXT:  [[V0:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
+// CHECK-NEXT:  kgen.call @del([[V0]]) : (!kgen.pointer<struct<(index, pointer<index>)>>) -> ()
+// CHECK-NEXT:  [[V1:%.*]] = kgen.struct.gep %arg0[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
+// CHECK-NEXT:  kgen.call @del([[V1]]) : (!kgen.pointer<struct<(index, pointer<index>)>>) -> ()
+// CHECK-NEXT:  kgen.return
+kgen.generator @foo<C>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1 : !kgen.pointer<struct<(index, pointer<index>)>>) {
+  %3 = kgen.closure.init(%arg0[@move, @del], %arg1[@copy, @move, @del])<A>() -> index {
+	  %0 = kgen.param.constant = <mul(C, A)>
+	  kgen.return %0 : index
+  } : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>), !kgen.pointer<!kgen.closure<@foo, "fn" escaping>>
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" escaping>>) -> index
+  kgen.return
+}
+
+kgen.generator @copy(%arg0:!kgen.pointer<struct<(index, pointer<index>)>>, %arg1:!kgen.pointer<struct<(index, pointer<index>)>>) {
+    kgen.return
+}
+kgen.generator @move(%arg0:!kgen.pointer<struct<(index, pointer<index>)>>, %arg1:!kgen.pointer<struct<(index, pointer<index>)>>) {
+    kgen.return
+}
+kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>>) {
+    kgen.return
+}
