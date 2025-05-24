@@ -166,8 +166,8 @@ fn tcgen05_ld[
     ]()
 
     constrained[
-        width in [1, 2, 4, 8, 16, 32, 64],
-        "`width` must be a power of 2 in the range [1, 64].",
+        width in [1, 2, 4, 8, 16, 32, 64, 128],
+        "`width` must be a power of 2 in the range [1, 128].",
     ]()
 
     constrained[
@@ -292,8 +292,8 @@ fn tcgen05_st[
     ]()
 
     constrained[
-        width in [1, 2, 4, 8, 16, 32, 64],
-        "`width` must be a power of 2 in the range [1, 64].",
+        width in [1, 2, 4, 8, 16, 32, 64, 128],
+        "`width` must be a power of 2 in the range [1, 128].",
     ]()
 
     constrained[
@@ -309,7 +309,7 @@ fn tcgen05_st[
     alias num_str = String(repeat)
     alias pack_str = ".pack::16b" if pack else ""
     alias constraints_str = "r," * width + "r"
-    alias addr_str = "[$0]"
+    alias addr_str = "[$" + String(width) + "]"
     alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
 
     alias asm_str = (
