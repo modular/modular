@@ -155,6 +155,16 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
         ]
 
     @always_inline("builtin")
+    fn __le__(self, rhs: IntLiteral[_]) -> Bool:
+        return __mlir_attr[
+            `#pop<int_literal_cmp<le `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         return self != Self._zero
 

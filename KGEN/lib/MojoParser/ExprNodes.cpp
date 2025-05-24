@@ -2580,7 +2580,21 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Emit the LHS value as a bool/i1 value.
   CValue lhsV = emitter.emitExprCValue(lhs, EC_OperatorOperandValue);
-  RValue lhsI1Val = emitter.emitI1({lhsV, lhs}, EC_OperatorOperandValue);
+
+  // If the lhs is an RValue, decay to BValue before passing into emitI1,
+  // because we can't have emitI1 consume it.
+  if (lhsV.getIfSRValue() &&
+      !lhsV.getRValueType().isTrivial(getLoc(), emitter.shared)) {
+    // We cannot convert an SRValue directly to an SBValue because the later
+    // doesn't track lifetimes back to the original value correctly. Instead,
+    // decay the SRValue to an MRValue first, which does.
+    lhsV = emitter.emitMRValue({lhsV, lhs}, EC_OperatorOperandValue);
+  }
+  CValue lhsBVal = lhsV;
+  if (auto mrVal = lhsV.getIfMRValue())
+    lhsBVal = MBValue(mrVal);
+
+  RValue lhsI1Val = emitter.emitI1({lhsBVal, lhs}, EC_OperatorOperandValue);
   PValue lhsI1PVal = lhsI1Val.getIfPValue();
 
   if (!emitter.builder) {
@@ -2633,8 +2647,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   auto configEmitter = [&](bool isLHS) {
     emitter.builder = isLHS ? falseBuilder : trueBuilder;
   };
-  // Try to find compatibility between the raw values.  Pass in a null SMLoc so
-  // that an error isn't diagnosed with an error message.
+  // Try to find compatibility between the raw values.  Pass in a null SMLoc
+  // so that an error isn't diagnosed with an error message.
   if (emitter.coerceTypesToEachOther(SMLoc(), lhsV, lhs, rhsV, rhs,
                                      configEmitter)) {
     // If the two types are incompatible or ambiguously convertible to each
