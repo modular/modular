@@ -2326,6 +2326,21 @@ AnyValue ListLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(emitListLiteral(this, exprs, emitter), this, dest);
 }
 
+AnyValue ListComprehensionNode::emitIR(ValueDest &dest,
+                                       IREmitter &emitter) const {
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(),
+                      "list comprehensions are not supported at compile time; "
+                      "move into a function and call it")
+        << getRange();
+    return {};
+  }
+
+  emitter.emitError(getLoc(), "TODO: list comprehension emission")
+      << getRange();
+  return {};
+}
+
 AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   assert(!values.empty() && "empty syntax doesn't turn into dict literal");
 

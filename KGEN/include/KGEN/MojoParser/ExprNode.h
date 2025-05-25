@@ -40,27 +40,28 @@ class ExprNode {
 public:
   // This indicates the subclass.
   enum Kind {
-    kSynthetic,      // There is no source corresponding to the IR.
-    kIntLiteral,     // 42
-    kFloatLiteral,   // 1.1
-    kBoolLiteral,    // False
-    kSelfLiteral,    // Self
-    kStringLiteral,  // "Hello"
-    kNoneLiteral,    // None
-    kDiscardLiteral, // _
-    kDeclRef,        // x
-    kAttributeRef,   // x.y
-    kParen,          // (x+y)
-    kTuple,          // (), (x,), (x, y), etc
-    kListLiteral,    // [x, y]
-    kDictLiteral,    // {a: 1, b: 2, **dictUnpack}
-    kSetInitLiteral, // {x, y} and {z=4, "foo"}
-    kCall,           // thing(a, b)
-    kSubscript,      // thing[a, b:c]
-    kSubscriptArrow, // thing[x, y -> a, b]
-    kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
-    kChainedCmp,     // a < b <= c
-    kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
+    kSynthetic,         // There is no source corresponding to the IR.
+    kIntLiteral,        // 42
+    kFloatLiteral,      // 1.1
+    kBoolLiteral,       // False
+    kSelfLiteral,       // Self
+    kStringLiteral,     // "Hello"
+    kNoneLiteral,       // None
+    kDiscardLiteral,    // _
+    kDeclRef,           // x
+    kAttributeRef,      // x.y
+    kParen,             // (x+y)
+    kTuple,             // (), (x,), (x, y), etc
+    kListLiteral,       // [x, y]
+    kListComprehension, // [x for x in range(10)]
+    kDictLiteral,       // {a: 1, b: 2, **dictUnpack}
+    kSetInitLiteral,    // {x, y} and {z=4, "foo"}
+    kCall,              // thing(a, b)
+    kSubscript,         // thing[a, b:c]
+    kSubscriptArrow,    // thing[x, y -> a, b]
+    kSlice,             // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
+    kChainedCmp,        // a < b <= c
+    kFunctionType,      // async fn[](owned Int, &F32) capturing raises -> F64
 
     // Magic functions
     kGetMValueAsLitRef,        // __get_mvalue_as_litref(x)

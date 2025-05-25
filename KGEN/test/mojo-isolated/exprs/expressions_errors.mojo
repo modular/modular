@@ -404,7 +404,7 @@ struct MyIntPair:
   var b: Int
 
 struct TwoAndThreeList:
-   
+
    # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
    # expected-note @below {{missing 2 required positional arguments: 'a', 'b'}}
    fn __init__(out self, a: Int, b: Int, __list_literal__: ()): pass
@@ -424,6 +424,16 @@ fn list_literals():
   var c: TwoAndThreeList = [1, 2, 3, 4]
   # expected-error @+1 {{no matching function in initialization}}
   var d: TwoAndThreeList = []
+
+  # expected-error @+2 {{TODO: list comprehension emission}}
+  # expected-error @+1 {{expected a single expression in list comprehension}}
+  _ = [x, x+1 for x in range(10)]
+
+  # expected-error @+1 {{TODO: list comprehension emission}}
+  _ = [x for x in range(10) if x % 2 == 0]
+
+  # expected-error @+1 {{list comprehensions are not supported at compile time; move into a function and call it}}
+  alias some_alias = [1 for x in range(10)]
 
 
 fn dict_expression(a: Int):
@@ -832,9 +842,9 @@ fn test_mergewith_pointer():
     var a = 1
     var b = 2
     var c = 3
- 
+
     # FIXME: This really should work, we need to figure out how exclusivity
-    # works here. 
+    # works here.
 
     # expected-error @below {{'List[Pointer[Int, {a, b}]]' does not implement the '__iter__' method}}
     # expected-error @below {{argument of '__init__' call allows writing a memory location previously writable through another aliased argument}}
@@ -842,5 +852,3 @@ fn test_mergewith_pointer():
     # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:
         elt[] *= 2
-
-

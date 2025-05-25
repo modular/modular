@@ -51,6 +51,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Tuple";
   case ExprNode::kListLiteral:
     return "ListLiteral";
+  case ExprNode::kListComprehension:
+    return "ListComprehension";
   case ExprNode::kDictLiteral:
     return "DictLiteral";
   case ExprNode::kSetInitLiteral:
@@ -332,6 +334,17 @@ void ListLiteralNode::print(raw_indented_ostream &os) const {
   os.indent() << "exprs: [\n";
   for (const ExprNode *expr : exprs)
     expr->print(os);
+  os.unindent() << "]\n";
+  os.unindent() << "}\n";
+}
+
+void ListComprehensionNode::print(raw_indented_ostream &os) const {
+  os << "ListComprehension {\n";
+  os.indent() << "expr: ";
+  expr->print(os);
+  os << "clauses: [\nTODO\n";
+  // for (const ComprehensionClause &clause : clauses)
+  //   clause.print(os);
   os.unindent() << "]\n";
   os.unindent() << "}\n";
 }
