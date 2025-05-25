@@ -412,6 +412,18 @@ struct TwoAndThreeList:
    # expected-note @below {{missing 3 required positional arguments: 'a', 'b', 'c'}}
    fn __init__(out self, a: Int, b: Int, c: Int, __list_literal__: ()): pass
 
+@register_passable("trivial")
+struct SimpleRange:
+    fn __init__(out self): pass
+    fn __has_next__(self) -> Bool:
+        pass
+    fn __len__(self) -> Int:
+        pass
+    fn __next__(mut self) -> Int:
+        pass
+    fn __iter__(self) -> Self:
+        pass
+
 fn list_literals():
   # expected-error @+1 {{cannot emit an empty list without a contextual type}}
   _ = []
@@ -425,14 +437,13 @@ fn list_literals():
   # expected-error @+1 {{no matching function in initialization}}
   var d: TwoAndThreeList = []
 
-  # expected-error @+2 {{TODO: list comprehension emission}}
   # expected-error @+1 {{expected a single expression in list comprehension}}
-  _ = [x, x+1 for x in range(10)]
+  _ = [x, x+1 for x in SimpleRange()]
 
-  # expected-error @+1 {{TODO: list comprehension emission}}
-  _ = [x for x in range(10) if x % 2 == 0]
+  # expected-error @+1 {{if clause not supported yet}}
+  _ = [x for x in SimpleRange() if x % 2 == 0]
 
-  # expected-error @+1 {{list comprehensions are not supported at compile time; move into a function and call it}}
+  # expected-error @+1 {{comprehensions are not supported at compile time; move into a function and call it}}
   alias some_alias = [1 for x in range(10)]
 
 

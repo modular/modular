@@ -623,6 +623,7 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
 ParseResult
 ExprParser::parseComprehensions(SmallVector<ComprehensionClause> &result) {
   while (getToken().isAny(Token::kw_for, Token::kw_if)) {
+    auto kwLoc = getToken().getLoc();
     ComprehensionClause::Kind kind;
     ExprNode *forPattern;
     ExprNode *expr;
@@ -640,7 +641,7 @@ ExprParser::parseComprehensions(SmallVector<ComprehensionClause> &result) {
     if (parseExpression(expr, Precedence::kBoolOr))
       return failure();
 
-    result.push_back({kind, forPattern, expr});
+    result.push_back({kwLoc, kind, forPattern, expr});
   }
   return success();
 }
@@ -684,8 +685,9 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
           << exprs[1]->getRange();
 
     // Create the comprehension node.
-    result =
-        alloc<ListComprehensionNode>(lsquareLoc, exprs[0], clauses, rsquareLoc);
+    result = alloc<ListComprehensionNode>(
+        lsquareLoc, exprs[0], copyArrayRef<ComprehensionClause>(clauses),
+        rsquareLoc);
     return success();
   }
 
