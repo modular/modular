@@ -17,7 +17,13 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from os import abort
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, llvm_intrinsic
+from sys import (
+    is_amd_gpu,
+    is_compile_time,
+    is_gpu,
+    is_nvidia_gpu,
+    llvm_intrinsic,
+)
 from sys._build import is_debug_build
 from sys.ffi import c_char, c_size_t, c_uint, external_call
 from sys.intrinsics import block_idx, thread_idx
@@ -263,7 +269,7 @@ fn debug_assert[
 
     @parameter
     if _assert_enabled[assert_mode, cpu_only]():
-        if cond:
+        if cond or is_compile_time():
             return
 
         # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
