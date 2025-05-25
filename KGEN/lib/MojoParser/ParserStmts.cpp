@@ -179,9 +179,6 @@ struct StmtParser : public ParserBase {
 
   ASTDecl &getParentDecl() { return parentDecl; }
   OpBuilder &getBuilder() { return builder; }
-  UnresolvedType getUnresolvedType() {
-    return UnresolvedType::get(getContext());
-  }
 
   /// Push a debug info lexical block to represent a local variable scope.
   void pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard);
@@ -216,8 +213,6 @@ struct StmtParser : public ParserBase {
                            size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
-  ParseResult parseForElse(size_t curIndent, SMLoc forLoc, ExprNode *targetExpr,
-                           ExprNode *seqExpr);
   ParseResult parseParamFor(size_t curIndent, SMLoc forLoc,
                             ExprNode *targetExpr, ExprNode *seqExpr);
   ParseResult parseTryStmt(size_t curIndent);
@@ -1085,9 +1080,42 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
-  if (isParamFor)
+  if (isParamFor) // Comptime for stmt.
     return parseParamFor(curIndent, forLoc, targetExpr, seqExpr);
-  return parseForElse(curIndent, forLoc, targetExpr, seqExpr);
+
+  // Otherwise, this is a dynamic for stmt.
+  auto forStmt = getEmitter().emitForStmt(
+      forLoc, targetExpr, seqExpr,
+      [&](LIT::LoopOp loop, VarDeclOp indVar) -> LogicalResult {
+        builder.setInsertionPointToEnd(&loop.getBodyRegion().front());
+
+        // Parse the body of the for loop into a new scope, pushing the iterator
+        // variable into that new scope.
+        return parseLocalScopeSuite(curIndent, [&]() {
+          // Add an ASTDecl for the induction variable.
+          // TODO: Generalize to an arbitrary pattern.
+          auto &vd = getDeclResolver().addFullyResolvedDecl(
+              &*indVar, indVar.getNameAttr(), targetExpr->getLoc(),
+              curDeclScope);
+          getEmitter().shared.notifyListenerOnVariableDecl(
+              vd, targetExpr->getLoc());
+        });
+      },
+      [&]() { skipUntilIndentation(curIndent); });
+
+  if (!forStmt)
+    return success();
+
+  // The 'else' block is executed only when the condition check fails.
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
+    builder.setInsertionPointToStart(&forStmt.getElseRegion().front());
+    if (parseToken(Token::colon, "expected ':' after else") ||
+        parseLocalScopeSuite(curIndent))
+      return failure();
+  }
+
+  return success();
 }
 
 // Given a struct type T, return T._IndexType if it exists.
@@ -1206,124 +1234,6 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // Advance the insertion point.
   builder.setInsertionPointAfter(paramFor);
-  return success();
-}
-
-ParseResult StmtParser::parseForElse(size_t curIndent, SMLoc forLoc,
-                                     ExprNode *targetExpr, ExprNode *seqExpr) {
-  Location forLocation = translateLocation(forLoc);
-
-  StringAttr target = decodeTarget(targetExpr, shared);
-  if (!target)
-    return failure();
-
-  // Create a VarDeclOp for the induction variable.  We infer its type from the
-  // call to __next__ down below.
-  VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
-      target, getUnresolvedType(), forLocation,
-      target.getValue() == "_" ? VarDeclKind::Synthesized
-                               : VarDeclKind::Implicit);
-
-  bool isInvalid = false;
-  // If there is a failure before we parse the for loop body, we still want to
-  // call the parser on it so that it builds an ASTDecl node and adds the for
-  // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
-  // unknown declaration” errors on it besides whatever error is raised while
-  // processing the loop header.
-  auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
-    isInvalid = true;
-    skipUntilIndentation(curIndent);
-  });
-
-  // We desugar
-  //
-  //   for e in iterable:
-  //     <BODY>
-  //
-  // into
-  //
-  //   var it = iterable.__iter__()
-  //   while not it.__isatend__():
-  //       var e = it.__next__()
-  //       <BODY>
-
-  // Emit the expression for the iterable.
-  ASTExprAnd<AnyValue> loadedSeq = {
-      getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
-  if (!loadedSeq.ir)
-    return {};
-
-  // Get an iterator into the iterable by emitting a call to `__iter__`.
-  VarDeclOp rangeRef = getEmitter().emitVarDecl(
-      "$RANGE", getUnresolvedType(), forLocation, VarDeclKind::Synthesized);
-  ValueDest rangeDest(rangeRef, EC_ForIterator);
-  if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                        CallSyntax::kMethodCall, seqExpr)) {
-    auto newRefType =
-        indvarDeclOp.getType().getWithElement(shared.getTypeCheckErrorType());
-    indvarDeclOp.getResult().setType(newRefType);
-    return {};
-  }
-
-  // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(forLocation);
-  Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
-  Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
-  Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
-
-  // Create the condition region.
-  builder = OpBuilder::atBlockEnd(condBlock);
-
-  ValueDest lengthDest(EC_ForIterator);
-  CValue hasNextBool = getEmitter().emitNamedMethodCall(
-      "__has_next__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
-      CallSyntax::kMethodCall, seqExpr);
-  if (!hasNextBool)
-    return {};
-  CValue hasNext = getEmitter().emitI1({hasNextBool, seqExpr}, EC_ForIterator);
-  if (!hasNext)
-    return {};
-  SRValue shouldContinue =
-      getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
-  if (!shouldContinue)
-    return {};
-  builder.create<LIT::LoopConditionOp>(forLocation, shouldContinue);
-
-  // Create the body. Add Target element to the continue block by calling next
-  // method. Emit the result into an implicitly declared variable at the current
-  // scope.
-  builder.setInsertionPointToStart(bodyBlock);
-  ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
-  if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
-          CallSyntax::kMethodCall, seqExpr))
-    return {};
-
-  avoidDroppingDeclOnFail.release();
-
-  // Parse the body of the for loop into a new scope, pushing the iterator
-  // variable into that new scope.
-  if (failed(parseLocalScopeSuite(curIndent, [&]() {
-        // Add an ASTDecl for the induction variable.
-        // TODO: Generalize to an arbitrary pattern.
-        auto &vd = getDeclResolver().addFullyResolvedDecl(
-            &*indvarDeclOp, target, targetExpr->getLoc(), curDeclScope);
-        getEmitter().shared.notifyListenerOnVariableDecl(vd,
-                                                         targetExpr->getLoc());
-      })))
-    return failure();
-  builder.create<LIT::LoopContinueOp>(forLocation);
-
-  // Create the else region.
-  builder.setInsertionPointToStart(elseBlock);
-  // The 'else' block is executed only when the condition check fails.
-  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
-      consumeIf(Token::kw_else)) {
-    if (parseToken(Token::colon, "expected ':' after else") ||
-        parseLocalScopeSuite(curIndent))
-      return failure();
-  }
-  builder.create<LIT::LoopYieldOp>(forLocation);
   return success();
 }
 
@@ -1577,7 +1487,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // Emit the context manager expression into a var with an inferred type.
   VarDeclOp contextMgrDecl = getEmitter().emitVarDecl(
-      "$CONTEXTMGR", getUnresolvedType(),
+      "$CONTEXTMGR", UnresolvedType::get(getContext()),
       shared.translateLocation(contextExp->getLoc()), VarDeclKind::Synthesized);
   ValueDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
   if (!getEmitter().emitExpr(contextExp, contextMgrDest))
@@ -1684,7 +1594,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     if (useLexicalScope) {
       auto name = StringAttr::get(getContext(), targetNode->spelling);
       auto emitter = getEmitter();
-      targetDecl = emitter.emitVarDecl(name, getUnresolvedType(),
+      targetDecl = emitter.emitVarDecl(name, UnresolvedType::get(getContext()),
                                        targetNode->getLocation(emitter),
                                        VarDeclKind::Implicit);
       enterDest = ValueDest(targetDecl, EC_WithContextMgr);
@@ -2523,7 +2433,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                       &identifierLoc))
     return failure();
 
-  auto unresolvedType = getUnresolvedType();
+  auto unresolvedType = UnresolvedType::get(getContext());
   bool delayAddingName = false;
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
@@ -2655,7 +2565,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   // Before parsing the rest of the alias, the type is unresolved and value is
   // UnresolvedAliasValueAttr.
-  auto type = getUnresolvedType();
+  auto type = UnresolvedType::get(getContext());
 
   // TODO(fixme): currently, we cannot rely on looking up name collisions of
   // aliases because of things like this:
