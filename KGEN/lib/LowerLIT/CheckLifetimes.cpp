@@ -2590,8 +2590,8 @@ struct DestructorInsertion {
 private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
-  void checkIfLikeOp(Operation &op);
-  void checkElIfOp(HLCF::ElifOp op);
+  void checkIfLikeOp(Operation &op, SmallVector<ResultEffect> &resultEffects);
+  void checkElIfOp(HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects);
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -2751,10 +2751,10 @@ void DestructorInsertion::scanBlock(Block &block) {
       checkLocalControlFlowOp(op);
       break;
     case OverallOpValueEffect::ifLikeOp:
-      checkIfLikeOp(op);
+      checkIfLikeOp(op, resultEffects);
       break;
     case OverallOpValueEffect::elifOp:
-      checkElIfOp(cast<HLCF::ElifOp>(op));
+      checkElIfOp(cast<HLCF::ElifOp>(op), resultEffects);
       break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(op);
@@ -2770,7 +2770,8 @@ void DestructorInsertion::scanBlock(Block &block) {
                                  std::next(Block::iterator(&op)));
     DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
 
-    assert(resultEffects.size() == op.getNumResults() &&
+    assert((resultEffects.size() == op.getNumResults() ||
+            overall == OverallOpValueEffect::ifLikeOp) &&
            "getOperationEffects returned wrong # effects");
 
     for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
@@ -2933,7 +2934,36 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 /// 'if' operations propagate the consume sets into each branch, and use the
 /// resulting consume sets to make sure the upward propagated set of consumed
 /// values is consistent.
-void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
+void DestructorInsertion::checkIfLikeOp(
+    Operation &ifElseOp, SmallVector<ResultEffect> &resultEffects) {
+
+  // If there are any result effects, process them first before going into the
+  // body.  This happens when the 'if' defines an owned register value, as in:
+  //   %x = hlcf.if %cond { } else { }
+  //   -> here.
+  // If the register result isn't used, for example, we want the dtor inserted
+  // below the 'if' and not propagated into the arms of the 'if'.
+  if (!resultEffects.empty()) {
+    // Insert any dtors after the 'if'.
+    ImplicitLocOpBuilder builder(ifElseOp.getLoc(), ifElseOp.getBlock(),
+                                 std::next(Block::iterator(&ifElseOp)));
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    for (auto [result, effect] :
+         llvm::zip(ifElseOp.getResults(), resultEffects)) {
+      switch (effect) {
+      case ResultEffect::ignore:
+        continue;
+      case ResultEffect::regDefine:
+        checkDef(result, ifElseOp, /*isDeref=*/false, dtorInserter);
+        break;
+      default:
+        llvm_unreachable("unknown result effect for 'if'");
+      }
+    }
+    // Handled these, don't reprocess.
+    resultEffects.clear();
+  }
+
   // Given an 'if' like operation (normal 'if' statement or parameter if)
   // perform dtor analysis for each side and insert destructors at the top of
   // the blocks to form a common upward-projected consume set.
@@ -2965,7 +2995,10 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
 }
 
 // This is used for the HLCF::ElifOp.
-void DestructorInsertion::checkElIfOp(HLCF::ElifOp op) {
+void DestructorInsertion::checkElIfOp(
+    HLCF::ElifOp op, SmallVector<ResultEffect> &resultEffects) {
+  assert(resultEffects.empty() && "Need to handle these like if-like ops");
+
   // ElIf contains pairs of regions in the elifRegions list, which correspond
   // to a 'condition' and a 'if true' block for each condition.  The live-out
   // set is the intersection of all of the live-out sets for each condition.
