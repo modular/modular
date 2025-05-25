@@ -228,10 +228,10 @@ struct StmtParser : public ParserBase {
                            size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
-  ParseResult parseForElse(size_t curIndent, ExprNode *seqExpr,
-                           StringAttr target, SMLoc smLoc, SMLoc targetLoc);
-  ParseResult parseParamFor(size_t curIndent, ExprNode *seqExpr,
-                            StringAttr target, SMLoc smLoc, SMLoc targetLoc);
+  ParseResult parseForElse(size_t curIndent, SMLoc forLoc, ExprNode *targetExpr,
+                           ExprNode *seqExpr);
+  ParseResult parseParamFor(size_t curIndent, SMLoc forLoc,
+                            ExprNode *targetExpr, ExprNode *seqExpr);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
   ParseResult parseDisableDelStmt(size_t curIndent);
@@ -1075,20 +1075,16 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     }
   }
 
-  SMLoc smLoc = consumeToken(Token::kw_for).getLoc();
+  SMLoc forLoc = consumeToken(Token::kw_for).getLoc();
 
   // parse [target_list] in [starred_list]
   // for now, we expect target_list to be an identifier
   // the [starred_list] needs to be a sequence with a __iter__ method that
   // returns a type that defines __len__ and __next__
-  StringAttr target = StringAttr::get(getContext(), getToken().getSpelling());
+  ExprNode *targetExpr = nullptr;
+  if (parseTargetListExpr(targetExpr, curIndent))
+    return failure();
 
-  // FIXME: This needs to parse this as a target expression and then handle it
-  // like a destructuring pattern.
-  SMLoc targetLoc;
-  if (!consumeIf(Token::kw__, &targetLoc))
-    if (parseIdentifier("expected identifier for target in 'for'", &targetLoc))
-      return failure();
   if (parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
                                "that target lists are not yet supported."))
     return failure();
@@ -1103,16 +1099,16 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   if (isParamFor)
-    return parseParamFor(curIndent, seqExpr, target, smLoc, targetLoc);
-  return parseForElse(curIndent, seqExpr, target, smLoc, targetLoc);
+    return parseParamFor(curIndent, forLoc, targetExpr, seqExpr);
+  return parseForElse(curIndent, forLoc, targetExpr, seqExpr);
 }
 
 // Given a struct type T, return T._IndexType if it exists.
 static std::optional<Type> getIndexType(SharedState &shared, Type structType,
-                                        SMLoc smLoc) {
+                                        SMLoc loc) {
   StringRef spelling("_IndexType");
   LookupResult lookup =
-      shared.lookupAndResolveDecl(spelling, smLoc, structType,
+      shared.lookupAndResolveDecl(spelling, loc, structType,
                                   /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
   if (memberDecls.empty()) {
@@ -1129,15 +1125,30 @@ static std::optional<Type> getIndexType(SharedState &shared, Type structType,
   }
   ArrayRef<TypedAttr> paramBindings{};
   PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
-                                        paramBindings, smLoc, shared);
+                                        paramBindings, loc, shared);
   ASTType type(result);
   return type;
 }
 
-ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
-                                      StringAttr target, SMLoc smLoc,
-                                      SMLoc targetLoc) {
-  Location forLoc = translateLocation(targetLoc);
+// FIXME: This needs to parse this as a target expression and then handle it
+// like a destructuring pattern.
+static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
+  StringRef name;
+  if (targetExpr->kind == ExprNode::kDiscardLiteral)
+    name = "_";
+  else if (auto dre = dyn_cast<DeclRefNode>(targetExpr))
+    name = dre->spelling;
+  else {
+    shared.emitError(targetExpr->getLoc(),
+                     "expected identifier for target in 'for'");
+    return {};
+  }
+  return StringAttr::get(shared.getContext(), name);
+}
+
+ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
+                                      ExprNode *targetExpr, ExprNode *seqExpr) {
+  Location forLocation = translateLocation(forLoc);
   ASTDecl &scope = getParentDecl();
 
   // Emit the sequence as a PValue parameter.
@@ -1148,7 +1159,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
   // Bind the sequence initial value to the parameter for iterator generator.
   // Start by looking up the builtin generator.
   ArrayRef<ASTDecl *> paramForImpl = shared.getBuiltinFunction(
-      scope, "builtin._stubs", "parameter_for_generator", smLoc);
+      scope, "builtin._stubs", "parameter_for_generator", forLoc);
   if (paramForImpl.empty())
     return failure();
 
@@ -1166,10 +1177,14 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
   // We expect that the struct returned by the range() call has an _IndexType
   // alias.
   std::optional<Type> indexType =
-      getIndexType(shared, seqPValue.getType(), smLoc);
+      getIndexType(shared, seqPValue.getType(), forLoc);
   if (!indexType)
-    indexType = shared.lookupNamedType("Int", scope, smLoc);
+    indexType = shared.lookupNamedType("Int", scope, forLoc);
   if (!indexType)
+    return failure();
+
+  StringAttr target = decodeTarget(targetExpr, shared);
+  if (!target)
     return failure();
 
   auto indVarDecl = ParamDeclAttr::get(scope.mangleParamName(target.getValue()),
@@ -1177,13 +1192,13 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
 
   // Create the loop and parse the body into it.
   auto paramFor =
-      builder.create<ParamForOp>(forLoc, seqPValue, iterate, indVarDecl);
+      builder.create<ParamForOp>(forLocation, seqPValue, iterate, indVarDecl);
   builder.createBlock(&paramFor.getBody());
   if (parseLocalScopeSuite(curIndent,
                            ScopeDecl{PValue(ParamDeclRefAttr::get(indVarDecl)),
-                                     targetLoc, target}))
+                                     targetExpr->getLoc(), target}))
     return failure();
-  builder.create<ParamForContinueOp>(forLoc);
+  builder.create<ParamForContinueOp>(forLocation);
 
   // Parse the else region if present.
   builder.createBlock(&paramFor.getElseRegion());
@@ -1194,34 +1209,38 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  builder.create<ParamYieldOp>(forLoc);
+  builder.create<ParamYieldOp>(forLocation);
 
   // Advance the insertion point.
   builder.setInsertionPointAfter(paramFor);
   return success();
 }
 
-ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
-                                     StringAttr target, SMLoc smLoc,
-                                     SMLoc targetLoc) {
-  Location forLoc = translateLocation(targetLoc);
+ParseResult StmtParser::parseForElse(size_t curIndent, SMLoc forLoc,
+                                     ExprNode *targetExpr, ExprNode *seqExpr) {
+  Location forLocation = translateLocation(forLoc);
+
+  StringAttr target = decodeTarget(targetExpr, shared);
+  if (!target)
+    return failure();
 
   // Create a VarDeclOp for the induction variable.  We infer its type from the
   // call to __next__ down below.
   VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
-      target, getUnresolvedType(), forLoc,
+      target, getUnresolvedType(), forLocation,
       target.getValue() == "_" ? VarDeclKind::Synthesized
                                : VarDeclKind::Implicit);
 
   bool isInvalid = false;
   auto notifyVarDecl = [&](ASTDecl &decl) {
-    getEmitter().shared.notifyListenerOnVariableDecl(decl, targetLoc);
+    getEmitter().shared.notifyListenerOnVariableDecl(decl,
+                                                     targetExpr->getLoc());
     if (isInvalid)
       decl.setErroneous();
   };
 
   auto indvarScopeDecl =
-      ScopeDecl{&*indvarDeclOp, targetLoc, target, notifyVarDecl};
+      ScopeDecl{&*indvarDeclOp, targetExpr->getLoc(), target, notifyVarDecl};
 
   // If there is a failure before we parse the for loop body, we still want to
   // call the parser on it so that it builds an ASTDecl node and adds the for
@@ -1253,7 +1272,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
 
   // Get an iterator into the iterable by emitting a call to `__iter__`.
   VarDeclOp rangeRef = getEmitter().emitVarDecl(
-      "$RANGE", getUnresolvedType(), forLoc, VarDeclKind::Synthesized);
+      "$RANGE", getUnresolvedType(), forLocation, VarDeclKind::Synthesized);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kMethodCall, seqExpr)) {
@@ -1264,7 +1283,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   }
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(forLoc);
+  auto loopOp = builder.create<LIT::LoopOp>(forLocation);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
@@ -1285,7 +1304,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
       getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
   if (!shouldContinue)
     return {};
-  builder.create<LIT::LoopConditionOp>(forLoc, shouldContinue);
+  builder.create<LIT::LoopConditionOp>(forLocation, shouldContinue);
 
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
@@ -1303,7 +1322,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   // variable into that new scope.
   if (failed(parseLocalScopeSuite(curIndent, indvarScopeDecl)))
     return failure();
-  builder.create<LIT::LoopContinueOp>(forLoc);
+  builder.create<LIT::LoopContinueOp>(forLocation);
 
   // Create the else region.
   builder.setInsertionPointToStart(elseBlock);
@@ -1314,7 +1333,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  builder.create<LIT::LoopYieldOp>(forLoc);
+  builder.create<LIT::LoopYieldOp>(forLocation);
   return success();
 }
 
