@@ -227,4 +227,5 @@ Changes to Python-Mojo interoperability:
 - [#4677](https://github.com/modular/modular/issues/4677),
   [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
   unsigned `gt` and `le` comparisions.
-- Compiler error handling `x or y` expressions with PythonObject.
+- [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
+  handling `x or y` expressions with PythonObject.
