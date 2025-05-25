@@ -643,7 +643,7 @@ fn loop_any_origin(owned mem: MemExample, cond: Bool):
   # there is an access through AnyOrigin within the loop.
   # CHECK: hlcf.loop
   # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_i1__
-  # CHECK-NEXT:     hlcf.if 
+  # CHECK-NEXT:     hlcf.if
   # CHECK-NEXT:       hlcf.yield
   # CHECK-NEXT:     } else {
   # CHECK-NEXT:       lit.var.lifetime.end %ptr
@@ -652,4 +652,24 @@ fn loop_any_origin(owned mem: MemExample, cond: Bool):
   while cond:
     ptr[] = 4
 
-  
+# 4694: or/and handling of comparisons on PythonObject
+@register_passable
+struct PyObjLike:
+    fn __copyinit__(out self, existing: Self):
+        pass
+    fn __eq__(self, other: Self) raises -> Self:
+        while True: pass;
+
+    fn __bool__(self) raises -> Bool:
+        return True
+
+    fn __del__(owned self):
+        pass
+
+# CHECK-LABEL: lit.fn @"test4694
+fn test4694(a : PyObjLike, b: PyObjLike) raises:
+    # Just check that we don't get a verifier error.
+    if a == b or b == a:
+        gotit()
+
+fn gotit(): pass
