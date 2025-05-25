@@ -25,6 +25,7 @@ class CallOperands;
 class AliasDeclOp;
 class TraitType;
 class VarDeclOp;
+class LoopOp;
 
 //===----------------------------------------------------------------------===//
 // ExprContext
@@ -580,7 +581,7 @@ public:
   TypedAttr extractOriginOf(const ExprNode *expr, CValue value);
 
   //===--------------------------------------------------------------------===//
-  // Return emission helpers.
+  // Statement emission helpers.
 
   /// Find the nearest error slot to use if the emitter is currently within a
   /// context that can raise. Otherwise, return null.
@@ -598,8 +599,14 @@ public:
   void emitNormalReturn(Location loc, Value value = Value(),
                         bool emitEndFunc = true);
 
-  //===--------------------------------------------------------------------===//
-  // Var emission helpers.
+  // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
+  // closure on success when in the scope of the loop, and the specified
+  // 'errorFn' if there is a semantic error with the sequence expression or
+  // target.
+  LIT::LoopOp emitForStmt(
+      SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
+      std::function<LogicalResult(LIT::LoopOp loop, VarDeclOp indVar)> bodyFn,
+      std::function<void()> errorFn);
 
   /// Helper to emit a VarDeclOp with a uniquely generated origin name.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
