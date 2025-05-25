@@ -186,21 +186,6 @@ struct StmtParser : public ParserBase {
   /// Push a debug info lexical block to represent a local variable scope.
   void pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard);
 
-  /// A local decl put in a scope when entering a new scope.
-  /// The astDeclCallback field is called after constructing an ASTDecl.
-  struct ScopeDecl {
-    DeclIRValue value;
-    SMLoc loc;
-    StringRef name;
-    function_ref<void(ASTDecl &)> astDeclCallback;
-    ScopeDecl(DeclIRValue value, SMLoc loc, StringRef name)
-        : value(value), loc(loc), name(name), astDeclCallback(nullptr) {}
-    ScopeDecl(DeclIRValue value, SMLoc loc, StringRef name,
-              function_ref<void(ASTDecl &)> astDeclCallback)
-        : value(value), loc(loc), name(name), astDeclCallback(astDeclCallback) {
-    }
-  };
-
   // Expression emission.
 
   IREmitter getEmitter() {
@@ -215,8 +200,11 @@ struct StmtParser : public ParserBase {
   ParseResult parseSuite(ssize_t curIndent);
   void pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
                       llvm::SaveAndRestore<ASTDecl *> &keepDecl);
+  /// Parse a "suite" body pushed under a local scope so any vardecls inside of
+  /// it are popped at the end. If `callInScope` is provided, it is called after
+  /// the scope is introduced, but before the suite is parsed.
   ParseResult parseLocalScopeSuite(ssize_t curIndent,
-                                   ArrayRef<ScopeDecl> decls = {});
+                                   std::function<void()> callInScope = {});
   ParseResult parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                         size_t stmtIndent);
 
@@ -382,20 +370,19 @@ void StmtParser::pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
                                                          loc, curDeclScope);
 }
 
-ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent,
-                                             ArrayRef<ScopeDecl> decls) {
+/// Parse a "suite" body pushed under a local scope so any vardecls inside of
+/// it are popped at the end. If `callInScope` is provided, it is called after
+/// the scope is introduced, but before the suite is parsed.
+ParseResult
+StmtParser::parseLocalScopeSuite(ssize_t curIndent,
+                                 std::function<void()> callInScope) {
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   // Push a new local variable scope for the subsequent suite.
   pushChildScope(scopeGuard, keepDecl);
 
-  // Add the scope variables.
-  for (const ScopeDecl &decl : decls) {
-    ASTDecl &astDecl = getDeclResolver().addFullyResolvedDecl(
-        decl.value, decl.name, decl.loc, curDeclScope);
-    if (decl.astDeclCallback)
-      decl.astDeclCallback(astDecl);
-  }
+  if (callInScope)
+    callInScope();
 
   // Forward to the normal suite parse method.
   return parseSuite(curIndent);
@@ -1194,9 +1181,15 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   auto paramFor =
       builder.create<ParamForOp>(forLocation, seqPValue, iterate, indVarDecl);
   builder.createBlock(&paramFor.getBody());
-  if (parseLocalScopeSuite(curIndent,
-                           ScopeDecl{PValue(ParamDeclRefAttr::get(indVarDecl)),
-                                     targetExpr->getLoc(), target}))
+  if (parseLocalScopeSuite(curIndent, [&]() {
+        // Add an ASTDecl for the induction variable.
+        // TODO: Generalize to an arbitrary pattern.
+        auto value = PValue(ParamDeclRefAttr::get(indVarDecl));
+        auto &vd = getDeclResolver().addFullyResolvedDecl(
+            value, target, targetExpr->getLoc(), curDeclScope);
+        getEmitter().shared.notifyListenerOnVariableDecl(vd,
+                                                         targetExpr->getLoc());
+      }))
     return failure();
   builder.create<ParamForContinueOp>(forLocation);
 
@@ -1232,16 +1225,6 @@ ParseResult StmtParser::parseForElse(size_t curIndent, SMLoc forLoc,
                                : VarDeclKind::Implicit);
 
   bool isInvalid = false;
-  auto notifyVarDecl = [&](ASTDecl &decl) {
-    getEmitter().shared.notifyListenerOnVariableDecl(decl,
-                                                     targetExpr->getLoc());
-    if (isInvalid)
-      decl.setErroneous();
-  };
-
-  auto indvarScopeDecl =
-      ScopeDecl{&*indvarDeclOp, targetExpr->getLoc(), target, notifyVarDecl};
-
   // If there is a failure before we parse the for loop body, we still want to
   // call the parser on it so that it builds an ASTDecl node and adds the for
   // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
@@ -1249,7 +1232,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, SMLoc forLoc,
   // processing the loop header.
   auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
     isInvalid = true;
-    (void)parseLocalScopeSuite(curIndent, indvarScopeDecl);
+    skipUntilIndentation(curIndent);
   });
 
   // We desugar
@@ -1320,7 +1303,14 @@ ParseResult StmtParser::parseForElse(size_t curIndent, SMLoc forLoc,
 
   // Parse the body of the for loop into a new scope, pushing the iterator
   // variable into that new scope.
-  if (failed(parseLocalScopeSuite(curIndent, indvarScopeDecl)))
+  if (failed(parseLocalScopeSuite(curIndent, [&]() {
+        // Add an ASTDecl for the induction variable.
+        // TODO: Generalize to an arbitrary pattern.
+        auto &vd = getDeclResolver().addFullyResolvedDecl(
+            &*indvarDeclOp, target, targetExpr->getLoc(), curDeclScope);
+        getEmitter().shared.notifyListenerOnVariableDecl(vd,
+                                                         targetExpr->getLoc());
+      })))
     return failure();
   builder.create<LIT::LoopContinueOp>(forLocation);
 
@@ -1467,18 +1457,24 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
     // If an identifier was declared for the error value, add a declaration that
     // references it.
-    SmallVector<ScopeDecl> decls;
     if (errName) {
       // If the user bound the error to a name, adjust the vardecl and add the
       // declaration.
       errDecl.setName(errName);
       errDecl.setKind(VarDeclKind::Var);
       errDecl->setLoc(translateLocation(errValLoc));
-      decls.push_back(ScopeDecl{DeclIRValue(errDecl), errValLoc, errName});
     }
 
     // Parse the except suite.
-    if (parseLocalScopeSuite(curIndent, decls))
+    if (parseLocalScopeSuite(curIndent, [&]() {
+          if (errName) {
+            // Add an ASTDecl for the error name. TODO: Generalize to an
+            // arbitrary pattern.
+            auto &vd = getDeclResolver().addFullyResolvedDecl(
+                DeclIRValue(errDecl), errName, errValLoc, curDeclScope);
+            getEmitter().shared.notifyListenerOnVariableDecl(vd, errValLoc);
+          }
+        }))
       return failure();
     builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
