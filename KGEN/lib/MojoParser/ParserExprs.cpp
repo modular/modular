@@ -118,6 +118,8 @@ private:
   ParseResult parseLambda(ExprNode *&result);
   ParseResult parseMagicFunction(ExprNode *&result);
 
+  ParseResult parseComprehensions(SmallVector<ComprehensionClause> &result);
+
   /// Check if the given operands (e.g. in a `(...)` call or `[...]` subscript)
   /// adhere to the Python grammar. Positional operands cannot appear after
   /// keyword operands, and duplicate keyword operands are not allowed. If the
@@ -287,7 +289,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
 
     ExprNode *ifElseCond;
     SMLoc elseLoc;
-    if (tokKind == Token::Kind::kw_if) {
+    if (tokKind == Token::Kind::kw_if && minPrec <= Precedence::kIfElse) {
       // Conditional if - else expression.
       // trueExpr 'if' condition 'else' falseExpr.
       // If/else operator needs special handling because it has an expression in
@@ -640,7 +642,36 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
   return success();
 }
 
-/// list_display ::=  "[" [starred_list | comprehension [TODO]] "]"
+/// Parse a collection literal comprehension, a sequence of for/if clauses.
+///
+/// This is used for list, set, and dict comprehensions.
+ParseResult
+ExprParser::parseComprehensions(SmallVector<ComprehensionClause> &result) {
+  while (getToken().isAny(Token::kw_for, Token::kw_if)) {
+    ComprehensionClause::Kind kind;
+    ExprNode *forPattern;
+    ExprNode *expr;
+
+    if (consumeIf(Token::kw_if)) {
+      forPattern = nullptr;
+      if (parseStarredItem(expr))
+        return failure();
+      kind = ComprehensionClause::kIf;
+    } else {
+      consumeToken(Token::kw_for);
+      if (parseTargetListExpr(forPattern, /*curIndent*/ {}) ||
+          parseToken(Token::kw_in, "expected 'in' after target for 'for'") ||
+          // FIXME: Weird.  Need tighter precedence for this to avoid 'if' exprs
+          parseTargetListExpr(expr, /*curIndent*/ {}))
+        return failure();
+      kind = ComprehensionClause::kFor;
+    }
+    result.push_back({kind, forPattern, expr});
+  }
+  return success();
+}
+
+/// list_display ::=  "[" [starred_list | comprehension "]"
 ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
                                            SMLoc lsquareLoc) {
   SMLoc rsquareLoc;
@@ -650,13 +681,42 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
     result = alloc<ListLiteralNode>(lsquareLoc, exprs, rsquareLoc);
     return success();
   }
-
-  if (parseStarredList(exprs, Token::r_square) || getLocation(rsquareLoc) ||
-      parseToken(Token::r_square, "expected ']' in list expression"))
+  // Parse the items in the list.
+  if (parseStarredList(exprs, Token::r_square))
     return failure();
-  result = alloc<ListLiteralNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs),
-                                  rsquareLoc);
-  return success();
+
+  // Handle a normal list.
+  if (consumeIf(Token::r_square, &rsquareLoc)) {
+    result = alloc<ListLiteralNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs),
+                                    rsquareLoc);
+    return success();
+  }
+
+  // Otherwise we might have a comprehension. List comprehensions always start
+  // with a 'for', but may be followed by an arbitrary number of "if" and "for"
+  // clauses.
+  if (getToken().is(Token::kw_for)) {
+    // Parse a list of for/if clauses.
+    SmallVector<ComprehensionClause> clauses;
+    if (parseComprehensions(clauses) ||
+        parseToken(Token::r_square, "expected ']' in list expression",
+                   &rsquareLoc))
+      return failure();
+
+    // Only a single expression is allowed in a comprehension.
+    if (exprs.size() != 1)
+      emitError(exprs[1]->getLoc(),
+                "expected a single expression in list comprehension")
+          << exprs[1]->getRange();
+
+    // Create the comprehension node.
+    result =
+        alloc<ListComprehensionNode>(lsquareLoc, exprs[0], clauses, rsquareLoc);
+    return success();
+  }
+
+  emitTokenError("expected ']' in list expression");
+  return failure();
 }
 
 /// dict_display       ::=  "{" [key_datum_list | dict_comprehension] "}"
@@ -1178,6 +1238,7 @@ ParseResult ParserBase::parseExpression(ExprNode *&result,
   return ExprParser(shared, getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kExpression);
 }
+
 ParseResult
 ParserBase::parseAssignExpression(ExprNode *&result,
                                   std::optional<size_t> stmtIndent) {

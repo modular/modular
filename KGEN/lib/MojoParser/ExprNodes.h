@@ -427,6 +427,42 @@ struct ListLiteralNode final : public ExprNode {
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
+/// This struct represents a parsed list comprehension clause. This has two
+/// forms:
+///   for pattern in expr
+///   if cond
+/// These can be chained, e.g. [i for i in range(10) if i % 2 == 0]
+///
+struct ComprehensionClause {
+  enum Kind {
+    kFor,
+    kIf,
+  } kind;
+  ExprNode *const forPattern; // pattern for a for.
+  ExprNode *const expr;       // cond for an if, range for 'for'
+};
+
+/// [a    for a in range    if cond]
+struct ListComprehensionNode final : public ExprNode {
+  ListComprehensionNode(SMLoc lsquareLoc, ExprNode *expr,
+                        ArrayRef<ComprehensionClause> clauses, SMLoc rsquareLoc)
+      : ExprNode(kListComprehension), lsquareLoc(lsquareLoc), expr(expr),
+        clauses(clauses), rsquareLoc(rsquareLoc) {}
+
+  const SMLoc lsquareLoc;
+  ExprNode *const expr;
+  ArrayRef<ComprehensionClause> clauses;
+  const SMLoc rsquareLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kListComprehension;
+  }
+  SMLoc getLoc() const override { return lsquareLoc; }
+  SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
 /// This represents `{key1: value1, key2: value2, **dictunpack}` expressions.
 /// The dictionary unpacking syntax is represented with a null key and with the
 /// unpack expression as the value.
