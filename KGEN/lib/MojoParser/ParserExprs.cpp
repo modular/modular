@@ -1189,6 +1189,21 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
   return ExprParser(shared, getLexer(), std::nullopt).parseStarredItem(result);
 }
 
+/// This parses a superset of the "target_list" production, which is used as the
+/// pattern in a "for" loop and comprehensions. This notably does not include
+/// "in" expressions.
+ParseResult ParserBase::parseTargetListExpr(ExprNode *&result,
+                                            std::optional<size_t> stmtIndent) {
+  return ExprParser(shared, getLexer(), stmtIndent)
+      .parseExpression(result, Precedence::kOr);
+}
+
+ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,
+                                               size_t stmtIndent) {
+  return ExprParser(shared, getLexer(), stmtIndent)
+      .parseStarredListAsTuple(result, /*terminators=*/{});
+}
+
 /// If the specified token is an '=' or '+=' sort of token, return the
 /// expression kind, otherwise return null.
 static std::optional<ExprNode::Kind> getAssignmentKind(Token::Kind tokenKind) {
@@ -1269,10 +1284,4 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
 
   result = p.alloc<BinOpNode>(assignKind.value(), expr, assignLoc, rhsExpr);
   return success();
-}
-
-ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,
-                                               size_t stmtIndent) {
-  return ExprParser(shared, getLexer(), stmtIndent)
-      .parseStarredListAsTuple(result, /*terminators=*/{});
 }
