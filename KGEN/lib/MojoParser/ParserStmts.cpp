@@ -217,7 +217,7 @@ struct StmtParser : public ParserBase {
   // target.
   LIT::LoopOp emitForStmt(SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
                           std::function<LogicalResult()> bodyFn,
-                          std::function<void()> errorFn);
+                          std::function<void()> errorFn = {});
 
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseParamFor(size_t curIndent, SMLoc forLoc,
@@ -1129,6 +1129,10 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
                                     ExprNode *seqExpr,
                                     std::function<LogicalResult()> bodyFn,
                                     std::function<void()> errorFn) {
+  // We will be moving the builder into sub-regions that are created, make sure
+  // we end up after it when this is done.
+  llvm::SaveAndRestore builderSaver(builder);
+
   Location forLocation = translateLocation(forLoc);
   StringAttr target = decodeTarget(targetExpr, shared);
   if (!target)
@@ -1146,7 +1150,10 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
   // unknown declaration” errors on it besides whatever error is raised while
   // processing the loop header.
-  auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() { errorFn(); });
+  auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
+    if (errorFn)
+      errorFn();
+  });
 
   // We desugar
   //
@@ -1224,7 +1231,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // TODO: Generalize to an arbitrary pattern.
   auto &vd = getDeclResolver().addFullyResolvedDecl(
       &*indvarDeclOp, target, targetExpr->getLoc(), curDeclScope);
-  getEmitter().shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
+  shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
 
   builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
 
@@ -2860,6 +2867,160 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
     return failure();
   StmtParser parser(lexer, decl);
   return parser.parseLocalScopeSuite(curIndent);
+}
+
+//===----------------------------------------------------------------------===//
+// List/Dict/Set Comprehensions
+//===----------------------------------------------------------------------===//
+
+/// Emit the clauses for a comprehension expression, then call the callback.
+static LogicalResult
+emitComprehensionsAnd(StmtParser &stmtEmitter,
+                      ArrayRef<ComprehensionClause> clauses,
+                      std::function<LogicalResult()> callback) {
+  // If we ran out of clauses, then we're bottomed out at the callback.  Invoke
+  // it and be done.
+  if (clauses.empty())
+    return callback();
+
+  auto clause = clauses.front();
+  switch (clause.kind) {
+  case ComprehensionClause::kFor: {
+    // Emit the for statement with a body the processes the rest of the clauses.
+    auto forStmt = stmtEmitter.emitForStmt(
+        clause.kwLoc, clause.forPattern, clause.expr, [&]() -> LogicalResult {
+          return emitComprehensionsAnd(stmtEmitter, clauses.drop_front(),
+                                       callback);
+        });
+    return success(forStmt != LIT::LoopOp());
+  }
+  case ComprehensionClause::kIf:
+    stmtEmitter.emitError(clause.expr->getLoc(), "if clause not supported yet");
+    return failure();
+  }
+  llvm_unreachable("unhandled comprehension clause kind");
+}
+
+/// Emit a comprehension expression into the specified emitter.  If a
+/// contextual type is known, 'expectedType' is non-null.
+static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
+                                  IREmitter &emitter) {
+  auto &shared = emitter.shared;
+  auto loc = node->getLoc();
+  auto location = shared.translateLocation(loc);
+
+  // Comprehensions are more like a statement then they are an expression.
+  // we can't emit them into PValue contexts until we have generalized PValue
+  // support ala:
+  // https://www.notion.so/modularai/Generalized-PValue-Support-62c85f77f13c4d9bad30e398f04ce1a9
+  if (!emitter.builder) {
+    emitter.emitError(loc, "comprehensions are not supported at compile time; "
+                           "move into a function and call it")
+        << node->getRange();
+    return {};
+  }
+
+  // The general structure we emit for '[x*x for x in range(10) if x != 4]' is:
+  //   var result = Collection()
+  //   for x in range(10):
+  //     if x != 4:
+  //       result.append(x*x)
+  //   "return" result
+  //
+  // The `Collection` is a type that implements `__init__` and `append`. It can
+  // be inferred from context, but otherwise defaults to List[T] (where T is the
+  // element type of x*x).  This is a bit awkward because we cannot know the
+  // type of 'result' until we emit all the other stuff.
+  auto listNode = cast<ListComprehensionNode>(node);
+
+  const char *emptyString = ""; // make sure we have a nul on this.
+  Lexer lexer(shared.diags, emptyString, emptyString);
+  StmtParser stmtEmitter(lexer, emitter.declScope);
+  stmtEmitter.getBuilder() = *emitter.builder;
+
+  // We're going to emit a bunch of stuff below but need a cursor to know where
+  // to put the temporary for the collection and the constructor call.  Emit a
+  // temporary operation so we can find it later.
+  auto cursor = stmtEmitter.getBuilder().create<LIT::ReturnOp>(
+      location, ArrayRef<Value>());
+  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor));
+
+  // Start out the result collection with an inferred type if it isn't known.
+  auto inferCollectionType = [&](ASTType eltType) -> ASTType {
+    // Use the contextual type if it is known.
+    if (auto expectedType = dest.getExpectedTypeIfSpecified())
+      return expectedType;
+
+    // Otherwise default to List[T].
+    auto listType = shared.getStandardCollectionType(loc, "List");
+    if (!listType)
+      return {};
+
+    // Form T[eltType] syntactically and emit it.
+    SyntheticNode collTypeExpr(loc, PValue(listType));
+    SyntheticNode eltTypeExpr(loc, PValue(eltType));
+    Operand subscriptOperand(&eltTypeExpr, loc, Operand::kPositional);
+    SubscriptNode subscript(&collTypeExpr, loc, subscriptOperand, loc);
+    return stmtEmitter.getParamEmitter(EC_CollectionCompElt)
+        .emitExprType(&subscript);
+  };
+
+  // Dummy node with the correct location.
+  SyntheticNode exprNode(loc);
+  MLValue collectionMLValue;
+
+  // This emits the body of the comprehension in the context of the clauses.
+  auto emitBody = [&]() -> LogicalResult {
+    auto emitter = stmtEmitter.getEmitter();
+    auto elementExpr =
+        emitter.emitExprCValue(listNode->expr, EC_CollectionCompElt);
+    // If we had no expected type, then assign the default collection type now.
+    auto collectionType = inferCollectionType(elementExpr.getRValueType());
+    if (!collectionType)
+      return failure();
+
+    // Now that we know the collection type, we can materialize the temporary
+    // with the right type (which might also reuse an existing buffer). Note
+    // that this uses cursorEmitter so the temp gets emitted to the right spot.
+    collectionMLValue =
+        dest.getMLValueForResult(loc, collectionType, cursorEmitter);
+
+    // Okay we know the collection has a type, emit "coll.append(elt)".
+    CallOperands operands(
+        {{collectionMLValue, &exprNode}, {elementExpr, &exprNode}});
+    operands.hasSelfOperand = true;
+
+    ValueDest dest(EC_CollectionCompElt);
+    emitter.emitNamedMethodCall("append", std::move(operands), dest,
+                                CallSyntax::kMethodCall, &exprNode);
+    return success();
+  };
+
+  if (failed(emitComprehensionsAnd(stmtEmitter, listNode->clauses, emitBody)))
+    return {};
+
+  // Leave the caller's IREmitter at the right place to continue emitting.
+  emitter.builder = stmtEmitter.getBuilder();
+
+  // Now that we know we have the collection type, emit the call to the
+  // initializer at the cursor.
+  ValueDest ctorDest(collectionMLValue, EC_CollectionCompElt);
+  cursorEmitter.emitConstructorCall(collectionMLValue.getRValueType(),
+                                    CallOperands(), &exprNode,
+                                    CallSyntax::kTypeCall, ctorDest);
+
+  // Finally, we can nuke the cursor.
+  cursor->erase();
+
+  // Success! Return ownership of the result expression.
+  return MRValue(collectionMLValue);
+}
+
+AnyValue ListComprehensionNode::emitIR(ValueDest &dest,
+                                       IREmitter &emitter) const {
+  // emitComprehension is defined in the statement emission file.
+  AnyValue result = emitComprehension(this, dest, emitter);
+  return emitter.emitResult(result, this, dest);
 }
 
 //===----------------------------------------------------------------------===//

@@ -67,6 +67,7 @@ enum ExprContext {
   EC_MLIRMagic,            // __mlir_type[x] / __mlir_attr[x]
   EC_TopLevelStmt,         // x
   EC_CollectionLiteral,    // [x, y], {x:y, q:r}, {x, y, z}
+  EC_CollectionCompElt,    // [x for x in y]
   EC_TupleElement,         // (x, y)
   EC_SubscriptBase,        // x[y]
   EC_Subscript,            // y[x]

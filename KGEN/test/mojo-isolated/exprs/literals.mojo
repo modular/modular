@@ -6,6 +6,18 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+@register_passable("trivial")
+struct SimpleIntRange:
+    fn __init__(out self): pass
+    fn __has_next__(self) -> Bool:
+        pass
+    fn __len__(self) -> Int:
+        pass
+    fn __next__(mut self) -> Int:
+        pass
+    fn __iter__(self) -> Self:
+        pass
+
 
 fn var_let_decls():
     # CHECK: %xx = lit.var.decl "xx" var
@@ -17,7 +29,7 @@ fn var_let_decls():
     alias il = 43
 
     # CHECK: %yy = lit.var.decl "yy" var
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !FloatDyn = <{:scalar<f64> "1"}> 
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !FloatDyn = <{:scalar<f64> "1"}>
     # CHECK: lit.ref.store [[TMP]], %yy
     var yy = 1.0
 
@@ -55,7 +67,9 @@ fn var_let_decls():
 
 @register_passable("trivial")
 struct IntList:
-   fn __init__(out self, *list_elements: Int, __list_literal__: ()): pass
+   fn __init__(out self, *list_elements: Int, __list_literal__: () = ()): pass
+
+   fn append(mut self, value: Int): pass
 
 fn inspect(list: List[_]):
     pass
@@ -89,6 +103,39 @@ fn test_list_literal():
     # CHECK: lit.call {{.*}}List::@"__init__{{.*}}<:!AnyType #FloatDyn1>
     inspect([1.0, 2])
 
+# CHECK-LABEL: lit.fn @"test_list_comprehension
+fn test_list_comprehension():
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
+    # CHECK: lit.loop cond {
+    # CHECK:   SimpleIntRange::@"__has_next__
+    # CHECK: } body {
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %i1
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
+    # CHECK:      lit.call {{.*}}@List::@"append
+    # CHECK-NEXT: lit.loop.continue
+    # CHECK: }
+    var a_collection = [i1*2 for i1 in SimpleIntRange()]
+
+    # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
+    # CHECK: } body {
+    # CHECK:   } body {
+    # CHECK-NEXT:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %i3
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i2
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %i3
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
+    # CHECK:      lit.call {{.*}}@List::@"append
+    var b_collection = [i2*i3 for i2 in SimpleIntRange() for i3 in SimpleIntRange()]
+
+    # Inferred to type IntList.
+    # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
+    var c_collection : IntList = [i4 for i4 in SimpleIntRange()]
+
+
+
 # ===----------------------------------------------------------------------=== #
 # Dictionary Literals
 # ===----------------------------------------------------------------------=== #
@@ -112,12 +159,12 @@ fn test_dict_literal(aBool: Bool):
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[KEYS_LIST:%.*]]) :
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[VALUES_LIST:%.*]]) :
     # CHECK: lit.call {{.*}}@MyDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %b) :
-    var b : MyDict[Int, Bool] = {1: aBool, 2: aBool} 
+    var b : MyDict[Int, Bool] = {1: aBool, 2: aBool}
 
     # CHECK: [[KEYS_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
     # CHECK: [[VALUES_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
     # CHECK: lit.call {{.*}}@IntDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %c) :
-    var c : IntDict = {1: 7, 2: 8} 
+    var c : IntDict = {1: 7, 2: 8}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -145,7 +192,7 @@ fn test_set_literal():
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.create
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
-    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut 
+    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut
     # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %b)
     var b : MySet[Int] = {1, 2}
 
@@ -165,11 +212,11 @@ fn test_initializer_list():
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], %a)
     var a : InitType[Int] = {1}
     # CHECK: [[TMP:%.*]] = lit.ref.immut
-    # CHECK: [[TWO:%.*]] = kgen.param.constant: !Int = <{2}> 
+    # CHECK: [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[TWO]], %b)
     var b : InitType[Int] = {1, 2}
     # CHECK: [[TMP:%.*]] = lit.ref.immut
-    # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{42}> 
+    # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[INT]], %c)
     var c : InitType[String] = {"foo", 42}
 

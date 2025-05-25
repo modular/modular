@@ -434,6 +434,7 @@ struct ListLiteralNode final : public ExprNode {
 /// These can be chained, e.g. [i for i in range(10) if i % 2 == 0]
 ///
 struct ComprehensionClause {
+  SMLoc kwLoc; // Location of 'for' or 'if'
   enum Kind {
     kFor,
     kIf,

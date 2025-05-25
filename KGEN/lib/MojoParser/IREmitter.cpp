@@ -105,6 +105,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in expression statement";
   case EC_CollectionLiteral: // [x, y], {x:y, q:r}
     return " in collection literal";
+  case EC_CollectionCompElt: // [x for x in y]
+    return " in comprehension expression";
   case EC_TupleElement: // (x, y)
     return " in tuple element";
   case EC_SubscriptBase: // x[y]

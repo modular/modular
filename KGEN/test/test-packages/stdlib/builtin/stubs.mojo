@@ -531,7 +531,10 @@ struct Slice:
 
 
 struct List[T: AnyType]:
-    fn __init__(out self, *elements: T, __list_literal__: ()):
+    fn __init__(out self, *elements: T, __list_literal__: () = ()):
+        pass
+
+    fn append(mut self, owned value: T):
         pass
 
 
