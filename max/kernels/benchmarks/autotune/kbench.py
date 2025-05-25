@@ -661,7 +661,7 @@ def _get_tmp_path(file_path):
 def _get_core_count():
     try:
         # The 'os.sched_getaffinity' method is only available on some Unix platforms
-        return len(os.sched_getaffinity(0))
+        return len(os.sched_getaffinity(0))  # type: ignore[attr-defined, unused-ignore]
     except AttributeError:
         # To cover other platforms, including mac
         return cpu_count()
