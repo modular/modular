@@ -40,7 +40,7 @@ fn take_python(obj: PythonObject): ...
 fn example():
     # This should form an InlineArray directly. It shouldn't create a List and
     # copy it.
-    take_inline_array([1, 2, 3]) 
+    take_inline_array([1, 2, 3])
 
     # This should pass a python list with python integers, string, set and dict
     # inside of it.
@@ -192,3 +192,33 @@ If there is a known contextual type, the compiler uses the following approach:
    providing a keyword argument.
 3) Otherwise, the elements are passed in to the `T.__init__` method as an
    initializer list.
+
+## Collection Comprehensions
+
+Mojo supports Python style collection "comprehensions", which is a collection
+literal with a single expression, and as set of postfix generator clauses saying
+how to produce the elements:
+
+```mojo
+  var list1 = [x*y for x in range(10) for y in other_int_list]
+  var list2 : YourList = [x for x in range(10)]
+```
+
+Collection comprehensions desugar into the same code you'd get by writing nested
+for loops and if statements, and uses the same defaulting rules as other
+literals above.  For example, these two examples desugar into:
+
+```mojo
+  var list1 = List[Int]()
+  for x in range(10):
+      for y in other_int_list:
+         list1.append(x*y)
+  var list2 = YourList()
+  for x in range(10):
+      list2.append(x)
+```
+
+This implies that this will only work with collection types that are default
+constructible, and have the insertion methods corresponding to their type:
+`append` for arrays.  Mojo doesn't require the collections to be copy or movable
+or impose any other requirements on them.
