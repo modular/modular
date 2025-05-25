@@ -36,32 +36,7 @@ using namespace M;
 // Expression Parsing
 //===----------------------------------------------------------------------===//
 
-// See https://docs.python.org/3/reference/expressions.html#operator-precedence
-enum class Precedence {
-  kInvalid, // No precedence
-
-  kUnpack,     // prefix: * or **
-  kAssignExpr, // infix: := (walrus)
-  kIfElse,     // infix: if - else
-  kBoolOr,     // infix: or
-  kBoolAnd,    // infix: and
-  kBoolNot,    // prefix: not
-  kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
-  kOr,         // infix: |
-  kXor,        // infix: ^
-  kAnd,        // infix: &
-  kShift,      // infix: <<, >>
-  kSum,        // infix: +, -
-  kTerm,       // infix: *, @, /, //, %
-  kFactor,     // prefix: +, -, ~
-  kPower,      // infix: **
-  kAwait,      // prefix: await
-  kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
-               //         foo.bar, foo[bar], lambda
-
-  kExpression = kIfElse, // "expression" precedence is if/else.
-  kHighest = kPrimary
-};
+using Precedence = ParserBase::Precedence;
 
 namespace M::KGEN::LIT {
 /// This class implements the ExprParser interface, implemented with the pImpl
@@ -194,7 +169,7 @@ struct InfixInfo {
   /// Classify a token for an infix operator.
   static InfixInfo get(Token::Kind tokKind, ParserBase &p) {
     // Helper to reduce boilerplate with isRightAssociative.
-    auto get = [](Precedence precedence, ExprNode::Kind nodeKind,
+    auto get = [](ParserBase::Precedence precedence, ExprNode::Kind nodeKind,
                   bool isRightAssociative = false) -> InfixInfo {
       return {precedence, nodeKind, isRightAssociative};
     };
@@ -651,21 +626,20 @@ ExprParser::parseComprehensions(SmallVector<ComprehensionClause> &result) {
     ComprehensionClause::Kind kind;
     ExprNode *forPattern;
     ExprNode *expr;
-
     if (consumeIf(Token::kw_if)) {
       forPattern = nullptr;
-      if (parseStarredItem(expr))
-        return failure();
       kind = ComprehensionClause::kIf;
     } else {
       consumeToken(Token::kw_for);
       if (parseTargetListExpr(forPattern, /*curIndent*/ {}) ||
-          parseToken(Token::kw_in, "expected 'in' after target for 'for'") ||
-          // FIXME: Weird.  Need tighter precedence for this to avoid 'if' exprs
-          parseTargetListExpr(expr, /*curIndent*/ {}))
+          parseToken(Token::kw_in, "expected 'in' after target for 'for'"))
         return failure();
       kind = ComprehensionClause::kFor;
     }
+    // kBoolOr avoids 'if' exprs.
+    if (parseExpression(expr, Precedence::kBoolOr))
+      return failure();
+
     result.push_back({kind, forPattern, expr});
   }
   return success();
@@ -1234,16 +1208,10 @@ ParseResult ParserBase::parseOptionalIdentifier(StringAttr &result,
 /// the current statement.  This can be passed in as None when there is a
 /// trailing punctuator that naturally terminates the expression.
 ParseResult ParserBase::parseExpression(ExprNode *&result,
-                                        std::optional<size_t> stmtIndent) {
+                                        std::optional<size_t> stmtIndent,
+                                        Precedence minPrec) {
   return ExprParser(shared, getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kExpression);
-}
-
-ParseResult
-ParserBase::parseAssignExpression(ExprNode *&result,
-                                  std::optional<size_t> stmtIndent) {
-  return ExprParser(shared, getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kAssignExpr);
+      .parseExpression(result, minPrec);
 }
 
 ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
@@ -1255,8 +1223,7 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
 /// "in" expressions.
 ParseResult ParserBase::parseTargetListExpr(ExprNode *&result,
                                             std::optional<size_t> stmtIndent) {
-  return ExprParser(shared, getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kOr);
+  return parseExpression(result, stmtIndent, Precedence::kOr);
 }
 
 ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,

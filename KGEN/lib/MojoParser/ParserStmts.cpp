@@ -987,7 +987,7 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
-  if (parseAssignExpression(condExp, curIndent))
+  if (parseExpression(condExp, curIndent, Precedence::kAssignExpr))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
@@ -1993,7 +1993,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
   ExprNode *condExp = nullptr;
-  if (parseAssignExpression(condExp, curIndent))
+  if (parseExpression(condExp, curIndent, Precedence::kAssignExpr))
     return failure();
 
   // Each if/elif conditions could be dynamic or static, use some helpers to
@@ -2027,7 +2027,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
     Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
-    if (parseAssignExpression(condExp, std::nullopt))
+    if (parseExpression(condExp, std::nullopt, Precedence::kAssignExpr))
       return failure();
 
     // Moves emission into "Condition" block if elif.
@@ -2087,7 +2087,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     auto emitter = getEmitter();
 
     ExprNode *condExp = nullptr;
-    if (parseAssignExpression(condExp, curIndent))
+    if (parseExpression(condExp, curIndent, Precedence::kAssignExpr))
       return {failure(), {}};
 
     // Create the 'elif' and parse the body into its "then" region.

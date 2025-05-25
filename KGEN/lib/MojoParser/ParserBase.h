@@ -223,6 +223,34 @@ public:
   SmallVector<std::pair<ExprNode *, LexerCursor>>
   parseDecorators(ssize_t indentation);
 
+  // See
+  // https://docs.python.org/3/reference/expressions.html#operator-precedence
+  enum class Precedence {
+    kInvalid, // No precedence
+
+    kUnpack,     // prefix: * or **
+    kAssignExpr, // infix: := (walrus)
+    kIfElse,     // infix: if - else
+    kBoolOr,     // infix: or
+    kBoolAnd,    // infix: and
+    kBoolNot,    // prefix: not
+    kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
+    kOr,         // infix: |
+    kXor,        // infix: ^
+    kAnd,        // infix: &
+    kShift,      // infix: <<, >>
+    kSum,        // infix: +, -
+    kTerm,       // infix: *, @, /, //, %
+    kFactor,     // prefix: +, -, ~
+    kPower,      // infix: **
+    kAwait,      // prefix: await
+    kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
+                 //         foo.bar, foo[bar], lambda
+
+    kExpression = kIfElse, // "expression" precedence is if/else.
+    kHighest = kPrimary
+  };
+
   /// Expression parsing.  Each of these take a `stmtIndent` specifier that
   /// indicates the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
@@ -231,9 +259,8 @@ public:
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpression(ExprNode *&result,
-                              std::optional<size_t> stmtIndent = std::nullopt);
-  ParseResult parseAssignExpression(ExprNode *&result,
-                                    std::optional<size_t> stmtIndent);
+                              std::optional<size_t> stmtIndent = std::nullopt,
+                              Precedence minPrec = Precedence::kExpression);
   ParseResult parseVarInitExpression(ExprNode *&result, size_t stmtIndent);
   ParseResult parseTargetListExpr(ExprNode *&result,
                                   std::optional<size_t> stmtIndent);
