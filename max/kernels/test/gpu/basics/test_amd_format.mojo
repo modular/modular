@@ -43,10 +43,8 @@ struct Buffer[capacity: Int](Writer):
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 fn check_float[type: DType, //, expected: StaticString](f8: Scalar[type]):
