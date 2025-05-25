@@ -198,10 +198,8 @@ struct StmtParser : public ParserBase {
   void pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
                       llvm::SaveAndRestore<ASTDecl *> &keepDecl);
   /// Parse a "suite" body pushed under a local scope so any vardecls inside of
-  /// it are popped at the end. If `callInScope` is provided, it is called after
-  /// the scope is introduced, but before the suite is parsed.
-  ParseResult parseLocalScopeSuite(ssize_t curIndent,
-                                   std::function<void()> callInScope = {});
+  /// it are popped at the end.
+  ParseResult parseLocalScopeSuite(ssize_t curIndent);
   ParseResult parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                         size_t stmtIndent);
 
@@ -212,6 +210,15 @@ struct StmtParser : public ParserBase {
   ParseResult parseParamIf(Location ifLoc, LexerCursor startCursor,
                            size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
+
+  // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
+  // closure on success when in the scope of the loop, and the specified
+  // 'errorFn' if there is a semantic error with the sequence expression or
+  // target.
+  LIT::LoopOp emitForStmt(SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
+                          std::function<LogicalResult()> bodyFn,
+                          std::function<void()> errorFn);
+
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseParamFor(size_t curIndent, SMLoc forLoc,
                             ExprNode *targetExpr, ExprNode *seqExpr);
@@ -366,18 +373,12 @@ void StmtParser::pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
 }
 
 /// Parse a "suite" body pushed under a local scope so any vardecls inside of
-/// it are popped at the end. If `callInScope` is provided, it is called after
-/// the scope is introduced, but before the suite is parsed.
-ParseResult
-StmtParser::parseLocalScopeSuite(ssize_t curIndent,
-                                 std::function<void()> callInScope) {
+/// it are popped at the end.
+ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   // Push a new local variable scope for the subsequent suite.
   pushChildScope(scopeGuard, keepDecl);
-
-  if (callInScope)
-    callInScope();
 
   // Forward to the normal suite parse method.
   return parseSuite(curIndent);
@@ -1084,23 +1085,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return parseParamFor(curIndent, forLoc, targetExpr, seqExpr);
 
   // Otherwise, this is a dynamic for stmt.
-  auto forStmt = getEmitter().emitForStmt(
+  auto forStmt = emitForStmt(
       forLoc, targetExpr, seqExpr,
-      [&](LIT::LoopOp loop, VarDeclOp indVar) -> LogicalResult {
-        builder.setInsertionPointToEnd(&loop.getBodyRegion().front());
-
-        // Parse the body of the for loop into a new scope, pushing the iterator
-        // variable into that new scope.
-        return parseLocalScopeSuite(curIndent, [&]() {
-          // Add an ASTDecl for the induction variable.
-          // TODO: Generalize to an arbitrary pattern.
-          auto &vd = getDeclResolver().addFullyResolvedDecl(
-              &*indVar, indVar.getNameAttr(), targetExpr->getLoc(),
-              curDeclScope);
-          getEmitter().shared.notifyListenerOnVariableDecl(
-              vd, targetExpr->getLoc());
-        });
-      },
+      [&]() -> LogicalResult { return parseSuite(curIndent); },
       [&]() { skipUntilIndentation(curIndent); });
 
   if (!forStmt)
@@ -1116,6 +1103,140 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   }
 
   return success();
+}
+
+// FIXME: This needs to parse this as a target expression and then handle it
+// like a destructuring pattern.
+static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
+  StringRef name;
+  if (targetExpr->kind == ExprNode::kDiscardLiteral)
+    name = "_";
+  else if (auto dre = dyn_cast<DeclRefNode>(targetExpr))
+    name = dre->spelling;
+  else {
+    shared.emitError(targetExpr->getLoc(),
+                     "expected identifier for target in 'for'");
+    return {};
+  }
+  return StringAttr::get(shared.getContext(), name);
+}
+
+// This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
+// closure on success when in the scope of the loop, and the specified
+// 'errorFn' if there is a semantic error with the sequence expression or
+// target.
+LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
+                                    ExprNode *seqExpr,
+                                    std::function<LogicalResult()> bodyFn,
+                                    std::function<void()> errorFn) {
+  Location forLocation = translateLocation(forLoc);
+  StringAttr target = decodeTarget(targetExpr, shared);
+  if (!target)
+    return {};
+
+  // Create a VarDeclOp for the induction variable.  We infer its type from the
+  // call to __next__ down below.
+  VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
+      target, UnresolvedType::get(getContext()), forLocation,
+      target.getValue() == "_" ? VarDeclKind::Synthesized
+                               : VarDeclKind::Implicit);
+
+  // If there is a failure before we parse the for loop body, we still want to
+  // call the parser on it so that it builds an ASTDecl node and adds the for
+  // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
+  // unknown declaration” errors on it besides whatever error is raised while
+  // processing the loop header.
+  auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() { errorFn(); });
+
+  // We desugar
+  //
+  //   for e in iterable:
+  //     <BODY>
+  //
+  // into
+  //
+  //   var it = iterable.__iter__()
+  //   while not it.__isatend__():
+  //       var e = it.__next__()
+  //       <BODY>
+
+  // Emit the expression for the iterable.
+  ASTExprAnd<AnyValue> loadedSeq = {
+      getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
+  if (!loadedSeq.ir)
+    return {};
+
+  // Get an iterator into the iterable by emitting a call to `__iter__`.
+  VarDeclOp rangeRef =
+      getEmitter().emitVarDecl("$RANGE", UnresolvedType::get(getContext()),
+                               forLocation, VarDeclKind::Synthesized);
+  ValueDest rangeDest(rangeRef, EC_ForIterator);
+  if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
+                                        CallSyntax::kMethodCall, seqExpr)) {
+    auto newRefType =
+        indvarDeclOp.getType().getWithElement(shared.getTypeCheckErrorType());
+    indvarDeclOp.getResult().setType(newRefType);
+    return {};
+  }
+
+  // Create the LoopOp
+  auto loopOp = builder.create<LIT::LoopOp>(forLocation);
+  Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
+  Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
+  Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
+
+  // Create the condition region.
+  builder = OpBuilder::atBlockEnd(condBlock);
+
+  ValueDest lengthDest(EC_ForIterator);
+  CValue hasNextBool = getEmitter().emitNamedMethodCall(
+      "__has_next__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
+      CallSyntax::kMethodCall, seqExpr);
+  if (!hasNextBool)
+    return {};
+  CValue hasNext = getEmitter().emitI1({hasNextBool, seqExpr}, EC_ForIterator);
+  if (!hasNext)
+    return {};
+  SRValue shouldContinue =
+      getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
+  if (!shouldContinue)
+    return {};
+  builder.create<LIT::LoopConditionOp>(forLocation, shouldContinue);
+
+  // Create the body. Add Target element to the continue block by calling next
+  // method. Emit the result into an implicitly declared variable at the current
+  // scope.
+  builder.setInsertionPointToStart(bodyBlock);
+  ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
+  if (!getEmitter().emitNamedMethodCall(
+          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
+          CallSyntax::kMethodCall, seqExpr))
+    return {};
+
+  avoidDroppingDeclOnFail.release();
+
+  // Push a new local variable scope for the subsequent body.
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  pushChildScope(scopeGuard, keepDecl);
+
+  // Add an ASTDecl for the induction variable.
+  // TODO: Generalize to an arbitrary pattern.
+  auto &vd = getDeclResolver().addFullyResolvedDecl(
+      &*indvarDeclOp, target, targetExpr->getLoc(), curDeclScope);
+  getEmitter().shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
+
+  builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
+
+  // Parse the body of the for loop, using the callback.
+  if (failed(bodyFn()))
+    return {};
+  builder.create<LIT::LoopContinueOp>(forLocation);
+
+  // Create the else region.
+  builder.setInsertionPointToStart(elseBlock);
+  builder.create<LIT::LoopYieldOp>(forLocation);
+  return loopOp;
 }
 
 // Given a struct type T, return T._IndexType if it exists.
@@ -1143,22 +1264,6 @@ static std::optional<Type> getIndexType(SharedState &shared, Type structType,
                                         paramBindings, loc, shared);
   ASTType type(result);
   return type;
-}
-
-// FIXME: This needs to parse this as a target expression and then handle it
-// like a destructuring pattern.
-static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
-  StringRef name;
-  if (targetExpr->kind == ExprNode::kDiscardLiteral)
-    name = "_";
-  else if (auto dre = dyn_cast<DeclRefNode>(targetExpr))
-    name = dre->spelling;
-  else {
-    shared.emitError(targetExpr->getLoc(),
-                     "expected identifier for target in 'for'");
-    return {};
-  }
-  return StringAttr::get(shared.getContext(), name);
 }
 
 ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
@@ -1209,16 +1314,24 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   auto paramFor =
       builder.create<ParamForOp>(forLocation, seqPValue, iterate, indVarDecl);
   builder.createBlock(&paramFor.getBody());
-  if (parseLocalScopeSuite(curIndent, [&]() {
-        // Add an ASTDecl for the induction variable.
-        // TODO: Generalize to an arbitrary pattern.
-        auto value = PValue(ParamDeclRefAttr::get(indVarDecl));
-        auto &vd = getDeclResolver().addFullyResolvedDecl(
-            value, target, targetExpr->getLoc(), curDeclScope);
-        getEmitter().shared.notifyListenerOnVariableDecl(vd,
-                                                         targetExpr->getLoc());
-      }))
-    return failure();
+
+  { // Create a scope for the induction variable.
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    // Push a new local variable scope for the subsequent suite.
+    pushChildScope(scopeGuard, keepDecl);
+
+    // Add an ASTDecl for the induction variable.
+    // TODO: Generalize to an arbitrary pattern.
+    auto value = PValue(ParamDeclRefAttr::get(indVarDecl));
+    auto &vd = getDeclResolver().addFullyResolvedDecl(
+        value, target, targetExpr->getLoc(), curDeclScope);
+    getEmitter().shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
+
+    if (parseSuite(curIndent))
+      return failure();
+  }
+
   builder.create<ParamForContinueOp>(forLocation);
 
   // Parse the else region if present.
@@ -1375,17 +1488,25 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       errDecl->setLoc(translateLocation(errValLoc));
     }
 
-    // Parse the except suite.
-    if (parseLocalScopeSuite(curIndent, [&]() {
-          if (errName) {
-            // Add an ASTDecl for the error name. TODO: Generalize to an
-            // arbitrary pattern.
-            auto &vd = getDeclResolver().addFullyResolvedDecl(
-                DeclIRValue(errDecl), errName, errValLoc, curDeclScope);
-            getEmitter().shared.notifyListenerOnVariableDecl(vd, errValLoc);
-          }
-        }))
-      return failure();
+    // Parse the except suite into its own scope.
+    {
+      DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+      llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+      // Push a new local variable scope for the subsequent suite.
+      pushChildScope(scopeGuard, keepDecl);
+
+      // Add an ASTDecl for the error name. TODO: Generalize to an
+      // arbitrary pattern.
+      if (errName) {
+        auto &vd = getDeclResolver().addFullyResolvedDecl(
+            DeclIRValue(errDecl), errName, errValLoc, curDeclScope);
+        getEmitter().shared.notifyListenerOnVariableDecl(vd, errValLoc);
+      }
+
+      // Forward to the normal suite parse method.
+      if (parseSuite(curIndent))
+        return failure();
+    }
     builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
     // Parse the else suite if present. Otherwise, leave it as empty.

@@ -599,15 +599,6 @@ public:
   void emitNormalReturn(Location loc, Value value = Value(),
                         bool emitEndFunc = true);
 
-  // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
-  // closure on success when in the scope of the loop, and the specified
-  // 'errorFn' if there is a semantic error with the sequence expression or
-  // target.
-  LIT::LoopOp emitForStmt(
-      SMLoc forLoc, ExprNode *targetExpr, ExprNode *seqExpr,
-      std::function<LogicalResult(LIT::LoopOp loop, VarDeclOp indVar)> bodyFn,
-      std::function<void()> errorFn);
-
   /// Helper to emit a VarDeclOp with a uniquely generated origin name.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
                         VarDeclKind kind);
