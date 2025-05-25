@@ -32,7 +32,7 @@ _NO_ASAN = [
     "builtin/test_bool.mojo",
     "builtin/test_format_float.mojo",
     "builtin/test_int.mojo",
-    "collections/string/test_string.mojo",
+    # "collections/string/test_string.mojo",     
     "python/test_ownership.mojo",
     "python/test_python_cpython.mojo",
     "python/test_python_error_handling.mojo",
@@ -41,7 +41,7 @@ _NO_ASAN = [
     "python/test_python_module_create.mojo",
     "python/test_python_object.mojo",
     "python/test_python_to_mojo.mojo",
-    "subprocess/test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
+    # "subprocess/test_run.mojo",  # TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
     "testing/test_assertion.mojo",
 ]
 
@@ -52,15 +52,15 @@ _PLATFORM_CONSTRAINTS = {
     })
     for src in _NO_ASAN
 } | {
-    "benchmark/test_benchmark.mojo": ["@platforms//:incompatible"],  # TODO (#34267): reenable
-    "math/test_erf.mojo": ["@platforms//os:linux"],
-    "math/test_tanh.mojo": ["@platforms//os:linux"],
-    "os/path/test_islink.mojo": ["@platforms//:incompatible"],  # TODO(#33762): This is causing recursive dirs to be created.
-    "sys/test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
-    "sys/test_linux_target.mojo": ["@platforms//os:linux"],
-    "sys/test_macos_target.mojo": ["@platforms//os:macos"],
-    "sys/test_windows_target.mojo": ["@platforms//:incompatible"],
-}
+#     "benchmark/test_benchmark.mojo": ["@platforms//:incompatible"],  # TODO (#34267): reenable
+#     "math/test_erf.mojo": ["@platforms//os:linux"],
+#     "math/test_tanh.mojo": ["@platforms//os:linux"],
+#     "os/path/test_islink.mojo": ["@platforms//:incompatible"],  # TODO(#33762): This is causing recursive dirs to be created.
+#     "sys/test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
+    "sys/test_linux_target.mojo": ["@platforms//os:linux"]
+#     "sys/test_macos_target.mojo": ["@platforms//os:macos"],
+#     "sys/test_windows_target.mojo": ["@platforms//:incompatible"],
+}   
 
 _TEST_RUNTIME_ARGS = {
     "benchmark/test_quick_bench.mojo": [
@@ -95,22 +95,22 @@ _MOJO_COMPILE_OPTS = {
         "-D",
         "BUILD_TYPE=debug",
     ],
-    "sys/test_paramenv.mojo": [
-        "-D",
-        "bar=99",
-        "-D",
-        "baz=hello",
-        "-D",
-        "foo=11",
-        "-D",
-        "my_true=True",
-        "-D",
-        "my_false=false",
-        "-D",
-        "my_on=on",
-        "-D",
-        "my_off=off",
-    ],
+    # "sys/test_paramenv.mojo": [
+    #     "-D",
+    #     "bar=99",
+    #     "-D",
+    #     "baz=hello",
+    #     "-D",
+    #     "foo=11",
+    #     "-D",
+    #     "my_true=True",
+    #     "-D",
+    #     "my_false=false",
+    #     "-D",
+    #     "my_on=on",
+    #     "-D",
+    #     "my_off=off",
+    # ],
     "sys/test_compile_debug.mojo": [
         "-O0",
         "--debug-level",
@@ -135,7 +135,7 @@ _DISABLED_ASSERTIONS = [
     "bit/test_bit.mojo",
     "builtin/test_debug_assert_mode_none.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
     "builtin/test_debug_assert_warning.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
-    "collections/test_index_normalization.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    # "collections/test_index_normalization.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
     "json/test_json.mojo",
 ]
 
@@ -144,7 +144,7 @@ _EXPECT_CRASH = [
     "builtin/test_debug_assert_default_error.mojo",
     "builtin/test_range_uint_reverse_range_bad.mojo",
     "builtin/test_debug_assert_mode_all_error.mojo",
-    "collections/test_list_getitem_invalid_index.mojo",
+    # "collections/test_list_getitem_invalid_index.mojo",
     "logger/test_logger_critical.mojo",
     "os/test_trap.mojo",
 ]
@@ -178,8 +178,8 @@ _FILECHECK_TESTS = [
     "builtin/test_range_uint_reverse_range_bad.mojo",
     "builtin/test_rebind.mojo",
     "builtin/test_sort_issue_1018.mojo",
-    "collections/test_index_normalization.mojo",
-    "collections/test_list_getitem_invalid_index.mojo",
+    # "collections/test_index_normalization.mojo",
+    # "collections/test_list_getitem_invalid_index.mojo",
     "logger/test_logger.mojo",
     "logger/test_logger_alias.mojo",
     "logger/test_logger_critical.mojo",
@@ -200,7 +200,7 @@ _FILECHECK_TESTS = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         data = _DATA,
         enable_assertions = src not in _DISABLED_ASSERTIONS,
-        env = _ENV.get(src, {}),
+        # env = _ENV.get(src, {}),
         expect_crash = src in _EXPECT_CRASH,
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [

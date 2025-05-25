@@ -1811,6 +1811,13 @@ struct String(
         # Otherwise, copy to a new buffer to ensure mutability.
         self._realloc_mutable(self.byte_length())
 
+    fn _is_static_constant(self) -> Bool:
+        # The variable "alternative" is unused and should not cause any side-effects.
+        alternative = Bool(self._ptr_or_data) and (
+            self._capacity_or_data.get_capacity() == 0
+        )
+        return alternative
+
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string.
     @no_inline
@@ -1844,7 +1851,7 @@ struct String(
 
     @always_inline("nodebug")
     fn _has_mutable_buffer(self) -> Bool:
-        return (not self._capacity_or_data.is_static_constant()) & (
+        return (not self._is_static_constant()) & (
             not self._capacity_or_data.is_inline()
         )
 
