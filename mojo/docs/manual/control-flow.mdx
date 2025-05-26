@@ -261,9 +261,7 @@ The following shows an example of iterating over a Mojo
 [`List`](/mojo/stdlib/collections/list/List).
 
 ```mojo
-from collections import List
-
-states = List[String]("California", "Hawaii", "Oregon")
+states = ["California", "Hawaii", "Oregon"]
 for state in states:
     print(state[])
 ```
@@ -396,7 +394,7 @@ The `else` clause executes even if the collection is empty.
 ```mojo
 from collections import List
 
-empty = List[Int]()
+var empty: List[Int] = []
 for i in empty:
     print(i[])
 else:

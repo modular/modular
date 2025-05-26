@@ -534,7 +534,7 @@ type at compile time using a [parameter](/mojo/manual/parameters/). For
 example, you can create a `List` of `Int` values like this:
 
 ```mojo
-var l = List[Int](1, 2, 3, 4)
+var l: List[Int] = [1, 2, 3, 4]
 # l.append(3.14) # error: FloatLiteral cannot be converted to Int
 ```
 
@@ -544,7 +544,7 @@ integer literals, Mojo creates a `List[Int]`.
 
 ```mojo
 # Inferred type == Int
-var l1 = List(1, 2, 3, 4)
+var l1 = [1, 2, 3, 4]
 ```
 
 Where you need a more flexible collection, the
@@ -575,9 +575,7 @@ ability to append to the list, pop items out of the list, and access list items
 using subscript notation.
 
 ```mojo
-from collections import List
-
-var list = List(2, 3, 5)
+var list = [2, 3, 5]
 list.append(7)
 list.append(11)
 print("Popping last item from list: ", list.pop())
@@ -595,17 +593,24 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-* Mojo supports list and dictionary literals for collection initialization:
+* Mojo supports list, set, and dictionary literals for collection initialization:
 
   ```mojo
   # List literal
   var nums: List[Int] = [2, 3, 5]
+
+  # Set literal
+  var unique_nums: Set[Int] = {2, 3, 5}
+
+  # Dictionary literal
+  var scores: Dict[String, Int] = {"Alice": 95, "Bob": 87}
   ```
 
-  You can also use variadic arguments for lists:
+  You can also use variadic arguments for lists and sets:
 
   ```mojo
   var list = List(2, 3, 5)
+  var set = Set(2, 3, 5)
   ```
 
 * You can't `print()` a list, or convert it directly into a string.
@@ -623,8 +628,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   item itself. You can access the item using the dereference operator, `[]`:
 
 ```mojo
-#: from collections import List
-var list = List(2, 3, 4)
+#: var list = [2, 3, 4]
 for item in list:
       print(item[], end=", ")
 ```
@@ -637,8 +641,7 @@ Subscripting in to a list, however, returns the item directly—no need to
 dereference:
 
 ```mojo
-#: from collections import List
-#: var list = List[Int](2, 3, 4)
+#: var list = [2, 3, 4]
 for i in range(len(list)):
     print(list[i], end=", ")
 ```
@@ -704,12 +707,15 @@ intersections between two sets.
 Sets are generic and the element type must conform to the
 [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait.
 
-Unlike lists and dictionaries, sets do not yet support literal syntax.
+Sets support literal syntax with curly braces:
 
 ```mojo
 from collections import Set
 
-i_like = Set("sushi", "ice cream", "tacos", "pho")
+# Using set literal syntax
+i_like = {"sushi", "ice cream", "tacos", "pho"}
+
+# You can also use the explicit constructor
 you_like = Set("burgers", "tacos", "salad", "ice cream")
 we_like = i_like.intersection(you_like)
 
