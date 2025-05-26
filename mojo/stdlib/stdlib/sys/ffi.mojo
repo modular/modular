@@ -178,11 +178,12 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
         """Initialize a dynamic library handle to all global symbols in the
         current process.
 
-        On POXIX-compatible operating systems, this performs
-        `dlopen(nullptr, flags)`.
-
         Args:
             flags: The flags to load the dynamic library.
+
+        Notes:
+            On POSIX-compatible operating systems, this performs
+            `dlopen(nullptr, flags)`.
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
