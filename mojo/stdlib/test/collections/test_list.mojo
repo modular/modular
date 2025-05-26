@@ -981,6 +981,14 @@ def test_copyinit_trivial_types_dtypes():
     assert_equal(test_index_dtype, 7)
 
 
+def test_list_comprehension():
+    var l1 = [x * x for x in range(10) if x & 1]
+    assert_equal(l1, [1, 9, 25, 49, 81])
+
+    var l2 = [x * y[] for x in range(3) for y in l1]
+    assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -1023,3 +1031,4 @@ def main():
     test_list_fill_constructor()
     test_uninit_ctor()
     test_copyinit_trivial_types_dtypes()
+    test_list_comprehension()

@@ -201,7 +201,7 @@ how to produce the elements:
 
 ```mojo
   var list1 = [x*y for x in range(10) for y in other_int_list]
-  var list2 : YourList = [x for x in range(10)]
+  var list2 : YourList = [x for x in range(10) if x & 1]
 ```
 
 Collection comprehensions desugar into the same code you'd get by writing nested
@@ -213,9 +213,11 @@ literals above.  For example, these two examples desugar into:
   for x in range(10):
       for y in other_int_list:
          list1.append(x*y)
+
   var list2 = YourList()
   for x in range(10):
-      list2.append(x)
+      if x & 1:
+          list2.append(x)
 ```
 
 This implies that this will only work with collection types that are default
