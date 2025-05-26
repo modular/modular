@@ -1108,7 +1108,7 @@ fn _matmul_qint4_m_any[
                     DType.int32,
                     alignment=alignment,
                 ]() if needs_correction else UnsafePointer[
-                    Int32,
+                    Int32, alignment=alignment
                 ]()
 
                 _unpack_weights[
