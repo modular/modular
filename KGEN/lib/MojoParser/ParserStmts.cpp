@@ -2946,8 +2946,8 @@ emitComprehensionsAnd(StmtParser &stmtEmitter,
 
 /// Emit a comprehension expression into the specified emitter.  If a
 /// contextual type is known, 'expectedType' is non-null.
-static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
-                                  IREmitter &emitter) {
+static AnyValue emitComprehension(const ComprehensionNode *node,
+                                  ValueDest &dest, IREmitter &emitter) {
   auto &shared = emitter.shared;
   auto loc = node->getLoc();
   auto location = shared.translateLocation(loc);
@@ -2963,6 +2963,11 @@ static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
     return {};
   }
 
+  if (node->kind != ExprNode::kListComprehension) {
+    emitter.emitError(loc, "IRGen unimp") << node->getRange();
+    return {};
+  }
+
   // The general structure we emit for '[x*x for x in range(10) if x != 4]' is:
   //   var result = Collection()
   //   for x in range(10):
@@ -2974,8 +2979,6 @@ static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
   // be inferred from context, but otherwise defaults to List[T] (where T is the
   // element type of x*x).  This is a bit awkward because we cannot know the
   // type of 'result' until we emit all the other stuff.
-  auto listNode = cast<ListComprehensionNode>(node);
-
   const char *emptyString = ""; // make sure we have a nul on this.
   Lexer lexer(shared.diags, emptyString, emptyString);
   StmtParser stmtEmitter(lexer, emitter.declScope);
@@ -3015,8 +3018,7 @@ static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
   // This emits the body of the comprehension in the context of the clauses.
   auto emitBody = [&]() -> LogicalResult {
     auto emitter = stmtEmitter.getEmitter();
-    auto elementExpr =
-        emitter.emitExprCValue(listNode->expr, EC_CollectionCompElt);
+    auto elementExpr = emitter.emitExprCValue(node->expr, EC_CollectionCompElt);
     // If we had no expected type, then assign the default collection type now.
     auto collectionType = inferCollectionType(elementExpr.getRValueType());
     if (!collectionType)
@@ -3039,7 +3041,7 @@ static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
     return success();
   };
 
-  if (failed(emitComprehensionsAnd(stmtEmitter, listNode->clauses, emitBody)))
+  if (failed(emitComprehensionsAnd(stmtEmitter, node->clauses, emitBody)))
     return {};
 
   // Leave the caller's IREmitter at the right place to continue emitting.
@@ -3059,8 +3061,7 @@ static AnyValue emitComprehension(const ExprNode *node, ValueDest &dest,
   return MRValue(collectionMLValue);
 }
 
-AnyValue ListComprehensionNode::emitIR(ValueDest &dest,
-                                       IREmitter &emitter) const {
+AnyValue ComprehensionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // emitComprehension is defined in the statement emission file.
   AnyValue result = emitComprehension(this, dest, emitter);
   return emitter.emitResult(result, this, dest);

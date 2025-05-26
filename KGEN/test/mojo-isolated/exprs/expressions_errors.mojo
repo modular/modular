@@ -446,6 +446,14 @@ fn list_literals():
   alias some_alias = [1 for x in range(10)]
 
 
+fn set_parse_errors(a: Int):
+  # expected-error @+1 {{IRGen unimp}}
+  _ = {key for key in SimpleRange() if key != 0}
+
+  # expected-error @+2 {{IRGen unimp}}
+  # expected-error @+1 {{cannot use keyword argument in set comprehension}}
+  _ = {key = value for key in SimpleRange()}
+
 fn dict_expression(a: Int):
   # expected-error @+1 {{cannot emit initializer list without a contextual type}}
   _ = {}
@@ -453,12 +461,13 @@ fn dict_expression(a: Int):
   # expected-error @+1 {{TODO: unpack emission in dict literal not supported yet}}
   _ = {a: 4, **dict, "b": 17}
 
-  # expected-error @+1 {{TODO: dictionary comprehension parsing}}
-  var comprehension = {key:value for (key,value) in dict.items()}
+  # expected-error @+1 {{IRGen unimp}}
+  var comprehension = {elts.key:elts.value for elts in dict.items()}
 
 fn dict_parse_errors(a: Int):
-  # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}
-  _ = {key:value, key:value for (key,value) in dict.items()}
+  # expected-error @+2 {{IRGen unimp}}
+  # expected-error @+1 {{expected a single expression in comprehension}}
+  _ = {elts.key:elts.value, 1:2 for elts in dict.items()}
 
 
 

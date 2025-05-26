@@ -93,7 +93,9 @@ private:
   ParseResult parseLambda(ExprNode *&result);
   ParseResult parseMagicFunction(ExprNode *&result);
 
-  ParseResult parseComprehensions(SmallVector<ComprehensionClause> &result);
+  ParseResult parseComprehension(ExprNode *&result, ExprNode::Kind kind,
+                                 SMLoc startLoc, ExprNode *expr,
+                                 ExprNode *value);
 
   /// Check if the given operands (e.g. in a `(...)` call or `[...]` subscript)
   /// adhere to the Python grammar. Positional operands cannot appear after
@@ -617,11 +619,15 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
   return success();
 }
 
-/// Parse a collection literal comprehension, a sequence of for/if clauses.
+/// Parse a collection literal comprehension, a sequence of for/if clauses. This
+/// kicks in after the first element expression is parsed.
 ///
 /// This is used for list, set, and dict comprehensions.
-ParseResult
-ExprParser::parseComprehensions(SmallVector<ComprehensionClause> &result) {
+ParseResult ExprParser::parseComprehension(ExprNode *&result,
+                                           ExprNode::Kind kind, SMLoc startLoc,
+                                           ExprNode *expr, ExprNode *value) {
+  // Parse a list of for/if clauses.
+  SmallVector<ComprehensionClause> clauses;
   while (getToken().isAny(Token::kw_for, Token::kw_if)) {
     auto kwLoc = getToken().getLoc();
     ComprehensionClause::Kind kind;
@@ -640,9 +646,36 @@ ExprParser::parseComprehensions(SmallVector<ComprehensionClause> &result) {
     // kBoolOr avoids 'if' exprs.
     if (parseExpression(expr, Precedence::kBoolOr))
       return failure();
-
-    result.push_back({kwLoc, kind, forPattern, expr});
+    clauses.push_back({kwLoc, kind, forPattern, expr});
   }
+
+  SMLoc endLoc;
+
+  // Parse the end token.
+  switch (kind) {
+  case ExprNode::kListComprehension:
+    if (parseToken(Token::r_square, "expected ']' in list comprehension",
+                   &endLoc))
+      return failure();
+    break;
+  case ExprNode::kSetComprehension:
+    if (parseToken(Token::r_brace, "expected '}' in set comprehension",
+                   &endLoc))
+      return failure();
+    break;
+  case ExprNode::kDictComprehension:
+    if (parseToken(Token::r_brace, "expected '}' in dict comprehension",
+                   &endLoc))
+      return failure();
+    break;
+  default:
+    llvm_unreachable("not a comprehension");
+  }
+
+  // Create the comprehension node.
+  result = alloc<ComprehensionNode>(kind, startLoc, expr, value,
+                                    copyArrayRef<ComprehensionClause>(clauses),
+                                    endLoc);
   return success();
 }
 
@@ -671,24 +704,14 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
   // with a 'for', but may be followed by an arbitrary number of "if" and "for"
   // clauses.
   if (getToken().is(Token::kw_for)) {
-    // Parse a list of for/if clauses.
-    SmallVector<ComprehensionClause> clauses;
-    if (parseComprehensions(clauses) ||
-        parseToken(Token::r_square, "expected ']' in list expression",
-                   &rsquareLoc))
-      return failure();
-
     // Only a single expression is allowed in a comprehension.
     if (exprs.size() != 1)
       emitError(exprs[1]->getLoc(),
                 "expected a single expression in list comprehension")
           << exprs[1]->getRange();
 
-    // Create the comprehension node.
-    result = alloc<ListComprehensionNode>(
-        lsquareLoc, exprs[0], copyArrayRef<ComprehensionClause>(clauses),
-        rsquareLoc);
-    return success();
+    return parseComprehension(result, ExprNode::kListComprehension, lsquareLoc,
+                              exprs[0], nullptr);
   }
 
   emitTokenError("expected ']' in list expression");
@@ -764,15 +787,21 @@ ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
   }
 
   // Handle dict_comprehension if present
-  SMLoc forLoc;
-  if (consumeIf(Token::kw_for, &forLoc)) {
-    if (elements.size() != 1 || !elements[0].first)
-      emitError(
-          forLoc,
-          "dictionary comprehension must start with single key:value pair");
-    else
-      emitError(forLoc, "TODO: dictionary comprehension parsing");
-    return failure();
+  if (getToken().is(Token::kw_for)) {
+    if (elements.size() != 1)
+      emitError(elements[1].second->getLoc(),
+                "expected a single expression in comprehension")
+          << elements[1].second->getRange();
+    else if (!isDict && elements[0].first)
+      emitError(elements[0].first->getLoc(),
+                "cannot use keyword argument in set comprehension")
+          << elements[0].first->getRange();
+    auto kind =
+        isDict ? ExprNode::kDictComprehension : ExprNode::kSetComprehension;
+
+    auto key = isDict ? elements[0].first : elements[0].second;
+    auto value = isDict ? elements[0].second : nullptr;
+    return parseComprehension(result, kind, lbraceLoc, key, value);
   }
 
   // Otherwise we must be out of elements.
