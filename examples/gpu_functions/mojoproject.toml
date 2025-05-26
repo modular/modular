@@ -11,7 +11,8 @@ vector_addition = "mojo run vector_addition.mojo"
 grayscale = "mojo run grayscale.mojo"
 naive_matrix_multiplication = "mojo run naive_matrix_multiplication.mojo"
 mandelbrot = "mojo run mandelbrot.mojo"
-test = { depends-on = ["vector_addition", "grayscale", "naive_matrix_multiplication", "mandelbrot"] }
+reduction = "mojo run reduction.mojo"
+test = { depends-on = ["vector_addition", "grayscale", "naive_matrix_multiplication", "mandelbrot", "reduction"] }
 
 [dependencies]
 max = ">=24.6.0.dev2024090821"
