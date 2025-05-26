@@ -11,16 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    ThroughputMeasure,
+    BenchMetric,
+)
+from utils import IndexList
+from gpu.host import DeviceContext
+from pathlib import Path
 from math import ceildiv
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from os.atomic import Atomic
 from random import randint
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from sys import has_accelerator, sizeof
 from testing import assert_equal
 
 from gpu import thread_idx, block_idx, block_dim, grid_dim, warp, barrier
 from gpu.host import DeviceContext
-from gpu.memory import load
+from gpu.memory import AddressSpace, load
 from layout.tensor_builder import LayoutTensorBuild as tb
 
 # Initialize parameters
@@ -28,7 +39,7 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 alias TPB = 512
 alias LOG_TPB = 9
 alias BATCH_SIZE = 8  # needs to be power of 2
-alias SIZE = 1 << 25
+alias SIZE = 1 << 29
 alias NUM_BLOCKS = ceildiv(SIZE, TPB * BATCH_SIZE)
 alias dtype = DType.int32
 
@@ -36,7 +47,11 @@ fn sum_kernel[
     size: Int, batch_size: Int
 ](out: UnsafePointer[Int32], a: UnsafePointer[Int32],):
     """Efficent reduction of the vector a."""
-    sums = tb[dtype]().row_major[TPB]().shared().alloc()
+    sums = stack_allocation[
+        TPB,
+        Scalar[dtype],
+        address_space = AddressSpace.SHARED,
+    ]()
     global_tid = block_idx.x * block_dim.x + thread_idx.x
     tid = thread_idx.x
     threads_in_grid = TPB * grid_dim.x
@@ -67,9 +82,28 @@ fn sum_kernel[
         if tid == 0:
             _ = Atomic.fetch_add(out, warp_sum)
 
+# Benchmark function for sum_kernel
+@parameter
+@always_inline
+fn sum_kernel_benchmark(mut b: Bencher, input_data: (UnsafePointer[Int32], UnsafePointer[Int32])) capturing raises:
+    @parameter
+    @always_inline
+    fn kernel_launch_sum(ctx: DeviceContext) raises:
+        var out_ptr = input_data[0]
+        var a_ptr = input_data[1]
+        ctx.enqueue_function[sum_kernel[SIZE, BATCH_SIZE]](
+            out_ptr,
+            a_ptr,
+            grid_dim=NUM_BLOCKS,
+            block_dim=TPB,
+        )
+
+    var bench_ctx = DeviceContext()
+    b.iter_custom[kernel_launch_sum](bench_ctx)
+
 def main():
     constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        has_accelerator(),
         "This example requires a supported GPU",
     ]()
 
@@ -107,3 +141,20 @@ def main():
             print("out:", out_host)
             print("expected:", expected)
             assert_equal(out_host[0], expected[0])
+
+        # Benchmark performance
+
+        var bench = Bench(BenchConfig(max_iters=50000))
+
+        bench.bench_with_input[
+            (UnsafePointer[Int32], UnsafePointer[Int32]), sum_kernel_benchmark
+        ](
+            BenchId("sum_kernel_benchmark", "gpu"),
+            (out_ptr, a_ptr),
+            ThroughputMeasure(
+                BenchMetric.bytes, SIZE * sizeof[dtype]()
+            ),
+        )
+
+        # Pretty print in table format
+        print(bench)
