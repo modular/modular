@@ -574,10 +574,7 @@ struct _Global[
         pass
 
     @staticmethod
-    fn _init_wrapper(payload: OpaquePointer) -> OpaquePointer:
-        # Struct-based globals don't get to take arguments to their initializer.
-        debug_assert(not payload)
-
+    fn _init_wrapper() -> OpaquePointer:
         # Heap allocate space to store this "global"
         var ptr = UnsafePointer[storage_type].alloc(1)
 
@@ -606,12 +603,11 @@ struct _Global[
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn (OpaquePointer) -> OpaquePointer,
+    init_fn: fn () -> OpaquePointer,
     destroy_fn: fn (OpaquePointer) -> None,
-](payload: OpaquePointer = OpaquePointer()) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrCreate", OpaquePointer](
+]() -> OpaquePointer:
+    return external_call["KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer](
         name,
-        payload,
         init_fn,
         destroy_fn,
     )
