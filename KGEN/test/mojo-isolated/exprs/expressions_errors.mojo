@@ -440,8 +440,7 @@ fn list_literals():
   # expected-error @+1 {{expected a single expression in list comprehension}}
   _ = [x, x+1 for x in SimpleRange()]
 
-  # expected-error @+1 {{if clause not supported yet}}
-  _ = [x for x in SimpleRange() if x % 2 == 0]
+  _ = [x for x in SimpleRange() if x * 2 == 0]
 
   # expected-error @+1 {{comprehensions are not supported at compile time; move into a function and call it}}
   alias some_alias = [1 for x in range(10)]

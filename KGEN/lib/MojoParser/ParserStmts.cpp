@@ -2873,6 +2873,48 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 // List/Dict/Set Comprehensions
 //===----------------------------------------------------------------------===//
 
+static LogicalResult emitIfClause(StmtParser &stmtEmitter,
+                                  const ComprehensionClause &clause,
+                                  std::function<LogicalResult()> callback) {
+  auto location = stmtEmitter.translateLocation(clause.kwLoc);
+  auto emitter = stmtEmitter.getEmitter();
+
+  // Create a new elifOp state and initialize it with 2 blocks.
+  HLCF::ElifOp elifOp =
+      emitter.builder->create<HLCF::ElifOp>(location, TypeRange(), 2);
+  auto &condBlock = elifOp.getElifRegions()[0].emplaceBlock();
+  emitter.builder->setInsertionPointToStart(&condBlock);
+
+  // Emit the condition expression.
+  RValue condI1RVal = emitter.emitExprI1(clause.expr, EC_BoolCondition);
+  if (!condI1RVal)
+    return failure();
+  SRValue condRVal =
+      emitter.emitSRValue({condI1RVal, clause.expr}, EC_BoolCondition);
+  if (!condRVal)
+    return failure();
+  emitter.builder->create<HLCF::ElifYieldOp>(location, condRVal,
+                                             /*no extra values*/ ValueRange());
+
+  // Emit the body of the 'then' clause.
+  auto &thenBlock = elifOp.getElifRegions()[1].emplaceBlock();
+  emitter.builder->setInsertionPointToStart(&thenBlock);
+
+  {
+    llvm::SaveAndRestore builderSaver(stmtEmitter.getBuilder());
+    stmtEmitter.getBuilder().setInsertionPointToStart(&thenBlock);
+    if (failed(callback()))
+      return failure();
+  }
+  emitter.builder->create<HLCF::YieldOp>(location);
+
+  // Leave the else block empty.
+  auto &elseBlock = elifOp.getElseRegion().emplaceBlock();
+  emitter.builder->setInsertionPointToStart(&elseBlock);
+  emitter.builder->create<HLCF::YieldOp>(location);
+  return success();
+}
+
 /// Emit the clauses for a comprehension expression, then call the callback.
 static LogicalResult
 emitComprehensionsAnd(StmtParser &stmtEmitter,
@@ -2895,8 +2937,9 @@ emitComprehensionsAnd(StmtParser &stmtEmitter,
     return success(forStmt != LIT::LoopOp());
   }
   case ComprehensionClause::kIf:
-    stmtEmitter.emitError(clause.expr->getLoc(), "if clause not supported yet");
-    return failure();
+    return emitIfClause(stmtEmitter, clause, [&]() -> LogicalResult {
+      return emitComprehensionsAnd(stmtEmitter, clauses.drop_front(), callback);
+    });
   }
   llvm_unreachable("unhandled comprehension clause kind");
 }
