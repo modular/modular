@@ -57,8 +57,7 @@ static std::mutex &getGlobalTableMutex() {
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
-                                  void *(*initFn)(void *),
+KGEN_CompilerRT_GetOrCreateGlobal(llvm::StringRef name, void *(*initFn)(),
                                   void (*destroyFn)(void *)) {
   auto &globalTable = getGlobalTable();
 
@@ -72,7 +71,7 @@ KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
   if (!initFn)
     return nullptr;
 
-  GlobalEntry entry(initFn(payload), destroyFn);
+  GlobalEntry entry(initFn(), destroyFn);
 
   GlobalTable::iterator itr;
   bool inserted;
@@ -91,7 +90,7 @@ KGEN_CompilerRT_GetGlobalOrCreate(llvm::StringRef name, void *payload,
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetGlobalOrNull(llvm::StringRef name) {
-  return KGEN_CompilerRT_GetGlobalOrCreate(name, nullptr, nullptr, nullptr);
+  return KGEN_CompilerRT_GetOrCreateGlobal(name, nullptr, nullptr);
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
