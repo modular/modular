@@ -542,14 +542,23 @@ struct Set[T: AnyType]:
     fn __init__(out self, *elements: T, __set_literal__: () = ()):
         pass
 
+    fn add(mut self, owned value: T):
+        pass
+
 
 struct Dict[K: AnyType, V: Copyable & Movable]:
+    fn __init__(out self):
+        pass
+
     fn __init__(
         out self,
         owned keys: List[K],
         owned values: List[V],
         __dict_literal__: (),
     ):
+        pass
+
+    fn __setitem__(mut self, key: K, value: V):
         pass
 
 

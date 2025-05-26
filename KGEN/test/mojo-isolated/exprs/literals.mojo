@@ -179,6 +179,21 @@ fn test_dict_literal(aBool: Bool):
     var c : IntDict = {1: 7, 2: 8}
 
 
+# CHECK-LABEL: lit.fn @"test_dict_comprehension
+fn test_dict_comprehension():
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Dict<:!AnyType #Int1, :!Copyable_Movable #String1>
+    # CHECK: lit.loop cond {
+    # CHECK:   SimpleIntRange::@"__has_next__
+    # CHECK: } body {
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %i
+    # CHECK:       lit.call {{.*}}String::@"__init__()
+    # CHECK:      [[TMP:%.*]] = lit.ref.immut %i
+    # CHECK:      lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%a_collection, [[TMP]],
+    # CHECK-NEXT: lit.loop.continue
+    # CHECK: }
+    var a_collection = {i: String() for i in SimpleIntRange()}
+
 # ===----------------------------------------------------------------------=== #
 # Set Literals
 # ===----------------------------------------------------------------------=== #
@@ -207,6 +222,24 @@ fn test_set_literal():
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut
     # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %b)
     var b : MySet[Int] = {1, 2}
+
+
+# CHECK-LABEL: lit.fn @"test_set_comprehension
+fn test_set_comprehension():
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Set<:!AnyType #Int1>
+    # CHECK: lit.loop cond {
+    # CHECK:   SimpleIntRange::@"__has_next__
+    # CHECK: } body {
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %i1
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
+    # CHECK:      lit.call {{.*}}@Set::@"add
+    # CHECK-NEXT: lit.loop.continue
+    # CHECK: }
+    var a_collection = {i1*2 for i1 in SimpleIntRange()}
+
 
 # ===----------------------------------------------------------------------=== #
 # Initializer Lists
