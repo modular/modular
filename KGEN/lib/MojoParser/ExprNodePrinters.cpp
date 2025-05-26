@@ -338,8 +338,22 @@ void ListLiteralNode::print(raw_indented_ostream &os) const {
   os.unindent() << "}\n";
 }
 
-void ListComprehensionNode::print(raw_indented_ostream &os) const {
-  os << "ListComprehension {\n";
+void ComprehensionNode::print(raw_indented_ostream &os) const {
+  switch (kind) {
+  default:
+    llvm_unreachable("not a comprehension");
+  case ExprNode::kListComprehension:
+    os << "List";
+    break;
+  case ExprNode::kSetComprehension:
+    os << "Set";
+    break;
+  case ExprNode::kDictComprehension:
+    os << "Dict";
+    break;
+  }
+
+  os << "Comprehension {\n";
   os.indent() << "expr: ";
   expr->print(os);
   os << "clauses: [\nTODO\n";

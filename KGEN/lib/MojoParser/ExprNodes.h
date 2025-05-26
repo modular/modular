@@ -444,19 +444,24 @@ struct ComprehensionClause {
 };
 
 /// [a    for a in range    if cond]
-struct ListComprehensionNode final : public ExprNode {
-  ListComprehensionNode(SMLoc lsquareLoc, ExprNode *expr,
-                        ArrayRef<ComprehensionClause> clauses, SMLoc rsquareLoc)
-      : ExprNode(kListComprehension), lsquareLoc(lsquareLoc), expr(expr),
-        clauses(clauses), rsquareLoc(rsquareLoc) {}
+/// {a    for a in range    if cond}
+/// {a: a * a    for a in range    if cond}
+struct ComprehensionNode final : public ExprNode {
+  ComprehensionNode(ExprNode::Kind kind, SMLoc lsquareLoc, ExprNode *expr,
+                    ExprNode *valueExpr, ArrayRef<ComprehensionClause> clauses,
+                    SMLoc rsquareLoc)
+      : ExprNode(kind), lsquareLoc(lsquareLoc), expr(expr),
+        valueExpr(valueExpr), clauses(clauses), rsquareLoc(rsquareLoc) {}
 
   const SMLoc lsquareLoc;
   ExprNode *const expr;
+  ExprNode *const valueExpr; // Used for dict comprehension.
   ArrayRef<ComprehensionClause> clauses;
   const SMLoc rsquareLoc;
 
   static bool classof(const ExprNode *node) {
-    return node->kind == kListComprehension;
+    return node->kind == kListComprehension ||
+           node->kind == kSetComprehension || node->kind == kDictComprehension;
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }

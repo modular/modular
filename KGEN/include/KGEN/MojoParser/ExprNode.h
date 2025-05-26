@@ -53,9 +53,11 @@ public:
     kParen,             // (x+y)
     kTuple,             // (), (x,), (x, y), etc
     kListLiteral,       // [x, y]
-    kListComprehension, // [x for x in range(10)]
     kDictLiteral,       // {a: 1, b: 2, **dictUnpack}
     kSetInitLiteral,    // {x, y} and {z=4, "foo"}
+    kListComprehension, // [x for x in range(10) if x & 1]
+    kSetComprehension,  // {x for x in range(10) if x & 1}
+    kDictComprehension, // {x: x * x for x in range(10) if x & 1}
     kCall,              // thing(a, b)
     kSubscript,         // thing[a, b:c]
     kSubscriptArrow,    // thing[x, y -> a, b]
