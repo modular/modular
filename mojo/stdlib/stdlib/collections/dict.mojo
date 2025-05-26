@@ -598,7 +598,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     fn __getitem__(
-        self, key: K
+        ref self, key: K
     ) raises -> ref [self._entries[0].value().value] Self.V:
         """Retrieve a value out of the dictionary.
 
