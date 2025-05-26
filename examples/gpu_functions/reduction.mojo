@@ -32,7 +32,6 @@ from testing import assert_equal
 from gpu import thread_idx, block_idx, block_dim, grid_dim, warp, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace, load
-from layout.tensor_builder import LayoutTensorBuild as tb
 
 # Initialize parameters
 # To archieve high bandwidth increase SIZE to large value
