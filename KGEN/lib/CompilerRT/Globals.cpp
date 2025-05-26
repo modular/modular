@@ -13,6 +13,7 @@
 
 #include "Support/SymbolExport.h"
 
+#include <atomic>
 #include <mutex>
 
 template <>
@@ -101,6 +102,57 @@ KGEN_CompilerRT_InsertGlobal(llvm::StringRef name, void *value) {
   globalTable.insert({name.str(), GlobalEntry(value, nullptr)});
 }
 
+//===----------------------------------------------------------------------===//
+// Indexed globals for well known constants.
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct AtomicGlobalEntry {
+  std::atomic<void *> value;
+  std::atomic<void (*)(void *)> destroyFn;
+
+  void destroy() {
+    if (auto loadedValue = value.load()) {
+      value.store(nullptr);
+      if (auto loadedDestroyFn = destroyFn.load()) {
+        destroyFn.store(nullptr);
+        loadedDestroyFn(loadedValue);
+      }
+    }
+  }
+};
+} // namespace
+
+/// Keep this as big as the indexed globals in ffi.mojo.
+#define NUM_INDEXED_GLOBALS 2
+static AtomicGlobalEntry indexedTable[NUM_INDEXED_GLOBALS];
+
+/// A faster version of GetOrCreateGlobal that doesn't need to lock the table
+/// or hash the name.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetOrCreateGlobalIndexed(size_t index, void *(*initFn)(),
+                                         void (*destroyFn)(void *)) {
+  assert(index < NUM_INDEXED_GLOBALS && "Unsupported indexed global #");
+
+  // Most accesses will be initialized.
+  auto entry = indexedTable[index].value.load();
+  if (entry)
+    return entry;
+
+  // If not, create a value.
+  auto newValue = initFn();
+  // Try to swap it in, replacing a nullptr.
+  if (!indexedTable[index].value.compare_exchange_strong(entry, newValue)) {
+    // If we raced and someone else won, delete whatever we just created.
+    destroyFn(newValue);
+    return entry;
+  }
+  // Unconditionally set the destroy function. It should always be the same for
+  // anyone racing on this.
+  indexedTable[index].destroyFn.store(destroyFn);
+  return newValue;
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestroyGlobals() {
   auto &globalTable = getGlobalTable();
@@ -110,4 +162,8 @@ KGEN_CompilerRT_DestroyGlobals() {
   for (auto entry : llvm::reverse(globalTable))
     entry.second.destroy();
   globalTable.clear();
+
+  // Destroy indexed globals last.
+  for (auto &entry : indexedTable)
+    entry.destroy();
 }
