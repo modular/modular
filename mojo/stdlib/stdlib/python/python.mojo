@@ -62,11 +62,12 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     The returned pointer is immutable to prevent invalid shared mutation of
     this global variable. Once it is initialized, it may not be mutated.
     """
-    var global_ptr: UnsafePointer[
-        _PythonGlobal
-    ] = _PYTHON_GLOBAL.get_or_create_ptr()
 
-    return Pointer[CPython, StaticConstantOrigin](to=global_ptr[].cpython)
+    var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
+    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
+        False, StaticConstantOrigin
+    ]()
+    return Pointer(to=ptr2[])
 
 
 struct Python:

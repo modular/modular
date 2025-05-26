@@ -565,18 +565,22 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
 # ===-----------------------------------------------------------------------===#
 
 
+# NOTE: This is vending shared mutable pointers to the client without locking.
+# This is not guaranteeing any sort of thread safety.
 struct _Global[
     name: StaticString,
-    storage_type: Movable,
-    init_fn: fn () -> storage_type,
+    StorageType: Movable,
+    init_fn: fn () -> StorageType,
 ]:
+    alias ResultType = UnsafePointer[StorageType]
+
     fn __init__(out self):
         pass
 
     @staticmethod
     fn _init_wrapper() -> OpaquePointer:
         # Heap allocate space to store this "global"
-        var ptr = UnsafePointer[storage_type].alloc(1)
+        var ptr = UnsafePointer[StorageType].alloc(1)
 
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -586,18 +590,35 @@ struct _Global[
         return ptr.bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(self_: OpaquePointer):
-        var ptr: UnsafePointer[storage_type] = self_.bitcast[storage_type]()
-
-        # Deinitialize and deallocate the global
+    fn _deinit_wrapper(opaque_ptr: OpaquePointer):
+        # Deinitialize and deallocate the storage.
+        var ptr = opaque_ptr.bitcast[StorageType]()
         ptr.destroy_pointee()
         ptr.free()
 
     @staticmethod
-    fn get_or_create_ptr() -> UnsafePointer[storage_type]:
+    fn get_or_create_ptr() -> Self.ResultType:
         return _get_global[
             name, Self._init_wrapper, Self._deinit_wrapper
-        ]().bitcast[storage_type]()
+        ]().bitcast[StorageType]()
+
+    # Currently known values for get_or_create_indexed_ptr.  See
+    # NUM_INDEXED_GLOBALS in CompilerRT.
+    alias _python_idx = 0
+    alias _unused = 1  # Intentionally unused (enabled for prototyping).
+
+    # This accesses a well-known global with a fixed index rather than using a
+    # name to unique the value.  The index table is above.
+    @staticmethod
+    fn get_or_create_indexed_ptr(idx: Int) -> Self.ResultType:
+        var ptr = external_call[
+            "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+        ](
+            idx,
+            Self._init_wrapper,
+            Self._deinit_wrapper,
+        )
+        return ptr.bitcast[StorageType]()
 
 
 @always_inline
