@@ -143,9 +143,7 @@ def main():
             assert_equal(out_host[0], expected[0])
 
         # Benchmark performance
-
         var bench = Bench(BenchConfig(max_iters=50000))
-
         bench.bench_with_input[
             (UnsafePointer[Int32], UnsafePointer[Int32]), sum_kernel_benchmark
         ](
@@ -155,6 +153,5 @@ def main():
                 BenchMetric.bytes, SIZE * sizeof[dtype]()
             ),
         )
-
         # Pretty print in table format
         print(bench)
