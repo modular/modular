@@ -513,8 +513,18 @@ fn test[name: String, test_fn: fn () raises]() raises:
     print("PASS")
 
 
+def test_set_comprehension():
+    var s1 = {x * x for x in range(10) if x & 1}
+    assert_equal(s1, {1, 9, 25, 49, 81})
+
+    var s2 = {x * y[] for x in range(3) for y in s1}
+    assert_equal(s2, {0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162})
+
+
 def main():
     test["test_set_construction", test_set_construction]()
+    test["test_set_move", test_set_move]()
+    test_set_move()
     test["test_len", test_len]()
     test["test_in", test_in]()
     test["test_equal", test_equal]()
@@ -537,5 +547,4 @@ def main():
     test["test_discard", test_discard]()
     test["test_clear", test_clear]()
     test["test_set_str", test_set_str]()
-
-    test_set_move()
+    test["test_set_comprehension", test_set_comprehension]()

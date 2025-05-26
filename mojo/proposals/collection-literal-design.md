@@ -202,6 +202,8 @@ how to produce the elements:
 ```mojo
   var list1 = [x*y for x in range(10) for y in other_int_list]
   var list2 : YourList = [x for x in range(10) if x & 1]
+  var set = [x for x in range(10)]
+  var dict = {x: x * x for x in range(10) if x & 1}
 ```
 
 Collection comprehensions desugar into the same code you'd get by writing nested
@@ -218,9 +220,19 @@ literals above.  For example, these two examples desugar into:
   for x in range(10):
       if x & 1:
           list2.append(x)
+
+  var set = Set[Int]()
+  for x in range(10):
+      set.add(x)
+
+  var dict = Dict[Int, Int]()
+  for x in range(10):
+      if x & 1:
+          dict[x] = x*x
 ```
 
 This implies that this will only work with collection types that are default
 constructible, and have the insertion methods corresponding to their type:
-`append` for arrays.  Mojo doesn't require the collections to be copy or movable
-or impose any other requirements on them.
+`append` for arrays, `add` for sets, and `__setitem__` for dicts.  Mojo doesn't
+require the collections to be copy or movable or impose any other requirements
+on them.
