@@ -19,9 +19,6 @@ from benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
-from utils import IndexList
-from gpu.host import DeviceContext
-from pathlib import Path
 from math import ceildiv
 from memory import UnsafePointer, stack_allocation
 from os.atomic import Atomic
