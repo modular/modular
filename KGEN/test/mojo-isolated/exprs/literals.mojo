@@ -130,10 +130,22 @@ fn test_list_comprehension():
     # CHECK:      lit.call {{.*}}@List::@"append
     var b_collection = [i2*i3 for i2 in SimpleIntRange() for i3 in SimpleIntRange()]
 
-    # Inferred to type IntList.
+    # Inferred to type IntList and using an "if" clause.
     # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
-    var c_collection : IntList = [i4 for i4 in SimpleIntRange()]
-
+    # CHECK: lit.loop cond {
+    # CHECK:   SimpleIntRange::@"__has_next__
+    # CHECK: } body {
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: lit.ref.store [[TMP]], %i4
+    # CHECK-NEXT: hlcf.elif {
+    # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.load %i4
+    # CHECK-NEXT:    @Int::@"__bool__
+    # CHECK-NEXT:    @Bool::@"__mlir_i1__
+    # CHECK-NEXT:    hlcf.elif.yield
+    # CHECK-NEXT: } then {
+    # CHECK-NEXT: [[RES:%.*]] = lit.ref.load %i4
+    # CHECK-NEXT  lit.call {{.*}}@IntList::@"append{{.*}}(%c_collection, [[RES]])
+    var c_collection : IntList = [i4 for i4 in SimpleIntRange() if i4]
 
 
 # ===----------------------------------------------------------------------=== #
