@@ -195,20 +195,20 @@ If there is a known contextual type, the compiler uses the following approach:
 
 ## Collection Comprehensions
 
-Mojo supports Python style collection "comprehensions", which is a collection
-literal with a single expression, and as set of postfix generator clauses saying
-how to produce the elements:
+Mojo supports Python-style collection "comprehensions", which are a collection
+literal with a single expression, followed by one or more postfix generator
+clauses indicating how to produce the elements.  Some examples:
 
 ```mojo
   var list1 = [x*y for x in range(10) for y in other_int_list]
-  var list2 : YourList = [x for x in range(10) if x & 1]
+  var list2: YourList = [x for x in range(10) if x & 1]
   var set = [x for x in range(10)]
-  var dict = {x: x * x for x in range(10) if x & 1}
+  var dict = {x : x*x for x in range(10) if x & 1}
 ```
 
 Collection comprehensions desugar into the same code you'd get by writing nested
-for loops and if statements, and uses the same defaulting rules as other
-literals above.  For example, these two examples desugar into:
+`for` loops and `if` statements, and uses the same defaulting rules as other
+literals above.  For example, the examples above desugar into:
 
 ```mojo
   var list1 = List[Int]()
