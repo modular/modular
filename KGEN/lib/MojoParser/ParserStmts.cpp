@@ -2963,11 +2963,6 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
     return {};
   }
 
-  if (node->kind != ExprNode::kListComprehension) {
-    emitter.emitError(loc, "IRGen unimp") << node->getRange();
-    return {};
-  }
-
   // The general structure we emit for '[x*x for x in range(10) if x != 4]' is:
   //   var result = Collection()
   //   for x in range(10):
@@ -2992,21 +2987,35 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor));
 
   // Start out the result collection with an inferred type if it isn't known.
-  auto inferCollectionType = [&](ASTType eltType) -> ASTType {
+  auto inferCollectionType = [&](ASTType eltType, ASTType valType) -> ASTType {
     // Use the contextual type if it is known.
     if (auto expectedType = dest.getExpectedTypeIfSpecified())
       return expectedType;
 
-    // Otherwise default to List[T].
-    auto listType = shared.getStandardCollectionType(loc, "List");
-    if (!listType)
+    // Otherwise default to List[T], Set[T] or Dict[K, V].
+    ASTType defaultType;
+    if (node->kind == ExprNode::kListComprehension)
+      defaultType = shared.getStandardCollectionType(loc, "List");
+    else if (node->kind == ExprNode::kSetComprehension)
+      defaultType = shared.getStandardCollectionType(loc, "Set");
+    else if (node->kind == ExprNode::kDictComprehension)
+      defaultType = shared.getStandardCollectionType(loc, "Dict");
+    else
+      llvm_unreachable("unhandled comprehension kind");
+    if (!defaultType)
       return {};
 
     // Form T[eltType] syntactically and emit it.
-    SyntheticNode collTypeExpr(loc, PValue(listType));
+    SyntheticNode collTypeExpr(loc, PValue(defaultType));
     SyntheticNode eltTypeExpr(loc, PValue(eltType));
-    Operand subscriptOperand(&eltTypeExpr, loc, Operand::kPositional);
-    SubscriptNode subscript(&collTypeExpr, loc, subscriptOperand, loc);
+    SyntheticNode valTypeExpr(loc, PValue(valType));
+    Operand subscriptOperand[] = {{&eltTypeExpr, loc, Operand::kPositional},
+                                  {&valTypeExpr, loc, Operand::kPositional}};
+    SubscriptNode subscript(&collTypeExpr, loc,
+                            node->kind == ExprNode::kDictComprehension
+                                ? ArrayRef<Operand>(subscriptOperand)
+                                : ArrayRef<Operand>(subscriptOperand[0]),
+                            loc);
     return stmtEmitter.getParamEmitter(EC_CollectionCompElt)
         .emitExprType(&subscript);
   };
@@ -3019,8 +3028,21 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   auto emitBody = [&]() -> LogicalResult {
     auto emitter = stmtEmitter.getEmitter();
     auto elementExpr = emitter.emitExprCValue(node->expr, EC_CollectionCompElt);
+    if (!elementExpr)
+      return failure();
+
+    CValue valueExpr;
+    ASTType valueType;
+    if (node->kind == ExprNode::kDictComprehension) {
+      valueExpr = emitter.emitExprCValue(node->valueExpr, EC_CollectionCompElt);
+      if (!valueExpr)
+        return failure();
+      valueType = valueExpr.getRValueType();
+    }
+
     // If we had no expected type, then assign the default collection type now.
-    auto collectionType = inferCollectionType(elementExpr.getRValueType());
+    auto collectionType =
+        inferCollectionType(elementExpr.getRValueType(), valueType);
     if (!collectionType)
       return failure();
 
@@ -3030,14 +3052,28 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
     collectionMLValue =
         dest.getMLValueForResult(loc, collectionType, cursorEmitter);
 
-    // Okay we know the collection has a type, emit "coll.append(elt)".
-    CallOperands operands(
-        {{collectionMLValue, &exprNode}, {elementExpr, &exprNode}});
-    operands.hasSelfOperand = true;
-
+    // Okay we know the collection has a type, emit the insertion method call.
     ValueDest dest(EC_CollectionCompElt);
-    emitter.emitNamedMethodCall("append", std::move(operands), dest,
-                                CallSyntax::kMethodCall, &exprNode);
+
+    // Use dict.__setitem__(key, value) for dict comprehensions.
+    if (node->kind == ExprNode::kDictComprehension) {
+      CallOperands operands({{collectionMLValue, &exprNode},
+                             {elementExpr, &exprNode},
+                             {valueExpr, &exprNode}});
+      operands.hasSelfOperand = true;
+      emitter.emitNamedMethodCall("__setitem__", std::move(operands), dest,
+                                  CallSyntax::kMethodCall, &exprNode);
+    } else {
+      // Use list.append(elt) or set.add(elt) for list and set comprehensions.
+      CallOperands operands(
+          {{collectionMLValue, &exprNode}, {elementExpr, &exprNode}});
+      operands.hasSelfOperand = true;
+      const char *name =
+          node->kind == ExprNode::kListComprehension ? "append" : "add";
+      emitter.emitNamedMethodCall(name, std::move(operands), dest,
+                                  CallSyntax::kMethodCall, &exprNode);
+    }
+
     return success();
   };
 

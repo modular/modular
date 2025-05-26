@@ -51,12 +51,16 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Tuple";
   case ExprNode::kListLiteral:
     return "ListLiteral";
-  case ExprNode::kListComprehension:
-    return "ListComprehension";
   case ExprNode::kDictLiteral:
     return "DictLiteral";
   case ExprNode::kSetInitLiteral:
     return "SetInitLiteral";
+  case ExprNode::kListComprehension:
+    return "ListComprehension";
+  case ExprNode::kSetComprehension:
+    return "SetComprehension";
+  case ExprNode::kDictComprehension:
+    return "DictComprehension";
   case ExprNode::kCall:
     return "Call";
   case ExprNode::kSubscript:
