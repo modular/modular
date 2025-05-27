@@ -2508,11 +2508,11 @@ class MoMutableLoadOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        out_chain: max._core.dialects.mo.ChainType,
         out_tensor: max._core.dialects.mo.TensorType,
-        in_chain: max._core.Value[max._core.dialects.mo.ChainType],
+        out_chain: max._core.dialects.mo.ChainType,
         in_buffer: max._core.Value[max._core.dialects.mo.BufferType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+        in_chain: max._core.Value[max._core.dialects.mo.ChainType],
     ) -> None: ...
     @overload
     def __init__(
@@ -2522,8 +2522,6 @@ class MoMutableLoadOp(max._core.Operation):
         input_values: Sequence[max._core.Value],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[max._core.dialects.mo.ChainType]: ...
     @property
     def in_buffer(
         self,
@@ -2536,6 +2534,8 @@ class MoMutableLoadOp(max._core.Operation):
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
+    @property
+    def in_chain(self) -> max._core.Value[max._core.dialects.mo.ChainType]: ...
 
 class MoMutableStoreOp(max._core.Operation):
     @overload
@@ -2544,10 +2544,10 @@ class MoMutableStoreOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         out_chain: max._core.dialects.mo.ChainType,
-        in_chain: max._core.Value[max._core.dialects.mo.ChainType],
         in_buffer: max._core.Value[max._core.dialects.mo.BufferType],
         in_tensor: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+        in_chain: max._core.Value[max._core.dialects.mo.ChainType],
     ) -> None: ...
     @overload
     def __init__(
@@ -2557,8 +2557,6 @@ class MoMutableStoreOp(max._core.Operation):
         input_values: Sequence[max._core.Value],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[max._core.dialects.mo.ChainType]: ...
     @property
     def in_buffer(
         self,
@@ -2575,6 +2573,8 @@ class MoMutableStoreOp(max._core.Operation):
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
+    @property
+    def in_chain(self) -> max._core.Value[max._core.dialects.mo.ChainType]: ...
 
 class MoMutableStoreSliceOp(max._core.Operation):
     @overload
@@ -2583,13 +2583,13 @@ class MoMutableStoreSliceOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         out_chain: max._core.dialects.mo.ChainType,
-        in_chain: max._core.Value[max._core.dialects.mo.ChainType],
         in_buffer: max._core.Value[max._core.dialects.mo.BufferType],
         slice: max._core.Value[max._core.dialects.mo.TensorType],
         start: max._core.Value[max._core.dialects.mo.TensorType],
         stop: max._core.Value[max._core.dialects.mo.TensorType],
         step: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+        in_chain: max._core.Value[max._core.dialects.mo.ChainType],
     ) -> None: ...
     @overload
     def __init__(
@@ -2599,8 +2599,6 @@ class MoMutableStoreSliceOp(max._core.Operation):
         input_values: Sequence[max._core.Value],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[max._core.dialects.mo.ChainType]: ...
     @property
     def in_buffer(
         self,
@@ -2621,6 +2619,8 @@ class MoMutableStoreSliceOp(max._core.Operation):
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
+    @property
+    def in_chain(self) -> max._core.Value[max._core.dialects.mo.ChainType]: ...
 
 class MoNegativeOp(max._core.Operation):
     """
