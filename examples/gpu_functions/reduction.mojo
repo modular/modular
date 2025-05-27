@@ -19,6 +19,7 @@ from benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
+from bit import log2_floor
 from math import ceildiv
 from memory import UnsafePointer, stack_allocation
 from os.atomic import Atomic
@@ -33,10 +34,11 @@ from gpu.memory import AddressSpace, load
 # Initialize parameters
 # To archieve high bandwidth increase SIZE to large value
 alias TPB = 512
-alias LOG_TPB = 9
+alias LOG_TPB = log2_floor(TPB)
 alias BATCH_SIZE = 8  # needs to be power of 2
 alias SIZE = 1 << 29
 alias NUM_BLOCKS = ceildiv(SIZE, TPB * BATCH_SIZE)
+alias WARP_SIZE = 32
 alias dtype = DType.int32
 
 fn sum_kernel[
@@ -71,7 +73,7 @@ fn sum_kernel[
         barrier()
 
     # Reduce the warp and accumulate via atomic addition
-    if tid < 32:
+    if tid < WARP_SIZE:
         var warp_sum: Int32 = sums[tid][0]
         warp_sum = warp.sum(warp_sum)
 
