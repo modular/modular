@@ -1,7 +1,8 @@
 ---
-title: Terminology - Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-terminology/
 ---
+
+# Terminology
 
 In this page, we'll talk about the terminology we use internally for various
 concepts in Mojo. Some of it will be unusual, marked with a ⚠️. Knowing these
@@ -153,6 +154,19 @@ requirements. Here are some example metatypes for that trait:
 Any type conforming to any of these metatypes can satisfy that trait.
 
 In a way, a trait is "all metatypes that have _at least_ these requirements".
+
+### lit.meta, AnyStruct
+
+`!lit.anystruct` (a.k.a. `LIT::AnyStructType`) is a `!lit.meta` of a struct.
+
+`!lit.meta` is a trait (sort of) that only one specific type conforms to, and
+has all the methods and fields of that type.
+
+For example, `!lit.meta<@Int>` is a trait (sort of) that only `Int` conforms to,
+and it has all the methods and fields that `Int` has.
+
+These things only exist in LIT. They (and all traits) lower to kgen's
+`kgen.type` (a.k.a. "type type", KGEN_TypeType in KGENTypes.td).
 
 ### Metatypes in KGEN
 

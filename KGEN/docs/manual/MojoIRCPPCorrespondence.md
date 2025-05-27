@@ -1,7 +1,10 @@
 ---
-title: Mojo ↔ IR ↔ C++ Correspondence - Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-correspondence/
 ---
+
+# Mojo ↔ IR ↔ C++ Correspondence
+
+(This page is heavily WIP, check back later)
 
 For any given piece of language semantics, there are three different domains in
 which you will view things:
