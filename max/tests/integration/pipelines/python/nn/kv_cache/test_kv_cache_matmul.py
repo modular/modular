@@ -529,7 +529,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         and "kv_matmul" in StringAttr(op.attributes["symbol"]).value
     ][0]
     assert len(matmul_kv_cache_op.results) == 1
-    assert "!mo.chain" in str(matmul_kv_cache_op.results[0].type)
+    assert "!mo.chain" in str(matmul_kv_cache_op.results[-1].type)
 
     matmul_args = matmul_kv_cache_op.operands
-    assert "!mo.chain" in str(matmul_args[0].type)
+    assert "!mo.chain" in str(matmul_args[-1].type)
