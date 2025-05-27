@@ -2232,8 +2232,8 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
                             :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
                             : !kgen.struct<(string, index)>
   // CHECK-NEXT: %2 = kgen.call @"HELLO,x=FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
-  kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <compile_offload_closure(
-    nvptx, :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">)>
+  kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <#kgen.compile_offload_closure<
+    nvptx, #kgen.symbol.constant<@HELLO<:() capturing -> index *"foo()">> : !kgen.generator<() capturing -> !kgen.none>>>
   %2 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: x](%arg0)
   kgen.return
 }
