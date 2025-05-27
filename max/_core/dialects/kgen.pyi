@@ -302,6 +302,34 @@ class ClosureSymbolAttr(max._core.Attribute):
     @property
     def type(self) -> FuncTypeGeneratorType: ...
 
+class CompileOffloadClosureAttr(max._core.Attribute):
+    """
+    The `#kgen.compile_offload_closure` attribute is used to compile offload
+    closures for a given target.
+
+    Example:
+
+    ```mlir
+    #kgen.get_linkage_name<
+      #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
+      #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>
+    > : !kgen.string
+    ```
+    """
+
+    def __init__(
+        self,
+        target: max._core.dialects.builtin.TypedAttr,
+        func: max._core.dialects.builtin.TypedAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class DTypeConstantAttr(max._core.Attribute):
     """
     This is constant value for a dtype, whose elements correspond to DType.
