@@ -281,9 +281,7 @@ def test_bool_conversion():
     var x: PythonObject = 1
     assert_true(x == 1)
     assert_false(x == 0)
-    # Note: the following doesn't work yet, because the compiler assumes that
-    # __eq__ returns Bool, but that's not the case for PythonObject.
-    # assert(x == 0 or x == 1)
+    assert_true(x == 0 or x == 1)
 
 
 fn test_string_conversions() raises -> None:

@@ -50,9 +50,7 @@ def run_display(
             running = False
         elif event.type == pygame.KEYDOWN:
             # Also quit if the user presses <Escape> or 'q'
-            if Bool(event.key == pygame.K_ESCAPE) or Bool(
-                event.key == pygame.K_q
-            ):
+            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
                 running = False
 
         # Clear the window by painting with the background color
