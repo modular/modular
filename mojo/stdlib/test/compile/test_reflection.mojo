@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from compile.reflection import get_linkage_name
+from compile.reflection import get_linkage_name, get_type_name
 from testing import assert_equal
 from sys.info import _current_target
 
@@ -51,8 +51,23 @@ def test_get_linkage_name_on_itself():
     assert_equal(name, "stdlib::sys::info::_current_target()")
 
 
+def test_get_type_name():
+    var name = get_type_name[Int]()
+    assert_equal(name, "stdlib::builtin::int::Int")
+
+
+def test_get_type_name_nested():
+    fn nested_func[T: AnyType]() -> StaticString:
+        return get_type_name[T]()
+
+    var name = nested_func[String]()
+    assert_equal(name, "stdlib::collections::string::string::String")
+
+
 def main():
     test_get_linkage_name()
     test_get_linkage_name_nested()
     test_get_linkage_name_parameterized()
     test_get_linkage_name_on_itself()
+    test_get_type_name()
+    test_get_type_name_nested()

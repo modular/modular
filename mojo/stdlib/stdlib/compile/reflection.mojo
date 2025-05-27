@@ -53,3 +53,19 @@ fn get_linkage_name[
         Symbol name.
     """
     return get_linkage_name[_current_target(), func]()
+
+
+fn get_type_name[
+    type_type: AnyTrivialRegType, //,
+    type: type_type,
+]() -> StaticString:
+    """Returns the struct name of the given type parameter.
+
+    Parameters:
+        type_type: Type of type.
+        type: A mojo type.
+
+    Returns:
+        Type name.
+    """
+    return __mlir_attr[`#kgen.get_type_name<`, type, `> : !kgen.string`]
