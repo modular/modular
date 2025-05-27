@@ -795,15 +795,6 @@ td_library(
     visibility = ["//visibility:public"],
 )
 
-modular_cc_library(
-    name = "FrameworkSupport",
-    srcs = glob(["lib/Frameworks/*.cpp"]),
-    hdrs = glob(["include/Support/Frameworks/*.h"]),
-    deps = [
-        ":Telemetry",
-    ],
-)
-
 # Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
 # function. This is used by downstream libraries to decide whether MLIR types
 # in different SOs are the same type or not.
