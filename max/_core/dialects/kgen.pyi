@@ -1488,8 +1488,6 @@ class POC(enum.Enum):
 
     compile_offload_closure = 31
 
-    get_linkage_name = 32
-
     get_vtable_entry = 33
 
     ptr_bitcast = 34
