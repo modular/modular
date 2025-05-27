@@ -75,14 +75,14 @@ def sum(
         devices.append(input.device)
 
     in_chain = Graph.current._current_chain
-    out_chain, *results = Graph.current._add_op(
+    *results, out_chain = Graph.current._add_op(
         mo.distributed_allreduce_sum,
         # Types for 2 outputs: chain, list of tensors
-        _ChainType().to_mlir(),
         [x.type.to_mlir() for x in inputs],
-        in_chain,
+        _ChainType().to_mlir(),
         inputs,
         signal_buffers,
+        in_chain,
     )
 
     Graph.current._update_chain(out_chain)

@@ -32,15 +32,15 @@ def buffer_load(
 
     output = Graph.current._add_op(
         rmo.mo_mutable_load,
-        _ChainType().to_mlir(),
         TensorType(x.dtype, x.shape, x.device).to_mlir(),
-        in_chain,
+        _ChainType().to_mlir(),
         x,
+        in_chain,
     )
 
-    Graph.current._update_chain(output[0])
+    Graph.current._update_chain(output[1])
 
-    return TensorValue(output[1])
+    return TensorValue(output[0])
 
 
 def buffer_store(destination: BufferValue, source: TensorValue) -> None:
@@ -56,7 +56,7 @@ def buffer_store(destination: BufferValue, source: TensorValue) -> None:
     in_chain = Graph.current._current_chain
 
     output_chain = Graph.current._add_op(
-        rmo.mo_mutable_store, in_chain, destination, source
+        rmo.mo_mutable_store, destination, source, in_chain
     )[0]
 
     Graph.current._update_chain(output_chain)
@@ -90,12 +90,12 @@ def buffer_store_slice(
 
     output_chain = Graph.current._add_op(
         rmo.mo_mutable_store_slice,
-        in_chain,
         destination,
         source.reshape(unsqueezed_shape),
         starts,
         stops,
         steps,
-    )[0]
+        in_chain,
+    )[-1]
 
     Graph.current._update_chain(output_chain)

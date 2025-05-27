@@ -170,10 +170,10 @@ def test_call_chain_updates():
         # Subgraph that stores tensor into buffer (mutates state, uses chain)
         with main_graph.add_subgraph(
             "store_subgraph",
-            input_types=[_ChainType(), buffer_type, tensor_type],
+            input_types=[buffer_type, tensor_type, _ChainType()],
         ) as subgraph:
-            buffer = subgraph.inputs[1]
-            tensor = subgraph.inputs[2]
+            buffer = subgraph.inputs[0]
+            tensor = subgraph.inputs[1]
             buf_val = buffer.buffer
             ten_val = tensor.tensor
             ops.buffer_store(buf_val, ten_val)
@@ -196,10 +196,10 @@ def test_call_chain_input_output_mismatch():
         # Manually create a subgraph with chain input but not outputting it
         with main_graph.add_subgraph(
             "bad_chain_subgraph",
-            input_types=[_ChainType(), buffer_type, tensor_type],
+            input_types=[buffer_type, tensor_type, _ChainType()],
         ) as subgraph:
-            buffer = subgraph.inputs[1]
-            tensor = subgraph.inputs[2]
+            buffer = subgraph.inputs[0]
+            tensor = subgraph.inputs[1]
             buf_val = buffer.buffer
             ten_val = tensor.tensor
             # This will use the chain, but we intentionally do NOT output anything (no chain output)
