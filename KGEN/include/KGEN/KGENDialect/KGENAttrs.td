@@ -535,6 +535,32 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
 }
 
 //===----------------------------------------------------------------------===//
+// GetTypeNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetTypeNameAttr : KGEN_ExprAttr<"GetTypeName", "get_type_name",
+    [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the name of a type symbol.";
+  let description = [{
+    The `#kgen.get_type_name` attribute is used to get the name of a struct
+    symbol.
+
+    Example:
+
+    ```mlir
+    #kgen.get_type_name<#Int>: !kgen.string
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+
+  let assemblyFormat = "`<` $typeValue `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // BindParams
 //===----------------------------------------------------------------------===//
 
