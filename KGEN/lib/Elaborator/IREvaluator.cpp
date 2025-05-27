@@ -129,6 +129,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateGetWitnessAttr(getWitnessEntry);
   if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
     return evaluateGetLinkageNameAttr(getLinkageNameAttr);
+  if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
+    return evaluateGetTypeNameAttr(getTypeNameAttr);
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
@@ -611,6 +613,22 @@ IREvaluator::evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr) {
   }
   StringAttr name = pairOrError.takeValue().first;
   return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
+}
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
+  // Find the struct generator for the instantiated type ref.
+  TypedAttr typeRef = getTypeNameAttr.getTypeValue();
+  if (!isa<TypeInstanceRefAttr>(typeRef)) {
+    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
+                  .getTypeValue();
+  }
+
+  SymbolRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef).getSymbol();
+  ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
+  StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
+
+  return {StringAttr::get(gen.getSymName(), getTypeNameAttr.getType())};
 }
 
 //===----------------------------------------------------------------------===//

@@ -89,6 +89,7 @@ private:
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
   FailureOr<TypedAttr>
   evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);
+  FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
