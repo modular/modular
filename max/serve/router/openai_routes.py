@@ -15,6 +15,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import queue
 import uuid
 from abc import ABC, abstractmethod
@@ -83,6 +84,16 @@ from starlette.datastructures import State
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
+
+# limits the number of concurrent tasks parsing incoming requests
+# TODO(AITLIB-368): remove this after taking action mentioned in the ticket
+MAX_SERVE_NUM_CONCURRENT_PARSING_TASKS = (
+    "MAX_SERVE_NUM_CONCURRENT_PARSING_TASKS"
+)
+_NUM_CONCURRENT_PARSING_TASKS = int(
+    os.environ.get(MAX_SERVE_NUM_CONCURRENT_PARSING_TASKS, 25)
+)
+_request_parsing_semaphore = asyncio.Semaphore(_NUM_CONCURRENT_PARSING_TASKS)
 
 
 def record_request_start():
@@ -516,7 +527,8 @@ async def openai_create_chat_completion(
 ) -> Union[CreateChatCompletionResponse, EventSourceResponse]:
     request_id = request.state.request_id
     try:
-        request_json = await request.json()
+        async with _request_parsing_semaphore:
+            request_json = await request.json()
         completion_request = CreateChatCompletionRequest.model_validate(
             request_json
         )
@@ -669,7 +681,8 @@ async def openai_create_embeddings(
     request_id = request.state.request_id
 
     try:
-        request_json = await request.json()
+        async with _request_parsing_semaphore:
+            request_json = await request.json()
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
         pipeline = get_pipeline(request, embeddings_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
@@ -932,7 +945,8 @@ async def openai_create_completion(
     request_handler_ns = perf_counter_ns()
     http_req_id = request.state.request_id
     try:
-        request_json = await request.json()
+        async with _request_parsing_semaphore:
+            request_json = await request.json()
         request_json_ns = perf_counter_ns()
         completion_request = CreateCompletionRequest.model_validate(
             request_json
@@ -1063,7 +1077,8 @@ async def create_streaming_audio_speech(
     """Audio generation endpoint that streams audio data."""
     try:
         request_id = request.state.request_id
-        request_json = await request.json()
+        async with _request_parsing_semaphore:
+            request_json = await request.json()
 
         audio_generation_request = CreateAudioGenerationRequest.model_validate(
             request_json
