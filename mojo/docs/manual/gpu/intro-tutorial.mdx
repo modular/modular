@@ -6,7 +6,6 @@ github_url: https://github.com/modular/modular/tree/main/examples/mojo/gpu-intro
 image: /images/artwork/mojo-motorcycle.jpg
 ---
 
-import GetMagic from '@site/src/includes/get_magic.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '@site/docs/max/requirements';
 
@@ -32,45 +31,54 @@ System requirements:
 
 <Requirements requirementsData={requirementsWithGPU} />
 
-## 1. Create a Mojo project with `magic`
+## 1. Create a Mojo project
 
-We'll start by using the [`magic`](/magic) CLI to create a virtual environment
-and generate our initial project directory.
+To install the Modular Platform, which includes Mojo, you can use `pip` as
+described in the [install guide](/max/packages), but for Mojo developers, we
+currently recommend using [`pixi`](https://pixi.sh/latest/).
 
-1. <GetMagic />
+1. If you don't have `pixi`, you can install it with this command:
+
+    ```sh
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
 
 2. Navigate to the directory in which you want to create the project
     and execute:
 
     ```bash
-    magic init gpu-intro --format mojoproject
+    pixi init gpu-intro \
+      -c https://conda.modular.com/max-nightly/ -c conda-forge \
+      && cd gpu-intro
     ```
 
-    This creates a project directory named `gpu-intro`.
+    This creates a project directory named `gpu-intro`, adds the Modular conda
+    package channel, and enters the directory.
 
-3. Let's go into the directory and verify the project is configured
+3. Install the Modular Platform from the `modular` package (which
+includes Mojo):
+
+    ```bash
+    pixi add modular
+    ```
+
+3. Let's verify the project is configured
     correctly by checking the version of Mojo that's installed within our
     project's virtual environment:
 
     ```bash
-    cd gpu-intro
-    ```
-
-    ```bash
-    magic run mojo --version
+    pixi run mojo --version
     ```
 
     You should see a version string indicating the version of Mojo installed,
-    which by default should be the latest nightly version. Because we used the
-    `--format mojoproject` option when creating the project, `magic`
-    automatically added the `max` package as a dependency, which includes Mojo
-    and the MAX libraries.
+    which by default should be the latest nightly version.
 
 4. Activate the project's virtual environment:
 
     ```bash
-    magic shell
+    pixi shell
     ```
+
     Later on, when you want to exit the virtual environment, just type `exit`.
 
 ## 2. Get a reference to the GPU device
@@ -876,7 +884,6 @@ import TutorialStack from '@site/src/components/TutorialStack';
 
 export const maxTutorials = [
   'build-custom-ops',
-  'magic',
 ];
 
 export const mojoTutorials = [
