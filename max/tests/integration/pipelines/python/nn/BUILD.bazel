@@ -22,6 +22,7 @@ modular_py_test(
         exclude = [
             "**/*_gpu.py",
             "**/*_distributed_gpu.py",
+            "**/test_transfer_engine.py",
         ],
     ),
     data = [
@@ -143,5 +144,25 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_transfer_engine",
+    srcs = glob(["**/test_transfer_engine.py"]),
+    data = [
+        "//AsyncRT:plugin_ucx",
+    ],
+    env = {
+        # TODO(GENAI-170): Make plugin directory discovery more robust and work
+        # outside of Bazel.
+        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
+    },
+    deps = [
+        "//SDK/lib/API/python/max:_core",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
