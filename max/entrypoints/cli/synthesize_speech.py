@@ -31,10 +31,13 @@ logger = logging.getLogger(__name__)
 def synthesize_speech(
     config: AudioGenerationConfig,
     text_to_synthesize: str,
-    voice: str,
+    voice: str | None,
     output: str,
 ):
     """Synthesize speech from text, and save the result to a file.
+
+    This will also ask the user whether they would like to rerun the synthesis
+    with a different voice or prompt.
 
     Args:
         text_to_synthesize: The text to synthesize.
