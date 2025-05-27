@@ -594,18 +594,18 @@ class DistributedAllreduceSumOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        out_chain: ChainType,
         outputs: Sequence[max._core.Value],
-        in_chain: max._core.Value[ChainType],
+        out_chain: ChainType,
         inputs: Sequence[max._core.Value],
         signal_buffers: Sequence[max._core.Value],
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def inputs(self) -> Sequence[max._core.Value]: ...
     @property
     def signal_buffers(self) -> Sequence[max._core.Value]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class AndOp(max._core.Operation):
     """
@@ -1370,16 +1370,16 @@ class BufferTransferOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         out_chain: ChainType,
-        in_chain: max._core.Value[ChainType],
         src: max._core.Value[BufferType],
         dst: max._core.Value[BufferType],
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def src(self) -> max._core.Value[BufferType]: ...
     @property
     def dst(self) -> max._core.Value[BufferType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class CallOp(max._core.Operation):
     """
@@ -3632,15 +3632,15 @@ class MutableLoadOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        out_chain: ChainType,
         out_tensor: TensorType,
-        in_chain: max._core.Value[ChainType],
+        out_chain: ChainType,
         in_buffer: max._core.Value[BufferType],
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
     @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
-    @property
     def in_buffer(self) -> max._core.Value[BufferType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class MutableStoreOp(max._core.Operation):
     """
@@ -3659,16 +3659,16 @@ class MutableStoreOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         out_chain: ChainType,
-        in_chain: max._core.Value[ChainType],
         in_buffer: max._core.Value[BufferType],
         in_tensor: max._core.Value[TensorType],
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def in_buffer(self) -> max._core.Value[BufferType]: ...
     @property
     def in_tensor(self) -> max._core.Value[TensorType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class MutableStoreSliceOp(max._core.Operation):
     """
@@ -3721,16 +3721,14 @@ class MutableStoreSliceOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         out_chain: ChainType,
-        in_chain: max._core.Value[ChainType],
         in_buffer: max._core.Value[BufferType],
         slice: max._core.Value[TensorType],
         start: max._core.Value[TensorType],
         stop: max._core.Value[TensorType],
         step: max._core.Value[TensorType],
+        in_chain: max._core.Value[ChainType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def in_buffer(self) -> max._core.Value[BufferType]: ...
     @property
@@ -3741,6 +3739,8 @@ class MutableStoreSliceOp(max._core.Operation):
     def stop(self) -> max._core.Value[TensorType]: ...
     @property
     def step(self) -> max._core.Value[TensorType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def output_param_decls(
         self,
