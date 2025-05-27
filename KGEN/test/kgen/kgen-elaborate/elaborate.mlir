@@ -1330,8 +1330,8 @@ kgen.generator @func_param<f: <index, index>() -> (index, index)>() -> index {
 
 !capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
 
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() {
+// CHECK-LABEL: kgen.func export @get_linkage_name
+kgen.generator export @get_linkage_name() {
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}no_params
   %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> () @no_params)>
   // CHECK-NEXT: constant: string = <"no_params">
@@ -1344,6 +1344,31 @@ kgen.generator export @main() {
   %4 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
   // CHECK-NEXT: constant: string = <"func_param,f=params">
   %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params>> : !kgen.generator<() -> index>>>
+  kgen.return
+}
+
+// -----
+
+kgen.struct.generator @NonParametric = struct_inst<
+  "NonParametric"(data: index)>
+
+kgen.struct.generator @"LinkedList"<T: type> = struct_inst<
+  "LinkedList"[T]<:type T>(data: typevalue<T>)>
+
+#linkedlist = #kgen.type<typevalue<:!kgen.type #kgen.genref<@LinkedList<:type none>>>, struct<(none, !kgen.pointer<none>)>> : !kgen.type
+
+// CHECK-LABEL: kgen.func @"parameter_get_type_name
+kgen.generator @parameter_get_type_name<T: type>(%arg: !kgen.param<T>) {
+  // CHECK-NEXT: constant: string = <"LinkedList">
+  kgen.param.constant: string = <#kgen.get_type_name<#kgen.param.decl.ref<"T">>>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @get_type_name
+kgen.generator export @get_type_name(%arg0: !kgen.struct<(none, !kgen.pointer<none>)>) {
+  // CHECK-NEXT: constant: string = <"NonParametric">
+  kgen.param.constant: string = <#kgen.get_type_name<#kgen.genref<@NonParametric>>>
+  kgen.call @parameter_get_type_name<:type #linkedlist>(%arg0) : (!kgen.struct<(none, !kgen.pointer<none>)>) -> i1
   kgen.return
 }
 
