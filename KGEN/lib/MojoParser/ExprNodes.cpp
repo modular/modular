@@ -47,6 +47,22 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+ExprNode::ELVIITResult
+LValueCapableExprNode::emitLValueIfImplicitlyTyped(IREmitter &emitter) const {
+  ValueDest dest(EC_Assignment);
+  return emitLCVIR(dest, emitter, true);
+}
+
+AnyValue LValueCapableExprNode::emitIR(ValueDest &dest,
+                                       IREmitter &emitter) const {
+  auto result = emitLCVIR(dest, emitter, false);
+  if (result.isFailure())
+    return {};
+  assert(!result.getIfExprNode() &&
+         "Non-speculative emitIR should not return an ExprNode*");
+  return result.getIfValue();
+}
+
 /// Given a StringRef for an MLIR attribute, invoke the MLIR parser to resolve
 /// it into an Attribute (which may not be a TypedAttr) and return it.  On
 /// error, emit a diagnostic and return null.
@@ -657,7 +673,8 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
-AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                            bool isSpeculative) const -> ELVIITResult {
   ASTDecl &container = emitter.declScope;
 
   // Notify the listener of a normal decl reference lookup.
@@ -674,9 +691,17 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // obviously not mutable.  Handle this by filtering out the overload set if
   // it is obviously not mutable, but we know we're in an lvalue context with
   // inferred type.
-  if (emitter.varDeclCursor && dest.getIfLValueInitializerType() &&
-      !lookup.isFailure() && isImmutableValuesInOtherScope(lookup, emitter))
-    lookup = LookupResult::getFailure({});
+  if (emitter.varDeclCursor && !lookup.isFailure() &&
+      isImmutableValuesInOtherScope(lookup, emitter)) {
+    // If we're declaring a local definition that shadows a global immutable
+    // symbol like a function, then we pretend we don't see it so the code below
+    // will synthesize it.  If we are speculatively resolving this, then we
+    // return unknown since we don't have a contextual type.
+    if (dest.getIfLValueInitializerType())
+      lookup = LookupResult::getFailure({});
+    else if (isSpeculative)
+      return this;
+  }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
@@ -720,13 +745,19 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), scopeToInsert);
     emitter.shared.notifyListenerOnVariableDecl(varASTDecl, getLoc());
 
-    return emitter.emitResult(MLValue(varDecl), this, dest);
+    return emitter.emitCResult(MLValue(varDecl), this, dest);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
   if (decls.empty()) {
     if (lookup.isErroneous())
-      return {}; // Error already diagnosed.
+      return ELVIITResult::failure(); // Error already diagnosed.
+
+    // If this was a speculative LValue lookup, don't fail, just wait for the
+    // caller to try again with a type so we can synthesize a decl.
+    if (isSpeculative)
+      return this;
+
     ArrayRef<ASTDecl *> failureDecls = lookup.getIfFailure();
     if (!failureDecls.empty()) {
       // Reject unqualified struct field references.
@@ -734,7 +765,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
         emitter.emitError(getLoc(), "cannot access instance field '")
             << spelling << "' directly; did you mean 'self.'?" << getRange()
             << FixIt::insertBeforeToken(getLoc(), "self.");
-        return {};
+        return ELVIITResult::failure();
         // Rejected unqualified struct method references.
       } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
         const char *replacement = "self.";
@@ -751,7 +782,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
         emitter.emitError(getLoc(), "cannot access method '")
             << spelling << "' directly; did you mean '" << replacement << "'?"
             << getRange() << FixIt::insertBeforeToken(getLoc(), replacement);
-        return {};
+        return ELVIITResult::failure();
       }
     }
 
@@ -760,7 +791,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       diag << structDecl.getNameAttr() << " has no '" << spelling << "' member";
     else
       diag << "use of unknown declaration '" << spelling << "'";
-    return {};
+    return ELVIITResult::failure();
   }
 
   emitter.shared.notifyListenerOnRef(decls, spelling, this);
@@ -793,24 +824,24 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
     PValue result = resolveAliasReference(param, spelling, /*bindings=*/{},
                                           getLoc(), emitter.shared);
-    return emitter.emitResult(result.get(), this, dest);
+    return emitter.emitCResult(result.get(), this, dest);
   }
 
   // If this is a type declaration, return it as a type.
   if (auto structOp = dyn_cast<StructDeclOp>(decl))
-    return emitter.emitResult(structOp.bindReference(), this, dest);
+    return emitter.emitCResult(structOp.bindReference(), this, dest);
   if (auto traitOp = dyn_cast<TraitDeclOp>(decl))
-    return emitter.emitResult(traitOp.bindReference(), this, dest);
+    return emitter.emitCResult(traitOp.bindReference(), this, dest);
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {
     PValue result(ModuleAttr::get(StructMetaType::get(LIT::StructType::get(
         decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
-    return emitter.emitResult(result, this, dest);
+    return emitter.emitCResult(result, this, dest);
   }
 
   if (auto pvalue = decl.getIfIRValue().getIfPValue())
-    return emitter.emitResult(pvalue, this, dest);
+    return emitter.emitCResult(pvalue, this, dest);
 
   // Narrow the decl to a CValue.
   CValue value;
@@ -818,8 +849,10 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     value = MLValue(var); // Var decls are always mutable.
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     // If this is a parameter context then we cannot return a dynamic field.
-    if (!emitter.builder)
-      return emitter.emitErrorForDynamicValueInParameter(this);
+    if (!emitter.builder) {
+      emitter.emitErrorForDynamicValueInParameter(this);
+      return ELVIITResult::failure();
+    }
     // Return a mutable value only if the global variable is mutable.
     auto ref =
         emitter.builder->create<GlobalVarRefOp>(getLocation(emitter), globalOp);
@@ -829,7 +862,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   } else {
     emitter.emitError(getLoc(), "use of declaration '")
         << spelling << "' as a value isn't supported yet" << getRange();
-    return {};
+    return ELVIITResult::failure();
   }
 
   // Now that we're referencing a potentially dynamic value, see if it is from
@@ -862,7 +895,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     }
   }
 
-  return emitter.emitResult(value, this, dest);
+  return emitter.emitCResult(value, this, dest);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
@@ -2476,20 +2509,53 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                                      dest, CallSyntax::kOperator, callExpr);
 }
 
-/// Emit a simple assignment statement. Python evaluates the RHS of an
-/// assignment before the LHS, as seen in things like:
-///    def test1(): print("test1"); return 0
-///    def test2(): print("test2"); return 1
-///    a[test1()] = test2()
-///  ==> test2; test1
+/// Emit a simple assignment statement.
 ///
 /// The walrus := operator in Python requires the left side to be a simple
 /// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
 AnyValue BinOpNode::emitAssign(ValueDest &dest, IREmitter &emitter) const {
-  // In an assignment, we emit the RHS into the LHS as its context.  This is
-  // required to enable the 'implicit declaration' behavior in a def and to
-  // support patterns.
-  ValueDest assignDest(lhs, EC_Assignment);
+  // Assignments might need to infer the LHS from the RHS when the LHS is
+  // unresolved, and the RHS from the LHS when it is known:
+  //
+  //    _, x = foo() # infer typeof _ and x from foo()
+  //    y = []       # infer type of [] from type of y.
+  //
+  // This is handled by speculatively emitting the LHS to see if it has a
+  // context-free known LValue, and resolve the RHS to it if so.
+  //
+  // Note: Python always emits the RHS before the LHS, as seen in things like:
+  //
+  //     def test1(): print("test1"); return 0
+  //     def test2(): print("test2"); return 1
+  //     a[test1()] = test2()
+  //   ==> test2; test1
+  //
+  // If we care, we will have to change this in a 'def'.
+
+  // Check out the LHS speculatively.
+  ELVIITResult lhsResult = lhs->emitLValueIfImplicitlyTyped(emitter);
+  if (lhsResult.isFailure())
+    return {};
+
+  if (AnyValue av = lhsResult.getIfValue()) {
+    // If this is an RValue, emit an error so ValueDest doesn't panic.
+    if (!av.getIfLValue()) {
+      emitter.emitError(lhs->getLoc(),
+                        "expression must be mutable in assignment")
+          << lhs->getRange();
+      return {};
+    }
+  }
+
+  // The RHS will be assigned into either the expression returned (resolving it
+  // from the type of the RHS) or from the LValue returned (allowing the RHS to
+  // infer from it) based on the lhsResult.
+  ValueDest assignDest(lhsResult, EC_Assignment);
+
+  // Emit the RHS into the context of the LHS.  If we got an LValue, then we can
+  // infer the type of the RHS from the LHS LValue.  If we got an unresolved
+  // LHS, then we can resolve it from the RHS.  If neither can decided then we
+  // have an ambiguity.
   auto resultValue = emitter.emitExpr(rhs, assignDest);
   if (!resultValue)
     return {};

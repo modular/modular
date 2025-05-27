@@ -133,10 +133,17 @@ public:
   /*implicit*/
   ValueDest(ExprContext context)
       : representation(NullRepresentation()), context(context) {}
-  ValueDest(const ExprNode *target, ExprContext context)
-      : representation(target), context(context) {
-    assert(target);
+  ValueDest(const ExprNode::ELVIITResult &dest, ExprContext context)
+      : context(context) {
+    assert(!dest.isFailure() && "Failures should be handled");
+    if (AnyValue av = dest.getIfValue()) {
+      representation = av.getIfLValue();
+      assert(isSpecified() && "Caller should check that only LV makes it here");
+    } else {
+      representation = dest.getIfExprNode();
+    }
   }
+
   ValueDest(LValue dest, ExprContext context)
       : representation(dest), context(context) {}
   ValueDest(VarDeclOp dest, ExprContext context);
