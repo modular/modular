@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -22,7 +23,10 @@ from uuid import uuid4
 
 import torch
 from max._core import nixl
+from max.driver import CPU
 from max.driver.tensor import Tensor
+
+logger = logging.getLogger("max.pipelines")
 
 
 def _get_tensor_base_addr(tensor: Tensor) -> int:
@@ -54,6 +58,8 @@ class XferReqData:
     src_name: str
     xfer_name: str
     xfer_id: int
+    src_idx: int
+    dst_idx: int
 
 
 class KVTransferEngine:
@@ -76,7 +82,7 @@ class KVTransferEngine:
     """Flattened tensor being managed."""
 
     base_addr: int
-    """Base memory address of tensor."""
+    """Base memory address of tensor / CPU staging buffer."""
 
     total_num_pages: int
     """Total number of pages in the tensor."""
@@ -92,6 +98,9 @@ class KVTransferEngine:
 
     completed_xfers: dict[str, set[str]]
     """Map of agent names to completed transfers."""
+
+    cpu_staging_buffer: Tensor | None
+    """CPU staging buffer for GPU->GPU transfers."""
 
     def __init__(
         self,
@@ -111,9 +120,6 @@ class KVTransferEngine:
                 f"Tensor num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
             )
 
-        if not tensor.device.is_host:
-            raise ValueError(f"Tensor device {tensor.device} must be host")
-
         # Create agent
         self.name = name
         self.agent = nixl.Agent(
@@ -125,14 +131,13 @@ class KVTransferEngine:
             ),
         )
 
-        # Flatten tensor
-        self.tensor = tensor.view(tensor.dtype, None)
-        self.base_addr = _get_tensor_base_addr(self.tensor)
+        # Reshape tensor to 2D
         self.total_num_pages = total_num_pages
         self.bytes_per_page = (
-            self.tensor.num_elements
-            * self.tensor.dtype.size_in_bytes
-            // total_num_pages
+            tensor.num_elements * tensor.dtype.size_in_bytes // total_num_pages
+        )
+        self.tensor = tensor.view(
+            tensor.dtype, (self.total_num_pages, self.bytes_per_page)
         )
 
         # Create UCX backend
@@ -141,6 +146,28 @@ class KVTransferEngine:
         self.ucx_backend = self.agent.create_backend(
             type="ucx", init_params=ucx_params[0]
         )
+
+        # TODO(E2EOPT-216) Delete CPU staging buffer after GPU->GPU is supported
+        # Maybe allocate a CPU staging buffer for GPU->GPU transfers
+        # So GPU->GPU would actually be GPU->CPU->CPU->GPU.
+        self.cpu_staging_buffer = None
+        if not tensor.device.is_host:
+            logger.warning(
+                "TransferEngine does not support GPUDirect, "
+                "falling back to slow CPU TCP transfers until it is supported."
+            )
+            self.cpu_staging_buffer = Tensor(
+                shape=(self.total_num_pages, self.bytes_per_page),
+                dtype=tensor.dtype,
+                device=CPU(),
+                pinned=True,
+            )
+
+        # Determine base address
+        if self.cpu_staging_buffer is None:
+            self.base_addr = _get_tensor_base_addr(self.tensor)
+        else:
+            self.base_addr = _get_tensor_base_addr(self.cpu_staging_buffer)
 
         # Register memory
         self.memory_type = (
@@ -238,6 +265,13 @@ class KVTransferEngine:
                 f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
             )
 
+        # Stage data to CPU staging buffer before xfer
+        if self.cpu_staging_buffer is not None:
+            self.cpu_staging_buffer[src_idx, :].inplace_copy_from(
+                self.tensor[src_idx, :]
+            )
+            self.cpu_staging_buffer.device.synchronize()
+
         bytes_per_page = self.bytes_per_page
 
         src_addr = self.base_addr + src_idx * bytes_per_page
@@ -269,6 +303,8 @@ class KVTransferEngine:
             src_name=self.name,
             xfer_name=xfer_name,
             xfer_id=xfer_id,
+            src_idx=src_idx,
+            dst_idx=dst_idx,
         )
 
     def send_xfer_sync(self, xfer_req_id: XferReqData) -> None:
@@ -315,6 +351,13 @@ class KVTransferEngine:
             for remote in notifs:
                 completed_xfer_names = [x.decode() for x in notifs[remote]]
                 self.completed_xfers[remote].update(completed_xfer_names)
+
+        # move data from CPU staging buffer to tensor after xfer
+        if self.cpu_staging_buffer is not None:
+            self.tensor[xfer_req_id.dst_idx, :].inplace_copy_from(
+                self.cpu_staging_buffer[xfer_req_id.dst_idx, :]
+            )
+            self.cpu_staging_buffer.device.synchronize()
 
     def __del__(self) -> None:
         # TODO(GENAI-170): Deregister memory
