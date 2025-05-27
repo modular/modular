@@ -1,7 +1,8 @@
 ---
-title: Common Types and Tools - Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-common-types-tools/
 ---
+
+# Common Types and Tools
 
 One must be prepared before diving into an unfamiliar compiler.
 

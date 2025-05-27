@@ -1,7 +1,8 @@
 ---
-title: Parser Debugging - Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-parser-debugging/
 ---
+
+# Parser Debugging
 
 This doc has various tricks to help you debug the parser.
 
@@ -234,3 +235,15 @@ For an example, see `KGEN/test/mojo-parser/trait-metatype-roundtrip.mojo`.
 Caveat: The Mojo compiler hard-codes `AnyType`, so if you make your own trait
 named `AnyType` it might not work as expected. Also, Mojo secretly automatically
 makes everything _explicitly_ conform to `AnyType`.
+
+## Debug Printing
+
+See
+[Mojo Dev Tools](https://www.notion.so/modularai/Mojo-Dev-Tools-027879ef5e4d480ea6f8f73b1cbc2ad3)
+for various ways to print out the IR after various passes in the compiler. My
+personal favorite is `kgen --mlir-print-ir-after-all` which prints out the IR
+after every single pass.
+
+You can also pretty-print location information by making a custom pass, like
+described
+[here](https://modular-ai.slack.com/archives/C034YPTTKL2/p1730758401416679).

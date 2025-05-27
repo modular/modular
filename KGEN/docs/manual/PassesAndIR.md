@@ -1,7 +1,8 @@
 ---
-title: Passes and IR - Mojo 🔥 Compiler Dev Manual
 markdown-notebook-data-directory: mdnb-data/manual-passes-ir/
 ---
+
+# Passes and Intermediate Representations
 
 The best way to start understanding a compiler is to understand the various IR
 stages, the differences between them, and which code makes those transformations
@@ -328,24 +329,92 @@ There can be subtle differences between the various terms:
 
 ### Does Compile-time Data Have Types?
 
-(Spoiler alert: in Mojo and LIT, yes, but in KGEN, no.)
+Yes. Like C++, Mojo's parameter values have types.
 
-To better frame the question, let's start by observing some things about C++. In
-C++, compile-time data _kind of_ has types.
+In C++, the template parameter `N` has type `int`:
 
-- The `N` in `template<int N> ...` has type `Int`.
-- The `T` in `template<typename T>` kind of has a type, `typename`.
+```c++
+#include <iostream>
+template<int N>
+void zork() {
+  std::cout << N << std::endl;
+}
+int main() {
+  zork<42>();
+}
+```
 
-This is not how Mojo works. However, **that is how kgen works.** kgen's `type`
-is basically C++'s `typename`.
+Same in this Mojo snippet, `N` is an `Int`:
 
-However, Mojo (and the LIT dialect which comes right after Mojo), compile-time
-data does have types.
+```mojo
+fn zork[N: Int]():
+      print(N)
+fn main():
+      zork[42]()
+```
 
-They're a bit more strict in that way, to enable better type-checking (akin to
-Java generics) compared to C++'s "duck-typed" templates.
+Our LIT dialect also remembers parameters' types. Let's see the LIT IR, by
+feeding that to
+`kgen-translate -import-mojo main.mojo | kgen-opt -lower-semantic-cf -check-lifetimes`:
 
-In Mojo, we need to specify the rough shape of `T`, by specifying a trait.
+```mlir
+lit.fn @"zork[::Int]()"<N: !Int>() -> !kgen.none attributes {sourceName = "zork", specialFnKind = 0 : i8} {
+  ...
+}
+lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind = 0 : i8} {
+  %0 = lit.call @main::@"zork[::Int]()"<:!Int {42}>() : !lit.generator<() -> !kgen.none>
+  ...
+}
+```
+
+- The `N: !Int` on the `lit.fn` line makes a parameter-decl named `N` of type `Int`.
+- The `:!Int {42}` on the `lit.call` line makes a parameter-value of type `Int`
+  with value `42`.
+
+KGEN, however, doesn't have types for its parameters. Let's see the KGEN IR, by
+feeding the LIT IR to `kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit`:
+
+```mlir
+kgen.generator @"main::zork[::Int]()"<N>() -> !kgen.none {
+  ...
+}
+kgen.generator @"main::main()"() -> !kgen.none {
+  %0 = kgen.call @"main::zork[::Int]()"<42>() : () -> !kgen.none
+  ...
+}
+```
+
+However, whereas C++ only supports basic types (`int`, `bool`, etc.), Mojo can
+take anything, like in this program that takes an entire `List[Int]`:
+
+```mojo
+fn zork[L: List[Int]]():
+    for x in L:
+        print(x[])
+
+fn main():
+    zork[[1, 2, 3, 4]]()
+```
+
+In this, the LIT contains this `lit.call` line:
+
+```mlir
+      %0 = lit.call @main::@"zork[::List[::Int, ::Bool(False)]]()"<:@stdlib::@collections::@list::@List<:!Copyable_Movable #Int1, :!Bool {:i1 0}> apply_result_slot(...)>() : !lit.generator<() -> !kgen.none>
+
+```
+
+(The `apply_result_slot` is LIT-speak for "call at compile-time".)
+
+C++ and Mojo are also different in how they handle types. In C++, a template can
+expect a type as a template parameter by saying `typename`, like:
+
+```c++
+template<int N, typename T>
+class Vec { ... };
+```
+
+In Mojo (and the LIT dialect), a parameter can't just be a "type", we must
+specify the rough shape of `T`, by specifying a trait.
 
 `template<int N, typename T> class Vec { ...` in C++ would therefore be
 equivalent to
@@ -360,9 +429,110 @@ In that `Vec`, we can say two things:
 "Type" is a relative term. `N`'s type is `Int`, and Int's type is something
 else, and that has a type, and so on. Everything has a type.
 
+### Types as Parameter Values, Parameter Values as Types
+
+When we instantiate a generic type, like the `Vec` above, we feed it a
+parameter-value for each of its parameter-decls. For example, we might say
+`Vec[3, Float32]`.
+
+However, `3` and `Float32` are not parameter-values, they're an integer and a
+type.
+
+To resolve this, the compiler automatically converts/wraps those into the proper
+parameter-values.
+
+The `3` int literal will be wrapped in a `pop.int_literal` parameter-value, like
+`:!pop.int_literal 2`.
+
+The `Float32` type will be wrapped in a type-param (a.k.a. `kgen.type` or
+"type-value" or `KGEN::TypeParamAttr` from KGENAttrs.td), like
+`#kgen.type<Float32, ...>`.
+
+Rule of thumb: **to convert a type to a parameter-value, use a type-param.**
+
+Some examples of type-params:
+
+- `#kgen.type<@blork::@MyStruct> : !lit.anystruct<@blork::@MyStruct>`
+- `:!MyTrait #MyStruct1`, means a parameter-value of type `MyTrait` with value
+  `#MyStruct1` (which is defined elsewhere as
+  `#MyStruct1 = #kgen.type<!MyStruct, {"bork" : ...}> : !MyTrait`).
+
+To see that last one, you can run this program through
+`kgen-translate -import-mojo main.mojo`:
+
+```mojo
+@explicit_destroy("Can't destroy a MyTrait")
+@register_passable("trivial")
+trait MyTrait:
+    fn bork(self):
+        ...
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct MyStruct(MyTrait):
+    fn bork(self):
+        print("hello")
+
+
+fn my_func[T: MyTrait](x: T):
+    x.bork()
+
+
+fn zork[N: Int]():
+    print(N)
+
+
+fn main():
+    zork[42]()
+    var x = MyStruct()
+    my_func(x)
+```
+
+To do the opposite, **to turn a type-param back into a type,** we use
+`kgen.param` (a.k.a. `KGEN::ParamType`).
+
+In the above snippet, you can see it in `my_func`'s argument:
+
+```mlir
+lit.fn @"my_func[main::MyTrait]($0)"<T: !MyTrait>(%x: !kgen.param<:!MyTrait T>) -> !kgen.none attributes {sourceName = "my_func", specialFnKind = 0 : i8} {
+  %0 = lit.call[!lit.generator<("self": !kgen.param<:!MyTrait T>) -> !kgen.none>: get_vtable_entry(:!MyTrait T, "bork")](%x)
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}
+```
+
+...because arguments must be types, not parameter-values.
+
+### Generators
+
+Whenever you see a `lit.generator`, that's a signature.
+
+If it has a number in it like the `2` in `lit.generator<[2](`, the [2] isn’t the
+number of arguments, it’s the number of implicit origins.
+
+### Miscellaneous Dialect Oddities
+
+When you see `#kgen<`, like in this:
+
+`#kgen<param.decl callee : !kgen.generator<!lit.generator<...>>>`
+
+we’re not actually “instantiating a `kgen`”.
+
+Rather that’s a `#kgen` prefix followed by another thing.
+
+It’s similar to this (hypothetical) syntax with a `.` instead and with the `<` moved:
+
+`#kgen.param.decl<callee : !kgen.generator<!lit.generator<...>>>`
+
+Supposedly this happens because `def KGEN_ParamDeclAttr`'s `assemblyFormat`
+didn’t specify that the *parameters* should start with `<`, so it assumed the
+*entire thing* starts with `<`
+
 ## Passes
 
-The Mojo compiler has a lot of stages. Some of the big ones are:
+The Mojo compiler has a lot of passes. Some of the big ones are:
 
 - Parsing, which does lexing, parsing, and type-checking.
 - Elaborating, which instantiates generics, for example `fn add[x: Int](...)`
