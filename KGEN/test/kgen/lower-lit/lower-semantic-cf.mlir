@@ -411,6 +411,55 @@ lit.fn @reraise_in_try() {
   kgen.return
 }
 
+// CHECK-LABEL: lit.fn @nested_try_inner_catch
+lit.fn @nested_try_inner_catch() {
+  // CHECK-NEXT: lit.try
+  lit.try {
+    %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
+    %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
+    // CHECK: lit.call @throwing_func
+    lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+    // CHECK-NEXT: hlcf.if
+    // CHECK-NEXT:   lit.ownership.mark_consumed %result
+    // CHECK-NEXT:   lit.try.raise
+    // CHECK-NEXT: else
+    // CHECK-NEXT:   lit.ownership.mark_consumed %err
+    // CHECK-NEXT:   yield
+
+    // CHECK: lit.try
+    lit.try {
+      // CHECK-NEXT: lit.try.raise
+      lit.raise
+      lit.try.yield
+    // CHECK-NEXT: except
+    } except {
+      // CHECK-NEXT: kgen.return
+      lit.return
+      lit.try.yield
+    // CHECK-NEXT: else
+    } else {
+      // CHECK-NEXT: kgen.unreachable
+      lit.try.yield
+    } finally {
+      lit.try.yield
+    }
+    // CHECK: kgen.unreachable
+    lit.try.yield
+  // CHECK-NEXT: except
+  } except {
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
+  // CHECK-NEXT: else
+  } else {
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
+  } finally {
+    lit.try.yield
+  }
+  // CHECK: kgen.return
+  kgen.return
+}
+
 // CHECK-LABEL: lit.fn @finally_breaks
 lit.fn @finally_breaks() -> index {
   // CHECK-LABEL: lit.try

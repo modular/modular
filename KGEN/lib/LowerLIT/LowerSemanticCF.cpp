@@ -520,9 +520,10 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
         eraseOpToEndOfBlock(firstExceptOp);
       } else {
         // The except and else blocks execute without protection from the try.
-        bool exceptBreaks = false;
-        lowerBlock(tryOp.getExceptRegion().front(), doesRaise, exceptBreaks,
+        bool exceptRaises = false, exceptBreaks = false;
+        lowerBlock(tryOp.getExceptRegion().front(), exceptRaises, exceptBreaks,
                    tryFallsThrough);
+        doesRaise |= exceptRaises;
         doesBreak |= exceptBreaks;
       }
 
