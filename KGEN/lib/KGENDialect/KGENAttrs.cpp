@@ -1208,7 +1208,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Rebind:
   case POC::VariadicGet:
   case POC::CompileAssembly:
-  case POC::GetLinkageName:
   case POC::CompileOffloadClosure:
   case POC::GetVTableEntry:
   case POC::PtrBitcast:
@@ -1406,14 +1405,6 @@ LogicalResult ParamOperatorAttr::verify(
     }
     break;
   }
-  case POC::GetLinkageName:
-    if (operands.size() != 2)
-      return emitError() << "'get_linkage_name' requires 2 operands";
-    if (!::isa<TargetType>(operands.front().getType()))
-      return emitError()
-             << "'get_linkage_name' first operand should be a target type";
-    break;
-
   case POC::CompileOffloadClosure: {
     if (operands.size() != 2)
       return emitError() << "'compile_offload_closure' requires 2 operands";
@@ -2891,7 +2882,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::ApplyResultSlot:
   case POC::GetEnv:
   case POC::CompileAssembly:
-  case POC::GetLinkageName:
   case POC::CompileOffloadClosure:
   case POC::AttrToStr:
     result = {};
@@ -2944,16 +2934,16 @@ Type inferParamOperatorResultType(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
-  assert(
-      llvm::is_contained(
-          {POC::Apply, POC::ApplyResultSlot, POC::TargetHasFeature,
-           POC::TargetGetField, POC::AcceleratorArch, POC::GetSizeOf,
-           POC::GetAlignOf, POC::VariadicGet, POC::GetEnv, POC::CompileAssembly,
-           POC::GetLinkageName, POC::CompileOffloadClosure, POC::GetVTableEntry,
-           POC::VariadicPtrMap, POC::VariadicPtrRemoveMap, POC::StringAddress},
-          opcode) ||
-      llvm::all_of(operandsIn.drop_front(),
-                   [&](auto op) { return op.getType() == resultType; }));
+  assert(llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
+                             POC::TargetHasFeature, POC::TargetGetField,
+                             POC::AcceleratorArch, POC::GetSizeOf,
+                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
+                             POC::CompileAssembly, POC::CompileOffloadClosure,
+                             POC::GetVTableEntry, POC::VariadicPtrMap,
+                             POC::VariadicPtrRemoveMap, POC::StringAddress},
+                            opcode) ||
+         llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == resultType; }));
   return resultType;
 }
 
