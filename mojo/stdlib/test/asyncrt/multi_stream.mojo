@@ -74,7 +74,7 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         print(out_host3[i])
 
     # Pre-compile and pre-register the device function
-    var dev_func = ctx1.compile_function_checked[vec_func, vec_func]()
+    var dev_func = ctx1.compile_function_experimental[vec_func]()
 
     # Make sure both queues are ready to run at this point.
     ctx1.synchronize()
@@ -190,8 +190,8 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     var out_host = ctx2.enqueue_create_host_buffer[T](length).enqueue_fill(0.5)
 
     # Pre-compile and pre-register the device function
-    var dev_func1 = ctx1.compile_function_checked[vec_func, vec_func]()
-    var dev_func2 = ctx2.compile_function_checked[vec_func, vec_func]()
+    var dev_func1 = ctx1.compile_function_experimental[vec_func]()
+    var dev_func2 = ctx2.compile_function_experimental[vec_func]()
 
     # Ensure the setup has completed.
     ctx1.synchronize()
