@@ -238,7 +238,7 @@ def test_list_reverse():
     # Test reversing the list [123]
     #
 
-    vec = List[Int]()
+    vec = []
 
     vec.append(123)
 
@@ -272,7 +272,7 @@ def test_list_reverse():
     # Test reversing the list [5, 10]
     #
 
-    vec = List[Int]()
+    vec = []
     vec.append(5)
     vec.append(10)
 
@@ -489,8 +489,8 @@ def test_list_extend():
     items.extend(copy)
     assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
 
-    items = List[UInt32](1, 2, 3)
-    copy = List[UInt32](1, 2, 3)
+    items = [1, 2, 3]
+    copy = [1, 2, 3]
 
     # Extend with span
     items.extend(Span(copy))
@@ -772,7 +772,7 @@ def test_list_add():
     assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
     assert_equal(len(b), 3)
 
-    a = List[Int](1, 2, 3)
+    a = [1, 2, 3]
     a += b^
     assert_equal(len(a), 6)
     assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
@@ -784,7 +784,7 @@ def test_list_add():
     assert_equal(f.__str__(), "[1, 2, 3, 4, 5, 6]")
 
     var l = List[Int](1, 2, 3)
-    l += List[Int]()
+    l += []
     assert_equal(len(l), 3)
 
 
