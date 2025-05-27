@@ -356,6 +356,20 @@ FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
 }
 
 //===----------------------------------------------------------------------===//
+// CompileOffloadClosureAttr
+//===----------------------------------------------------------------------===//
+
+bool CompileOffloadClosureAttr::isConstant() const { return false; }
+
+LogicalResult CompileOffloadClosureAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
+    TypedAttr func, Type type) {
+  if (!::isa<TargetType>(target.getType()))
+    return emitError() << "target operand must be of `!kgen.target` type";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // GetLinkageNameAttr
 //===----------------------------------------------------------------------===//
 

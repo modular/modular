@@ -501,6 +501,40 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
 }
 
 //===----------------------------------------------------------------------===//
+// CompileOffloadClusreAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_CompileOffloadClosureAttr : KGEN_ExprAttr<"CompileOffloadClosure",
+    "compile_offload_closure", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Compile offload closure for a given target.";
+  let description = [{
+    The `#kgen.compile_offload_closure` attribute is used to compile offload
+    closures for a given target.
+
+    Example:
+
+    ```mlir
+    #kgen.get_linkage_name<
+      #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
+      #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>
+    > : !kgen.string
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$target,
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,` $func `>`
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // GetLinkageNameAttr
 //===----------------------------------------------------------------------===//
 
@@ -531,7 +565,7 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
     `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,` $func `>`
   }];
 
-  let genVerifyDecl = 1;  // Generate getChecked/verify.
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1097,7 +1131,7 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
   ];
 
   let assemblyFormat = "`<` $opcode (`,` $operands^)? `>`";
-  let genVerifyDecl = 1;  // Generate getChecked/verify.
+  let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
     size_t getNumOperands() const {
@@ -1498,7 +1532,7 @@ def KGEN_DeferredAttr : KGENAttr<"Deferred", "deferred", [
   let assemblyFormat = "$attr";
 
   let extraClassDeclaration = [{ Type getType() const; }];
-  let genVerifyDecl = 1;  // Generate getChecked/verify.
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1532,7 +1566,7 @@ def KGEN_AttrCtorDeferredAttr : KGENAttr<"AttrCtorDeferred",
   let assemblyFormat = "`(` $strings `)`";
   let extraClassDeclaration = [{ Type getType() const; }];
 
-  let genVerifyDecl = 1;  // Generate getChecked/verify.
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
