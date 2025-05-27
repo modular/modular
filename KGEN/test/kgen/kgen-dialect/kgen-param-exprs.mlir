@@ -889,8 +889,8 @@ kgen.generator @compile_assembly<emission_kind: index>() {
 // CHECK-LABEL: @compile_offload_closure
 kgen.generator @compile_offload_closure() {
   kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>>
-  // CHECK: constant: string = <compile_offload_closure(nvptx, :() -> () @kernel)>
-  kgen.param.constant: string = <compile_offload_closure(nvptx, :() -> () @kernel)>
+  // CHECK: constant: string = <#kgen.compile_offload_closure<nvptx, #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: string = <#kgen.compile_offload_closure<nvptx, #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
   kgen.return
 }
 

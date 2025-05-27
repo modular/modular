@@ -131,6 +131,9 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateGetLinkageNameAttr(getLinkageNameAttr);
   if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
     return evaluateGetTypeNameAttr(getTypeNameAttr);
+  if (auto compileOffloadClosureAttr =
+          dyn_cast<CompileOffloadClosureAttr>(attr))
+    return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
@@ -171,8 +174,6 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return failure();
   case POC::CompileAssembly:
     return evaluateCompileAssembly(op);
-  case POC::CompileOffloadClosure:
-    return evaluateCompileOffloadClosure(op);
   case POC::LoadFromMem:
     if (auto memref = dyn_cast<MemRefAttr>(op.getOperands().front())) {
       ErrorOr<TypedAttr> value = loadAttributeFromMemRef(memref, op.getType());
@@ -534,8 +535,8 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
                        populateFnRef})};
 }
 
-FailureOr<TypedAttr>
-IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
+FailureOr<TypedAttr> IREvaluator::evaluateCompileOffloadClosureAttr(
+    CompileOffloadClosureAttr compileOffloadClosureAttr) {
   // Create the signature and an empty body of the populate capture for offload
   // closures as part of elaboration step.
   // We currently only support capturing closure as a parameter. So this closure
@@ -549,12 +550,14 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
 
   // Slice out a standalone module to re-elaborate with the new target later.
 
-  TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
+  TargetInfoAttr target =
+      cast<TargetParamAttr>(compileOffloadClosureAttr.getTarget()).getTarget();
   // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
   // compiler will fail.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       elaborator->getExpectedMangledName(
-          *errorLoc, "compile_offload_closure", op.getOperand(1),
+          *errorLoc, "compile_offload_closure",
+          compileOffloadClosureAttr.getFunc(),
           /*allowParametric=*/false, /*sanitize=*/false,
           [isGPU = target.isGPU()](StringRef name) {
             return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
@@ -567,7 +570,7 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
   StringAttr name = pairOrError.takeValue().first;
 
   // Construct the expected result type.
-  MLIRContext *ctx = op.getContext();
+  MLIRContext *ctx = compileOffloadClosureAttr.getContext();
   auto noneType = KGEN::NoneType::get(ctx);
 
   // The location to use for generated code. Remove all debuginfo from it.
