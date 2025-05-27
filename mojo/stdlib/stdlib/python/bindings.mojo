@@ -1005,32 +1005,35 @@ struct PythonTypeBuilder(Movable, Copyable):
 
         return b^
 
-    fn finalize(mut self) raises -> TypedPythonObject["Type"]:
-        """Finalize the builder and create a Python type object.
+    fn finalize(mut self, module: PythonModule) raises:
+        """Finalize the builder and add the created type to a Python module.
 
-        This method completes the construction of a Python type object from the
-        builder's configuration.
+        This method completes the type building process by calling the
+        parameterless `finalize()` method to create the Python type object, then
+        automatically adds the resulting type to the specified Python module
+        using the builder's configured type name. After successful completion,
+        the builder's method list is cleared to prevent accidental reuse.
 
-        The method ensures that each Mojo type has exactly one corresponding
-        Python type object by registering the created type in a global registry.
-        This prevents accidental creation of multiple type objects for the same
-        Mojo type, which would break Python's type system assumptions.
+        This is a convenience method that combines type finalization and module
+        registration in a single operation, which is the most common use case
+        when creating Python-accessible Mojo types.
 
-        Returns:
-            A `TypedPythonObject["Type"]` representing the newly created Python
-            type object that can be used to create instances or register with
-            Python modules.
+        Args:
+            module: The Python module to which the finalized type will be added.
+                The type will be accessible from Python code that imports this
+                module using the name specified during builder construction.
 
         Raises:
-            If the Python type object creation fails, typically due to invalid
-            type specifications or Python C API errors.
+            If the type object creation fails (see `finalize()` for details) or
+            if adding the type to the module fails, typically due to name
+            conflicts or module state issues.
 
         Note:
-            After calling this method, the builder's internal state may be
-            modified (methods list is consumed), so the builder should not be
-            reused for creating additional type objects.
-
-            TODO: This should be enforced programmatically in the future.
+            After calling this method, the builder's internal state is modified
+            (methods list is cleared), so the builder should not be reused for
+            creating additional type objects. If you need the type object for
+            further operations, use the parameterless `finalize()` method
+            instead and manually add it to the module.
         """
         var cpython = Python().cpython()
 
@@ -1072,40 +1075,7 @@ struct PythonTypeBuilder(Movable, Copyable):
         if type_id := self._type_id:
             _register_py_type_object(type_id[], typed_type_obj)
 
-        return typed_type_obj^
-
-    fn finalize(mut self, module: PythonModule) raises:
-        """Finalize the builder and add the created type to a Python module.
-
-        This method completes the type building process by calling the parameterless
-        `finalize()` method to create the Python type object, then automatically
-        adds the resulting type to the specified Python module using the builder's
-        configured type name. After successful completion, the builder's method
-        list is cleared to prevent accidental reuse.
-
-        This is a convenience method that combines type finalization and module
-        registration in a single operation, which is the most common use case
-        when creating Python-accessible Mojo types.
-
-        Args:
-            module: The Python module to which the finalized type will be added.
-                   The type will be accessible from Python code that imports
-                   this module using the name specified during builder construction.
-
-        Raises:
-            If the type object creation fails (see `finalize()` for details) or
-            if adding the type to the module fails, typically due to name conflicts
-            or module state issues.
-
-        Note:
-            After calling this method, the builder's internal state is modified
-            (methods list is cleared), so the builder should not be reused for
-            creating additional type objects. If you need the type object for
-            further operations, use the parameterless `finalize()` method instead
-            and manually add it to the module.
-        """
-        var type_obj = self.finalize()
-        Python.add_object(module, self.type_name, type_obj)
+        Python.add_object(module, self.type_name, typed_type_obj)
         self.methods.clear()
 
     # ===-------------------------------------------------------------------===#

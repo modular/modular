@@ -72,14 +72,8 @@ fn gen_pytype_wrapper[
     # TODO(MOCO-1307): Add support for constructor generation.
 
     var type_builder = PythonTypeBuilder.bind[T](name)
-    var type_obj = type_builder.finalize()
-
-    # FIXME(MSTDL-957): We should have APIs that explicitly take a `CPython`
-    # instance so that callers can pass it around instead of performing a lookup
-    # each time.
-    Python.add_object(
-        PythonModule(unsafe_unchecked_from=module), String(name), type_obj
-    )
+    var module_obj = PythonModule(unsafe_unchecked_from=module)
+    _ = type_builder.finalize(module_obj)
 
 
 fn add_wrapper_to_module[
