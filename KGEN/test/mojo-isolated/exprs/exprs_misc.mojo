@@ -18,6 +18,16 @@ fn literal_promotion[cond: Bool]():
     # This needs to coerce to the materialization type of float literal
     alias a = 2.0 if cond else 3
 
+##===----------------------------------------------------------------------===##
+# Assignment operator
+##===----------------------------------------------------------------------===##
+
+fn test_rhs_inference():
+    var a: List[Int]
+
+    # None of these should be ambiguous.
+    a = []
+    (a) = []
 
 
 ##===----------------------------------------------------------------------===##

@@ -12,7 +12,9 @@
 #ifndef KGEN_MOJOPARSER_EXPRNODE_H
 #define KGEN_MOJOPARSER_EXPRNODE_H
 
+#include "KGEN/MojoParser/IRValues.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include <variant>
 
 namespace mlir {
 class raw_indented_ostream;
@@ -181,6 +183,72 @@ public:
   /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.  On success, the
   /// ValueDest /must/ be emitted into.
   virtual AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const = 0;
+
+  /// emitLValueIfImplicitlyTyped can return one of three things:
+  ///   1) A CValue if it is inherently typed.
+  ///   2) A (potentially changed!) ExprNode* if it is contextually typed,
+  ///      unresolvable until the initializer expression is known.
+  ///   3) Failure if the expression is invalid.
+  ///
+  /// This method is used with assignment expressions, which need to infer the
+  /// LHS from the RHS when the LHS is unresolved, and the RHS from the LHS when
+  /// it is known:
+  ///
+  ///     _, x = foo() # infer typeof _ and x from foo()
+  ///     y = []       # infer type of [] from type of y.
+  ///
+  struct ELVIITResult {
+    // Error cases can often propagate in a null AnyValue.
+    ELVIITResult(AnyValue value) : storage(value) {}
+    ELVIITResult(CValue value) : ELVIITResult(AnyValue(value)) {}
+    ELVIITResult(const ExprNode *value) : storage(value) {
+      assert(value && "Cannot init with null ExprNode*");
+    }
+    static ELVIITResult failure() { return ELVIITResult(AnyValue()); }
+
+    bool isFailure() const {
+      if (auto *ptr = std::get_if<AnyValue>(&storage))
+        return ptr->isNull();
+      return false;
+    }
+    AnyValue getIfValue() const {
+      if (auto *ptr = std::get_if<AnyValue>(&storage))
+        return *ptr;
+      return AnyValue();
+    }
+    const ExprNode *getIfExprNode() const {
+      if (auto *ptr = std::get_if<const ExprNode *>(&storage))
+        return *ptr;
+      return nullptr;
+    }
+
+  private:
+    /// The failure case is encoded as a null AnyValue
+    std::variant<AnyValue, const ExprNode *> storage;
+  };
+
+  /// If this expression is an LValue with an inherent type, emit it and return
+  /// it. Otherwise return an ExprNode* to further resolve (with emitIR) or
+  /// emit an error and return failure.
+  virtual ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter) const {
+    return ELVIITResult(this);
+  }
+};
+
+/// This class is a helper class used for expression nodes might be resolvable
+/// to a concrete type without an explicit initializer. This allows them to
+/// simplify their implementation by providing a single hook for both the
+/// "speculative" and non-speculative paths.
+class LValueCapableExprNode : public ExprNode {
+public:
+  LValueCapableExprNode(Kind kind) : ExprNode(kind) {}
+
+  // A default implementation is provided for these that forward to emitIR.
+  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter) const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+
+  virtual ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                                 bool isSpeculative) const = 0;
 };
 
 } // namespace M::KGEN::LIT

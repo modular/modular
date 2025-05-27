@@ -19,7 +19,6 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/ExprNode.h"
-#include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -191,14 +190,16 @@ struct Identifier {
   }
 };
 
-struct DeclRefNode final : public ExprNode, Identifier {
+struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   DeclRefNode(StringRef spelling, bool isEscapedIdentifier = false)
-      : ExprNode(kDeclRef), Identifier(spelling, isEscapedIdentifier) {}
+      : LValueCapableExprNode(kDeclRef),
+        Identifier(spelling, isEscapedIdentifier) {}
 
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getIdentifierLoc(); }
   SourceRange getRange() const override { return getIdentifierRange(); }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -381,6 +382,11 @@ struct ParenNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+
+  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter) const override {
+    return subExpr->emitLValueIfImplicitlyTyped(emitter);
+  }
+
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
