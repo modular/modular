@@ -1536,8 +1536,6 @@ class POC(enum.Enum):
 
     compile_assembly = 30
 
-    compile_offload_closure = 31
-
     get_vtable_entry = 33
 
     ptr_bitcast = 34
