@@ -1065,13 +1065,8 @@ class DistributedMLP(MLP):
         for n, device in enumerate(self.devices):
             layer = MLP(*args, **kwargs)
 
-            layer.gate_proj.device = device
             layer.gate_proj.weight = self.gate_proj.weight.shard(n, device)
-
-            layer.down_proj.device = device
             layer.down_proj.weight = self.down_proj.weight.shard(n, device)
-
-            layer.up_proj.device = device
             layer.up_proj.weight = self.up_proj.weight.shard(n, device)
 
             if self.float8_config:
