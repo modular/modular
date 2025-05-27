@@ -15,6 +15,7 @@
 
 from .architectures import register_all_models
 from .core import (
+    AudioGenerationResponse,
     EmbeddingsGenerator,
     EmbeddingsResponse,
     InputContext,
@@ -78,6 +79,7 @@ register_all_models()
 __all__ = [
     "AudioGenerationConfig",
     "download_weight_files",
+    "AudioGenerationResponse",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "EmbeddingsResponse",

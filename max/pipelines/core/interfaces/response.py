@@ -137,3 +137,30 @@ class TextGenerationResponse:
 
     def update_status(self, status: TextGenerationStatus) -> None:
         self._final_status = status
+
+
+class AudioGenerationResponse:
+    def __init__(
+        self,
+        final_status: TextGenerationStatus,
+        audio: np.ndarray | None = None,
+    ) -> None:
+        self._audio = audio
+        self._final_status = final_status
+
+    @property
+    def is_done(self) -> bool:
+        return self._final_status.is_done
+
+    @property
+    def has_audio_data(self) -> bool:
+        return self._audio is not None
+
+    @property
+    def audio_data(self) -> np.ndarray:
+        assert self._audio is not None
+        return self._audio
+
+    @property
+    def final_status(self) -> TextGenerationStatus:
+        return self._final_status

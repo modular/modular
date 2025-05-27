@@ -17,6 +17,7 @@ from typing import Union as _Union
 from .context import InputContext, TextAndVisionContext, TextContext, TTSContext
 from .interfaces import (
     AudioGenerationRequest,
+    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorContext,
     AudioGeneratorOutput,
@@ -44,6 +45,7 @@ PipelinesFactory = _Callable[
 
 __all__ = [
     "AudioGenerationRequest",
+    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
     "AudioGeneratorOutput",

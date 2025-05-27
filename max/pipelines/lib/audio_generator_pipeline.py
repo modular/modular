@@ -16,16 +16,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, no_type_check
 
-from max.driver import Tensor
 from max.nn import ReturnLogits
-from max.pipelines.core import AudioGenerator, TextGenerationStatus, TTSContext
+from max.pipelines.core import (
+    AudioGenerationResponse,
+    AudioGenerator,
+    TTSContext,
+)
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
 from .pipeline import PipelineModel
 
 
-class AudioGeneratorPipeline(AudioGenerator[TTSContext, Tensor]):
+class AudioGeneratorPipeline(AudioGenerator[TTSContext]):
     """Converts text to speech.
 
     This pipeline passes all of the work through to the PipelineModel.
@@ -62,15 +65,9 @@ class AudioGeneratorPipeline(AudioGenerator[TTSContext, Tensor]):
 
     def next_chunk(
         self, batch: dict[str, TTSContext], num_tokens: int
-    ) -> dict[str, TextGenerationStatus]:
+    ) -> dict[str, AudioGenerationResponse]:
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]
         return next_chunk(batch, num_tokens)
-
-    def decode(
-        self, batch: dict[str, TTSContext], num_tokens: int
-    ) -> dict[str, Tensor]:
-        decode = getattr(self.pipeline_model, "decode")  # type: ignore[has-type]
-        return decode(batch, num_tokens)
 
     def release(self, context: TTSContext) -> None:
         release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]

@@ -20,6 +20,7 @@ from .audio_generation import (
 )
 from .embeddings_generation import EmbeddingsGenerator
 from .response import (
+    AudioGenerationResponse,
     EmbeddingsResponse,
     LogProbabilities,
     TextGenerationResponse,
@@ -40,6 +41,7 @@ from .text_generation import (
 
 __all__ = [
     "AudioGenerationRequest",
+    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
     "AudioGeneratorOutput",

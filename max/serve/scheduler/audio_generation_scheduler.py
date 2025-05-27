@@ -21,12 +21,11 @@ from typing import Any, Optional, cast
 
 import torch
 import zmq
-from max.driver import CPU, Tensor
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
+    AudioGenerationResponse,
     AudioGenerator,
     AudioGeneratorOutput,
-    TextGenerationStatus,
     TTSContext,
 )
 from max.profiler import Trace, traced
@@ -646,7 +645,7 @@ class AudioGenerationScheduler(Scheduler):
     def _handle_terminated_responses(
         self,
         batch_executed: dict[str, Any],
-        batch_responses: dict[str, TextGenerationStatus],
+        batch_responses: dict[str, AudioGenerationResponse],
     ):
         """Task that handles responses"""
         if not batch_responses:
@@ -668,7 +667,7 @@ class AudioGenerationScheduler(Scheduler):
     def _handle_chunked_requests(
         self,
         batch_executed: dict[str, Any],
-        batch_responses: dict[str, TextGenerationStatus],
+        batch_responses: dict[str, AudioGenerationResponse],
     ):
         """Handle chunked requests"""
         # Only the last request in a batch could be chunked. We discard its response
@@ -706,8 +705,7 @@ class AudioGenerationScheduler(Scheduler):
     @traced
     def _stream_responses_to_frontend(
         self,
-        batch_responses: dict[str, TextGenerationStatus],
-        decode_response: dict[str, Tensor],
+        batch_responses: dict[str, AudioGenerationResponse],
     ):
         if not batch_responses:
             return
@@ -718,11 +716,10 @@ class AudioGenerationScheduler(Scheduler):
         stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
         audio_responses: dict[str, AudioGeneratorOutput] = {}
         stop_responses: dict[str, AudioGeneratorOutput] = {}
-        for request_id, status in batch_responses.items():
-            if request_id in decode_response:
-                audio_data = decode_response[request_id]
+        for request_id, response in batch_responses.items():
+            if response.has_audio_data:
                 audio_gen_output = AudioGeneratorOutput(
-                    audio_data=torch.from_dlpack(audio_data.to(CPU())),
+                    audio_data=torch.from_numpy(response.audio_data),
                     metadata={},
                 )
             else:
@@ -731,7 +728,7 @@ class AudioGenerationScheduler(Scheduler):
                     metadata={},
                 )
             audio_responses[request_id] = audio_gen_output
-            if status.is_done:
+            if response.is_done:
                 stop_responses[request_id] = stop_stream
 
         self.response_q.put_nowait([audio_responses, stop_responses])
@@ -747,9 +744,6 @@ class AudioGenerationScheduler(Scheduler):
             batch_to_execute,
             num_tokens=sch_output.num_steps,
         )
-        decode_response = self.pipeline.decode(
-            batch_to_execute, num_tokens=sch_output.num_steps
-        )
 
         # put the unfinished request back into the queue, and delete its responses
         if self.scheduler_config.enable_chunked_prefill:
@@ -762,7 +756,7 @@ class AudioGenerationScheduler(Scheduler):
             self.active_batch[req_id] = batch_to_execute[req_id]
 
         # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses, decode_response)
+        self._stream_responses_to_frontend(batch_responses)
 
     def _schedule_tg(self, sch_output: AudioGenerationSchedulerOutput):
         batch_to_execute = sch_output.batch_inputs
@@ -773,14 +767,11 @@ class AudioGenerationScheduler(Scheduler):
             batch_to_execute,
             num_tokens=sch_output.num_steps,
         )
-        decode_response = self.pipeline.decode(
-            batch_to_execute, num_tokens=sch_output.num_steps
-        )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
 
         # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses, decode_response)
+        self._stream_responses_to_frontend(batch_responses)
 
     def _schedule(self, sch_output: AudioGenerationSchedulerOutput):
         assert sch_output.batch_size > 0

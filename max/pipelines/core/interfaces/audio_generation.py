@@ -29,7 +29,7 @@ from typing import (
 if TYPE_CHECKING:
     import torch
 
-from .response import TextGenerationStatus
+from .response import AudioGenerationResponse
 
 
 class AudioFormat(enum.Enum):
@@ -188,37 +188,24 @@ class PipelineAudioTokenizer(
 
 
 @runtime_checkable
-class AudioGenerator(Generic[AudioGeneratorContext, DecoderOutput], Protocol):
+class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
     """Interface for audio generation models."""
 
     def next_chunk(
         self, batch: dict[str, AudioGeneratorContext], num_tokens: int
-    ) -> dict[str, TextGenerationStatus]:
+    ) -> dict[str, AudioGenerationResponse]:
         """Computes the next audio chunk for a single batch.
 
-        The new speech tokens are saved to the context.
+        The new speech tokens are saved to the context. The most recently
+        generated audio is return through the `AudioGenerationResponse`.
 
         Args:
             batch (dict[str, AudioGeneratorContext]): Batch of contexts.
             num_tokens (int): Number of speech tokens to generate.
 
         Returns:
-            dict[str, TextGenerationStatus]: Dictionary mapping request IDs to
-                speech token generation status.
-        """
-        ...
-
-    def decode(
-        self, batch: dict[str, AudioGeneratorContext], num_tokens: int
-    ) -> dict[str, DecoderOutput]:
-        """Decodes speech tokens to audio bytes.
-
-        Args:
-            batch (dict[str, AudioGeneratorContext]): Batch of audio generation contexts.
-            num_tokens (int): Number of speech tokens to decode.
-
-        Returns:
-            dict[str, DecoderOutput]: Dictionary mapping request IDs to WAV audio data.
+            dict[str, AudioGenerationResponse]: Dictionary mapping request IDs to
+                audio generation responses.
         """
         ...
 
