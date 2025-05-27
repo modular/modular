@@ -19,6 +19,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DiagnosticFormat.h"
@@ -673,6 +674,8 @@ static int build(const State &subcommandState) {
   // Lower the input file to an MLIR module.
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
+  ConditionallyDisableMLIRWarnings dwHandler(&mlirCtx, options.disableWarnings);
+
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, runtime,
       options::OPT_diagnose_missing_doc_strings,

@@ -16,6 +16,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "mlir/IR/Diagnostics.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -299,6 +300,18 @@ void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
 /// This concatenates another diagnostic.
 void addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag);
 
+// Compiler passes can emit warnings using MLIR diagnostics, and those
+// warnings are not seen by the Diags class above. Instantiating this
+// scoped handler in the driver (mojo-run and mojo-build) ensures
+// that warning suppression works consistently across all warning
+// emission mechanisms.
+class ConditionallyDisableMLIRWarnings {
+public:
+  ConditionallyDisableMLIRWarnings(MLIRContext *ctx, bool disableWarnings);
+
+private:
+  mlir::ScopedDiagnosticHandler handler;
+};
 } // namespace M
 
 #endif // SUPPORT_COMPILER_DIAGS_H
