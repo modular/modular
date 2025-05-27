@@ -999,29 +999,36 @@ fn rms_norm_cpu[
     var num_cols = out_shape[1]
 
     var simd_loop_end = align_down(num_cols, simd_width)
+    alias intermediate_type = get_accum_type[type]()
 
+    # PyTorch converts the input to float32 before computing the RMS norm
+    # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
     for row in range(num_rows):
-        var sum_simd = SIMD[type, simd_width]()
+        var sum_simd = SIMD[intermediate_type, simd_width]()
         for col in range(0, simd_loop_end, simd_width):
-            sum_simd += input_fn[simd_width](row, col) ** 2
+            sum_simd += (
+                input_fn[simd_width](row, col).cast[intermediate_type]() ** 2
+            )
 
         var sum_val = sum_simd.reduce_add()
         for col in range(simd_loop_end, num_cols):
-            sum_val += input_fn[1](row, col) ** 2
+            sum_val += input_fn[1](row, col).cast[intermediate_type]() ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = isqrt(mean_val + epsilon)
+        var norm_factor = isqrt(mean_val + epsilon.cast[intermediate_type]())
 
         @__copy_capture(norm_factor, weight_offset)
         @parameter
         fn _normalize[simd_width: Int](col: Int):
-            var input_val = input_fn[simd_width](row, col)
+            var input_val = input_fn[simd_width](row, col).cast[
+                intermediate_type
+            ]()
             var gamma_val = gamma.load[width=simd_width](col)
             var norm_val: SIMD[type, simd_width]
 
             if multiply_before_cast:
                 var gamma_offset = gamma_val + weight_offset
-                norm_val = input_val * norm_factor * gamma_offset
+                norm_val = (input_val * norm_factor).cast[type]() * gamma_offset
             else:
                 norm_val = (input_val * norm_factor).cast[type]() * (
                     gamma_val + weight_offset

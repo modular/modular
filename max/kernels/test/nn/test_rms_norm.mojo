@@ -19,17 +19,21 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.normalization import *
 from testing import assert_almost_equal
+from sys import has_neon
 
 from utils.index import Index, IndexList
 
 
 fn compute_rms[
     type: DType
-](data: NDBuffer[type, 1], size: Int, eps: Scalar[type]) -> Scalar[type]:
-    var sum_of_squares = Scalar[type]()
+](data: NDBuffer[type, 1], size: Int, eps: Scalar[type]) -> Scalar[
+    DType.float32
+]:
+    var sum_of_squares = Scalar[DType.float32]()
     for i in range(size):
-        sum_of_squares += data[i] * data[i]
-    return sqrt((sum_of_squares / len(data)) + eps).cast[type]()
+        var d = data[i].cast[DType.float32]()
+        sum_of_squares += d * d
+    return sqrt((sum_of_squares / len(data)) + eps.cast[DType.float32]())
 
 
 fn run_rms_norm_cpu[
@@ -84,9 +88,11 @@ fn run_rms_norm_cpu[
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c
-            var val = (input_ptr[idx] / rms_ref) * (
-                gamma_ptr[c] + weight_offset
-            )
+            # PyTorch converts the input to float32 before computing the RMS norm
+            # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
+            var val = (input_ptr[idx].cast[DType.float32]() / rms_ref).cast[
+                type
+            ]() * (gamma_ptr[c] + weight_offset)
             assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
     input_ptr.free()
@@ -94,17 +100,25 @@ fn run_rms_norm_cpu[
     gamma_ptr.free()
 
 
-def main():
-    run_rms_norm_cpu[DType.float32](Index(2, 5))
-    run_rms_norm_cpu[DType.float32](Index(2, 55))
-    run_rms_norm_cpu[DType.float32](Index(7, 557))
-    run_rms_norm_cpu[DType.float32](Index(2, 8191))
-    run_rms_norm_cpu[DType.float32](Index(2, 8192))
-    run_rms_norm_cpu[DType.float32](Index(2, 16384))
-    run_rms_norm_cpu[DType.float32](Index(2, 16385))
+fn run_rms_norm_tests[type: DType](rtol: Float64 = 0.001) raises:
+    run_rms_norm_cpu[type](Index(2, 5), rtol)
+    run_rms_norm_cpu[type](Index(2, 55), rtol)
+    run_rms_norm_cpu[type](Index(7, 557), rtol)
+    run_rms_norm_cpu[type](Index(2, 8191), rtol)
+    run_rms_norm_cpu[type](Index(2, 8192), rtol)
+    run_rms_norm_cpu[type](Index(2, 16384), rtol)
+    run_rms_norm_cpu[type](Index(2, 16385), rtol)
 
     # variable rank
-    run_rms_norm_cpu[DType.float32](Index(0))
-    run_rms_norm_cpu[DType.float32](Index(5))
-    run_rms_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
-    run_rms_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))
+    run_rms_norm_cpu[type](Index(0), rtol)
+    run_rms_norm_cpu[type](Index(5), rtol)
+    run_rms_norm_cpu[type](Index(3, 4, 10, 20, 8), rtol)
+    run_rms_norm_cpu[type](Index(1, 5, 6, 10, 128), rtol)
+
+
+def main():
+    run_rms_norm_tests[DType.float32]()
+
+    @parameter
+    if not has_neon():
+        run_rms_norm_tests[DType.bfloat16](rtol=1e-2)
