@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
@@ -684,21 +683,6 @@ class InferenceSession:
     def _set_mojo_define(self, key: str, value: bool | int | str):
         """Enables overwriting of any mojo config directly."""
         self._impl.set_mojo_define(key, value)
-
-    @property
-    def stats_report(self) -> dict[str, Any]:  # XXX
-        """Metadata about model compilation (PyTorch only).
-
-        Prints a list of "fallback ops", which are ops that could not be lowered
-        to our internal dialect MO. Fallback ops have to be executed using the
-        original framework (i.e. PyTorch), which makes the model much slower.
-        This function is a good starting point for debugging model performance.
-        """
-        return json.loads(self._impl.stats_report)
-
-    def reset_stats_report(self) -> None:
-        """Clears all entries in `stats_report`."""
-        self._impl.reset_stats_report()
 
     @property
     def devices(self) -> list[Device]:
