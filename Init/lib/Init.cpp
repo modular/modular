@@ -10,7 +10,6 @@
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
-#include "Support/Frameworks/StatsReport.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
@@ -95,8 +94,6 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   // Move everything into the context. Construct here may used the settings.
   ctx->emplace<HTTPContextRef>(std::move(httpCtx));
   ctx->emplace<TelemetryContext>(settings, options.resources);
-  ctx->emplace<std::shared_ptr<Frameworks::StatsReport>>(
-      std::make_shared<Frameworks::StatsReport>("pytorch"));
 
   // Create a new runtime (if needed).
   if (options.runtimeOptions) {

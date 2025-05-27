@@ -12,7 +12,6 @@ modular_cc_library(
         "//AsyncRT:Runtime",
         "//Support:Configuration",
         "//Support:CrashReporting",
-        "//Support:FrameworkSupport",
         "//Support:HTTP",
         "//Support:Telemetry",
     ],
