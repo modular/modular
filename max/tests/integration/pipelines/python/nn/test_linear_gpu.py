@@ -17,20 +17,19 @@ ACCURACY_RTOL = 1e-3
 ACCURACY_ATOL = 2e-1
 
 
-# Parameters for each test case are (out_features, in_features, sequence_length)
-# This corresponds to the M, N, K convention for the underlying matmul
+# This corresponds to M, N, K, transpose_b=True for the underlying matmul
 @pytest.mark.parametrize(
-    "out_features, in_features, sequence_length",
+    "sequence_length, out_features, in_features",
     [
-        # (M, N, K) -> (out_features, in_features, sequence_length)
-        (1024, 2048, 64),
+        # (M, N, K) -> (sequence_length, out_features, in_features)
+        (64, 1024, 2048),
     ],
 )
 def test_linear_gpu(
     gpu_session: InferenceSession,
+    sequence_length: int,
     out_features: int,
     in_features: int,
-    sequence_length: int,
 ) -> None:
     linear_impl(gpu_session, out_features, in_features, sequence_length)
 
