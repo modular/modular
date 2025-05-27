@@ -10,7 +10,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, Device
 from max.driver.tensor import Tensor
 from max.dtype import DType
 from max.nn.kv_cache import (
@@ -18,6 +18,14 @@ from max.nn.kv_cache import (
     KVTransferEngineMetadata,
     XferReqData,
 )
+
+port = 8001
+
+
+def get_unique_port():
+    global port
+    port += 1
+    return port
 
 
 def transfer_routine_sender(
@@ -33,8 +41,8 @@ def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue):
     engine.recv_xfer_sync(xfer_req)
 
 
-def test_send_recv_basic():
-    device = CPU()
+@pytest.mark.parametrize("device", [CPU(), Accelerator()])
+def test_send_recv_basic(device: Device):
     total_num_pages = 3
     elts_per_page = 3
     num_elts = total_num_pages * elts_per_page
@@ -47,10 +55,10 @@ def test_send_recv_basic():
     )
 
     engine_1 = KVTransferEngine(
-        "engine_1", blocks_1, total_num_pages, listen_port=8043
+        "engine_1", blocks_1, total_num_pages, listen_port=get_unique_port()
     )
     engine_2 = KVTransferEngine(
-        "engine_2", blocks_2, total_num_pages, listen_port=8053
+        "engine_2", blocks_2, total_num_pages, listen_port=get_unique_port()
     )
 
     engine_1.connect(engine_2.metadata)
@@ -89,17 +97,14 @@ def test_constructor():
         "abc",
         tensor,
         total_num_pages=2,
-        listen_port=8043,
+        listen_port=get_unique_port(),
     )
-
-    # device is not CPU
-    with pytest.raises(ValueError):
-        _ = KVTransferEngine(
-            "abc",
-            tensor.to(Accelerator()),
-            total_num_pages=2,
-            listen_port=8044,
-        )
+    _ = KVTransferEngine(
+        "abc",
+        tensor.to(Accelerator()),
+        total_num_pages=2,
+        listen_port=get_unique_port(),
+    )
 
     # total_num_pages is 0
     with pytest.raises(ValueError):
@@ -107,7 +112,7 @@ def test_constructor():
             "abc",
             tensor,
             total_num_pages=0,
-            listen_port=8045,
+            listen_port=get_unique_port(),
         )
 
     # bytes is not divisible by total_num_pages
@@ -116,7 +121,7 @@ def test_constructor():
             "abc",
             tensor,
             total_num_pages=3,
-            listen_port=8046,
+            listen_port=get_unique_port(),
         )
 
 
@@ -134,10 +139,10 @@ def test_initiate_send_xfer():
     )
 
     engine_1 = KVTransferEngine(
-        "engine_1", blocks_1, total_num_pages, listen_port=8043
+        "engine_1", blocks_1, total_num_pages, listen_port=get_unique_port()
     )
     engine_2 = KVTransferEngine(
-        "engine_2", blocks_2, total_num_pages, listen_port=8053
+        "engine_2", blocks_2, total_num_pages, listen_port=get_unique_port()
     )
 
     engine_1.connect(engine_2.metadata)
