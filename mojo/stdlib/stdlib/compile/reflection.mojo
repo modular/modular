@@ -31,7 +31,7 @@ fn get_linkage_name[
         Symbol name.
     """
     return __mlir_attr[
-        `#kgen.param.expr<get_linkage_name,`,
+        `#kgen.get_linkage_name<`,
         target,
         `,`,
         func,
