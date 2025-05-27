@@ -127,6 +127,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
 
   if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr))
     return evaluateGetWitnessAttr(getWitnessEntry);
+  if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
+    return evaluateGetLinkageNameAttr(getLinkageNameAttr);
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
@@ -167,8 +169,6 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return failure();
   case POC::CompileAssembly:
     return evaluateCompileAssembly(op);
-  case POC::GetLinkageName:
-    return evaluateGetLinkageName(op);
   case POC::CompileOffloadClosure:
     return evaluateCompileOffloadClosure(op);
   case POC::LoadFromMem:
@@ -587,10 +587,12 @@ IREvaluator::evaluateCompileOffloadClosure(ParamOperatorAttr op) {
   return {populateFnRef};
 }
 
-FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
+FailureOr<TypedAttr>
+IREvaluator::evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr) {
   // This only supports generators with an empty set of parameters, otherwise we
   // need to resolve the symbol name after elaboration.
-  TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
+  TargetInfoAttr target =
+      cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
   // GPU backends.
 
@@ -598,7 +600,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
   // compiler will fail.
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       elaborator->getExpectedMangledName(
-          *errorLoc, "get_linkage_name", op.getOperand(1),
+          *errorLoc, "get_linkage_name", getLinkageNameAttr.getFunc(),
           /*allowParametric=*/true, /*sanitize=*/target.isGPU(),
           [isGPU = target.isGPU()](StringRef name) {
             return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
@@ -608,7 +610,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
     return failure();
   }
   StringAttr name = pairOrError.takeValue().first;
-  return {StringAttr::get(name.getValue(), op.getType())};
+  return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
 }
 
 //===----------------------------------------------------------------------===//

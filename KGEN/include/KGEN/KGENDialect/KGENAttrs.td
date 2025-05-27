@@ -528,10 +528,8 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
   );
 
   let assemblyFormat = [{
-    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,`
-    custom<ColonTypeParamValue>($func) `>`
+    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,` $func `>`
   }];
-
 
   let genVerifyDecl = 1;  // Generate getChecked/verify.
 }

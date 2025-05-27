@@ -896,8 +896,8 @@ kgen.generator @compile_offload_closure() {
 
 // CHECK-LABEL: @get_likage_name
 kgen.generator @get_likage_name() {
-  // CHECK: constant: string = <get_linkage_name(current_target(), :() -> () @kernel)>
-  kgen.param.constant: string = <get_linkage_name(current_target(), :() -> () @kernel)>
+  // CHECK: constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
+  kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>>>
   kgen.return
 }
 
