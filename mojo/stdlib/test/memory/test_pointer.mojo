@@ -15,7 +15,7 @@ from testing import assert_equal, assert_not_equal, assert_true
 
 
 def test_copy_reference_explicitly():
-    var a = List[Int](1, 2, 3)
+    var a = [1, 2, 3]
 
     var b = Pointer(to=a)
     var c = b.copy()
@@ -27,8 +27,8 @@ def test_copy_reference_explicitly():
 
 
 def test_equality():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
 
     assert_true(Pointer(to=a) == Pointer(to=a))
     assert_true(Pointer(to=b) == Pointer(to=b))
@@ -48,8 +48,8 @@ def test_pointer_to():
 
 # Test pointer merging with ternary operation.
 def test_merge():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
 
     fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = Pointer(to=a) if cond else Pointer(to=b)
@@ -58,8 +58,8 @@ def test_merge():
     inner(True, 7, a, b)
     inner(False, 8, a, b)
 
-    assert_equal(a, List[Int](1, 2, 3, 7))
-    assert_equal(b, List[Int](4, 5, 6, 8))
+    assert_equal(a, [1, 2, 3, 7])
+    assert_equal(b, [4, 5, 6, 8])
 
 
 # We don't actually need to run this,

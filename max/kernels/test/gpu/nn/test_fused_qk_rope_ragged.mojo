@@ -64,11 +64,11 @@ def execute_fused_qk_rope_ragged(
 
     alias max_seq_len = 1024
 
-    var true_ce_prompt_lens = List[Int](100, 200, 300, 400)
-    var mixed_ce_prompt_lens = List[Int](50, 100, 150, 100)
+    var true_ce_prompt_lens = [100, 200, 300, 400]
+    var mixed_ce_prompt_lens = [50, 100, 150, 100]
 
-    var true_ce_cache_lens = List[Int](0, 0, 0, 0)
-    var mixed_ce_cache_lens = List[Int](50, 100, 150, 300)
+    var true_ce_cache_lens = [0, 0, 0, 0]
+    var mixed_ce_cache_lens = [50, 100, 150, 300]
 
     var batch_size = len(true_ce_prompt_lens)
 

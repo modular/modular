@@ -18,7 +18,7 @@ from testing import assert_equal
 
 
 def test_reversed_list():
-    var list = List[Int](1, 2, 3, 4, 5, 6)
+    var list = [1, 2, 3, 4, 5, 6]
     var check: Int = 6
 
     for item in reversed(list):

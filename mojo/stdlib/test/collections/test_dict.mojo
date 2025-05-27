@@ -37,7 +37,7 @@ def test_dict_literals():
 
 
 def test_dict_fromkeys():
-    alias keys = List[String]("a", "b")
+    alias keys = [String("a"), "b"]
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
@@ -53,7 +53,7 @@ def test_dict_fromkeys():
 
 
 def test_dict_fromkeys_optional():
-    alias keys = List[String]("a", "b", "c")
+    alias keys = [String("a"), "b", "c"]
     var expected_dict: Dict[String, Optional[Int]] = {
         "a": None,
         "b": None,

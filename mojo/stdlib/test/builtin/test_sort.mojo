@@ -72,7 +72,7 @@ fn test_sort_small_3() raises:
 
     _small_sort[length, Int, _less_than](list.data)
 
-    var expected = List[Int](1, 2, 9)
+    var expected = [1, 2, 9]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -94,7 +94,7 @@ fn test_sort_small_5() raises:
 
     _small_sort[length, Int, _less_than](list.data)
 
-    var expected = List[Int](1, 2, 3, 4, 9)
+    var expected = [1, 2, 3, 4, 9]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -114,7 +114,7 @@ fn test_sort2() raises:
 
     sort(list)
 
-    var expected = List[Int](-1, 0)
+    var expected = [-1, 0]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -123,7 +123,7 @@ fn test_sort2() raises:
 
     sort(list)
 
-    expected = List[Int](-2, 2)
+    expected = [-2, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -138,7 +138,7 @@ fn test_sort3() raises:
 
     sort(list)
 
-    var expected = List[Int](-1, 0, 1)
+    var expected = [-1, 0, 1]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -148,7 +148,7 @@ fn test_sort3() raises:
 
     sort(list)
 
-    expected = List[Int](-2, 0, 2)
+    expected = [-2, 0, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -166,7 +166,7 @@ fn test_sort3_dupe_elements() raises:
 
         _quicksort[cmp_fn](list)
 
-        var expected = List[Int](3, 3, 5)
+        var expected = [3, 3, 5]
         for i in range(length):
             assert_equal(expected[i], list[i])
 
@@ -188,7 +188,7 @@ fn test_sort4() raises:
 
     sort(list)
 
-    var expected = List[Int](-1, 0, 1, 2)
+    var expected = [-1, 0, 1, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -199,7 +199,7 @@ fn test_sort4() raises:
 
     sort(list)
 
-    expected = List[Int](-4, -2, 0, 2)
+    expected = [-4, -2, 0, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -213,7 +213,7 @@ fn test_sort5() raises:
 
     sort(list)
 
-    var expected = List[Int](0, 1, 2, 3, 4)
+    var expected = [0, 1, 2, 3, 4]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -225,7 +225,7 @@ fn test_sort5() raises:
 
     sort(list)
 
-    expected = List[Int](-4, -2, 0, 1, 2)
+    expected = [-4, -2, 0, 1, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -239,7 +239,7 @@ fn test_sort_reverse() raises:
 
     sort(list)
 
-    var expected = List[Int](0, 1, 2, 3, 4)
+    var expected = [0, 1, 2, 3, 4]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -256,7 +256,7 @@ fn test_sort_semi_random() raises:
 
     sort(list)
 
-    var expected = List[Int](-7, -5, -3, -1, 0, 2, 4, 6)
+    var expected = [-7, -5, -3, -1, 0, 2, 4, 6]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -270,7 +270,7 @@ fn test_sort9() raises:
 
     sort(list)
 
-    var expected = List[Int](0, 1, 2, 3, 4, 5, 6, 7, 8)
+    var expected = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -436,7 +436,7 @@ fn test_partition_top_k(length: Int, k: Int) raises:
 
 
 fn test_sort_stress() raises:
-    var lens = List[Int](3, 100, 117, 223, 500, 1000, 1500, 2000, 3000)
+    var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
 
@@ -606,7 +606,7 @@ struct IntPair:
 
 
 def test_stable_sort_stress():
-    var lens = List[Int](3, 100, 117, 223, 500, 1000, 1500, 2000, 3000)
+    var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
 

@@ -172,7 +172,7 @@ def main():
             64, DType.bfloat16, DType.bfloat16, DType.bfloat16
         ](ctx, static[128](), static[64](), static[64]())
 
-        alias wgmma_n = List[Int](8, 32, 64, 128, 256)
+        alias wgmma_n = [8, 32, 64, 128, 256]
         alias num_ins = 5
 
         @parameter

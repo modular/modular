@@ -143,7 +143,7 @@ def test_list_unsafe_set():
 
 
 def test_list_clear():
-    var list = List[Int](1, 2, 3)
+    var list = [1, 2, 3]
     assert_equal(len(list), 3)
     assert_equal(list.capacity, 3)
     list.clear()
@@ -189,7 +189,7 @@ def test_list_pop():
 
 
 def test_list_variadic_constructor():
-    var l = List[Int](2, 4, 6)
+    var l = [2, 4, 6]
     assert_equal(3, len(l))
     assert_equal(2, l[0])
     assert_equal(4, l[1])
@@ -254,7 +254,7 @@ def test_list_reverse():
     # Test reversing the list ["one", "two", "three"]
     #
 
-    vec2 = List[String]("one", "two", "three")
+    vec2 = [String("one"), "two", "three"]
 
     assert_equal(len(vec2), 3)
     assert_equal(vec2[0], "one")
@@ -395,7 +395,7 @@ def test_list_insert():
 
 
 def test_list_index():
-    var test_list_a = List[Int](10, 20, 30, 40, 50)
+    var test_list_a = [10, 20, 30, 40, 50]
 
     # Basic Functionality Tests
     assert_equal(test_list_a.index(10), 0)
@@ -454,7 +454,7 @@ def test_list_index():
     with assert_raises(contains="ValueError: Given element is not in list"):
         _ = test_list_a.index(10, start=0, stop=0)
 
-    var test_list_b = List[Int](10, 20, 30, 20, 10)
+    var test_list_b = [10, 20, 30, 20, 10]
 
     # Test finding the first occurrence of an item
     assert_equal(test_list_b.index(10), 0)
@@ -631,7 +631,7 @@ def test_list_iter():
 
 
 def test_list_iter_mutable():
-    var vs = List[Int](1, 2, 3)
+    var vs = [1, 2, 3]
 
     for v in vs:
         v[] += 1
@@ -644,7 +644,7 @@ def test_list_iter_mutable():
 
 
 def test_list_span():
-    var vs = List[Int](1, 2, 3)
+    var vs = [1, 2, 3]
 
     var es = vs[1:]
     assert_equal(es[0], 2)
@@ -740,15 +740,15 @@ def test_converting_list_to_string():
     # essentially, `List.__str__()` just creates a String and applies `to_format` to it.
     # If we were to write unit tests for `to_format`, we would essentially copy-paste the code
     # of `List.__str__()`
-    var my_list = List[Int](1, 2, 3)
+    var my_list = [1, 2, 3]
     assert_equal(my_list.__str__(), "[1, 2, 3]")
 
-    var my_list4 = List[String]("a", "b", "c", "foo")
+    var my_list4 = [String("a"), "b", "c", "foo"]
     assert_equal(my_list4.__str__(), "['a', 'b', 'c', 'foo']")
 
 
 def test_list_count():
-    var list = List[Int](1, 2, 3, 2, 5, 6, 7, 8, 9, 10)
+    var list = [1, 2, 3, 2, 5, 6, 7, 8, 9, 10]
     assert_equal(1, list.count(1))
     assert_equal(2, list.count(2))
     assert_equal(0, list.count(4))
@@ -758,8 +758,8 @@ def test_list_count():
 
 
 def test_list_add():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
     var c = a + b
     assert_equal(len(c), 6)
     # check that original values aren't modified
@@ -777,19 +777,19 @@ def test_list_add():
     assert_equal(len(a), 6)
     assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
 
-    var d = List[Int](1, 2, 3)
-    var e = List[Int](4, 5, 6)
+    var d = [1, 2, 3]
+    var e = [4, 5, 6]
     var f = d + e^
     assert_equal(len(f), 6)
     assert_equal(f.__str__(), "[1, 2, 3, 4, 5, 6]")
 
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     l += []
     assert_equal(len(l), 3)
 
 
 def test_list_mult():
-    var a = List[Int](1, 2, 3)
+    var a = [1, 2, 3]
     var b = a * 2
     assert_equal(len(b), 6)
     assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3]")
@@ -800,7 +800,7 @@ def test_list_mult():
     assert_equal(len(a), 6)
     assert_equal(a.__str__(), "[1, 2, 3, 1, 2, 3]")
 
-    var l = List[Int](1, 2)
+    var l = [1, 2]
     l *= 1
     assert_equal(len(l), 2)
 
@@ -810,7 +810,7 @@ def test_list_mult():
 
 
 def test_list_contains():
-    var x = List[Int](1, 2, 3)
+    var x = [1, 2, 3]
     assert_false(0 in x)
     assert_true(1 in x)
     assert_false(4 in x)
@@ -823,12 +823,12 @@ def test_list_contains():
 
 
 def test_list_eq_ne():
-    var l1 = List[Int](1, 2, 3)
-    var l2 = List[Int](1, 2, 3)
+    var l1 = [1, 2, 3]
+    var l2 = [1, 2, 3]
     assert_true(l1 == l2)
     assert_false(l1 != l2)
 
-    var l3 = List[Int](1, 2, 3, 4)
+    var l3 = [1, 2, 3, 4]
     assert_false(l1 == l3)
     assert_true(l1 != l3)
 
@@ -837,16 +837,16 @@ def test_list_eq_ne():
     assert_true(l4 == l5)
     assert_true(l1 != l4)
 
-    var l6 = List[String]("a", "b", "c")
-    var l7 = List[String]("a", "b", "c")
-    var l8 = List[String]("a", "b")
+    var l6 = [String("a"), "b", "c"]
+    var l7 = [String("a"), "b", "c"]
+    var l8 = [String("a"), "b"]
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)
 
 
 def test_list_init_span():
-    var l = List[String]("a", "bb", "cc", "def")
+    var l = [String("a"), "bb", "cc", "def"]
     var sp = Span(l)
     var l2 = List[String](sp)
     for i in range(len(l)):
@@ -854,7 +854,7 @@ def test_list_init_span():
 
 
 def test_indexing():
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     assert_equal(l[Int(1)], 2)
     assert_equal(l[False], 1)
     assert_equal(l[True], 2)

@@ -279,8 +279,8 @@ def execute_flash_attention_suite():
         ](tg_seq_lens, 110, tg_cache_sizes, 2, 0)
 
     # edge cases
-    var short_ce_seq_len = List[Int](2)
-    var short_ce_cache_size = List[Int](0)
+    var short_ce_seq_len = [2]
+    var short_ce_cache_size = [0]
     execute_ragged_flash_attention[llama_num_q_heads, type, kv_params_llama3](
         short_ce_seq_len, 110, short_ce_cache_size, 2, 1
     )
