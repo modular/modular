@@ -546,3 +546,15 @@ void M::addToDiagnostic(FixIt fixIt, InflightDiag &diag) {
 void M::addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag) {
   diag.addDiag(std::move(otherDiag));
 }
+
+M::ConditionallyDisableMLIRWarnings::ConditionallyDisableMLIRWarnings(
+    MLIRContext *ctx, bool disableWarnings)
+    : handler(ctx, [=](mlir::Diagnostic &diag) {
+        if (diag.getSeverity() == mlir::DiagnosticSeverity::Warning &&
+            disableWarnings) {
+          // swallow the warning
+          return mlir::success();
+        } else {
+          return mlir::failure();
+        }
+      }) {}
