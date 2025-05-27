@@ -119,7 +119,7 @@ struct Info[
 
     alias populate = rebind[fn (UnsafePointer[NoneType]) capturing -> None](
         __mlir_attr[
-            `#kgen.param.expr<compile_offload_closure,`,
+            `#kgen.compile_offload_closure<`,
             target,
             `,`,
             func,
