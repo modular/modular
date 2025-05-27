@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_doc", "mojo_library", "pkg_filegroup", "pkg_files")
+load("//bazel:api.bzl", "mojo_library", "pkg_files")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,71 +14,12 @@ mojo_library(
     srcs = [
         ":stdlib_srcs",
     ],
-    build_docs = False,
 )
 
-LIBS = [
-    "algorithm",
-    "base64",
-    "benchmark",
-    "bit",
-    "buffer",
-    "builtin",
-    "collections",
-    "compile",
-    "complex",
-    "gpu",
-    "hashlib",
-    "logger",
-    "math",
-    "memory",
-    "os",
-    "pathlib",
-    "pwd",
-    "python",
-    "random",
-    "runtime",
-    "stat",
-    "subprocess",
-    "sys",
-    "tempfile",
-    "testing",
-    "time",
-    "utils",
-]
-
-[
-    mojo_doc(
-        name = lib + ".docs",
-        srcs = glob([lib + "/**/*.mojo"]),
-        # Building the docs for the standard library causes some issues with mojo doc.
-        # It lets the local files take priority of the existing stdlib.mojopkg
-        # resulting in broken lookups if you only have some of the files.
-        data = glob(
-            ["**/*.mojo"],
-            exclude = [lib + "/**/*.mojo"],
-        ),
-        validate_missing_docs = True,
-    )
-    for lib in LIBS
-]
-
-[
-    pkg_files(
-        name = lib + "-doc-files",
-        srcs = [":" + lib + ".docs"],
-        renames = {
-            lib + ".docs": lib,
-        },
-        visibility = ["//visibility:private"],
-    )
-    for lib in LIBS
-]
-
-pkg_filegroup(
+pkg_files(
     name = "docs",
-    srcs = [
-        ":" + lib + "-doc-files"
-        for lib in LIBS
-    ],
+    srcs = [":stdlib.docs"],
+    renames = {
+        "stdlib.docs": "stdlib",
+    },
 )
