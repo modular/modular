@@ -1,0 +1,23 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["*.py"]),
+    env = {
+        # HACK: This test invokes "mojo build" in a subprocess, but it can't see modular.cfg, so we need to
+        # provide the run path here to find CompilerRT.
+        "MODULAR_MOJO_MAX_SHARED_LIBS": "-Xlinker,-rpath,-Xlinker,KGEN",
+    },
+    mojo_deps = [
+        "//open-source/max/mojo/stdlib/stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//SDK/lib/API/python/max/_core_mojo",
+        requirement("numpy"),
+    ],
+)
