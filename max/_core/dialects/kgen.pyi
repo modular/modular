@@ -458,6 +458,28 @@ class GetLinkageNameAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class GetTypeNameAttr(max._core.Attribute):
+    """
+    The `#kgen.get_type_name` attribute is used to get the name of a struct
+    symbol.
+
+    Example:
+
+    ```mlir
+    #kgen.get_type_name<#Int>: !kgen.string
+    ```
+    """
+
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class GetWitnessAttr(max._core.Attribute):
     """
     The `#kgen.get_witness` attribute is used to lookup a witness entry
