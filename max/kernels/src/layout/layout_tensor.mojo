@@ -2402,10 +2402,13 @@ struct LayoutTensor[
             size of the view, not the original tensor.
         """
         constrained[
-            depth(layout.shape) == 1,
-            (
-                "This method only works with tensors that have depth-1 layouts"
-                " (no nested shapes)."
+            0 <= depth(layout.shape) <= 1,
+            String(
+                (
+                    "This method only works with tensors that have depth-1"
+                    " layouts (no nested shapes). Received: "
+                ),
+                layout,
             ),
         ]()
 
