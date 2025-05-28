@@ -351,6 +351,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
   if (value.getValue().empty())
     str = "\0";
 
+  auto resetState = llvm::make_scope_exit([&] { reset(); });
+
   MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
   ErrorOr<int64_t> addr = mapConstGlobalMemory(hdl);
   if (addr.isError()) {

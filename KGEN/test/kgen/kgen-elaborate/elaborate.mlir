@@ -2214,6 +2214,7 @@ kgen.generator @FOO() capturing -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
   %0 = pop.stack_allocation 1 x index marked
   pop.compiler.global_store "CAPTURE_0", %0 : !kgen.pointer<index>
@@ -2250,3 +2251,28 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
 // CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<pointer<none>>
 // CHECK-NEXT: [[NONE:%.*]] = kgen.param.constant: none = <#kgen.none>
 // CHECK-NEXT: kgen.return [[NONE]] : !kgen.none
+
+// -----
+
+kgen.generator @get_hello_address() -> !kgen.pointer<scalar<si8>> {
+  %0 = kgen.param.constant: string = <"hello">
+  %1 = pop.string.address %0
+  kgen.return %1 : !kgen.pointer<scalar<si8>>
+}
+
+kgen.generator @use_string_address<a: !kgen.pointer<scalar<si8>>>() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @entry
+kgen.generator export @entry() {
+  kgen.param.declare from_poc: !kgen.pointer<scalar<si8>> = <string_address("world")>
+  kgen.param.apply from_func = [() -> !kgen.pointer<scalar<si8>>: @get_hello_address]()
+  // CHECK: kgen.call {{.*}}#interp.memref<{{.*}}world
+  kgen.call @use_string_address<:!kgen.pointer<scalar<si8>> from_poc>() : () -> ()
+  // COM: Ensure the mem slot for "world" does not appear again. This means the
+  // interpreter state was correctly reset after evaluating POC::string_address.
+  // CHECK-NOT: world
+  kgen.call @use_string_address<:!kgen.pointer<scalar<si8>> from_func>() : () -> ()
+  kgen.return
+}
