@@ -12,9 +12,9 @@
 // RUN: not mojo test "%S/inputs/magic-project" | FileCheck %s --check-prefix=CHECK-MAGIC
 
 // CHECK: Testing Time: {{.*}}s
-// CHECK: Total Discovered Tests: 21
-// CHECK: Passed : 18
-// CHECK: Failed : 3
+// CHECK: Total Discovered Tests: 23
+// CHECK: Passed : 19
+// CHECK: Failed : 4
 // CHECK: Skipped: 0
 
 // CHECK: {{.*}} Failure: '{{.*}}subfolder/subfolder_test.mojo::test_fails()'
@@ -26,10 +26,10 @@
 // CHECK: {{.*}}subfolder/subfolder_test.mojo:19:16: AssertionError: condition was unexpectedly False
 
 // CHECK-FILTER: Testing Time: {{.*}}s
-// CHECK-FILTER: Total Discovered Tests: 21
+// CHECK-FILTER: Total Discovered Tests: 23
 // CHECK-FILTER: Passed : 2
 // CHECK-FILTER: Failed : 0
-// CHECK-FILTER: Skipped: 19
+// CHECK-FILTER: Skipped: 21
 
 // CHECK-BADID: Total Discovered Tests: 0
 // CHECK-BADID: No tests were discovered with the test ID not_a_test_id. Did you mean to use --filter instead?
