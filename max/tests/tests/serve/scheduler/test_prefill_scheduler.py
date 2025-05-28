@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import tempfile
+import threading
 import time
 import uuid
 from typing import cast
@@ -13,6 +14,8 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 import zmq
+from max.driver import CPU, Tensor
+from max.nn.kv_cache import KVTransferEngine
 from max.pipelines.core import TextContext, TextGenerationResponse
 from max.serve.scheduler.prefill_scheduler import (
     PrefillScheduler,
@@ -57,9 +60,18 @@ def mock_process_control():
 
 @pytest.fixture
 def paged_manager():
+    device = CPU()
+    total_num_pages = 1
+    elts_per_page = 128
+    num_elts = total_num_pages * elts_per_page
+
     paged_manager = Mock()
     paged_manager.external_claim = Mock()
     paged_manager.prefetch = Mock(return_value=True)
+    paged_manager.device_tensors = [
+        Tensor.from_numpy(np.arange(num_elts, dtype=np.int8)).to(device)
+    ]
+    paged_manager.total_num_pages = total_num_pages
     return paged_manager
 
 
@@ -88,6 +100,14 @@ def zmq_ctx() -> zmq.Context:
     return zmq.Context(io_threads=2)
 
 
+def remote_agent_peer(agent_md):
+    zmq_ctx = zmq.Context(io_threads=1)
+    socket = zmq_ctx.socket(zmq.REP)
+    socket.bind(f"ipc://{tempfile.gettempdir()}/transfer_engine")
+    _ = socket.recv_pyobj()
+    socket.send_pyobj(agent_md)
+
+
 @pytest.fixture
 def scheduler(
     mock_pipeline,
@@ -98,7 +118,30 @@ def scheduler(
     paged_manager,
     zmq_ctx,
 ):
-    return PrefillScheduler(
+    # Create peer transfer agent
+    device = CPU()
+    total_num_pages = 1
+    elts_per_page = 128
+    num_elts = total_num_pages * elts_per_page
+
+    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int8) + 10).to(
+        device
+    )
+
+    peer_agent = KVTransferEngine(
+        name="dummy_agent",
+        listen_port=8057,
+        tensor=blocks_1,
+        total_num_pages=total_num_pages,
+    )
+
+    # Create a Thread to send remote agent metadata
+    thread = threading.Thread(
+        target=remote_agent_peer, args=(peer_agent.metadata,)
+    )
+    thread.start()
+
+    scheduler = PrefillScheduler(
         process_control=mock_process_control,
         scheduler_config=scheduler_config,
         pipeline=mock_pipeline,
@@ -107,6 +150,14 @@ def scheduler(
         paged_manager=paged_manager,
         zmq_ctx=zmq_ctx,
     )
+
+    # Ensure agent is registered appropriately.
+    assert "dummy_agent" in scheduler.transfer_engine.remote_connections
+
+    # Block until remote agent peer thread resolves.
+    thread.join()
+
+    return scheduler
 
 
 def create_mock_request(

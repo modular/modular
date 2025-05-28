@@ -9,10 +9,14 @@ modular_py_test(
             "scheduler/*.py",
         ],
     ),
-    data = ["//SDK/lib/API/python/tests/serve/testdata"],
+    data = [
+        "//AsyncRT:plugin_ucx",
+        "//SDK/lib/API/python/tests/serve/testdata",
+    ],
     env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
+        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
     },
     deps = [
         "//SDK/lib/API/python/max/nn",
