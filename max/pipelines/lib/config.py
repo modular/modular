@@ -535,8 +535,7 @@ class AudioGenerationConfig(PipelineConfig):
 
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
-
-    block_sizes: list[int] | int | None = None
+    block_sizes: list[int] | None = None
     """The block sizes to use for streaming.
     If this is an int, then fixed-size blocks of the given size are used
     If this is a list, then variable block sizes are used."""
@@ -580,6 +579,12 @@ class AudioGenerationConfig(PipelineConfig):
         )
 
         # Configuration for audio generation streaming.
+        block_sizes = audio_config.pop("block_sizes", "")
+        if not block_sizes:
+            self.block_sizes = None
+        else:
+            self.block_sizes = [int(size) for size in block_sizes.split(",")]
+
         buffer = audio_config.pop("buffer", None)
         if buffer is None:
             self.buffer = None
@@ -613,8 +618,6 @@ class AudioGenerationConfig(PipelineConfig):
         else:
             self.prepend_prompt_speech_tokens_causal = True
 
-        if self.block_sizes:
-            raise NotImplementedError("Block sizes are not implemented")
         if self.block_causal:
             raise NotImplementedError("Causal generation is not implemented")
         if self.prepend_prompt_speech_tokens:

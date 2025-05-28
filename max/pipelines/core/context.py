@@ -591,10 +591,15 @@ class TTSContext(TextContext):
         self._speech_token_end_idx = 0
         self._speech_tokens = np.zeros(self._speech_token_size, dtype=np.int32)
         self._decoded_index = 0
+        self._block_counter = 0
 
     @property
     def speech_tokens(self) -> np.ndarray:
         return self._speech_tokens[: self._speech_token_end_idx]
+
+    @property
+    def block_counter(self) -> int:
+        return self._block_counter
 
     def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
         """Updates the next_tokens"""
@@ -604,6 +609,7 @@ class TTSContext(TextContext):
             + len(new_tokens)
         ] = new_tokens
         self._speech_token_end_idx += len(new_tokens)
+        self._block_counter += 1
 
     def _upsize_speech_tokens(self, new_size: int) -> None:
         if self._speech_token_end_idx + new_size >= self._speech_token_size:
