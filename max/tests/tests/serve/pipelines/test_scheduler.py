@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import zmq
 from max.pipelines.core import InputContext, TextContext
-from max.serve.config import generate_zmq_ipc_endpoint
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.scheduler import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
@@ -83,9 +83,9 @@ def scheduler(
         process_control=mock_process_control,
         scheduler_config=scheduler_config,
         pipeline=mock_pipeline,
-        request_zmq_endpoint=generate_zmq_ipc_endpoint(),
-        response_zmq_endpoint=generate_zmq_ipc_endpoint(),
-        cancel_zmq_endpoint=generate_zmq_ipc_endpoint(),
+        request_zmq_endpoint=generate_zmq_ipc_path(),
+        response_zmq_endpoint=generate_zmq_ipc_path(),
+        cancel_zmq_endpoint=generate_zmq_ipc_path(),
         zmq_ctx=zmq_ctx,
     )
 
