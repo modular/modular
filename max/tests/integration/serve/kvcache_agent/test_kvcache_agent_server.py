@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import multiprocessing
 import time
 
 import grpc
 import pytest
+import zmq
 from max.serve.kvcache_agent.kvcache_agent import (
     KVCacheAgentServer,
     KVCacheAgentServerConfig,
@@ -22,6 +22,25 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
     KVCacheAgentServiceStub,
 )
+from max.serve.queue.zmq_queue import ZmqPushSocket, generate_zmq_ipc_path
+
+
+@pytest.fixture(scope="module")
+def zmq_ctx():
+    ctx = zmq.Context()
+    yield ctx
+
+
+@pytest.fixture
+def zmq_endpoint():
+    return generate_zmq_ipc_path()
+
+
+@pytest.fixture
+def zmq_push_socket(zmq_ctx, zmq_endpoint):
+    push_socket = ZmqPushSocket[KVCacheChangeMessage](zmq_ctx, zmq_endpoint)
+    yield push_socket
+    push_socket._cleanup()
 
 
 @pytest.fixture(scope="module")
@@ -31,23 +50,12 @@ def server_config():
 
 
 @pytest.fixture
-def queue():
-    """Fixture that provides a queue for tests."""
-    return multiprocessing.Queue()
-
-
-@pytest.fixture
-def server(server_config, queue):
-    """Fixture that provides a running server instance for tests."""
-    server = KVCacheAgentServer(server_config, queue)
+def server(server_config, zmq_ctx, zmq_endpoint):
+    """Fixture that provides a running server instance for tests using ZMQ."""
+    server = KVCacheAgentServer(server_config, zmq_ctx, zmq_endpoint)
     server.start()
-
-    # Give the server time to start up
     time.sleep(0.1)
-
     yield server
-
-    # Teardown
     server.stop(grace=1)
 
 
@@ -60,9 +68,9 @@ def stub(server_config):
     return KVCacheAgentServiceStub(channel)
 
 
-def test_server_initialization(server_config, queue):
-    """Test that the server initializes correctly."""
-    server = KVCacheAgentServer(server_config, queue)
+def test_server_initialization(server_config, zmq_ctx, zmq_endpoint):
+    """Test that the server initializes correctly with ZMQ."""
+    server = KVCacheAgentServer(server_config, zmq_ctx, zmq_endpoint)
     assert not server._started
 
     server.start()
@@ -72,16 +80,16 @@ def test_server_initialization(server_config, queue):
     assert not server._started
 
 
-def test_smoke(server, queue, stub):
-    """Smoke test."""
-    queue.put(
+def test_smoke(server, zmq_push_socket, stub):
+    """Smoke test using ZMQ for event delivery."""
+    zmq_push_socket.put(
         KVCacheChangeMessage(
             cache_id="id1",
             memory_tier=MemoryTier.MEMORY_TIER_GPU,
             update_type=UpdateType.UPDATE_TYPE_ADDED,
         )
     )
-    queue.put(
+    zmq_push_socket.put(
         KVCacheChangeMessage(
             cache_id="id2",
             memory_tier=MemoryTier.MEMORY_TIER_CPU,
@@ -101,7 +109,7 @@ def test_smoke(server, queue, stub):
     assert response.memory_tier == MemoryTier.MEMORY_TIER_CPU
     assert response.cache_ids == ["id2"]
 
-    queue.put(
+    zmq_push_socket.put(
         KVCacheChangeMessage(
             cache_id="id1",
             memory_tier=MemoryTier.MEMORY_TIER_GPU,
@@ -115,13 +123,13 @@ def test_smoke(server, queue, stub):
     assert response.cache_ids == ["id1"]
 
 
-def test_multiple_subscribers(server, queue, stub):
-    """Test that multiple subscribers receive updates."""
+def test_multiple_subscribers(server, zmq_push_socket, stub):
+    """Test that multiple subscribers receive updates using ZMQ."""
 
     responses1 = stub.SubscribeToUpdates(SubscriptionRequest())
     responses2 = stub.SubscribeToUpdates(SubscriptionRequest())
 
-    queue.put(
+    zmq_push_socket.put(
         KVCacheChangeMessage(
             cache_id="id1",
             memory_tier=MemoryTier.MEMORY_TIER_GPU,

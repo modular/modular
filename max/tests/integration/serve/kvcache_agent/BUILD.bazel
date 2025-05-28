@@ -5,6 +5,8 @@ modular_py_test(
     srcs = glob(["*.py"]),
     deps = [
         "//SDK/lib/API/python/max/serve/kvcache_agent",
+        "//SDK/lib/API/python/max/serve/queue",
         requirement("grpcio"),
+        requirement("pyzmq"),
     ],
 )
