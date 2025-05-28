@@ -14,7 +14,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.nn import Linear
 
 ACCURACY_RTOL = 1e-3
-ACCURACY_ATOL = 2e-1
+ACCURACY_ATOL = 2e-3
 
 
 # This corresponds to M, N, K, transpose_b=True for the underlying matmul
@@ -42,6 +42,8 @@ def linear_impl(
 ) -> None:
     torch.manual_seed(42)
     batch_size = 1
+    # Multiple models use std=0.02 for initialization, including GPT-2 and BERT
+    std = 0.02
 
     has_bias = True
 
@@ -51,6 +53,7 @@ def linear_impl(
     max_dtype = DType.float32
     max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
 
+    # Distribution matches post-LayerNorm distribution (mean=0, std=1)
     input_tensor = torch.randn(
         size=(batch_size, sequence_length, in_features),
         dtype=torch_dtype,
@@ -72,23 +75,11 @@ def linear_impl(
         device=max_device,
     )
 
-    torch_linear.weight.data = nn.Parameter(
-        torch.randn(
-            size=torch_linear.weight.data.shape,
-            dtype=torch_dtype,
-            device=torch_device,
-        )
-    )
+    torch_linear.weight.data = std * torch.randn_like(torch_linear.weight)
 
     if has_bias:
         assert torch_linear.bias is not None
-        torch_linear.bias.data = nn.Parameter(
-            torch.randn(
-                size=torch_linear.bias.data.shape,
-                dtype=torch_dtype,
-                device=torch_device,
-            )
-        )
+        torch_linear.bias.data = std * torch.randn_like(torch_linear.bias)
 
     # Load the same weights into MAX linear
     state_dict = {
