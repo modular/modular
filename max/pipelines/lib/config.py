@@ -529,26 +529,33 @@ class AudioGenerationConfig(PipelineConfig):
     # TODO: Make these flags more discoverable.
     audio_decoder: str = ""
     """The name of the audio decoder model architecture."""
+
     audio_prompt_speakers: str = ""
     """The path to the audio prompt speakers file."""
+
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
+
     block_sizes: list[int] | int | None = None
     """The block sizes to use for streaming.
     If this is an int, then fixed-size blocks of the given size are used
     If this is a list, then variable block sizes are used."""
-    buffered: bool = False
-    """Whether to pass through all generated LLM tokens so far to the audio decoder
-    (after the first block)."""
+
+    buffer: int | None = None
+    """The number of previous speech tokens to pass to the audio decoder on
+    each generation step."""
+
     block_causal: bool = False
-    """Whether prior buffered blocks should attend to tokens in the current block.
-    Has no effect if buffered is False."""
+    """Whether prior buffered tokens should attend to tokens in the current block.
+    Has no effect if buffer is not set."""
+
     prepend_prompt_speech_tokens: bool | None = None
     """Whether the prompt speech tokens should be forwarded to the audio decoder.
     If None (default), the prompt tokens are not forwarded.
     If False, the prompt tokens are only forwarded on the first block.
     If True, the prompt tokens are forwarded on all blocks.
     """
+
     prepend_prompt_speech_tokens_causal: bool = False
     """Whether the prompt speech tokens should attend to tokens in the currently
     generated audio block.
@@ -573,11 +580,11 @@ class AudioGenerationConfig(PipelineConfig):
         )
 
         # Configuration for audio generation streaming.
-        buffered = audio_config.pop("buffered", "")
-        if not buffered or buffered.lower() == "false":
-            self.buffered = False
+        buffer = audio_config.pop("buffer", None)
+        if buffer is None:
+            self.buffer = None
         else:
-            self.buffered = True
+            self.buffer = int(buffer)
 
         block_causal = audio_config.pop("block_causal", "")
         if not block_causal or block_causal.lower() == "false":
@@ -608,8 +615,6 @@ class AudioGenerationConfig(PipelineConfig):
 
         if self.block_sizes:
             raise NotImplementedError("Block sizes are not implemented")
-        if self.buffered:
-            raise NotImplementedError("Buffered generation is not implemented")
         if self.block_causal:
             raise NotImplementedError("Causal generation is not implemented")
         if self.prepend_prompt_speech_tokens:

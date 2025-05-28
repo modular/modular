@@ -614,20 +614,27 @@ class TTSContext(TextContext):
                 self._speech_tokens, self._speech_token_size
             )
 
-    def next_speech_tokens(self, audio_chunk_size: int) -> np.ndarray:
+    def next_speech_tokens(
+        self, audio_chunk_size: int, buffer: int | None = None
+    ) -> np.ndarray:
         """Returns a chunk of the next unseen speech tokens.
 
         Calling this function will update the index of the last seen token.
 
         Args:
             audio_chunk_size: The number of speech tokens to return.
+            buffer: The number of previous speech tokens to pass to the audio
+                decoder on each generation step.
 
         Returns:
             A chunk of speech tokens.
         """
+        start_idx = self._decoded_index
+        if buffer is not None:
+            start_idx = max(0, self._decoded_index - buffer)
         end_idx = min(
             self._decoded_index + audio_chunk_size, self._speech_token_end_idx
         )
-        chunk = self._speech_tokens[self._decoded_index : end_idx]
+        chunk = self._speech_tokens[start_idx:end_idx]
         self._decoded_index = end_idx
         return chunk
