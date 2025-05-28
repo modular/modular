@@ -81,29 +81,6 @@ def test_elementwise_add_graph_with_device_prop() -> None:
         )
 
 
-def test_elementwise_add_graph_with_device_prop_error() -> None:
-    """Builds a simple graph with explicit device on inputs and checks for error conditions on output device propagation in the IR."""
-    pytest.skip("TODO(MAXPLAT-192): Create similar feature and re-enable test.")
-
-    with Graph(
-        "elementwise_add",
-        input_types=[
-            TensorType(
-                dtype=DType.float32,
-                shape=["batch", "channels"],
-                device=DeviceRef.GPU(0),
-            ),
-            TensorType(
-                dtype=DType.float32,
-                shape=["batch", "channels"],
-                device=DeviceRef.GPU(1),
-            ),
-        ],
-    ) as graph:
-        with pytest.raises(ValueError, match="Differing input devices"):
-            graph.output(graph.inputs[0] + graph.inputs[1])
-
-
 def test_transpose_graph_with_device_prop() -> None:
     """Builds a simple graph with an transpose and checks the IR."""
     with Graph(
