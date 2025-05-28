@@ -408,7 +408,7 @@ iterators for the standard library collections return pointers, so they can be
 used in `for..in` loops:
 
 ```mojo
-nums = List(1, 2, 3)
+nums = [1, 2, 3]
 for item in nums: # List iterator returns a Pointer, which must be dereferenced
     print(item[])
 for i in range(len(nums)):

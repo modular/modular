@@ -297,7 +297,7 @@ We can also create a `List` with an initial set of values and let the compiler
 infer the type.
 
 ```mojo
-nums = List(12, -7, 64)  # A List[Int] containing 3 Int values
+nums = [12, -7, 64]  # A List[Int] containing 3 Int values
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values out
@@ -305,7 +305,7 @@ of the list, and access list items using subscript notation. Here's a taste of
 those operations:
 
 ```mojo
-nums = List(12, -7, 64)
+nums = [12, -7, 64]
 nums.append(-937)
 print("Number of elements in the list:", len(nums))
 print("Popping last element off the list:", nums.pop())
@@ -325,10 +325,10 @@ Last element of the list: 64
 We can also nest `List`s:
 
 ```mojo
-grid = List(
-    List(11, 22),
-    List(33, 44)
-)
+grid = [
+    [11, 22],
+    [33, 44]
+]
 print("Row 0, Column 0:", grid[0][0])
 print("Row 0, Column 1:", grid[0][1])
 print("Row 1, Column 0:", grid[1][0])
@@ -352,16 +352,16 @@ pattern.
 def main():
     num_rows = 8
     num_cols = 8
-    glider = List(
-        List(0, 1, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 1, 0, 0, 0, 0, 0),
-        List(1, 1, 1, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-    )
+    glider = [
+        [0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ]
 ```
 
 ## 5. Create and use a function to print the grid
@@ -435,7 +435,7 @@ dereference operator, `[]`, to access the actual element value. The code looks
 like this:
 
 ```mojo
-nums = List(12, -7, 64)
+nums = [12, -7, 64]
 for value in nums:
     print("Value:", value[])
 ```
@@ -536,7 +536,7 @@ arguments are the same names and types as the struct's fields and appear in the
 same order. So this means that we can create an instance of `Grid` like this:
 
 ```mojo
-my_grid = Grid(2, 2, List(List(0, 1), List(1, 1)))
+my_grid = Grid(2, 2, [[0, 1], [1, 1]])
 ```
 
 We can then access the field values with "dot" syntax like this:
@@ -574,16 +574,16 @@ def grid_str(grid: Grid) -> String:
     return str
 
 def main():
-    glider = List(
-        List(0, 1, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 1, 0, 0, 0, 0, 0),
-        List(1, 1, 1, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-    )
+    glider = [
+        [0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ]
     start = Grid(8, 8, glider)
     result = grid_str(start)
     print(result)

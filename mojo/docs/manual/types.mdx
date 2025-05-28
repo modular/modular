@@ -543,8 +543,8 @@ type, you can omit it. For example, when you construct a list from a set of
 integer literals, Mojo creates a `List[Int]`.
 
 ```mojo
-# Inferred type == Int
-var l1 = List(1, 2, 3, 4)
+# Inferred type == List[Int]
+var l1 = [1, 2, 3, 4]
 ```
 
 Where you need a more flexible collection, the
@@ -577,7 +577,7 @@ using subscript notation.
 ```mojo
 from collections import List
 
-var list = List(2, 3, 5)
+var list = [2, 3, 5]
 list.append(7)
 list.append(11)
 print("Popping last item from list: ", list.pop())
@@ -605,7 +605,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   You can also use variadic arguments for lists:
 
   ```mojo
-  var list = List(2, 3, 5)
+  var list = [2, 3, 5]
   ```
 
 * You can't `print()` a list, or convert it directly into a string.
@@ -624,7 +624,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
 
 ```mojo
 #: from collections import List
-var list = List(2, 3, 4)
+var list = [2, 3, 4]
 for item in list:
       print(item[], end=", ")
 ```
@@ -638,7 +638,7 @@ dereference:
 
 ```mojo
 #: from collections import List
-#: var list = List[Int](2, 3, 4)
+#: var list = [2, 3, 4]
 for i in range(len(list)):
     print(list[i], end=", ")
 ```
@@ -709,8 +709,8 @@ Unlike lists and dictionaries, sets do not yet support literal syntax.
 ```mojo
 from collections import Set
 
-i_like = Set("sushi", "ice cream", "tacos", "pho")
-you_like = Set("burgers", "tacos", "salad", "ice cream")
+i_like = {String("sushi"), "ice cream", "tacos", "pho"}
+you_like = {String("burgers"), "tacos", "salad", "ice cream"}
 we_like = i_like.intersection(you_like)
 
 print("We both like:")
