@@ -94,11 +94,9 @@ async def lifespan(
     try:
         async with AsyncExitStack() as exit_stack:
             if settings.experimental_enable_kvcache_agent:
-                kvcache_agent_queue = await exit_stack.enter_async_context(
+                await exit_stack.enter_async_context(
                     start_kvcache_agent(settings)
                 )
-            else:
-                kvcache_agent_queue = None
 
             # start telemetry worker and configure Metrics to use it
             metric_client = await exit_stack.enter_async_context(
@@ -113,7 +111,6 @@ async def lifespan(
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
-                    kvcache_agent_queue,
                 )
             )
 

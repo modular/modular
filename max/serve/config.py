@@ -16,12 +16,11 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
 import socket
-import tempfile
-import uuid
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -59,10 +58,6 @@ class MetricRecordingMethod(Enum):
     ASYNCIO = "ASYNCIO"
     # Send metric observations to a separate process for recording
     PROCESS = "PROCESS"
-
-
-def generate_zmq_ipc_endpoint() -> str:
-    return f"ipc://{tempfile.gettempdir()}/{uuid.uuid4()}"
 
 
 class Settings(BaseSettings):
@@ -234,21 +229,27 @@ class Settings(BaseSettings):
     )
 
     request_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_REQUEST_ZMQ_ENDPOINT",
     )
 
     response_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Response ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_RESPONSE_ZMQ_ENDPOINT",
     )
 
     cancel_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Cancel ZMQ Socket for communication betwee the API and Model Worker(s)",
         alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
+    )
+
+    kv_cache_events_zmq_endpoint: str = Field(
+        default_factory=generate_zmq_ipc_path,
+        description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
+        alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
     prefill_zmq_endpoint: Optional[str] = Field(
