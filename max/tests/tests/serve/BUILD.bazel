@@ -6,6 +6,41 @@ modular_py_test(
         [
             "*.py",
             "pipelines/*.py",
+        ],
+    ),
+    data = [
+        "//SDK/lib/API/python/tests/serve/testdata",
+    ],
+    env = {
+        "MAX_SERVE_DISABLE_TELEMETRY": "True",
+        "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
+    },
+    deps = [
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/pipelines",
+        "//SDK/lib/API/python/max/serve/router",
+        "//SDK/lib/API/python/max/serve/scheduler",
+        "//SDK/lib/API/python/max/serve/schemas",
+        "//SDK/lib/API/python/max/serve/telemetry",
+        requirement("async-asgi-testclient"),
+        requirement("fastapi"),
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("opentelemetry-sdk"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-grpc"),
+        requirement("sse-starlette"),
+        requirement("sseclient-py"),
+        requirement("transformers"),
+        requirement("pyzmq"),
+    ],
+)
+
+modular_py_test(
+    name = "scheduler_tests",
+    srcs = glob(
+        [
             "scheduler/*.py",
         ],
     ),
@@ -18,6 +53,8 @@ modular_py_test(
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
         "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
     },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/serve",
