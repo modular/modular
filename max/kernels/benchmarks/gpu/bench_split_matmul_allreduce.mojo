@@ -47,6 +47,7 @@ fn _get_run_name[
     ngpus: Int,
     partition_dim: Int,
     num_partitions: Int,
+    overlap_with_dpl: Bool,
 ](m: ValOrDim, n: ValOrDim, k: ValOrDim,) -> String:
     var vendor_str = "matmul_allreduce"
     var type_str = String("(", type, ") : ")
@@ -67,6 +68,7 @@ fn _get_run_name[
     var partition_dim_str = String(
         "/partition_dim=", partition_dim
     ) if num_partitions > 1 else String()
+    var overlap_str = String("/overlap") if overlap_with_dpl else String()
     return String(
         vendor_str,
         type_str,
@@ -78,6 +80,7 @@ fn _get_run_name[
         ngpus_str,
         num_partitions_str,
         partition_dim_str,
+        overlap_str,
     )
 
 
@@ -86,6 +89,7 @@ fn bench_matmul_all_reduce[
     ngpus: Int,
     partition_dim: Int,
     num_partitions: Int,
+    overlap_with_dpl: Bool,
 ](
     mut b: Bench,
     list_of_ctx: List[DeviceContext],
@@ -223,6 +227,7 @@ fn bench_matmul_all_reduce[
                 ngpus=ngpus,
                 partition_dim=partition_dim,
                 num_partitions=num_partitions,
+                overlap_with_dpl=overlap_with_dpl,
                 outputs_lambda=outputs_lambda,
             ](As, Bs, Cs, out_bufs, rank_sigs, list_of_ctx)
 
@@ -235,6 +240,7 @@ fn bench_matmul_all_reduce[
                 ngpus,
                 partition_dim,
                 num_partitions,
+                overlap_with_dpl,
             ](m, n, k)
         ),
         ThroughputMeasure(
@@ -259,6 +265,7 @@ fn main() raises:
     alias num_gpus = env_get_int["NUM_GPUS", 4]()
     alias partition_dim = env_get_int["DIM", 1]()
     alias num_partitions = env_get_int["PARTITIONS", 1]()
+    alias overlap_with_dpl = env_get_bool["OVERLAP", False]()
 
     var m = Bench()
 
@@ -275,6 +282,7 @@ fn main() raises:
         ngpus=num_gpus,
         partition_dim=partition_dim,
         num_partitions=num_partitions,
+        overlap_with_dpl=overlap_with_dpl,
     ](
         m,
         ctx,

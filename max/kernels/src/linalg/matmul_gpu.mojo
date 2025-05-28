@@ -38,6 +38,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
+from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, DEFAULT_GPU, H100
@@ -324,6 +325,7 @@ fn _matmul_gpu[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
     _trace_description: StaticString = "",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -441,6 +443,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=NUM_PIPELINE_STAGES,
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=False,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -484,6 +487,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=8,
                     num_consumer=1,
                     partitioned_multicast=True,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -513,6 +517,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=6,
                     num_consumer=2,
                     partitioned_multicast=True,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -542,6 +547,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=6,
                     num_consumer=2,
                     partitioned_multicast=True,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -576,6 +582,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=6,
                     num_consumer=2,
                     partitioned_multicast=False,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -723,6 +730,7 @@ fn _matmul_gpu[
                             block_m, block_n
                         ](),
                         num_k_partitions=num_k_partitions,
+                        pdl_level=pdl_level,
                     )
                     multistage_gemm[
                         transpose_b=transpose_b,
@@ -799,6 +807,7 @@ fn _matmul_gpu[
                         num_pipeline_stages=4,
                         num_consumer=2,
                         partitioned_multicast=False,
+                        pdl_level=pdl_level,
                     )
                     warp_specialize_gemm_with_multicasting[
                         transpose_b=transpose_b,
@@ -883,6 +892,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=8,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -915,6 +925,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -947,6 +958,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -984,6 +996,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1016,6 +1029,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1053,6 +1067,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1085,6 +1100,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1122,6 +1138,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1154,6 +1171,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1190,6 +1208,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=1,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1220,6 +1239,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,

@@ -30,6 +30,7 @@ params:
   NUM_GPUS: 4
   PARTITIONS: 4
   DIM: [0, 1]
+  OVERLAP: [False, True]
 
 # Second Matmul + AllReduce (MLP output)
 
@@ -45,3 +46,4 @@ params:
   NUM_GPUS: 4
   PARTITIONS: 4
   DIM: [0, 1]
+  OVERLAP: [False, True]

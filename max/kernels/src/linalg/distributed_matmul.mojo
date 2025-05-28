@@ -24,6 +24,7 @@ from memory import UnsafePointer
 from linalg.matmul_gpu import _matmul_gpu
 from sys import sizeof
 from utils import IndexList, StaticTuple
+from gpu.grid_controls import PDLLevel
 
 
 @parameter
@@ -83,6 +84,7 @@ fn _matmul_allreduce_split_m[
     b_static_shape: DimList,
     c_static_shape: DimList,
     out_static_shape: DimList,
+    overlap_with_dpl: Bool = True,
 ](
     a_buffers: InlineArray[
         NDBuffer[type, 2, MutableAnyOrigin, a_static_shape], ngpus
@@ -130,6 +132,7 @@ fn _matmul_allreduce_split_m[
     # Overlap matmul with previous partition's allreduce
     @parameter
     for stage in range(num_partitions):
+        alias pdl_matmul = PDLLevel.OVERLAP_AT_END if stage == 0 else PDLLevel.NO_WAIT_OVERLAP_AT_END
 
         @parameter
         for i in range(ngpus):
@@ -151,9 +154,11 @@ fn _matmul_allreduce_split_m[
                 output_buffers[i].data + stage * length,
                 DimList(m_part, n),
             )
-            _matmul_gpu[use_tensor_core=True, transpose_b=True](
-                C_parts[i], A_parts[i], b_buffers[i], ctxs[i]
-            )
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=True,
+                pdl_level = pdl_matmul if overlap_with_dpl else PDLLevel(),
+            ](C_parts[i], A_parts[i], b_buffers[i], ctxs[i])
 
         @always_inline
         @parameter
@@ -176,7 +181,11 @@ fn _matmul_allreduce_split_m[
                 global_coords, val
             )
 
-        allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda_wrapper](
+        allreduce[
+            ngpus=ngpus,
+            outputs_lambda=outputs_lambda_wrapper,
+            pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
+        ](
             rebind[InlineArray[NDBuffer[type, 2, MutableAnyOrigin], ngpus]](
                 C_parts
             ),
@@ -198,6 +207,7 @@ fn _matmul_allreduce_split_n[
     b_static_shape: DimList,
     c_static_shape: DimList,
     out_static_shape: DimList,
+    overlap_with_dpl: Bool = True,
 ](
     a_buffers: InlineArray[
         NDBuffer[type, 2, MutableAnyOrigin, a_static_shape], ngpus
@@ -248,6 +258,7 @@ fn _matmul_allreduce_split_n[
     # Overlap matmul with previous partition's allreduce
     @parameter
     for stage in range(num_partitions):
+        alias pdl_matmul = PDLLevel.OVERLAP_AT_END if stage == 0 else PDLLevel.NO_WAIT_OVERLAP_AT_END
 
         @parameter
         for i in range(ngpus):
@@ -269,9 +280,11 @@ fn _matmul_allreduce_split_n[
                 output_buffers[i].data + stage * length,
                 DimList(m, n_part),
             )
-            _matmul_gpu[use_tensor_core=True, transpose_b=True](
-                C_parts[i], a_buffers[i], B_parts[i], ctxs[i]
-            )
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=True,
+                pdl_level = pdl_matmul if overlap_with_dpl else PDLLevel(),
+            ](C_parts[i], a_buffers[i], B_parts[i], ctxs[i])
 
         @always_inline
         @parameter
@@ -294,7 +307,11 @@ fn _matmul_allreduce_split_n[
                 global_coords, val
             )
 
-        allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda_wrapper](
+        allreduce[
+            ngpus=ngpus,
+            outputs_lambda=outputs_lambda_wrapper,
+            pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
+        ](
             rebind[InlineArray[NDBuffer[type, 2, MutableAnyOrigin], ngpus]](
                 C_parts
             ),
@@ -317,6 +334,7 @@ fn matmul_allreduce[
     b_static_shape: DimList,
     c_static_shape: DimList,
     out_static_shape: DimList,
+    overlap_with_dpl: Bool = True,
 ](
     a_buffers: InlineArray[
         NDBuffer[type, 2, MutableAnyOrigin, a_static_shape], ngpus
@@ -355,10 +373,12 @@ fn matmul_allreduce[
             ngpus=ngpus,
             num_partitions=num_partitions,
             outputs_lambda=outputs_lambda,
+            overlap_with_dpl=overlap_with_dpl,
         ](a_buffers, b_buffers, c_temp_buffers, output_buffers, rank_sigs, ctxs)
     else:
         _matmul_allreduce_split_n[
             ngpus=ngpus,
             num_partitions=num_partitions,
             outputs_lambda=outputs_lambda,
+            overlap_with_dpl=overlap_with_dpl,
         ](a_buffers, b_buffers, c_temp_buffers, output_buffers, rank_sigs, ctxs)
