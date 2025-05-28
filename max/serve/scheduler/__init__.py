@@ -25,8 +25,8 @@ from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 from .audio_generation_scheduler import (
-    AudioGenerationConfig,
     AudioGenerationScheduler,
+    AudioGenerationSchedulerConfig,
 )
 from .base import Scheduler
 from .config import TokenGeneratorSchedulerConfig
@@ -45,7 +45,7 @@ __all__ = [
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
     "AudioGenerationScheduler",
-    "AudioGenerationConfig",
+    "AudioGenerationSchedulerConfig",
 ]
 
 
@@ -69,10 +69,7 @@ def load_scheduler(
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
             zmq_ctx=zmq_ctx,
         )
-    elif pipeline.__class__.__name__ in (
-        "TTSPipeline",  # TODO: Remove this.
-        "AudioGeneratorPipeline",
-    ):
+    elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert isinstance(pipeline, AudioGenerator)
         paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
         assert isinstance(paged_manager, PagedKVCacheManager)
@@ -87,11 +84,15 @@ def load_scheduler(
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_in_flight_batching=config.enable_in_flight_batching,
         )
+        if config.audio_generator_scheduler_config is not None:
+            audio_generation_config = config.audio_generator_scheduler_config
+        else:
+            audio_generation_config = AudioGenerationSchedulerConfig()
 
         return AudioGenerationScheduler(
             process_control=pc,
             scheduler_config=token_gen_config,
-            audio_generation_config=AudioGenerationConfig(),
+            audio_generation_config=audio_generation_config,
             pipeline=pipeline,
             request_zmq_endpoint=settings.request_zmq_endpoint,
             response_zmq_endpoint=settings.response_zmq_endpoint,

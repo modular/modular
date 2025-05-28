@@ -46,7 +46,7 @@ logger = logging.getLogger("max.serve")
 
 
 @dataclass
-class AudioGenerationConfig:
+class AudioGenerationSchedulerConfig:
     """Audio Generation Scheduler configuration."""
 
     # This is set to something very big as there are gaps in audio between
@@ -68,7 +68,7 @@ class AudioGenerationScheduler(Scheduler):
         self,
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
-        audio_generation_config: AudioGenerationConfig,
+        audio_generation_config: AudioGenerationSchedulerConfig,
         pipeline: AudioGenerator,
         *,
         request_zmq_endpoint: str,
