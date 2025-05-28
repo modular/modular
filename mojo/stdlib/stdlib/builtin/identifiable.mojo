@@ -38,16 +38,3 @@ trait Identifiable:
             True if `self` is not `rhs`.
         """
         ...
-
-
-# TODO(MSTDL-1580): Replace with compiler-provided type ID.
-trait TypeIdentifiable:
-    """Denotes a type that can be uniquely identified.
-
-    This trait is intended to be usable for implementing "type map" based
-    functionality.
-
-    This type will eventually be replaced with a generic compiler interface."""
-
-    alias TYPE_ID: StaticString
-    """The unique identifier."""

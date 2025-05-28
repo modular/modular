@@ -61,7 +61,8 @@ class TestMojoPythonInterop(unittest.TestCase):
         self.assertEqual(
             err.exception.args,
             (
-                "No Python type object registered for Mojo type with id: mojo_module.NonBoundType",
+                "No Python type object registered for Mojo type with name: "
+                "mojo_module::NonBoundType",
             ),
         )
 
@@ -182,8 +183,8 @@ class TestMojoPythonInterop(unittest.TestCase):
             cm.exception.args,
             (
                 (
-                    "TypeError: incr_int() expected Mojo 'stdlib.Int' type argument,"
-                    " got 'str'"
+                    "TypeError: incr_int() expected Mojo "
+                    "'stdlib::builtin::int::Int' type argument, got 'str'"
                 ),
             ),
         )
@@ -210,8 +211,8 @@ class TestMojoPythonInterop(unittest.TestCase):
             (
                 (
                     "TypeError: add_to_int() expected argument at position"
-                    " 1 to be instance of (or convertible to) Mojo 'stdlib.Int';"
-                    " got 'str'."
+                    " 1 to be instance of (or convertible to) Mojo "
+                    "'stdlib::builtin::int::Int'; got 'str'."
                     " (Note: attempted conversion failed due to: invalid"
                     " literal for int() with base 10: 'foo')"
                 ),

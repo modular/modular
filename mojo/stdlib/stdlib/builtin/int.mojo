@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from builtin.identifiable import TypeIdentifiable
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -229,13 +228,9 @@ struct Int(
     Roundable,
     Stringable,
     Writable,
-    TypeIdentifiable,
     ConvertibleFromPython,
 ):
     """This type represents an integer value."""
-
-    # TODO(MSTDL-1580): Replace with compiler-provided type ID.
-    alias TYPE_ID = "stdlib.Int"
 
     alias device_type: AnyTrivialRegType = Self
     """Int is remapped to the same type when passed to accelerator devices."""

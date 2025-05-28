@@ -23,11 +23,11 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import abort
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
+from compile.reflection import get_type_name
 
 # This apparently redundant import is needed so PythonBindingsGen.cpp can find
 # the StringLiteral declaration.
 from builtin.string_literal import StringLiteral
-from builtin.identifiable import TypeIdentifiable
 from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
@@ -378,9 +378,7 @@ struct PythonObject(
         self = PythonObject(from_owned_ptr=from_borrowed_ptr)
 
     @always_inline
-    fn __init__[
-        T: Movable & TypeIdentifiable
-    ](out self, *, owned alloc: T) raises:
+    fn __init__[T: Movable](out self, *, owned alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -1608,7 +1606,7 @@ struct PythonObject(
         return result
 
     fn downcast_value_ptr[
-        T: TypeIdentifiable
+        T: AnyType
     ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[T]:
         """Get a pointer to the expected contained Mojo value of type `T`.
 
@@ -1644,7 +1642,7 @@ struct PythonObject(
                             " got '{}'"
                         ),
                         func[],
-                        T.TYPE_ID,
+                        get_type_name[T](),
                         _get_type_name(self),
                     )
                 )
@@ -1652,7 +1650,7 @@ struct PythonObject(
                 raise Error(
                     String.format(
                         "TypeError: expected Mojo '{}' type value, got '{}'",
-                        T.TYPE_ID,
+                        get_type_name[T](),
                         _get_type_name(self),
                     )
                 )
@@ -1661,7 +1659,7 @@ struct PythonObject(
         return opt.unsafe_take()
 
     fn _try_downcast_value[
-        T: TypeIdentifiable,
+        T: AnyType
     ](owned self) raises -> Optional[UnsafePointer[T]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 

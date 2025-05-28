@@ -14,7 +14,6 @@
 # RUN: %mojo %s
 
 
-from builtin.identifiable import TypeIdentifiable
 from python import Python, PythonObject
 from python.bindings import PythonTypeBuilder, PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
@@ -631,11 +630,9 @@ def test_contains_dunder():
 
 
 @fieldwise_init
-struct Person(Movable, Defaultable, TypeIdentifiable, Representable):
+struct Person(Movable, Defaultable, Representable):
     var name: String
     var age: Int
-
-    alias TYPE_ID = "test.Person"
 
     fn __init__(out self):
         self.name = ""

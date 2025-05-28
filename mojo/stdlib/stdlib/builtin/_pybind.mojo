@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.identifiable import TypeIdentifiable
-
 from sys import alignof, sizeof
+from compile.reflection import get_type_name
 
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
@@ -64,7 +63,7 @@ fn fail_initialization(owned err: Error) -> PythonObject:
 
 
 fn gen_pytype_wrapper[
-    T: Movable & Defaultable & Representable & TypeIdentifiable,
+    T: Movable & Defaultable & Representable,
     name: StaticString,
 ](module: PythonObject) raises:
     # TODO(MOCO-1301): Add support for member method generation.
@@ -85,7 +84,7 @@ fn add_wrapper_to_module[
 
 
 fn check_and_get_arg[
-    T: TypeIdentifiable
+    T: AnyType
 ](
     func_name: StaticString,
     py_args: TypedPythonObject["Tuple"],
@@ -101,7 +100,7 @@ fn check_and_get_arg[
 #   function.
 @always_inline
 fn check_and_get_or_convert_arg[
-    T: ConvertibleFromPython & TypeIdentifiable
+    T: ConvertibleFromPython
 ](
     func_name: StaticString,
     py_args: TypedPythonObject["Tuple"],
@@ -126,7 +125,7 @@ fn check_and_get_or_convert_arg[
 
 
 fn _try_convert_arg[
-    T: ConvertibleFromPython & TypeIdentifiable
+    T: ConvertibleFromPython
 ](
     func_name: StringSlice,
     py_args: TypedPythonObject["Tuple"],
@@ -145,7 +144,7 @@ fn _try_convert_arg[
                 ),
                 func_name,
                 argidx,
-                T.TYPE_ID,
+                get_type_name[T](),
                 _get_type_name(py_args[argidx]),
                 convert_err,
             )
