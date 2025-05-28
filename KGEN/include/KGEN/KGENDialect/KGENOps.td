@@ -2171,7 +2171,7 @@ def KGEN_DeferredOp: KGENOp<"deferred"> {
 
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    $opName (`(` $operands^ `:` type($operands) `)`)? $opAttrs attr-dict `:` type($results)
+    $opName (`(` $operands^ `:` type($operands) `)`)? $opAttrs attr-dict (`:` type($results)^)?
   }];
 }
 
