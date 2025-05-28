@@ -13,11 +13,13 @@
 
 import logging
 import queue
+import tempfile
+import uuid
 from dataclasses import dataclass
 from typing import Optional
 
 import zmq
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import KVTransferEngine, PagedKVCacheManager
 from max.pipelines.core import InputContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
@@ -58,6 +60,7 @@ class PrefillScheduler(Scheduler):
         zmq_ctx: zmq.Context,
         prefill_zmq_endpoint: str,
         decode_zmq_endpoint: str,
+        agent_zmq_endpoint: str = f"ipc://{tempfile.gettempdir()}/transfer_engine",
     ):
         self.pc = process_control
         self.pipeline = pipeline
@@ -82,6 +85,43 @@ class PrefillScheduler(Scheduler):
         self.preempted_requests: queue.Queue[tuple[str, InputContext]] = (
             queue.Queue()
         )
+
+        # Create Transfer Engine
+        self.transfer_engine = KVTransferEngine(
+            name=f"prefill_agent_{uuid.uuid4()}",
+            listen_port=8047,
+            tensor=self.paged_manager.device_tensors[0],
+            total_num_pages=self.paged_manager.total_num_pages,
+        )
+
+        self.register_remote_agent(agent_zmq_endpoint, zmq_ctx)
+
+    def register_remote_agent(
+        self, agent_zmq_endpoint: str, zmq_ctx: zmq.Context
+    ) -> None:
+        """Registers and connects the transfer engine with a remote decode agent.
+
+        This function establishes a ZMQ socket connection with a remote decode agent,
+        exchanges transfer engine metadata between the two agents, and sets up the
+        connection between them. The metadata exchange allows the agents to communicate
+        and transfer data between each other.
+
+        Args:
+            zmq_ctx: The ZMQ context used to create the socket connection.
+        """
+        # Open up the socket.
+        logger.debug("connecting to transfer engine socket.")
+        socket = zmq_ctx.socket(zmq.REQ)
+        socket.connect(agent_zmq_endpoint)
+
+        # Send Transfer Engine Metadata
+        logger.debug("sending prefill transfer engine metadata.")
+        socket.send_pyobj(self.transfer_engine.metadata)
+
+        # Wait for Partner Transfer Engine Metadata
+        logger.debug("waiting for decode engine metadata.")
+        remote_engine_message = socket.recv_pyobj()
+        self.transfer_engine.connect(remote_engine_message)
 
     def push_to_decode_socket(
         self, request_id: str, data: InputContext

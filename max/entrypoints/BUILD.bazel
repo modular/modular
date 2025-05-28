@@ -54,6 +54,7 @@ modular_py_binary(
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "DAOLABS_FLASH_ATTENTION_LIBRARY": "$(location @daolabs_flash_attn)",
+        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
     },
     deps = [
         "//SDK/lib/API/python/max/entrypoints",

@@ -3,8 +3,10 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 modular_py_library(
     name = "scheduler",
     srcs = glob(["*.py"]),
+    data = ["//AsyncRT:plugin_ucx"],
     imports = ["../../.."],
     deps = [
+        "//SDK/lib/API/python/max:_core",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/pipelines/lib",
