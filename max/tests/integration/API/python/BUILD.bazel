@@ -90,6 +90,7 @@ modular_py_test(
         # TODO(MAXPLAT-85): mypy doesn't inherit requirements
         requirement("click"),
         requirement("gguf"),
+        requirement("pytest-asyncio"),
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
