@@ -29,9 +29,13 @@ def get_unique_port():
 
 
 def transfer_routine_sender(
-    engine: KVTransferEngine, remote: KVTransferEngineMetadata, queue: Queue
+    engine: KVTransferEngine,
+    remote: KVTransferEngineMetadata,
+    queue: Queue,
+    src_idxs: list[int],
+    dst_idxs: list[int],
 ):
-    xfer_req = engine.initiate_send_xfer(remote, src_idx=2, dst_idx=1)
+    xfer_req = engine.initiate_send_xfer(remote, src_idxs, dst_idxs)
     queue.put(xfer_req)
     engine.send_xfer_sync(xfer_req)
 
@@ -65,9 +69,11 @@ def test_send_recv_basic(device: Device):
     engine_2.connect(engine_1.metadata)
 
     queue: Queue[XferReqData] = Queue()
+    src_idxs = [2, 2]
+    dst_idxs = [1, 0]
     thread_1 = Thread(
         target=transfer_routine_sender,
-        args=(engine_1, engine_2.metadata, queue),
+        args=(engine_1, engine_2.metadata, queue, src_idxs, dst_idxs),
     )
     thread_2 = Thread(target=transfer_routine_receiver, args=(engine_2, queue))
 
@@ -83,7 +89,7 @@ def test_send_recv_basic(device: Device):
         [10, 11, 12, 13, 14, 15, 16, 17, 18],
     )
     expected_blocks_2 = np.array(
-        [80, 81, 82, 16, 17, 18, 86, 87, 88],
+        [16, 17, 18, 16, 17, 18, 86, 87, 88],
     )
     assert np.array_equal(blocks_1.to_numpy(), expected_blocks_1)
     assert np.array_equal(blocks_2.to_numpy(), expected_blocks_2)
@@ -149,22 +155,36 @@ def test_initiate_send_xfer():
     engine_2.connect(engine_1.metadata)
 
     # ok
-    _ = engine_1.initiate_send_xfer(engine_2.metadata, src_idx=2, dst_idx=1)
+    _ = engine_1.initiate_send_xfer(
+        engine_2.metadata, src_idxs=[2, 1], dst_idxs=[1, 0]
+    )
 
     # oob src_idx
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_xfer(
-            engine_2.metadata, src_idx=100, dst_idx=1
+            engine_2.metadata, src_idxs=[100], dst_idxs=[1]
         )
 
     # oob dst_idx
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_xfer(
-            engine_2.metadata, src_idx=2, dst_idx=100
+            engine_2.metadata, src_idxs=[2, 0], dst_idxs=[100, 0]
         )
 
     # oob dst_idx
     with pytest.raises(ValueError):
         _ = engine_1.initiate_send_xfer(
-            engine_2.metadata, src_idx=2, dst_idx=-1
+            engine_2.metadata, src_idxs=[2], dst_idxs=[-1]
+        )
+
+    # mismatch lengths
+    with pytest.raises(ValueError):
+        _ = engine_1.initiate_send_xfer(
+            engine_2.metadata, src_idxs=[2], dst_idxs=[0, 1]
+        )
+
+    # write to same dst page
+    with pytest.raises(ValueError):
+        _ = engine_1.initiate_send_xfer(
+            engine_2.metadata, src_idxs=[2, 1], dst_idxs=[0, 0]
         )
