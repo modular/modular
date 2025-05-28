@@ -13,6 +13,7 @@
 // RUN: mojo test --co --diagnostic-format json "%S/inputs/doc.mojo@doc_fn(\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-JSON
 // RUN: mojo test --filter backtick --co %S/inputs/ | FileCheck %s --check-prefix=CHECK-FILTER
 // RUN: mojo test --co %S/inputs/magic-project | FileCheck %s --check-prefix=CHECK-MAGIC
+// RUN: mojo test --co %S/inputs/pixi-project | FileCheck %s --check-prefix=CHECK-PIXI
 
 // RUN: not mojo test --co "%S/inputs/doc.mojo@doc_fn.::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-0
 // RUN: not mojo test --co "%S/inputs/doc.mojo@.doc_fn::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-1
@@ -81,3 +82,6 @@
 
 // CHECK-MAGIC: inputs/magic-project/test_unit.mojo::test_unit_fail()>
 // CHECK-MAGIC: inputs/magic-project/test_unit.mojo::test_unit_pass()>
+
+// CHECK-PIXI: inputs/pixi-project/test_unit.mojo::test_unit_fail()>
+// CHECK-PIXI: inputs/pixi-project/test_unit.mojo::test_unit_pass()>

@@ -698,7 +698,12 @@ struct Test::TestDiscovery {
         // There are self-tests shipped with the Mojo SDK. If this is a Magic
         // project, we do not want to collect those tests as part of the user's
         // regular workflow.
-        if (entry.path().filename() == ".magic" &&
+
+        // List of directory names to skip during test discovery.
+        static const std::unordered_set<std::string> kSkipDirs = {".magic",
+                                                                  ".pixi"};
+        const std::string dirName = entry.path().filename().string();
+        if (kSkipDirs.count(dirName) &&
             std::filesystem::exists(path / "mojoproject.toml"))
           continue;
 
