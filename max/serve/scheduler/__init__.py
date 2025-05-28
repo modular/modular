@@ -22,6 +22,7 @@ from max.pipelines.core import (
 from max.pipelines.lib import PipelineRole
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 from .audio_generation_scheduler import (
     AudioGenerationConfig,
@@ -36,12 +37,9 @@ from .text_generation_scheduler import (
     TokenGenerationSchedulerConfig,
     load_text_generation_scheduler,
 )
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 __all__ = [
     "Scheduler",
-    "ZmqPushSocket",
-    "ZmqPullSocket",
     "load_scheduler",
     "TokenGeneratorSchedulerConfig",
     "EmbeddingsScheduler",

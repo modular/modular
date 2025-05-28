@@ -34,7 +34,8 @@ logger = logging.getLogger("max.serve")
 T = TypeVar("T")
 
 
-def _generate_zmq_ipc_path() -> str:
+def generate_zmq_ipc_path() -> str:
+    """Generate a unique ZMQ IPC path."""
     base_rpc_path = tempfile.gettempdir()
     return f"ipc://{base_rpc_path}/{uuid.uuid4()}"
 
@@ -87,7 +88,7 @@ class ZmqPushSocket(Generic[T]):
         self.zmq_endpoint = (
             zmq_endpoint
             if zmq_endpoint is not None
-            else _generate_zmq_ipc_path()
+            else generate_zmq_ipc_path()
         )
         self.push_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.PUSH
@@ -130,7 +131,7 @@ class ZmqPullSocket(Generic[T]):
         self.zmq_endpoint = (
             zmq_endpoint
             if zmq_endpoint is not None
-            else _generate_zmq_ipc_path()
+            else generate_zmq_ipc_path()
         )
         self.pull_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.PULL

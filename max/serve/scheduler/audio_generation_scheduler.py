@@ -30,6 +30,7 @@ from max.pipelines.core import (
 )
 from max.profiler import Trace, traced
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -40,7 +41,6 @@ from .text_generation_scheduler import (
     GenericSchedulerOutput,
     TokenGenerationSchedulerConfig,
 )
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 

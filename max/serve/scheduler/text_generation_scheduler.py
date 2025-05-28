@@ -30,12 +30,12 @@ from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Trace, traced
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
 from .queues import STOP_STREAM
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
