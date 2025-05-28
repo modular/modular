@@ -102,7 +102,6 @@ def load_scheduler(
             paged_manager=paged_manager,
         )
     elif config.pipeline_role == PipelineRole.PrefillAndDecode:
-        print("creating a text generation scheduler with paged manager")
         assert isinstance(pipeline, TokenGenerator)
         return load_text_generation_scheduler(
             zmq_ctx,
