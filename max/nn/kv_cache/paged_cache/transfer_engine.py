@@ -141,7 +141,11 @@ class KVTransferEngine:
         )
 
         # Create UCX backend
-        assert "ucx" in self.agent.get_available_plugins()
+        if "ucx" not in self.agent.get_available_plugins():
+            raise RuntimeError(
+                "UCX not currently available, please ensure it is supported by your system."
+            )
+
         ucx_params = self.agent.get_plugin_params("ucx")
         self.ucx_backend = self.agent.create_backend(
             type="ucx", init_params=ucx_params[0]

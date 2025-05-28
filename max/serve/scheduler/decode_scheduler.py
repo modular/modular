@@ -144,44 +144,6 @@ class DecodeScheduler(Scheduler):
         socket.send_pyobj(self.transfer_engine.metadata)
         logger.debug("agent and remote engine registered!")
 
-        # Create Transfer Engine
-        self.transfer_engine = KVTransferEngine(
-            name=f"decode_agent_{uuid.uuid4()}",
-            listen_port=8057,
-            tensor=self.paged_manager.device_tensors[0],
-            total_num_pages=self.paged_manager.total_num_pages,
-        )
-
-        self.register_remote_agent(agent_zmq_endpoint, zmq_ctx)
-
-    def register_remote_agent(
-        self, agent_zmq_endpoint: str, zmq_ctx: zmq.Context
-    ) -> None:
-        """Registers and connects the transfer engine with a remote prefill agent.
-
-        This function establishes a ZMQ socket connection with a remote prefill agent,
-        exchanges transfer engine metadata between the two agents, and sets up the
-        connection between them. The metadata exchange allows the agents to communicate
-        and transfer data between each other.
-
-        Args:
-            zmq_ctx: The ZMQ context used to create the socket connection.
-        """
-        # Initialize Socket to send Transfer Engine Agent Metadata to peer.
-        logger.debug("connecting to transfer engine socket.")
-        socket = zmq_ctx.socket(zmq.REP)
-        socket.bind(agent_zmq_endpoint)
-
-        # Wait to Receive Transfer Engine Metadata.
-        logger.debug("waiting for prefill engine metadata.")
-        remote_engine_metadata = socket.recv_pyobj()
-        self.transfer_engine.connect(remote_engine_metadata)
-
-        # Send Transfer Engine Metadata.
-        logger.debug("sending decode engine metadata.")
-        socket.send_pyobj(self.transfer_engine.metadata)
-        logger.debug("agent and remote engine registered!")
-
     def pull_from_request_socket(self) -> tuple[str, InputContext]:
         """Pulls a request from the request socket.
 
