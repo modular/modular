@@ -26,7 +26,7 @@ from utils.index import Index
 
 
 def test_vendor_blas[
-    type: DType
+    type: DType, transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
@@ -50,16 +50,22 @@ def test_vendor_blas[
     ctx.enqueue_copy(b_device, b_host)
 
     var a = NDBuffer[type, 2](a_device._unsafe_ptr(), (M, K))
-    var b = NDBuffer[type, 2](b_device._unsafe_ptr(), (K, N))
+    var b = NDBuffer[type, 2](
+        b_device._unsafe_ptr(), (N, K) if transpose_b else (K, N)
+    )
     var c = NDBuffer[type, 2](c_device._unsafe_ptr(), (M, N))
     var c_ref = NDBuffer[type, 2](c_device_ref._unsafe_ptr(), (M, N))
 
-    vendor_blas.matmul(ctx, c, a, b, c_row_major=True)
+    vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 
     ctx.enqueue_copy(c_host, c_device)
 
     alias BLOCK_DIM = 16
-    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
+    ctx.enqueue_function[
+        matmul_kernel_naive[
+            type, type, type, BLOCK_DIM, transpose_b=transpose_b
+        ]
+    ](
         c_ref,
         a,
         b,
@@ -93,14 +99,27 @@ def test_vendor_blas[
     c_host_ref.free()
 
 
-def dispatch_test_vendor_blas(*, M: Int, N: Int, K: Int, ctx: DeviceContext):
-    test_vendor_blas[type = DType.bfloat16](M=M, N=N, K=K, ctx=ctx)
-    test_vendor_blas[type = DType.float32](M=M, N=N, K=K, ctx=ctx)
+def dispatch_test_vendor_blas[
+    transpose_b: Bool
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
+    test_vendor_blas[type = DType.bfloat16, transpose_b=transpose_b](
+        M=M, N=N, K=K, ctx=ctx
+    )
+    test_vendor_blas[type = DType.float32, transpose_b=transpose_b](
+        M=M, N=N, K=K, ctx=ctx
+    )
 
 
 def main():
     with DeviceContext() as ctx:
-        dispatch_test_vendor_blas(M=63, N=65, K=66, ctx=ctx)
-        dispatch_test_vendor_blas(M=7, N=6144, K=4096, ctx=ctx)
-        dispatch_test_vendor_blas(M=1024, N=1024, K=1024, ctx=ctx)
-        dispatch_test_vendor_blas(M=1, N=1024, K=1024, ctx=ctx)
+        dispatch_test_vendor_blas[transpose_b=True](M=550, N=2048, K=8, ctx=ctx)
+        dispatch_test_vendor_blas[transpose_b=False](M=63, N=65, K=66, ctx=ctx)
+        dispatch_test_vendor_blas[transpose_b=False](
+            M=7, N=6144, K=4096, ctx=ctx
+        )
+        dispatch_test_vendor_blas[transpose_b=False](
+            M=1024, N=1024, K=1024, ctx=ctx
+        )
+        dispatch_test_vendor_blas[transpose_b=False](
+            M=1, N=1024, K=1024, ctx=ctx
+        )
