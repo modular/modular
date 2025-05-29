@@ -933,7 +933,7 @@ struct UnsafePointer[
 
 
 @register_passable("trivial")
-struct _StridedRangeIterator:
+struct _StridedRangeIterator(_IntIter):
     var start: Int
     var end: Int
     var step: Int
