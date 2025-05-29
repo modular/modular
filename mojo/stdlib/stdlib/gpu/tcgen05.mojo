@@ -14,6 +14,8 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
+from os import abort
+
 from sys import _RegisterPackType, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
@@ -238,7 +240,7 @@ fn tcgen05_ld[
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
             ]
         ]()
-    else:
+    elif width == 64:
         return call_ld_intrinsic[
                 _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
@@ -250,6 +252,29 @@ fn tcgen05_ld[
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
             ]
         ]()
+    elif width == 128:
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+            ]
+        ]()
+    else:
+        constrained[False, "width must be a power of 2 in the range [1, 128]."]()
+        return abort[SIMD[type, width]]()
     # fmt: on
 
 

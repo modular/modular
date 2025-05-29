@@ -48,26 +48,6 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
-    name = "whisper",
-    srcs = ["whisper.py"],
-    create_test = False,
-    extra_data = [
-        ":kernels",
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "//PyTorch:TorchRuntimePlugins",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
-    extra_deps = [
-        "//SDK/lib/API/python/max/torch",
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("datasets"),
-        requirement("librosa"),
-    ],
-)
-
-custom_op_example_py_binary(
     name = "matrix_multiplication",
     srcs = ["matrix_multiplication.py"],
 )

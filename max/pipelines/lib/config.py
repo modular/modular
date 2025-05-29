@@ -526,12 +526,42 @@ class PipelineConfig(MAXConfig):
 
 @dataclass
 class AudioGenerationConfig(PipelineConfig):
+    # TODO: Make these flags more discoverable.
     audio_decoder: str = ""
     """The name of the audio decoder model architecture."""
+
     audio_prompt_speakers: str = ""
     """The path to the audio prompt speakers file."""
+
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
+    block_sizes: list[int] | None = None
+    """The block sizes to use for streaming.
+    If this is an int, then fixed-size blocks of the given size are used
+    If this is a list, then variable block sizes are used."""
+
+    buffer: int | None = None
+    """The number of previous speech tokens to pass to the audio decoder on
+    each generation step."""
+
+    block_causal: bool = False
+    """Whether prior buffered tokens should attend to tokens in the current block.
+    Has no effect if buffer is not set."""
+
+    prepend_prompt_speech_tokens: bool | None = None
+    """Whether the prompt speech tokens should be forwarded to the audio decoder.
+    If None (default), the prompt tokens are not forwarded.
+    If False, the prompt tokens are only forwarded on the first block.
+    If True, the prompt tokens are forwarded on all blocks.
+    """
+
+    prepend_prompt_speech_tokens_causal: bool = False
+    """Whether the prompt speech tokens should attend to tokens in the currently
+    generated audio block.
+    Has no effect if prepend_prompt_speech_tokens is False.
+    If False (default), the prompt tokens do not attend to the current block.
+    If True, the prompt tokens attend to the current block.
+    """
 
     def __init__(self, audio_config: dict[str, str], **kwargs: Any) -> None:
         PipelineConfig.__init__(self, **kwargs)
@@ -547,6 +577,53 @@ class AudioGenerationConfig(PipelineConfig):
         self.audio_decoder_weights = audio_config.pop(
             "audio_decoder_weights", ""
         )
+
+        # Configuration for audio generation streaming.
+        block_sizes = audio_config.pop("block_sizes", "")
+        if not block_sizes:
+            self.block_sizes = None
+        else:
+            self.block_sizes = [int(size) for size in block_sizes.split(",")]
+
+        buffer = audio_config.pop("buffer", None)
+        if buffer is None:
+            self.buffer = None
+        else:
+            self.buffer = int(buffer)
+
+        block_causal = audio_config.pop("block_causal", "")
+        if not block_causal or block_causal.lower() == "false":
+            self.block_causal = False
+        else:
+            self.block_causal = True
+
+        prepend_prompt_speech_tokens = audio_config.pop(
+            "prepend_prompt_speech_tokens", ""
+        )
+        if not prepend_prompt_speech_tokens:
+            self.prepend_prompt_speech_tokens = None
+        elif prepend_prompt_speech_tokens.lower() == "false":
+            self.prepend_prompt_speech_tokens = False
+        else:
+            self.prepend_prompt_speech_tokens = True
+
+        prepend_prompt_speech_tokens_causal = audio_config.pop(
+            "prepend_prompt_speech_tokens_causal", ""
+        )
+        if (
+            not prepend_prompt_speech_tokens_causal
+            or prepend_prompt_speech_tokens_causal.lower() == "false"
+        ):
+            self.prepend_prompt_speech_tokens_causal = False
+        else:
+            self.prepend_prompt_speech_tokens_causal = True
+
+        if self.block_causal:
+            raise NotImplementedError("Causal generation is not implemented")
+        if self.prepend_prompt_speech_tokens_causal:
+            raise NotImplementedError(
+                "Prepend prompt speech tokens causal is not implemented"
+            )
 
         if audio_config:
             raise ValueError(

@@ -28,8 +28,7 @@ import sentinel
 import zmq
 from max.pipelines.core import InputContext
 from max.serve.process_control import ProcessControl
-
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 

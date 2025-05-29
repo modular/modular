@@ -746,44 +746,107 @@ fn _matmul_gpu[
 
                 @parameter
                 if not transpose_b:
-                    kernel_helper[128, 128, num_pipeline_stages=2]()
+                    return kernel_helper[128, 128, num_pipeline_stages=2]()
                 elif env_get_bool["AUTOTUNING_MODE", False]():
                     alias block_m = env_get_int["TUNE_BM", 128]()
                     alias block_n = env_get_int["TUNE_BN", 128]()
                     alias num_k_partitions = env_get_int[
                         "TUNE_NUM_K_PARTITIONS", 1
                     ]()
-                    kernel_helper[
+                    return kernel_helper[
                         block_m, block_n, num_k_partitions=num_k_partitions
                     ]()
-                elif static_N >= 28672 and static_K >= 2048:
+
+                # mistral-small-24b auto-tuned shapes
+                @parameter
+                if static_N == 5120 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[192, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+                elif static_N == 6144 and static_K == 5120:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[192, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 192]()
+                elif static_N == 65536 and static_K == 5120:
+                    if m >= 8192:
+                        return kernel_helper[256, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+                elif static_N == 5120 and static_K == 32768:
+                    if m >= 8192:
+                        return kernel_helper[192, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+
+                # gemma-3-12b auto-tuned shapes
+                @parameter
+                if static_N == 3840 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[192, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 192]()
+                elif static_N == 3840 and static_K == 15360:
+                    if m >= 8192:
+                        return kernel_helper[256, 224]()
+                    elif m >= 7000:
+                        return kernel_helper[224, 224]()
+                    elif m >= 3500:
+                        return kernel_helper[224, 224]()
+                elif static_N == 8192 and static_K == 3840:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 256]()
+                elif static_N == 30720 and static_K == 3840:
+                    if m >= 8192:
+                        return kernel_helper[256, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+
+                # Default tune based on llama3
+                @parameter
+                if static_N >= 28672 and static_K >= 2048:
                     if m >= 1024:
-                        kernel_helper[224, 256]()
+                        return kernel_helper[224, 256]()
                     elif m >= 128:
-                        kernel_helper[128, 128]()
+                        return kernel_helper[128, 128]()
                     else:
-                        kernel_helper[64, 64]()
+                        return kernel_helper[64, 64]()
                 elif static_N >= 2048 and static_K >= 2048:
                     if m >= 4096:
-                        kernel_helper[224, 256]()
+                        return kernel_helper[224, 256]()
                     elif m >= 1024:
-                        kernel_helper[128, 128]()
+                        return kernel_helper[128, 128]()
                     elif m >= 512:
-                        kernel_helper[128, 128, num_k_partitions=2]()
+                        return kernel_helper[128, 128, num_k_partitions=2]()
                     elif static_K == 14336:
                         if m >= 128:
-                            kernel_helper[64, 64, num_k_partitions=4]()
+                            return kernel_helper[64, 64, num_k_partitions=4]()
                         elif m >= 64:
-                            kernel_helper[64, 64, num_k_partitions=8]()
+                            return kernel_helper[64, 64, num_k_partitions=8]()
                         else:
-                            kernel_helper[32, 64, num_k_partitions=4]()
+                            return kernel_helper[32, 64, num_k_partitions=4]()
                     elif m >= 64:
-                        kernel_helper[64, 64]()
+                        return kernel_helper[64, 64]()
                     else:
-                        kernel_helper[32, 64, num_k_partitions=4]()
-                else:
-                    kernel_helper[128, 128]()
-                return
+                        return kernel_helper[32, 64, num_k_partitions=4]()
+                return kernel_helper[128, 128]()
 
             @parameter
             if env_get_bool["AUTOTUNING_MODE", False]():

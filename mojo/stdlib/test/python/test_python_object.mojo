@@ -14,7 +14,6 @@
 # RUN: %mojo %s
 
 
-from builtin.identifiable import TypeIdentifiable
 from python import Python, PythonObject
 from python.bindings import PythonTypeBuilder, PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
@@ -412,7 +411,7 @@ fn test_dict() raises:
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
-    var tuples = List((123, PythonObject("food")), (42, PythonObject("42")))
+    var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
     dd = Python.dict(tuples)
     assert_equal(String(dd), "{123: 'food', 42: '42'}")
 
@@ -631,11 +630,9 @@ def test_contains_dunder():
 
 
 @fieldwise_init
-struct Person(Movable, Defaultable, TypeIdentifiable, Representable):
+struct Person(Movable, Defaultable, Representable):
     var name: String
     var age: Int
-
-    alias TYPE_ID = "test.Person"
 
     fn __init__(out self):
         self.name = ""

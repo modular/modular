@@ -40,7 +40,6 @@ from python.bindings import (
     Typed_initproc,
     Typed_newfunc,
 )
-from builtin.identifiable import TypeIdentifiable
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings

@@ -42,6 +42,12 @@ algorithms to be selectively replaced with faster Mojo alternatives.
 These examples illustrate how that can work, including using Mojo functions
 running on a compatible GPU.
 
+## [PyTorch custom operations in Mojo](pytorch_custom_ops/)
+
+PyTorch custom operations can be defined in Mojo to try out new algorithms on
+GPUs. These examples show how to extend PyTorch layers using custom operations
+written in Mojo.
+
 ## [PyTorch inference on MAX](inference/)
 
 MAX has the power to accelerate existing PyTorch models directly, and
@@ -52,3 +58,14 @@ models and how to run them even faster via MAX.
 
 Jupyter notebooks that showcase PyTorch models being accelerated
 through MAX.
+
+## [Build custom neural network modules with MAX Python API](python_modules/)
+
+The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
+PyTorch-like interface for building neural network components that compile to
+highly optimized graphs. These examples demonstrate how to create reusable,
+modular components using MAX's `nn.Module` class.
+
+The examples include custom layers, blocks, and architectural patterns that
+showcase the flexibility of MAX's Python API for deep learning development, from
+simple MLP blocks to more complex neural network architectures.

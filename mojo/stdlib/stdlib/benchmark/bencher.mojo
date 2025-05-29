@@ -690,7 +690,7 @@ struct Bench(Writable, Stringable):
         mut self,
         bench_id: BenchId,
         input: T,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function with input args of type AnyTrivialRegType.
 
@@ -747,7 +747,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -780,7 +780,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -809,7 +809,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -850,7 +850,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -911,7 +911,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function.
 

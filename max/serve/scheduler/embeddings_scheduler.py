@@ -20,9 +20,9 @@ import zmq
 from max.pipelines.core import EmbeddingsGenerator, InputContext
 from max.profiler import traced
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import Scheduler
 from max.serve.scheduler.queues import STOP_STREAM
-from max.serve.scheduler.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 

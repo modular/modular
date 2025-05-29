@@ -13,7 +13,6 @@
 
 from os import abort
 
-from builtin.identifiable import TypeIdentifiable
 from builtin._pybind import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
@@ -116,8 +115,8 @@ fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
     return PythonObject(None)
 
 
-struct NonBoundType(TypeIdentifiable):
-    alias TYPE_ID = "mojo_module.NonBoundType"
+struct NonBoundType:
+    pass
 
 
 fn case_downcast_unbound_type(value: PythonObject) raises:
@@ -130,11 +129,9 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
+struct Person(Defaultable, Representable, Copyable, Movable):
     var name: String
     var age: Int
-
-    alias TYPE_ID = "mojo_module.Person"
 
     fn __init__(out self):
         self.name = "John Smith"
@@ -176,9 +173,7 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Movable, Defaultable, Representable, TypeIdentifiable):
-    alias TYPE_ID = "mojo_module.FailToInitialize"
-
+struct FailToInitialize(Movable, Defaultable, Representable):
     fn __init__(out self):
         pass
 

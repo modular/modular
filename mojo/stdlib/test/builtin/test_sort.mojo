@@ -574,7 +574,7 @@ def test_sort_comparamble_elements_list():
     fn gen_list(count: Int):
         list = List[Person]()
         var ages = random_numbers[DType.uint8](count)
-        var names = List[String]("Maxim", "Max", "Alex", "Bob", "Joe")
+        var names = [String("Maxim"), "Max", "Alex", "Bob", "Joe"]
         for age in ages:
             var name = names[Int(age[]) % len(names)]
             list.append(Person(name, Int(age[])))

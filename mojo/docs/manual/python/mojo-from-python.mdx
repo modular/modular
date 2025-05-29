@@ -149,24 +149,11 @@ your Python with Mojo.
 ## Binding Mojo types
 
 All Mojo type are eligible to be bound for use from Python.
-To expose a Mojo type to Python, it must implement the
-[`TypeIdentifiable`][TypeIdentifiable] trait.
-For a simple Mojo type, this might look like:
-
-```mojo title="🔥 Mojo"
-struct Person(TypeIdentifiable, ...):
-    var name: String
-    var age: Int
-
-    # Unique name under which the type object is stored.
-    # Eventually this will be a compiler provided unique type ID.
-    alias TYPE_ID = "mojo_module.Person"
-```
 
 :::note
 
-Types currently must also implement `Movable`, `Defaultable`, and
-`Representable` to be bound for use from Python.
+Types currently must implement `Movable`, `Defaultable`, and `Representable`
+to be bound for use from Python.
 
 :::
 
@@ -228,7 +215,7 @@ object type had not previously been registered using
 {/*
 TODO: How to distinguish this constructor from the converting constructor?
 TODO: Maybe `PythonObject.mojo()` / `PythonObject(mojo_object=)`?
-TODO: `PythonObject.__init__[T: TypeIdentifiable](out self, *, owned alloc: T)
+TODO: `PythonObject.__init__[T: AnyType](out self, *, owned alloc: T)
 */}
 
 
@@ -513,5 +500,4 @@ link reference
 */}
 
 [ConvertibleFromPython]: /mojo/stdlib/python/python_object/ConvertibleFromPython
-[TypeIdentifiable]: /mojo/stdlib/builtin/identifiable/TypeIdentifiable
 [downcast_value_ptr]: /mojo/stdlib/python/python_object/PythonObject#downcast_value_ptr

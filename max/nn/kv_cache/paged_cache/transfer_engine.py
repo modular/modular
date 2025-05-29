@@ -58,8 +58,8 @@ class XferReqData:
     src_name: str
     xfer_name: str
     xfer_id: int
-    src_idx: int
-    dst_idx: int
+    src_idxs: list[int]
+    dst_idxs: list[int]
 
 
 class KVTransferEngine:
@@ -245,14 +245,17 @@ class KVTransferEngine:
         self.remote_connections[remote.name] = remote
 
     def initiate_send_xfer(
-        self, remote: KVTransferEngineMetadata, src_idx: int, dst_idx: int
+        self,
+        remote: KVTransferEngineMetadata,
+        src_idxs: list[int],
+        dst_idxs: list[int],
     ) -> XferReqData:
         """Initiate a transfer from current engine to remote engine.
 
         Args:
             remote: Metadata for the remote engine.
-            src_idx: Index of the source page in the current engine.
-            dst_idx: Index of the destination page in the remote engine.
+            src_idxs: List of indices of the source pages in the current engine.
+            dst_idxs: List of indices of the destination pages in the remote engine.
         """
 
         if remote.name not in self.remote_connections:
@@ -260,33 +263,62 @@ class KVTransferEngine:
 
         remote = self.remote_connections[remote.name]
 
-        if src_idx < 0 or src_idx >= self.total_num_pages:
+        if len(src_idxs) != len(dst_idxs):
             raise ValueError(
-                f"Source index {src_idx} must be between 0 and {self.total_num_pages - 1}"
+                f"Source and destination indices must have the same length. Got {len(src_idxs)} and {len(dst_idxs)}"
             )
-        if dst_idx < 0 or dst_idx >= remote.total_num_pages:
+
+        # Each dst idx must be unique so that we don't write to the same page
+        if len(set(dst_idxs)) != len(dst_idxs):
             raise ValueError(
-                f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
+                f"Destination indices must be unique. Found duplicate index: {dst_idxs}"
             )
+
+        for src_idx in src_idxs:
+            if not (0 <= src_idx < self.total_num_pages):
+                raise ValueError(
+                    f"Source index {src_idx} must be between 0 and {self.total_num_pages - 1}"
+                )
+
+        for dst_idx in dst_idxs:
+            if not (0 <= dst_idx < remote.total_num_pages):
+                raise ValueError(
+                    f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
+                )
 
         # Stage data to CPU staging buffer before xfer
         if self.cpu_staging_buffer is not None:
-            self.cpu_staging_buffer[src_idx, :].inplace_copy_from(
-                self.tensor[src_idx, :]
-            )
+            for src_idx in src_idxs:
+                self.cpu_staging_buffer[src_idx, :].inplace_copy_from(
+                    self.tensor[src_idx, :]
+                )
             self.cpu_staging_buffer.device.synchronize()
 
         bytes_per_page = self.bytes_per_page
 
-        src_addr = self.base_addr + src_idx * bytes_per_page
+        # Prepare source descriptor list
+        descs_src: list[tuple[int, int, int]] = []
+        for src_idx in src_idxs:
+            src_addr = self.base_addr + src_idx * bytes_per_page
+            descs_src.append((src_addr, bytes_per_page, self.memory_type.value))
         xfer_dlist_src = nixl.TransferDescriptorList(
             type=self.memory_type,
-            descs=[(src_addr, bytes_per_page, self.memory_type.value)],
+            # This type ignore is needed because the argument expects `list[ArrayLike | tuple[int, int, int]]`.
+            # The correct type should be `Sequence[ArrayLike | tuple[int, int, int]]`.
+            # This needs to be fixed in the .pyi file.
+            descs=descs_src,  # type: ignore
         )
-        dst_addr = remote.base_addr + dst_idx * bytes_per_page
+
+        # Prepare destination descriptor list
+        descs_dst: list[tuple[int, int, int]] = []
+        for dst_idx in dst_idxs:
+            dst_addr = remote.base_addr + dst_idx * bytes_per_page
+            descs_dst.append(
+                (dst_addr, bytes_per_page, remote.memory_type.value)
+            )
         xfer_dlist_dst = nixl.TransferDescriptorList(
             type=remote.memory_type,
-            descs=[(dst_addr, bytes_per_page, remote.memory_type.value)],
+            descs=descs_dst,  # type: ignore
         )
 
         xfer_name = str(uuid4())
@@ -307,8 +339,8 @@ class KVTransferEngine:
             src_name=self.name,
             xfer_name=xfer_name,
             xfer_id=xfer_id,
-            src_idx=src_idx,
-            dst_idx=dst_idx,
+            src_idxs=src_idxs,
+            dst_idxs=dst_idxs,
         )
 
     def send_xfer_sync(self, xfer_req_id: XferReqData) -> None:
@@ -358,9 +390,10 @@ class KVTransferEngine:
 
         # move data from CPU staging buffer to tensor after xfer
         if self.cpu_staging_buffer is not None:
-            self.tensor[xfer_req_id.dst_idx, :].inplace_copy_from(
-                self.cpu_staging_buffer[xfer_req_id.dst_idx, :]
-            )
+            for dst_idx in xfer_req_id.dst_idxs:
+                self.tensor[dst_idx, :].inplace_copy_from(
+                    self.cpu_staging_buffer[dst_idx, :]
+                )
             self.cpu_staging_buffer.device.synchronize()
 
     def __del__(self) -> None:

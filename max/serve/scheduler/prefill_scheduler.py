@@ -24,9 +24,9 @@ from max.pipelines.core import InputContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 from .base import Scheduler
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 

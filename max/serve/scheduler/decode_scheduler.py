@@ -30,10 +30,10 @@ from max.pipelines.core import (
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 from .base import Scheduler
 from .queues import STOP_STREAM
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 

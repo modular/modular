@@ -4916,6 +4916,54 @@ struct LayoutTensor[
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
 
+    @always_inline("nodebug")
+    fn _get[idx: IntTuple](self) -> Self.element_type:
+        """Retrieves a single element from the tensor at the index.
+
+        The shape of the IntTuple index should conform with the layout.
+
+        Parameters:
+            idx: The coordinate specifying the element's position in each dimension. For example, in a 3D tensor, you would use (i, j, k).
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+
+        @parameter
+        if layout.all_dims_known():
+            alias offset = Self.layout(idx)
+            return self._load_offset(offset)
+        else:
+            alias crd = RuntimeTuple[idx]()
+            return self.__getitem__(crd)
+
+    @always_inline("nodebug")
+    fn _set[idx: IntTuple](self, val: Self.element_type):
+        """Sets a single element in a layout tensor.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        The shape of the IntTuple index should conform with the layout.
+
+        Parameters:
+            idx: The coordinate specifying the element's position in each dimension. For example, in a 3D tensor, you would use (i, j, k).
+        """
+
+        @parameter
+        if layout.all_dims_known():
+            alias offset = Self.layout(idx)
+            Element[index_type=linear_idx_type](
+                val, self.runtime_element_layout
+            ).store(self.ptr.offset(offset))
+        else:
+            alias crd = RuntimeTuple[idx]()
+            var offset = self.runtime_layout(crd)
+            Element[index_type=linear_idx_type](
+                val, self.runtime_element_layout
+            ).store(self.ptr.offset(offset))
+
 
 @always_inline
 fn _pretty_print_2d_tensor[W: Writer](tensor: LayoutTensor, mut writer: W):

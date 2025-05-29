@@ -1854,10 +1854,8 @@ struct DeviceFunction[
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -1988,10 +1986,8 @@ struct DeviceFunction[
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
@@ -2430,10 +2426,8 @@ struct DeviceExternalFunction:
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Launches the device function with the specified arguments and configuration.
 
@@ -3371,10 +3365,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3466,10 +3458,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3556,10 +3546,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -3637,10 +3625,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -3718,10 +3704,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -3802,10 +3786,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3902,10 +3884,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
@@ -3999,10 +3979,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
@@ -4100,10 +4078,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
@@ -4191,10 +4167,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         f._call_with_pack(
             self,
@@ -4219,10 +4193,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         f._call_with_pack_checked(
             self,
@@ -4247,10 +4219,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         """Enqueues an external device function for asynchronous execution on the GPU.
 
@@ -4318,10 +4288,8 @@ struct DeviceContext(Copyable, Movable):
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
         shared_mem_bytes: OptionalReg[Int] = None,
-        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
-        owned constant_memory: List[ConstantMemoryMapping] = List[
-            ConstantMemoryMapping
-        ](),
+        owned attributes: List[LaunchAttribute] = [],
+        owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
         f._call_with_pack(
             self,

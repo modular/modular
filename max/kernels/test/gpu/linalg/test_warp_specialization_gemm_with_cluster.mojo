@@ -777,7 +777,7 @@ fn main() raises:
                     static[128](),
                 )
 
-            alias wgmma_n = List[Int](64, 128, 256)
+            alias wgmma_n = [64, 128, 256]
 
             print("# 2x1 warp specialized gemm with multicasting tests")
 

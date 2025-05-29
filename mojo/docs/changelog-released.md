@@ -1931,6 +1931,9 @@ detailed information in the following sections:
   Point(3, 4)
   ```
 
+- The `TypeIdentifiable` trait has been removed in favor of the new
+  `get_type_name` utility in the `compile.reflection` module.
+
 - Python interop changes:
 
   - Introduced

@@ -323,7 +323,7 @@ struct _OpBuilderList[T: Copyable & Movable]:
     var elements: List[T]
 
     fn __init__(out self):
-        self.elements = List[T]()
+        self.elements = []
 
     @implicit
     fn __init__(out self, owned elements: List[T]):
@@ -331,7 +331,7 @@ struct _OpBuilderList[T: Copyable & Movable]:
 
     @implicit
     fn __init__(out self, element: T):
-        self.elements = List[T]()
+        self.elements = []
         self.elements.append(element)
 
     fn __bool__(self) -> Bool:

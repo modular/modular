@@ -30,6 +30,7 @@ from max.pipelines.core import (
 )
 from max.profiler import Trace, traced
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -40,13 +41,12 @@ from .text_generation_scheduler import (
     GenericSchedulerOutput,
     TokenGenerationSchedulerConfig,
 )
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
 
 @dataclass
-class AudioGenerationConfig:
+class AudioGenerationSchedulerConfig:
     """Audio Generation Scheduler configuration."""
 
     # This is set to something very big as there are gaps in audio between
@@ -68,7 +68,7 @@ class AudioGenerationScheduler(Scheduler):
         self,
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
-        audio_generation_config: AudioGenerationConfig,
+        audio_generation_config: AudioGenerationSchedulerConfig,
         pipeline: AudioGenerator,
         *,
         request_zmq_endpoint: str,

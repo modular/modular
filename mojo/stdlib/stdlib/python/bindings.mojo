@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.identifiable import TypeIdentifiable
 from collections.string.string_slice import get_static_string
 from os import abort
 from sys.ffi import c_int, _Global
 from sys.info import sizeof
+from compile.reflection import get_type_name
 
 from memory import UnsafePointer
 from python import Python, PythonConvertible, PythonObject, TypedPythonObject
@@ -82,9 +82,7 @@ fn _register_py_type_object(
     type_dict[][type_id] = type_obj^
 
 
-fn lookup_py_type_object[
-    T: TypeIdentifiable
-]() raises -> TypedPythonObject["Type"]:
+fn lookup_py_type_object[T: AnyType]() raises -> TypedPythonObject["Type"]:
     """Retrieve a reference to the unique Python type describing Python objects
     containing Mojo values of type `T`.
 
@@ -93,8 +91,7 @@ fn lookup_py_type_object[
     can be used to create Python objects that wrap Mojo values of type `T`.
 
     Parameters:
-        T: The Mojo type to look up. Must implement the `TypeIdentifiable` trait
-           to provide a unique type identifier.
+        T: The Mojo type to look up.
 
     Returns:
         A `TypedPythonObject["Type"]` representing the Python type object that
@@ -109,11 +106,13 @@ fn lookup_py_type_object[
     # FIXME(MSTDL-1580):
     #   This should use a unique compiler type ID, not the Python name of this
     #   type.
-    if entry := type_dict[].find(T.TYPE_ID):
+
+    alias type_name = get_type_name[T]()
+    if entry := type_dict[].find(type_name):
         return entry.take()
 
     raise Error(
-        "No Python type object registered for Mojo type with id: ", T.TYPE_ID
+        "No Python type object registered for Mojo type with name: ", type_name
     )
 
 
@@ -359,7 +358,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Movable & Defaultable & Representable & TypeIdentifiable
+        T: Movable & Defaultable & Representable
     ](mut self, type_name: StaticString) -> ref [
         self.type_builders
     ] PythonTypeBuilder:
@@ -977,7 +976,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
     @staticmethod
     fn bind[
-        T: Movable & Defaultable & Representable & TypeIdentifiable
+        T: Movable & Defaultable & Representable
     ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
@@ -1001,7 +1000,7 @@ struct PythonTypeBuilder(Movable, Copyable):
             PyType_Slot.tp_repr(_tp_repr_wrapper[T]),
         )
         b.methods = List[PyMethodDef]()
-        b._type_id = T.TYPE_ID
+        b._type_id = get_type_name[T]()
 
         return b^
 
