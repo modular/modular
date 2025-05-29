@@ -3198,6 +3198,7 @@ fn conv_gpu[
     filter_type: DType,
     output_type: DType,
     maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
+    filter_is_fcrs: Bool = False,
 ](
     input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
     filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
@@ -3211,6 +3212,8 @@ fn conv_gpu[
     ctx: DeviceContext,
 ) raises:
     alias block_size = 16
+
+    constrained[not filter_is_fcrs, "Filter format FCRS is not supported"]()
 
     alias conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
         input_dim,
