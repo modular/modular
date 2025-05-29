@@ -42,6 +42,12 @@ algorithms to be selectively replaced with faster Mojo alternatives.
 These examples illustrate how that can work, including using Mojo functions
 running on a compatible GPU.
 
+## [PyTorch custom operations in Mojo](pytorch_custom_ops/)
+
+PyTorch custom operations can be defined in Mojo to try out new algorithms on
+GPUs. These examples show how to extend PyTorch layers using custom operations
+written in Mojo.
+
 ## [PyTorch inference on MAX](inference/)
 
 MAX has the power to accelerate existing PyTorch models directly, and

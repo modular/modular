@@ -1,0 +1,57 @@
+load("//bazel:api.bzl", "mojo_library", "requirement")
+load(":custom_op_example.bzl", "custom_op_example_py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "kernel_sources",
+    srcs = glob(["operations/*.mojo"]),
+)
+
+custom_op_example_py_binary(
+    name = "addition",
+    srcs = ["addition.py"],
+    create_test = False,
+    extra_data = [
+        ":operations",
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "//PyTorch:TorchRuntimePlugins",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    extra_deps = [
+        "//SDK/lib/API/python/max/torch",
+        requirement("torch"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "whisper",
+    srcs = ["whisper.py"],
+    create_test = False,
+    extra_data = [
+        ":operations",
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "//PyTorch:TorchRuntimePlugins",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    extra_deps = [
+        "//SDK/lib/API/python/max/torch",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("datasets"),
+        requirement("librosa"),
+    ],
+)
+
+mojo_library(
+    name = "operations",
+    srcs = [":kernel_sources"],
+    deps = [
+        "@mojo//:compiler",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
+    ],
+)

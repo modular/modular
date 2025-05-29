@@ -1,0 +1,34 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "Examples of PyTorch custom ops in Mojo"
+name = "PyTorch Custom Operations"
+platforms = ["linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+addition = "python addition.py"
+test = { depends-on = [
+  # FIXME
+  #"whisper",
+] }
+
+[feature.whisper.tasks]
+whisper = "python whisper.py"
+
+[dependencies]
+python = ">=3.9,<3.14"
+max = ">=24.6.0.dev2024090821"
+pytorch-gpu = ">=2.5.0,<=2.7.0"
+
+[system-requirements]
+cuda = "12.6"
+
+[feature.whisper.dependencies]
+transformers = "*"
+datasets = "*"
+librosa = "*"
+
+[environments]
+default = { solve-group = "default" }
+whisper = { features = ["whisper"], solve-group = "default" }

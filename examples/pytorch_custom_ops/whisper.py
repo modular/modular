@@ -30,8 +30,8 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperEncoderLayer,
 )
 
-mojo_kernels = Path(__file__).parent / "kernels"
-op_library = CustomOpLibrary(mojo_kernels)
+mojo_operations = Path(__file__).parent / "operations"
+op_library = CustomOpLibrary(mojo_operations)
 fused_attention_custom = op_library.fused_attention_custom[
     {
         "BN": 16,
