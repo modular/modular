@@ -157,24 +157,20 @@ def test_iota():
     alias length = 103
     var offset = 2
 
-    var vector = List[Int32]()
-    vector.resize(length, 0)
+    var vector = List[Int32](unsafe_uninit_length=length)
 
-    var buff = vector.data
+    var buff = vector.unsafe_ptr()
     iota(buff, length, offset)
-
     for i in range(length):
         assert_equal(vector[i], offset + i)
 
     iota(vector, offset)
-
     for i in range(length):
         assert_equal(vector[i], offset + i)
 
-    var vector2 = List[Int]()
-    vector2.resize(length, 0)
-    iota(vector2, offset)
+    var vector2 = List[Int](unsafe_uninit_length=length)
 
+    iota(vector2, offset)
     for i in range(length):
         assert_equal(vector2[i], offset + i)
 
