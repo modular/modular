@@ -22,7 +22,10 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
     KVCacheAgentServiceStub,
 )
-from max.serve.queue.zmq_queue import ZmqPushSocket, generate_zmq_ipc_path
+from max.serve.queue.zmq_queue import (
+    ZmqPushSocket,
+    generate_zmq_inproc_endpoint,
+)
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +36,7 @@ def zmq_ctx():
 
 @pytest.fixture
 def zmq_endpoint():
-    return generate_zmq_ipc_path()
+    return generate_zmq_inproc_endpoint()
 
 
 @pytest.fixture

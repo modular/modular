@@ -8,5 +8,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/serve/queue",
         requirement("grpcio"),
         requirement("pyzmq"),
+        requirement("pytest-asyncio"),
     ],
 )
