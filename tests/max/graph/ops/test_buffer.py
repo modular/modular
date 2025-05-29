@@ -63,6 +63,10 @@ def test_value_constructor(tensor_type: TensorType, buffer_type: BufferType):
         tensor = Value.from_mlir(graph.inputs[0]._mlir_value)
         assert isinstance(tensor, TensorValue)
         assert isinstance(tensor.type, TensorType)
+        with pytest.raises(TypeError):
+            TensorValue.from_mlir(graph.inputs[1]._mlir_value)
+        with pytest.raises(TypeError):
+            BufferValue.from_mlir(graph.inputs[0]._mlir_value)
 
         buffer = BufferValue(graph.inputs[1]._mlir_value)
         assert isinstance(buffer, BufferValue)

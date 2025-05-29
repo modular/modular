@@ -107,13 +107,21 @@ class Value(Typed[MlirType]):
 
     @classmethod
     def from_mlir(cls, value: _Value) -> Value:
-        if isinstance(value.type, mo.TensorType):
+        if cls in [TensorValue, Value] and isinstance(
+            value.type, mo.TensorType
+        ):
             return TensorValue(value)
-        elif isinstance(value.type, mo.ChainType):
+        elif cls in [_ChainValue, Value] and isinstance(
+            value.type, mo.ChainType
+        ):
             return _ChainValue(value)
-        elif isinstance(value.type, mo.OpaqueType):
+        elif cls in [_OpaqueValue, Value] and isinstance(
+            value.type, mo.OpaqueType
+        ):
             return _OpaqueValue(value)
-        elif isinstance(value.type, mo.BufferType):
+        elif cls in [BufferValue, Value] and isinstance(
+            value.type, mo.BufferType
+        ):
             return BufferValue(value)
         raise TypeError(f"Invalid mlir value {value=}")
 
