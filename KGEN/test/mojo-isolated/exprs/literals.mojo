@@ -109,6 +109,7 @@ fn test_list_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
+    # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: lit.ref.store [[TMP]], %i1
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
@@ -121,7 +122,9 @@ fn test_list_comprehension():
 
     # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
     # CHECK: } body {
+    # CHECK-NEXT: %i2 = lit.var.decl "i2"
     # CHECK:   } body {
+    # CHECK-NEXT: %i3 = lit.var.decl "i3"
     # CHECK-NEXT:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: lit.ref.store [[TMP]], %i3
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i2
@@ -135,6 +138,7 @@ fn test_list_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
+    # CHECK-NEXT: %i4 = lit.var.decl "i4"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: lit.ref.store [[TMP]], %i4
     # CHECK-NEXT: hlcf.elif {
@@ -185,6 +189,7 @@ fn test_dict_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
+    # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: lit.ref.store [[TMP]], %i
     # CHECK:       lit.call {{.*}}String::@"__init__()
@@ -230,6 +235,7 @@ fn test_set_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
+    # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK-NEXT: lit.ref.store [[TMP]], %i1
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1

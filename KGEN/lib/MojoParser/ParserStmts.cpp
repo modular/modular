@@ -1134,16 +1134,6 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   llvm::SaveAndRestore builderSaver(builder);
 
   Location forLocation = translateLocation(forLoc);
-  StringAttr target = decodeTarget(targetExpr, shared);
-  if (!target)
-    return {};
-
-  // Create a VarDeclOp for the induction variable.  We infer its type from the
-  // call to __next__ down below.
-  VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
-      target, UnresolvedType::get(getContext()), forLocation,
-      target.getValue() == "_" ? VarDeclKind::Synthesized
-                               : VarDeclKind::Implicit);
 
   // If there is a failure before we parse the for loop body, we still want to
   // call the parser on it so that it builds an ASTDecl node and adds the for
@@ -1179,12 +1169,8 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
                                forLocation, VarDeclKind::Synthesized);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                        CallSyntax::kMethodCall, seqExpr)) {
-    auto newRefType =
-        indvarDeclOp.getType().getWithElement(shared.getTypeCheckErrorType());
-    indvarDeclOp.getResult().setType(newRefType);
+                                        CallSyntax::kMethodCall, seqExpr))
     return {};
-  }
 
   // Create the LoopOp
   auto loopOp = builder.create<LIT::LoopOp>(forLocation);
@@ -1214,6 +1200,23 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
   builder.setInsertionPointToStart(bodyBlock);
+
+  // Push a new local variable scope for the subsequent body.
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  pushChildScope(scopeGuard, keepDecl);
+
+  StringAttr target = decodeTarget(targetExpr, shared);
+  if (!target)
+    return {};
+
+  // Create a VarDeclOp for the induction variable.  We infer its type from the
+  // call to __next__ down below.
+  VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
+      target, UnresolvedType::get(getContext()), forLocation,
+      target.getValue() == "_" ? VarDeclKind::Synthesized
+                               : VarDeclKind::Implicit);
+
   ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
@@ -1221,11 +1224,6 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     return {};
 
   avoidDroppingDeclOnFail.release();
-
-  // Push a new local variable scope for the subsequent body.
-  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-  pushChildScope(scopeGuard, keepDecl);
 
   // Add an ASTDecl for the induction variable.
   // TODO: Generalize to an arbitrary pattern.
@@ -1650,13 +1648,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // If this has a 'as TARGET' specifier, parse the name into targetName,
   // otherwise targetName will be null.
-  std::optional<DeclRefNode> targetNode;
+  ExprNode *targetNode = nullptr;
   if (consumeIf(Token::kw_as)) {
-    // FIXME: This needs to parse this as a target expression and then handle it
-    // like a destructuring pattern.
-    targetNode.emplace(DeclRefNode(getToken().getSpelling(),
-                                   getToken().is(Token::escaped_identifier)));
-    if (parseIdentifier("expected identifier for target in 'with'"))
+    if (parseTargetListExpr(targetNode, curIndent))
       return failure();
   }
 
@@ -1718,9 +1712,11 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // If there is an explicit target specified, use it.
   ValueDest enterDest(EC_WithContextMgr);
   VarDeclOp targetDecl;
-  if (targetNode.has_value()) {
+  if (targetNode) {
     if (useLexicalScope) {
-      auto name = StringAttr::get(getContext(), targetNode->spelling);
+      // FIXME: This needs to parse this as a target expression and then handle
+      // it like a destructuring pattern.
+      StringAttr name = decodeTarget(targetNode, shared);
       auto emitter = getEmitter();
       targetDecl = emitter.emitVarDecl(name, UnresolvedType::get(getContext()),
                                        targetNode->getLocation(emitter),
@@ -1747,13 +1743,14 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // Inject the target into our scope if asked for.
   if (targetDecl) {
+    // FIXME: This won't be right for real destructuring patterns.
     auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
         targetDecl.getOperation(), targetDecl.getNameAttr(),
         targetNode->getLoc(), curDeclScope);
     if (!enterResult)
       targetDeclResolved.setErroneous();
     shared.notifyListenerOnVariableDecl(targetDeclResolved,
-                                        targetNode->getIdentifierLoc());
+                                        targetNode->getLoc());
   }
 
   // Lookup the error type and emit a vardecl for the error.
