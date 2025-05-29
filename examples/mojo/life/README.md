@@ -25,7 +25,7 @@ This directory contains the following files:
 - The `test` directory contains unit tests for each `Grid` implementation using
   the [Mojo testing framework](https://docs.modular.com/mojo/tools/testing).
 
-- The `mojoproject.toml` file is a [Magic](https://docs.modular.com/magic/)
+- The `pixi.toml` file is a [Pixi](https://pixi.sh)
   project file containing the project dependencies and task definitions.
 
 ## Run the code
@@ -73,5 +73,5 @@ Therefore, to run this program your environment must have both a compatible
 Python runtime (Python 3.12) and the pygame package installed.
 
 The easiest way to ensure that the runtime dependencies are met is to run the
-program with [`magic`](https://docs.modular.com/magic/), which manages a virtual
-environment for the project as defined by the `mojoproject.toml` file.
+program with [`pixi`](https://pixi.sh), which manages a virtual
+environment for the project as defined by the `pixi.toml` file.
