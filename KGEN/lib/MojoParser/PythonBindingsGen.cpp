@@ -67,8 +67,6 @@ private:
   ASTDecl &pythonModule;
   /// The builtin `PythonObject` type.
   ASTType pyObjType;
-  /// The builtin `TypedPythonObject["Tuple"]` type.
-  ASTType tupleTypedPyObjType;
 
   /// The `PyInit_impl_*` function where function and type declarations are
   /// added.
@@ -91,22 +89,6 @@ static StringAttr getTypeName(SharedState &shared, const ASTType &type) {
   return typeName;
 }
 
-/// Instantiates TypedPythonObject["Tuple"]
-static ASTType makeTupleTypedPythonObj(ASTDecl &moduleDecl,
-                                       ASTDecl &pythonModule) {
-  // Form the AST we want to emit.
-  SMLoc moduleLoc = moduleDecl.getLoc();
-  DeclRefNode typePythonObject("TypedPythonObject");
-  StringRef tupleStr = "\"Tuple\""; // Avoid dangling pointer.
-  StringLiteralNode tupleString(tupleStr);
-  Operand subscriptOperand(&tupleString, moduleLoc, Operand::kPositional);
-  SubscriptNode subscript(&typePythonObject, moduleLoc, subscriptOperand,
-                          moduleLoc);
-  // Emit it as a type.
-  IREmitter emitter(pythonModule, ExprContext::EC_PyBindGen);
-  return emitter.emitExprType(&subscript);
-}
-
 BindingGenerator::BindingGenerator(ASTDecl &moduleDecl)
     : SharedStateUser(moduleDecl.getShared()), ctx(getContext()),
       moduleLoc(moduleDecl.getLoc()), moduleDecl(moduleDecl),
@@ -117,8 +99,7 @@ BindingGenerator::BindingGenerator(ASTDecl &moduleDecl)
       pythonModule(shared.importModule("stdlib.python.python_object",
                                        /*currentPackage=*/nullptr, moduleLoc)),
       pyObjType(
-          shared.lookupNamedType("PythonObject", pythonModule, moduleLoc)),
-      tupleTypedPyObjType(makeTupleTypedPythonObj(moduleDecl, pythonModule)) {}
+          shared.lookupNamedType("PythonObject", pythonModule, moduleLoc)) {}
 
 LogicalResult BindingGenerator::genPyInitImplFunc() {
   ImplicitLocOpBuilder b(moduleOp.getLoc(), moduleDecl.getDeclEndBuilder());
@@ -339,7 +320,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   //
   //    fn incr_int__wrapper(
   //        py_self: PythonObject,
-  //        py_args: TypedPythonObject["Tuple"],
+  //        py_args: PythonObject,
   //    ) raises -> PythonObject:
   //        check_arguments_arity("incr_int", 1, py_args)
   //
@@ -365,7 +346,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
   auto [wrapperFunc, wrapperDecl] = createFunction(
       wrapperFuncName, moduleDecl,
-      /*argTypes=*/{pyObjType, tupleTypedPyObjType},    /*convs=*/
+      /*argTypes=*/{pyObjType, pyObjType},              /*convs=*/
       {ArgConvention::ReadMem, ArgConvention::ReadMem}, // DO NOT SUBMIT
       /*resultType=*/pyObjType, FnEffects().setThrows());
 
