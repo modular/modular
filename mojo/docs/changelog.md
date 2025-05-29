@@ -230,7 +230,9 @@ Changes to Python-Mojo interoperability:
 - [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
   False Positive "Uninitialized Value".
 - [#4677](https://github.com/modular/modular/issues/4677),
-  [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
+- [#4684](https://github.com/modular/modular/issues/4684) - Failure inferring
+  type of initializer list from field of struct.
+- [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
   unsigned `gt` and `le` comparisions.
 - [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
   handling `x or y` expressions with PythonObject.

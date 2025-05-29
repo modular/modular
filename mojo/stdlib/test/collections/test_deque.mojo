@@ -291,7 +291,7 @@ fn test_impl_appendleft_with_maxlen() raises:
 
 fn test_impl_extend() raises:
     q = Deque[Int](maxlen=4)
-    lst = List[Int](0, 1, 2)
+    lst = [0, 1, 2]
 
     q.extend(lst)
     assert_equal(q._head, 0)

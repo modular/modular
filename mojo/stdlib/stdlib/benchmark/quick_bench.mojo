@@ -40,7 +40,7 @@ struct QuickBench:
         func: fn () -> T_out,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with no input arguments and return type `T_out`.
@@ -76,7 +76,7 @@ struct QuickBench:
         x0: T0,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 1 input argument and return type `T_out`.
@@ -118,7 +118,7 @@ struct QuickBench:
         x1: T1,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 2 input argument and return type `T_out`.
@@ -164,7 +164,7 @@ struct QuickBench:
         x2: T2,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 3 input argument and return type `T_out`.
@@ -214,7 +214,7 @@ struct QuickBench:
         x3: T3,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 4 input argument and return type `T_out`.
@@ -268,7 +268,7 @@ struct QuickBench:
         x4: T4,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 5 input argument and return type `T_out`.
@@ -326,7 +326,7 @@ struct QuickBench:
         x5: T5,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 6 input argument and return type `T_out`.
@@ -388,7 +388,7 @@ struct QuickBench:
         x6: T6,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 7 input argument and return type `T_out`.
@@ -454,7 +454,7 @@ struct QuickBench:
         x7: T7,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 8 input argument and return type `T_out`.
@@ -524,7 +524,7 @@ struct QuickBench:
         x8: T8,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 9 input argument and return type `T_out`.
@@ -598,7 +598,7 @@ struct QuickBench:
         x9: T9,
         *,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """
         Benchmark function `func` with 10 input argument and return type `T_out`.

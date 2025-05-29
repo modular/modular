@@ -441,7 +441,7 @@ fn write_buffered[
     from utils import write_buffered
 
     var string = String()
-    var values = List[String]("3", "total", "args")
+    var values = [String("3"), "total", "args"]
     write_buffered(string, values, sep=",")
     ```
 

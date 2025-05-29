@@ -411,7 +411,7 @@ fn test_dict() raises:
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
-    var tuples = List((123, PythonObject("food")), (42, PythonObject("42")))
+    var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
     dd = Python.dict(tuples)
     assert_equal(String(dd), "{123: 'food', 42: '42'}")
 

@@ -33,7 +33,7 @@ fn make_inputs(
 
     var step = (end - begin) / (num - 1)
 
-    var result: List[input_type] = List[input_type]()
+    var result = List[input_type]()
     for i in range(num):
         result.append(begin + step * i)
     return result
@@ -45,7 +45,7 @@ fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 
     var step = (end - begin) // (num - 1)
 
-    var result: List[Int] = List[Int]()
+    var result = List[Int]()
     for i in range(num):
         result.append(begin + step * i)
     return result

@@ -31,7 +31,7 @@ def test_is_negative():
     for i in range(len(dtypes)):
         alias D = dtypes[i]
         var last_value = 2 ** (bitwidthof[D]() - 1) - 1
-        var values = List(1, 2, last_value - 1, last_value)
+        var values = [1, 2, last_value - 1, last_value]
 
         @parameter
         for j in range(len(widths)):
@@ -82,7 +82,7 @@ def test_compare():
     for i in range(len(dtypes)):
         alias D = dtypes[i]
         var last_value = 2 ** (bitwidthof[D]() - 1) - 1
-        var values = List(1, 2, last_value - 1, last_value)
+        var values = [1, 2, last_value - 1, last_value]
 
         @parameter
         for j in range(len(widths)):
