@@ -2305,22 +2305,27 @@ SymbolConstantAttr KGEN::makeSymbol(Type type, SymbolRefAttr symbol,
       paramValues);
 }
 
-void KGEN::printMemSymbolTripleAttrWithoutType(AsmPrinter &p,
-                                               SymbolConstantAttr copy,
-                                               SymbolConstantAttr move,
-                                               SymbolConstantAttr del) {
+void KGEN::printMemSymbolTripleAttrWithoutType(
+    AsmPrinter &p, SymbolConstantAttr copy, SymbolConstantAttr move,
+    SymbolConstantAttr del,
+    std::optional<llvm::function_ref<void(AsmPrinter &p, FuncTypeGeneratorType,
+                                          ArrayRef<TypedAttr> params)>>
+        printParameterSet) {
+  auto printSymbol = [&](SymbolConstantAttr callee) {
+    p << callee.getSymbol();
+    if (printParameterSet.has_value())
+      printParameterSet.value()(p, callee.getType(), callee.getParamValues());
+    else
+      printParameterValues(p, callee.getParamValues());
+  };
   if (copy) {
-    p << copy.getSymbol();
-    printParameterValues(p, copy.getParamValues());
+    printSymbol(copy);
     p << ", ";
   }
   if (move) {
-    p << move.getSymbol();
-    printParameterValues(p, move.getParamValues());
+    printSymbol(move);
     p << ", ";
   }
-  if (del) {
-    p << del.getSymbol();
-    printParameterValues(p, del.getParamValues());
-  }
+  if (del)
+    printSymbol(del);
 }

@@ -484,9 +484,12 @@ ParseResult parseMemSymbolParts(AsmParser &p, MemSymbolTripleParts &parts);
 SymbolConstantAttr makeSymbol(Type type, SymbolRefAttr symbol,
                               ParameterExprArrayAttr paramValues,
                               bool isConstructor = true);
-void printMemSymbolTripleAttrWithoutType(AsmPrinter &p, SymbolConstantAttr copy,
-                                         SymbolConstantAttr move,
-                                         SymbolConstantAttr del);
+void printMemSymbolTripleAttrWithoutType(
+    AsmPrinter &p, SymbolConstantAttr copy, SymbolConstantAttr move,
+    SymbolConstantAttr del,
+    std::optional<llvm::function_ref<void(AsmPrinter &p, FuncTypeGeneratorType,
+                                          ArrayRef<TypedAttr> params)>>
+        parameterPrinter = {});
 
 } // namespace M::KGEN
 
