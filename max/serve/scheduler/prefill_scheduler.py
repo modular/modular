@@ -19,14 +19,17 @@ from dataclasses import dataclass
 from typing import Optional
 
 import zmq
-from max.nn.kv_cache import KVTransferEngine, PagedKVCacheManager
+from max.nn.kv_cache import (
+    KVTransferEngine,
+    PagedKVCacheManager,
+)
 from max.pipelines.core import InputContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
-from .base import Scheduler
+from .base import DecodeRequest, PrefillRequest, Scheduler
 
 logger = logging.getLogger("max.serve")
 
@@ -60,7 +63,7 @@ class PrefillScheduler(Scheduler):
         zmq_ctx: zmq.Context,
         prefill_zmq_endpoint: str,
         decode_zmq_endpoint: str,
-        agent_zmq_endpoint: str = f"ipc://{tempfile.gettempdir()}/transfer_engine",
+        transfer_engine_zmq_endpoint: str = f"ipc://{tempfile.gettempdir()}/transfer_engine",
     ):
         self.pc = process_control
         self.pipeline = pipeline
@@ -70,7 +73,7 @@ class PrefillScheduler(Scheduler):
         # Initialize Queues for Disaggregation
         logger.info(f"starting prefill queue on: {prefill_zmq_endpoint}")
         logger.info(f"starting decode queue on: {decode_zmq_endpoint}")
-        self.prefill_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
+        self.prefill_pull_socket = ZmqPullSocket[PrefillRequest](
             zmq_ctx, prefill_zmq_endpoint
         )
         self.decode_push_socket = ZmqPushSocket[tuple[str, InputContext]](
@@ -78,13 +81,12 @@ class PrefillScheduler(Scheduler):
         )
 
         # Initialize Scheduler state.
+        self.pending_transfers: dict[str, tuple[str, list[int]]] = {}
         self.active_batch: dict[str, InputContext] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_ce)
         )
-        self.preempted_requests: queue.Queue[tuple[str, InputContext]] = (
-            queue.Queue()
-        )
+        self.preempted_prefill: queue.Queue[PrefillRequest] = queue.Queue()
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
@@ -94,10 +96,12 @@ class PrefillScheduler(Scheduler):
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
-        self.register_remote_agent(agent_zmq_endpoint, zmq_ctx)
+        self.register_remote_transfer_engine(
+            transfer_engine_zmq_endpoint, zmq_ctx
+        )
 
-    def register_remote_agent(
-        self, agent_zmq_endpoint: str, zmq_ctx: zmq.Context
+    def register_remote_transfer_engine(
+        self, transfer_engine_zmq_endpoint: str, zmq_ctx: zmq.Context
     ) -> None:
         """Registers and connects the transfer engine with a remote decode agent.
 
@@ -112,7 +116,7 @@ class PrefillScheduler(Scheduler):
         # Open up the socket.
         logger.debug("connecting to transfer engine socket.")
         socket = zmq_ctx.socket(zmq.REQ)
-        socket.connect(agent_zmq_endpoint)
+        socket.connect(transfer_engine_zmq_endpoint)
 
         # Send Transfer Engine Metadata
         logger.debug("sending prefill transfer engine metadata.")
@@ -126,9 +130,11 @@ class PrefillScheduler(Scheduler):
     def push_to_decode_socket(
         self, request_id: str, data: InputContext
     ) -> None:
-        self.decode_push_socket.put_nowait((request_id, data))
+        self.decode_push_socket.put_nowait(DecodeRequest(request_id, data))
 
-    def pull_from_prefill_socket(self) -> tuple[str, InputContext]:
+    def pull_from_prefill_socket(
+        self,
+    ) -> PrefillRequest:
         """Pulls a request from the prefill socket, checking preempted requests first.
 
         Returns:
@@ -139,12 +145,15 @@ class PrefillScheduler(Scheduler):
             zmq.ZMQError: If there is an error receiving from the socket.
         """
         # First try and return from pre-empted requests queue.
-        if not self.preempted_requests.empty():
-            return self.preempted_requests.get()
+        if not self.preempted_prefill.empty():
+            return self.preempted_prefill.get()
 
         return self.prefill_pull_socket.get_nowait()
 
-    def return_to_prefill_queue(self, req_id: str, data: InputContext) -> None:
+    def return_to_prefill_queue(
+        self,
+        prefill_request: PrefillRequest,
+    ) -> None:
         """Releases the cache index back to the available pool and cleans up pipeline
         resources before returning the request to the preempted queue.
 
@@ -152,10 +161,9 @@ class PrefillScheduler(Scheduler):
             req_id: The ID of the request to return
             data: The InputContext containing the request data
         """
-        self.available_cache_indices.add(data.cache_seq_id)
-        self.pipeline.release(data)
-        data.reset()
-        self.preempted_requests.put((req_id, data))
+        self.pipeline.release(prefill_request.context)
+        prefill_request.context.reset()
+        self.preempted_prefill.put(prefill_request)
 
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
@@ -170,39 +178,49 @@ class PrefillScheduler(Scheduler):
         batch_token_length = 0
         while self.available_cache_indices:
             try:
-                req_id, data = self.pull_from_prefill_socket()
+                prefill_request = self.pull_from_prefill_socket()
                 logger.info("received from decode node!")
 
-                if data.start_idx == 0:
-                    data.unassign_from_cache()
+                if prefill_request.context.start_idx == 0:
+                    prefill_request.context.unassign_from_cache()
 
-                if not data.is_assigned_to_cache:
-                    data.assign_to_cache(self.available_cache_indices.pop())
-                    self.paged_manager.external_claim([data.cache_seq_id])
+                if not prefill_request.context.is_assigned_to_cache:
+                    prefill_request.context.assign_to_cache(
+                        self.available_cache_indices.pop()
+                    )
+                    self.paged_manager.external_claim(
+                        [prefill_request.context.cache_seq_id]
+                    )
 
             except queue.Empty:
                 break
 
-            scheduled = self.paged_manager.prefetch(data, 1)
+            scheduled = self.paged_manager.prefetch(prefill_request.context, 1)
 
             if not scheduled:
-                self.return_to_prefill_queue(req_id, data)
+                self.return_to_prefill_queue(prefill_request)
                 break
 
             if self.scheduler_config.enable_chunked_prefill:
                 if (
-                    batch_token_length + data.active_length
+                    batch_token_length + prefill_request.context.active_length
                     >= self.scheduler_config.target_tokens_per_batch_ce
                 ):
                     trimmed_tokens = (
                         batch_token_length
-                        + data.active_length
+                        + prefill_request.context.active_length
                         - self.scheduler_config.target_tokens_per_batch_ce
                     )
-                    data.bump_token_indices(active_idx=-trimmed_tokens)
+                    prefill_request.context.bump_token_indices(
+                        active_idx=-trimmed_tokens
+                    )
 
-            batch_token_length += data.active_length
-            self.active_batch[req_id] = data
+            batch_token_length += prefill_request.context.active_length
+            self.active_batch[prefill_request.id] = prefill_request.context
+            self.pending_transfers[prefill_request.id] = (
+                prefill_request.transfer_engine_name,
+                prefill_request.block_ids,
+            )
 
     def _handle_chunked_requests(
         self,
@@ -221,15 +239,22 @@ class PrefillScheduler(Scheduler):
         # Which should be faster than creating a list to retrieve the last dictionary item
         # and then conditionally popping which is O(n).
         last_request_id, last_request = self.active_batch.popitem()
+        remote_name, dst_idx = self.pending_transfers.pop(last_request_id)
 
         # Check if its chunked.
         if last_request.active_idx - last_request.start_idx > 1:
             # If its chunked, add it back to the start of the request queue.
-            self.preempted_requests.put((last_request_id, last_request))
+            self.preempted_prefill.put(
+                PrefillRequest(
+                    last_request_id, last_request, remote_name, dst_idx
+                )
+            )
         else:
             # Send to decode if not chunked
             last_request.bump_token_indices(start_idx=-last_request.start_idx)
-            self.push_to_decode_socket(last_request_id, last_request)
+            self.decode_push_socket.put_nowait(
+                DecodeRequest(last_request_id, last_request)
+            )
 
     def schedule(self) -> None:
         """Executes the current batch of requests and sends completed requests to decode.
@@ -253,7 +278,9 @@ class PrefillScheduler(Scheduler):
             input_context.bump_token_indices(start_idx=-input_context.start_idx)
             # TODO: E2EOPT-231
             input_context._completion_start_idx -= 1  # type: ignore
-            self.push_to_decode_socket(req_id, input_context)
+            self.decode_push_socket.put_nowait(
+                DecodeRequest(req_id, input_context)
+            )
 
     def run(self) -> None:
         """Main scheduling loop that processes prefill requests.

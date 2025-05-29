@@ -247,7 +247,7 @@ class KVTransferEngine:
 
     def initiate_send_xfer(
         self,
-        remote: KVTransferEngineMetadata,
+        remote_metadata: KVTransferEngineMetadata,
         src_idxs: list[int],
         dst_idxs: list[int],
     ) -> XferReqData:
@@ -259,10 +259,12 @@ class KVTransferEngine:
             dst_idxs: List of indices of the destination pages in the remote engine.
         """
 
-        if remote.name not in self.remote_connections:
-            raise ValueError(f"Remote connection {remote.name} not found")
+        if remote_metadata.name not in self.remote_connections:
+            raise ValueError(
+                f"Remote connection {remote_metadata.name} not found"
+            )
 
-        remote = self.remote_connections[remote.name]
+        remote = self.remote_connections[remote_metadata.name]
 
         if len(src_idxs) != len(dst_idxs):
             raise ValueError(
@@ -327,7 +329,7 @@ class KVTransferEngine:
             operation=nixl.TransferOpType.WRITE,
             local_descs=xfer_dlist_src,
             remote_descs=xfer_dlist_dst,
-            remote_agent=remote.name,
+            remote_agent=remote_metadata.name,
             notif_msg=xfer_name,
         )
         status = self.agent.post_transfer_request(xfer_id)
@@ -336,7 +338,7 @@ class KVTransferEngine:
             raise ValueError(f"Transfer request failed with status {status}")
 
         return XferReqData(
-            dst_name=remote.name,
+            dst_name=remote_metadata.name,
             src_name=self.name,
             xfer_name=xfer_name,
             xfer_id=xfer_id,
