@@ -1,9 +1,5 @@
 # Writing custom CPU or GPU graph operations using Mojo
 
-> [!NOTE]
-> This is a preview of an interface for writing custom operations in Mojo,
-> and may be subject to change before the next stable release.
-
 Graphs in MAX can be extended to use custom operations written in Mojo. The
 following examples are shown here:
 
@@ -41,19 +37,19 @@ graph construction occurs in the Python files in the base directory. These
 examples are designed to stand on their own, so that they can be used as
 templates for experimentation.
 
-A single Magic command runs each of the examples:
+A single [Pixi](https://pixi.sh) command runs each of the examples:
 
 ```sh
-magic run addition
-magic run mandelbrot
-magic run vector_addition
-magic run top_k
-magic run matrix_multiplication
-magic run fused_attention
-magic run image_pipeline
+pixi run addition
+pixi run mandelbrot
+pixi run vector_addition
+pixi run top_k
+pixi run matrix_multiplication
+pixi run fused_attention
+pixi run image_pipeline
 ```
 
-`magic run <example>` runs the associated Python example, taking care
+`pixi run <example>` runs the associated Python example, taking care
 to ensure the necessary dependencies (i.e. the `max` package) are visible.
 The Python code will construct the graph and related inference session state.
 The Mojo kernels code defining the custom operations will be (re)compiled on the
@@ -63,5 +59,5 @@ of the Mojo code.
 You can also run benchmarks to compare the performance of your GPU to your CPU:
 
 ```sh
-magic run benchmark
+pixi run benchmark
 ```

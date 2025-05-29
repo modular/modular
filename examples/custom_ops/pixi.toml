@@ -7,15 +7,15 @@ platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 version = "0.1.0"
 
 [tasks]
-addition = { cmd = "python addition.py" }
-mandelbrot = { cmd = "python mandelbrot.py" }
-vector_addition = { cmd = "python vector_addition.py" }
-top_k = { cmd = "python top_k.py" }
-fused_attention = { cmd = "python fused_attention.py" }
-matrix_multiplication = { cmd = "python matrix_multiplication.py" }
-histogram = { cmd = "python histogram.py" }
-benchmark = { cmd = "mojo benchmarks.mojo" }
-image_pipeline = { cmd = "python image_pipeline.py" }
+addition = "python addition.py"
+mandelbrot = "python mandelbrot.py"
+vector_addition = "python vector_addition.py"
+top_k = "python top_k.py"
+fused_attention = "python fused_attention.py"
+matrix_multiplication = "python matrix_multiplication.py"
+histogram = "python histogram.py"
+benchmark = "mojo benchmarks.mojo"
+image_pipeline = "python image_pipeline.py"
 test = { depends-on = [
   "addition",
   "mandelbrot",

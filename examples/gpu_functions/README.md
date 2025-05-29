@@ -1,19 +1,9 @@
 # Compiling and running Mojo functions on a GPU
 
-> [!NOTE]
-> This is a preview of an interface for programming GPUs using Mojo,
-> and may be subject to change before the next stable release.
-
 Mojo functions can be compiled and dispatched on a GPU, and these examples
-show a few different ways of doing so. They also demonstrate how to allocate
-and move tensors between CPU and GPU via the MAX Driver API. These examples are
-complementary with
+show a few different ways of doing so. These examples are complementary with
 [those that show how to program custom graph operations](../custom_ops/) to
 run on the CPU or GPU in Mojo.
-
-> [!NOTE]
-> The Mojo interfaces to the MAX Driver API are under development, are
-> not fully documented, and may change before the next stable release.
 
 A [MAX-compatible GPU](https://docs.modular.com/max/faq/#gpu-requirements) is
 necessary to run these examples.
@@ -32,13 +22,23 @@ The four examples of GPU functions defined in Mojo consist of:
   escape in the Mandelbrot set. An example of the same computation performed as
   a custom graph operation can be found [here](../custom_ops/).
 
-A single Magic command runs each of the examples:
+These examples can be run either through a single [Pixi](https://pixi.sh)
+command:
 
 ```sh
-magic run vector_addition
-magic run grayscale
-magic run naive_matrix_multiplication
-magic run mandelbrot
+pixi run vector_addition
+pixi run grayscale
+pixi run naive_matrix_multiplication
+pixi run mandelbrot
+```
+
+or directly with Mojo if it has been installed in the local environment:
+
+```sh
+mojo vector_addition.mojo
+mojo grayscale.mojo
+mojo naive_matrix_multiplication.mojo
+mojo mandelbrot.mojo
 ```
 
 For larger computations, we recommend staging them as part of a
