@@ -704,7 +704,7 @@ struct Test::TestDiscovery {
                                                                   ".pixi"};
         const std::string dirName = entry.path().filename().string();
         if (kSkipDirs.count(dirName) &&
-            std::filesystem::exists(path / "mojoproject.toml"))
+            std::filesystem::exists(path / "pixi.toml"))
           continue;
 
         asyncChildren.emplace_back(
