@@ -27,11 +27,11 @@ from max.nn.rotary_embedding import (
     Llama3RotaryEmbedding,
 )
 from max.pipelines import KVCacheConfig
-from max.pipelines.architectures.llama3.model_config import (
-    Llama3Config as MaxQwen3Config,
-)
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
+)
+from max.pipelines.architectures.qwen3.model_config import (
+    Qwen3Config as MaxQwen3Config,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
