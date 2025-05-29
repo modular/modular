@@ -348,6 +348,23 @@ void LITLowerer::lowerLITOps(FnOp func) {
 
     } else if (auto funcOp = dyn_cast<FnOp>(op)) {
       lowerNestedFunction(funcOp);
+    } else if (auto closureInit = dyn_cast<LIT::ClosureInitOp>(op)) {
+      IRRewriter b{OpBuilder(closureInit)};
+      SmallVector<Attribute> moveOrCopyCaptureSymbols =
+          llvm::map_to_vector(closureInit.getMoveOrCopyCaptureSymbols(),
+                              [&](Attribute attr) -> Attribute {
+                                if (auto boolean = dyn_cast<BoolAttr>(attr))
+                                  return UnitAttr::get(boolean.getContext());
+                                return attr;
+                              });
+      KGEN::ClosureInitOp closureInitKgen = b.create<KGEN::ClosureInitOp>(
+          closureInit.getLoc(), closureInit->getResults().front().getType(),
+          closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
+          closureInit.getCaptures(),
+          ArrayAttr::get(b.getContext(), moveOrCopyCaptureSymbols),
+          closureInit.getInputParams(), closureInit.getInlineLevel());
+      closureInitKgen.getBodyRegion().takeBody(closureInit.getBodyRegion());
+      b.replaceOp(closureInit, closureInitKgen);
     }
   });
 }
