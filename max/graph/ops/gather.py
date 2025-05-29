@@ -54,54 +54,59 @@ def gather_nd(
     indices: TensorValueLike,
     batch_dims: int = 0,
 ) -> TensorValue:
-    """Selects elements out of an input tensor by index.
+    """Selects elements out of an input tensor by N-dimensional index.
 
-    Examples:
+    This operation performs N-dimensional indexing into ``input`` using ``indices``.
+    Unlike :obj:`gather()`, which indexes along a single axis, ``gather_nd()`` allows
+    indexing along multiple dimensions simultaneously.
 
-    >>> input_shape = ["a", "b", "c", "d", "e"]
-    >>> indices_shape = ["a", "f", 3]
-    >>> input_type = TensorType(DType.bfloat16, input_shape)
-    >>> indices_type = TensorType(DType.int32, indices_shape)
-    >>> with Graph("gather_nd", input_types=[input_type, indices_type]) as graph:
-    ...     input, indices = graph.inputs
-    ...     gathered = ops.gather_nd(input, indices, batch_dims=1)
-    ...     print(gathered.type)
-    TensorType(dtype=DType.bfloat16, shape=["a", "f", "e"])
+    .. code-block:: python
 
-    In this example
-    - batch_dims is 1, so there's 1 shared dimension at the beginning
-    - indices has an additional dimension "f" which
-    - the last dimension of indices is the index vector; values in
-        this vector are interpreted to be indicies into "b", "c", and "d"
-    - since batch_dims (1) + index size (3) < input.rank (5), the remaining
-        dimensions (in this case "e") are sliced into the output as features
+        input_shape = ["a", "b", "c", "d", "e"]
+        indices_shape = ["a", "f", 3]
+        input_type = TensorType(DType.bfloat16, input_shape)
+        indices_type = TensorType(DType.int32, indices_shape)
+        with Graph("gather_nd", input_types=[input_type, indices_type]) as graph:
+            input, indices = graph.inputs
+            gathered = ops.gather_nd(input, indices, batch_dims=1)
+            print(gathered.type)
+        # Output: TensorType(dtype=DType.bfloat16, shape=["a", "f", "e"])
+
+    In this example:
+
+    - ``batch_dims`` is 1, so there's 1 shared dimension at the beginning.
+    - ``indices`` has an additional dimension "f" which becomes part of the output.
+    - The last dimension of ``indices`` is the index vector; values in this vector
+      are interpreted to be indices into "b", "c", and "d".
+    - Since ``batch_dims (1) + index size (3) < input.rank (5)``, the remaining
+      dimensions (in this case "e") are sliced into the output as features.
 
     Args:
         input: The input symbolic tensor to select elements from.
         indices: A symbolic tensor of index values to use for selection.
             The last dimension of this tensor must be static. This dimension
-            will be used to index or slice into `input` immediately following
-            `batch_dims` initial dimensions. The size of this index dimension
+            will be used to index or slice into ``input`` immediately following
+            ``batch_dims`` initial dimensions. The size of this index dimension
             is the number of dimensions it specifies.
         batch_dims: The number of leading batch dimensions shared by
-            `input` and `indices`; 0 by default. `input` and `indices` must
-            _exactly_ match up to their first `batch_dims` dimensions. This
-            function does not broadcast!
+            ``input`` and ``indices``; 0 by default. ``input`` and ``indices`` must
+            exactly match up to their first ``batch_dims`` dimensions. This
+            function does not broadcast.
 
     Returns:
         A new symbolic tensor representing the result of the gather operation.
-        The output will have the same DType as `input`, and will have shape
-        depending on the inputs, in this order
-            - `input.shape[:batch_dims]` -- think of this as the "broadcast"
-                dimensions (though note that this function does not broadcast).
-                These dimensions must be identical between `input` and `indices`.
-            - `indices.shape[batch_dims:-1]` -- the "gather" dimensions; this
-                allows multi-dimensional tensors of indices. The last dimension
-                is the index vector.
-            - `input.shape[batch_dims + indices.shape[-1]:]` -- the "slice"
-                dimensions. If `batch_dims` < `input.rank - indices.shape[-1]`
-                (again, this last is the index vector), then any following
-                dimensions of the inputs are taken entirely as though slicing.
+        The output will have the same dtype as ``input``, and will have shape
+        depending on the inputs, in this order:
+
+        - ``input.shape[:batch_dims]`` -- The "broadcast" dimensions (though note
+          that this function does not broadcast). These dimensions must be
+          identical between ``input`` and ``indices``.
+        - ``indices.shape[batch_dims:-1]`` -- The "gather" dimensions; this allows
+          multi-dimensional tensors of indices. The last dimension is the index vector.
+        - ``input.shape[batch_dims + indices.shape[-1]:]`` -- The "slice" dimensions.
+          If ``batch_dims`` < ``input.rank - indices.shape[-1]`` (again, this last
+          is the index vector), then any following dimensions of the inputs are
+          taken entirely as though slicing.
     """
     input, indices = TensorValue(input), TensorValue(indices)
     if not isinstance(indices.shape[-1], StaticDim):

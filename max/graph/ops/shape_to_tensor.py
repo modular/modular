@@ -24,13 +24,14 @@ def shape_to_tensor(shape: ShapeLike) -> TensorValue:
     Returns:
         The TensorValue containing the same value as `shape`.
 
-    Example:
-        >>> x = ops.constant(np.zeros((1,)), DType.int64, device=DeviceRef.CPU())
-        >>> result = ops.stack([
-        ...     x,
-        ...     ops.shape_to_tensor(x.shape),
-        ... ])
-        TensorValue(dtype=int64, shape=[StaticDim(dim=2), StaticDim(dim=1)])
+    .. code-block:: python
+
+        x = ops.constant(np.zeros((1,)), DType.int64, device=DeviceRef.CPU())
+        result = ops.stack([
+            x,
+            ops.shape_to_tensor(x.shape),
+        ])
+        # TensorValue(dtype=int64, shape=[StaticDim(dim=2), StaticDim(dim=1)])
     """
     shape = Shape(shape)
     result = Graph.current._add_op(rmo.shape_to_tensor, shape.to_mlir())[

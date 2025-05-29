@@ -13,6 +13,12 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
     """
     Chunk the tensor into an exact number of chunks along the specified dim.
 
+    .. code-block:: python
+
+        a = TensorValue([1, 2, 3, 4, 5])
+        chunk(a, 2, 0)
+        # [TensorValue([1, 2]), TensorValue([3, 4])]
+
     Args:
         x: The tensor to chunk.
         chunks: The number of chunks to split the tensor into.
@@ -21,11 +27,6 @@ def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
 
     Returns:
         A list of `chunks` tensors.
-
-    Example:
-        >>> a = TensorValue([1, 2, 3, 4, 5])
-        >>> chunk(a, 2, 0)
-        [TensorValue([1, 2]), TensorValue([3, 4])]
     """
     # TODO(GEX-1943): once we have control flow in the graph, this can be updated to
     # dynamic chunk counts while still supporting algebraic dims. For now,

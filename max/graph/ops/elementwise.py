@@ -1120,13 +1120,13 @@ Raises:
 
 is_inf = _elementwise_unary(rmo.mo_is_inf)
 """
-Computes the elementwise is_inf of a symbolic tensor.
+Computes the elementwise :obj:`is_inf()` of a symbolic tensor.
 
-Creates a new op node to compute the elementwise is_inf of a
+Creates a new op node to compute the elementwise :obj:`is_inf()` of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
 
 Args:
-    value: The symbolic tensor to use as the input to the is_inf
+    value: The symbolic tensor to use as the input to the :obj:`is_inf()`
         computation.
 
 Returns:

@@ -16,10 +16,11 @@ from ..value import TensorValue, TensorValueLike
 def nonzero(x: TensorValueLike, out_dim: DimLike) -> TensorValue:
     """Returns the indices of all nozero elements in a tensor.
 
-    Returns a tensor of indices of the nonzero values in the given tensor.
-    The return value is a 2D tensor of shape [out_dim x rank_in], where out_dim is the
-    number of nonzero elements in the input tensor, and rank_in is the rank of
-    the input tensor. Indices are generated in row-major order.
+    Returns a tensor of indices of the nonzero values in the given tensor. The
+    return value is a 2D tensor of shape ``[out_dim x rank_in]``, where
+    out_dim is the number of nonzero elements in the input tensor, and
+    rank_in is the rank of the input tensor. Indices are generated in
+    row-major order.
 
     Args:
         x: The input symbolic tensor.

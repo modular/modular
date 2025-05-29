@@ -405,16 +405,18 @@ def _slice_symbolic_tensor(
 def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     """Slices out a subtensor view of the input tensor based on `indices`.
 
-    The semantics of `slice_tensor` follow NumPy slicing semantics with the
+    The semantics of :obj:`slice_tensor()` follow NumPy slicing semantics with the
     following restrictions:
-    - Slice indices must not index out of [-dim - 1, dim - 1] for negative step,
-      or [-dim, dim] for positive step.
 
-    Examples:
-    # Reverse a tensor.
-    >>> x[::-1]
-    # Unsqueeze the second last dimension of a tensor.
-    >>> x[..., None, :]
+    - Slice indices must not index out of ``[-dim - 1, dim - 1]`` for negative step,
+      or ``[-dim, dim]`` for positive step.
+
+    .. code-block:: python
+
+        # Reverse a tensor.
+        slice_tensor(x, [slice(None, None, -1)])
+        # Unsqueeze the second last dimension of a tensor.
+        slice_tensor(x, [..., None, slice(None)])
 
     Returns:
         The sliced subtensor of `x`.

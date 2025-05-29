@@ -35,6 +35,20 @@ def pad(
     mode: Literal["constant"] = "constant",
     value: TensorValueLike = 0,
 ) -> TensorValue:
+    """Pads a tensor with constant values.
+
+    Adds padding to the input tensor using the specified padding values.
+    Currently only constant padding mode is supported.
+
+    Args:
+        input: The input tensor to pad.
+        paddings: Sequence of padding values. The padding values are applied
+            symmetrically to each dimension. For a tensor with rank N,
+            paddings should contain 2*N values: [pad_before_dim0, pad_after_dim0,
+            pad_before_dim1, pad_after_dim1, ...].
+        mode: The padding mode. Currently only "constant" is supported.
+        value: The constant value to use for padding.
+    """
     input = TensorValue(input)
     paddings = list(paddings)
 
