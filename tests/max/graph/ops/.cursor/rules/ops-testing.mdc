@@ -42,7 +42,7 @@ alwaysApply: false
 ## Documentation Reference
 
 For detailed testing principles and examples, refer to:
-`SDK/lib/API/python/tests/graph/ops/README.md`
+`SDK/docs/GraphAPITesting.md`
 
 ## Quality Guidelines
 
