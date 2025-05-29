@@ -93,6 +93,7 @@ DecoderOutput = TypeVar("DecoderOutput")
 class AudioGeneratorOutput:
     audio_data: torch.Tensor
     metadata: dict[str, Any]
+    is_done: bool
 
 
 @runtime_checkable

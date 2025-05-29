@@ -204,6 +204,11 @@ class InputContext(Protocol):
         """Returns True if input is assigned to a cache slot, False otherwise."""
         ...
 
+    @property
+    def is_ce(self) -> bool:
+        """Returns True if the context is a context encoding context, False otherwise."""
+        ...
+
 
 class TextContext:
     """A base class for model context, specifically for Text model variants."""
@@ -517,6 +522,10 @@ class TextContext:
     def is_assigned_to_cache(self) -> bool:
         return self._cache_seq_id is not None
 
+    @property
+    def is_ce(self) -> bool:
+        return self.active_length > 1
+
     def __repr__(self) -> str:
         return (
             f"TextContext("
@@ -625,7 +634,7 @@ class TTSContext(TextContext):
             )
 
     def next_speech_tokens(
-        self, audio_chunk_size: int, buffer: int | None = None
+        self, audio_chunk_size: int | None = None, buffer: int | None = None
     ) -> np.ndarray:
         """Returns a chunk of the next unseen speech tokens.
 
@@ -641,10 +650,18 @@ class TTSContext(TextContext):
         """
         start_idx = self._decoded_index
         if buffer is not None:
-            start_idx = max(0, self._decoded_index - buffer)
-        end_idx = min(
-            self._decoded_index + audio_chunk_size, self._speech_token_end_idx
-        )
+            start_idx = max(0, start_idx - buffer)
+
+        end_idx = self._speech_token_end_idx
+        if audio_chunk_size is not None:
+            end_idx = min(
+                end_idx,
+                self._decoded_index + audio_chunk_size,
+            )
+
         chunk = self._speech_tokens[start_idx:end_idx]
         self._decoded_index = end_idx
         return chunk
+
+    def has_undecoded_speech_tokens(self) -> bool:
+        return self._decoded_index < self._speech_token_end_idx

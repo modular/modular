@@ -721,11 +721,13 @@ class AudioGenerationScheduler(Scheduler):
                 audio_gen_output = AudioGeneratorOutput(
                     audio_data=torch.from_numpy(response.audio_data),
                     metadata={},
+                    is_done=response.is_done,
                 )
             else:
                 audio_gen_output = AudioGeneratorOutput(
                     audio_data=torch.tensor([], dtype=torch.float32),
                     metadata={},
+                    is_done=response.is_done,
                 )
             audio_responses[request_id] = audio_gen_output
             if response.is_done:
