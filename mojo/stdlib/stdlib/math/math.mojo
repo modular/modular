@@ -1002,6 +1002,7 @@ fn tanh[
             ](x)
 
         elif dtype is DType.bfloat16:
+
             @parameter
             if _is_sm_9x_or_newer():
                 return _call_ptx_intrinsic[
@@ -1011,10 +1012,10 @@ fn tanh[
                     vector_constraints="=r,r",
                 ](x)
             else:
-                 return _call_ptx_intrinsic[
+                return _call_ptx_intrinsic[
                     instruction="tanh.approx.f32", constraints="=f,f"
                 ](x.cast[DType.float32]()).cast[dtype]()
-        
+
         elif dtype is DType.float32:
             return _call_ptx_intrinsic[
                 instruction="tanh.approx.f32", constraints="=f,f"
