@@ -20,6 +20,7 @@ import logging
 import os
 import sys
 from dataclasses import MISSING, dataclass, field, fields
+from enum import Enum
 from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
@@ -524,6 +525,12 @@ class PipelineConfig(MAXConfig):
         return self._profiling_config
 
 
+class PrependPromptSpeechTokens(Enum):
+    NEVER = "never"
+    ONCE = "once"
+    ALWAYS = "always"
+
+
 @dataclass
 class AudioGenerationConfig(PipelineConfig):
     # TODO: Make these flags more discoverable.
@@ -548,17 +555,19 @@ class AudioGenerationConfig(PipelineConfig):
     """Whether prior buffered tokens should attend to tokens in the current block.
     Has no effect if buffer is not set."""
 
-    prepend_prompt_speech_tokens: bool | None = None
+    prepend_prompt_speech_tokens: PrependPromptSpeechTokens = (
+        PrependPromptSpeechTokens.NEVER
+    )
     """Whether the prompt speech tokens should be forwarded to the audio decoder.
-    If None (default), the prompt tokens are not forwarded.
-    If False, the prompt tokens are only forwarded on the first block.
-    If True, the prompt tokens are forwarded on all blocks.
+    If "never", the prompt tokens are not forwarded.
+    If "once", the prompt tokens are only forwarded on the first block.
+    If "always", the prompt tokens are forwarded on all blocks.
     """
 
     prepend_prompt_speech_tokens_causal: bool = False
     """Whether the prompt speech tokens should attend to tokens in the currently
     generated audio block.
-    Has no effect if prepend_prompt_speech_tokens is False.
+    Has no effect if prepend_prompt_speech_tokens is "never".
     If False (default), the prompt tokens do not attend to the current block.
     If True, the prompt tokens attend to the current block.
     """
@@ -598,14 +607,11 @@ class AudioGenerationConfig(PipelineConfig):
             self.block_causal = True
 
         prepend_prompt_speech_tokens = audio_config.pop(
-            "prepend_prompt_speech_tokens", ""
+            "prepend_prompt_speech_tokens", "never"
         )
-        if not prepend_prompt_speech_tokens:
-            self.prepend_prompt_speech_tokens = None
-        elif prepend_prompt_speech_tokens.lower() == "false":
-            self.prepend_prompt_speech_tokens = False
-        else:
-            self.prepend_prompt_speech_tokens = True
+        self.prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
+            prepend_prompt_speech_tokens
+        )
 
         prepend_prompt_speech_tokens_causal = audio_config.pop(
             "prepend_prompt_speech_tokens_causal", ""

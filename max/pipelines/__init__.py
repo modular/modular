@@ -35,7 +35,11 @@ from .core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from .lib.config import AudioGenerationConfig, PipelineConfig
+from .lib.config import (
+    AudioGenerationConfig,
+    PipelineConfig,
+    PrependPromptSpeechTokens,
+)
 from .lib.config_enums import (
     PipelineEngine,
     PipelineRole,
@@ -102,6 +106,7 @@ __all__ = [
     "PipelineTask",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
+    "PrependPromptSpeechTokens",
     "ProfilingConfig",
     "repo_exists_with_retry",
     "RepoType",
