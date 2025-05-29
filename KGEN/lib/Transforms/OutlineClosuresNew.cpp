@@ -827,7 +827,9 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
                                   /*isRegisterPassable=*/memoryKind ==
                                       ClosureMemoryKind::REGISTER_PASSABLE);
   } else {
-    Type loweredClosureType = StructType::get(fieldTypes);
+    Type loweredClosureType =
+        StructType::get(b.getContext(), fieldTypes,
+                        memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
     switch (memoryKind) {
     case ClosureMemoryKind::REGISTER_PASSABLE:
       replacement =
