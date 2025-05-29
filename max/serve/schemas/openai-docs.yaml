@@ -78,9 +78,24 @@ paths:
                       "content": "Who won the world series in 2020?"
                     },
                 ],
+                max_tokens=100
             )
 
             print(completion.choices[0].message.content)
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/chat/completions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "modularai/Llama-3.1-8B-Instruct-GGUF",
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "Who won the world series in 2020?"
+                  }
+                ],
+                "max_tokens": 100
+              }'
       requestBody:
         required: true
         content:
@@ -224,6 +239,32 @@ paths:
       description: |
         Creates a completion for the provided prompt.
         MAX Serve supports a subset of OpenAI's completion parameters.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            completion = client.completions.create(
+                model="modularai/Llama-3.1-8B-Instruct-GGUF",
+                prompt="Once upon a time",
+                max_tokens=50
+            )
+
+            print(completion.choices[0].text)
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/completions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "modularai/Llama-3.1-8B-Instruct-GGUF",
+                "prompt": "Once upon a time",
+                "max_tokens": 50
+              }'
       requestBody:
         required: true
         content:
@@ -275,7 +316,7 @@ paths:
                     model: "modularai/Llama-3.1-8B-Instruct-GGUF"
                     choices:
                       - index: 0
-                        text: " The story of a young girl who was born with a rare condition that made her skin extremely sensitive to the sun. She had to stay indoors during the day and only go out at night. She was a bit of an outcast among her peers,"
+                        text: ", there was a brave knight who lived in a small village at the edge of a great forest. The knight was known throughout the land for his kindness and courage."
                         finish_reason: "stop"
                         logprobs:
                           text_offset: null
@@ -317,6 +358,31 @@ paths:
         [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2)
         model. Only string and list of strings are supported for the
         input parameter.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            response = client.embeddings.create(
+                model="sentence-transformers/all-mpnet-base-v2",
+                input="The food was delicious and the service was excellent."
+            )
+
+            print(f"Embedding vector length: {len(response.data[0].embedding)}")
+            print(f"First 5 values: {response.data[0].embedding[:5]}")
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/embeddings \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "sentence-transformers/all-mpnet-base-v2",
+                "input": "The food was delicious and the service was excellent."
+              }'
       requestBody:
         required: true
         content:
@@ -387,6 +453,26 @@ paths:
       description: |
         Lists the currently available models.
         MAX Serve only returns the one model that it is currently serving.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            models = client.models.list()
+
+            for model in models.data:
+                print(f"Model ID: {model.id}")
+                print(f"Object Type: {model.object}")
+                print(f"Owned By: {model.owned_by}")
+        - lang: curl
+          source: |
+            curl -X GET http://0.0.0.0:8000/v1/models \
+              -H "Content-Type: application/json"
       responses:
         '200':
           description: OK
