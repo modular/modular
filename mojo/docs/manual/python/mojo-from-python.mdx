@@ -245,11 +245,6 @@ Mojo value:
    This is handled by [`PythonObject.downcast_value_ptr()`][downcast_value_ptr].
 
 {/* <!-- TODO:
-3. **Narrowing** a generic Python object into a more specific object type, like
-   `TypedPythonObject["Tuple"]` or `TypedPythonObject["List"]`
--->
-
-<!-- TODO:
 Since `PythonObject` are reference counted, and Mojo `Pointer` is guaranteed
 to be either immutable or a unique pointer, safe object downcasting currently
 only works to immutable pointers.
@@ -404,16 +399,16 @@ fn PyInit_mojo_module() -> PythonObject:
         b.def_py_function[sum_args]("sum_args")
         b.def_py_function[lookup]("lookup")
 
-fn count_args(py_self: PythonObject, args: TypedPythonObject["Tuple"]):
+fn count_args(py_self: PythonObject, args: PythonObject) raises:
     return len(args)
 
-fn sum_args(py_self: PythonObject, args: TypedPythonObject["Tuple"]):
+fn sum_args(py_self: PythonObject, args: PythonObject) raises:
     var total = args[0]
     for i in range(1, len(args)):
         total += args[i]
     return total
 
-fn lookup(py_self: PythonObject, args: TypedPythonObject["Tuple"]) raises:
+fn lookup(py_self: PythonObject, args: PythonObject) raises:
     if len(args) != 2 and len(args) != 3:
         raise Error("lookup() expects 2 or 3 arguments")
 

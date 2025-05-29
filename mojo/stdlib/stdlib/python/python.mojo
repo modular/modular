@@ -34,7 +34,7 @@ from ._cpython import (
     PyMethodDef,
     PyObjectPtr,
 )
-from .python_object import PythonModule, PythonObject, TypedPythonObject
+from .python_object import PythonObject
 
 alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal, _init_python_global]
 
@@ -214,7 +214,6 @@ struct Python:
     # PythonObject "Module" Operations
     # ===-------------------------------------------------------------------===#
 
-    # TODO(MSTDL-880): Change this to return `PythonModule`
     @staticmethod
     fn import_module(owned module: String) raises -> PythonObject:
         """Imports a Python module.
@@ -247,7 +246,7 @@ struct Python:
         return PythonObject(from_owned_ptr=module_ptr)
 
     @staticmethod
-    fn create_module(name: StaticString) raises -> PythonModule:
+    fn create_module(name: StaticString) raises -> PythonObject:
         """Creates a Python module using the provided name.
 
         Inspired by https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1227
@@ -272,19 +271,17 @@ struct Python:
         if module_ptr.is_null():
             raise cpython.get_error()
 
-        return PythonModule(
-            unsafe_unchecked_from=PythonObject(from_owned_ptr=module_ptr)
-        )
+        return PythonObject(from_owned_ptr=module_ptr)
 
     @staticmethod
     fn add_functions(
-        module: PythonModule,
+        module: PythonObject,
         owned functions: List[PyMethodDef],
     ) raises:
-        """Adds functions to a PythonModule object.
+        """Adds functions to a Python module object.
 
         Args:
-            module: The PythonModule object.
+            module: The Python module object.
             functions: List of function data.
 
         Raises:
@@ -303,17 +300,17 @@ struct Python:
 
     @staticmethod
     fn _unsafe_add_functions(
-        module: PythonModule,
+        module: PythonObject,
         functions: UnsafePointer[PyMethodDef],
     ) raises:
-        """Adds functions to a PythonModule object.
+        """Adds functions to a Python module object.
 
         Safety:
             The provided `functions` pointer must point to data that lives
             for the duration of the associated Python interpreter session.
 
         Args:
-            module: The PythonModule object.
+            module: The Python module object.
             functions: A null terminated pointer to function data.
 
         Raises:
@@ -333,7 +330,7 @@ struct Python:
 
     @staticmethod
     fn add_object(
-        module: PythonModule,
+        module: PythonObject,
         owned name: String,
         value: PythonObject,
     ) raises:

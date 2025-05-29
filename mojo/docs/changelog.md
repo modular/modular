@@ -184,6 +184,8 @@ Changes to Python-Mojo interoperability:
     Also added equivalent `UnsafePointer` initializer for downcasting from a
     `PythonObject`.
 
+- The `TypedPythonObject` type has been removed. Use `PythonObject` instead.
+
 - The `Python.is_type(x, y)` static method has been removed. Use the
   expression `x is y` instead.
 

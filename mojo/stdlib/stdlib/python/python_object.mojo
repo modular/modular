@@ -159,142 +159,10 @@ struct _PyIter(Sized):
             return 1
 
 
-alias PythonModule = TypedPythonObject["Module"]
-alias PyFunction = fn (
-    mut PythonObject, mut TypedPythonObject["Tuple"]
-) -> PythonObject
+alias PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
 alias PyFunctionRaising = fn (
-    mut PythonObject, mut TypedPythonObject["Tuple"]
+    mut PythonObject, mut PythonObject
 ) raises -> PythonObject
-
-
-@register_passable
-struct TypedPythonObject[type_hint: StaticString](
-    Movable,
-    Copyable,
-    PythonConvertible,
-    SizedRaising,
-):
-    """A wrapper around `PythonObject` that indicates the type of the contained
-    object.
-
-    The PythonObject structure is entirely dynamically typed. This type provides
-    a weak layer of optional static typing.
-
-    Parameters:
-        type_hint: The type name hint indicating the static type of this
-            object.
-    """
-
-    # ===-------------------------------------------------------------------===#
-    # Fields
-    # ===-------------------------------------------------------------------===#
-
-    var _obj: PythonObject
-
-    # ===-------------------------------------------------------------------===#
-    # Life cycle methods
-    # ===-------------------------------------------------------------------===#
-
-    fn __init__(out self, *, owned unsafe_unchecked_from: PythonObject):
-        """Construct a TypedPythonObject without any validation that the given
-        object is of the specified hinted type.
-
-        Args:
-            unsafe_unchecked_from: The PythonObject to construct from. This
-                will not be type checked.
-        """
-        self._obj = unsafe_unchecked_from^
-
-    fn __init__(out self: PythonModule, name: StaticString) raises:
-        """Construct a Python module with the given name.
-
-        Args:
-            name: The name of the module.
-
-        Raises:
-            If the module creation fails.
-        """
-        self = Python.create_module(name)
-
-    fn __copyinit__(out self, other: Self):
-        """Copy an instance of this type.
-
-        Args:
-            other: The value to copy.
-        """
-        self._obj = other._obj
-
-    # ===-------------------------------------------------------------------===#
-    # Trait implementations
-    # ===-------------------------------------------------------------------===#
-
-    fn __len__(self) raises -> Int:
-        """Returns the length of the object.
-
-        Returns:
-            The length of the object.
-        """
-        return len(self._obj)
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    fn to_python_object(self) -> PythonObject:
-        """Convert the TypedPythonObject to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        return self._obj
-
-    # TODO:
-    #   This should have origin, or we should do this with a context
-    #   manager, to prevent use after ASAP destruction.
-    fn unsafe_as_py_object_ptr(self) -> PyObjectPtr:
-        """Get the underlying PyObject pointer.
-
-        Returns:
-            The underlying PyObject pointer.
-
-        Safety:
-            Use-after-free: The caller must take care that `self` outlives the
-            usage of the pointer returned by this function.
-        """
-        return self._obj.unsafe_as_py_object_ptr()
-
-    # ===-------------------------------------------------------------------===#
-    # 'Tuple' Operations
-    # ===-------------------------------------------------------------------===#
-
-    fn __getitem__[
-        I: Indexer
-    ](self: TypedPythonObject["Tuple"], pos: I,) raises -> PythonObject:
-        """Get an element from this tuple.
-
-        Args:
-            pos: The tuple element position to retrieve.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Returns:
-            The value of the tuple element at the specified position.
-        """
-        var cpython = Python().cpython()
-
-        var item: PyObjectPtr = cpython.PyTuple_GetItem(
-            self.unsafe_as_py_object_ptr(),
-            index(pos),
-        )
-
-        if item.is_null():
-            raise cpython.get_error()
-
-        # TODO(MSTDL-911): Avoid unnecessary owned reference counts when
-        #   returning read-only PythonObject values.
-        return PythonObject(from_borrowed_ptr=item)
 
 
 @register_passable
@@ -412,22 +280,6 @@ struct PythonObject(
         ]()
 
         return PythonObject._unsafe_alloc(type_obj_ptr, alloc^)
-
-    @implicit
-    fn __init__(out self, owned typed_obj: TypedPythonObject[_]):
-        """Construct a PythonObject from a typed object, dropping the type hint
-        information.
-
-        This is a no-op at runtime. The only information that is lost is static
-        type information.
-
-        Args:
-            typed_obj: The typed python object to unwrap.
-        """
-        self = typed_obj._obj^
-
-        # Mark destroyed so we can transfer out its field.
-        __disable_del typed_obj
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need

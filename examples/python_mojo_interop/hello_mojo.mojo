@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from python import PythonObject, PythonModule
+from python import PythonObject
 from python.bindings import PythonModuleBuilder
 from os import abort
 

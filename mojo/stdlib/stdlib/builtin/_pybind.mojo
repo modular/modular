@@ -18,9 +18,7 @@ import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
 from python import (
     Python,
-    PythonModule,
     PythonObject,
-    TypedPythonObject,
     ConvertibleFromPython,
 )
 from python.bindings import (  # Imported for use by the compiler
@@ -45,7 +43,7 @@ fn get_cpython() -> CPython:
 
 
 # This function is used by the compiler to create a new module.
-fn create_pybind_module[name: StaticString]() raises -> PythonModule:
+fn create_pybind_module[name: StaticString]() raises -> PythonObject:
     return Python.create_module(name)
 
 
@@ -71,14 +69,13 @@ fn gen_pytype_wrapper[
     # TODO(MOCO-1307): Add support for constructor generation.
 
     var type_builder = PythonTypeBuilder.bind[T](name)
-    var module_obj = PythonModule(unsafe_unchecked_from=module)
-    _ = type_builder.finalize(module_obj)
+    _ = type_builder.finalize(module)
 
 
 fn add_wrapper_to_module[
     wrapper_func: PyFunctionRaising, func_name: StaticString
 ](mut module_obj: PythonObject) raises:
-    var b = PythonModuleBuilder(PythonModule(unsafe_unchecked_from=module_obj))
+    var b = PythonModuleBuilder(module_obj)
     b.def_py_function[wrapper_func](func_name)
     _ = b.finalize()
 
@@ -87,7 +84,7 @@ fn check_and_get_arg[
     T: AnyType
 ](
     func_name: StaticString,
-    py_args: TypedPythonObject["Tuple"],
+    py_args: PythonObject,
     index: Int,
 ) raises -> UnsafePointer[T]:
     return py_args[index].downcast_value_ptr[T](func=func_name)
@@ -103,7 +100,7 @@ fn check_and_get_or_convert_arg[
     T: ConvertibleFromPython
 ](
     func_name: StaticString,
-    py_args: TypedPythonObject["Tuple"],
+    py_args: PythonObject,
     index: Int,
 ) raises -> UnsafePointer[T]:
     # Stack space to hold a converted value for this argument, if needed.
@@ -128,7 +125,7 @@ fn _try_convert_arg[
     T: ConvertibleFromPython
 ](
     func_name: StringSlice,
-    py_args: TypedPythonObject["Tuple"],
+    py_args: PythonObject,
     argidx: Int,
     out result: T,
 ) raises:

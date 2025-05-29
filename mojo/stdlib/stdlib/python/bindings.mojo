@@ -18,7 +18,7 @@ from sys.info import sizeof
 from compile.reflection import get_type_name
 
 from memory import UnsafePointer
-from python import Python, PythonConvertible, PythonObject, TypedPythonObject
+from python import Python, PythonConvertible, PythonObject
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
@@ -31,7 +31,7 @@ from python._cpython import (
     destructor,
     newfunc,
 )
-from python.python_object import PyFunction, PyFunctionRaising, PythonModule
+from python.python_object import PyFunction, PyFunctionRaising
 
 # ===-----------------------------------------------------------------------===#
 # Global `PyTypeObject` Registration
@@ -39,20 +39,19 @@ from python.python_object import PyFunction, PyFunctionRaising, PythonModule
 
 alias MOJO_PYTHON_TYPE_OBJECTS = _Global[
     "MOJO_PYTHON_TYPE_OBJECTS",
-    Dict[StaticString, TypedPythonObject["Type"]],
+    Dict[StaticString, PythonObject],
     _init_python_type_objects,
 ]
 """Mapping of Mojo type identifiers to unique `PyTypeObject*` binding
 that Mojo type to this CPython interpreter instance."""
 
 
-fn _init_python_type_objects() -> Dict[StaticString, TypedPythonObject["Type"]]:
-    return Dict[StaticString, TypedPythonObject["Type"]]()
+fn _init_python_type_objects() -> Dict[StaticString, PythonObject]:
+    return Dict[StaticString, PythonObject]()
 
 
 fn _register_py_type_object(
-    type_id: StaticString,
-    owned type_obj: TypedPythonObject["Type"],
+    type_id: StaticString, owned type_obj: PythonObject
 ) raises:
     """Register a Python type object for the identified Mojo type.
 
@@ -82,7 +81,7 @@ fn _register_py_type_object(
     type_dict[][type_id] = type_obj^
 
 
-fn lookup_py_type_object[T: AnyType]() raises -> TypedPythonObject["Type"]:
+fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     """Retrieve a reference to the unique Python type describing Python objects
     containing Mojo values of type `T`.
 
@@ -94,8 +93,8 @@ fn lookup_py_type_object[T: AnyType]() raises -> TypedPythonObject["Type"]:
         T: The Mojo type to look up.
 
     Returns:
-        A `TypedPythonObject["Type"]` representing the Python type object that
-        binds the Mojo type `T` to the current CPython interpreter instance.
+        A `PythonObject` representing the Python type object that binds the Mojo
+        type `T` to the current CPython interpreter instance.
 
     Raises:
         If no `PythonTypeBuilder` was ever finalized for type `T`, or if no
@@ -123,7 +122,7 @@ fn lookup_py_type_object[T: AnyType]() raises -> TypedPythonObject["Type"]:
 # Must be ABI compatible with `initproc`
 alias Typed_initproc = fn (
     PyObjectPtr,
-    TypedPythonObject["Tuple"],
+    PythonObject,
     # Will be NULL if no keyword arguments were passed.
     PyObjectPtr,
 ) -> c_int
@@ -131,7 +130,7 @@ alias Typed_initproc = fn (
 # Must be ABI compatible with `newfunc`
 alias Typed_newfunc = fn (
     UnsafePointer[PyTypeObject],
-    TypedPythonObject["Tuple"],
+    PythonObject,
     PyObjectPtr,
 ) -> PyObjectPtr
 
@@ -172,7 +171,7 @@ fn _default_tp_new_wrapper[
     T: Defaultable & Movable
 ](
     subtype: UnsafePointer[PyTypeObject],
-    args: TypedPythonObject["Tuple"],
+    args: PythonObject,
     keyword_args: PyObjectPtr,
 ) -> PyObjectPtr:
     """Python-compatible wrapper around a Mojo initializer function.
@@ -319,7 +318,7 @@ struct PythonModuleBuilder:
         TODO: This should be enforced programmatically in the future.
     """
 
-    var module: PythonModule
+    var module: PythonObject
     """The Python module being built."""
 
     var functions: List[PyMethodDef]
@@ -341,9 +340,9 @@ struct PythonModuleBuilder:
         Raises:
             If the module creation fails.
         """
-        self = Self(PythonModule(name))
+        self = Self(Python().create_module(name))
 
-    fn __init__(out self, module: PythonModule):
+    fn __init__(out self, module: PythonObject):
         """Construct a Python module builder with the given module.
 
         Args:
@@ -466,7 +465,7 @@ struct PythonModuleBuilder:
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(0, py_args)
             return func()
@@ -494,7 +493,7 @@ struct PythonModuleBuilder:
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(1, py_args)
             var arg = py_args[0]
@@ -523,7 +522,7 @@ struct PythonModuleBuilder:
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(2, py_args)
             var arg0 = py_args[0]
@@ -555,7 +554,7 @@ struct PythonModuleBuilder:
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(3, py_args)
             var arg0 = py_args[0]
@@ -896,7 +895,7 @@ struct PythonModuleBuilder:
 
         self.def_function[wrapper](func_name, docstring)
 
-    fn finalize(mut self) raises -> PythonModule:
+    fn finalize(mut self) raises -> PythonObject:
         """Finalize the module builder, creating the module object.
 
 
@@ -1004,7 +1003,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
         return b^
 
-    fn finalize(mut self, module: PythonModule) raises:
+    fn finalize(mut self, module: PythonObject) raises:
         """Finalize the builder and add the created type to a Python module.
 
         This method completes the type building process by calling the
@@ -1057,14 +1056,12 @@ struct PythonTypeBuilder(Movable, Copyable):
         )
 
         # Construct a Python 'type' object from our type spec.
-        var type_obj = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
+        var type_obj_ptr = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
 
-        if type_obj.is_null():
+        if type_obj_ptr.is_null():
             raise cpython.get_error()
 
-        var typed_type_obj = TypedPythonObject["Type"](
-            unsafe_unchecked_from=PythonObject(from_owned_ptr=type_obj)
-        )
+        var type_obj = PythonObject(from_owned_ptr=type_obj_ptr)
 
         # Every Mojo type that is exposed to Python must have EXACTLY ONE
         # `PyTypeObject` instance that represents it. That is important for
@@ -1072,9 +1069,9 @@ struct PythonTypeBuilder(Movable, Copyable):
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
         if type_id := self._type_id:
-            _register_py_type_object(type_id[], typed_type_obj)
+            _register_py_type_object(type_id[], type_obj)
 
-        Python.add_object(module, self.type_name, typed_type_obj)
+        Python.add_object(module, self.type_name, type_obj)
         self.methods.clear()
 
     # ===-------------------------------------------------------------------===#
@@ -1183,7 +1180,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(0, py_args)
             return method(py_self)
@@ -1214,7 +1211,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(1, py_args)
             var a0 = py_args[0]
@@ -1248,7 +1245,7 @@ struct PythonTypeBuilder(Movable, Copyable):
 
         @always_inline
         fn wrapper(
-            mut py_self: PythonObject, mut py_args: TypedPythonObject["Tuple"]
+            mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
             check_arguments_arity(2, py_args)
             var a0 = py_args[0]
@@ -1567,7 +1564,7 @@ fn _py_c_function_wrapper[
 
     Parameters:
         user_func: The Mojo function to wrap. Must have signature
-                  `fn(PythonObject, TypedPythonObject["Tuple"]) -> PythonObject`.
+                  `fn(PythonObject, PythonObject) -> PythonObject`.
 
     Args:
         py_self_ptr: Pointer to the Python object representing 'self' in the
@@ -1605,9 +1602,7 @@ fn _py_c_function_wrapper[
     #   argument convention to `user_func`, so logically they are treated
     #   as Python read-only references.
     var py_self = PythonObject(from_owned_ptr=py_self_ptr)
-    var args = TypedPythonObject["Tuple"](
-        unsafe_unchecked_from=PythonObject(from_owned_ptr=args_ptr)
-    )
+    var args = PythonObject(from_owned_ptr=args_ptr)
 
     # SAFETY:
     #   Call the user provided function, and take ownership of the
@@ -1619,11 +1614,8 @@ fn _py_c_function_wrapper[
     __disable_del py_self
 
     # SAFETY:
-    #   Prevent `args` AND `args._obj` from being destroyed, since we don't
-    #   own them.
-    var _obj = args._obj^
+    #   Prevent `args` from being destroyed, since we don't own it.
     __disable_del args
-    __disable_del _obj
     return result
 
 
@@ -1638,7 +1630,7 @@ fn _py_c_function_wrapper[
 
     Parameters:
         user_func: The Mojo function to wrap. Must follow the `PyFunctionRaising`
-                  signature: `fn(PythonObject, TypedPythonObject["Tuple"]) raises -> PythonObject`
+                  signature: `fn(PythonObject, PythonObject) raises -> PythonObject`
 
     Args:
         py_self_ptr: Pointer to the Python object representing 'self' (borrowed reference).
@@ -1650,7 +1642,7 @@ fn _py_c_function_wrapper[
     """
 
     fn wrapper(
-        mut py_self: PythonObject, mut args: TypedPythonObject["Tuple"]
+        mut py_self: PythonObject, mut args: PythonObject
     ) -> PythonObject:
         var cpython = Python().cpython()
 
@@ -1683,7 +1675,7 @@ fn _py_c_function_wrapper[
 
 fn check_arguments_arity(
     arity: Int,
-    args: TypedPythonObject["Tuple"],
+    args: PythonObject,
 ) raises:
     """Validate that the provided arguments match the expected function arity.
 
@@ -1706,7 +1698,7 @@ fn check_arguments_arity(
 
 fn check_arguments_arity(
     arity: Int,
-    args: TypedPythonObject["Tuple"],
+    args: PythonObject,
     func_name: StringSlice,
 ) raises:
     """Validate that the provided arguments match the expected function arity.
