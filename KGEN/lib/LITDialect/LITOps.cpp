@@ -1895,6 +1895,76 @@ static ParseResult parseRegionOnly(OpAsmParser &p,
   return success();
 }
 
+static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
+                                            MemSymbolTripleAttr &triple) {
+  SmallVector<SymbolConstantAttr> symbols;
+  do {
+    SymbolRefAttr callee;
+    ParameterExprArrayAttr paramValues;
+    int numOrigins = 0;
+    if (p.parseAttribute(callee) || p.parseLSquare() ||
+        p.parseInteger(numOrigins) || p.parseRSquare() ||
+        parseParameterValues(p, paramValues))
+      return failure();
+    // TODO: this is carefully curated to handle move, copy, del. Should
+    // we introduce an abstraction or use existing vtable machinery
+    // instead?
+    SmallVector<Type> args;
+    if (p.parseLParen() || p.parseType(args.emplace_back()))
+      return failure();
+    if (succeeded(p.parseOptionalComma())) {
+      if (p.parseType(args.emplace_back()))
+        return failure();
+    }
+    if (p.parseRParen())
+      return failure();
+    // TODO MOCO-1721: Name metadata is discarded when inferring the
+    // type
+    // of the symbol. Parameters and lifetimes are preserved. Lifetimes
+    // should not be needed since the function call is not generated
+    // until after lower-lit. I am uncertain what relies on the symbol
+    // type contained the same metadata as the function type on the
+    // function the symbol refers to. Revisit this TODO once the
+    // frontend pipeline is built out.
+    FnType funType = FnType::get(p.getContext(), args, {},
+                                 /*numImplicitOriginDecls=*/numOrigins);
+    FnTypeGeneratorType signatureType = LITGeneratorType::get(
+        /*inputParamTypes=*/llvm::to_vector(llvm::map_range(
+            paramValues.getValue(), [](TypedAttr in) { return in.getType(); })),
+        funType,
+        PogListAttr::get(
+            p.getContext(),
+            llvm::to_vector(
+                llvm::map_range(paramValues.getValue(), [&](TypedAttr param) {
+                  StringAttr name = StringAttr::get(p.getContext(), "");
+
+                  // TODO: Likely not handling variadics right.
+                  VariadicKind vk = VariadicKind::None;
+                  if (isa<VariadicType>(param.getType()))
+                    vk = VariadicKind::PosVarArg;
+                  return PogMetadataAttr::get(name, PassingKind::PosOnly, vk);
+                }))));
+    auto sym = SymbolConstantAttr::get(callee, signatureType, paramValues);
+    symbols.push_back(sym);
+
+  } while (succeeded(p.parseOptionalComma()));
+  if (failed(p.parseRSquare()))
+    return failure();
+  switch (symbols.size()) {
+  case 2:
+    triple =
+        MemSymbolTripleAttr::get(p.getContext(), {}, symbols[0], symbols[1]);
+    break;
+  case 3:
+    triple = MemSymbolTripleAttr::get(p.getContext(), symbols[0], symbols[1],
+                                      symbols[2]);
+    break;
+  default:
+    return p.emitError(p.getCurrentLocation(), "expected 2 or 3 symbols");
+  }
+  return success();
+}
+
 static ParseResult parseClosureInitOpValue(
     OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
@@ -1907,7 +1977,7 @@ static ParseResult parseClosureInitOpValue(
 
   // Collect the captures and symbols, if provided.
   SmallVector<TypedAttr> origins;
-  SmallVector<Attribute> copyOrMoveSymbols;
+  SmallVector<Attribute> memSymbolTriples;
   LogicalResult result = success();
   if (failed(p.parseOptionalRParen())) {
     do {
@@ -1924,7 +1994,7 @@ static ParseResult parseClosureInitOpValue(
       // indicating the method to call.
       if (p.parseOptionalLSquare()) {
         // No attribute specified; capture by value.
-        copyOrMoveSymbols.push_back(BoolAttr::get(p.getContext(), false));
+        memSymbolTriples.push_back({});
       } else {
         if (succeeded(p.parseOptionalKeyword("ref"))) {
           // capture by reference, parse the origin.
@@ -1932,56 +2002,15 @@ static ParseResult parseClosureInitOpValue(
               parseOriginParamValue(p, origins.emplace_back()) ||
               p.parseRSquare())
             return failure();
-          copyOrMoveSymbols.push_back(BoolAttr::get(p.getContext(), true));
+          memSymbolTriples.push_back(BoolAttr::get(p.getContext(), true));
         } else {
           // capture by copy/move, parse the symbol.
-          SymbolRefAttr callee;
-          ParameterExprArrayAttr paramValues;
-          int numOrigins = 0;
-          if (p.parseAttribute(callee) || p.parseLSquare() ||
-              p.parseInteger(numOrigins) || p.parseRSquare() ||
-              parseParameterValues(p, paramValues))
+          MemSymbolTripleAttr triple;
+          if (failed(parseMemSymbolTripleAttr(p, triple)))
             return failure();
-
-          Type existingType;
-          Type selfType;
-          if (p.parseLParen() || p.parseType(existingType) || p.parseComma() ||
-              p.parseType(selfType) || p.parseRParen() || p.parseRSquare())
-            return failure();
-
-          // TODO MOCO-1721: Name metadata is discarded when inferring the type
-          // of the symbol. Parameters and lifetimes are preserved. Lifetimes
-          // should not be needed since the function call is not generated until
-          // after lower-lit. I am uncertain what relies on the symbol type
-          // contained the same metadata as the function type on the function
-          // the symbol refers to. Revisit this TODO once the frontend pipeline
-          // is built out.
-          FnType funType =
-              FnType::get(p.getContext(), {existingType, selfType}, {},
-                          /*numImplicitOriginDecls=*/numOrigins);
-          FnTypeGeneratorType signatureType = LITGeneratorType::get(
-              /*inputParamTypes=*/llvm::to_vector(
-                  llvm::map_range(paramValues.getValue(),
-                                  [](TypedAttr in) { return in.getType(); })),
-              funType,
-              PogListAttr::get(
-                  p.getContext(),
-                  llvm::to_vector(llvm::map_range(
-                      paramValues.getValue(), [&](TypedAttr param) {
-                        StringAttr name = StringAttr::get(p.getContext(), "");
-
-                        // TODO: Likely not handling variadics right.
-                        VariadicKind vk = VariadicKind::None;
-                        if (isa<VariadicType>(param.getType()))
-                          vk = VariadicKind::PosVarArg;
-                        return PogMetadataAttr::get(name, PassingKind::PosOnly,
-                                                    vk);
-                      }))));
-          copyOrMoveSymbols.push_back(
-              SymbolConstantAttr::get(callee, signatureType, paramValues));
+          memSymbolTriples.push_back(triple);
         }
       }
-
       result = p.parseOptionalComma();
     } while (succeeded(result));
     if (p.parseRParen())
@@ -2000,10 +2029,10 @@ static ParseResult parseClosureInitOpValue(
   if (p.parseComma() || parseVarDeclType(p, resultType, paramDecl))
     return failure();
 
-  if (captureTypes.size() != copyOrMoveSymbols.size())
+  if (captureTypes.size() != memSymbolTriples.size())
     return p.emitError(p.getCurrentLocation(),
                        "expected symbols to match number of capture types");
-  moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), copyOrMoveSymbols);
+  moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), memSymbolTriples);
   captureOrigins = OriginSetAttr::get(p.getContext(), origins);
   return success();
 }
@@ -2015,6 +2044,21 @@ static void printClosureInitOpValue(
     KGEN::ParamDeclArrayAttr inputParams, KGEN::InlineLevelAttr inlineLevel,
     Region &bodyRegion, TypeRange captureTypes, Type resultType,
     KGEN::ParamDeclAttr paramDecl) {
+  auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
+                         ArrayRef<TypedAttr> params) {
+    p << "[";
+    FnTypeGeneratorType fnTypeGen = cast<FnTypeGeneratorType>(calleeType);
+    p << fnTypeGen.getBody().getNumImplicitOriginDecls();
+    p << "]";
+    printParameterValues(p, params);
+    p << "(";
+    for (unsigned i = 0; i < fnTypeGen.getValues().getNumInputs(); i++) {
+      p.printType(fnTypeGen.getValues().getInput(i));
+      if (i < fnTypeGen.getValues().getNumInputs() - 1)
+        p << ", ";
+    }
+    p << ")";
+  };
   p << "(";
   int i = 0;
   int j = 0;
@@ -2023,20 +2067,15 @@ static void printClosureInitOpValue(
   int n = captures.size();
   for (auto [capture, symbol] : llvm::zip(captures, moveOrCopyCaptureSymbols)) {
     p << capture;
-    if (SymbolConstantAttr callee = dyn_cast<SymbolConstantAttr>(symbol)) {
+    if (!symbol) {
+      if (++i < n)
+        p << ", ";
+      continue;
+    }
+    if (MemSymbolTripleAttr triple = dyn_cast<MemSymbolTripleAttr>(symbol)) {
       p << "[";
-      p << callee.getSymbol();
-      p << "[";
-      FnTypeGeneratorType fnTypeGen =
-          cast<FnTypeGeneratorType>(callee.getType());
-      p << fnTypeGen.getBody().getNumImplicitOriginDecls();
-      p << "]";
-      printParameterValues(p, callee.getParamValues());
-      p << "(";
-      p.printType(fnTypeGen.getValues().getInput(0));
-      p << ", ";
-      p.printType(fnTypeGen.getValues().getInput(1));
-      p << ")";
+      printMemSymbolTripleAttrWithoutType(p, triple.getCopy(), triple.getMove(),
+                                          triple.getDel(), paramPrinter);
       p << "]";
     } else if (BoolAttr hasLifetime = dyn_cast<BoolAttr>(symbol)) {
       if (hasLifetime.getValue()) {

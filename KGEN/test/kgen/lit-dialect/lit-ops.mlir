@@ -493,9 +493,11 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 
 // CHECK-LABEL: lit.fn @make_closure
   lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@String, imm Y> owned_in_mem, %x: index, %z: !lit.ref<@String, imm Z> owned_in_mem) -> !kgen.none {
-    // CHECK: lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<@String, mut *[0,0]>, !lit.ref<@String, imm *[0,1]>)])(%arg0[y2]: index) -> index
+    // CHECK: lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<@String, mut *[0,0]>, !lit.ref<@String, imm *[0,1]>), @String::@__moveinit__[2]({{.*}}), @String::@__del__[1]({{.*}})])(%arg0[y2]: index) -> index
     // CHECK: } : (!lit.ref<@String, imm Y>, index, !lit.ref<@String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
-    %0 = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<@String, mut *[0,0]>, !lit.ref<@String, imm *[0,1]>)])(%arg0[y2]: index) -> index {
+    %0 = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<@String, mut *[0,0]>, !lit.ref<@String, imm *[0,1]>),
+                                                 @String::@__moveinit__[2](!lit.ref<@String, imm *[0,0]>, !lit.ref<@String, imm *[0,1]>),
+                                                 @String::@__del__[1](!lit.ref<@String, imm *[0,0]>)])(%arg0[y2]: index) -> index {
       lit.end_fn
     } : (!lit.ref<@String, imm Y>, index, !lit.ref<@String, imm Z>),
         !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
@@ -531,7 +533,9 @@ lit.trait.decl @Closure<?, SELF: !Closure> {
 }
 
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
-  %impl = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<!String, imm *[0,0]>, !lit.ref<!String, imm *[0,1]>)])(%y2: index) -> index {
+  %impl = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<!String, imm *[0,0]>, !lit.ref<!String, imm *[0,1]>),
+                                                  @String::@__moveinit__[2](!lit.ref<!String, imm *[0,0]>, !lit.ref<!String, imm *[0,1]>),
+                                                  @String::@__del__[1](!lit.ref<!String, imm *[0,0]>)])(%y2: index) -> index {
     lit.end_fn
   } : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
   %2 = lit.call @direct[mut C]<:!Closure #Impl1>(%impl, %x) :
@@ -574,10 +578,14 @@ lit.struct.decl @Foo<PARAM: index>
 
 lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, mut R> byref_result) -> !kgen.none {
   %foo = lit.var.decl "foo" var : !lit.ref<@Foo<:index PARAM>, mut FOO>
-  // CHECK: lit.closure.init(%foo[@Foo::@__copyinit__[2]<PARAM, 2>(!lit.ref<@Foo<*(0,0)>, imm *[0,0]>, !lit.ref<@Foo<*(0,0)>, mut *[0,1]>)])(%arg0[y2]: index) -> index {
+  // CHECK: lit.closure.init(%foo[@Foo::@__copyinit__[2]<PARAM, 2>(!lit.ref<@Foo<*(0,0)>, imm *[0,0]>, !lit.ref<@Foo<*(0,0)>, mut *[0,1]>), @
+  // CHECK-SAME: Foo::@__moveinit__[2]<PARAM, 2>(!lit.ref<@Foo<*(0,0)>, imm *[0,0]>, !lit.ref<@Foo<*(0,0)>, mut *[0,1]>), @
+  // CHECK-SAME: Foo::@__del__[1]<PARAM, 2>(!lit.ref<@Foo<*(0,0)>, imm *[0,0]>)])(%arg0[y2]: index) -> index {
   // CHECK-NEXT: lit.end_fn
   // CHECK-NEXT: } : (!lit.ref<@Foo<PARAM>, mut FOO>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
-  %impl = lit.closure.init(%foo[@Foo::@__copyinit__[2]<PARAM, 2>(!lit.ref<@Foo<:index *(0,0)>, imm *[0,0]>, !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]>)])(%y2: index) -> index {
+  %impl = lit.closure.init(%foo[@Foo::@__copyinit__[2]<PARAM, 2>(!lit.ref<@Foo<:index *(0,0)>, imm *[0,0]>, !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]>),
+                                @Foo::@__moveinit__[2]<PARAM, 2>(!lit.ref<@Foo<:index *(0,0)>, imm *[0,0]>, !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]>),
+                                @Foo::@__del__[1]<PARAM, 2>(!lit.ref<@Foo<:index *(0,0)>, imm *[0,0]>)])(%y2: index) -> index {
     lit.end_fn
   } : (!lit.ref<@Foo<:index PARAM>, mut FOO>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
   lit.end_fn
