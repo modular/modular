@@ -51,10 +51,10 @@ def test_send_recv_basic(device: Device):
     elts_per_page = 3
     num_elts = total_num_pages * elts_per_page
 
-    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int8) + 10).to(
+    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 10).to(
         device
     )
-    blocks_2 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int8) + 80).to(
+    blocks_2 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 80).to(
         device
     )
 
@@ -137,10 +137,10 @@ def test_initiate_send_xfer():
     elts_per_page = 3
     num_elts = total_num_pages * elts_per_page
 
-    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int8) + 10).to(
+    blocks_1 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 10).to(
         device
     )
-    blocks_2 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int8) + 80).to(
+    blocks_2 = Tensor.from_numpy(np.arange(num_elts, dtype=np.int16) + 80).to(
         device
     )
 
