@@ -50,6 +50,7 @@ from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import HuggingFaceRepo
 from .pipeline import PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
@@ -59,6 +60,7 @@ PipelineTypes = Union[
     EmbeddingsGenerator,
     AudioGeneratorPipeline,
     SpeculativeDecodingTextGenerationPipeline,
+    SpeechTokenGenerationPipeline,
 ]
 
 
@@ -69,6 +71,7 @@ def get_pipeline_for_task(
     | type[EmbeddingsPipeline]
     | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]
+    | type[SpeechTokenGenerationPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config.draft_model_config is not None:
@@ -79,6 +82,8 @@ def get_pipeline_for_task(
         return EmbeddingsPipeline
     elif task == PipelineTask.AUDIO_GENERATION:
         return AudioGeneratorPipeline
+    elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
+        return SpeechTokenGenerationPipeline
     else:
         msg = f"PipelineTask ({task}) does not have supported Pipeline"
         raise ValueError(msg)

@@ -65,6 +65,7 @@ from .lib.pipeline import (
 )
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
     PipelineTokenizer,
@@ -107,6 +108,7 @@ __all__ = [
     "RopeType",
     "SamplingConfig",
     "SpeculativeDecodingTextGenerationPipeline",
+    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionContext",

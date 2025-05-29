@@ -20,3 +20,4 @@ class PipelineTask(str, Enum):
     TEXT_GENERATION = "text_generation"
     EMBEDDINGS_GENERATION = "embeddings_generation"
     AUDIO_GENERATION = "audio_generation"
+    SPEECH_TOKEN_GENERATION = "speech_token_generation"
