@@ -32,6 +32,7 @@ from python._cpython import (
     newfunc,
 )
 from python.python_object import PyFunction, PyFunctionRaising
+from python._python_func import PyObjectFunction
 
 # ===-----------------------------------------------------------------------===#
 # Global `PyTypeObject` Registration
@@ -440,12 +441,12 @@ struct PythonModuleBuilder:
         )
 
     # ===-------------------------------------------------------------------===#
-    # def_function with return, raising
+    # def_function
     # ===-------------------------------------------------------------------===#
 
-    # TODO: declare these as a single method using variadics
     fn def_function[
-        func: fn () raises -> PythonObject
+        func_type: AnyTrivialRegType, //,
+        func: PyObjectFunction[func_type, False],
     ](
         mut self: Self,
         func_name: StaticString,
@@ -454,8 +455,21 @@ struct PythonModuleBuilder:
         """Declare a binding for a function with PythonObject signature in the
         module.
 
+        These signatures can have any number of positional PythonObject
+        arguments up to 3, can optionally return a PythonObject, and can raise.
+
+        Example signature types:
+        ```mojo
+        alias F1 = fn (mut PythonObject) raises -> PythonObject
+        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
+        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        ```
+
         Parameters:
-            func: The function to declare a binding for.
+            func_type: The type of the function to declare a binding for.
+            func: The function to declare a binding for. Users can pass their
+                function directly, and it will be implicitly converted to a
+                PyObjectFunction if and only if its signature is supported.
 
         Args:
             func_name: The name with which the function will be exposed in the
@@ -467,433 +481,9 @@ struct PythonModuleBuilder:
         fn wrapper(
             mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
-            check_arguments_arity(0, py_args)
-            return func()
+            return func._call_func(py_args)
 
         self.def_py_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject) raises -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            check_arguments_arity(1, py_args)
-            var arg = py_args[0]
-            return func(arg)
-
-        self.def_py_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject, mut PythonObject) raises -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            check_arguments_arity(2, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            return func(arg0, arg1)
-
-        self.def_py_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (
-            mut PythonObject, mut PythonObject, mut PythonObject
-        ) raises -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            check_arguments_arity(3, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            return func(arg0, arg1, arg2)
-
-        self.def_py_function[wrapper](func_name, docstring)
-
-    # ===-------------------------------------------------------------------===#
-    # def_function with return, not raising
-    # ===-------------------------------------------------------------------===#
-
-    # TODO: declare these as a single method using variadics
-    fn def_function[
-        func: fn () -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper() raises -> PythonObject:
-            return func()
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject) -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(mut a0: PythonObject) raises -> PythonObject:
-            return func(a0)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject, mut PythonObject) -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut a0: PythonObject, mut a1: PythonObject
-        ) raises -> PythonObject:
-            return func(a0, a1)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (
-            mut PythonObject, mut PythonObject, mut PythonObject
-        ) -> PythonObject
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut a0: PythonObject, mut a1: PythonObject, mut a2: PythonObject
-        ) raises -> PythonObject:
-            return func(a0, a1, a2)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    # ===-------------------------------------------------------------------===#
-    # def_function with no return, raising
-    # ===-------------------------------------------------------------------===#
-
-    # TODO: declare these as a single method using variadics
-    fn def_function[
-        func: fn () raises
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper() raises -> PythonObject:
-            func()
-            return PythonObject(None)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject) raises
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(mut a0: PythonObject) raises -> PythonObject:
-            func(a0)
-            return PythonObject(None)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject, mut PythonObject) raises
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut a0: PythonObject, mut a1: PythonObject
-        ) raises -> PythonObject:
-            func(a0, a1)
-            return PythonObject(None)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject, mut PythonObject, mut PythonObject) raises
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut a0: PythonObject, mut a1: PythonObject, mut a2: PythonObject
-        ) raises -> PythonObject:
-            func(a0, a1, a2)
-            return PythonObject(None)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    # ===-------------------------------------------------------------------===#
-    # def_function with no return, not raising
-    # ===-------------------------------------------------------------------===#
-
-    # TODO: declare these as a single method using variadics
-    fn def_function[
-        func: fn ()
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper() raises:
-            func()
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject)
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(mut a0: PythonObject) raises:
-            func(a0)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject, mut PythonObject)
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(mut a0: PythonObject, mut a1: PythonObject) raises:
-            func(a0, a1)
-
-        self.def_function[wrapper](func_name, docstring)
-
-    fn def_function[
-        func: fn (mut PythonObject, mut PythonObject, mut PythonObject)
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
-
-        Parameters:
-            func: The function to declare a binding for.
-
-        Args:
-            func_name: The name with which the function will be exposed in the
-                module.
-            docstring: The docstring for the function in the module.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut a0: PythonObject, mut a1: PythonObject, mut a2: PythonObject
-        ) raises:
-            func(a0, a1, a2)
-
-        self.def_function[wrapper](func_name, docstring)
 
     fn finalize(mut self) raises -> PythonObject:
         """Finalize the module builder, creating the module object.
@@ -1152,12 +742,12 @@ struct PythonTypeBuilder(Movable, Copyable):
         )
 
     # ===-------------------------------------------------------------------===#
-    # def_method with return, raising
+    # def_method
     # ===-------------------------------------------------------------------===#
 
-    # TODO: declare these as a single method using variadics
     fn def_method[
-        method: fn (mut PythonObject) raises -> PythonObject
+        method_type: AnyTrivialRegType, //,
+        method: PyObjectFunction[method_type, True],
     ](
         mut self: Self,
         method_name: StaticString,
@@ -1166,8 +756,22 @@ struct PythonTypeBuilder(Movable, Copyable):
         """Declare a binding for a method with PythonObject signature for the
         type.
 
+        These signatures can have any number of positional PythonObject
+        arguments up to 3 (including self), can optionally return a
+        PythonObject, and can raise.
+
+        Example signature types:
+        ```mojo
+        alias F1 = fn (mut PythonObject) raises -> PythonObject
+        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
+        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        ```
+
         Parameters:
-            method: The method to declare a binding for.
+            method_type: The type of the method to declare a binding for.
+            method: The method to declare a binding for. Users can pass their
+                function directly, and it will be implicitly converted to a
+                PyObjectFunction if and only if its signature is supported.
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -1182,365 +786,9 @@ struct PythonTypeBuilder(Movable, Copyable):
         fn wrapper(
             mut py_self: PythonObject, mut py_args: PythonObject
         ) raises -> PythonObject:
-            check_arguments_arity(0, py_args)
-            return method(py_self)
+            return method._call_method(py_self, py_args)
 
         return self.def_py_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (mut PythonObject, mut PythonObject) raises -> PythonObject
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            check_arguments_arity(1, py_args)
-            var a0 = py_args[0]
-            return method(py_self, a0)
-
-        return self.def_py_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (
-            mut PythonObject, mut PythonObject, mut PythonObject
-        ) raises -> PythonObject
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            check_arguments_arity(2, py_args)
-            var a0 = py_args[0]
-            var a1 = py_args[1]
-            return method(py_self, a0, a1)
-
-        return self.def_py_method[wrapper](method_name, docstring)
-
-    # ===-------------------------------------------------------------------===#
-    # def_method with return, not raising
-    # ===-------------------------------------------------------------------===#
-
-    # TODO: declare these as a single method using variadics
-    fn def_method[
-        method: fn (mut PythonObject) -> PythonObject
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(mut py_self: PythonObject) raises -> PythonObject:
-            return method(py_self)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (mut PythonObject, mut PythonObject) -> PythonObject
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut a0: PythonObject
-        ) raises -> PythonObject:
-            return method(py_self, a0)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (
-            mut PythonObject, mut PythonObject, mut PythonObject
-        ) -> PythonObject
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject,
-            mut a0: PythonObject,
-            mut a1: PythonObject,
-        ) raises -> PythonObject:
-            return method(py_self, a0, a1)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    # ===-------------------------------------------------------------------===#
-    # def_method with no return, raising
-    # ===-------------------------------------------------------------------===#
-
-    # TODO: declare these as a single method using variadics
-    fn def_method[
-        method: fn (mut PythonObject) raises
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(mut py_self: PythonObject) raises -> PythonObject:
-            method(py_self)
-            return PythonObject(None)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (mut PythonObject, mut PythonObject) raises
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject, mut a0: PythonObject
-        ) raises -> PythonObject:
-            method(py_self, a0)
-            return PythonObject(None)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (mut PythonObject, mut PythonObject, mut PythonObject) raises
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject,
-            mut a0: PythonObject,
-            mut a1: PythonObject,
-        ) raises -> PythonObject:
-            method(py_self, a0, a1)
-            return PythonObject(None)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    # ===-------------------------------------------------------------------===#
-    # def_method with no return, not raising
-    # ===-------------------------------------------------------------------===#
-
-    # TODO: declare these as a single method using variadics
-    fn def_method[
-        method: fn (mut PythonObject)
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(mut py_self: PythonObject) raises:
-            method(py_self)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (mut PythonObject, mut PythonObject)
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(mut py_self: PythonObject, mut a0: PythonObject) raises:
-            method(py_self, a0)
-
-        return self.def_method[wrapper](method_name, docstring)
-
-    fn def_method[
-        method: fn (mut PythonObject, mut PythonObject, mut PythonObject)
-    ](
-        mut self: Self,
-        method_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
-
-        Parameters:
-            method: The method to declare a binding for.
-
-        Args:
-            method_name: The name with which the method will be exposed on the
-                type.
-            docstring: The docstring for the method of the type.
-
-        Returns:
-            The builder with the method binding declared.
-        """
-
-        @always_inline
-        fn wrapper(
-            mut py_self: PythonObject,
-            mut a0: PythonObject,
-            mut a1: PythonObject,
-        ) raises:
-            method(py_self, a0, a1)
-
-        return self.def_method[wrapper](method_name, docstring)
 
 
 # ===-----------------------------------------------------------------------===#
