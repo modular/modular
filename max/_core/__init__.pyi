@@ -7,7 +7,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import enum
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Callable, Generic, TypeVar
 
 from max.mlir import Attribute as MlirAttribute
@@ -49,13 +49,13 @@ class Attribute:
     @property
     def _CAPIPtr(self) -> object: ...
 
-class NamedAttribute:
+class NamedAttribute(tuple[str, Attribute]):
     def __init__(self, arg0: str, arg1: Attribute, /) -> None: ...
     @property
     def name(self): ...
     @property
     def value(self) -> Attribute: ...
-    def __iter__(self) -> tuple: ...
+    def __iter__(self) -> Iterator[str | Attribute]: ...
 
 class TypeID:
     pass
