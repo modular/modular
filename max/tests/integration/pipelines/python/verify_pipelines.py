@@ -742,6 +742,23 @@ PIPELINES = {
             kl_div_threshold=1.3e-1,
         ),
     ),
+    "Qwen3-8B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="qwen3",
+            encoding="bfloat16",
+            cos_dist_threshold=4.6e-4,
+            kl_div_threshold=3.7e-3,
+        ),
+    ),
     "EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
