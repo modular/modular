@@ -19,6 +19,7 @@ from max.graph import (
     _ChainValue,
     ops,
 )
+from max.mlir.dialects import mo
 
 # Create shared strategies for tensor types
 input_types = st.shared(tensor_types())
@@ -228,3 +229,27 @@ def test_call_no_chain_no_update():
         ops.call(subgraph, x)
         chain_after = main_graph._current_chain
         assert chain_before == chain_after
+
+
+def test_call_tuple_operands_with_add_op():
+    """Test calling a graph using _add_op with tuple for operands."""
+    input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+    with Graph("main_graph_tuple_test", input_types=[input_type]) as main_graph:
+        # Create a simple subgraph that just returns its input.
+        with main_graph.add_subgraph(
+            "identity_subgraph", input_types=[input_type]
+        ) as subgraph:
+            subgraph.output(subgraph.inputs[0])
+
+        # Call the subgraph using _add_op with operands as a tuple.
+        # This is the core of the test: ensuring unwrap handles the tuple.
+        call_results = main_graph._add_op(
+            mo.call_,
+            symbol=subgraph.name,
+            results=(input_type,),
+            operands=(main_graph.inputs[0],),
+        )
+
+        assert len(call_results) == 1
+        assert call_results[0].type == input_type
+        main_graph.output(call_results[0])

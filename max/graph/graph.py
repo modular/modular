@@ -415,7 +415,7 @@ class Graph:
                 return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore
             elif isinstance(arg, Type):
                 return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)
-            elif isinstance(arg, list):
+            elif isinstance(arg, (list, tuple)):
                 return [unwrap(elem) for elem in arg]
             elif isinstance(arg, _Attribute):
                 return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
