@@ -17,6 +17,7 @@ import zmq
 from max.driver import CPU, Tensor
 from max.nn.kv_cache import KVTransferEngine
 from max.pipelines.core import TextContext, TextGenerationResponse
+from max.serve.scheduler.base import PrefillRequest
 from max.serve.scheduler.prefill_scheduler import (
     PrefillScheduler,
     PrefillSchedulerConfig,
@@ -202,8 +203,12 @@ def test_prefill_scheduler_create_batch(
     request_2 = create_mock_request(cache_seq_id=0, seq_len=15, start_idx=0)
 
     # Send to Prefill Pull Socket
-    prefill_push_socket.send_pyobj((request_1_id, request_1))
-    prefill_push_socket.send_pyobj((request_2_id, request_2))
+    prefill_push_socket.send_pyobj(
+        PrefillRequest(request_1_id, request_1, "dummy_agent", [1])
+    )
+    prefill_push_socket.send_pyobj(
+        PrefillRequest(request_2_id, request_2, "dummy_agent", [2])
+    )
     time.sleep(5)
 
     # Get batch from scheduler, test that the batch includes two requests.
@@ -216,22 +221,26 @@ def test_prefill_scheduler_create_batch(
     time.sleep(5)
 
     # Retrieve from the Decode Queue
-    recv_1_id, _ = decode_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
-    assert recv_1_id == request_1_id
+    decode_request_1 = decode_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
+    assert decode_request_1.id == request_1_id
 
-    recv_2_id, _ = decode_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
-    assert recv_2_id == request_2_id
+    decode_request_2 = decode_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
+    assert decode_request_2.id == request_2_id
 
     # Pre-empt new request
-    prefill_push_socket.send_pyobj((request_1_id, request_1))
-    prefill_push_socket.send_pyobj((request_2_id, request_2))
+    prefill_push_socket.send_pyobj(
+        PrefillRequest(request_1_id, request_1, "dummy_agent", [1])
+    )
+    prefill_push_socket.send_pyobj(
+        PrefillRequest(request_2_id, request_2, "dummy_agent", [2])
+    )
     time.sleep(5)
 
     # Retrieve first request
-    req_1_id, req_1_data = scheduler.pull_from_prefill_socket()
-    scheduler.return_to_prefill_queue(req_1_id, req_1_data)
+    prefill_data = scheduler.pull_from_prefill_socket()
+    scheduler.return_to_prefill_queue(prefill_data)
     time.sleep(2)
 
     # Retrieve the same request again.
-    req_1_id, req_1_data = scheduler.pull_from_prefill_socket()
-    assert req_1_id == request_1_id
+    prefill_data = scheduler.pull_from_prefill_socket()
+    assert prefill_data.id == request_1_id

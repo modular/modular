@@ -109,7 +109,7 @@ def cancel_zmq_endpoint():
 
 
 @pytest.fixture
-def agent_zmq_endpoint():
+def transfer_engine_zmq_endpoint():
     return _generate_zmq_ipc_path()
 
 
@@ -118,10 +118,10 @@ def zmq_ctx() -> zmq.Context:
     return zmq.Context(io_threads=2)
 
 
-def remote_agent_peer(agent_zmq_endpoint, agent_md):
+def remote_agent_peer(transfer_engine_zmq_endpoint, agent_md):
     zmq_ctx = zmq.Context(io_threads=1)
     socket = zmq_ctx.socket(zmq.REQ)
-    socket.connect(agent_zmq_endpoint)
+    socket.connect(transfer_engine_zmq_endpoint)
     socket.send_pyobj(agent_md)
     _ = socket.recv_pyobj()
 
@@ -136,7 +136,7 @@ def scheduler(
     request_zmq_endpoint,
     response_zmq_endpoint,
     cancel_zmq_endpoint,
-    agent_zmq_endpoint,
+    transfer_engine_zmq_endpoint,
     paged_manager,
     zmq_ctx,
 ):
@@ -161,7 +161,7 @@ def scheduler(
     thread = threading.Thread(
         target=remote_agent_peer,
         args=(
-            agent_zmq_endpoint,
+            transfer_engine_zmq_endpoint,
             dummy_agent.metadata,
         ),
     )
@@ -177,7 +177,7 @@ def scheduler(
         request_zmq_endpoint=request_zmq_endpoint,
         cancel_zmq_endpoint=cancel_zmq_endpoint,
         paged_manager=paged_manager,
-        agent_zmq_endpoint=agent_zmq_endpoint,
+        transfer_engine_zmq_endpoint=transfer_engine_zmq_endpoint,
         zmq_ctx=zmq_ctx,
     )
 
@@ -217,6 +217,8 @@ def test_decode_scheduler(
     zmq_ctx,
 ):
     # Create push socket to send to.
+    # This is not used in this test, but is necessary to ensure the queues
+    # operate correctly.
     decode_push_socket = zmq_ctx.socket(zmq.constants.PUSH)
     decode_push_socket.setsockopt(zmq.constants.RCVHWM, 0)
     decode_push_socket.setsockopt(zmq.constants.RCVBUF, -1)
@@ -251,8 +253,8 @@ def test_decode_scheduler(
     time.sleep(5)
 
     # Ensure that the prefill node got the details.
-    recv_1_id, _ = prefill_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
-    assert recv_1_id == request_1_id
-    recv_2_id, _ = prefill_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
-    assert recv_2_id == request_2_id
+    prefill_request_1 = prefill_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
+    assert prefill_request_1.id == request_1_id
+    prefill_request_2 = prefill_pull_socket.recv_pyobj(flags=zmq.NOBLOCK)
+    assert prefill_request_2.id == request_2_id
     time.sleep(5)
