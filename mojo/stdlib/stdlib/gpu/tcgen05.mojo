@@ -175,9 +175,14 @@ fn tcgen05_ld[
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
         and sizeof[type]() == 4,
-        (
-            "Only support 4B data type and width must be equal to (num * n * m)"
-            " // (32 * 32)."
+        String(
+            (
+                "Only support 4B data type and width must be equal to (num * n"
+                " * m) // (32 * 32). width is "
+            ),
+            width,
+            " but need ",
+            (repeat * bits * datapaths) // (32 * 32),
         ),
     ]()
 

@@ -15,11 +15,11 @@ from math import ceildiv
 from sys import sizeof, simdwidthof
 
 from gpu import WARP_SIZE, barrier
-from gpu import warp_id as get_warp_id
+from gpu import warp_id as get_warp_id, lane_id as get_lane_id
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
+from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
 from gpu.memory import AddressSpace
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -33,6 +33,11 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     tile_to_descriptor,
 )
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    cluster_sync_relaxed,
+)
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
 from memory import stack_allocation
@@ -44,6 +49,7 @@ from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 
+@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 fn tma_umma_kernel_ss[
@@ -58,9 +64,11 @@ fn tma_umma_kernel_ss[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
+    cta_group: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
@@ -70,6 +78,8 @@ fn tma_umma_kernel_ss[
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
     alias num_m_mmas = BM // mma_shape[0]
     alias num_n_mmas = BN // mma_shape[1]
 
@@ -105,7 +115,7 @@ fn tma_umma_kernel_ss[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
+    alias c_frag_size = MMA_M * MMA_N // 128 // cta_group
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
@@ -135,14 +145,19 @@ fn tma_umma_kernel_ss[
 
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
     var elect_one_thread = thread_idx.x == 0
+    var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[1](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
-    barrier()
+    @parameter
+    if cta_group == 1:
+        barrier()
+    else:
+        cluster_sync()
 
     tmem_addr = ptr_tmem_addr[0]
 
@@ -193,81 +208,141 @@ fn tma_umma_kernel_ss[
 
         barrier()
 
-        if elect_one_thread:
-            adesc = adesc_base
-            bdesc = bdesc_base
-            if i == 0:
-                mma[c_scale=0](adesc, bdesc, tmem_addr, idesc)
+        @parameter
+        if cta_group == 1:
+            if elect_one_thread:
+                adesc = adesc_base
+                bdesc = bdesc_base
+                if i == 0:
+                    mma[c_scale=0](adesc, bdesc, tmem_addr, idesc)
 
-                @parameter
-                for j in range(1, BK // mma_shape[2]):
-                    adesc += mma_shape[2] * sizeof[a_type]()
-                    bdesc += b_k_stride
-                    mma[c_scale=1](adesc, bdesc, tmem_addr, idesc)
-            else:
+                    @parameter
+                    for j in range(1, BK // mma_shape[2]):
+                        adesc += mma_shape[2] * sizeof[a_type]()
+                        bdesc += b_k_stride
+                        mma[c_scale=1](adesc, bdesc, tmem_addr, idesc)
+                else:
 
-                @parameter
-                for j in range(BK // mma_shape[2]):
-                    mma[c_scale=1](adesc, bdesc, tmem_addr, idesc)
-                    adesc += mma_shape[2] * sizeof[a_type]()
-                    bdesc += b_k_stride
+                    @parameter
+                    for j in range(BK // mma_shape[2]):
+                        mma[c_scale=1](adesc, bdesc, tmem_addr, idesc)
+                        adesc += mma_shape[2] * sizeof[a_type]()
+                        bdesc += b_k_stride
 
-            mma_arrive(mma_mbar)
+                mma_arrive(mma_mbar)
 
-        mma_mbar[0].wait(mma_phase)
-        mma_phase ^= 1
+            mma_mbar[0].wait(mma_phase)
+            mma_phase ^= 1
+        else:
+            # even cta issue mma
+            if elect_one_cta:
+                if elect_one_thread:
+                    adesc = adesc_base
+                    bdesc = bdesc_base
 
-    c_frag = tcgen05_ld[
-        datapaths=16,
-        bits=256,
-        repeat = BN // 8,
-        type=accum_type,
-        pack=False,
-        width=c_frag_size,
-    ](tmem_addr)
+                    if i == 0:
+                        mma[cta_group, c_scale=0](
+                            adesc, bdesc, tmem_addr, idesc
+                        )
 
+                        @parameter
+                        for j in range(1, BK // mma_shape[2]):
+                            adesc += mma_shape[2] * sizeof[a_type]()
+                            bdesc += b_k_stride
+                            mma[cta_group, c_scale=1](
+                                adesc, bdesc, tmem_addr, idesc
+                            )
+                    else:
+
+                        @parameter
+                        for j in range(BK // mma_shape[2]):
+                            mma[cta_group, c_scale=1](
+                                adesc, bdesc, tmem_addr, idesc
+                            )
+                            adesc += mma_shape[2] * sizeof[a_type]()
+                            bdesc += b_k_stride
+
+                    mma_arrive_multicast[cta_group](mma_mbar, 0x000F)
+            mma_mbar[0].wait(mma_phase)
+            mma_phase ^= 1
+
+    @parameter
+    if cta_group == 1:
+        c_frag = tcgen05_ld[
+            datapaths=16,
+            bits=256,
+            repeat = BN // 8,
+            type=accum_type,
+            pack=False,
+            width=c_frag_size,
+        ](tmem_addr)
+    else:
+        c_frag = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=BN,
+            type=accum_type,
+            pack=False,
+            width=c_frag_size,
+        ](tmem_addr)
     tcgen05_load_wait()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[1]()
-        tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
+        tcgen05_release_allocation_lock[cta_group]()
+        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
 
     warp_id = thread_idx.x // WARP_SIZE
 
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
-
     @parameter
-    for m_mma in range(num_m_mmas):
+    if cta_group == 1:
+        ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
         @parameter
-        for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
-
-            c_gmem_warp_tile = ctile.tile[mma_shape[0] // 4, mma_shape[1]](
-                4 * m_mma + warp_id, n_mma
-            )
-
-            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](lane_id())
-
-            alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
-            alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+        for m_mma in range(num_m_mmas):
 
             @parameter
-            for n_vec in range(num_vecs_n):
+            for n_mma in range(num_n_mmas):
+                alias mma_id = n_mma * num_m_mmas + m_mma
+
+                c_gmem_warp_tile = ctile.tile[mma_shape[0] // 4, mma_shape[1]](
+                    4 * m_mma + warp_id, n_mma
+                )
+
+                c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+                    Layout.row_major(8, 4)
+                ](lane_id())
+
+                alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
+                alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
                 @parameter
-                for m_vec in range(num_vecs_m):
-                    alias i_vec = n_vec * num_vecs_m + m_vec
+                for n_vec in range(num_vecs_n):
 
-                    c_gmem_frag[m_vec, n_vec] = rebind[
-                        c_gmem_frag.element_type
-                    ](
-                        SIMD[accum_type, 2](
-                            c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
-                        ).cast[c_type]()
-                    )
+                    @parameter
+                    for m_vec in range(num_vecs_m):
+                        alias i_vec = n_vec * num_vecs_m + m_vec
+
+                        c_gmem_frag[m_vec, n_vec] = rebind[
+                            c_gmem_frag.element_type
+                        ](
+                            SIMD[accum_type, 2](
+                                c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
+                            ).cast[c_type]()
+                        )
+    else:
+        if elect_one_cta:
+            var c_gmem_block = c.tile[BM, MMA_N](block_id_in_cluster.y, 0)
+            var c_gmem_slice = c_gmem_block.tile[BM // 2, BN](
+                warp_id % 2, warp_id // 2
+            ).vectorize[1, 2]()
+
+            @parameter
+            for i in range(c_frag_size // 2):
+                c_gmem_slice[lane_id(), i] = rebind[c_gmem_slice.element_type](
+                    SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
+                        c_type
+                    ]()
+                )
 
 
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
@@ -391,7 +466,7 @@ fn tma_umma_kernel_ts[
         # of size 2x4B=4xBF16
         a_gmem_frag = a_gmem_warp_tile.vectorize[1, 4]().distribute[
             Layout.row_major(8, 4)
-        ](lane_id())
+        ](get_lane_id())
         alias num_vecs_m = a_gmem_frag.layout.shape[0].value()
         alias num_vecs_k = a_gmem_frag.layout.shape[1].value()
 
@@ -477,7 +552,7 @@ fn tma_umma_kernel_ts[
     c_gmem_warp_tile = c.tile[mma_shape[0] // 4, mma_shape[1]](warp_id, 0)
     c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
         Layout.row_major(8, 4)
-    ](lane_id())
+    ](get_lane_id())
     alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
     alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
 
@@ -503,9 +578,11 @@ def test_tma_umma[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
+    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
+    cta_group: Int = 1,
 ](ctx: DeviceContext):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -525,6 +602,7 @@ def test_tma_umma[
         + "; inst shape "
         + String(mma_shape)
         + " A "
+        + (String(a_swizzle) if a_smem else "tmem")
         + (String(a_swizzle) if a_smem else "tmem")
         + " B "
         + String(b_swizzle)
@@ -581,11 +659,12 @@ def test_tma_umma[
             block_tile_shape,
             mma_shape,
             transpose_b=transpose_b,
+            cluster_shape=cluster_shape,
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
             a_smem=a_smem,
+            cta_group=cta_group,
         ]
-
         ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
@@ -594,6 +673,7 @@ def test_tma_umma[
             grid_dim=(N // BN, M // BM),
             block_dim=(128),
         )
+
     else:
         alias kernel = tma_umma_kernel_ts[
             a_type,
@@ -641,6 +721,7 @@ def test_tma_umma[
                 rtol=1e-4,
                 msg=String(m) + ", " + String(n),
             )
+            # print(m, n, c_host[m, n], c_host_ref[m, n])
 
     _ = a^
     _ = b^
@@ -678,3 +759,35 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             a_smem=False,
         ](ctx)
+
+        @parameter
+        for transpose_b in range(0, 2):
+            test_tma_umma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 128, 64),
+                Index(64, 64, 64),
+                Index(128, 128, 16),
+                cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                cta_group=2,
+                transpose_b=transpose_b,
+            ](ctx)
+
+        @parameter
+        for transpose_b in range(0, 2):
+            test_tma_umma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 64),
+                Index(64, 128, 64),
+                Index(128, 256, 16),
+                cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                cta_group=2,
+                transpose_b=transpose_b,
+            ](ctx)
