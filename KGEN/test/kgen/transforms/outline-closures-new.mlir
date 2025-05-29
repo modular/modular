@@ -12,16 +12,16 @@ kgen.generator @foo_del(%self:!kgen.pointer<struct<(index,index)>>){
   kgen.return
 }
 
-// CHECK: kgen.generator @closure_types_fn<CAPTURES: none>(%arg0: !kgen.pointer<struct<(struct<(index, index)>)>>, %arg1: index) -> index {
-// CHECK-NEXT: [[CAP:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, index)>)>>
+// CHECK: kgen.generator @closure_types_fn<CAPTURES: none>(%arg0: !kgen.pointer<struct<(struct<(index, index)>) memoryOnly>>, %arg1: index) -> index {
+// CHECK-NEXT: [[CAP:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, index)>) memoryOnly>
 // CHECK-NEXT: [[SLOT:%.*]] = kgen.struct.gep [[CAP]][0] : <struct<(index, index)>>
 // CHECK-NEXT: [[FIELD:%.*]] = pop.load [[SLOT]] : !kgen.pointer<index>
 // CHECK-NEXT: kgen.return [[FIELD]] : index
 // CHECK-NEXT: }
 
 // CHECK: kgen.generator @closure_types(%arg0: index, %arg1: !kgen.pointer<struct<(index, index)>>) {
-// CHECK-NEXT: [[CAP:%.*]] = pop.stack_allocation 1 x struct<(struct<(index, index)>)> marked
-// CHECK-NEXT: %1 = kgen.struct.gep %0[0] : <struct<(struct<(index, index)>)>>
+// CHECK-NEXT: [[CAP:%.*]] = pop.stack_allocation 1 x struct<(struct<(index, index)>) memoryOnly> marked
+// CHECK-NEXT: %1 = kgen.struct.gep %0[0] : <struct<(struct<(index, index)>) memoryOnly>>
 // CHECK-NEXT: kgen.call @foo_copy(%1, %arg1) : (!kgen.pointer<struct<(index, index)>>, !kgen.pointer<struct<(index, index)>>) -> ()
 // CHECK-NEXT: kgen.return
 // CHECK-NEXT: }
@@ -36,9 +36,9 @@ kgen.generator @closure_types(%arg0 : index, %arg1: !kgen.pointer<struct<(index,
 }
 
 // CHECK-LABEL: kgen.generator @closure_types_escaping
-// CHECK: %index = kgen.param.constant = <get_sizeof(struct<(struct<(index, index)>)>, current_target())>
-// CHECK-NEXT: %index_0 = kgen.param.constant = <get_alignof(struct<(struct<(index, index)>)>, current_target())>
-// CHECK-NEXT: %0 = pop.aligned_alloc %index_0, %index : <struct<(struct<(index, index)>)>>
+// CHECK: %index = kgen.param.constant = <get_sizeof(struct<(struct<(index, index)>) memoryOnly>, current_target())>
+// CHECK-NEXT: %index_0 = kgen.param.constant = <get_alignof(struct<(struct<(index, index)>) memoryOnly>, current_target())>
+// CHECK-NEXT: %0 = pop.aligned_alloc %index_0, %index : <struct<(struct<(index, index)>) memoryOnly>>
 kgen.generator @closure_types_escaping(%arg0 : index, %arg1: !kgen.pointer<struct<(index,index)>>) {
   %3 = kgen.closure.init(%arg1[@foo_copy, @foo_move, @foo_del])(%arg2: index) escaping -> index {
     %0 = kgen.struct.gep %arg1[0] : !kgen.pointer<struct<(index,index)>>
@@ -53,8 +53,8 @@ kgen.generator @closure_types_escaping(%arg0 : index, %arg1: !kgen.pointer<struc
 
 // COM: Verify ClosureSymbols and ClosureTypes are lowered correctly.
 
-// CHECK: #type_value = #kgen.type<struct<(index)>, {
-// CHECK-SAME: "__call__" : (!kgen.pointer<struct<(index)>>, index) -> index = @foo_fn<:none #kgen.none>}> : !kgen.type
+// CHECK: #type_value = #kgen.type<struct<(index) memoryOnly>, {
+// CHECK-SAME: "__call__" : (!kgen.pointer<struct<(index) memoryOnly>>, index) -> index = @foo_fn<:none #kgen.none>}> : !kgen.type
 #type_value = #kgen.type<!kgen.closure<@foo, "fn" nonescaping>,
               {"__call__" :
               (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>, index) -> index =
@@ -66,16 +66,16 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
     kgen.return %0 : index
 }
 
-// CHECK: kgen.generator @foo_fn<CAPTURES: none>(%arg0: !kgen.pointer<struct<(index)>>, %arg1: index) -> index {
-// CHECK-NEXT: [[V0:%.*]] = kgen.struct.gep %arg0[0] : <struct<(index)>>
+// CHECK: kgen.generator @foo_fn<CAPTURES: none>(%arg0: !kgen.pointer<struct<(index) memoryOnly>>, %arg1: index) -> index {
+// CHECK-NEXT: [[V0:%.*]] = kgen.struct.gep %arg0[0] : <struct<(index) memoryOnly>>
 // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<index>
 // CHECK-NEXT: kgen.return [[V1]] : index
 
 // CHECK: kgen.generator @foo(%arg0: index) {
-// CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x struct<(index)> marked
-// CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[V0]][0] : <struct<(index)>>
+// CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x struct<(index) memoryOnly> marked
+// CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[V0]][0] : <struct<(index) memoryOnly>>
 // CHECK-NEXT: pop.store %arg0, [[V1]] : !kgen.pointer<index>
-// CHECK-NEXT: [[V2:%.*]] = kgen.call @consume<:type #type_value>([[V0]]) : (!kgen.pointer<struct<(index)>> read_mem) -> index
+// CHECK-NEXT: [[V2:%.*]] = kgen.call @consume<:type #type_value>([[V0]]) : (!kgen.pointer<struct<(index) memoryOnly>> read_mem) -> index
 // CHECK-NEXT: kgen.return
 kgen.generator @foo(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)(%arg1: index) -> index {
@@ -195,9 +195,9 @@ kgen.generator @thin() {
 
 // COM: Test that a Parameterless Closure that Captures Parameters Is Lifted Correctly
 
-// CHECK: #type_value = #kgen.type<struct<(index)>,
+// CHECK: #type_value = #kgen.type<struct<(index) memoryOnly>,
 // CHECK-SAME: "__call__" :
-// CHECK-SAME: (!kgen.pointer<struct<(index)>>) -> index =
+// CHECK-SAME: (!kgen.pointer<struct<(index) memoryOnly>>) -> index =
 // CHECK-SAME: @foo_fn<:struct<(index, index)> CAPTURES>}> : !kgen.type
 #type_value =
   #kgen.type<!kgen.closure<@foo, "fn" nonescaping>,
@@ -214,7 +214,7 @@ kgen.generator @consume<x: type
 }
 
 // COM: The lifted function should have a single parameter of type struct with the captured parameters as members
-// CHECK:      kgen.generator @foo_fn<CAPTURES: struct<(index, index)>>(%arg0: !kgen.pointer<struct<(index)>>) -> index {
+// CHECK:      kgen.generator @foo_fn<CAPTURES: struct<(index, index)>>(%arg0: !kgen.pointer<struct<(index) memoryOnly>>) -> index {
 // CHECK-NEXT:   kgen.param.declare C = <#kgen.struct.extract<:struct<(index, index)> CAPTURES, 0>>
 // CHECK-NEXT:   kgen.param.declare D = <#kgen.struct.extract<:struct<(index, index)> CAPTURES, 1>>
 // CHECK-NEXT:   kgen.struct.gep %arg0[0]
@@ -227,11 +227,11 @@ kgen.generator @consume<x: type
 // COM: The parent generator should bind the struct attribute it created to the parameter of the consuming function
 // CHECK: kgen.generator @foo<C, D>(%arg0: index) {
 // CHECK-NEXT:   kgen.param.declare CAPTURES: struct<(index, index)> = <{ C, D }>
-// CHECK-NEXT:   [[V0:%.*]] = pop.stack_allocation 1 x struct<(index)> marked
+// CHECK-NEXT:   [[V0:%.*]] = pop.stack_allocation 1 x struct<(index) memoryOnly> marked
 // CHECK-NEXT:   kgen.struct.gep
 // CHECK-NEXT:   pop.store
 // CHECK-NEXT:   kgen.call @consume<:type #type_value
-// CHECK-SAME:   ) : (!kgen.pointer<struct<(index)>>) -> index
+// CHECK-SAME:   ) : (!kgen.pointer<struct<(index) memoryOnly>>) -> index
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT:   }
 kgen.generator @foo<C,D>(%arg0 : index) {
@@ -263,7 +263,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
 
 // COM: Verify that single param capture does not result in disassembly
 // CHECK: kgen.generator @foo_fn
-// CHECK-SAME: <A, C>(%arg0: !kgen.pointer<struct<(index)>>) -> index {
+// CHECK-SAME: <A, C>(%arg0: !kgen.pointer<struct<(index) memoryOnly>>) -> index {
 // CHECK-NEXT: kgen.struct.gep
 // CHECK-NEXT: pop.load
 // CHECK-NEXT: <mul(A, C)>
@@ -286,8 +286,8 @@ kgen.generator @foo<C>(%arg0 : index) {
 
 
 // CHECK:  "__move__" :
-// CHECK-SAME: (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>,
-// CHECK-SAME: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>) -> ()
+// CHECK-SAME: (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>,
+// CHECK-SAME: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>) -> ()
 // CHECK-SAME: = @foo_move_fn<C>
 #type_value =
   #kgen.type<!kgen.closure<@foo, "fn" escaping>,
@@ -302,12 +302,12 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
   kgen.return %0 : index
 }
 
-  // CHECK: kgen.generator @foo_move_fn<C>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>, %arg1: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>) {
-  // CHECK-NEXT:  %0 = kgen.struct.gep %arg1[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
-  // CHECK-NEXT:  %1 = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
+  // CHECK: kgen.generator @foo_move_fn<C>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>, %arg1: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>) {
+  // CHECK-NEXT:  %0 = kgen.struct.gep %arg1[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
+  // CHECK-NEXT:  %1 = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
   // CHECK-NEXT:  kgen.call @move(%1, %0) : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>) -> ()
-  // CHECK-NEXT:  %2 = kgen.struct.gep %arg1[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
-  // CHECK-NEXT:  %3 = kgen.struct.gep %arg0[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
+  // CHECK-NEXT:  %2 = kgen.struct.gep %arg1[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
+  // CHECK-NEXT:  %3 = kgen.struct.gep %arg0[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
   // CHECK-NEXT:  kgen.call @move(%3, %2) : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>) -> ()
   // CHECK-NEXT:  kgen.return
   // CHECK-NEXT:  }
@@ -350,14 +350,14 @@ kgen.return %0 : !kgen.param<T>
 // COM: Signature check
 // CHECK:  kgen.generator @foo_fn<CAPTURES: struct<(type, type)>>
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>,
-// CHECK-SAME: #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>)>>) -> !kgen.param<#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>> {
+// CHECK-SAME: #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>) memoryOnly>>) -> !kgen.param<#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>> {
 
 // COM: Unpack check (adds declarations for all references to captured params in stolen body from original nested)
 // CHECK-NEXT:  kgen.param.declare E: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>>
 // CHECK-NEXT:  kgen.param.declare D: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
 
 // COM: Argument Rebind checks (if extractions were used in the signature, these rebinds prevent type mismatch errors)
-// CHECK:  kgen.rebind %arg0 : !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>, #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>)>> to !kgen.pointer<struct<(pointer<struct<(E, D)>>)>>
+// CHECK:  kgen.rebind %arg0 : !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>, #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>) memoryOnly>> to !kgen.pointer<struct<(pointer<struct<(E, D)>>) memoryOnly>>
 
 // COM: Result Rebind check (if extractions were used in the signature, this rebinds the result to the extraction type in signature)
 // CHECK:  [[RES:%.*]] = kgen.rebind {{.*}} : !kgen.param<D> to !kgen.param<#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
@@ -378,7 +378,7 @@ kgen.return
 // COM: Test that the del method is synthesized correctly.
 
 
-// CHECK: "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>) -> () = @foo_del_fn<C>}> : !kgen.type
+// CHECK: "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>) -> () = @foo_del_fn<C>}> : !kgen.type
 
 #type_value =
   #kgen.type<!kgen.closure<@foo, "fn" escaping>,
@@ -392,10 +392,10 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
   %0 = kgen.call_param[(!kgen.pointer<x>) -> index: bind_params(:<index>(!kgen.pointer<none>) -> index get_vtable_entry(x, "__del__"), 3)](%arg0)
   kgen.return %0 : index
 }
-// CHECK: kgen.generator @foo_del_fn<C>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>) {
-// CHECK-NEXT:  [[V0:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
+// CHECK: kgen.generator @foo_del_fn<C>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>) {
+// CHECK-NEXT:  [[V0:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
 // CHECK-NEXT:  kgen.call @del([[V0]]) : (!kgen.pointer<struct<(index, pointer<index>)>>) -> ()
-// CHECK-NEXT:  [[V1:%.*]] = kgen.struct.gep %arg0[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>)>>
+// CHECK-NEXT:  [[V1:%.*]] = kgen.struct.gep %arg0[1] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
 // CHECK-NEXT:  kgen.call @del([[V1]]) : (!kgen.pointer<struct<(index, pointer<index>)>>) -> ()
 // CHECK-NEXT:  kgen.return
 kgen.generator @foo<C>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1 : !kgen.pointer<struct<(index, pointer<index>)>>) {
