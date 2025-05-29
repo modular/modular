@@ -21,7 +21,7 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
     """Wrapper to hide the binding logic for functions taking a variadic number
     of PythonObject arguments.
 
-    This currently supports function types with up to 3 positional arguments,
+    This currently supports function types with up to 6 positional arguments,
     as well as raising functions, and both functions that return a PythonObject
     or nothing.
 
@@ -150,6 +150,93 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
         self._func = f
 
     # ===-------------------------------------------------------------------===#
+    # 4 arguments
+    # ===-------------------------------------------------------------------===#
+
+    alias _4er = fn (PO, PO, PO, PO) raises -> PO
+    alias _4r = fn (PO, PO, PO, PO) -> PO
+    alias _4e = fn (PO, PO, PO, PO) raises
+    alias _4 = fn (PO, PO, PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._4er, is_method], f: Self._4er):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._4r, is_method], f: Self._4r):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._4e, is_method], f: Self._4e):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._4, is_method], f: Self._4):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 5 arguments
+    # ===-------------------------------------------------------------------===#
+
+    alias _5er = fn (PO, PO, PO, PO, PO) raises -> PO
+    alias _5r = fn (PO, PO, PO, PO, PO) -> PO
+    alias _5e = fn (PO, PO, PO, PO, PO) raises
+    alias _5 = fn (PO, PO, PO, PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._5er, is_method], f: Self._5er):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._5r, is_method], f: Self._5r):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._5e, is_method], f: Self._5e):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._5, is_method], f: Self._5):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
+    # 6 arguments
+    # ===-------------------------------------------------------------------===#
+
+    alias _6er = fn (PO, PO, PO, PO, PO, PO) raises -> PO
+    alias _6r = fn (PO, PO, PO, PO, PO, PO) -> PO
+    alias _6e = fn (PO, PO, PO, PO, PO, PO) raises
+    alias _6 = fn (PO, PO, PO, PO, PO, PO)
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._6er, is_method], f: Self._6er):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._6r, is_method], f: Self._6r):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._6e, is_method], f: Self._6e):
+        self._func = f
+
+    @doc_private
+    @implicit
+    fn __init__(out self: PyObjectFunction[Self._6, is_method], f: Self._6):
+        self._func = f
+
+    # ===-------------------------------------------------------------------===#
     # Compile-time check utilities
     # ===-------------------------------------------------------------------===#
 
@@ -190,6 +277,27 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
             or Self._has_type[Self._3]()
         ):
             return arity == 3
+        elif (
+            Self._has_type[Self._4er]()
+            or Self._has_type[Self._4r]()
+            or Self._has_type[Self._4e]()
+            or Self._has_type[Self._4]()
+        ):
+            return arity == 4
+        elif (
+            Self._has_type[Self._5er]()
+            or Self._has_type[Self._5r]()
+            or Self._has_type[Self._5e]()
+            or Self._has_type[Self._5]()
+        ):
+            return arity == 5
+        elif (
+            Self._has_type[Self._6er]()
+            or Self._has_type[Self._6r]()
+            or Self._has_type[Self._6e]()
+            or Self._has_type[Self._6]()
+        ):
+            return arity == 6
         else:
             return False
 
@@ -254,6 +362,71 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
                 return rebind[Self._3e](self._func)(arg0, arg1, arg2)
             elif self._has_type[Self._3]():
                 return rebind[Self._3](self._func)(arg0, arg1, arg2)
+        elif Self._has_arity(4):
+            check_arguments_arity(4, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+
+            @parameter
+            if self._has_type[Self._4er]():
+                return rebind[Self._4er](self._func)(arg0, arg1, arg2, arg3)
+            elif self._has_type[Self._4r]():
+                return rebind[Self._4r](self._func)(arg0, arg1, arg2, arg3)
+            elif self._has_type[Self._4e]():
+                return rebind[Self._4e](self._func)(arg0, arg1, arg2, arg3)
+            elif self._has_type[Self._4]():
+                return rebind[Self._4](self._func)(arg0, arg1, arg2, arg3)
+        elif Self._has_arity(5):
+            check_arguments_arity(5, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+            var arg4 = py_args[4]
+
+            @parameter
+            if self._has_type[Self._5er]():
+                return rebind[Self._5er](self._func)(
+                    arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._5r]():
+                return rebind[Self._5r](self._func)(
+                    arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._5e]():
+                return rebind[Self._5e](self._func)(
+                    arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._5]():
+                return rebind[Self._5](self._func)(arg0, arg1, arg2, arg3, arg4)
+        elif Self._has_arity(6):
+            check_arguments_arity(6, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+            var arg4 = py_args[4]
+            var arg5 = py_args[5]
+
+            @parameter
+            if self._has_type[Self._6er]():
+                return rebind[Self._6er](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5
+                )
+            elif self._has_type[Self._6r]():
+                return rebind[Self._6r](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5
+                )
+            elif self._has_type[Self._6e]():
+                return rebind[Self._6e](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5
+                )
+            elif self._has_type[Self._6]():
+                return rebind[Self._6](self._func)(
+                    arg0, arg1, arg2, arg3, arg4, arg5
+                )
 
         constrained[False, "unsupported arity or signature"]()
         return PO()
@@ -302,6 +475,71 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
                 return rebind[Self._3e](self._func)(py_self, arg0, arg1)
             elif self._has_type[Self._3]():
                 return rebind[Self._3](self._func)(py_self, arg0, arg1)
+        elif Self._has_arity(4):
+            check_arguments_arity(3, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+
+            @parameter
+            if self._has_type[Self._4er]():
+                return rebind[Self._4er](self._func)(py_self, arg0, arg1, arg2)
+            elif self._has_type[Self._4r]():
+                return rebind[Self._4r](self._func)(py_self, arg0, arg1, arg2)
+            elif self._has_type[Self._4e]():
+                return rebind[Self._4e](self._func)(py_self, arg0, arg1, arg2)
+            elif self._has_type[Self._4]():
+                return rebind[Self._4](self._func)(py_self, arg0, arg1, arg2)
+        elif Self._has_arity(5):
+            check_arguments_arity(4, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+
+            @parameter
+            if self._has_type[Self._5er]():
+                return rebind[Self._5er](self._func)(
+                    py_self, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5r]():
+                return rebind[Self._5r](self._func)(
+                    py_self, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5e]():
+                return rebind[Self._5e](self._func)(
+                    py_self, arg0, arg1, arg2, arg3
+                )
+            elif self._has_type[Self._5]():
+                return rebind[Self._5](self._func)(
+                    py_self, arg0, arg1, arg2, arg3
+                )
+
+        elif Self._has_arity(6):
+            check_arguments_arity(5, py_args)
+            var arg0 = py_args[0]
+            var arg1 = py_args[1]
+            var arg2 = py_args[2]
+            var arg3 = py_args[3]
+            var arg4 = py_args[4]
+
+            @parameter
+            if self._has_type[Self._6er]():
+                return rebind[Self._6er](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6r]():
+                return rebind[Self._6r](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6e]():
+                return rebind[Self._6e](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4
+                )
+            elif self._has_type[Self._6]():
+                return rebind[Self._6](self._func)(
+                    py_self, arg0, arg1, arg2, arg3, arg4
+                )
 
         constrained[False, "unsupported arity or signature"]()
         return PO()
