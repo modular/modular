@@ -136,8 +136,9 @@ class KVTransferEngine:
         self.bytes_per_page = (
             tensor.num_elements * tensor.dtype.size_in_bytes // total_num_pages
         )
+        self.elts_per_page = tensor.num_elements // total_num_pages
         self.tensor = tensor.view(
-            tensor.dtype, (self.total_num_pages, self.bytes_per_page)
+            tensor.dtype, (self.total_num_pages, self.elts_per_page)
         )
 
         # Create UCX backend
@@ -161,7 +162,7 @@ class KVTransferEngine:
                 "falling back to slow CPU TCP transfers until it is supported."
             )
             self.cpu_staging_buffer = Tensor(
-                shape=(self.total_num_pages, self.bytes_per_page),
+                shape=(self.total_num_pages, self.elts_per_page),
                 dtype=tensor.dtype,
                 device=CPU(),
                 pinned=True,
