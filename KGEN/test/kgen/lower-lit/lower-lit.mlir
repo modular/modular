@@ -615,3 +615,61 @@ lit.fn @call_using_empty_struct<es: !lit.struct<@EmptyStruct>, alwaysFn: <index,
   kgen.param.declare paramFn2: !lit.generator<() -> ()> = <bind_params(:<type, *(0,0)>() -> () paramFn, #kgen.type<!lit.struct<@EmptyStruct>>, es)>
   kgen.return
 }
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Closures.
+//===----------------------------------------------------------------------===//
+
+!Closure = !lit.trait<@Closure>
+!String = !lit.struct<@String>
+!Impl = !kgen.closure<@make_closure, "foo" nonescaping>
+
+#Impl1 = #kgen.type<!Impl, {"__call__" :
+                            !lit.generator<[1]("self": !lit.ref<!Impl, imm *[0,0]> read_mem, "y": index) -> index> =
+                            #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !Closure
+
+lit.trait.decl @Closure<?, SELF: !Closure> {
+  lit.fn @"__call__"[imm O](%self: !lit.ref<:!Closure SELF, imm O> read_mem, %y: index) -> index {
+    kgen.unreachable
+  }
+}
+
+// CHECK-label: kgen.generator @make_closure
+lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
+  // CHECK:     kgen.closure.init(%arg0, %arg1, %arg2[@"String::__copyinit__", @"String::__moveinit__", @"String::__del__"])(%arg3: index) -> index {
+  // CHECK-NEXT:    kgen.return %arg1 : index
+  // CHECK-NEXT: } : (!kgen.pointer<struct<() memoryOnly>>, index, !kgen.pointer<struct<() memoryOnly>>)
+  // CHECK-SAME: , !kgen.pointer<!kgen.closure<@make_closure, "foo" nonescaping>>
+  %impl = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
+                                                  @String::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
+                                                  @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%y2: index) -> index {
+   kgen.return %x : index
+  } : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+  %2 = lit.call @direct[mut C]<:!Closure #Impl1>(%impl, %x) : !lit.generator<[1]("c":!lit.ref<:!Closure #Impl1, mut *[0,0]> read_mem, "x": index) -> !kgen.none>
+
+   %none = kgen.param.constant: none = <#kgen.none>
+   kgen.return %none : !kgen.none
+}
+
+lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
+   %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
+        get_vtable_entry(:!Closure CT, "__call__")][mut Origin0](%c, %x)
+   lit.end_fn
+}
+
+lit.struct.decl @String {
+    lit.fn @__copyinit__[mut E1, imm E2](%existing: !lit.ref<!String, imm E2> read_mem, %self: !lit.ref<!String, mut E1> byref_result) -> !kgen.none {
+      %none = kgen.param.constant: none = <#kgen.none>
+      kgen.return %none : !kgen.none
+    }
+    lit.fn @__moveinit__[mut E1, imm E2](%existing: !lit.ref<!String, imm E2> read_mem, %self: !lit.ref<!String, mut E1> byref_result) -> !kgen.none {
+      %none = kgen.param.constant: none = <#kgen.none>
+      kgen.return %none : !kgen.none
+    }
+    lit.fn @__del__[mut E](%self: !lit.ref<!String, mut E> owned_in_mem) -> !kgen.none {
+      %none = kgen.param.constant: none = <#kgen.none>
+      kgen.return %none : !kgen.none
+    }
+}
