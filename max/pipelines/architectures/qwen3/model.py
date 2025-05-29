@@ -34,7 +34,7 @@ from max.pipelines.lib import (
 from transformers.models.auto.configuration_auto import AutoConfig
 
 from ..llama3.model import LlamaModelBase
-from ..llama3.model_config import Llama3Config
+from .model_config import Qwen3Config
 from .qwen3 import Qwen3
 
 logger = logging.getLogger("max.pipelines")
@@ -116,7 +116,7 @@ class Qwen3Model(LlamaModelBase):
 
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.generate(
+        model_config = Qwen3Config.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,

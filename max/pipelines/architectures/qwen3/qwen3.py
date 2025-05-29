@@ -50,6 +50,7 @@ class Qwen3(Transformer):
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
+            head_dim=config.kv_params.head_dim,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
             device=config.devices[0],
