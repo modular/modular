@@ -38,6 +38,7 @@ def register_all_models():
     from .phi3 import phi3_arch
     from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
+    from .qwen3 import qwen3_arch
 
     architectures = [
         exaone_arch,
@@ -54,6 +55,7 @@ def register_all_models():
         phi3_arch,
         pixtral_arch,
         qwen2_arch,
+        qwen3_arch,
         granite_arch,
     ]
 
