@@ -256,12 +256,12 @@ struct BigRegExample:
     # Test a raising constructor.
     # CHECK-LABEL: lit.fn @"__init__{{.*}}MemExample{{.*}}MemExample
     fn __init__(out self, a: MemExample, b: MemExample) raises:
-        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger %self[a]
+        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: lit.ref.store [[A]], [[A_REF]]
         self.a = RegExample()
-        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[B_REF:%.*]] = lit.ref.struct.ger %self[b]
+        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
         self.b = RegExample()
         # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>

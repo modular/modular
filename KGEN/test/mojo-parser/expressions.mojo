@@ -51,13 +51,13 @@ struct MemoryOnlyPair:
   # CHECK: lit.fn @"__copyinit__{{.*}}(%other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
   fn __copyinit__(out self, other: MemoryOnlyPair):
-    # CHECK-NEXT: %0 = lit.ref.struct.ger %other[x]
-    # CHECK-NEXT: %1 = lit.ref.struct.ger %self[x]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%0, %1)
-    # CHECK-NEXT: %3 = lit.ref.struct.ger %other[y]
-    # CHECK-NEXT: %4 = lit.ref.struct.ger %self[y]
-    # CHECK-NEXT: %5 = lit.ref.load %3
-    # CHECK-NEXT: lit.ref.store %5, %4
+    # CHECK-NEXT: %0 = lit.ref.struct.ger %self[x]
+    # CHECK-NEXT: %1 = lit.ref.struct.ger %other[x]
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%1, %0)
+    # CHECK-NEXT: [[SY:%.*]] = lit.ref.struct.ger %self[y]
+    # CHECK-NEXT: [[OY:%.*]] = lit.ref.struct.ger %other[y]
+    # CHECK-NEXT: [[OY_VAL:%.*]] = lit.ref.load [[OY]]
+    # CHECK-NEXT: lit.ref.store [[OY_VAL]], [[SY]]
     self.x = other.x
     self.y = other.y
 

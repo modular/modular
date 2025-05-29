@@ -393,8 +393,8 @@ struct TestLoopWithWholeObjectBit:
             buf.noop()
         # CHECK-NEXT: }
 
-        # CHECK-NEXT: lit.ownership.use %buf
         # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
+        # CHECK-NEXT: lit.ownership.use %buf
         # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%buf, [[FIELD_REF]])
         # CHECK-NEXT: lifetime.end %buf
         # CHECK-NEXT: %none = kgen.param.constant

@@ -751,7 +751,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
   if (decls.empty()) {
     if (lookup.isErroneous())
-      return ELVIITResult::failure(); // Error already diagnosed.
+      return {}; // Error already diagnosed.
 
     // If this was a speculative LValue lookup, don't fail, just wait for the
     // caller to try again with a type so we can synthesize a decl.
@@ -765,7 +765,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         emitter.emitError(getLoc(), "cannot access instance field '")
             << spelling << "' directly; did you mean 'self.'?" << getRange()
             << FixIt::insertBeforeToken(getLoc(), "self.");
-        return ELVIITResult::failure();
+        return {};
         // Rejected unqualified struct method references.
       } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
         const char *replacement = "self.";
@@ -782,7 +782,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         emitter.emitError(getLoc(), "cannot access method '")
             << spelling << "' directly; did you mean '" << replacement << "'?"
             << getRange() << FixIt::insertBeforeToken(getLoc(), replacement);
-        return ELVIITResult::failure();
+        return {};
       }
     }
 
@@ -791,7 +791,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       diag << structDecl.getNameAttr() << " has no '" << spelling << "' member";
     else
       diag << "use of unknown declaration '" << spelling << "'";
-    return ELVIITResult::failure();
+    return {};
   }
 
   emitter.shared.notifyListenerOnRef(decls, spelling, this);
@@ -851,7 +851,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // If this is a parameter context then we cannot return a dynamic field.
     if (!emitter.builder) {
       emitter.emitErrorForDynamicValueInParameter(this);
-      return ELVIITResult::failure();
+      return {};
     }
     // Return a mutable value only if the global variable is mutable.
     auto ref =
@@ -862,7 +862,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   } else {
     emitter.emitError(getLoc(), "use of declaration '")
         << spelling << "' as a value isn't supported yet" << getRange();
-    return ELVIITResult::failure();
+    return {};
   }
 
   // Now that we're referencing a potentially dynamic value, see if it is from
@@ -1518,12 +1518,14 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   return emitter.emitResult(result, node, dest);
 }
 
-/// Emit a qualified attribute reference to MLIR.  On error, emit an error and
-/// return a null value.
-AnyValue AttributeRefNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+/// Emit a qualified attribute reference like "x.y" to MLIR. These can always be
+/// emitted eagerly in the LHS of an assignment because the base expression can
+/// never have an inferred type.
+auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                                 bool isSpeculative) const -> ELVIITResult {
   auto &shared = emitter.shared;
 
-  // In-order to allow parameter expressions which technically include a runtime
+  // In order to allow parameter expressions which technically include a runtime
   // reference, i.e `x.static_field` we allow some values which would otherwise
   // produce a value in a parameter context to still propagate up.
   CValue baseVal = emitter.emitExprCValue(base, EC_AttributeRefBase);
@@ -2194,7 +2196,11 @@ AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(result, this, dest);
 }
 
-AnyValue SubscriptNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+/// Emit a reference like "x[i, j]" to MLIR. These can always be
+/// emitted eagerly in the LHS of an assignment because the base expression can
+/// never have an inferred type.
+auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                              bool isSpeculative) const -> ELVIITResult {
   // Subscripting a generic function binds the parameter expressions.
   auto baseAnyValue = emitter.emitExpr(base, EC_SubscriptBase);
   if (!baseAnyValue)
@@ -3537,15 +3543,94 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
 //      (exp, exp) is sugar for Tuple[typeof(expr), typeof(expr)](exp, exp)
 // and we want to emit a constructor call and infer the parameter types
 // of Tuple.
-AnyValue TupleNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                          bool isSpeculative) const -> ELVIITResult {
+  auto formTupleDLValue =
+      [&](ArrayRef<ASTExprAnd<AnyValue>> elements) -> AnyValue {
+    SmallVector<Type> typeElts;
+    for (ASTExprAnd<AnyValue> elt : elements)
+      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
+    ASTType concretizedTupleType =
+        emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
+    if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
+      return {};
+    DLValue result(
+        RCRef<TupleDLValue>::create(elements, concretizedTupleType, this));
+    return emitter.emitResult(result, this, dest);
+  };
+
+  // If this tuple is being speculatively emitted on the LHS of an assignment,
+  // speculatively emit each subelement.  It is possible that some will remain
+  // unresolvable, e.g. for `(x, y) = foo()` when 'x' is implicitly declared but
+  // 'y' is not.  When this happens, we need to bundle things up and return a
+  // new TupleNode.
+  if (isSpeculative) {
+    SmallVector<ELVIITResult> eltResults;
+    bool allEltsKnownLValue = true;
+    bool anyExprChanged = false;
+    for (const ExprNode *expr : exprs) {
+      auto result = expr->emitLValueIfImplicitlyTyped(emitter);
+      if (result.isFailure())
+        return {};
+      if (auto *newExpr = result.getIfExprNode()) {
+        // Emitting the expr could result in a new subexpr that is different,
+        // which forces us to rebuild this node.
+        anyExprChanged |= newExpr != expr;
+        allEltsKnownLValue = false;
+      } else {
+        anyExprChanged = true; // Successfully emitted a subexpr.
+        allEltsKnownLValue &= !result.getIfValue().getIfLValue().isNull();
+      }
+      eltResults.push_back(result);
+    }
+
+    // If we successfully emitted everything to an LValue, bind and return the
+    // resolved LValue for the aggregate so the RHS of the assignment can infer
+    // from the known type of the tuple.
+    if (allEltsKnownLValue) {
+      SmallVector<ASTExprAnd<AnyValue>> lvElements;
+      for (auto [result, expr] : llvm::zip(eltResults, exprs))
+        lvElements.push_back({result.getIfValue().getIfLValue(), expr});
+      return formTupleDLValue(lvElements);
+    }
+
+    // If no exprs changed, just keep the same node. (a,b,_) = foo() where both
+    // are implicitly declared.
+    if (!anyExprChanged)
+      return this;
+
+    // Otherwise, we need to rebuild a new node capturing the emitted subexpr
+    // values so the remaining exprs can be emitted but they don't get
+    // re-emitted.
+    auto &shared = emitter.shared;
+    SmallVector<ExprNode *> newExprs;
+    for (auto [result, expr] : llvm::zip(eltResults, exprs)) {
+      if (auto *newExpr = result.getIfExprNode())
+        newExprs.push_back(const_cast<ExprNode *>(newExpr));
+      else {
+        assert(result.getIfValue() && "unexpected result kind");
+        newExprs.push_back(shared.allocPersistent<SyntheticNode>(
+            expr->getLoc(), result.getIfValue()));
+      }
+    }
+    return shared.allocPersistent<TupleNode>(
+        firstCommaLoc, shared.getPersistentCopy(ArrayRef(newExprs)));
+  }
+
+  // Otherwise, emit in a non-speculatively path, which could be an LValue or
+  // RValue.  It could even be a type!
   ASTType tupleType =
       emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
 
-  // If the tuple has an inferred type from the RHS, as in `(a, b)=foo()`,
-  // propagate the element types into the subexpressions if possible to enable
-  // implicit var definition.
+  // If the tuple has an inferred type, as in `(a, b)=foo()`, propagate the
+  // element types into the subexpressions if possible to enable implicit var
+  // definition.
   SmallVector<ASTType> eltTypes;
-  if (auto destLVType = dest.getIfLValueInitializerType()) {
+  bool isLValueType = false;
+  if (auto destLVType = dest.getExpectedTypeIfSpecified()) {
+    // Inferring an LValue type or an RValue type?
+    isLValueType = !dest.getIfLValueInitializerType().isNull();
+
     // Special case the element type of Tuple.  We could be more general than
     // this if there was a reason to, e.g. looking up a __getitem__
     // implementation.
@@ -3569,8 +3654,13 @@ AnyValue TupleNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   for (auto [i, expr] : llvm::enumerate(exprs)) {
     // Use an inferred element type if we have one.
     ValueDest eltDest(EC_TupleElement);
-    if (!eltTypes.empty())
-      eltDest = ValueDest(LValueInitializerType{eltTypes[i]}, EC_TupleElement);
+    if (!eltTypes.empty()) {
+      if (isLValueType)
+        eltDest =
+            ValueDest(LValueInitializerType{eltTypes[i]}, EC_TupleElement);
+      else
+        eltDest = ValueDest(eltTypes[i], EC_TupleElement);
+    }
 
     auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
@@ -3599,18 +3689,8 @@ AnyValue TupleNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // If this is a tuple with all LValue elements, return a DLValue since we
   // can assign into this expression.
   // TODO: Add support for list LValues as well.
-  if (allEltsLValue) {
-    SmallVector<Type> typeElts;
-    for (ASTExprAnd<AnyValue> elt : elements)
-      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    ASTType concretizedTupleType =
-        emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
-    if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
-      return {};
-    DLValue result(
-        RCRef<TupleDLValue>::create(elements, concretizedTupleType, this));
-    return emitter.emitResult(result, this, dest);
-  }
+  if (allEltsLValue)
+    return formTupleDLValue(elements);
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.

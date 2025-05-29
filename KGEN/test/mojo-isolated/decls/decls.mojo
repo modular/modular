@@ -778,8 +778,8 @@ struct StructWithInit:
         # CHECK: %0 = lit.ref.struct.ger %self[x]
         # CHECK: lit.ref.store %a, %0
         self.x = a
-        # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
         # CHECK: [[YP:%.*]] = lit.ref.struct.ger %self[y]
+        # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
         # CHECK: [[XT:%.*]] = lit.ref.load [[XP]]
         # CHECK: lit.ref.store [[XT]], [[YP]]
         self.y = self.x

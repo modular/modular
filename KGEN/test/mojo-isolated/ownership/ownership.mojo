@@ -379,8 +379,8 @@ fn test_result_optimization():
 
   # Aliased reuse of part of the result slot forces a temporary.
 
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
   # CHECK-NEXT: [[F1:%.*]] = lit.ref.struct.ger %example[f1]
+  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
   # CHECK-NEXT: %__call_result_tmp___0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %__call_result_tmp___0
   # CHECK-NEXT: lit.call @ownership::@"use_and_return2{{.*}}([[IMMREF]], %__call_result_tmp___0)
@@ -501,11 +501,11 @@ struct BigRegExample:
   # CHECK-LABEL: lit.fn @"__init__()"
   fn __init__(out self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: [[A:%.*]] = lit.ref.struct.ger %self[a]
-    # CHECK-NEXT: lit.ref.store [[TMP]], [[A]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[A]]
     # CHECK-NEXT: [[B:%.*]] = lit.ref.struct.ger %self[b]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: lit.ref.store [[TMP]], [[B]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
@@ -516,12 +516,12 @@ struct BigRegExample:
   # CHECK-LABEL: lit.fn @"__copyinit__
   fn __copyinit__(out self, existing: Self):
     # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
-    # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %existing[a]
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
+    # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %existing[a]
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[EA]])
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SA]]
-    # CHECK-NEXT: [[EB:%.*]] = lit.ref.struct.ger %existing[b]
     # CHECK-NEXT: [[SB:%.*]] = lit.ref.struct.ger %self[b]
+    # CHECK-NEXT: [[EB:%.*]] = lit.ref.struct.ger %existing[b]
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[EB]])
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SB]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
@@ -567,8 +567,8 @@ fn bigreg_test():
   # CHECK-NEXT: lifetime.end [[ANON]]
   consume(varThing.b)
 
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %varThing[a]
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: lit.ref.store [[TMP]], [[AREF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%varThing)
   # CHECK-NEXT: lifetime.end %varThing
