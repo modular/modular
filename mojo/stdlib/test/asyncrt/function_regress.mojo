@@ -31,7 +31,7 @@ trait MaybeZeroSized:
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZeroSized(MaybeZeroSized, DevicePassable):
+struct ZeroSized(MaybeZeroSized, DevicePassable, Writable):
     alias device_type: AnyTrivialRegType = Self
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):
@@ -61,7 +61,7 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct NotZeroSized(MaybeZeroSized, DevicePassable):
+struct NotZeroSized(MaybeZeroSized, DevicePassable, Writable):
     alias device_type: AnyTrivialRegType = Self
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):
