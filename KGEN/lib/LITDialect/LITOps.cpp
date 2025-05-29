@@ -1901,52 +1901,12 @@ static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
   do {
     SymbolRefAttr callee;
     ParameterExprArrayAttr paramValues;
-    int numOrigins = 0;
-    if (p.parseAttribute(callee) || p.parseLSquare() ||
-        p.parseInteger(numOrigins) || p.parseRSquare() ||
-        parseParameterValues(p, paramValues))
+    LIT::FnTypeGeneratorType generatorType;
+    if (p.parseAttribute(callee) || parseParameterValues(p, paramValues) ||
+        p.parseType(generatorType))
       return failure();
-    // TODO: this is carefully curated to handle move, copy, del. Should
-    // we introduce an abstraction or use existing vtable machinery
-    // instead?
-    SmallVector<Type> args;
-    if (p.parseLParen() || p.parseType(args.emplace_back()))
-      return failure();
-    if (succeeded(p.parseOptionalComma())) {
-      if (p.parseType(args.emplace_back()))
-        return failure();
-    }
-    if (p.parseRParen())
-      return failure();
-    // TODO MOCO-1721: Name metadata is discarded when inferring the
-    // type
-    // of the symbol. Parameters and lifetimes are preserved. Lifetimes
-    // should not be needed since the function call is not generated
-    // until after lower-lit. I am uncertain what relies on the symbol
-    // type contained the same metadata as the function type on the
-    // function the symbol refers to. Revisit this TODO once the
-    // frontend pipeline is built out.
-    FnType funType = FnType::get(p.getContext(), args, {},
-                                 /*numImplicitOriginDecls=*/numOrigins);
-    FnTypeGeneratorType signatureType = LITGeneratorType::get(
-        /*inputParamTypes=*/llvm::to_vector(llvm::map_range(
-            paramValues.getValue(), [](TypedAttr in) { return in.getType(); })),
-        funType,
-        PogListAttr::get(
-            p.getContext(),
-            llvm::to_vector(
-                llvm::map_range(paramValues.getValue(), [&](TypedAttr param) {
-                  StringAttr name = StringAttr::get(p.getContext(), "");
-
-                  // TODO: Likely not handling variadics right.
-                  VariadicKind vk = VariadicKind::None;
-                  if (isa<VariadicType>(param.getType()))
-                    vk = VariadicKind::PosVarArg;
-                  return PogMetadataAttr::get(name, PassingKind::PosOnly, vk);
-                }))));
-    auto sym = SymbolConstantAttr::get(callee, signatureType, paramValues);
+    auto sym = SymbolConstantAttr::get(callee, generatorType, paramValues);
     symbols.push_back(sym);
-
   } while (succeeded(p.parseOptionalComma()));
   if (failed(p.parseRSquare()))
     return failure();
@@ -1990,11 +1950,11 @@ static ParseResult parseClosureInitOpValue(
       // There are three possibilities:
       // (1) capture by value. This is a register passable type.
       // (2) capture by reference. This uses a keyword "ref" and expects a
-      // lifetime. (3) capture by copy/move. There is no keyword, only a symbol
-      // indicating the method to call.
+      // lifetime. (3) capture by copy/move. There is no keyword, only a
+      // symbol indicating the method to call.
       if (p.parseOptionalLSquare()) {
         // No attribute specified; capture by value.
-        memSymbolTriples.push_back({});
+        memSymbolTriples.push_back(UnitAttr::get(p.getContext()));
       } else {
         if (succeeded(p.parseOptionalKeyword("ref"))) {
           // capture by reference, parse the origin.
@@ -2046,18 +2006,11 @@ static void printClosureInitOpValue(
     KGEN::ParamDeclAttr paramDecl) {
   auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
                          ArrayRef<TypedAttr> params) {
-    p << "[";
-    FnTypeGeneratorType fnTypeGen = cast<FnTypeGeneratorType>(calleeType);
-    p << fnTypeGen.getBody().getNumImplicitOriginDecls();
-    p << "]";
+    LIT::FnTypeGeneratorType fnTypeGen =
+        cast<LIT::FnTypeGeneratorType>(calleeType);
     printParameterValues(p, params);
-    p << "(";
-    for (unsigned i = 0; i < fnTypeGen.getValues().getNumInputs(); i++) {
-      p.printType(fnTypeGen.getValues().getInput(i));
-      if (i < fnTypeGen.getValues().getNumInputs() - 1)
-        p << ", ";
-    }
-    p << ")";
+    p << " ";
+    printSignatureValues(p, fnTypeGen.getValues(), fnTypeGen);
   };
   p << "(";
   int i = 0;
