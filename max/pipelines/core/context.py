@@ -586,6 +586,10 @@ class TTSContext(TextContext):
         *args,
         **kwargs,
     ) -> None:
+        self.audio_prompt_tokens = kwargs.get(
+            "audio_prompt_tokens", np.array([], dtype=np.int32)
+        )
+        kwargs.pop("audio_prompt_tokens", None)
         super().__init__(*args, **kwargs)
         self._speech_token_size = SPEECH_TOKEN_audio_chunk_size
         self._speech_token_end_idx = 0

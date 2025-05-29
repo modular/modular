@@ -620,10 +620,6 @@ class AudioGenerationConfig(PipelineConfig):
 
         if self.block_causal:
             raise NotImplementedError("Causal generation is not implemented")
-        if self.prepend_prompt_speech_tokens:
-            raise NotImplementedError(
-                "Prepend prompt tokens is not implemented"
-            )
         if self.prepend_prompt_speech_tokens_causal:
             raise NotImplementedError(
                 "Prepend prompt speech tokens causal is not implemented"
