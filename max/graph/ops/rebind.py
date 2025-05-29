@@ -5,16 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for rebind."""
 
+from __future__ import annotations
+
 from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Shape, ShapeLike
+from ..type import FilterLayout, Shape, ShapeLike
 from ..value import TensorType, TensorValue, TensorValueLike
 
 
 def rebind(
-    x: TensorValueLike, shape: ShapeLike, message: str = ""
+    x: TensorValueLike,
+    shape: ShapeLike,
+    message: str = "",
+    layout: FilterLayout | None = None,
 ) -> TensorValue:
     """Rebinds a symbolic tensor to a specified set of dimensions.
 
@@ -29,6 +34,7 @@ def rebind(
         shape: The symbolic shape to assert for ``x``, as a list of
                [``Dim``](/max/api/python/graph/type/Dim) values.
         message: The message printed if the rebind fails at runtime.
+        layout: A layout of the weights used by some operations like `conv`.
 
     Returns:
         A symbolic tensor with the same elements and shape as the given tensor,
@@ -43,10 +49,10 @@ def rebind(
     if shape.rank != v.rank:
         raise ValueError(f"Wrong rank for rebind: {v.shape=} but {shape=}")
 
+    out_type = TensorType(v.dtype, shape, device=v.device)
+    out_type._layout = layout
+
     message_attr = mlir.StringAttr.get(message)
     return Graph.current._add_op(
-        rmo.rebind_tensor_shape,
-        TensorType(v.dtype, shape, device=v.device).to_mlir(),
-        v,
-        message=message_attr,
+        rmo.rebind_tensor_shape, out_type.to_mlir(), v, message=message_attr
     )[0].tensor

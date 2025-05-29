@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
+import enum
 import functools
 import math
 import re
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Generic, TypeVar, Union
 
@@ -27,12 +28,41 @@ else:
     Self = TypeVar("Self")
 
 import numpy as np
+from max._core import NamedAttribute
 from max._core import Type as _Type
 from max._core.dialects import builtin, kgen, m, mo, mosh
 from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 
 MlirType = TypeVar("MlirType", bound=_Type)
+
+
+class FilterLayout(enum.Enum):
+    RSCF = "RSCF"
+    QRSCF = "QRSCF"
+    FCRS = "FCRS"
+    FCQRS = "FCQRS"
+
+    def to_mlir(self) -> mo.LayoutAttr:
+        """Returns an mlir Attribute representing this Layout.
+        This attribute is used in tensor type metadata for certain ops.
+
+        Returns:
+            An Attribute representing the layout.
+        """
+        return mo.LayoutAttr(format_str=str(self.value))
+
+    @staticmethod
+    def from_mlir(attr: mo.LayoutAttr) -> FilterLayout:
+        """Constructs a layout from an attribute.
+
+        Args:
+            attr: The MLIR Attribute object to parse into a layout.
+
+        Returns:
+            The FilterLayout represented by the Attribute value.
+        """
+        return FilterLayout(attr.format.value)
 
 
 class Dim:
@@ -747,6 +777,7 @@ class _TensorTypeBase(Type[MlirType]):
         return type(self)(dtype, self.shape, self.device)
 
 
+@dataclass
 class TensorType(_TensorTypeBase[mo.TensorType]):
     """A symbolic :obj:`TensorType`.
 
@@ -779,6 +810,12 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
     device the tensor is associated with.
     """
 
+    _layout: FilterLayout | None = field(
+        default=None, compare=False, repr=False
+    )
+
+    __init__ = _TensorTypeBase.__init__
+
     @classmethod
     def from_mlir(cls, type: mo.TensorType) -> TensorType:
         """Constructs a tensor type from an MLIR type.
@@ -790,7 +827,12 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
             The tensor type represented by the MLIR Type value.
         """
         device_ref = DeviceRef.from_mlir(type.device_ref)
-        return cls(type.dtype, Shape.from_mlir(type.shape_attr), device_ref)
+        self = cls(type.dtype, Shape.from_mlir(type.shape_attr), device_ref)
+        for name, attr in type.metadata.value:
+            if name == "layout":
+                assert isinstance(attr, mo.LayoutAttr)
+                self._layout = FilterLayout.from_mlir(attr)
+        return self
 
     def to_mlir(self) -> mo.TensorType:
         """Converts to an ``mlir.Type`` instance.
@@ -798,8 +840,14 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
         Returns:
             An ``mlir.Type`` in the specified Context.
         """
+        metadata = []
+        if self._layout:
+            metadata.append(NamedAttribute("layout", self._layout.to_mlir()))
         return mo.TensorType(
-            self.shape.to_mlir(), self.dtype, self.device.to_mlir()
+            self.shape.to_mlir(),
+            self.dtype,
+            self.device.to_mlir(),
+            metadata=builtin.DictionaryAttr(metadata),
         )
 
     def as_buffer(self) -> BufferType:

@@ -11,7 +11,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Shape
+from ..type import FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
 
 
@@ -23,6 +23,7 @@ def conv2d(
     padding: tuple[int, int, int, int] = (0, 0, 0, 0),
     groups: int = 1,
     bias: Optional[TensorValueLike] = None,
+    filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
     """Computes the 2-D convolution product of the input with the given filter, bias,
     strides, dilations, paddings, and groups.
@@ -96,8 +97,8 @@ def conv2d(
 
     conv_output = Graph.current._add_op(
         rmo.conv,
-        TensorValue(x),
-        TensorValue(filter),
+        x,
+        filter._with_layout(filter_layout),
         Shape(stride).to_mlir(),
         Shape(dilation).to_mlir(),
         Shape(padding).to_mlir(),
@@ -117,6 +118,7 @@ def conv3d(
     padding: tuple[int, int, int, int, int, int] = (0, 0, 0, 0, 0, 0),
     groups: int = 1,
     bias: Optional[TensorValueLike] = None,
+    filter_layout: FilterLayout = FilterLayout.QRSCF,
 ) -> TensorValue:
     """Computes the 3-D convolution product of the input with the given filter,
     strides, dilations, paddings, and groups.
@@ -190,8 +192,8 @@ def conv3d(
 
     conv_output = Graph.current._add_op(
         rmo.conv,
-        TensorValue(x),
-        TensorValue(filter),
+        x,
+        filter._with_layout(filter_layout),
         Shape(stride).to_mlir(),
         Shape(dilation).to_mlir(),
         Shape(padding).to_mlir(),

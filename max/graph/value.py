@@ -27,6 +27,7 @@ from .type import (
     DeviceRef,
     Dim,
     DimLike,
+    FilterLayout,
     Shape,
     ShapeLike,
     TensorType,
@@ -607,6 +608,17 @@ class TensorValue(Value[mo.TensorType]):
             A new :obj:`TensorValue` with the updated shape.
         """
         return ops.rebind(self, shape, message)
+
+    def _with_layout(self, layout: FilterLayout) -> TensorValue:
+        """Rebinds the tensor with a known layout for convolution filters.
+
+        Args:
+            layout: The layout value.
+
+        Returns:
+            A new :obj:`TensorValue` with the known layout.
+        """
+        return ops.rebind(self, shape=self.shape, layout=layout)
 
     def permute(self, dims: list[int]) -> TensorValue:
         """Permutes the tensor's dimensions based on provided indices.

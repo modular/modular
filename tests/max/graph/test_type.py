@@ -25,6 +25,7 @@ from max.graph import (
     TensorType,
     _ChainType,
 )
+from max.graph.type import FilterLayout, Type
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -167,6 +168,18 @@ def test_tensor_type_accessors(mlir_context) -> None:
 
     assert _graph.tensor_type_get_dtype(tensor_type) == DType.float32._mlir
     assert _graph.tensor_type_get_rank(tensor_type) == 2
+
+
+def test_tensor_type_layout(mlir_context):
+    t = TensorType(DType.float32, ["r", "s", "f", "c"], DeviceRef.CPU())
+    t_copy = Type.from_mlir(t.to_mlir())
+    t._layout = FilterLayout.RSCF
+    t2 = Type.from_mlir(t.to_mlir())
+    assert t._layout == FilterLayout.RSCF
+    assert t2._layout == FilterLayout.RSCF
+    assert t == t2
+    # layout is not considered for equality checks
+    assert t == t_copy
 
 
 def test_tensor_type_with_device_accessors(mlir_context: mlir.Context) -> None:
