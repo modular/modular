@@ -32,7 +32,7 @@ struct OverloadedIndexers:
     var vals: List[Int]
 
     fn __init__(out self):
-        self.vals = List[Int](0, 1, 2)
+        self.vals = [0, 1, 2]
 
     fn __getitem__(self, idx: Int) -> Int:
         return self.vals[idx]

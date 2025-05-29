@@ -204,7 +204,7 @@ public:
     ELVIITResult(const ExprNode *value) : storage(value) {
       assert(value && "Cannot init with null ExprNode*");
     }
-    static ELVIITResult failure() { return ELVIITResult(AnyValue()); }
+    /*implicit*/ ELVIITResult() { return ELVIITResult(AnyValue()); }
 
     bool isFailure() const {
       if (auto *ptr = std::get_if<AnyValue>(&storage))

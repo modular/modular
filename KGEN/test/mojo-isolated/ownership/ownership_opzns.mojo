@@ -66,10 +66,10 @@ struct MemoryUniqueMovable:
     fn __moveinit__(out self, owned other: Self):
         # Mercilessly steal 'other's state which could be interesting.
 
-        # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
-        # CHECK-NEXT: lit.ownership.use %0
-        # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
-        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%0, %1)
+        # CHECK-NEXT: %0 = lit.ref.struct.ger %self[state]
+        # CHECK-NEXT: %1 = lit.ref.struct.ger %other[state]
+        # CHECK-NEXT: lit.ownership.use %1
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %0)
         self.state = other.state^
 
         # CHECK-NEXT: kgen.param.constant: none
@@ -289,7 +289,7 @@ fn optimizeCopyToMove():
     # CHECK: %m1 = lit.var.decl
     # CHECK-NEXT: lifetime.start %m1
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
-    var m1 = MemExample() 
+    var m1 = MemExample()
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m1.noop()
@@ -326,7 +326,7 @@ fn optimizeCopyToMove():
 
     # CHECK-NEXT: %r2 = lit.var.decl "r2"
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %r1
-    # CHECK-NEXT: lit.var.lifetime.end %r1 
+    # CHECK-NEXT: lit.var.lifetime.end %r1
     # CHECK-NEXT: lit.var.lifetime.start %r2
     # CHECK-NEXT: lit.ref.store [[TMP]], %r2
     var r2 = r1

@@ -358,7 +358,7 @@ fn bad_tuple(a: Int):
   (c, d) = a
 
   var iTup : Tuple[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, FloatDyn]' value to 'Tuple[Int, Int]'}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[2]' value to 'Int'}}
   iTup = (1, 2.0)
 
 

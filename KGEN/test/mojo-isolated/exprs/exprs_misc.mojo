@@ -22,12 +22,24 @@ fn literal_promotion[cond: Bool]():
 # Assignment operator
 ##===----------------------------------------------------------------------===##
 
+struct RHSInferenceStruct:
+    var field: List[Int]
+
+    fn __setitem__(self, value: List[Int]):
+      pass
+
+# None of these should be ambiguous.
 fn test_rhs_inference():
     var a: List[Int]
+    a = [] # DeclRefNode
+    (a) = [] # ParenNode
 
-    # None of these should be ambiguous.
-    a = []
-    (a) = []
+    var lf : RHSInferenceStruct
+    (lf).field = [] # AttributeRefNode
+
+    lf[] = [] # SubscriptNode
+
+    a, lf.field = [], [] # TupleNode
 
 
 ##===----------------------------------------------------------------------===##

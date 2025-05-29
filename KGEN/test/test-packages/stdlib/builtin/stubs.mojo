@@ -530,7 +530,7 @@ struct Slice:
         pass
 
 
-struct List[T: AnyType]:
+struct List[T: AnyType](Copyable, Movable):
     fn __init__(out self, *elements: T, __list_literal__: () = ()):
         pass
 

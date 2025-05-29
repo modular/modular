@@ -203,11 +203,11 @@ struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
-struct AttributeRefNode final : public ExprNode, Identifier {
+struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
   AttributeRefNode(ExprNode *base, SMLoc dotLoc, StringRef spelling,
                    bool isEscapedIdentifier = false)
-      : ExprNode(kAttributeRef), Identifier(spelling, isEscapedIdentifier),
-        base(base), dotLoc(dotLoc) {}
+      : LValueCapableExprNode(kAttributeRef),
+        Identifier(spelling, isEscapedIdentifier), base(base), dotLoc(dotLoc) {}
 
   ExprNode *const base;
   const SMLoc dotLoc;
@@ -220,7 +220,8 @@ struct AttributeRefNode final : public ExprNode, Identifier {
   SourceRange getRange() const override {
     return {base->getRangeStart(), getIdentifierLoc()};
   }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
   /// Emit a reference to a stored field with a base that is known not to be a
@@ -310,10 +311,10 @@ struct CallNode final : public ExprNode {
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
 /// slice will be represented with a subexpression.
-struct SubscriptNode final : public ExprNode {
+struct SubscriptNode final : public LValueCapableExprNode {
   SubscriptNode(const ExprNode *base, SMLoc lsquareLoc,
                 ArrayRef<Operand> operands, SMLoc rsquareLoc)
-      : ExprNode(kSubscript), base(base), lsquareLoc(lsquareLoc),
+      : LValueCapableExprNode(kSubscript), base(base), lsquareLoc(lsquareLoc),
         operands(operands), rsquareLoc(rsquareLoc) {}
 
   const ExprNode *const base;
@@ -329,7 +330,8 @@ struct SubscriptNode final : public ExprNode {
   /// Return a source range from '[' to ']'.
   SourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -395,9 +397,10 @@ struct ParenNode final : public ExprNode {
 ///
 /// Note that an empty tuple `()` is represented as a TupleNode no exprs,
 /// and the firstCommaLoc is at the `(`.  It is then wrapped with a ParenNode.
-struct TupleNode final : public ExprNode {
+struct TupleNode final : public LValueCapableExprNode {
   TupleNode(SMLoc firstCommaLoc, ArrayRef<ExprNode *> exprs)
-      : ExprNode(kTuple), firstCommaLoc(firstCommaLoc), exprs(exprs) {}
+      : LValueCapableExprNode(kTuple), firstCommaLoc(firstCommaLoc),
+        exprs(exprs) {}
 
   const SMLoc firstCommaLoc;
   ArrayRef<ExprNode *> exprs;
@@ -409,7 +412,8 @@ struct TupleNode final : public ExprNode {
       return {firstCommaLoc, firstCommaLoc};
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 

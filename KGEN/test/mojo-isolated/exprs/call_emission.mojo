@@ -234,10 +234,11 @@ fn test_variadic_and_kw_only_params_indirect[x: Index,
 fn initialize_in_addrspace(
     ptr: UnsafePointer[ExampleRegPassable, address_space=AddressSpace(1)]
 ):
-    # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}()
 
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
+
+    # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}()
 
     # Use lit.ref.store to move into addrspace 1
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.origin, 1>
