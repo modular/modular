@@ -2366,20 +2366,52 @@ struct LayoutTensor[
         return stride[idx]
 
     @always_inline
-    fn dim[idx: Int](self) -> Int:
+    fn dim(self, idx: Int) -> Int:
         """Returns the runtime dimension size of the tensor along the specified
         axis.
 
-        Unlike the static `shape` method, this instance method provides access
-        to the tensor's actual dimension sizes at runtime, which is necessary
-        for tensors with dynamic shapes or when working with tensor slices.
+        Unlike the static `dim` method, this instance method takes a runtime
+        dimension index.
 
-        Parameters:
+        Args:
             idx: The dimension index to query (0-based).
                  For example, in a 3D tensor with shape `[10, 20, 30]`:
                  - `dim(0)` returns 10 (first dimension).
                  - `dim(1)` returns 20 (second dimension).
                  - `dim(2)` returns 30 (third dimension).
+
+        Returns:
+            The dimension of the tensor along the specified axis as an integer.
+        """
+
+        constrained[
+            0 <= depth(layout.shape) <= 1,
+            String(
+                (
+                    "This method only works with tensors that have depth-1"
+                    " layouts (no nested shapes). Received: "
+                ),
+                layout,
+            ),
+        ]()
+
+        return self.runtime_layout.shape.value[idx]
+
+    @always_inline
+    fn dim[idx: Int](self) -> Int:
+        """Returns the dimension size of the tensor along the specified
+        axis.
+
+        Unlike the static `shape` method, this instance method provides access
+        to the tensor's actual dimension sizes. If the dimension is unknown,
+        the runtime layout is used to get the dimension size.
+
+        Parameters:
+            idx: The dimension index to query (0-based).
+                 For example, in a 3D tensor with shape `[10, 20, 30]`:
+                 - `dim[0]()` returns 10 (first dimension).
+                 - `dim[1]()` returns 20 (second dimension).
+                 - `dim[2]()` returns 30 (third dimension).
 
         Constraints:
             - Only works with tensors that have depth-1 layouts (no nested
@@ -2390,8 +2422,6 @@ struct LayoutTensor[
 
         Performance:
 
-        - This is a run-time operation that accesses the tensor's runtime
-            layout information.
         - For static dimensions known at compile time, prefer the static
             `shape` method when possible for better performance.
 
