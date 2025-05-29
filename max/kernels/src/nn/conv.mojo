@@ -3139,7 +3139,7 @@ fn conv_cudnn[
             stride[1],
             dilation[0],
             dilation[1],
-            cudnnConvolutionMode_t.CUDNN_CONVOLUTION,
+            cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )
     )
