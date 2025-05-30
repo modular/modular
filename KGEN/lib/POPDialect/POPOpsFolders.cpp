@@ -167,6 +167,16 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
           return value;
       };
 
+      // For a k32BitResult don't try to fold as 64bit index, as it won't always
+      // correct for the result type.
+      if constexpr (foldType == k32BitResult) {
+        OpResultT result32 = op(args.trunc(32)...);
+        if constexpr (isOptional)
+          if (!result32.has_value())
+            return {};
+        return unwrap(result32);
+      }
+
       OpResultT result64 = op(args...);
       if constexpr (isOptional)
         if (!result64.has_value())
@@ -892,19 +902,11 @@ static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
     ssize_t indexWidth = target ? target.resolveIndexBitWidth() : 64;
     if (indexWidth == 64) {
       return foldSIMDOpResult<::Detail::k64BitResult>(
-          operands, outputDType,
-          [&](const APSInt &in) { return APSInt(in, outputDType.isUInt()); },
-          [&](const APFloat &in) {
-            return APSInt(in.bitcastToAPInt(), outputDType.isUInt());
-          });
+          operands, outputDType, std::forward<OpsFns>(ops)...);
     }
     if (indexWidth == 32) {
       return foldSIMDOpResult<::Detail::k32BitResult>(
-          operands, outputDType,
-          [&](const APSInt &in) { return APSInt(in, outputDType.isUInt()); },
-          [&](const APFloat &in) {
-            return APSInt(in.bitcastToAPInt(), outputDType.isUInt());
-          });
+          operands, outputDType, std::forward<OpsFns>(ops)...);
     }
     return {};
   }
@@ -935,9 +937,15 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   if (dtype->isIndex()) {
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [&](const APSInt &in) { return APSInt(in, /*isUnsigned=*/true); },
-        [&](const APFloat &in) {
-          return APSInt(in.bitcastToAPInt(), /*isUnsigned=*/true);
+        [&](const APSInt &in) -> APSInt {
+          // Must zero extend to 64bit, otherwise there will be segfault during
+          // SIMDAttr construction as it expects 64bit index by default.
+          return APSInt(in, /*isUnsigned=*/true).extend(64);
+        },
+        [&](const APFloat &in) -> APSInt {
+          // Must zero extend to 64bit, otherwise there will be segfault during
+          // SIMDAttr construction as it expects 64bit index by default.
+          return APSInt(in.bitcastToAPInt(), /*isUnsigned=*/true).extend(64);
         });
   }
   assert(dtype->isFloat());
