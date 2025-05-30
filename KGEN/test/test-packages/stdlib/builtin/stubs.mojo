@@ -537,6 +537,9 @@ struct List[T: AnyType](Copyable, Movable):
     fn append(mut self, owned value: T):
         pass
 
+    fn __getitem__(ref self, idx: Int) -> ref [self] T:
+        pass
+
 
 struct Set[T: AnyType]:
     fn __init__(out self, *elements: T, __set_literal__: () = ()):

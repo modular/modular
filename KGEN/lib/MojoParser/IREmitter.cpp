@@ -1289,6 +1289,34 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (auto dlValue = destLV.getIfDLValue())
     return dlValue->emitStore(value, *this);
 
+  // If the destination is a RLValue, then the source value must be an MLValue
+  // and we're binding its address into the VarDeclOp.
+  if (auto rlValue = destLV.getIfRLValue()) {
+    // The destination must be a VarDeclOp by construction.
+    VarDeclOp destRef = cast<VarDeclOp>(rlValue.getDefiningOp());
+    assert(destRef && destRef.getKind() == VarDeclKind::Ref &&
+           "not a ref to initialize!");
+    // There must be an ASTDecl for it with the same name, in scope.
+    ArrayRef<ASTDecl *> decls =
+        declScope.lookupInCurrentScope(destRef.getNameAttr());
+    assert(decls.size() == 1 && cast<VarDeclOp>(decls[0]) == destRef &&
+           "lookup failure");
+
+    if (!value.ir.isMValue()) {
+      emitError(value.expr->getLoc(), "value of type ")
+          << value.ir.getRValueType()
+          << " cannot be bound into a 'ref' because it has no address"
+          << value.expr->getRange();
+      decls[0]->setErroneous();
+      return {};
+    }
+
+    // Change the name binding to the correct reference.  We just abandon the
+    // vardecl itself.
+    decls[0]->setIRValue(value.ir);
+    return value.ir; // Return the input reference.
+  }
+
   // Otherwise, we know we have an MLValue destination.
   MLValue destRef = destLV.getIfMLValue();
   assert(destRef && "No other known LValue");

@@ -83,6 +83,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "ML: ";
     os << val;
+  } else if (auto val = dyn_cast<RLValue>(storage)) {
+    if (isDump)
+      os << "RL: ";
+    os << val;
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
       os << "DLV ";
@@ -173,6 +177,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MLValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<RLValue>(storage))
+    return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
   assert(!isa<OverloadSetUValue>(storage) && "overloaded rvalue has no type");
@@ -247,13 +253,17 @@ ASTType CValue::getRValueType() const {
   auto type = getType();
   if (isMValue())
     return type.getReferenceElementType();
+  if (auto rl = dyn_cast<RLValue>(storage))
+    return rl.getRValueType();
   return type;
 }
 
 ASTType LValue::getRValueType() const {
   auto type = getType();
-  if (isa<MLValue>(storage))
-    return type.getReferenceElementType();
+  if (auto ml = dyn_cast<MLValue>(storage))
+    return ml.getRValueType();
+  if (auto rl = dyn_cast<RLValue>(storage))
+    return rl.getRValueType();
   return type;
 }
 
@@ -268,6 +278,8 @@ ASTType BValue::getRValueType() const {
 Value VariantValueStorageBase::getMValueReference() const {
   if (auto lvalue = dyn_cast<MLValue>(storage))
     return lvalue;
+  if (auto rl = dyn_cast<RLValue>(storage))
+    return rl;
   if (auto rvalue = dyn_cast<MRValue>(storage))
     return rvalue;
   if (auto bvalue = dyn_cast<MBValue>(storage))
@@ -305,6 +317,8 @@ Value VariantValueStorageBase::getMlirValue() const {
     return rvalue;
   if (auto bvalue = dyn_cast<SBValue>(storage))
     return bvalue;
+  if (auto rlvalue = dyn_cast<RLValue>(storage))
+    return rlvalue;
   return Value();
 }
 
@@ -313,11 +327,21 @@ void MRValue::check() const {
          ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
          "MRValue can only be used for a mutable reference");
 }
+
 void MLValue::check() const {
   assert(::isa<RefType>(Value::getType()) &&
          ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
          "MLValue can only be used for a mutable reference");
 }
+
+void RLValue::check() const {
+  assert(::isa<RefType>(Value::getType()) &&
+         ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
+         "RLValue can only be used for a mutable reference");
+  assert(::isa<RefType>(::cast<RefType>(Value::getType()).getElementType()) &&
+         "RLValue should be ref of ref");
+}
+
 void MBValue::check() const {
   // MBValue allow any mutability.
   assert(::isa<RefType>(Value::getType()));

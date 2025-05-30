@@ -357,6 +357,14 @@ fn use_non_parameter_func() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
   var result: Int = higher_order_int_func[my_nested_func]()
 
+fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
+    ref r = a[0]
+    r += 1 # expected-error {{expression must be mutable for in-place operator destination}}
+
+    ref r2 = 42 # expected-error {{value of type 'Int' cannot be bound into a 'ref' because it has no address}}
+    ref r3 = r2 # no follow-on error.
+
+
 ##===----------------------------------------------------------------------===##
 # Tuples
 ##===----------------------------------------------------------------------===##

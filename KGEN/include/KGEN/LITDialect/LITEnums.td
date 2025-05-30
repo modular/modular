@@ -61,7 +61,7 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
   // Things like byref results/errors and _Self in Traits.
   I32EnumAttrCase<"Implicit", 3, "implicit">,
   // User-declared inferred-only params like: fn x[a: Bool, //, b: Int](...
-  I32EnumAttrCase<"Inferred", 4, "inferred"> 
+  I32EnumAttrCase<"Inferred", 4, "inferred">
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;
@@ -73,20 +73,22 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
 
 def LIT_VarDeclKind : I32EnumAttr<"VarDeclKind",
     "origin of a VarDeclOp", [
-  /// Value is declared explicitly by the user to be mutable.
+  /// "var x = ...": Value is declared explicitly by the user to be mutable.
   I32EnumAttrCase<"Var", 0, "var">,
+  /// "ref x = ...": Explicitly declared reference binding.
+  I32EnumAttrCase<"Ref", 1, "ref">,
   /// Value is declared implicitly by the user via non-var/let syntax.
   /// For example, implicit declarations in `def` functions, target declarations
   /// in `for` statements.
-  I32EnumAttrCase<"Implicit", 1, "imp">,
+  I32EnumAttrCase<"Implicit", 2, "imp">,
   /// Value is not declared by the user at all.
-  I32EnumAttrCase<"Synthesized", 2, "synth">,
+  I32EnumAttrCase<"Synthesized", 3, "synth">,
   /// Value is a shadow of a function argument, for arguments that need a
   /// variable location.
-  I32EnumAttrCase<"Arg", 3, "arg">,
+  I32EnumAttrCase<"Arg", 4, "arg">,
   /// Value is a shadow of an 'out' argument for a register passable
   /// initializer.
-  I32EnumAttrCase<"InitOutArg", 4, "initoutarg">,
+  I32EnumAttrCase<"InitOutArg", 5, "initoutarg">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;
