@@ -119,7 +119,7 @@ def test_reversed_dict():
     var empty_dict = Dict[String, Int]()
 
     keys = String()
-    for key in reversed(empty_dict):
+    for var key in reversed(empty_dict):
         keys += key[]
 
     assert_equal(keys, "")
@@ -133,7 +133,7 @@ def test_reversed_dict():
 
     keys = String()
     check = 0
-    for item in reversed(empty_dict.items()):
+    for var item in reversed(empty_dict.items()):
         keys += item[].key
         check += item[].value
 

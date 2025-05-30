@@ -185,7 +185,7 @@ def test_stringslice_from_utf8():
     for sequence in GOOD_SEQUENCES:
         _ = StringSlice.from_utf8(Span(sequence[]))
 
-    for sequence in BAD_SEQUENCES:
+    for var sequence in BAD_SEQUENCES:
         with assert_raises(contains="buffer is not valid UTF-8"):
             _ = StringSlice.from_utf8(Span(sequence[]))
 

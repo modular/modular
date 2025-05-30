@@ -49,7 +49,9 @@ fn bench_parsing_all_floats_in_file(
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+
+
+fn main() raises:
     var bench = Bench()
     alias files = ["canada", "mesh"]
 
@@ -60,8 +62,8 @@ def main():
 
         var items_to_parse = file_path.read_text().splitlines()
         var nb_of_bytes = 0
-        for item in items_to_parse:
-            nb_of_bytes += len(item[])
+        for item2 in items_to_parse:
+            nb_of_bytes += len(item2[])
 
         bench.bench_with_input[List[String], bench_parsing_all_floats_in_file](
             BenchId("atof", filename),

@@ -83,9 +83,9 @@ struct Grid(StringableRaising):
 
         data = List[List[Int]]()
 
-        for row in range(rows):
+        for _row in range(rows):
             row_data = List[Int]()
-            for col in range(cols):
+            for _col in range(cols):
                 # Generate a random 0 or 1 and append it to the row.
                 row_data.append(Int(random.random_si64(0, 1)))
             data.append(row_data)

@@ -83,6 +83,37 @@ what we publish.
   conformance should either declare conformances explicitly or, if appropriate,
   replace empty, non-load-bearing traits with trait compositions.
 
+- `for` loops in a `def` now use function-scoped variables to provide
+  Python-like behavior, e.g.
+
+  ```mojo
+  def main():
+    i = 0 # needed because Mojo doesn't know range(2) is non-empty.
+    for i in range(2):
+      print(i)
+    print(i)
+  ```
+
+  now prints 0, 1, 1.
+
+  This also means that weird things like this are errors:
+
+  ```mojo
+  def main():
+    for i in range(2): ...
+    for i in ["foo", "bar"]: ...
+  ```
+
+  Because "i" will have contradictory types in the different loops. `fn`'s
+  automatically scope variables like this, but you can tell Mojo to scope the
+  variable in a def by using the `var` keyword:
+
+  ```mojo
+  def main():
+    for var i in range(2): ...       # This i is scoped to this loop
+    for var i in ["foo", "bar"]: ... # This i is scoped to this loop
+  ```
+
 ### Standard library changes
 
 - The `CollectionElement` trait has been removed.

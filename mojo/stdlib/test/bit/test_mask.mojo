@@ -37,7 +37,7 @@ def test_is_negative():
         for j in range(len(widths)):
             alias S = SIMD[D, widths[j]]
 
-            for k in values:
+            for var k in values:
                 assert_equal(S(-1), is_negative(S(-k[])))
                 assert_equal(S(0), is_negative(S(k[])))
 
@@ -88,7 +88,7 @@ def test_compare():
         for j in range(len(widths)):
             alias S = SIMD[D, widths[j]]
 
-            for k in values:
+            for var k in values:
                 var s_k = S(k[])
                 var s_k_1 = S(k[] - 1)
                 assert_equal(S(-1), is_true[D](s_k == s_k))

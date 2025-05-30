@@ -87,7 +87,7 @@ def test_array_int():
         var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
             fill=arg
         )
-        for i in range(size):
+        for var i in range(size):
             assert_equal(arr[i], arg)
 
     def test_init_fill_scalars[

@@ -293,7 +293,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
     @parameter
     for type_idx in range(2):
         alias type = types[type_idx]
-        for bs_ref in [1, 16]:
+        for var bs_ref in [1, 16]:
             bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()

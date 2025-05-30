@@ -902,10 +902,10 @@ def test_isspace():
     for i in univ_sep_var:
         assert_true(i[].isspace())
 
-    for i in List[String]("not", "space", "", "s", "a", "c"):
+    for var i in List[String]("not", "space", "", "s", "a", "c"):
         assert_false(i[].isspace())
 
-    for i in range(len(univ_sep_var)):
+    for var i in range(len(univ_sep_var)):
         var sep = String()
         for j in range(len(univ_sep_var)):
             sep += univ_sep_var[i]
@@ -1223,7 +1223,7 @@ def test_string_char_slices_iter():
         var ptr = item.unsafe_ptr()
         var amnt_characters = 0
         var byte_idx = 0
-        for v in item.codepoint_slices():
+        for var v in item.codepoint_slices():
             var byte_len = v.byte_length()
             for i in range(byte_len):
                 assert_equal(ptr[byte_idx + i], v.unsafe_ptr()[i])
@@ -1232,7 +1232,7 @@ def test_string_char_slices_iter():
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
         var concat = String()
-        for v in item.__reversed__():
+        for var v in item.__reversed__():
             concat += v
         assert_equal(rev[item_idx], concat)
         item_idx += 1
